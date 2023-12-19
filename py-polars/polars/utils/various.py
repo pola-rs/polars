@@ -23,9 +23,8 @@ from polars.datatypes import (
     Int64,
     Time,
     Utf8,
-    unpack_dtypes,
 )
-from polars.dependencies import _PYARROW_AVAILABLE, _check_for_numpy
+from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
@@ -208,18 +207,6 @@ def arrlen(obj: Any) -> int | None:
         return None if isinstance(obj, str) else len(obj)
     except TypeError:
         return None
-
-
-def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
-    """Check if the given dtypes can be used to create dicts with pyarrow fast path."""
-    # TODO: have our own fast-path for dict iteration in Rust
-    return (
-        _PYARROW_AVAILABLE
-        # note: 'ns' precision instantiates values as pandas types - avoid
-        and not any(
-            (getattr(tp, "time_unit", None) == "ns") for tp in unpack_dtypes(*dtypes)
-        )
-    )
 
 
 def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) -> str:
