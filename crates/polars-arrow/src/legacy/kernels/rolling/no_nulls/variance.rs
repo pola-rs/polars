@@ -209,14 +209,11 @@ mod test {
 
         let out = rolling_var(values, 2, 1, false, None, None).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out
-            .into_iter()
-            .map(|v| v.copied().unwrap())
-            .collect::<Vec<_>>();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),
-            format!("{:?}", &[0.0, 8.0, 2.0, 0.5])
+            format!("{:?}", &[None, Some(8.0), Some(2.0), Some(0.5)])
         );
         // test nan handling.
         let values = &[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
