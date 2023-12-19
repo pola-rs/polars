@@ -17,6 +17,8 @@ use crate::chunked_array::builder::{
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::{AnonymousOwnedFixedSizeListBuilder, FixedSizeListBuilder};
 #[cfg(feature = "object")]
+use crate::chunked_array::object::builder::get_object_type;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::flatten::flatten_par;
@@ -208,7 +210,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                 } else {
                     match first_s.dtype() {
                         #[cfg(feature = "object")]
-                        DataType::Object(_) => {
+                        DataType::Object(_, _) => {
                             let mut builder =
                                 first_s.get_list_builder("collected", capacity * 5, capacity);
                             for _ in 0..init_null_count {
@@ -326,7 +328,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             len,
         });
         let mut out = ChunkedArray {
-            field: Arc::new(Field::new("", DataType::Object(T::type_name()))),
+            field: Arc::new(Field::new("", get_object_type::<T>())),
             chunks: vec![arr],
             phantom: PhantomData,
             bit_settings: Default::default(),
@@ -660,7 +662,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
 
         match &dtype {
             #[cfg(feature = "object")]
-            Some(DataType::Object(_)) => {
+            Some(DataType::Object(_, _)) => {
                 let s = vectors
                     .iter()
                     .flatten()

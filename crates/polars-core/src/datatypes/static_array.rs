@@ -1,11 +1,9 @@
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
 
-#[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, ObjectValueIter};
 use crate::prelude::*;
 
-#[cfg(feature = "object")]
 impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     type ValueT<'a> = &'a T;
     type ZeroableValueT<'a> = Option<&'a T>;

@@ -747,6 +747,7 @@ impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
 }
 
 impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
+    #[allow(unused_variables)]
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = Box<dyn Array>>>(
         dtype: ArrowDataType,
         iter: I,
@@ -782,6 +783,7 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
 }
 
 impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
+    #[allow(unused_variables)]
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = Option<Box<dyn Array>>>>(
         dtype: ArrowDataType,
         iter: I,

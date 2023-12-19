@@ -12,7 +12,9 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
+#[cfg(feature = "object")]
 mod static_array;
+#[cfg(feature = "object")]
 mod static_array_collect;
 mod time_unit;
 
@@ -212,7 +214,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type Structure = Nested;
 
     fn get_dtype() -> DataType {
-        DataType::Object(T::type_name())
+        DataType::Object(T::type_name(), None)
     }
 }
 

@@ -68,7 +68,7 @@ impl Series {
         let dtype = self.dtype();
         #[cfg(feature = "object")]
         assert!(
-            !matches!(dtype, DataType::Object(_)),
+            !matches!(dtype, DataType::Object(_, _)),
             "object dtype not supported in Series.iter"
         );
         assert_eq!(self.chunks().len(), 1, "impl error");
@@ -90,7 +90,7 @@ impl Series {
         assert_eq!(self.chunks().len(), 1, "impl error");
         #[cfg(feature = "object")]
         assert!(
-            !matches!(dtype, DataType::Object(_)),
+            !matches!(dtype, DataType::Object(_, _)),
             "object dtype not supported in Series.iter"
         );
         let arr = &*self.chunks()[0];

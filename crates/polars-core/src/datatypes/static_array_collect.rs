@@ -1,15 +1,12 @@
 use std::sync::Arc;
 
-#[cfg(feature = "object")]
 use arrow::array::ArrayFromIterDtype;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 
-#[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 
 // TODO: more efficient implementations, I really took the short path here.
-#[cfg(feature = "object")]
 impl<'a, T: PolarsObject> ArrayFromIterDtype<&'a T> for ObjectArray<T> {
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = &'a T>>(
         dtype: ArrowDataType,
@@ -30,7 +27,6 @@ impl<'a, T: PolarsObject> ArrayFromIterDtype<&'a T> for ObjectArray<T> {
     }
 }
 
-#[cfg(feature = "object")]
 impl<'a, T: PolarsObject> ArrayFromIterDtype<Option<&'a T>> for ObjectArray<T> {
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = Option<&'a T>>>(
         dtype: ArrowDataType,

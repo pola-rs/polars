@@ -160,7 +160,7 @@ impl Series {
     pub fn clear(&self) -> Series {
         // Only the inner of objects know their type, so use this hack.
         #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_)) {
+        if matches!(self.dtype(), DataType::Object(_, _)) {
             return if self.is_empty() {
                 self.clone()
             } else {

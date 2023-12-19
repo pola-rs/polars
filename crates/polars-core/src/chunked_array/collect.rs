@@ -23,9 +23,12 @@ use crate::datatypes::{
 pub(crate) fn prepare_collect_dtype(dtype: &DataType) -> ArrowDataType {
     match dtype {
         #[cfg(feature = "object")]
-        DataType::Object(_) => {
-            use crate::chunked_array::object::registry;
-            registry::get_object_physical_type()
+        DataType::Object(_, reg) => match reg {
+            Some(reg) => reg.physical_dtype.clone(),
+            None => {
+                use crate::chunked_array::object::registry;
+                registry::get_object_physical_type()
+            },
         },
         dt => dt.to_arrow(),
     }
