@@ -127,6 +127,13 @@ def test_zeros(
     assert_series_equal(result_lazy, expected)
 
 
+def test_zeros_ones_bool_type() -> None:
+    zeros = pl.zeros(3, pl.Boolean, eager=True)
+    ones = pl.ones(3, pl.Boolean, eager=True)
+    assert zeros.to_list() == [False, False, False]
+    assert ones.to_list() == [True, True, True]
+
+
 def test_repeat_by_logical_dtype() -> None:
     with pl.StringCache():
         df = pl.DataFrame(

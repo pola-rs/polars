@@ -470,6 +470,24 @@ impl<'a> AnyValue<'a> {
             })
         }
 
+        fn cast_boolean<'a>(av: &AnyValue) -> PolarsResult<AnyValue<'a>> {
+            Ok(match av {
+                AnyValue::UInt8(v) => AnyValue::Boolean(*v != u8::default()),
+                AnyValue::UInt16(v) => AnyValue::Boolean(*v != u16::default()),
+                AnyValue::UInt32(v) => AnyValue::Boolean(*v != u32::default()),
+                AnyValue::UInt64(v) => AnyValue::Boolean(*v != u64::default()),
+                AnyValue::Int8(v) => AnyValue::Boolean(*v != i8::default()),
+                AnyValue::Int16(v) => AnyValue::Boolean(*v != i16::default()),
+                AnyValue::Int32(v) => AnyValue::Boolean(*v != i32::default()),
+                AnyValue::Int64(v) => AnyValue::Boolean(*v != i64::default()),
+                AnyValue::Float32(v) => AnyValue::Boolean(*v != f32::default()),
+                AnyValue::Float64(v) => AnyValue::Boolean(*v != f64::default()),
+                _ => {
+                    polars_bail!(ComputeError: "cannot cast any-value {:?} to boolean", av)
+                },
+            })
+        }
+
         let new_av = match self {
             _ if (self.is_boolean()
                 | self.is_signed_integer()
@@ -490,6 +508,7 @@ impl<'a> AnyValue<'a> {
                     DataType::Utf8 => {
                         AnyValue::Utf8Owned(format_smartstring!("{}", self.try_extract::<i64>()?))
                     },
+                    DataType::Boolean => return cast_boolean(self),
                     _ => return cast_numeric(self, dtype),
                 }
             },
