@@ -558,11 +558,10 @@ def test_extract_binary() -> None:
     assert out[0] == "aron"
 
 
-def test_auto_explode() -> None:
+def test_str_concat_returns_scalar() -> None:
     df = pl.DataFrame(
         [pl.Series("val", ["A", "B", "C", "D"]), pl.Series("id", [1, 1, 2, 2])]
     )
-    pl.col("val").str.concat(delimiter=",")
     grouped = (
         df.group_by("id")
         .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))

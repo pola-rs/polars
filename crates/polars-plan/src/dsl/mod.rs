@@ -620,7 +620,7 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        auto_explode: bool,
+        returns_scalar: bool,
         cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
@@ -632,7 +632,7 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
-                returns_scalar: auto_explode,
+                returns_scalar,
                 cast_to_supertypes,
                 ..Default::default()
             },
