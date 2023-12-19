@@ -2733,3 +2733,12 @@ def test_series_cmp_fast_paths() -> None:
         pl.Series([None], dtype=pl.Boolean)
         == pl.Series([False, False], dtype=pl.Boolean)
     ).to_list() == [None, None]
+
+
+def test_comp_series_with_str_13123() -> None:
+    s = pl.Series(["1", "2", None])
+    # assert (s != "1").to_list() == [False, True, None]
+    assert_series_equal(s != "1", pl.Series([False, True, None]))
+    assert_series_equal(s == "1", pl.Series([True, False, None]))
+    assert_series_equal(s.eq_missing("1"), pl.Series([True, False, False]))
+    assert_series_equal(s.ne_missing("1"), pl.Series([False, True, True]))
