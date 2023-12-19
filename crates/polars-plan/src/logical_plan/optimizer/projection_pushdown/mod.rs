@@ -1,6 +1,8 @@
 mod functions;
 mod generic;
 mod group_by;
+#[cfg(feature = "horizontal_concat")]
+mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
@@ -18,6 +20,8 @@ use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
+#[cfg(feature = "horizontal_concat")]
+use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
@@ -646,6 +650,21 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
+            #[cfg(feature = "horizontal_concat")]
+            HConcat {
+                inputs,
+                schema,
+                options,
+            } => process_hconcat(
+                self,
+                inputs,
+                schema,
+                options,
+                acc_projections,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
             lp @ Union { .. } => process_generic(
                 self,
                 lp,
@@ -655,8 +674,6 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            #[cfg(feature = "horizontal_concat")]
-            lp @ HConcat { .. } => Ok(lp), // TODO
             // These nodes only have inputs and exprs, so we can use same logic.
             lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
                 self,

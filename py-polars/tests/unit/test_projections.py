@@ -1,6 +1,7 @@
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_projection_on_semi_join_4789() -> None:
@@ -82,6 +83,34 @@ def test_unnest_projection_pushdown() -> None:
         "col": ["z", "z", "c", "c"],
         "value": [1, 2, 2, 3],
     }
+
+
+def test_hconcat_projection_pushdown() -> None:
+    lf1 = pl.LazyFrame({"a": [0, 1, 2], "b": [3, 4, 5]})
+    lf2 = pl.LazyFrame({"c": [6, 7, 8], "d": [9, 10, 11]})
+    query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
+
+    explanation = query.explain()
+    assert explanation.count("PROJECT 1/2 COLUMNS") == 2
+
+    out = query.collect()
+    expected = pl.DataFrame({"a": [0, 1, 2], "d": [9, 10, 11]})
+    assert_frame_equal(out, expected)
+
+
+def test_hconcat_projection_pushdown_length_maintained() -> None:
+    # We can't eliminate the second input completely as this affects
+    # the length of the result, even though no columns are used.
+    lf1 = pl.LazyFrame({"a": [0, 1], "b": [2, 3]})
+    lf2 = pl.LazyFrame({"c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
+    query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
+
+    explanation = query.explain()
+    assert "PROJECT 1/2 COLUMNS" in explanation
+
+    out = query.collect()
+    expected = pl.DataFrame({"a": [0, 1, None, None]})
+    assert_frame_equal(out, expected)
 
 
 def test_unnest_columns_available() -> None:
