@@ -324,6 +324,6 @@ def test_different_enum_comparison_order() -> None:
     for op in [operator.gt, operator.ge, operator.lt, operator.le]:
         with pytest.raises(
             pl.ComputeError,
-            match="can only compare Enum types with the same categories",
+            match="can only compare categoricals of the same type",
         ):
             df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import operator
-import re
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
@@ -145,21 +144,117 @@ def test_categorical_equality() -> None:
     }
 
 
-def test_categorical_error_on_local_ordering() -> None:
-    df_cat = pl.DataFrame(
-        [
-            pl.Series("a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
-            pl.Series("b_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
-        ]
-    )
-    for op in [operator.gt, operator.ge, operator.lt, operator.le]:
-        with pytest.raises(
-            pl.ComputeError,
-            match=re.escape(
-                "can not compare (<, <=, >, >=) two categoricals, unless they are of Enum type"
-            ),
-        ):
-            df_cat.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+@pytest.mark.parametrize(
+    ("op", "expected_phys", "expected_lexical"),
+    [
+        (
+            operator.le,
+            pl.Series([True, True, True, True, False]),
+            pl.Series([False, True, True, False, True]),
+        ),
+        (
+            operator.lt,
+            pl.Series([True, False, False, True, False]),
+            pl.Series([False, False, False, False, True]),
+        ),
+        (
+            operator.ge,
+            pl.Series([False, True, True, False, True]),
+            pl.Series([True, True, True, True, False]),
+        ),
+        (
+            operator.gt,
+            pl.Series([False, False, False, False, True]),
+            pl.Series([True, False, False, True, False]),
+        ),
+    ],
+)
+@StringCache()
+def test_categorical_global_ordering(
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected_phys: pl.Series,
+    expected_lexical: pl.Series,
+) -> None:
+    s = pl.Series(["z", "b", "c", "c", "a"], dtype=pl.Categorical)
+    s2 = pl.Series("b_cat", ["a", "b", "c", "a", "c"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected_phys)
+
+    s = s.cast(pl.Categorical("lexical"))
+    s2 = s2.cast(pl.Categorical("lexical"))
+    assert_series_equal(op(s, s2), expected_lexical)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected_phys", "expected_lexical"),
+    [
+        (operator.le, pl.Series([True, True, False]), pl.Series([False, True, False])),
+        (
+            operator.lt,
+            pl.Series([True, False, False]),
+            pl.Series([False, False, False]),
+        ),
+        (operator.ge, pl.Series([False, True, True]), pl.Series([True, True, True])),
+        (operator.gt, pl.Series([False, False, True]), pl.Series([True, False, True])),
+    ],
+)
+@StringCache()
+def test_categorical_global_ordering_broadcast_rhs(
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected_phys: pl.Series,
+    expected_lexical: pl.Series,
+) -> None:
+    s = pl.Series(["c", "a", "b"], dtype=pl.Categorical)
+    s2 = pl.Series("b_cat", ["a"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected_phys)
+
+    s = s.cast(pl.Categorical("lexical"))
+    s2 = s2.cast(pl.Categorical("lexical"))
+    assert_series_equal(op(s, s2), expected_lexical)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected_phys", "expected_lexical"),
+    [
+        (operator.le, pl.Series([True, True, True]), pl.Series([True, False, True])),
+        (operator.lt, pl.Series([True, True, False]), pl.Series([True, False, False])),
+        (operator.ge, pl.Series([False, False, True]), pl.Series([False, True, True])),
+        (
+            operator.gt,
+            pl.Series([False, False, False]),
+            pl.Series([False, True, False]),
+        ),
+    ],
+)
+@StringCache()
+def test_categorical_global_ordering_broadcast_lhs(
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected_phys: pl.Series,
+    expected_lexical: pl.Series,
+) -> None:
+    s = pl.Series(["b"], dtype=pl.Categorical)
+    s2 = pl.Series(["c", "a", "b"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected_phys)
+
+    s = s.cast(pl.Categorical("lexical"))
+    s2 = s2.cast(pl.Categorical("lexical"))
+    assert_series_equal(op(s, s2), expected_lexical)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([True, True, True, False, True, True])),
+        (operator.lt, pl.Series([False, False, False, False, True, False])),
+        (operator.ge, pl.Series([True, True, True, True, False, True])),
+        (operator.gt, pl.Series([False, False, False, True, False, False])),
+    ],
+)
+def test_categorical_ordering(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series(["a", "b", "c", "c", "a", "b"], dtype=pl.Categorical)
+    s2 = pl.Series("b_cat", ["a", "b", "c", "a", "c", "b"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected)
 
 
 @pytest.mark.parametrize(
