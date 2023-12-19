@@ -31,7 +31,7 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
 
 @pytest.mark.slow()
 def test_series_from_pydecimal_and_ints(
-    permutations_int_dec_none: list[tuple[D | int | None, ...]]
+    permutations_int_dec_none: list[tuple[D | int | None, ...]],
 ) -> None:
     # TODO: check what happens if there are strings, floats arrow scalars in the list
     for data in permutations_int_dec_none:
