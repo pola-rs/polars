@@ -208,7 +208,7 @@ def read_cpu_flags() -> dict[str, bool]:
 
 
 def check_cpu_flags() -> None:
-    expected_cpu_flags = [f.removeprefix("+") for f in _POLARS_FEATURE_FLAGS.split(",")]
+    expected_cpu_flags = [f.lstrip("+") for f in _POLARS_FEATURE_FLAGS.split(",")]
     supported_cpu_flags = read_cpu_flags()
 
     missing_features = []
