@@ -177,6 +177,7 @@ pub trait ListFromIter {
                 },
                 None => {
                     validity.push(false);
+                    offsets.push(length_so_far);
                     None
                 },
             })

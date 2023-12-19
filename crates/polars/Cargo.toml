@@ -11,10 +11,10 @@ repository = { workspace = true }
 description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
-polars-core = { workspace = true }
+polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
-polars-ops = { workspace = true }
+polars-ops = { workspace = true, optional = true }
 polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
@@ -33,9 +33,9 @@ getrandom = { version = "0.2", features = ["js"] }
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd", "polars-ops/simd"]
+simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
 avx512 = ["polars-core/avx512"]
-nightly = ["polars-core/nightly", "polars-ops/nightly", "simd", "polars-lazy?/nightly", "polars-sql/nightly"]
+nightly = ["polars-core/nightly", "polars-ops?/nightly", "simd", "polars-lazy?/nightly", "polars-sql/nightly"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy?/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy?/random", "polars-ops/random"]
@@ -54,8 +54,8 @@ serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
   "polars-time?/serde",
-  "polars-io/serde",
-  "polars-ops/serde",
+  "polars-io?/serde",
+  "polars-ops?/serde",
 ]
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
@@ -106,9 +106,6 @@ performant = [
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
 fmt_no_tty = ["polars-core/fmt_no_tty"]
-
-# sort by multiple columns
-sort_multiple = ["polars-core/sort_multiple"]
 
 # extra operations
 approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique"]

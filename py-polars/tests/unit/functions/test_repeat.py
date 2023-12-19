@@ -154,3 +154,10 @@ def test_repeat_by_logical_dtype() -> None:
         )
 
         assert_frame_equal(out, expected_df)
+
+
+def test_repeat_by_none_13053() -> None:
+    df = pl.DataFrame({"x": ["a", "b", None], "by": [2, None, 3]})
+    res = df.select(repeat=pl.col("x").repeat_by("by"))
+    expected = pl.Series("repeat", [["a", "a"], None, [None, None, None]])
+    assert_series_equal(res.to_series(), expected)

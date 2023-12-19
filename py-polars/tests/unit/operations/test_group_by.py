@@ -851,3 +851,12 @@ def test_group_by_when_then_no_aggregation_predicate() -> None:
         "pos": [5, 5],
         "neg": [-8, 0],
     }
+
+
+def test_group_by_apply_first_input_is_literal() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 4, 5], "g": [1, 1, 2, 2, 2]})
+    pow = df.group_by("g").agg(2 ** pl.col("x"))
+    assert pow.sort("g").to_dict(as_series=False) == {
+        "g": [1, 2],
+        "x": [[2.0, 4.0], [8.0, 16.0, 32.0]],
+    }

@@ -618,7 +618,9 @@ pub(crate) fn decompress(
 /// The caller must ensure that:
 ///     - Output buffer must have enough capacity to hold `bytes.len()`
 ///     - bytes ends with the quote character e.g.: `"`
+///     - bytes length > 1.
 pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [MaybeUninit<u8>]) -> usize {
+    debug_assert!(bytes.len() > 1);
     let mut prev_quote = false;
 
     let mut count = 0;

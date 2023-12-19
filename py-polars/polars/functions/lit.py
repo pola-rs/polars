@@ -101,7 +101,8 @@ def lit(
             return e
 
     elif isinstance(value, timedelta):
-        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        if dtype is None or (time_unit := getattr(dtype, "time_unit", "us")) is None:
+            time_unit = "us"
         return lit(_timedelta_to_pl_timedelta(value, time_unit)).cast(
             Duration(time_unit)
         )

@@ -551,6 +551,16 @@ def test_lit_dtypes() -> None:
     )
 
 
+def test_lit_empty_tu() -> None:
+    td = timedelta(1)
+    assert pl.select(pl.lit(td, dtype=pl.Duration)).item() == td
+    assert pl.select(pl.lit(td, dtype=pl.Duration)).dtypes[0].time_unit == "us"  # type: ignore[attr-defined]
+
+    t = datetime(2023, 1, 1)
+    assert pl.select(pl.lit(t, dtype=pl.Datetime)).item() == t
+    assert pl.select(pl.lit(t, dtype=pl.Datetime)).dtypes[0].time_unit == "us"  # type: ignore[attr-defined]
+
+
 def test_incompatible_lit_dtype() -> None:
     with pytest.raises(
         TypeError,
