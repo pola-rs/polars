@@ -359,18 +359,13 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok(dsl::lit(val as i32).into())
-                } else {
-                    Ok(dsl::lit(val).into())
-                }
-            },
-            _ => {
-                let val = int.extract::<u64>().unwrap();
-                Ok(dsl::lit(val).into())
-            },
+        if let Ok(val) = int.extract::<i32>() {
+            Ok(dsl::lit(val).into())
+        } else if let Ok(val) = int.extract::<i64>() {
+            Ok(dsl::lit(val).into())
+        } else {
+            let val = int.extract::<u64>().unwrap();
+            Ok(dsl::lit(val).into())
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
