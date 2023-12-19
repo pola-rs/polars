@@ -325,7 +325,6 @@ unsafe fn from_buffer_impl<T: NativeType>(
     let arr = unsafe { arrow::ffi::mmap::slice_and_owner(slice, base) };
     Series::from_arrow("", arr.to_boxed()).unwrap()
 }
-
 unsafe fn from_buffer_boolean_impl(
     pointer: usize,
     offset: usize,
@@ -369,10 +368,7 @@ fn series_to_bitmap(s: Series) -> PyResult<Bitmap> {
     Ok(bitmap)
 }
 fn series_to_offsets(s: Series) -> PyResult<OffsetsBuffer<i64>> {
-    let ca_result = s.i64();
-    let ca = ca_result.map_err(PyPolarsErr::from)?;
-    let arr = ca.downcast_iter().next().unwrap();
-    let buffer = arr.values().clone();
+    let buffer = series_to_buffer::<Int64Type>(s)?;
     let offsets = unsafe { OffsetsBuffer::new_unchecked(buffer) };
     Ok(offsets)
 }
