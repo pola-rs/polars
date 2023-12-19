@@ -214,7 +214,7 @@ def check_cpu_flags() -> None:
     missing_features = []
     for f in expected_cpu_flags:
         if f not in supported_cpu_flags:
-            raise RuntimeError(f"unknown feature flag {f}")
+            raise RuntimeError(f'unknown feature flag "{f}"')
 
         if not supported_cpu_flags[f]:
             missing_features.append(f)
