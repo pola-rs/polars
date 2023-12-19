@@ -231,7 +231,7 @@ impl ChunkCompare<&str> for Series {
     fn not_equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         match self.dtype() {
-            DataType::Utf8 => Ok(self.utf8().unwrap().equal(rhs)),
+            DataType::Utf8 => Ok(self.utf8().unwrap().not_equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().not_equal(rhs),
             _ => Ok(BooleanChunked::full(self.name(), true, self.len())),
