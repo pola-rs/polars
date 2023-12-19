@@ -104,7 +104,6 @@ from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     _warn_null_comparison,
-    can_create_dicts_with_pyarrow,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -2044,7 +2043,7 @@ class DataFrame:
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
 
         """
-        return list(self.iter_rows(named=True))
+        return self.rows(named=True)
 
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
@@ -9775,12 +9774,9 @@ class DataFrame:
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size and not has_object:
-            create_with_pyarrow = named and can_create_dicts_with_pyarrow(self.dtypes)
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)
-                if create_with_pyarrow:
-                    yield from zerocopy_slice.to_arrow().to_pylist()
-                elif named:
+                if named:
                     for row in zerocopy_slice.rows(named=False):
                         yield dict_(zip_(columns, row))
                 else:
