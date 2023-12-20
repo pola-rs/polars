@@ -61,7 +61,7 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(tu) => Duration(*tu),
             DataType::Time => Time,
             #[cfg(feature = "object")]
-            DataType::Object(_) => Object,
+            DataType::Object(_, _) => Object,
             DataType::Categorical(rev_map, _) => rev_map.as_ref().map_or_else(
                 || Categorical,
                 |rev_map| {
@@ -109,7 +109,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
-            PyDataType::Object => Object(OBJECT_NAME),
+            PyDataType::Object => Object(OBJECT_NAME, None),
             PyDataType::Categorical => Categorical(None, Default::default()),
             PyDataType::Enum(categories) => create_enum_data_type(categories),
             PyDataType::Struct => Struct(vec![]),

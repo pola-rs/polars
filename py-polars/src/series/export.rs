@@ -60,7 +60,7 @@ impl PySeries {
                 Ok(np_arr.into_py(py))
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 let ca = s
                     .as_any()
                     .downcast_ref::<ObjectChunked<ObjectValue>>()
@@ -104,7 +104,7 @@ impl PySeries {
                         PyList::new(py, series.categorical().unwrap().iter_str())
                     },
                     #[cfg(feature = "object")]
-                    DataType::Object(_) => {
+                    DataType::Object(_, _) => {
                         let v = PyList::empty(py);
                         for i in 0..series.len() {
                             let obj: Option<&ObjectValue> =

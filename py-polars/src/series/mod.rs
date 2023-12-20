@@ -117,7 +117,7 @@ impl PySeries {
     #[cfg(feature = "object")]
     fn get_object(&self, index: usize) -> PyObject {
         Python::with_gil(|py| {
-            if matches!(self.series.dtype(), DataType::Object(_)) {
+            if matches!(self.series.dtype(), DataType::Object(_, _)) {
                 let obj: Option<&ObjectValue> = self.series.get_object(index).map(|any| any.into());
                 obj.to_object(py)
             } else {
@@ -355,7 +355,7 @@ impl PySeries {
             ($self:expr, $method:ident, $($args:expr),*) => {
                 match $self.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_) => {
+                    DataType::Object(_, _) => {
                         let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
                         ca.$method($($args),*)
                     },
@@ -533,7 +533,7 @@ impl PySeries {
                     ca.into_series()
                 },
                 #[cfg(feature = "object")]
-                Some(DataType::Object(_)) => {
+                Some(DataType::Object(_, _)) => {
                     let ca = dispatch_apply!(
                         series,
                         apply_lambda_with_object_out_type,

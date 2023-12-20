@@ -723,7 +723,7 @@ impl PyDataFrame {
             PyTuple::new(
                 py,
                 self.df.get_columns().iter().map(|s| match s.dtype() {
-                    DataType::Object(_) => {
+                    DataType::Object(_, _) => {
                         let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                         obj.to_object(py)
                     },
@@ -746,7 +746,7 @@ impl PyDataFrame {
                         py,
                         self.df.get_columns().iter().map(|s| match s.dtype() {
                             DataType::Null => py.None(),
-                            DataType::Object(_) => {
+                            DataType::Object(_, _) => {
                                 let obj: Option<&ObjectValue> =
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)

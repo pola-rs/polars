@@ -456,6 +456,50 @@ impl ArrowDataType {
         }
     }
 
+    // The datatype underlying this (possibly logical) arrow data type.
+    pub fn underlying_physical_type(&self) -> ArrowDataType {
+        use ArrowDataType::*;
+        match self {
+            Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => Int32,
+            Date64
+            | Timestamp(_, _)
+            | Time64(_)
+            | Duration(_)
+            | Interval(IntervalUnit::DayTime) => Int64,
+            Interval(IntervalUnit::MonthDayNano) => unimplemented!(),
+            Binary => Binary,
+            List(field) => List(Box::new(Field {
+                data_type: field.data_type.underlying_physical_type(),
+                ..*field.clone()
+            })),
+            LargeList(field) => LargeList(Box::new(Field {
+                data_type: field.data_type.underlying_physical_type(),
+                ..*field.clone()
+            })),
+            FixedSizeList(field, width) => FixedSizeList(
+                Box::new(Field {
+                    data_type: field.data_type.underlying_physical_type(),
+                    ..*field.clone()
+                }),
+                *width,
+            ),
+            Struct(fields) => Struct(
+                fields
+                    .iter()
+                    .map(|field| Field {
+                        data_type: field.data_type.underlying_physical_type(),
+                        ..field.clone()
+                    })
+                    .collect(),
+            ),
+            Dictionary(keys, _, _) => (*keys).into(),
+            Union(_, _, _) => unimplemented!(),
+            Map(_, _) => unimplemented!(),
+            Extension(_, inner, _) => inner.underlying_physical_type(),
+            _ => self.clone(),
+        }
+    }
+
     /// Returns `&self` for all but [`ArrowDataType::Extension`]. For [`ArrowDataType::Extension`],
     /// (recursively) returns the inner [`ArrowDataType`].
     /// Never returns the variant [`ArrowDataType::Extension`].
@@ -464,6 +508,15 @@ impl ArrowDataType {
         match self {
             Extension(_, key, _) => key.to_logical_type(),
             _ => self,
+        }
+    }
+
+    pub fn inner_dtype(&self) -> Option<&ArrowDataType> {
+        match self {
+            ArrowDataType::List(inner) => Some(inner.data_type()),
+            ArrowDataType::LargeList(inner) => Some(inner.data_type()),
+            ArrowDataType::FixedSizeList(inner, _) => Some(inner.data_type()),
+            _ => None,
         }
     }
 }

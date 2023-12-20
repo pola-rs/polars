@@ -68,13 +68,13 @@ where
                 let out: U::Array = arr
                     .values_iter()
                     .map(&mut op)
-                    .collect_arr_with_dtype(dtype.clone());
+                    .collect_arr_with_dtype(dtype.to_arrow());
                 out.with_validity_typed(arr.validity().cloned())
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op))
-                    .collect_arr_with_dtype(dtype.clone());
+                    .collect_arr_with_dtype(dtype.to_arrow());
                 out.with_validity_typed(arr.validity().cloned())
             }
         });

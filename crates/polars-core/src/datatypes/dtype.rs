@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::ObjectRegistry;
 
 pub type TimeZone = String;
 
@@ -40,7 +42,7 @@ pub enum DataType {
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
-    Object(&'static str),
+    Object(&'static str, Option<Arc<ObjectRegistry>>),
     Null,
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
@@ -76,7 +78,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-duration")]
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "object")]
-                (Object(lhs), Object(rhs)) => lhs == rhs,
+                (Object(lhs, _), Object(rhs, _)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
                 (Struct(lhs), Struct(rhs)) => Vec::as_ptr(lhs) == Vec::as_ptr(rhs) || lhs == rhs,
                 #[cfg(feature = "dtype-array")]
@@ -282,7 +284,7 @@ impl DataType {
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_) => {
+            Object(_, _) => {
                 polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
             },
             #[cfg(feature = "dtype-categorical")]
@@ -362,7 +364,7 @@ impl Display for DataType {
             DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
-            DataType::Object(s) => s,
+            DataType::Object(s, _) => s,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => "cat",
             #[cfg(feature = "dtype-struct")]

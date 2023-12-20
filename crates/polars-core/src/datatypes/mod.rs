@@ -12,7 +12,9 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
+#[cfg(feature = "object")]
 mod static_array;
+#[cfg(feature = "object")]
 mod static_array_collect;
 mod time_unit;
 
@@ -23,6 +25,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
 pub use aliases::*;
 pub use any_value::*;
+pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
@@ -42,8 +45,6 @@ use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
-pub use static_array::StaticArray;
-pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
 pub use time_unit::*;
 
 use crate::chunked_array::arithmetic::ArrayArithmetics;
@@ -213,7 +214,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type Structure = Nested;
 
     fn get_dtype() -> DataType {
-        DataType::Object(T::type_name())
+        DataType::Object(T::type_name(), None)
     }
 }
 
