@@ -399,3 +399,40 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
     assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
     assert r'SELECTION: "[(col(\"key\")) == (1)]"' in plan
+
+
+def test_hconcat_predicate() -> None:
+    # Predicates shouldn't be pushed down past an hconcat as we can't filter
+    # across the different inputs
+    lf1 = pl.LazyFrame(
+        {
+            "a1": [0, 1, 2, 3, 4],
+            "a2": [5, 6, 7, 8, 9],
+        }
+    )
+    lf2 = pl.LazyFrame(
+        {
+            "b1": [0, 1, 2, 3, 4],
+            "b2": [5, 6, 7, 8, 9],
+        }
+    )
+
+    query = pl.concat(
+        [
+            lf1.filter(pl.col("a1") < 4),
+            lf2.filter(pl.col("b1") > 0),
+        ],
+        how="horizontal",
+    ).filter(pl.col("b2") < 9)
+
+    expected = pl.DataFrame(
+        {
+            "a1": [0, 1, 2],
+            "a2": [5, 6, 7],
+            "b1": [1, 2, 3],
+            "b2": [6, 7, 8],
+        }
+    )
+
+    result = query.collect(predicate_pushdown=True)
+    assert_frame_equal(result, expected)
