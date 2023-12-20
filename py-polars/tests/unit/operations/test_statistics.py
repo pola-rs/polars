@@ -137,7 +137,7 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
-def test_count(fruits_cars: pl.DataFrame) -> None:
+def test_count() -> None:
     lf = pl.LazyFrame(
         {
             "nulls": [None, None, None],
@@ -146,8 +146,10 @@ def test_count(fruits_cars: pl.DataFrame) -> None:
             "no_nulls_int": [1, 2, 3],
         }
     )
+    df = lf.collect()
 
-    result = lf.count().collect()
+    lf_result = lf.count().collect()
+    df_result = df.count()
 
     expected = pl.DataFrame(
         {
@@ -157,4 +159,5 @@ def test_count(fruits_cars: pl.DataFrame) -> None:
             "no_nulls_int": [3],
         },
     ).cast(pl.UInt32)
-    assert_frame_equal(result, expected)
+    assert_frame_equal(lf_result, expected)
+    assert_frame_equal(df_result, expected)
