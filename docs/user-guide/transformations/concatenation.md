@@ -31,7 +31,8 @@ In a horizontal concatenation you combine all of the columns from a list of `Dat
 
 Horizontal concatenation fails when dataframes have overlapping columns.
 
-When dataframes have different numbers of rows, columns will be padded with `null` values at the end up to the maximum length.
+When dataframes have different numbers of rows,
+columns will be padded with `null` values at the end up to the maximum length.
 
 {{code_block('user-guide/transformations/concatenation','horizontal_different_lengths',['concat'])}}
 
