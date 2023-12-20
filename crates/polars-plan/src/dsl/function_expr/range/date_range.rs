@@ -5,8 +5,8 @@ use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
 use super::datetime_range::{datetime_range, datetime_ranges};
 use super::utils::{
-    ensure_range_bounds_contain_exactly_one_value, ranges_impl_broadcast,
-    temporal_series_to_i64_scalar,
+    ensure_range_bounds_contain_exactly_one_value, temporal_series_to_i64_scalar,
+    temporary_ranges_impl_broadcast,
 };
 use crate::dsl::function_expr::FieldsMapper;
 
@@ -106,7 +106,7 @@ fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> Polars
         Ok(())
     };
 
-    let out = ranges_impl_broadcast(&start, &end, range_impl, &mut builder)?;
+    let out = temporary_ranges_impl_broadcast(&start, &end, range_impl, &mut builder)?;
 
     let to_type = DataType::List(Box::new(DataType::Date));
     out.cast(&to_type)

@@ -190,21 +190,40 @@ def test_int_range_non_integer_dtype() -> None:
 def test_int_ranges_broadcasting() -> None:
     df = pl.DataFrame({"int": [1, 2, 3]})
     result = df.select(
-        pl.int_ranges("int", 3).alias("end"),
-        pl.int_ranges(1, "int").alias("start"),
+        # result column name means these columns will be broadcast
+        pl.int_ranges(1, pl.Series([2, 4, 6]), "int").alias("start"),
+        pl.int_ranges("int", 6, "int").alias("end"),
+        pl.int_ranges("int", pl.col("int") + 2, 1).alias("step"),
+        pl.int_ranges("int", 3, 1).alias("end_step"),
+        pl.int_ranges(1, "int", 1).alias("start_step"),
+        pl.int_ranges(1, 6, "int").alias("start_end"),
+        pl.int_ranges("int", pl.Series([4, 5, 10]), "int").alias("no_broadcast"),
     )
     expected = pl.DataFrame(
         {
+            "start": [[1], [1, 3], [1, 4]],
             "end": [
+                [1, 2, 3, 4, 5],
+                [2, 4],
+                [3],
+            ],
+            "step": [[1, 2], [2, 3], [3, 4]],
+            "end_step": [
                 [1, 2],
                 [2],
                 [],
             ],
-            "start": [
+            "start_step": [
                 [],
                 [1],
                 [1, 2],
             ],
+            "start_end": [
+                [1, 2, 3, 4, 5],
+                [1, 3, 5],
+                [1, 4],
+            ],
+            "no_broadcast": [[1, 2, 3], [2, 4], [3, 6, 9]],
         }
     )
     assert_frame_equal(result, expected)
