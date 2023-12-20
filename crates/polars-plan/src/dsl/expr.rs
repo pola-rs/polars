@@ -297,6 +297,8 @@ pub enum Operator {
     And,
     Or,
     Xor,
+    LogicalAnd,
+    LogicalOr,
 }
 
 impl Display for Operator {
@@ -318,8 +320,8 @@ impl Display for Operator {
             TrueDivide => "/",
             FloorDivide => "floor_div",
             Modulus => "%",
-            And => "&",
-            Or => "|",
+            And | LogicalAnd => "&",
+            Or | LogicalOr => "|",
             Xor => "^",
         };
         write!(f, "{tkn}")
