@@ -246,7 +246,7 @@ def test_window_expression_different_group_length() -> None:
         assert "output: 'shape:" in msg
 
 
-def test_lazy_concat_err() -> None:
+def test_invalid_concat_type_err() -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2],
@@ -259,11 +259,6 @@ def test_lazy_concat_err() -> None:
         match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
-    with pytest.raises(
-        ValueError,
-        match="LazyFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'align'}, got 'horizontal'",
-    ):
-        pl.concat([df.lazy(), df.lazy()], how="horizontal").collect()
 
 
 @pytest.mark.parametrize("how", ["horizontal", "diagonal"])
