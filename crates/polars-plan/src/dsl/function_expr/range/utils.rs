@@ -138,7 +138,7 @@ where
 }
 
 /// Create a ranges column from the given start/end columns and a range function.
-pub(super) fn temporary_ranges_impl_broadcast<T, U, F>(
+pub(super) fn temporal_ranges_impl_broadcast<T, U, F>(
     start: &ChunkedArray<T>,
     end: &ChunkedArray<T>,
     range_impl: F,
@@ -151,7 +151,7 @@ where
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
-            build_temporary_ranges::<_, _, T, U, F>(
+            build_temporal_ranges::<_, _, T, U, F>(
                 start.downcast_iter().flatten(),
                 end.downcast_iter().flatten(),
                 range_impl,
@@ -161,7 +161,7 @@ where
         (1, len_end) => {
             let start_scalar = start.get(0);
             match start_scalar {
-                Some(start) => build_temporary_ranges::<_, _, T, U, F>(
+                Some(start) => build_temporal_ranges::<_, _, T, U, F>(
                     std::iter::repeat(Some(&start)),
                     end.downcast_iter().flatten(),
                     range_impl,
@@ -173,7 +173,7 @@ where
         (len_start, 1) => {
             let end_scalar = end.get(0);
             match end_scalar {
-                Some(end) => build_temporary_ranges::<_, _, T, U, F>(
+                Some(end) => build_temporal_ranges::<_, _, T, U, F>(
                     start.downcast_iter().flatten(),
                     std::iter::repeat(Some(&end)),
                     range_impl,
@@ -220,7 +220,7 @@ where
 }
 
 /// Iterate over a start and end column and create a range for each entry.
-fn build_temporary_ranges<'a, I, J, T, U, F>(
+fn build_temporal_ranges<'a, I, J, T, U, F>(
     start: I,
     end: J,
     range_impl: F,

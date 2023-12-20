@@ -5,8 +5,8 @@ use polars_core::series::Series;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
 use super::utils::{
-    ensure_range_bounds_contain_exactly_one_value, temporal_series_to_i64_scalar,
-    temporary_ranges_impl_broadcast,
+    ensure_range_bounds_contain_exactly_one_value, temporal_ranges_impl_broadcast,
+    temporal_series_to_i64_scalar,
 };
 use crate::dsl::function_expr::FieldsMapper;
 
@@ -202,7 +202,7 @@ pub(super) fn datetime_ranges(
                 Ok(())
             };
 
-            temporary_ranges_impl_broadcast(start, end, range_impl, &mut builder)?
+            temporal_ranges_impl_broadcast(start, end, range_impl, &mut builder)?
         },
         _ => unimplemented!(),
     };
