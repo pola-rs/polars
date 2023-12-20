@@ -9910,7 +9910,7 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
-    def gather_every(self, n: int) -> DataFrame:
+    def gather_every(self, n: int, offset: int = 0) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -9918,6 +9918,8 @@ class DataFrame:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
 
         Examples
         --------
@@ -9933,8 +9935,19 @@ class DataFrame:
         │ 3   ┆ 7   │
         └─────┴─────┘
 
+        >>> s.gather_every(2, offset=1)
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 2   ┆ 6   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+
         """
-        return self.select(F.col("*").gather_every(n))
+        return self.select(F.col("*").gather_every(n, offset))
 
     def hash_rows(
         self,
@@ -10684,7 +10697,7 @@ class DataFrame:
         return self.shift(n, fill_value=fill_value)
 
     @deprecate_renamed_function("gather_every", version="0.19.12")
-    def take_every(self, n: int) -> DataFrame:
+    def take_every(self, n: int, offset: int = 0) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -10695,8 +10708,10 @@ class DataFrame:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("get_column_index", version="0.19.14")
     def find_idx_by_name(self, name: str) -> int:
