@@ -133,6 +133,8 @@ impl_serialize!(Utf8Chunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
 impl_serialize!(BinaryChunked);
+#[cfg(feature = "dtype-array")]
+impl_serialize!(ArrayChunked);
 
 #[cfg(feature = "dtype-categorical")]
 impl Serialize for CategoricalChunked {

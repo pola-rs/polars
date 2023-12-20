@@ -4,6 +4,8 @@ use std::fmt::Formatter;
 use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::chunked_array::builder::AnonymousListBuilder;
 use crate::chunked_array::Settings;
 use crate::prelude::*;
@@ -23,6 +25,11 @@ impl Serialize for Series {
             },
             DataType::List(_) => {
                 let ca = self.list().unwrap();
+                ca.serialize(serializer)
+            },
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => {
+                let ca = self.array().unwrap();
                 ca.serialize(serializer)
             },
             DataType::Boolean => {
@@ -212,6 +219,33 @@ impl<'de> Deserialize<'de> for Series {
                             })?;
                         }
                         Ok(lb.finish().into_series())
+                    },
+                    #[cfg(feature = "dtype-array")]
+                    DataType::Array(inner, width) => {
+                        let values: Vec<Option<Series>> = map.next_value()?;
+                        let mut builder =
+                            get_fixed_size_list_builder(&inner, values.len(), width, &name)
+                                .map_err(|e| {
+                                    de::Error::custom(format!(
+                                        "could not get supported list builder: {e}"
+                                    ))
+                                })?;
+                        for value in &values {
+                            if let Some(s) = value {
+                                // we only have one chunk per series as we serialize it in this way.
+                                let arr = &s.chunks()[0];
+                                // safety, we are within bounds
+                                unsafe {
+                                    builder.push_unchecked(arr.as_ref(), 0);
+                                }
+                            } else {
+                                // safety, we are within bounds
+                                unsafe {
+                                    builder.push_null();
+                                }
+                            }
+                        }
+                        Ok(builder.finish().into_series())
                     },
                     DataType::Binary => {
                         let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
