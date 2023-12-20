@@ -1,12 +1,12 @@
 use arrow::array::ValueSize;
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::kernels::set::{set_at_idx_no_null, set_with_mask};
+use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
 use arrow::legacy::prelude::FromData;
 
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, CustomIterTools};
 
-macro_rules! impl_set_at_idx_with {
+macro_rules! impl_scatter_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
         let mut ca_iter = $self.into_iter().enumerate();
 
@@ -44,7 +44,7 @@ impl<'a, T> ChunkSet<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         value: Option<T::Native>,
@@ -53,7 +53,7 @@ where
             if let Some(value) = value {
                 // Fast path uses kernel.
                 if self.chunks.len() == 1 {
-                    let arr = set_at_idx_no_null(
+                    let arr = scatter_single_non_null(
                         self.downcast_iter().next().unwrap(),
                         idx,
                         value,
@@ -77,10 +77,10 @@ where
                 }
             }
         }
-        self.set_at_idx_with(idx, |_| value)
+        self.scatter_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -89,7 +89,7 @@ where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
-        impl_set_at_idx_with!(self, builder, idx, f)
+        impl_scatter_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> PolarsResult<Self> {
@@ -122,15 +122,15 @@ where
 }
 
 impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         value: Option<bool>,
     ) -> PolarsResult<Self> {
-        self.set_at_idx_with(idx, |_| value)
+        self.scatter_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -174,7 +174,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
 }
 
 impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         opt_value: Option<&'a str>,
@@ -206,7 +206,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         Ok(ca)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -216,7 +216,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         F: Fn(Option<&'a str>) -> Option<String>,
     {
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
-        impl_set_at_idx_with!(self, builder, idx, f)
+        impl_scatter_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<&'a str>) -> PolarsResult<Self>
@@ -238,7 +238,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
 }
 
 impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         opt_value: Option<&'a [u8]>,
@@ -270,7 +270,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Ok(ca)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -281,7 +281,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
     {
         let mut builder =
             BinaryChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
-        impl_set_at_idx_with!(self, builder, idx, f)
+        impl_scatter_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<&'a [u8]>) -> PolarsResult<Self>
@@ -328,10 +328,10 @@ mod test {
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(5), Some(2), Some(3)]);
 
-        let ca = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
+        let ca = ca.scatter_single(vec![0, 1], Some(10)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(10), Some(10), Some(3)]);
 
-        assert!(ca.set_at_idx(vec![0, 10], Some(0)).is_err());
+        assert!(ca.scatter_single(vec![0, 10], Some(0)).is_err());
 
         // test booleans
         let ca = BooleanChunked::new("a", &[true, true, true]);
