@@ -42,6 +42,10 @@ before/during the CPU feature check code.
 # enabled at compile time.
 _POLARS_FEATURE_FLAGS = ""
 
+# Set to True during the build process if we are building a LTS CPU version.
+# The risk of the CPU check failing is then higher than a CPU not being supported.
+_POLARS_LTS_CPU = False
+
 _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
 _IS_X86 = platform.machine() in ("AMD64", "x86_64", "x86", "i686")
@@ -208,7 +212,7 @@ def read_cpu_flags() -> dict[str, bool]:
 
 
 def check_cpu_flags() -> None:
-    if not _POLARS_FEATURE_FLAGS:
+    if not _POLARS_FEATURE_FLAGS or _POLARS_LTS_CPU or os.environ.get("POLARS_SKIP_CPU_CHECK"):
         return
 
     expected_cpu_flags = [f.lstrip("+") for f in _POLARS_FEATURE_FLAGS.split(",")]
@@ -230,7 +234,7 @@ def check_cpu_flags() -> None:
 
 This version of Polars requires the following CPU features your processor appears to be missing:
     {", ".join(missing_features)}
-Continuing to use this version of Polars on this processor will likely result in a crash.
+Continuing to use this version of Polars on this processor will likely result in a crash. If you believe this to be a false positive, please set the `POLARS_SKIP_CPU_CHECK` environment variable to bypass this check.
 
 If you are on an Apple ARM machine (e.g. M1) this is likely due to running Python under Rosetta. It is recommended to install a native version of Python that does not run under Rosetta x86-64 emulation.
 
