@@ -4,7 +4,6 @@ use polars_utils::arena::Arena;
 use crate::dsl::function_expr::StringFunction;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
-use crate::prelude::function_expr::FunctionExpr;
 use crate::prelude::optimizer::simplify_functions::optimize_functions;
 
 macro_rules! eval_binary_same_type {

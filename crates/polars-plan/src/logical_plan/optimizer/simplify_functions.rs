@@ -1,9 +1,9 @@
 use super::*;
 
 pub(super) fn optimize_functions(
-    input: &Vec<Node>,
+    input: &[Node],
     function: &FunctionExpr,
-    options: &FunctionOptions,
+    _options: &FunctionOptions,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
@@ -53,7 +53,7 @@ pub(super) fn optimize_functions(
                 Some(AExpr::Function {
                     input: new_inputs,
                     function: function.clone(),
-                    options: *options,
+                    options: *_options,
                 })
             } else {
                 None
