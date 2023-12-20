@@ -157,44 +157,52 @@ def test_series_init_uninstantiated_enum() -> None:
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
 
-def test_equality_enum() -> None:
-    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-    s2 = pl.Series([None, "c", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-
-    expected = pl.Series([None, False, True, True], dtype=pl.Boolean)
-    assert_series_equal(s == s2, expected)
-
-    s_utf = pl.Series(["c"], dtype=pl.Utf8)
-    expected = pl.Series([None, True, False, True], dtype=pl.Boolean)
-    assert_series_equal(s2 == s_utf, expected)
-
-    with pytest.raises(pl.ComputeError, match="value 'd' is not present in Enum"):
-        _ = pl.Series(["d", "d", "d", "c"], dtype=pl.Utf8) == s2
-
-
-def test_equality_missing_enum() -> None:
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True])),
+        (operator.lt, pl.Series([None, True, False, False])),
+        (operator.ge, pl.Series([None, False, True, True])),
+        (operator.gt, pl.Series([None, False, False, False])),
+        (operator.eq, pl.Series([None, False, True, True])),
+        (operator.ne, pl.Series([None, True, False, False])),
+        (pl.Series.ne_missing, pl.Series([False, True, False, False])),
+        (pl.Series.eq_missing, pl.Series([True, False, True, True])),
+    ],
+)
+def test_equality_enum(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
     dtype = pl.Enum(["a", "b", "c"])
-    df = pl.DataFrame(
-        {
-            "a": pl.Series([None, "a", "b", "c"], dtype=dtype),
-            "b": pl.Series([None, "b", "b", "c"], dtype=dtype),
-            "c": pl.Series([None, "b", "b", "c"]),
-        }
+    s = pl.Series([None, "a", "b", "c"], dtype=dtype)
+    s2 = pl.Series([None, "c", "b", "c"], dtype=dtype)
+
+    assert_series_equal(op(s, s2), expected)
+    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, False, True, True])),
+        (operator.lt, pl.Series([None, False, False, True])),
+        (operator.ge, pl.Series([None, True, True, False])),
+        (operator.gt, pl.Series([None, True, False, False])),
+        (operator.eq, pl.Series([None, False, True, False])),
+        (operator.ne, pl.Series([None, True, False, True])),
+        (pl.Series.ne_missing, pl.Series([True, True, False, True])),
+        (pl.Series.eq_missing, pl.Series([False, False, True, False])),
+    ],
+)
+def test_compare_enum_str_single(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series(
+        [None, "HIGH", "MEDIUM", "LOW"], dtype=pl.Enum(["LOW", "MEDIUM", "HIGH"])
     )
+    s2 = "MEDIUM"
 
-    for col in ["b", "c"]:
-        out = df.select(pl.col("a").eq_missing(pl.col(col)).alias("cmp")).get_column(
-            "cmp"
-        )
-        expected = pl.Series("cmp", [True, False, True, True], dtype=pl.Boolean)
-        assert_series_equal(out, expected)
-
-    for col in ["b", "c"]:
-        out = df.select(pl.col("a").ne_missing(pl.col(col)).alias("cmp")).get_column(
-            "cmp"
-        )
-        expected = pl.Series("cmp", [False, True, False, False], dtype=pl.Boolean)
-        assert_series_equal(out, expected)
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
 
 
 def test_equality_missing_enum_scalar() -> None:
@@ -239,47 +247,6 @@ def test_equality_missing_enum_none_scalar() -> None:
     ).get_column("cmp")
     expected = pl.Series("cmp", [False, True, True, True], dtype=pl.Boolean)
     assert_series_equal(out, expected)
-
-
-@pytest.mark.parametrize(
-    ("op", "expected"),
-    [
-        (operator.le, pl.Series([None, True, True, True])),
-        (operator.lt, pl.Series([None, True, False, False])),
-        (operator.ge, pl.Series([None, False, True, True])),
-        (operator.gt, pl.Series([None, False, False, False])),
-    ],
-)
-def test_compare_enum(
-    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
-) -> None:
-    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-    s2 = pl.Series([None, "c", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-
-    assert_series_equal(op(s, s2), expected)
-
-    s2_string = s2.cast(pl.Utf8)
-    assert_series_equal(op(s, s2_string), expected)
-
-
-@pytest.mark.parametrize(
-    ("op", "expected"),
-    [
-        (operator.le, pl.Series([None, False, True, True])),
-        (operator.lt, pl.Series([None, False, False, True])),
-        (operator.ge, pl.Series([None, True, True, False])),
-        (operator.gt, pl.Series([None, True, False, False])),
-    ],
-)
-def test_compare_enum_str_single(
-    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
-) -> None:
-    s = pl.Series(
-        [None, "HIGH", "MEDIUM", "LOW"], dtype=pl.Enum(["LOW", "MEDIUM", "HIGH"])
-    )
-    s2 = "MEDIUM"
-
-    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(("op"), [operator.le, operator.lt, operator.ge, operator.gt])
