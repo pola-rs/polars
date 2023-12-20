@@ -31,7 +31,6 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError, PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
-from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -2504,55 +2503,6 @@ def test_get_chunks() -> None:
     chunks = pl.concat([a, b], rechunk=False).get_chunks()
     assert_series_equal(chunks[0], a)
     assert_series_equal(chunks[1], b)
-
-
-def test_ptr() -> None:
-    # not much to test on the ptr value itself.
-    s = pl.Series([1, None, 3])
-
-    ptr = s._get_ptr()[2]
-    assert isinstance(ptr, int)
-    s2 = s.append(pl.Series([1, 2]))
-
-    ptr2 = s2.rechunk()._get_ptr()[2]
-    assert ptr != ptr2
-
-    for dtype in list(polars.datatypes.FLOAT_DTYPES) + list(
-        polars.datatypes.INTEGER_DTYPES
-    ):
-        assert pl.Series([1, 2, 3], dtype=dtype)._s.get_ptr()[2] > 0
-
-
-def test_get_buffer() -> None:
-    s = pl.Series(["a", "bc", None, "éâç", ""])
-
-    data = s._s.get_buffer(0)
-    expected = pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8)
-    assert_series_equal(wrap_s(data), expected)
-
-    validity = s._s.get_buffer(1)
-    expected = pl.Series([True, True, False, True, True])
-    assert_series_equal(wrap_s(validity), expected)
-
-    offsets = s._s.get_buffer(2)
-    expected = pl.Series([0, 1, 3, 3, 9, 9], dtype=pl.Int64)
-    assert_series_equal(wrap_s(offsets), expected)
-
-
-def test_get_buffer_no_validity_or_offsets() -> None:
-    s = pl.Series([1, 2, 3])
-
-    validity = s._s.get_buffer(1)
-    assert validity is None
-
-    offsets = s._s.get_buffer(2)
-    assert offsets is None
-
-
-def test_get_buffer_invalid_index() -> None:
-    s = pl.Series([1, None, 3])
-    with pytest.raises(ValueError):
-        s._s.get_buffer(3)
 
 
 def test_null_comparisons() -> None:

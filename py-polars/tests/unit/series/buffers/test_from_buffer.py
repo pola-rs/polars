@@ -46,4 +46,4 @@ def test_series_from_buffer_unsupported() -> None:
         TypeError,
         match="`from_buffer` requires a physical type as input for `dtype`, got date",
     ):
-        wrap_s(PySeries._from_buffer(pointer, offset, length, pl.Date, base=s))
+        PySeries._from_buffer(pointer, offset, length, pl.Date, base=s)
