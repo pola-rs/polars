@@ -3,7 +3,7 @@
 There are a number of ways to concatenate data from separate DataFrames:
 
 - two dataframes with **the same columns** can be **vertically** concatenated to make a **longer** dataframe
-- two dataframes with the **same number of rows** and **non-overlapping columns** can be **horizontally** concatenated to make a **wider** dataframe
+- two dataframes with **non-overlapping columns** can be **horizontally** concatenated to make a **wider** dataframe
 - two dataframes with **different numbers of rows and columns** can be **diagonally** concatenated to make a dataframe which might be longer and/ or wider. Where column names overlap values will be vertically concatenated. Where column names do not overlap new rows and columns will be added. Missing values will be set as `null`
 
 ## Vertical concatenation - getting longer
@@ -29,7 +29,15 @@ In a horizontal concatenation you combine all of the columns from a list of `Dat
 --8<-- "python/user-guide/transformations/concatenation.py:horizontal"
 ```
 
-Horizontal concatenation fails when dataframes have overlapping columns or a different number of rows.
+Horizontal concatenation fails when dataframes have overlapping columns.
+
+When dataframes have different numbers of rows, columns will be padded with `null` values at the end up to the maximum length.
+
+{{code_block('user-guide/transformations/concatenation','horizontal_different_lengths',['concat'])}}
+
+```python exec="on" result="text" session="user-guide/transformations/concatenation"
+--8<-- "python/user-guide/transformations/concatenation.py:horizontal_different_lengths"
+```
 
 ## Diagonal concatenation - getting longer, wider and `null`ier
 
