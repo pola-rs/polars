@@ -8349,7 +8349,7 @@ class DataFrame:
                 6.0
         ]
         """
-        return self.select(F.max_horizontal(F.all())).to_series()
+        return self.select(max=F.max_horizontal(F.all())).to_series()
 
     @overload
     def min(self, axis: Literal[0] | None = ...) -> Self:
@@ -8438,7 +8438,7 @@ class DataFrame:
                 3.0
         ]
         """
-        return self.select(F.min_horizontal(F.all())).to_series()
+        return self.select(min=F.min_horizontal(F.all())).to_series()
 
     @overload
     def sum(
