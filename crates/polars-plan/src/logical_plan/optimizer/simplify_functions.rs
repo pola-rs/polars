@@ -59,6 +59,13 @@ pub(super) fn optimize_functions(
                 None
             }
         },
+        FunctionExpr::Boolean(BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal) => {
+            if input.len() == 1 {
+                Some(expr_arena.get(input[0]).clone())
+            } else {
+                None
+            }
+        },
         FunctionExpr::Boolean(BooleanFunction::Not) => {
             let y = expr_arena.get(input[0]);
 
