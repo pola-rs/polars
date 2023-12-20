@@ -399,3 +399,18 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
     assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
     assert r'SELECTION: "[(col(\"key\")) == (1)]"' in plan
+
+
+def test_predicate_reduction() -> None:
+    # ensure we get clean reduction without casts
+    assert (
+        "cast"
+        not in pl.LazyFrame({"a": [1], "b": [2]})
+        .filter(
+            [
+                pl.col("a") > 1,
+                pl.col("b") > 1,
+            ]
+        )
+        .explain()
+    )

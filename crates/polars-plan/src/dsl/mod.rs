@@ -1003,6 +1003,16 @@ impl Expr {
         binary_expr(self, Operator::Or, expr.into())
     }
 
+    /// "or" operation.
+    pub fn logical_or<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::LogicalOr, expr.into())
+    }
+
+    /// "or" operation.
+    pub fn logical_and<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::LogicalAnd, expr.into())
+    }
+
     /// Filter a single column.
     ///
     /// Should be used in aggregation context. If you want to filter on a

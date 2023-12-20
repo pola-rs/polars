@@ -473,8 +473,8 @@ impl OptimizationRule for SimplifyExprRule {
                     NotEq | NotEqValidity => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
                     GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
                     LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
-                    And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
-                    Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
+                    And | LogicalAnd => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
+                    Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
                     FloorDivide => None,
                 };

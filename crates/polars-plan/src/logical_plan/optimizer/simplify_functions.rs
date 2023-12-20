@@ -34,6 +34,7 @@ pub(super) fn optimize_functions(
             }
         },
         // flatten nested concat_str calls
+        #[cfg(all(feature = "strings", feature = "concat_str"))]
         function @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep))
             if sep.is_empty() =>
         {
