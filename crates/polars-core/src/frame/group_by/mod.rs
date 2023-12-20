@@ -1020,14 +1020,7 @@ mod test {
             .unwrap();
 
         assert_eq!(
-            Vec::from(
-                &adf.column("N_sum")
-                    .unwrap()
-                    .i32()
-                    .unwrap()
-                    .sort(false)
-                    .unwrap()
-            ),
+            Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
             &[Some(1), Some(2), Some(2), Some(6)]
         );
     }
@@ -1073,28 +1066,14 @@ mod test {
         // is equal, then, the grouped columns shall be equal and in the same order.
         for series_name in &series_names {
             assert_eq!(
-                Vec::from(
-                    &adf.column(series_name)
-                        .unwrap()
-                        .utf8()
-                        .unwrap()
-                        .sort(false)
-                        .unwrap()
-                ),
+                Vec::from(&adf.column(series_name).unwrap().utf8().unwrap().sort(false)),
                 &[Some("A"), Some("B"), Some("C")]
             );
         }
 
         // Check the aggregated column is the expected one.
         assert_eq!(
-            Vec::from(
-                &adf.column("N_sum")
-                    .unwrap()
-                    .i32()
-                    .unwrap()
-                    .sort(false)
-                    .unwrap()
-            ),
+            Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
             &[Some(3), Some(4), Some(6)]
         );
     }

@@ -28,7 +28,7 @@ where
         breaks.sort_unstable_by_key(|k| TotalOrdWrap(*k));
         breaks.push(f64::INFINITY);
 
-        let sorted = ca.sort(false).unwrap();
+        let sorted = ca.sort(false);
 
         let mut count: Vec<IdxSize> = Vec::with_capacity(breaks.len());
         let mut current_count: IdxSize = 0;

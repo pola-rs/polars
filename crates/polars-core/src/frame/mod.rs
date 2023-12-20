@@ -2702,7 +2702,7 @@ impl DataFrame {
                     },
                 };
 
-                let last_idx = last_idx.sort(false).unwrap();
+                let last_idx = last_idx.sort(false);
                 return Ok(unsafe { df.take_unchecked(&last_idx) });
             },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {

@@ -37,7 +37,7 @@ impl CategoricalChunked {
                 )
             };
         }
-        let cats = self.physical().sort_with(options).unwrap();
+        let cats = self.physical().sort_with(options);
         // safety:
         // we only reordered the indexes so we are still in bounds
         unsafe {
@@ -72,7 +72,7 @@ impl CategoricalChunked {
                 self.len(),
             )
         } else {
-            self.physical().arg_sort(options).unwrap()
+            self.physical().arg_sort(options)
         }
     }
 

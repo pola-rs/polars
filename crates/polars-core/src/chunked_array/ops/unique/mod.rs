@@ -123,7 +123,7 @@ where
                 }
             },
             IsSorted::Not => {
-                let sorted = self.sort(false)?;
+                let sorted = self.sort(false);
                 sorted.unique()
             },
         }
@@ -164,7 +164,7 @@ where
                 }
             },
             IsSorted::Not => {
-                let sorted = self.sort(false)?;
+                let sorted = self.sort(false);
                 sorted.n_unique()
             },
         }
@@ -289,7 +289,6 @@ mod test {
             ca.unique()
                 .unwrap()
                 .sort(false)
-                .unwrap()
                 .into_iter()
                 .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
@@ -302,7 +301,7 @@ mod test {
 
         let ca = Utf8Chunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);
         assert_eq!(
-            Vec::from(&ca.unique().unwrap().sort(false).unwrap()),
+            Vec::from(&ca.unique().unwrap().sort(false)),
             &[None, Some("a"), Some("b")]
         );
     }

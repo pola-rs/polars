@@ -295,11 +295,11 @@ macro_rules! impl_dyn_series {
             }
 
             fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-                Ok(self.0.sort_with(options).unwrap().$into_logical().into_series())
+                Ok(self.0.sort_with(options).$into_logical().into_series())
             }
 
             fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
-                Ok(self.0.arg_sort(options).unwrap())
+                Ok(self.0.arg_sort(options))
             }
 
             fn null_count(&self) -> usize {

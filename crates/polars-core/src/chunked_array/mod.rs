@@ -688,13 +688,12 @@ pub(crate) mod test {
         let a = Int32Chunked::new("a", &[1, 9, 3, 2]);
         let b = a
             .sort(false)
-            .unwrap()
             .into_iter()
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
         let a = Utf8Chunked::new("a", &["b", "a", "c"]);
-        let a = a.sort(false).unwrap();
+        let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
         assert!(a.is_sorted_ascending_flag());
@@ -792,24 +791,24 @@ pub(crate) mod test {
     #[test]
     fn sorting() {
         let s = UInt32Chunked::new("", &[9, 2, 4]);
-        let sorted = s.sort(false).unwrap();
+        let sorted = s.sort(false);
         assert_slice_equal(&sorted, &[2, 4, 9]);
-        let sorted = s.sort(true).unwrap();
+        let sorted = s.sort(true);
         assert_slice_equal(&sorted, &[9, 4, 2]);
 
         let s: Utf8Chunked = ["b", "a", "z"].iter().collect();
-        let sorted = s.sort(false).unwrap();
+        let sorted = s.sort(false);
         assert_eq!(
             sorted.into_iter().collect::<Vec<_>>(),
             &[Some("a"), Some("b"), Some("z")]
         );
-        let sorted = s.sort(true).unwrap();
+        let sorted = s.sort(true);
         assert_eq!(
             sorted.into_iter().collect::<Vec<_>>(),
             &[Some("z"), Some("b"), Some("a")]
         );
         let s: Utf8Chunked = [Some("b"), None, Some("z")].iter().copied().collect();
-        let sorted = s.sort(false).unwrap();
+        let sorted = s.sort(false);
         assert_eq!(
             sorted.into_iter().collect::<Vec<_>>(),
             &[None, Some("b"), Some("z")]

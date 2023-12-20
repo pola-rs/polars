@@ -74,7 +74,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             let failure_mask = !ca.is_null() & out.is_null();
             let all_failures = ca.filter(&failure_mask)?;
             let n_failures = all_failures.len();
-            let some_failures = all_failures.unique()?.slice(0, 10).sort(false).unwrap();
+            let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
             let some_error_msg = some_failures
                 .get(0)
                 .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())

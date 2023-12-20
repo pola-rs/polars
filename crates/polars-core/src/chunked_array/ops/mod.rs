@@ -391,13 +391,13 @@ impl Default for SortOptions {
 /// Sort operations on `ChunkedArray`.
 pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
-    fn sort_with(&self, options: SortOptions) -> PolarsResult<ChunkedArray<T>>;
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<T>;
 
     /// Returned a sorted `ChunkedArray`.
-    fn sort(&self, descending: bool) -> PolarsResult<ChunkedArray<T>>;
+    fn sort(&self, descending: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
-    fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa>;
+    fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
     fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {

@@ -351,6 +351,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
-        Ok(self.0.arg_sort(options).unwrap())
+        Ok(self.0.arg_sort(options))
     }
 }

@@ -12,6 +12,6 @@ fn test_initial_empty_sort() -> PolarsResult<()> {
     for column in df.get_columns().iter() {
         series.append(column)?;
     }
-    series.f64()?.sort(false)?;
+    series.f64()?.sort(false);
     Ok(())
 }

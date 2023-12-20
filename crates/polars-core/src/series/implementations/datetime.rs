@@ -291,13 +291,12 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Ok(self
             .0
             .sort_with(options)
-            .unwrap()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
-        Ok(self.0.arg_sort(options).unwrap())
+        Ok(self.0.arg_sort(options))
     }
 
     fn null_count(&self) -> usize {
