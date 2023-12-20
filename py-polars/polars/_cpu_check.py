@@ -212,7 +212,11 @@ def read_cpu_flags() -> dict[str, bool]:
 
 
 def check_cpu_flags() -> None:
-    if not _POLARS_FEATURE_FLAGS or _POLARS_LTS_CPU or os.environ.get("POLARS_SKIP_CPU_CHECK"):
+    if (
+        not _POLARS_FEATURE_FLAGS
+        or _POLARS_LTS_CPU
+        or os.environ.get("POLARS_SKIP_CPU_CHECK")
+    ):
         return
 
     expected_cpu_flags = [f.lstrip("+") for f in _POLARS_FEATURE_FLAGS.split(",")]
