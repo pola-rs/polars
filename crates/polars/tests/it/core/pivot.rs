@@ -55,7 +55,7 @@ fn test_pivot_old() {
     .unwrap();
     assert_eq!(pvt.get_column_names(), &["foo", "k", "l", "m"]);
     assert_eq!(
-        Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false).unwrap()),
+        Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
         &[None, None, Some(6)]
     );
     let pvt = pivot(
@@ -69,7 +69,7 @@ fn test_pivot_old() {
     )
     .unwrap();
     assert_eq!(
-        Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false).unwrap()),
+        Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
         &[None, None, Some(2)]
     );
     let pvt = pivot(
@@ -83,7 +83,7 @@ fn test_pivot_old() {
     )
     .unwrap();
     assert_eq!(
-        Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false).unwrap()),
+        Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
         &[None, None, Some(4)]
     );
     let pvt = pivot(
@@ -97,7 +97,7 @@ fn test_pivot_old() {
     )
     .unwrap();
     assert_eq!(
-        Vec::from(&pvt.column("m").unwrap().f64().unwrap().sort(false).unwrap()),
+        Vec::from(&pvt.column("m").unwrap().f64().unwrap().sort(false)),
         &[None, None, Some(3.0)]
     );
     let pvt = pivot(
@@ -111,7 +111,7 @@ fn test_pivot_old() {
     )
     .unwrap();
     assert_eq!(
-        Vec::from(&pvt.column("m").unwrap().idx().unwrap().sort(false).unwrap()),
+        Vec::from(&pvt.column("m").unwrap().idx().unwrap().sort(false)),
         &[None, None, Some(2)]
     );
 }
