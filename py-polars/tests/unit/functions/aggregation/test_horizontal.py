@@ -288,3 +288,32 @@ def test_horizontal_expr_use_left_name() -> None:
     assert df.select(pl.min_horizontal("b", "a")).columns == ["b"]
     assert df.select(pl.any_horizontal("b", "a")).columns == ["b"]
     assert df.select(pl.all_horizontal("a", "b")).columns == ["a"]
+
+
+def test_horizontal_broadcasting() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 3],
+            "b": [3, 6],
+        }
+    )
+
+    assert_series_equal(
+        df.select(sum=pl.sum_horizontal(1, "a", "b")).to_series(),
+        pl.Series("sum", [5, 10]),
+    )
+    assert_series_equal(
+        df.select(max=pl.max_horizontal(4, "*")).to_series(), pl.Series("max", [4, 6])
+    )
+    assert_series_equal(
+        df.select(min=pl.min_horizontal(2, "b", "a")).to_series(),
+        pl.Series("min", [1, 2]),
+    )
+    assert_series_equal(
+        df.select(any=pl.any_horizontal(False, pl.Series([True, False]))).to_series(),
+        pl.Series("any", [True, False]),
+    )
+    assert_series_equal(
+        df.select(all=pl.all_horizontal(True, pl.Series([True, False]))).to_series(),
+        pl.Series("all", [True, False]),
+    )
