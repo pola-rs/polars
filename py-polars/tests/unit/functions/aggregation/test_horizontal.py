@@ -60,11 +60,11 @@ def test_all_any_accept_expr() -> None:
 
 
 def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
-    result = fruits_cars.select(pl.max_horizontal("A", "B"))
+    result = fruits_cars.select(max=pl.max_horizontal("A", "B"))
     expected = pl.Series("max", [5, 4, 3, 4, 5])
     assert_series_equal(result.to_series(), expected)
 
-    result = fruits_cars.select(pl.min_horizontal("A", "B"))
+    result = fruits_cars.select(min=pl.min_horizontal("A", "B"))
     expected = pl.Series("min", [1, 2, 3, 2, 1])
     assert_series_equal(result.to_series(), expected)
 
@@ -72,11 +72,11 @@ def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
 def test_max_min_nulls_consistency() -> None:
     df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
 
-    result = df.select(pl.max_horizontal("a", "b", "c")).to_series()
+    result = df.select(max=pl.max_horizontal("a", "b", "c")).to_series()
     expected = pl.Series("max", [7, 5, 6])
     assert_series_equal(result, expected)
 
-    result = df.select(pl.min_horizontal("a", "b", "c")).to_series()
+    result = df.select(min=pl.min_horizontal("a", "b", "c")).to_series()
     expected = pl.Series("min", [4, 2, 0])
     assert_series_equal(result, expected)
 
@@ -110,29 +110,29 @@ def test_empty_inputs_raise() -> None:
 
 def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
     result = fruits_cars.select(pl.col(pl.datatypes.Int64)).select(
-        pl.min_horizontal("*")
+        min=pl.min_horizontal("*")
     )
     expected = pl.Series("min", [1, 2, 3, 2, 1])
     assert_series_equal(result.to_series(), expected)
 
     result = fruits_cars.select(pl.col(pl.datatypes.Int64)).select(
-        pl.min_horizontal(pl.all())
+        min=pl.min_horizontal(pl.all())
     )
     assert_series_equal(result.to_series(), expected)
 
     result = fruits_cars.select(pl.col(pl.datatypes.Int64)).select(
-        pl.max_horizontal("*")
+        max=pl.max_horizontal("*")
     )
     expected = pl.Series("max", [5, 4, 3, 4, 5])
     assert_series_equal(result.to_series(), expected)
 
     result = fruits_cars.select(pl.col(pl.datatypes.Int64)).select(
-        pl.max_horizontal(pl.all())
+        max=pl.max_horizontal(pl.all())
     )
     assert_series_equal(result.to_series(), expected)
 
     result = fruits_cars.select(pl.col(pl.datatypes.Int64)).select(
-        pl.max_horizontal(pl.all(), "A", "*")
+        max=pl.max_horizontal(pl.all(), "A", "*")
     )
     assert_series_equal(result.to_series(), expected)
 
@@ -149,7 +149,7 @@ def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
 )
 def test_min_horizontal_single_input(input: Any, expected_data: list[Any]) -> None:
     df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.min_horizontal(input)).to_series()
+    result = df.select(min=pl.min_horizontal(input)).to_series()
     expected = pl.Series("min", expected_data)
     assert_series_equal(result, expected)
 
@@ -166,7 +166,7 @@ def test_min_horizontal_multi_input(
     inputs: tuple[Any, ...], expected_data: list[Any]
 ) -> None:
     df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.min_horizontal(*inputs))
+    result = df.select(min=pl.min_horizontal(*inputs))
     expected = pl.DataFrame({"min": expected_data})
     assert_frame_equal(result, expected)
 
@@ -183,7 +183,7 @@ def test_min_horizontal_multi_input(
 )
 def test_max_horizontal_single_input(input: Any, expected_data: list[Any]) -> None:
     df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.max_horizontal(input))
+    result = df.select(max=pl.max_horizontal(input))
     expected = pl.DataFrame({"max": expected_data})
     assert_frame_equal(result, expected)
 
@@ -200,7 +200,7 @@ def test_max_horizontal_multi_input(
     inputs: tuple[Any, ...], expected_data: list[Any]
 ) -> None:
     df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.max_horizontal(*inputs))
+    result = df.select(max=pl.max_horizontal(*inputs))
     expected = pl.DataFrame({"max": expected_data})
     assert_frame_equal(result, expected)
 
@@ -223,9 +223,9 @@ def test_expanding_sum() -> None:
 def test_sum_max_min() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.select(
-        pl.sum_horizontal("a", "b"),
-        pl.max_horizontal("a", pl.col("b") ** 2),
-        pl.min_horizontal("a", pl.col("b") ** 2),
+        sum=pl.sum_horizontal("a", "b"),
+        max=pl.max_horizontal("a", pl.col("b") ** 2),
+        min=pl.min_horizontal("a", pl.col("b") ** 2),
     )
     assert_series_equal(out["sum"], pl.Series("sum", [2.0, 4.0, 6.0]))
     assert_series_equal(out["max"], pl.Series("max", [1.0, 4.0, 9.0]))
@@ -273,3 +273,18 @@ def test_sum_dtype_12028() -> None:
         ]
     )
     assert_frame_equal(expected, result)
+
+
+def test_horizontal_expr_use_left_name() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [3, 4],
+        }
+    )
+
+    assert df.select(pl.sum_horizontal("a", "b")).columns == ["a"]
+    assert df.select(pl.max_horizontal("*")).columns == ["a"]
+    assert df.select(pl.min_horizontal("b", "a")).columns == ["b"]
+    assert df.select(pl.any_horizontal("b", "a")).columns == ["b"]
+    assert df.select(pl.all_horizontal("a", "b")).columns == ["a"]
