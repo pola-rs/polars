@@ -1027,7 +1027,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
-            SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
+            SumHorizontal => wrap!(dispatch::sum_horizontal),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
             #[cfg(feature = "ewma")]
