@@ -178,6 +178,16 @@ impl PySeries {
                     .cast(&DataType::Duration(tu))
                     .map_err(PyPolarsErr::from)?
             },
+            DataType::Categorical(rev_map, ordering) if let Some() => {
+                let data = series_to_buffer::<UInt32Type>(data)?;
+                let physical = from_buffers_num_impl::<u32>(data, validity)?;
+                physical
+                    .cast(&DataType::Categorical(
+                        Some(RevMapping::Enum(categories, id)),
+                        ordering,
+                    ))
+                    .map_err(PyPolarsErr::from)?
+            },
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "`from_buffers` not implemented for `dtype` {dt}",
