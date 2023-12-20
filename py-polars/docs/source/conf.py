@@ -106,7 +106,10 @@ version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", git_ref)
 switcher_version = version_match.group(1) if version_match is not None else "dev"
 
 html_js_files = [
-    ('https://plausible.io/js/script.js', {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"}),
+    (
+        "https://plausible.io/js/script.js",
+        {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"},
+    ),
 ]
 
 html_theme_options = {
