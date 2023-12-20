@@ -142,7 +142,7 @@ extra_css:
 extra:
   analytics:
     provider: plausible
-    domain: docs.pola.rs
+    domain: guide.pola.rs,combined.pola.rs
 
 # Preview controls
 strict: true
