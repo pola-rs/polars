@@ -414,3 +414,9 @@ def test_predicate_reduction() -> None:
         )
         .explain()
     )
+
+
+def test_all_any_cleanup_at_single_predicate_case() -> None:
+    plan = pl.LazyFrame({"a": [1], "b": [2]}).select(["a"]).drop_nulls().explain()
+    assert "horizontal" not in plan
+    assert "all" not in plan
