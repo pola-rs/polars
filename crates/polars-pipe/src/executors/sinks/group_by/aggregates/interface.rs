@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use enum_dispatch::enum_dispatch;
+use num_traits::NumCast;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{AnyValue, Series};
 
@@ -26,34 +27,7 @@ pub(crate) trait AggregateFn: Send + Sync {
         length: IdxSize,
         values: &Series,
     );
-    fn pre_agg_u8(&mut self, _chunk_idx: IdxSize, _item: Option<u8>) {
-        unimplemented!()
-    }
-    fn pre_agg_u16(&mut self, _chunk_idx: IdxSize, _item: Option<u16>) {
-        unimplemented!()
-    }
-    fn pre_agg_u32(&mut self, _chunk_idx: IdxSize, _item: Option<u32>) {
-        unimplemented!()
-    }
-    fn pre_agg_u64(&mut self, _chunk_idx: IdxSize, _item: Option<u64>) {
-        unimplemented!()
-    }
-    fn pre_agg_i8(&mut self, _chunk_idx: IdxSize, _item: Option<i8>) {
-        unimplemented!()
-    }
-    fn pre_agg_i16(&mut self, _chunk_idx: IdxSize, _item: Option<i16>) {
-        unimplemented!()
-    }
-    fn pre_agg_i32(&mut self, _chunk_idx: IdxSize, _item: Option<i32>) {
-        unimplemented!()
-    }
-    fn pre_agg_i64(&mut self, _chunk_idx: IdxSize, _item: Option<i64>) {
-        unimplemented!()
-    }
-    fn pre_agg_f32(&mut self, _chunk_idx: IdxSize, _item: Option<f32>) {
-        unimplemented!()
-    }
-    fn pre_agg_f64(&mut self, _chunk_idx: IdxSize, _item: Option<f64>) {
+    fn pre_agg_primitive<T: NumCast>(&mut self, _chunk_idx: IdxSize, _item: Option<T>) {
         unimplemented!()
     }
 
