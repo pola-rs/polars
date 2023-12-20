@@ -538,18 +538,18 @@ pub(super) fn apply_aggregate(
                     match $self.dtype() {
                         #[cfg(feature = "dtype-u8")]
                         DataType::UInt8 => $macro!($self.u8().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // #[cfg(feature = "dtype-u16")]
-                        // DataType::UInt16 => $macro!($self.u16().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // DataType::UInt32 => $macro!($self.u32().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // DataType::UInt64 => $macro!($self.u64().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // #[cfg(feature = "dtype-i8")]
-                        // DataType::Int8 => $macro!($self.i8().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // #[cfg(feature = "dtype-i16")]
-                        // DataType::Int16 => $macro!($self.i16().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // DataType::Int32 => $macro!($self.i32().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // DataType::Int64 => $macro!($self.i64().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // DataType::Float32 => $macro!($self.f32().unwrap(), pre_agg_primitive $(, $opt_args)*),
-                        // DataType::Float64 => $macro!($self.f64().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        #[cfg(feature = "dtype-u16")]
+                        DataType::UInt16 => $macro!($self.u16().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::UInt32 => $macro!($self.u32().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::UInt64 => $macro!($self.u64().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        #[cfg(feature = "dtype-i8")]
+                        DataType::Int8 => $macro!($self.i8().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        #[cfg(feature = "dtype-i16")]
+                        DataType::Int16 => $macro!($self.i16().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Int32 => $macro!($self.i32().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Int64 => $macro!($self.i64().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Float32 => $macro!($self.f32().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Float64 => $macro!($self.f64().unwrap(), pre_agg_primitive $(, $opt_args)*),
                         dt => panic!("not implemented for {:?}", dt),
                     }
                 }};
