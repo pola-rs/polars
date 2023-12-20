@@ -466,7 +466,14 @@ impl<'a> FieldsMapper<'a> {
         let dtype = match return_dtype {
             Some(dtype) => dtype,
             // Supertype of `new` and `default`
-            None => try_get_supertype(self.fields[2].data_type(), self.fields[3].data_type())?,
+            None => {
+                let default = if let Some(default) = self.fields.get(3) {
+                    default
+                } else {
+                    &self.fields[0]
+                };
+                try_get_supertype(self.fields[2].data_type(), default.data_type())?
+            },
         };
         self.with_dtype(dtype)
     }
