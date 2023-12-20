@@ -1672,8 +1672,8 @@ impl LazyFrame {
     }
 
     /// Return the number of non-null elements in all the columns.
-    pub fn count(self) -> PolarsResult<LazyFrame> {
-        self.stats_helper(|dt| dt.is_ord(), |name| col(name).count())
+    pub fn count(self) -> LazyFrame {
+        self.select(vec![col("*").count()])
     }
 
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be

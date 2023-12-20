@@ -1071,10 +1071,9 @@ impl PyLazyFrame {
         Ok(self.get_schema()?.len())
     }
 
-    fn count(&self) -> PyResult<Self> {
+    fn count(&self) -> Self {
         let ldf = self.ldf.clone();
-        let out = ldf.count().map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        ldf.count().into()
     }
 
     #[cfg(feature = "merge_sorted")]
