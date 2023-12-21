@@ -685,7 +685,7 @@ class Series:
         ...
 
     @overload
-    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
         ...
 
     def eq_missing(self, other: Any) -> Self | Expr:
