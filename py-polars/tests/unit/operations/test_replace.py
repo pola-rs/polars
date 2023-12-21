@@ -56,7 +56,7 @@ def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) ->
 
 
 @pl.StringCache()
-def test_replace_cat_to_str(str_mapping: dict[str | None, str]) -> None:
+def test_replace_cat_to_str_err(str_mapping: dict[str | None, str]) -> None:
     df = pl.DataFrame(
         {"country_code": ["FR", None, "ES", "DE"]},
         schema={"country_code": pl.Categorical},
@@ -64,6 +64,16 @@ def test_replace_cat_to_str(str_mapping: dict[str | None, str]) -> None:
 
     with pytest.raises(pl.InvalidOperationError):
         df.select(pl.col("country_code").replace(str_mapping))
+
+
+# https://github.com/pola-rs/polars/issues/13164
+@pl.StringCache()
+def test_replace_cat_to_str_fast_path_err() -> None:
+    s = pl.Series(["a", "b"], dtype=pl.Categorical)
+    mapping = {"a": "c"}
+
+    with pytest.raises(pl.InvalidOperationError):
+        s.replace(mapping)
 
 
 @pl.StringCache()
