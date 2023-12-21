@@ -1671,6 +1671,11 @@ impl LazyFrame {
         }
     }
 
+    /// Return the number of non-null elements for each column.
+    pub fn count(self) -> LazyFrame {
+        self.select(vec![col("*").count()])
+    }
+
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]

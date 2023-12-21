@@ -5875,6 +5875,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(result._ldf)
 
+    def count(self) -> Self:
+        """
+        Return the number of non-null elements for each column.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> lf.count().collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 3   ┆ 0   │
+        └─────┴─────┴─────┘
+        """
+        return self._from_pyldf(self._ldf.count())
+
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
         self,
