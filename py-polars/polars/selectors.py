@@ -934,7 +934,7 @@ def datetime(
             [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
         )
 
-    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]  # type: ignore[union-attr]
+    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]
 
     return _selector_proxy_(
         F.col(datetime_dtypes),
