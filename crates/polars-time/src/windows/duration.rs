@@ -14,7 +14,6 @@ use polars_core::prelude::{
     PolarsResult,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
-use polars_error::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -544,6 +543,7 @@ impl Duration {
         tz: Option<&Tz>,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
+        daily_duration: i64,
     ) -> PolarsResult<i64>
     where
         G: Fn(i64) -> NaiveDateTime,
@@ -551,41 +551,71 @@ impl Duration {
     {
         let original_dt_utc;
         let original_dt_local;
-        match tz {
+        let t = match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
                 original_dt_utc = timestamp_to_datetime(t);
                 original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                datetime_to_timestamp(original_dt_local)
             },
             _ => {
                 original_dt_utc = timestamp_to_datetime(t);
                 original_dt_local = original_dt_utc;
+                datetime_to_timestamp(original_dt_local)
             },
         };
-        let (year, month) = (original_dt_local.year(), original_dt_local.month());
 
-        // determine the total number of months and truncate
-        // the number of months by the duration amount
-        let mut total = (year * 12) + (month as i32 - 1);
-        let remainder = total % self.months as i32;
-        total -= remainder;
+        // Remove the time of day from the timestamp
+        // e.g. 2020-01-01 12:34:56 -> 2020-01-01 00:00:00
+        let mut remainder_time = t % daily_duration;
+        if remainder_time < 0 {
+            remainder_time += daily_duration
+        }
+        let t = t - remainder_time;
 
-        // recreate a new time from the year and month combination
-        let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
+        // Calculate how many months we need to subtract...
+        let (mut year, mut month) = (
+            original_dt_local.year() as i64,
+            original_dt_local.month() as i64,
+        );
+        let total = (year * 12) + (month - 1);
+        let mut remainder_months = total % self.months;
+        if remainder_months < 0 {
+            remainder_months += self.months
+        }
 
-        let result_dt_local = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
-            ComputeError: format!("date '{}-{}-1' does not exist", year, month)
-        ))?;
+        // ...and translate that to how many days we need to subtract.
+        let mut days_per_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        if is_leap_year(year as i32) {
+            days_per_month[1] = 29;
+        }
+        let mut remainder_days = (original_dt_local.day() - 1) as i64;
+        while remainder_months > 0 {
+            month -= 1;
+            if month == 0 {
+                year -= 1;
+                if is_leap_year(year as i32) {
+                    days_per_month[1] = 29;
+                } else {
+                    days_per_month[1] = 28;
+                }
+                month = 12;
+            }
+            remainder_days += days_per_month[(month - 1) as usize];
+            remainder_months -= 1;
+        }
+
         match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
+                let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
                 let result_dt_utc =
                     self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz);
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
-            _ => Ok(datetime_to_timestamp(result_dt_local)),
+            _ => Ok(t - remainder_days * daily_duration),
         }
     }
 
@@ -640,7 +670,14 @@ impl Duration {
             },
             // truncate by months
             (_, 0, 0, 0) => {
-                self.truncate_monthly(t, tz, timestamp_to_datetime, datetime_to_timestamp)
+                let duration = nsecs_to_unit(NS_DAY);
+                self.truncate_monthly(
+                    t,
+                    tz,
+                    timestamp_to_datetime,
+                    datetime_to_timestamp,
+                    duration,
+                )
             },
             _ => {
                 polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
