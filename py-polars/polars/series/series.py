@@ -727,6 +727,14 @@ class Series:
 
         """
 
+    @overload
+    def ne(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def ne(self, other: Any) -> Series:
+        ...
+
     def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression `series != other`."""
         return self.__ne__(other)
