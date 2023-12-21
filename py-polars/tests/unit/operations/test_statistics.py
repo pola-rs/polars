@@ -148,10 +148,10 @@ def test_count() -> None:
     )
     df = lf.collect()
 
-    lf_result = lf.count().collect()
+    lf_result = lf.count()
     df_result = df.count()
 
-    expected = pl.DataFrame(
+    expected = pl.LazyFrame(
         {
             "nulls": [0],
             "one_null_str": [2],
@@ -160,4 +160,4 @@ def test_count() -> None:
         },
     ).cast(pl.UInt32)
     assert_frame_equal(lf_result, expected)
-    assert_frame_equal(df_result, expected)
+    assert_frame_equal(df_result, expected.collect())

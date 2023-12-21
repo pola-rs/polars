@@ -1671,7 +1671,7 @@ impl LazyFrame {
         }
     }
 
-    /// Return the number of non-null elements in all the columns.
+    /// Return the number of non-null elements for each column.
     pub fn count(self) -> LazyFrame {
         self.select(vec![col("*").count()])
     }

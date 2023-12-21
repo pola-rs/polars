@@ -5877,7 +5877,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def count(self) -> Self:
         """
-        Return the number of non-null elements in all the columns.
+        Return the number of non-null elements for each column.
 
         Examples
         --------
