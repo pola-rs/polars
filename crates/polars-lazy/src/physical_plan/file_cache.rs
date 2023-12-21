@@ -50,10 +50,11 @@ impl FileCache {
     where
         F: FnMut() -> PolarsResult<DataFrame>,
     {
+        #[cfg(debug_assertions)]
+        {
+            assert_ne!(total_read_count, 0);
+        }
         if total_read_count == 1 {
-            if total_read_count == 0 {
-                eprintln!("we have hit an unexpected branch, please open an issue")
-            }
             reader()
         } else {
             // should exist
