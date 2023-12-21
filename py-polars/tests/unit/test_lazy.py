@@ -1498,7 +1498,7 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     ],
 )
 def test_lazy_comparison_operators(
-    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]]
+    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]],
 ) -> None:
     # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(
