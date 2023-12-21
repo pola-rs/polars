@@ -5,6 +5,7 @@ mod python;
 mod err;
 #[cfg(feature = "pivot")]
 pub mod pivot;
+mod exitable;
 
 use std::borrow::Cow;
 #[cfg(any(
@@ -50,6 +51,7 @@ use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
+pub use exitable::*;
 
 pub trait IntoLazy {
     fn lazy(self) -> LazyFrame;

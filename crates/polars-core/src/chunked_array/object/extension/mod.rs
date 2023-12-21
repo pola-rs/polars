@@ -135,6 +135,7 @@ mod test {
     use std::fmt::{Display, Formatter};
 
     use polars_utils::idxvec;
+    use crate::chunked_array::object::registry::register_object_builder;
 
     use super::*;
 

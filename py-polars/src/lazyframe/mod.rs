@@ -1,3 +1,5 @@
+mod exitable;
+
 use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;

@@ -1593,6 +1593,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        background: bool = False,
         _eager: bool = False,
     ) -> DataFrame:
         """
@@ -1630,6 +1631,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Use :func:`explain` to see if Polars can process the query in streaming
                 mode.
+        background
+            Run the query in the background and get a handle to the query. This handle can
+            be used to fetch the result or cancel the query.
 
         Returns
         -------
@@ -1702,6 +1706,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
             _eager,
         )
+        if background:
+            return ldf.collect_concurrently()
+
         return wrap_df(ldf.collect())
 
     @overload
