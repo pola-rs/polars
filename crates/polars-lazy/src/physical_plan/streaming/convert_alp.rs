@@ -347,7 +347,7 @@ pub(crate) fn insert_streaming_nodes(
                 fn allowed_dtype(dt: &DataType, string_cache: bool) -> bool {
                     match dt {
                         #[cfg(feature = "object")]
-                        DataType::Object(_) => false,
+                        DataType::Object(_, _) => false,
                         #[cfg(feature = "dtype-categorical")]
                         DataType::Categorical(_, _) => string_cache,
                         DataType::List(inner) => allowed_dtype(inner, string_cache),

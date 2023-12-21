@@ -160,7 +160,7 @@ impl Series {
     pub fn clear(&self) -> Series {
         // Only the inner of objects know their type, so use this hack.
         #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_)) {
+        if matches!(self.dtype(), DataType::Object(_, _)) {
             return if self.is_empty() {
                 self.clone()
             } else {
@@ -297,7 +297,7 @@ impl Series {
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         // Best leave as is.
-        if matches!(dtype, DataType::Unknown) {
+        if matches!(dtype, DataType::Unknown) || (dtype == self.dtype() && dtype.is_primitive()) {
             return Ok(self.clone());
         }
         let ret = self.0.cast(dtype);

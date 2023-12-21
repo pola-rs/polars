@@ -1003,6 +1003,16 @@ impl Expr {
         binary_expr(self, Operator::Or, expr.into())
     }
 
+    /// "or" operation.
+    pub fn logical_or<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::LogicalOr, expr.into())
+    }
+
+    /// "or" operation.
+    pub fn logical_and<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::LogicalAnd, expr.into())
+    }
+
     /// Filter a single column.
     ///
     /// Should be used in aggregation context. If you want to filter on a
@@ -1317,12 +1327,21 @@ impl Expr {
         default: Option<E>,
         return_dtype: Option<DataType>,
     ) -> Expr {
-        let default_expr = match default {
-            Some(expr) => expr.into(),
-            None => self.clone(),
-        };
-        let args: &[Expr] = &[old.into(), new.into(), default_expr];
-        self.apply_many_private(FunctionExpr::Replace { return_dtype }, args, false, false)
+        let old = old.into();
+        let new = new.into();
+        // If we search and replace by literals, we can run on batches.
+        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
+
+        let mut args = vec![old, new];
+        if let Some(default) = default {
+            args.push(default.into())
+        }
+
+        if literal_searchers {
+            self.map_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+        } else {
+            self.apply_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+        }
     }
 
     #[cfg(feature = "cutqcut")]

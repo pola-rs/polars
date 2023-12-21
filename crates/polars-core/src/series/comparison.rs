@@ -18,13 +18,18 @@ macro_rules! impl_compare {
         #[cfg(feature = "dtype-categorical")]
         match (lhs.dtype(), rhs.dtype()) {
             (Categorical(_, _), Categorical(_, _)) => {
-                return lhs
+                return Ok(lhs
                     .categorical()
                     .unwrap()
-                    .$method(rhs.categorical().unwrap());
+                    .$method(rhs.categorical().unwrap())?
+                    .with_name(lhs.name()));
             },
             (Categorical(_, _), Utf8) => {
-                return lhs.categorical().unwrap().$method(rhs.utf8().unwrap());
+                return Ok(lhs
+                    .categorical()
+                    .unwrap()
+                    .$method(rhs.utf8().unwrap())?
+                    .with_name(lhs.name()));
             },
             (Utf8, Categorical(_, _)) => {
                 return Ok(rhs

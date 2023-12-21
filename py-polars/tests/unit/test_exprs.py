@@ -806,3 +806,12 @@ def test_repr_gather() -> None:
     assert 'col("a").gather(0)' in result
     result = repr(pl.col("a").get(0))
     assert 'col("a").get(0)' in result
+
+
+def test_replace_no_cse() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1], "b": [2]})
+        .select([(pl.col("a") * pl.col("a")).sum().replace(1, None)])
+        .explain()
+    )
+    assert "POLARS_CSER" not in plan

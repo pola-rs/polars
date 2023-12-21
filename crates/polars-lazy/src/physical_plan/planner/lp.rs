@@ -123,7 +123,7 @@ fn partitionable_gb(
                     for name in aexpr_to_leaf_names(*agg, expr_arena) {
                         let dtype = _input_schema.get(&name).unwrap();
 
-                        if let DataType::Object(_) = dtype {
+                        if let DataType::Object(_, _) = dtype {
                             partitionable = false;
                             break;
                         }

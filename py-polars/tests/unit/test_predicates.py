@@ -401,6 +401,27 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     assert r'SELECTION: "[(col(\"key\")) == (1)]"' in plan
 
 
+def test_predicate_reduction() -> None:
+    # ensure we get clean reduction without casts
+    assert (
+        "cast"
+        not in pl.LazyFrame({"a": [1], "b": [2]})
+        .filter(
+            [
+                pl.col("a") > 1,
+                pl.col("b") > 1,
+            ]
+        )
+        .explain()
+    )
+
+
+def test_all_any_cleanup_at_single_predicate_case() -> None:
+    plan = pl.LazyFrame({"a": [1], "b": [2]}).select(["a"]).drop_nulls().explain()
+    assert "horizontal" not in plan
+    assert "all" not in plan
+
+
 def test_hconcat_predicate() -> None:
     # Predicates shouldn't be pushed down past an hconcat as we can't filter
     # across the different inputs

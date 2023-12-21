@@ -120,7 +120,9 @@ jobs:
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
       - name: Set _LTS_CPU variable
         if: matrix.package == 'polars-lts-cpu'
-        run: sed -i 's/^_LTS_CPU = False$/_LTS_CPU = True/g' py-polars/polars/_cpu_check.py
+        env:
+          SED_OPTIONS: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
+        run: sed $SED_OPTIONS 's/^_LTS_CPU = False$/_LTS_CPU = True/g' py-polars/polars/_cpu_check.py
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os != 'macos-latest'

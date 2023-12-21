@@ -204,10 +204,7 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     // `col(i).is_null() for i in len(df))`
     // so we would miss the boolean operator.
     if exprs.len() > 1 {
-        return Ok(exprs
-            .into_iter()
-            .reduce(|l, r| l.cast(DataType::Boolean).and(r.cast(DataType::Boolean)))
-            .unwrap());
+        return Ok(exprs.into_iter().reduce(|l, r| l.logical_and(r)).unwrap());
     }
 
     Ok(Expr::Function {
@@ -233,10 +230,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 
     // See comment in `all_horizontal`.
     if exprs.len() > 1 {
-        return Ok(exprs
-            .into_iter()
-            .reduce(|l, r| l.cast(DataType::Boolean).or(r.cast(DataType::Boolean)))
-            .unwrap());
+        return Ok(exprs.into_iter().reduce(|l, r| l.logical_or(r)).unwrap());
     }
 
     Ok(Expr::Function {

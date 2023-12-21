@@ -40,7 +40,7 @@ impl DataFrame {
             DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_out, &mut cols_t),
             DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 // this requires to support `Object` in Series::iter which we don't yet
                 polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
             },

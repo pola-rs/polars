@@ -10,7 +10,7 @@ pub mod list;
 pub mod nan_propagating_aggregate;
 #[cfg(feature = "peaks")]
 pub mod peaks;
-mod set;
+mod scatter;
 pub mod strings;
 mod sum;
 #[cfg(feature = "top_k")]
@@ -40,7 +40,7 @@ pub use list::*;
 use polars_core::prelude::*;
 #[cfg(feature = "repeat_by")]
 pub use repeat_by::*;
-pub use set::ChunkedSet;
+pub use scatter::ChunkedSet;
 pub use strings::*;
 #[cfg(feature = "top_k")]
 pub use top_k::*;

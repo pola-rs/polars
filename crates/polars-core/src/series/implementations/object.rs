@@ -165,7 +165,7 @@ where
     }
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        if matches!(data_type, DataType::Object(_)) {
+        if matches!(data_type, DataType::Object(_, None)) {
             Ok(self.0.clone().into_series())
         } else {
             Err(PolarsError::ComputeError(

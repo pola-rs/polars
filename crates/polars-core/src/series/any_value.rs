@@ -310,19 +310,36 @@ impl Series {
                 return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
-                use crate::chunked_array::object::registry;
-                let converter = registry::get_object_converter();
-                let mut builder = registry::get_object_builder(name, av.len());
-                for av in av {
-                    if let AnyValue::Object(val) = av {
-                        builder.append_value(val.as_any())
-                    } else {
-                        let any = converter(av.as_borrowed());
-                        builder.append_value(&*any)
-                    }
+            DataType::Object(_, registry) => {
+                match registry {
+                    None => {
+                        use crate::chunked_array::object::registry;
+                        let converter = registry::get_object_converter();
+                        let mut builder = registry::get_object_builder(name, av.len());
+                        for av in av {
+                            if let AnyValue::Object(val) = av {
+                                builder.append_value(val.as_any())
+                            } else {
+                                // This is needed because in python people can send mixed types.
+                                // This only works if you set a global converter.
+                                let any = converter(av.as_borrowed());
+                                builder.append_value(&*any)
+                            }
+                        }
+                        return Ok(builder.to_series());
+                    },
+                    Some(registry) => {
+                        let mut builder = (*registry.builder_constructor)(name, av.len());
+                        for av in av {
+                            if let AnyValue::Object(val) = av {
+                                builder.append_value(val.as_any())
+                            } else {
+                                polars_bail!(ComputeError: "expected object");
+                            }
+                        }
+                        return Ok(builder.to_series());
+                    },
                 }
-                return Ok(builder.to_series());
             },
             DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
             #[cfg(feature = "dtype-categorical")]
@@ -433,9 +450,9 @@ impl<'a> From<&AnyValue<'a>> for DataType {
                 }
             },
             #[cfg(feature = "object")]
-            Object(o) => DataType::Object(o.type_name()),
+            Object(o) => DataType::Object(o.type_name(), None),
             #[cfg(feature = "object")]
-            ObjectOwned(o) => DataType::Object(o.0.type_name()),
+            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
         }
