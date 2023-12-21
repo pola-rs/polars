@@ -32,7 +32,7 @@ atoi = "2"
 avro-schema = { version = "0.3" }
 base64 = "0.21.2"
 bitflags = "2"
-bytemuck = { version = ">=1.11.0,<2", features = ["derive", "extern_crate_alloc"] }
+bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.8.1"
 ciborium = "0.2"
