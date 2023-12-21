@@ -632,7 +632,6 @@ def map_batches(
     --------
     >>> def test_func(a, b, c):
     ...     return a + b + c
-    ...
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2, 3, 4],

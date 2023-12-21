@@ -37,7 +37,6 @@ class StringCache(contextlib.ContextDecorator):
     >>> with pl.StringCache():
     ...     s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
     ...     s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
-    ...
 
     As both Series are constructed under the same global string cache,
     they can be concatenated.
@@ -62,7 +61,6 @@ class StringCache(contextlib.ContextDecorator):
     ...     s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
     ...     s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
     ...     return pl.concat([s1, s2])
-    ...
 
     """
 

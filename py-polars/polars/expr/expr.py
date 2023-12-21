@@ -4208,9 +4208,7 @@ class Expr:
 
         >>> df.with_columns(
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
-        ... ).sort(
-        ...     "key"
-        ... )  # doctest: +IGNORE_RESULT
+        ... ).sort("key")  # doctest: +IGNORE_RESULT
 
         """
         # input x: Series of type list containing the group values

@@ -99,7 +99,6 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ...
     ...     def nearest(self, p: int) -> pl.Expr:
     ...         return (p ** (self._expr.log(p)).round(0).cast(pl.Int64)).cast(pl.Int64)
-    ...
     >>>
     >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
     >>> df.select(
@@ -159,7 +158,6 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ...                 set(df.select(pl.col(col).str.slice(0, 1)).to_series())
     ...             )
     ...         ]
-    ...
     >>>
     >>> df = pl.DataFrame(
     ...     data=[["xx", 2, 3, 4], ["xy", 4, 5, 6], ["yy", 5, 6, 7], ["yz", 6, 7, 8]],
@@ -256,7 +254,6 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ...         return self._ldf.with_columns(
     ...             pl.col(tp).cast(pl.Int64) for tp in (pl.Int8, pl.Int16, pl.Int32)
     ...         )
-    ...
     >>>
     >>> ldf = pl.DataFrame(
     ...     data={"a": [1, 2], "b": [3, 4], "c": [5.6, 6.7]},
@@ -356,7 +353,6 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ...
     ...     def cube(self) -> pl.Series:
     ...         return self._s * self._s * self._s
-    ...
     >>>
     >>> s = pl.Series("n", [1.5, 31.0, 42.0, 64.5])
     >>> s.math.square().alias("s^2")

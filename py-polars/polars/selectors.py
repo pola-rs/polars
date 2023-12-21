@@ -1681,7 +1681,6 @@ def object() -> SelectorType:
     ...         schema_overrides={"idx": pl.Int32},
     ...     )
     ...     print(df)  # doctest: +IGNORE_RESULT
-    ...
     shape: (2, 3)
     ┌─────┬──────────────────────────────────────┬──────────────────────────────────────┐
     │ idx ┆ uuid_obj                             ┆ uuid_str                             │
