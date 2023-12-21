@@ -550,7 +550,6 @@ def read_csv_batched(
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
     ...     print(df)
-    ...
 
     Read big CSV file in batches and write a CSV file for each "group" of interest.
 
@@ -571,7 +570,6 @@ def read_csv_batched(
     ...         seen_groups.add(group)
     ...
     ...     batches = reader.next_batches(100)
-    ...
 
     """
     projection, columns = handle_projection_columns(columns)

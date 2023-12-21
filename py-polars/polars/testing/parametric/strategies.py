@@ -374,7 +374,6 @@ def create_list_strategy(
     ... def uint8_pairs(draw, uints=create_list_strategy(pl.UInt8, size=2)):
     ...     pairs = list(zip(draw(uints), draw(uints)))
     ...     return [sorted(ints) for ints in pairs]
-    ...
     >>> uint8_pairs().example()  # doctest: +SKIP
     [(12, 22), (15, 131)]
     >>> uint8_pairs().example()  # doctest: +SKIP

@@ -75,7 +75,6 @@ class CatNameSpace:
 
         >>> with pl.StringCache():
         ...     s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-        ...
         >>> s.cat.is_local()
         False
 
@@ -98,7 +97,6 @@ class CatNameSpace:
         >>> with pl.StringCache():
         ...     _ = pl.Series("x", ["a", "b", "a"], dtype=pl.Categorical)
         ...     s = pl.Series("y", ["c", "b", "d"], dtype=pl.Categorical)
-        ...
         >>> s.to_physical()
         shape: (3,)
         Series: 'y' [u32]

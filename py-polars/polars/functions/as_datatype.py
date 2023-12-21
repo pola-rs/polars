@@ -252,7 +252,6 @@ def duration(
     ...         (pl.col("dt") + pl.duration(milliseconds="add")).alias("add_millis"),
     ...         (pl.col("dt") + pl.duration(hours="add")).alias("add_hours"),
     ...     )
-    ...
     shape: (2, 5)
     ┌─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────────┬─────────────────────┐
     │ add_weeks           ┆ add_days            ┆ add_seconds         ┆ add_millis              ┆ add_hours           │
@@ -277,7 +276,6 @@ def duration(
     ...             pl.format("{}y", pl.col("add"))
     ...         ),
     ...     )
-    ...
     shape: (2, 3)
     ┌─────────────────────┬─────────────────────┬─────────────────────┐
     │ add_calendar_days   ┆ add_calendar_months ┆ add_calendar_years  │
