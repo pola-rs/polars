@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import io
 import json
 from collections import OrderedDict
@@ -299,6 +300,13 @@ def test_write_json_duration() -> None:
             [[[1, 2, 3], [4, None]], None, [[None, None, 2]]],
             pl.List(pl.Array(pl.Int32(), width=3)),
         ),
+        (
+            [
+                [datetime.datetime(1991, 1, 1), datetime.datetime(1991, 1, 1), None],
+                [None, None, None],
+            ],
+            pl.Array(pl.Datetime, width=3),
+        ),
     ],
 )
 def test_write_read_json_array(data: Any, dtype: pl.DataType) -> None:
@@ -308,6 +316,44 @@ def test_write_read_json_array(data: Any, dtype: pl.DataType) -> None:
     buf.seek(0)
     deserialized_df = pl.read_json(buf)
     assert_frame_equal(deserialized_df, df)
+
+
+@pytest.mark.parametrize(
+    ("data", "dtype"),
+    [
+        (
+            [
+                [
+                    datetime.datetime(1997, 10, 1),
+                    datetime.datetime(2000, 1, 2, 10, 30, 1),
+                ],
+                [None, None],
+            ],
+            pl.Array(pl.Datetime, width=2),
+        ),
+        (
+            [[datetime.date(1997, 10, 1), datetime.date(2000, 1, 1)], [None, None]],
+            pl.Array(pl.Date, width=2),
+        ),
+        (
+            [
+                [datetime.timedelta(seconds=1), datetime.timedelta(seconds=10)],
+                [None, None],
+            ],
+            pl.Array(pl.Duration, width=2),
+        ),
+    ],
+)
+def test_write_read_json_array_logical_inner_type(
+    data: Any, dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"foo": data}, schema={"foo": dtype})
+    buf = io.StringIO()
+    df.write_json(buf)
+    buf.seek(0)
+    deserialized_df = pl.read_json(buf)
+    assert deserialized_df.dtypes == df.dtypes
+    assert deserialized_df.to_dict(as_series=False) == df.to_dict(as_series=False)
 
 
 def test_json_null_infer() -> None:
