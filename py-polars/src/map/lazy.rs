@@ -128,10 +128,11 @@ pub fn map_single(
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
     agg_list: bool,
+    is_elementwise: bool,
 ) -> PyExpr {
     let output_type = output_type.map(|wrap| wrap.0);
 
-    let func = python_udf::PythonUdfExpression::new(lambda, output_type);
+    let func = python_udf::PythonUdfExpression::new(lambda, output_type, is_elementwise);
     pyexpr.inner.clone().map_python(func, agg_list).into()
 }
 

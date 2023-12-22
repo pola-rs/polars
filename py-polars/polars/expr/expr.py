@@ -3975,6 +3975,7 @@ class Expr:
         return_dtype: PolarsDataType | None = None,
         *,
         agg_list: bool = False,
+        is_elementwise: bool = False,
     ) -> Self:
         """
         Apply a custom python function to a whole Series or sequence of Series.
@@ -3996,6 +3997,9 @@ class Expr:
             Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
+        is_elementwise
+            If set to true this can run in the streaming engine, but may yield
+            incorrect results in group-by. Ensure you know what you are doing!
         agg_list
             Aggregate list.
 
@@ -4031,7 +4035,7 @@ class Expr:
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(
-            self._pyexpr.map_batches(function, return_dtype, agg_list)
+            self._pyexpr.map_batches(function, return_dtype, agg_list, is_elementwise)
         )
 
     def map_elements(

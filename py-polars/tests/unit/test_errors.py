@@ -47,7 +47,8 @@ def test_error_on_reducing_map() -> None:
         df.select(
             pl.col("x")
             .map_batches(
-                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
+                is_elementwise=True,
             )
             .over("group")
         )
