@@ -7,7 +7,7 @@ from typing import Any, Iterator, Mapping
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 class CustomSchema(Mapping[str, Any]):
@@ -66,6 +66,15 @@ def test_fill_null_minimal_upcast_4056() -> None:
     df = df.with_columns(pl.col("a").cast(pl.Int8))
     assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
     assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
+
+
+def test_fill_enum_upcast() -> None:
+    dtype = pl.Enum(["a", "b"])
+    s = pl.Series(["a", "b", None], dtype=dtype)
+    s_filled = s.fill_null("b")
+    expected = pl.Series(["a", "b", "b"], dtype=dtype)
+    assert s_filled.dtype == dtype
+    assert_series_equal(s_filled, expected)
 
 
 def test_pow_dtype() -> None:
