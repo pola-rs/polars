@@ -33,7 +33,7 @@ pub fn replace(
         return Ok(default);
     }
 
-    let old = old.cast(s.dtype())?;
+    let old = old.strict_cast(s.dtype())?;
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
