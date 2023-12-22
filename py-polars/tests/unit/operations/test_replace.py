@@ -62,7 +62,10 @@ def test_replace_cat_to_str_err(str_mapping: dict[str | None, str]) -> None:
         schema={"country_code": pl.Categorical},
     )
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="casting to a non-enum variant with rev map is not supported for the user",
+    ):
         df.select(pl.col("country_code").replace(str_mapping))
 
 
@@ -72,7 +75,10 @@ def test_replace_cat_to_str_fast_path_err() -> None:
     s = pl.Series(["a", "b"], dtype=pl.Categorical)
     mapping = {"a": "c"}
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="casting to a non-enum variant with rev map is not supported for the user",
+    ):
         s.replace(mapping)
 
 
