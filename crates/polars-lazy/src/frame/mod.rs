@@ -3,9 +3,9 @@
 mod python;
 
 mod err;
+mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
-mod exitable;
 
 use std::borrow::Cow;
 #[cfg(any(
@@ -21,6 +21,7 @@ pub use anonymous_scan::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "csv")]
 pub use csv::*;
+pub use exitable::*;
 pub use file_list_reader::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
@@ -51,7 +52,6 @@ use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
-pub use exitable::*;
 
 pub trait IntoLazy {
     fn lazy(self) -> LazyFrame;

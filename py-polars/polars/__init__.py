@@ -185,7 +185,7 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
-from polars.lazyframe import LazyFrame
+from polars.lazyframe import InProcessQuery, LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import (
@@ -228,6 +228,7 @@ __all__ = [
     "Expr",
     "LazyFrame",
     "Series",
+    "InProcessQuery",
     # polars.datatypes
     "Array",
     "Binary",

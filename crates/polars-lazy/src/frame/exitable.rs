@@ -1,8 +1,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use super::*;
-use polars_core::POOL;
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::Mutex;
+
+use polars_core::POOL;
+
+use super::*;
 
 impl LazyFrame {
     pub fn collect_concurrently(self) -> PolarsResult<InProcessQuery> {
@@ -17,7 +19,7 @@ impl LazyFrame {
 
         Ok(InProcessQuery {
             rx: Arc::new(Mutex::new(rx)),
-            token
+            token,
         })
     }
 }
@@ -25,19 +27,25 @@ impl LazyFrame {
 #[derive(Clone)]
 pub struct InProcessQuery {
     rx: Arc<Mutex<Receiver<PolarsResult<DataFrame>>>>,
-    token: Arc<AtomicBool>
+    token: Arc<AtomicBool>,
 }
 
 impl InProcessQuery {
+    /// Cancel the query at earliest convenience.
     pub fn cancel(&self) {
         self.token.store(true, Ordering::Relaxed)
     }
 
+    /// Fetch the result.
+
+    /// If it is ready, a materialized DataFrame is returned.
+    /// If it is not ready it will return `None`.
     pub fn fetch(&self) -> Option<PolarsResult<DataFrame>> {
         let rx = self.rx.lock().unwrap();
         rx.try_recv().ok()
     }
 
+    /// Await the result synchronously.
     pub fn fetch_blocking(&self) -> PolarsResult<DataFrame> {
         let rx = self.rx.lock().unwrap();
         rx.recv().unwrap()

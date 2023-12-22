@@ -7,7 +7,7 @@ impl PyLazyFrame {
             let ldf = self.ldf.clone();
             ldf.collect_concurrently().map_err(PyPolarsErr::from)
         })?;
-        Ok(PyInProcessQuery{ipq})
+        Ok(PyInProcessQuery { ipq })
     }
 }
 
@@ -15,7 +15,7 @@ impl PyLazyFrame {
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyInProcessQuery {
-    pub ipq: InProcessQuery
+    pub ipq: InProcessQuery,
 }
 
 #[pymethods]
@@ -33,6 +33,4 @@ impl PyInProcessQuery {
         let out = self.ipq.fetch_blocking().map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
-
-
 }

@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicU8, Ordering, AtomicU32, AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
@@ -92,7 +92,7 @@ pub struct ExecutionState {
     pub(super) flags: AtomicU8,
     pub(super) ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
-    stop: Arc<AtomicBool>
+    stop: Arc<AtomicBool>,
 }
 
 impl ExecutionState {
@@ -105,10 +105,10 @@ impl ExecutionState {
             df_cache: Default::default(),
             schema_cache: Default::default(),
             #[cfg(any(
-            feature = "ipc",
-            feature = "parquet",
-            feature = "csv",
-            feature = "json"
+                feature = "ipc",
+                feature = "parquet",
+                feature = "csv",
+                feature = "json"
             ))]
             file_cache: FileCache::new(None),
             group_tuples: Default::default(),
@@ -117,7 +117,7 @@ impl ExecutionState {
             flags: AtomicU8::new(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
             node_timer: None,
-            stop: Arc::new(AtomicBool::new(false))
+            stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -176,7 +176,7 @@ impl ExecutionState {
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
-            stop: self.stop.clone()
+            stop: self.stop.clone(),
         }
     }
 
@@ -198,7 +198,7 @@ impl ExecutionState {
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
-            stop: self.stop.clone()
+            stop: self.stop.clone(),
         }
     }
 
