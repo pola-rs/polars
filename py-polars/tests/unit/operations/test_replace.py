@@ -56,14 +56,38 @@ def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) ->
 
 
 @pl.StringCache()
-def test_replace_cat_to_str(str_mapping: dict[str | None, str]) -> None:
+def test_replace_cat_to_str_err(str_mapping: dict[str | None, str]) -> None:
     df = pl.DataFrame(
         {"country_code": ["FR", None, "ES", "DE"]},
         schema={"country_code": pl.Categorical},
     )
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="casting to a non-enum variant with rev map is not supported for the user",
+    ):
         df.select(pl.col("country_code").replace(str_mapping))
+
+
+# https://github.com/pola-rs/polars/issues/13164
+@pl.StringCache()
+def test_replace_cat_to_str_fast_path_err() -> None:
+    s = pl.Series(["a", "b"], dtype=pl.Categorical)
+    mapping = {"a": "c"}
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="casting to a non-enum variant with rev map is not supported for the user",
+    ):
+        s.replace(mapping)
+
+
+def test_replace_str_to_cat() -> None:
+    s = pl.Series(["a", "b", "c"])
+    mapping = {"a": "c", "b": "d"}
+    result = s.replace(mapping, return_dtype=pl.Categorical)
+    expected = pl.Series(["c", "d", "c"], dtype=pl.Categorical)
+    assert_series_equal(result, expected, categorical_as_str=True)
 
 
 @pl.StringCache()

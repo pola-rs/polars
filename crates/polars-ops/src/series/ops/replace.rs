@@ -33,10 +33,11 @@ pub fn replace(
         return Ok(default);
     }
 
+    let old = old.cast(s.dtype())?;
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
-        replace_by_single(s, old, &new, &default)
+        replace_by_single(s, &old, &new, &default)
     } else {
         replace_by_multiple(s, old, new, &default)
     }
@@ -57,7 +58,7 @@ fn replace_by_single(
 /// General case for replacing by multiple values
 fn replace_by_multiple(
     s: &Series,
-    old: &Series,
+    old: Series,
     new: Series,
     default: &Series,
 ) -> PolarsResult<Series> {
@@ -67,7 +68,7 @@ fn replace_by_multiple(
     );
 
     let df = DataFrame::new_no_checks(vec![s.clone()]);
-    let replacer = create_replacer(s, old, new)?;
+    let replacer = create_replacer(old, new)?;
 
     let joined = df.join(
         &replacer,
@@ -95,8 +96,7 @@ fn replace_by_multiple(
 }
 
 // Build replacer dataframe
-fn create_replacer(s: &Series, old: &Series, mut new: Series) -> PolarsResult<DataFrame> {
-    let mut old = old.cast(s.dtype())?;
+fn create_replacer(mut old: Series, mut new: Series) -> PolarsResult<DataFrame> {
     old.rename("__POLARS_REPLACE_OLD");
     new.rename("__POLARS_REPLACE_NEW");
 
