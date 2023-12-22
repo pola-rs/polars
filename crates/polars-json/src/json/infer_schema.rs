@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field};
+use arrow::datatypes::{ArrowDataType, Field};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use simd_json::borrowed::Object;
@@ -22,48 +22,6 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
         BorrowedValue::Array(array) => infer_array(array)?,
         BorrowedValue::String(_) => ArrowDataType::LargeUtf8,
         BorrowedValue::Object(inner) => infer_object(inner)?,
-    })
-}
-
-/// Infers [`ArrowSchema`] from JSON [`Value`][Value] in (pandas-compatible) records format.
-///
-/// [Value]: simd_json::value::Value
-pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<ArrowSchema> {
-    let outer_array = match json {
-        BorrowedValue::Array(array) => Ok(array),
-        _ => Err(PolarsError::ComputeError(
-            "outer type is not an array".into(),
-        )),
-    }?;
-
-    let fields = match outer_array.iter().next() {
-        Some(BorrowedValue::Object(record)) => record
-            .iter()
-            .map(|(name, json)| {
-                let data_type = infer(json)?;
-
-                Ok(Field {
-                    name: name.to_string(),
-                    data_type: ArrowDataType::LargeList(Box::new(Field {
-                        name: format!("{name}-records"),
-                        data_type,
-                        is_nullable: true,
-                        metadata: Default::default(),
-                    })),
-                    is_nullable: true,
-                    metadata: Default::default(),
-                })
-            })
-            .collect::<PolarsResult<Vec<_>>>(),
-        None => Ok(vec![]),
-        _ => Err(PolarsError::ComputeError(
-            "first element in array is not a record".into(),
-        )),
-    }?;
-
-    Ok(ArrowSchema {
-        fields,
-        metadata: Default::default(),
     })
 }
 
