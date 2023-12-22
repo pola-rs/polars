@@ -111,6 +111,8 @@ def test_gather_every() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
     assert_frame_equal(expected_df, ldf.gather_every(2).collect())
+    expected_df = pl.DataFrame({"a": [2, 4], "b": ["x", "z"]})
+    assert_frame_equal(expected_df, ldf.gather_every(2, offset=1).collect())
 
 
 def test_agg() -> None:

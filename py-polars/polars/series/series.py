@@ -3031,7 +3031,7 @@ class Series:
         """
         return self.head(n)
 
-    def gather_every(self, n: int) -> Series:
+    def gather_every(self, n: int, offset: int = 0) -> Series:
         """
         Take every nth value in the Series and return as new Series.
 
@@ -3039,6 +3039,8 @@ class Series:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Start the row count at this offset.
 
         Examples
         --------
@@ -3049,6 +3051,13 @@ class Series:
         [
             1
             3
+        ]
+        >>> s.gather_every(2, offset=1)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            2
+            4
         ]
 
         """
@@ -7046,7 +7055,7 @@ class Series:
         return self.dtype == Utf8
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int) -> Series:
+    def take_every(self, n: int, offset: int = 0) -> Series:
         """
         Take every nth value in the Series and return as new Series.
 
@@ -7057,8 +7066,10 @@ class Series:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("gather", version="0.19.14")
     def take(

@@ -416,13 +416,13 @@ impl PyExpr {
         self.inner.clone().explode().into()
     }
 
-    fn gather_every(&self, n: usize) -> Self {
+    fn gather_every(&self, n: usize, offset: usize) -> Self {
         self.inner
             .clone()
             .map(
                 move |s: Series| {
                     polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
-                    Ok(Some(s.gather_every(n)))
+                    Ok(Some(s.gather_every(n, offset)))
                 },
                 GetOutput::same_type(),
             )

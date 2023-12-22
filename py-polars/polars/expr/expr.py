@@ -4386,7 +4386,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.implode())
 
-    def gather_every(self, n: int) -> Self:
+    def gather_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -4394,6 +4394,8 @@ class Expr:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
 
         Examples
         --------
@@ -4410,8 +4412,20 @@ class Expr:
         │ 7   │
         └─────┘
 
+        >>> df.select(pl.col("foo").gather_every(3, offset=1))
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        │ 5   │
+        │ 8   │
+        └─────┘
+
         """
-        return self._from_pyexpr(self._pyexpr.gather_every(n))
+        return self._from_pyexpr(self._pyexpr.gather_every(n, offset))
 
     def head(self, n: int | Expr = 10) -> Self:
         """
@@ -9572,7 +9586,7 @@ class Expr:
         )
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int) -> Self:
+    def take_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -9583,8 +9597,10 @@ class Expr:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("gather", version="0.19.14")
     def take(
