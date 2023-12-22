@@ -481,7 +481,8 @@ where
                 })
                 .collect();
 
-            unsafe { Self::from_chunks(self.name(), chunks) }
+            // SAFETY: We just slice the original chunks, their type will not change.
+            unsafe { Self::from_chunks_and_dtype(self.name(), chunks, self.dtype().clone()) }
         };
 
         if self.chunks.len() != 1 {
