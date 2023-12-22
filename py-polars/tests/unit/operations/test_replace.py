@@ -76,6 +76,14 @@ def test_replace_cat_to_str_fast_path_err() -> None:
         s.replace(mapping)
 
 
+def test_replace_str_to_cat() -> None:
+    s = pl.Series(["a", "b", "c"])
+    mapping = {"a": "c", "b": "d"}
+    result = s.replace(mapping, return_dtype=pl.Categorical)
+    expected = pl.Series(["c", "d", "c"], dtype=pl.Categorical)
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
 @pl.StringCache()
 def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
     lf = pl.LazyFrame(
