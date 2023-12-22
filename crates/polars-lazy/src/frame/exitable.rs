@@ -12,7 +12,7 @@ impl LazyFrame {
 
         let (tx, rx) = channel();
         let token = state.cancel_token();
-        POOL.spawn(move || {
+        POOL.spawn_fifo(move || {
             let result = physical_plan.execute(&mut state);
             tx.send(result).unwrap();
         });

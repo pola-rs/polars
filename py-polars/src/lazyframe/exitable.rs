@@ -20,17 +20,17 @@ pub struct PyInProcessQuery {
 
 #[pymethods]
 impl PyInProcessQuery {
-    pub fn cancel(&self) {
-        self.ipq.cancel();
+    pub fn cancel(&self, py: Python) {
+        py.allow_threads(|| self.ipq.cancel())
     }
 
-    pub fn fetch(&self) -> PyResult<Option<PyDataFrame>> {
-        let out = self.ipq.fetch().transpose().map_err(PyPolarsErr::from)?;
+    pub fn fetch(&self, py: Python) -> PyResult<Option<PyDataFrame>> {
+        let out = py.allow_threads(|| self.ipq.fetch().transpose().map_err(PyPolarsErr::from))?;
         Ok(out.map(|df| df.into()))
     }
 
-    pub fn fetch_blocking(&self) -> PyResult<PyDataFrame> {
-        let out = self.ipq.fetch_blocking().map_err(PyPolarsErr::from)?;
+    pub fn fetch_blocking(&self, py: Python) -> PyResult<PyDataFrame> {
+        let out = py.allow_threads(|| self.ipq.fetch_blocking().map_err(PyPolarsErr::from))?;
         Ok(out.into())
     }
 }
