@@ -217,7 +217,6 @@ fn modify_supertype(
         use DataType::*;
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
-            // when then expression literals can have a different list type.
             #[cfg(feature = "dtype-categorical")]
             (Categorical(opt_rev_map, ordering), Utf8, _, AExpr::Literal(_))
             | (Utf8, Categorical(opt_rev_map, ordering), AExpr::Literal(_), _) => {
@@ -227,6 +226,7 @@ fn modify_supertype(
                     .map(|rev_map| Categorical(Some(rev_map.clone()), *ordering))
                     .unwrap_or_else(|| Categorical(None, *ordering))
             },
+            // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
             (List(inner), List(other), _, AExpr::Literal(_))
             | (List(other), List(inner), AExpr::Literal(_), _)
