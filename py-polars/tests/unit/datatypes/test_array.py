@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -24,7 +26,7 @@ def test_cast_list_array() -> None:
 
 
 def test_array_construction() -> None:
-    payload = [[1, 2, 3], [4, 2, 3]]
+    payload = [[1, 2, 3], None, [4, 2, 3]]
 
     dtype = pl.Array(pl.Int64, 3)
     s = pl.Series(payload, dtype=dtype)
@@ -33,7 +35,7 @@ def test_array_construction() -> None:
 
     # inner type
     dtype = pl.Array(pl.UInt8, 2)
-    payload = [[1, 2], [3, 4]]
+    payload = [[1, 2], None, [3, 4]]
     s = pl.Series(payload, dtype=dtype)
     assert s.dtype == dtype
     assert s.to_list() == payload
@@ -149,3 +151,19 @@ def test_array_data_type_equality() -> None:
     assert pl.Array(pl.Int64, 2) != pl.Array(pl.Int64, 3)
     assert pl.Array(pl.Int64, 2) != pl.Array(pl.Utf8, 2)
     assert pl.Array(pl.Int64, 2) != pl.List(pl.Int64)
+
+
+@pytest.mark.parametrize(
+    ("data", "inner_type"),
+    [
+        ([[1, 2], None, [3, None], [None, None]], pl.Int64),
+        ([[True, False], None, [True, None], [None, None]], pl.Boolean),
+        ([[1.0, 2.0], None, [3.0, None], [None, None]], pl.Float32),
+        ([["a", "b"], None, ["c", None], [None, None]], pl.Utf8),
+        ([[[1, 2], None], None, [[3], None], [None, None]], pl.List(pl.Int32)),
+    ],
+)
+def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
+    s = pl.Series(data, dtype=pl.List(inner_type))
+    s = s.cast(pl.Array(inner_type, 2))
+    assert s.to_list() == data
