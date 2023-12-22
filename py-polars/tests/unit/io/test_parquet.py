@@ -618,3 +618,18 @@ def test_null_parquet(tmp_path: Path) -> None:
     df.write_parquet(file_path)
     out = pl.read_parquet(file_path)
     assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk()
+def test_write_parquet_with_null_col(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df1 = pl.DataFrame({"nulls": [None] * 2, "ints": [1] * 2})
+    df2 = pl.DataFrame({"nulls": [None] * 2, "ints": [1] * 2})
+    df3 = pl.DataFrame({"nulls": [None] * 3, "ints": [1] * 3})
+    df = df1.vstack(df2)
+    df = df.vstack(df3)
+    file_path = tmp_path / "with_null.parquet"
+    df.write_parquet(file_path, row_group_size=3)
+    out = pl.read_parquet(file_path)
+    assert_frame_equal(out, df)
