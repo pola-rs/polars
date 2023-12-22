@@ -112,6 +112,17 @@ impl DataType {
         }
     }
 
+    /// Check if the whole dtype is known.
+    pub fn is_known(&self) -> bool {
+        match self {
+            DataType::List(inner) => inner.is_known(),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
+            DataType::Unknown => false,
+            _ => true,
+        }
+    }
+
     /// Get the inner data type of a nested type.
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
