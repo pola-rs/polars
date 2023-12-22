@@ -169,11 +169,7 @@ impl<'a> CoreJsonReader<'a> {
             None => {
                 let bytes: &[u8] = &reader_bytes;
                 let mut cursor = Cursor::new(bytes);
-
-                let data_type = polars_json::ndjson::infer(&mut cursor, infer_schema_len)?;
-                let schema = StructArray::get_fields(&data_type).iter().collect();
-
-                Arc::new(schema)
+                Arc::new(crate::ndjson::infer_schema(&mut cursor, infer_schema_len)?)
             },
         };
         if let Some(overwriting_schema) = schema_overwrite {
