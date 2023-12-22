@@ -1,6 +1,8 @@
 use polars_core::prelude::*;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 use polars_core::with_match_physical_numeric_polars_type;
+#[cfg(feature = "dtype-categorical")]
+use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
@@ -335,15 +337,55 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<BooleanChunked> {
+    match other.dtype() {
+        DataType::Categorical(_, _) => {
+            let (ca_in, other_in) =
+                make_categoricals_compatible(ca_in, other.categorical().unwrap())?;
+            let s = other_in.physical().clone().into_series();
+            is_in_numeric(ca_in.physical(), &s)
+        },
+        DataType::Utf8 => {
+            let ca_other = other.utf8().unwrap();
+            let categories = ca_in.get_rev_map().get_categories();
+            if ca_other.len() > categories.len() {
+                let categories_set: PlHashMap<&str, u32> = categories
+                    .values_iter()
+                    .enumerate_idx()
+                    .map(|(idx, s)| (s, idx as u32))
+                    .collect();
+
+                let idx: UInt32Chunked = ca_other
+                    .into_iter()
+                    .flatten()
+                    .map(|s| categories_set.get(s).copied())
+                    .collect();
+                let s = idx.into_series();
+
+                is_in_numeric(ca_in.physical(), &s)
+            } else {
+                let others: PlHashSet<&str> = ca_other.into_iter().flatten().collect();
+                let idx: UInt32Chunked = categories
+                    .values_iter()
+                    .enumerate_idx()
+                    .filter(|(_, s)| others.contains(s))
+                    .map(|(idx, _)| Some(idx as u32))
+                    .collect();
+                let s = idx.into_series();
+                is_in_numeric(ca_in.physical(), &s)
+            }
+        },
+        _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
+    }
+}
+
 pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_, _) => {
-            use crate::frame::join::_check_categorical_src;
-            _check_categorical_src(s.dtype(), other.dtype())?;
             let ca = s.categorical().unwrap();
-            let ca = ca.physical();
-            is_in_numeric(ca, &other.to_physical_repr())
+            is_in_cat(ca, other)
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {

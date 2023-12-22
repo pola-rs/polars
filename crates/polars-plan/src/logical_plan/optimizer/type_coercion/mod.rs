@@ -356,14 +356,8 @@ impl OptimizationRule for TypeCoercionRule {
                         data_type: type_left,
                         strict: false,
                     },
-                    // cast both local and global string cache
-                    // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, ordering), DataType::Utf8) => AExpr::Cast {
-                        expr: other_node,
-                        data_type: DataType::Categorical(None, *ordering),
-                        strict: false,
-                    },
+                    (DataType::Categorical(_, _), DataType::Utf8) => return Ok(None),
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
