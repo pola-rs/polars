@@ -251,7 +251,7 @@ def test_equality_missing_enum_none_scalar() -> None:
 
 @pytest.mark.parametrize(("op"), [operator.le, operator.lt, operator.ge, operator.gt])
 def test_compare_enum_str_single_raise(
-    op: Callable[[pl.Series, pl.Series], pl.Series]
+    op: Callable[[pl.Series, pl.Series], pl.Series],
 ) -> None:
     s = pl.Series(
         [None, "HIGH", "MEDIUM", "LOW"], dtype=pl.Enum(["LOW", "MEDIUM", "HIGH"])

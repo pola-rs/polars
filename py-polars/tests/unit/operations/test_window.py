@@ -424,3 +424,21 @@ def test_window_10417() -> None:
             pl.col("c") - pl.col("c").mean().over("a"),
         ]
     ).collect().to_dict(as_series=False) == {"a": [1], "b": [0.0], "c": [0.0]}
+
+
+def test_window_13173() -> None:
+    df = pl.DataFrame(
+        data={
+            "color": ["yellow", "yellow"],
+            "color2": [None, "light"],
+            "val": ["2", "3"],
+        }
+    )
+    assert df.with_columns(
+        pl.min("val").over(["color", "color2"]).alias("min_val_per_color")
+    ).to_dict(as_series=False) == {
+        "color": ["yellow", "yellow"],
+        "color2": [None, "light"],
+        "val": ["2", "3"],
+        "min_val_per_color": ["2", "3"],
+    }

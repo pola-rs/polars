@@ -109,6 +109,11 @@ def test_rolling_aggs(
     aggregation: str,
 ) -> None:
     assume(window_size != "")
+
+    # Testing logic can be faulty when window is more precise than time unit
+    # https://github.com/pola-rs/polars/issues/11754
+    assume(not (time_unit == "ms" and "us" in window_size))
+
     dataframe = data.draw(
         dataframes(
             [

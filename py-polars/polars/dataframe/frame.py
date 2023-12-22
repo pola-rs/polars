@@ -342,7 +342,6 @@ class DataFrame:
 
     >>> class MyDataFrame(pl.DataFrame):
     ...     pass
-    ...
     >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
     False
 
@@ -2959,7 +2958,6 @@ class DataFrame:
         ...     )
         ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
         ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
-        ...
 
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customised options (and positioning)
@@ -3939,7 +3937,6 @@ class DataFrame:
         ...     while True:
         ...         yield f"{base_name}{count}"
         ...         count += 1
-        ...
         >>> df.transpose(include_header=False, column_names=name_generator())
         shape: (2, 3)
         ┌─────────────┬─────────────┬─────────────┐
@@ -5148,7 +5145,6 @@ class DataFrame:
         --------
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
-        ...
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
         >>> df.pipe(cast_str_to_int, col_name="b")
         shape: (4, 2)
@@ -5328,7 +5324,6 @@ class DataFrame:
         >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        ...
         a
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -7992,7 +7987,6 @@ class DataFrame:
         ...     df.select(
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
         ...     )
-        ...
         shape: (3, 1)
         ┌───────────┐
         │ is_odd    │
@@ -8167,7 +8161,6 @@ class DataFrame:
         ...     df.drop("c").with_columns(
         ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
         ...     )
-        ...
         shape: (4, 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │
@@ -9866,7 +9859,6 @@ class DataFrame:
         ... )
         >>> for idx, frame in enumerate(df.iter_slices()):
         ...     print(f"{type(frame).__name__}:[{idx}]:{len(frame)}")
-        ...
         DataFrame:[0]:10000
         DataFrame:[1]:7500
 
@@ -9876,7 +9868,6 @@ class DataFrame:
         >>> for frame in df.iter_slices(n_rows=15_000):
         ...     record_batch = frame.to_arrow().to_batches()[0]
         ...     print(f"{record_batch.schema}\n<< {len(record_batch)}")
-        ...
         a: int32
         b: date32[day]
         c: large_string
@@ -10397,6 +10388,27 @@ class DataFrame:
             )
             .collect(_eager=True)
         )
+
+    def count(self) -> DataFrame:
+        """
+        Return the number of non-null elements for each column.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> df.count()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 3   ┆ 0   │
+        └─────┴─────┴─────┘
+        """
+        return self.lazy().count().collect(_eager=True)
 
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(

@@ -111,7 +111,7 @@ def _normalise_numpy_dtype(dtype: Any) -> tuple[Any, Any]:
 
 
 def numpy_values_and_dtype(
-    values: np.ndarray[Any, Any]
+    values: np.ndarray[Any, Any],
 ) -> tuple[np.ndarray[Any, Any], type]:
     """Return numpy values and their associated dtype, adjusting if required."""
     # Create new dtype object from dtype base name so architecture specific

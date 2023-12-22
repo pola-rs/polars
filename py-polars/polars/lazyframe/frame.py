@@ -891,7 +891,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
-        ...
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
@@ -1824,7 +1823,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         .agg(pl.all().sum())
         ...         .collect_async()
         ...     )
-        ...
         >>> asyncio.run(main())
         shape: (3, 3)
         ┌─────┬─────┬─────┐
@@ -2799,7 +2797,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     lf.select(
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
         ...     ).collect()
-        ...
         shape: (3, 1)
         ┌───────────┐
         │ is_odd    │
@@ -3971,7 +3968,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     lf.drop("c").with_columns(
         ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
         ...     ).collect()
-        ...
         shape: (4, 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │
@@ -5874,6 +5870,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             result = result.drop(row_count_name)
 
         return self._from_pyldf(result._ldf)
+
+    def count(self) -> Self:
+        """
+        Return the number of non-null elements for each column.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> lf.count().collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 3   ┆ 0   │
+        └─────┴─────┴─────┘
+        """
+        return self._from_pyldf(self._ldf.count())
 
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
