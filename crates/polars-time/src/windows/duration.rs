@@ -22,7 +22,7 @@ use super::calendar::{
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
-use crate::windows::calendar::{is_leap_year, last_day_of_month};
+use crate::windows::calendar::{is_leap_year, DAYS_PER_MONTH};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -387,10 +387,8 @@ impl Duration {
         }
 
         // Normalize the day if we are past the end of the month.
-        let mut last_day_of_month = last_day_of_month(month);
-        if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
-            last_day_of_month += 1;
-        }
+        let last_day_of_month =
+            DAYS_PER_MONTH[is_leap_year(year) as usize][(month - 1) as usize] as u32;
 
         if day > last_day_of_month {
             day = last_day_of_month
@@ -586,23 +584,16 @@ impl Duration {
         }
 
         // ...and translate that to how many days we need to subtract.
-        let mut days_per_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        if is_leap_year(year as i32) {
-            days_per_month[1] = 29;
-        }
+        let mut _is_leap_year = is_leap_year(year as i32) as usize;
         let mut remainder_days = (original_dt_local.day() - 1) as i64;
         while remainder_months > 0 {
             month -= 1;
             if month == 0 {
                 year -= 1;
-                if is_leap_year(year as i32) {
-                    days_per_month[1] = 29;
-                } else {
-                    days_per_month[1] = 28;
-                }
+                _is_leap_year = is_leap_year(year as i32) as usize;
                 month = 12;
             }
-            remainder_days += days_per_month[(month - 1) as usize];
+            remainder_days += DAYS_PER_MONTH[_is_leap_year][(month - 1) as usize];
             remainder_months -= 1;
         }
 
