@@ -504,8 +504,11 @@ impl OptimizationRule for SimplifyExprRule {
 }
 
 fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Option<AExpr>> {
+    if !dtype.is_known() {
+        return Ok(None);
+    }
     let lv = match (input, dtype) {
-        (AExpr::Literal(lv), _) if !matches!(dtype, DataType::Unknown) => match lv {
+        (AExpr::Literal(lv), _) => match lv {
             LiteralValue::Series(s) => {
                 let s = if strict {
                     s.strict_cast(dtype)

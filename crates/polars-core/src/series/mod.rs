@@ -297,7 +297,7 @@ impl Series {
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         // Best leave as is.
-        if matches!(dtype, DataType::Unknown) || (dtype == self.dtype() && dtype.is_primitive()) {
+        if !dtype.is_known() || (dtype == self.dtype() && dtype.is_primitive()) {
             return Ok(self.clone());
         }
         let ret = self.0.cast(dtype);
