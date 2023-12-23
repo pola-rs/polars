@@ -47,7 +47,7 @@ impl ListUtf8ChunkedBuilder {
     }
 
     #[inline]
-    pub(crate) fn append(&mut self, ca: &Utf8Chunked) {
+    pub(crate) fn append(&mut self, ca: &StringChunked) {
         if ca.is_empty() {
             self.fast_explode = false;
         }

@@ -192,8 +192,12 @@ impl ChunkZip<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkZip<Utf8Type> for Utf8Chunked {
-    fn zip_with(&self, mask: &BooleanChunked, other: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
+impl ChunkZip<Utf8Type> for StringChunked {
+    fn zip_with(
+        &self,
+        mask: &BooleanChunked,
+        other: &StringChunked,
+    ) -> PolarsResult<StringChunked> {
         unsafe {
             self.as_binary()
                 .zip_with(mask, &other.as_binary())

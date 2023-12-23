@@ -109,7 +109,7 @@ mod test {
         let result = mode_primitive(&ca).unwrap().to_vec();
         assert_eq!(result, &[Some(3.0f32)]);
 
-        let ca = Utf8Chunked::from_slice("test", &["test", "test", "test", "another test"]);
+        let ca = StringChunked::from_slice("test", &["test", "test", "test", "another test"]);
         let result = mode_primitive(&ca).unwrap();
         let vec_result4: Vec<Option<&str>> = result.into_iter().collect();
         assert_eq!(vec_result4, &[Some("test")]);

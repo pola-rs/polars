@@ -464,7 +464,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]

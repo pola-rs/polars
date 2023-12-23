@@ -178,7 +178,7 @@ pub(super) fn datetime(
 #[cfg(feature = "date_offset")]
 fn apply_offsets_to_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
-    offsets: &Utf8Chunked,
+    offsets: &StringChunked,
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Int64Chunked> {
@@ -303,7 +303,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
         Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
             result_naive.datetime().unwrap(),
             Some(tz),
-            &Utf8Chunked::from_iter(std::iter::once("raise")),
+            &StringChunked::from_iter(std::iter::once("raise")),
         )?
         .into()),
         _ => Ok(result_naive),

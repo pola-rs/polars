@@ -232,7 +232,7 @@ impl IntoGroupsProxy for BooleanChunked {
     }
 }
 
-impl IntoGroupsProxy for Utf8Chunked {
+impl IntoGroupsProxy for StringChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.as_binary().group_tuples(multithreaded, sorted)

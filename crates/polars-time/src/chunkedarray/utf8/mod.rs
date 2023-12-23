@@ -71,7 +71,7 @@ enum ParseErrorKind {
     BadFormat,
 }
 
-fn get_first_val(ca: &Utf8Chunked) -> PolarsResult<&str> {
+fn get_first_val(ca: &StringChunked) -> PolarsResult<&str> {
     let idx = ca.first_non_null().ok_or_else(|| {
         polars_err!(ComputeError:
             "unable to determine date parsing format, all values are null",
@@ -81,7 +81,7 @@ fn get_first_val(ca: &Utf8Chunked) -> PolarsResult<&str> {
 }
 
 #[cfg(feature = "dtype-datetime")]
-fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
+fn sniff_fmt_datetime(ca_utf8: &StringChunked) -> PolarsResult<&'static str> {
     let val = get_first_val(ca_utf8)?;
     datetime_pattern(val, NaiveDateTime::parse_from_str)
         .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))
@@ -89,13 +89,13 @@ fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
 }
 
 #[cfg(feature = "dtype-date")]
-fn sniff_fmt_date(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
+fn sniff_fmt_date(ca_utf8: &StringChunked) -> PolarsResult<&'static str> {
     let val = get_first_val(ca_utf8)?;
     date_pattern(val, NaiveDate::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "date"))
 }
 
 #[cfg(feature = "dtype-time")]
-fn sniff_fmt_time(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
+fn sniff_fmt_time(ca_utf8: &StringChunked) -> PolarsResult<&'static str> {
     let val = get_first_val(ca_utf8)?;
     time_pattern(val, NaiveTime::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "time"))
 }
@@ -164,7 +164,7 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         tz_aware: bool,
         tz: Option<&TimeZone>,
-        _ambiguous: &Utf8Chunked,
+        _ambiguous: &StringChunked,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
@@ -267,7 +267,7 @@ pub trait Utf8Methods: AsUtf8 {
         use_cache: bool,
         tz_aware: bool,
         tz: Option<&TimeZone>,
-        ambiguous: &Utf8Chunked,
+        ambiguous: &StringChunked,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
@@ -331,13 +331,13 @@ pub trait Utf8Methods: AsUtf8 {
 }
 
 pub trait AsUtf8 {
-    fn as_utf8(&self) -> &Utf8Chunked;
+    fn as_utf8(&self) -> &StringChunked;
 }
 
-impl AsUtf8 for Utf8Chunked {
-    fn as_utf8(&self) -> &Utf8Chunked {
+impl AsUtf8 for StringChunked {
+    fn as_utf8(&self) -> &StringChunked {
         self
     }
 }
 
-impl Utf8Methods for Utf8Chunked {}
+impl Utf8Methods for StringChunked {}

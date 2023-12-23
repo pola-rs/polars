@@ -511,8 +511,8 @@ impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
-    fn new_from_index(&self, index: usize, length: usize) -> Utf8Chunked {
+impl ChunkExpandAtIndex<Utf8Type> for StringChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> StringChunked {
         let mut out = impl_chunk_expand!(self, length, index);
         out.set_sorted_flag(IsSorted::Ascending);
         out

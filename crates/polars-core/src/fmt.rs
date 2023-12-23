@@ -199,7 +199,7 @@ impl Debug for ChunkedArray<BooleanType> {
     }
 }
 
-impl Debug for Utf8Chunked {
+impl Debug for StringChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         format_array!(f, self, "str", self.name(), "ChunkedArray")
     }
@@ -1434,7 +1434,7 @@ ChunkedArray: 'Date' [i32]
 ]"#,
             format!("{:?}", ca)
         );
-        let ca = Utf8Chunked::new("name", &["a", "b"]);
+        let ca = StringChunked::new("name", &["a", "b"]);
         assert_eq!(
             r#"shape: (2,)
 ChunkedArray: 'name' [str]

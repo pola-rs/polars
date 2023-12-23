@@ -120,7 +120,7 @@ fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
     }
 }
 
-fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
+fn arg_min_str(ca: &StringChunked) -> Option<usize> {
     if ca.is_empty() || ca.null_count() == ca.len() {
         return None;
     }
@@ -136,7 +136,7 @@ fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
     }
 }
 
-fn arg_max_str(ca: &Utf8Chunked) -> Option<usize> {
+fn arg_max_str(ca: &StringChunked) -> Option<usize> {
     if ca.is_empty() || ca.null_count() == ca.len() {
         return None;
     }

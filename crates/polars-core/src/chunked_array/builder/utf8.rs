@@ -39,7 +39,7 @@ impl Utf8ChunkedBuilder {
         self.builder.push(opt);
     }
 
-    pub fn finish(mut self) -> Utf8Chunked {
+    pub fn finish(mut self) -> StringChunked {
         let arr = self.builder.as_box();
 
         let mut ca = ChunkedArray {

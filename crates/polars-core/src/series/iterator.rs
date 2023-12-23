@@ -45,14 +45,14 @@ from_iterator!(bool, BooleanType);
 
 impl<'a> FromIterator<&'a str> for Series {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
-        let ca: Utf8Chunked = iter.into_iter().collect();
+        let ca: StringChunked = iter.into_iter().collect();
         ca.into_series()
     }
 }
 
 impl FromIterator<String> for Series {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
-        let ca: Utf8Chunked = iter.into_iter().collect();
+        let ca: StringChunked = iter.into_iter().collect();
         ca.into_series()
     }
 }

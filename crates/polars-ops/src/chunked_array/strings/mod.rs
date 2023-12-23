@@ -41,11 +41,11 @@ pub use split::*;
 pub use strip::*;
 
 pub trait AsUtf8 {
-    fn as_utf8(&self) -> &Utf8Chunked;
+    fn as_utf8(&self) -> &StringChunked;
 }
 
-impl AsUtf8 for Utf8Chunked {
-    fn as_utf8(&self) -> &Utf8Chunked {
+impl AsUtf8 for StringChunked {
+    fn as_utf8(&self) -> &StringChunked {
         self
     }
 }

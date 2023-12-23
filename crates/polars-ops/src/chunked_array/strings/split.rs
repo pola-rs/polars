@@ -7,8 +7,8 @@ use super::*;
 
 #[cfg(feature = "dtype-struct")]
 pub fn split_to_struct<'a, F, I>(
-    ca: &'a Utf8Chunked,
-    by: &'a Utf8Chunked,
+    ca: &'a StringChunked,
+    by: &'a StringChunked,
     n: usize,
     op: F,
 ) -> PolarsResult<StructChunked>
@@ -77,7 +77,7 @@ where
     StructChunked::new(ca.name(), &fields)
 }
 
-pub fn split_helper<'a, F, I>(ca: &'a Utf8Chunked, by: &'a Utf8Chunked, op: F) -> ListChunked
+pub fn split_helper<'a, F, I>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked
 where
     F: Fn(&'a str, &'a str) -> I,
     I: Iterator<Item = &'a str>,

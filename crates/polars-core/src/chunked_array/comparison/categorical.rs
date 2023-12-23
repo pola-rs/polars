@@ -153,7 +153,7 @@ impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
 
 fn cat_str_equality_helper<'a, Missing, CompareNone, CompareCat, ComparePhys, CompareString>(
     lhs: &'a CategoricalChunked,
-    rhs: &'a Utf8Chunked,
+    rhs: &'a StringChunked,
     missing_function: Missing,
     compare_to_none: CompareNone,
     cat_compare_function: CompareCat,
@@ -165,7 +165,7 @@ where
     CompareNone: Fn(&CategoricalChunked) -> BooleanChunked,
     ComparePhys: Fn(&UInt32Chunked, u32) -> BooleanChunked,
     CompareCat: Fn(&CategoricalChunked, &CategoricalChunked) -> PolarsResult<BooleanChunked>,
-    CompareString: Fn(&Utf8Chunked, &'a Utf8Chunked) -> BooleanChunked,
+    CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
     let rev_map = lhs.get_rev_map();
     if rev_map.is_enum() {
@@ -186,7 +186,7 @@ where
 
 fn cat_str_compare_helper<'a, CompareCat, ComparePhys, CompareStringSingle, CompareString>(
     lhs: &'a CategoricalChunked,
-    rhs: &'a Utf8Chunked,
+    rhs: &'a StringChunked,
     cat_compare_function: CompareCat,
     phys_compare_function: ComparePhys,
     str_single_compare_function: CompareStringSingle,
@@ -196,7 +196,7 @@ where
     CompareStringSingle: Fn(&Utf8Array<i64>, &str) -> Bitmap,
     ComparePhys: Fn(&UInt32Chunked, u32) -> BooleanChunked,
     CompareCat: Fn(&CategoricalChunked, &CategoricalChunked) -> PolarsResult<BooleanChunked>,
-    CompareString: Fn(&Utf8Chunked, &'a Utf8Chunked) -> BooleanChunked,
+    CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
     let rev_map = lhs.get_rev_map();
     if rev_map.is_enum() {
@@ -218,10 +218,10 @@ where
     }
 }
 
-impl ChunkCompare<&Utf8Chunked> for CategoricalChunked {
+impl ChunkCompare<&StringChunked> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
-    fn equal(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn equal(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_equality_helper(
             self,
             rhs,
@@ -229,10 +229,10 @@ impl ChunkCompare<&Utf8Chunked> for CategoricalChunked {
             |lhs| BooleanChunked::full_null(lhs.name(), lhs.len()),
             |s1, s2| CategoricalChunked::equal(s1, s2),
             UInt32Chunked::equal,
-            Utf8Chunked::equal,
+            StringChunked::equal,
         )
     }
-    fn equal_missing(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn equal_missing(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_equality_helper(
             self,
             rhs,
@@ -240,11 +240,11 @@ impl ChunkCompare<&Utf8Chunked> for CategoricalChunked {
             |lhs| lhs.physical().is_null(),
             |s1, s2| CategoricalChunked::equal_missing(s1, s2),
             UInt32Chunked::equal_missing,
-            Utf8Chunked::equal_missing,
+            StringChunked::equal_missing,
         )
     }
 
-    fn not_equal(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn not_equal(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_equality_helper(
             self,
             rhs,
@@ -252,10 +252,10 @@ impl ChunkCompare<&Utf8Chunked> for CategoricalChunked {
             |lhs| BooleanChunked::full_null(lhs.name(), lhs.len()),
             |s1, s2| CategoricalChunked::not_equal(s1, s2),
             UInt32Chunked::not_equal,
-            Utf8Chunked::not_equal,
+            StringChunked::not_equal,
         )
     }
-    fn not_equal_missing(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn not_equal_missing(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_equality_helper(
             self,
             rhs,
@@ -263,51 +263,51 @@ impl ChunkCompare<&Utf8Chunked> for CategoricalChunked {
             |lhs| !lhs.physical().is_null(),
             |s1, s2| CategoricalChunked::not_equal_missing(s1, s2),
             UInt32Chunked::not_equal_missing,
-            Utf8Chunked::not_equal_missing,
+            StringChunked::not_equal_missing,
         )
     }
 
-    fn gt(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn gt(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_compare_helper(
             self,
             rhs,
             |s1, s2| CategoricalChunked::gt(s1, s2),
             UInt32Chunked::gt,
             Utf8Array::tot_gt_kernel_broadcast,
-            Utf8Chunked::gt,
+            StringChunked::gt,
         )
     }
 
-    fn gt_eq(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn gt_eq(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_compare_helper(
             self,
             rhs,
             |s1, s2| CategoricalChunked::gt_eq(s1, s2),
             UInt32Chunked::gt_eq,
             Utf8Array::tot_ge_kernel_broadcast,
-            Utf8Chunked::gt_eq,
+            StringChunked::gt_eq,
         )
     }
 
-    fn lt(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn lt(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_compare_helper(
             self,
             rhs,
             |s1, s2| CategoricalChunked::lt(s1, s2),
             UInt32Chunked::lt,
             Utf8Array::tot_lt_kernel_broadcast,
-            Utf8Chunked::lt,
+            StringChunked::lt,
         )
     }
 
-    fn lt_eq(&self, rhs: &Utf8Chunked) -> Self::Item {
+    fn lt_eq(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_compare_helper(
             self,
             rhs,
             |s1, s2| CategoricalChunked::lt_eq(s1, s2),
             UInt32Chunked::lt_eq,
             Utf8Array::tot_le_kernel_broadcast,
-            Utf8Chunked::lt_eq,
+            StringChunked::lt_eq,
         )
     }
 }

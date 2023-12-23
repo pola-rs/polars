@@ -317,7 +317,7 @@ impl<T: PolarsNumericType> DatetimeInfer<T>
 where
     ChunkedArray<T>: IntoSeries,
 {
-    fn coerce_utf8(&mut self, ca: &Utf8Chunked) -> Series {
+    fn coerce_utf8(&mut self, ca: &StringChunked) -> Series {
         let chunks = ca.downcast_iter().map(|array| {
             let iter = array
                 .into_iter()
@@ -434,10 +434,10 @@ fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
 
 #[cfg(feature = "dtype-datetime")]
 pub(crate) fn to_datetime(
-    ca: &Utf8Chunked,
+    ca: &StringChunked,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _ambiguous: &Utf8Chunked,
+    _ambiguous: &StringChunked,
 ) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {
         None => Ok(Int64Chunked::full_null(ca.name(), ca.len()).into_datetime(tu, tz.cloned())),
@@ -479,7 +479,7 @@ pub(crate) fn to_datetime(
     }
 }
 #[cfg(feature = "dtype-date")]
-pub(crate) fn to_date(ca: &Utf8Chunked) -> PolarsResult<DateChunked> {
+pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
     match ca.first_non_null() {
         None => Ok(Int32Chunked::full_null(ca.name(), ca.len()).into_date()),
         Some(idx) => {

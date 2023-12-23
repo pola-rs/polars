@@ -221,7 +221,7 @@ impl ChunkAnyValue for BooleanChunked {
     }
 }
 
-impl ChunkAnyValue for Utf8Chunked {
+impl ChunkAnyValue for StringChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)

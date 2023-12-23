@@ -332,7 +332,7 @@ impl ExplodeByOffsets for ArrayChunked {
     }
 }
 
-impl ExplodeByOffsets for Utf8Chunked {
+impl ExplodeByOffsets for StringChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         unsafe {
             self.as_binary()
@@ -470,7 +470,7 @@ mod test {
             &[None, Some(true), Some(false), None]
         );
 
-        let ca = Utf8Chunked::from_slice_options("", &[None, Some("b"), Some("c")]);
+        let ca = StringChunked::from_slice_options("", &[None, Some("b"), Some("c")]);
         let out = ca.explode_by_offsets(offsets);
         assert_eq!(
             Vec::from(out.utf8().unwrap()),
@@ -520,21 +520,21 @@ mod test {
         builder.append_series(&Series::new("", &["abc"])).unwrap();
         builder
             .append_series(
-                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();
         builder.append_series(&Series::new("", &["de"])).unwrap();
         builder
             .append_series(
-                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();
         builder.append_series(&Series::new("", &["fg"])).unwrap();
         builder
             .append_series(
-                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();

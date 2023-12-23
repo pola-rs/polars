@@ -40,7 +40,7 @@ macro_rules! impl_reverse {
 }
 
 impl_reverse!(BooleanType, BooleanChunked);
-impl_reverse!(Utf8Type, Utf8Chunked);
+impl_reverse!(Utf8Type, StringChunked);
 impl_reverse!(BinaryType, BinaryChunked);
 impl_reverse!(ListType, ListChunked);
 

@@ -7,14 +7,14 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 
 pub trait PolarsTruncate {
-    fn truncate(&self, tz: Option<&Tz>, every: &Utf8Chunked, offset: &str) -> PolarsResult<Self>
+    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 #[cfg(feature = "dtype-datetime")]
 impl PolarsTruncate for DatetimeChunked {
-    fn truncate(&self, tz: Option<&Tz>, every: &Utf8Chunked, offset: &str) -> PolarsResult<Self> {
+    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self> {
         let offset = Duration::parse(offset);
 
         let func = match self.time_unit() {
@@ -50,7 +50,12 @@ impl PolarsTruncate for DatetimeChunked {
 
 #[cfg(feature = "dtype-date")]
 impl PolarsTruncate for DateChunked {
-    fn truncate(&self, _tz: Option<&Tz>, every: &Utf8Chunked, offset: &str) -> PolarsResult<Self> {
+    fn truncate(
+        &self,
+        _tz: Option<&Tz>,
+        every: &StringChunked,
+        offset: &str,
+    ) -> PolarsResult<Self> {
         let offset = Duration::parse(offset);
         let out = match every.len() {
             1 => {

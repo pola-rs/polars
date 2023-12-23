@@ -14,7 +14,7 @@ fn hamming_distance(series_a: &PyAny, series_b: &PyAny) -> PyResult<PyObject> {
     ffi::rust_series_to_py_series(&out.into_series())
 }
 
-/// This function iterates over 2 `Utf8Chunked` arrays and computes the hamming distance between the values .
+/// This function iterates over 2 `StringChunked` arrays and computes the hamming distance between the values .
 fn hamming_distance_impl(a: &Series, b: &Series) -> PolarsResult<UInt32Chunked> {
     Ok(a.utf8()?
         .into_iter()

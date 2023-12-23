@@ -123,7 +123,7 @@ impl BooleanChunked {
     }
 }
 
-impl<'a> IntoIterator for &'a Utf8Chunked {
+impl<'a> IntoIterator for &'a StringChunked {
     type Item = Option<&'a str>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
@@ -184,7 +184,7 @@ impl<'a> DoubleEndedIterator for Utf8IterNoNull<'a> {
 /// all arrays have known size.
 impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
 
-impl Utf8Chunked {
+impl StringChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
     pub fn into_no_null_iter(
@@ -650,7 +650,7 @@ mod test {
     /// # Input
     ///
     /// test_name: The name of the test to generate.
-    /// ca_type: The chunked array to use for this test. Ex: [`Utf8Chunked`], [`UInt32Chunked`] ...
+    /// ca_type: The chunked array to use for this test. Ex: [`StringChunked`], [`UInt32Chunked`] ...
     /// first_val: The first value contained in the chunked array.
     /// second_val: The second value contained in the chunked array.
     /// third_val: The third value contained in the chunked array.
@@ -701,7 +701,7 @@ mod test {
     }
 
     impl_test_iter_single_chunk!(num_iter_single_chunk, UInt32Chunked, 1, 2, 3);
-    impl_test_iter_single_chunk!(utf8_iter_single_chunk, Utf8Chunked, "a", "b", "c");
+    impl_test_iter_single_chunk!(utf8_iter_single_chunk, StringChunked, "a", "b", "c");
     impl_test_iter_single_chunk!(bool_iter_single_chunk, BooleanChunked, true, true, false);
 
     /// Generate test for [`IntoIterator`] trait for chunked arrays with just one chunk and null values.
@@ -711,7 +711,7 @@ mod test {
     /// # Input
     ///
     /// test_name: The name of the test to generate.
-    /// ca_type: The chunked array to use for this test. Ex: [`Utf8Chunked`], [`UInt32Chunked`] ...
+    /// ca_type: The chunked array to use for this test. Ex: [`StringChunked`], [`UInt32Chunked`] ...
     /// first_val: The first value contained in the chunked array. Must be an [`Option<T>`].
     /// second_val: The second value contained in the chunked array. Must be an [`Option<T>`].
     /// third_val: The third value contained in the chunked array. Must be an [`Option<T>`].
@@ -770,7 +770,7 @@ mod test {
     );
     impl_test_iter_single_chunk_null_check!(
         utf8_iter_single_chunk_null_check,
-        Utf8Chunked,
+        StringChunked,
         Some("a"),
         None,
         Some("c")
@@ -790,7 +790,7 @@ mod test {
     /// # Input
     ///
     /// test_name: The name of the test to generate.
-    /// ca_type: The chunked array to use for this test. Ex: [`Utf8Chunked`], [`UInt32Chunked`] ...
+    /// ca_type: The chunked array to use for this test. Ex: [`StringChunked`], [`UInt32Chunked`] ...
     /// first_val: The first value contained in the chunked array.
     /// second_val: The second value contained in the chunked array.
     /// third_val: The third value contained in the chunked array.
@@ -843,7 +843,7 @@ mod test {
     }
 
     impl_test_iter_many_chunk!(num_iter_many_chunk, UInt32Chunked, 1, 2, 3);
-    impl_test_iter_many_chunk!(utf8_iter_many_chunk, Utf8Chunked, "a", "b", "c");
+    impl_test_iter_many_chunk!(utf8_iter_many_chunk, StringChunked, "a", "b", "c");
     impl_test_iter_many_chunk!(bool_iter_many_chunk, BooleanChunked, true, true, false);
 
     /// Generate test for [`IntoIterator`] trait for chunked arrays with many chunk and null values.
@@ -853,7 +853,7 @@ mod test {
     /// # Input
     ///
     /// test_name: The name of the test to generate.
-    /// ca_type: The chunked array to use for this test. Ex: [`Utf8Chunked`], [`UInt32Chunked`] ...
+    /// ca_type: The chunked array to use for this test. Ex: [`StringChunked`], [`UInt32Chunked`] ...
     /// first_val: The first value contained in the chunked array. Must be an [`Option<T>`].
     /// second_val: The second value contained in the chunked array. Must be an [`Option<T>`].
     /// third_val: The third value contained in the chunked array. Must be an [`Option<T>`].
@@ -914,7 +914,7 @@ mod test {
     );
     impl_test_iter_many_chunk_null_check!(
         utf8_iter_many_chunk_null_check,
-        Utf8Chunked,
+        StringChunked,
         Some("a"),
         None,
         Some("c")
@@ -934,7 +934,7 @@ mod test {
     /// # Input
     ///
     /// test_name: The name of the test to generate.
-    /// ca_type: The chunked array to use for this test. Ex: [`Utf8Chunked`], [`UInt32Chunked`] ...
+    /// ca_type: The chunked array to use for this test. Ex: [`StringChunked`], [`UInt32Chunked`] ...
     /// first_val: The first value contained in the chunked array.
     /// second_val: The second value contained in the chunked array.
     /// third_val: The third value contained in the chunked array.
@@ -987,7 +987,7 @@ mod test {
     impl_test_no_null_iter_single_chunk!(num_no_null_iter_single_chunk, UInt32Chunked, 1, 2, 3);
     impl_test_no_null_iter_single_chunk!(
         utf8_no_null_iter_single_chunk,
-        Utf8Chunked,
+        StringChunked,
         "a",
         "b",
         "c"
@@ -1007,7 +1007,7 @@ mod test {
     /// # Input
     ///
     /// test_name: The name of the test to generate.
-    /// ca_type: The chunked array to use for this test. Ex: [`Utf8Chunked`], [`UInt32Chunked`] ...
+    /// ca_type: The chunked array to use for this test. Ex: [`StringChunked`], [`UInt32Chunked`] ...
     /// first_val: The first value contained in the chunked array.
     /// second_val: The second value contained in the chunked array.
     /// third_val: The third value contained in the chunked array.
@@ -1060,7 +1060,7 @@ mod test {
     }
 
     impl_test_no_null_iter_many_chunk!(num_no_null_iter_many_chunk, UInt32Chunked, 1, 2, 3);
-    impl_test_no_null_iter_many_chunk!(utf8_no_null_iter_many_chunk, Utf8Chunked, "a", "b", "c");
+    impl_test_no_null_iter_many_chunk!(utf8_no_null_iter_many_chunk, StringChunked, "a", "b", "c");
     impl_test_no_null_iter_many_chunk!(
         bool_no_null_iter_many_chunk,
         BooleanChunked,
@@ -1122,7 +1122,7 @@ mod test {
     }
 
     impl_test_iter_skip!(utf8_iter_single_chunk_skip, 8, Some("0"), Some("9"), {
-        Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE))
+        StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE))
     });
 
     impl_test_iter_skip!(
@@ -1130,19 +1130,19 @@ mod test {
         8,
         Some("0"),
         None,
-        { Utf8Chunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE)) }
+        { StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE)) }
     );
 
     impl_test_iter_skip!(utf8_iter_many_chunk_skip, 18, Some("0"), Some("9"), {
-        let mut a = Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
-        let a_b = Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
+        let mut a = StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
+        let a_b = StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_test_iter_skip!(utf8_iter_many_chunk_null_check_skip, 18, Some("0"), None, {
-        let mut a = Utf8Chunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
-        let a_b = Utf8Chunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
+        let mut a = StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
+        let a_b = StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });

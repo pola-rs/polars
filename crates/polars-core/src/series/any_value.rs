@@ -8,7 +8,7 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
         .collect_trusted()
 }
 
-fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<Utf8Chunked> {
+fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
     let mut builder = Utf8ChunkedBuilder::new("", avs.len(), avs.len() * 10);
 
     // amortize allocations
@@ -434,7 +434,7 @@ impl Series {
                         ),
                     }
                 } else {
-                    Utf8Chunked::full("", "", 0)
+                    StringChunked::full("", "", 0)
                 };
 
                 ca.cast(&DataType::Categorical(rev_map.clone(), *ordering))

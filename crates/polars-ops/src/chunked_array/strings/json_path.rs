@@ -41,7 +41,7 @@ pub fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a,
 pub trait Utf8JsonPathImpl: AsUtf8 {
     /// Extract json path, first match
     /// Refer to <https://goessner.net/articles/JsonPath/>
-    fn json_path_match(&self, json_path: &str) -> PolarsResult<Utf8Chunked> {
+    fn json_path_match(&self, json_path: &str) -> PolarsResult<StringChunked> {
         let pat = PathCompiled::compile(json_path)
             .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression {}", e))?;
         Ok(self
@@ -50,7 +50,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
     }
 
     /// Returns the inferred DataType for JSON values for each row
-    /// in the Utf8Chunked, with an optional number of rows to inspect.
+    /// in the StringChunked, with an optional number of rows to inspect.
     /// When None is passed for the number of rows, all rows are inspected.
     fn json_infer(&self, number_of_rows: Option<usize>) -> PolarsResult<DataType> {
         let ca = self.as_utf8();
@@ -64,7 +64,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 
-    /// Extracts a typed-JSON value for each row in the Utf8Chunked
+    /// Extracts a typed-JSON value for each row in the StringChunked
     fn json_decode(
         &self,
         dtype: Option<DataType>,
@@ -88,7 +88,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
         Series::try_from(("", array))
     }
 
-    fn json_path_select(&self, json_path: &str) -> PolarsResult<Utf8Chunked> {
+    fn json_path_select(&self, json_path: &str) -> PolarsResult<StringChunked> {
         let pat = PathCompiled::compile(json_path)
             .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression: {}", e))?;
         Ok(self
@@ -107,7 +107,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
     }
 }
 
-impl Utf8JsonPathImpl for Utf8Chunked {}
+impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {

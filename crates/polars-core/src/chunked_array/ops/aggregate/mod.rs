@@ -414,7 +414,7 @@ impl ChunkAggSeries for BooleanChunked {
     }
 }
 
-impl Utf8Chunked {
+impl StringChunked {
     pub(crate) fn max_str(&self) -> Option<&str> {
         if self.is_empty() {
             return None;
@@ -463,9 +463,9 @@ impl Utf8Chunked {
     }
 }
 
-impl ChunkAggSeries for Utf8Chunked {
+impl ChunkAggSeries for StringChunked {
     fn sum_as_series(&self) -> Series {
-        Utf8Chunked::full_null(self.name(), 1).into_series()
+        StringChunked::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {
         Series::new(self.name(), &[self.max_str()])

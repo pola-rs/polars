@@ -23,7 +23,7 @@
 //! that have to be moved.
 //!
 //! If you have a [`DataFrame`] with a large number of
-//! [`Utf8Chunked`] columns and you need to reorder them due to an
+//! [`StringChunked`] columns and you need to reorder them due to an
 //! operation like a FILTER, JOIN, GROUPBY, etc. than this can become quite expensive.
 //!
 //! ## Categorical type
@@ -32,13 +32,13 @@
 //! Thereby maintaining cache-efficiency, whilst also making it cheap to move values around.
 //!
 //! [`DataFrame`]: crate::frame::DataFrame
-//! [`Utf8Chunked`]: crate::datatypes::Utf8Chunked
+//! [`StringChunked`]: crate::datatypes::StringChunked
 //! [`CategoricalType`]: crate::datatypes::CategoricalType
 //! [`CategoricalChunked`]: crate::datatypes::CategoricalChunked
 //!
 //! ### Example: Single DataFrame
 //!
-//! In the example below we show how you can cast a [`Utf8Chunked`] column to a [`CategoricalChunked`].
+//! In the example below we show how you can cast a [`StringChunked`] column to a [`CategoricalChunked`].
 //!
 //! ```rust
 //! use polars::prelude::*;

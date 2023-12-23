@@ -18,7 +18,7 @@ impl DataFrame {
             None => Vec::<Series>::with_capacity(new_width),
             Some(name) => {
                 let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
-                tmp.push(Utf8Chunked::new(name, self.get_column_names()).into());
+                tmp.push(StringChunked::new(name, self.get_column_names()).into());
                 tmp
             },
         };

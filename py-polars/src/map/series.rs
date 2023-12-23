@@ -166,7 +166,7 @@ pub trait ApplyLambda<'a> {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked>;
+    ) -> PyResult<StringChunked>;
 
     /// Apply a lambda with list output type
     fn apply_lambda_with_list_out_type(
@@ -367,7 +367,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked> {
+    ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
@@ -663,7 +663,7 @@ where
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked> {
+    ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
@@ -817,7 +817,7 @@ where
     }
 }
 
-impl<'a> ApplyLambda<'a> for Utf8Chunked {
+impl<'a> ApplyLambda<'a> for StringChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
@@ -954,7 +954,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         lambda: &PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked> {
+    ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
@@ -1441,7 +1441,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked> {
+    ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         // get the pypolars module
         let pypolars = PyModule::import(py, "polars")?;
@@ -1920,7 +1920,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked> {
+    ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         // get the pypolars module
         let pypolars = PyModule::import(py, "polars")?;
@@ -2267,7 +2267,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked> {
+    ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
@@ -2527,7 +2527,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: Option<&str>,
-    ) -> PyResult<Utf8Chunked> {
+    ) -> PyResult<StringChunked> {
         let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
 
         let skip = usize::from(first_value.is_some());

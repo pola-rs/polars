@@ -60,8 +60,8 @@ impl ChunkShift<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkShiftFill<Utf8Type, Option<&str>> for Utf8Chunked {
-    fn shift_and_fill(&self, periods: i64, fill_value: Option<&str>) -> Utf8Chunked {
+impl ChunkShiftFill<Utf8Type, Option<&str>> for StringChunked {
+    fn shift_and_fill(&self, periods: i64, fill_value: Option<&str>) -> StringChunked {
         let ca = self.as_binary();
         unsafe {
             ca.shift_and_fill(periods, fill_value.map(|v| v.as_bytes()))
@@ -76,7 +76,7 @@ impl ChunkShiftFill<BinaryType, Option<&[u8]>> for BinaryChunked {
     }
 }
 
-impl ChunkShift<Utf8Type> for Utf8Chunked {
+impl ChunkShift<Utf8Type> for StringChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }

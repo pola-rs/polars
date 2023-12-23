@@ -416,7 +416,7 @@ mod test {
             Some("foo"),
             Some("bar"),
         ];
-        let ca = Utf8Chunked::new("a", slice);
+        let ca = StringChunked::new("a", slice);
         let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 

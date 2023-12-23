@@ -124,7 +124,7 @@ impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
+impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
         let mut builder = Utf8ChunkedBuilder::new("", len, len * 25);
@@ -389,7 +389,7 @@ impl ToPyObject for Wrap<DataType> {
                 if let Some(rev_map) = rev_map {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
                         let class = pl.getattr(intern!(py, "Enum")).unwrap();
-                        let ca = Utf8Chunked::from_iter(categories);
+                        let ca = StringChunked::from_iter(categories);
                         return class.call1((Wrap(&ca).to_object(py),)).unwrap().into();
                     }
                 }
@@ -500,7 +500,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
-                let categories = categories.extract::<Wrap<Utf8Chunked>>()?.0;
+                let categories = categories.extract::<Wrap<StringChunked>>()?.0;
                 let arr = categories.rechunk().into_series().to_arrow(0);
                 let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                 create_enum_data_type(arr.clone())
@@ -586,7 +586,7 @@ impl ToPyObject for Wrap<TimeUnit> {
     }
 }
 
-impl ToPyObject for Wrap<&Utf8Chunked> {
+impl ToPyObject for Wrap<&StringChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = self.0.into_iter();
         PyList::new(py, iter).into_py(py)

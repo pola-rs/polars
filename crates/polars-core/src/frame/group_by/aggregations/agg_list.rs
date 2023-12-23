@@ -175,7 +175,7 @@ impl AggList for BooleanChunked {
     }
 }
 
-impl AggList for Utf8Chunked {
+impl AggList for StringChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // TODO: dispatch via binary
         match groups {

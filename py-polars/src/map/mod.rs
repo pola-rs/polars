@@ -219,9 +219,9 @@ fn iterator_to_utf8<'a>(
     first_value: Option<&'a str>,
     name: &str,
     capacity: usize,
-) -> Utf8Chunked {
+) -> StringChunked {
     // SAFETY: we know the iterators len.
-    let ca: Utf8Chunked = unsafe {
+    let ca: StringChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
                 .map(|_| None)

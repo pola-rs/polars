@@ -173,7 +173,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
     }
 }
 
-impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
+impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
     fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
@@ -340,7 +340,7 @@ mod test {
         assert_eq!(Vec::from(&ca), &[Some(true), None, Some(true)]);
 
         // test utf8
-        let ca = Utf8Chunked::new("a", &["foo", "foo", "foo"]);
+        let ca = StringChunked::new("a", &["foo", "foo", "foo"]);
         let mask = BooleanChunked::new("mask", &[false, true, false]);
         let ca = ca.set(&mask, Some("bar")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("bar"), Some("foo")]);
@@ -353,7 +353,7 @@ mod test {
         let ca = ca.set(&mask, Some(2)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(2), Some(3)]);
 
-        let ca = Utf8Chunked::new("a", &[Some("foo"), None, Some("bar")]);
+        let ca = StringChunked::new("a", &[Some("foo"), None, Some("bar")]);
         let ca = ca.set(&mask, Some("foo")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("foo"), Some("bar")]);
 

@@ -44,7 +44,7 @@ impl ChunkFullNull for BooleanChunked {
     }
 }
 
-impl<'a> ChunkFull<&'a str> for Utf8Chunked {
+impl<'a> ChunkFull<&'a str> for StringChunked {
     fn full(name: &str, value: &'a str, length: usize) -> Self {
         let mut builder = Utf8ChunkedBuilder::new(name, length, length * value.len());
 
@@ -57,7 +57,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
-impl ChunkFullNull for Utf8Chunked {
+impl ChunkFullNull for StringChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = Utf8Array::new_null(DataType::String.to_arrow(), length);
         ChunkedArray::with_chunk(name, arr)

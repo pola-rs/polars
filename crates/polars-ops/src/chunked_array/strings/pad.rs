@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
-use polars_core::prelude::Utf8Chunked;
+use polars_core::prelude::StringChunked;
 
-pub(super) fn pad_end<'a>(ca: &'a Utf8Chunked, length: usize, fill_char: char) -> Utf8Chunked {
+pub(super) fn pad_end<'a>(ca: &'a StringChunked, length: usize, fill_char: char) -> StringChunked {
     // amortize allocation
     let mut buf = String::new();
     let f = |s: &'a str| {
@@ -24,7 +24,11 @@ pub(super) fn pad_end<'a>(ca: &'a Utf8Chunked, length: usize, fill_char: char) -
     ca.apply_mut(f)
 }
 
-pub(super) fn pad_start<'a>(ca: &'a Utf8Chunked, length: usize, fill_char: char) -> Utf8Chunked {
+pub(super) fn pad_start<'a>(
+    ca: &'a StringChunked,
+    length: usize,
+    fill_char: char,
+) -> StringChunked {
     // amortize allocation
     let mut buf = String::new();
     let f = |s: &'a str| {
@@ -46,7 +50,7 @@ pub(super) fn pad_start<'a>(ca: &'a Utf8Chunked, length: usize, fill_char: char)
     ca.apply_mut(f)
 }
 
-pub(super) fn zfill<'a>(ca: &'a Utf8Chunked, length: usize) -> Utf8Chunked {
+pub(super) fn zfill<'a>(ca: &'a StringChunked, length: usize) -> StringChunked {
     // amortize allocation
     let mut buf = String::new();
     let f = |s: &'a str| {

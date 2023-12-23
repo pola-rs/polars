@@ -17,7 +17,7 @@ mod test {
         let out = serde_json::from_str::<Series>(&json).unwrap();
         assert!(ca.into_series().equals_missing(&out));
 
-        let ca = Utf8Chunked::new("foo", &[Some("foo"), None, Some("bar")]);
+        let ca = StringChunked::new("foo", &[Some("foo"), None, Some("bar")]);
 
         let json = serde_json::to_string(&ca).unwrap();
 

@@ -129,7 +129,7 @@ macro_rules! impl_serialize {
     };
 }
 
-impl_serialize!(Utf8Chunked);
+impl_serialize!(StringChunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
 impl_serialize!(BinaryChunked);

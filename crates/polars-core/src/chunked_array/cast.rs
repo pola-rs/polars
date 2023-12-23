@@ -193,7 +193,7 @@ where
     }
 }
 
-impl ChunkCast for Utf8Chunked {
+impl ChunkCast for StringChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
@@ -285,17 +285,17 @@ unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
 impl BinaryChunked {
     /// # Safety
     /// Utf8 is not validated
-    pub unsafe fn to_utf8(&self) -> Utf8Chunked {
+    pub unsafe fn to_utf8(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
             .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
-        Utf8Chunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+        StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
     }
 }
 
-impl Utf8Chunked {
+impl StringChunked {
     pub fn as_binary(&self) -> BinaryChunked {
         let chunks = self
             .downcast_iter()
@@ -330,7 +330,7 @@ impl ChunkCast for BinaryChunked {
     }
 }
 
-fn boolean_to_utf8(ca: &BooleanChunked) -> Utf8Chunked {
+fn boolean_to_utf8(ca: &BooleanChunked) -> StringChunked {
     ca.into_iter()
         .map(|opt_b| match opt_b {
             Some(true) => Some("true"),
@@ -557,7 +557,7 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
-        let ca = Utf8Chunked::new("foo", &["bar", "ham"]);
+        let ca = StringChunked::new("foo", &["bar", "ham"]);
         let out = ca
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();

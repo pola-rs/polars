@@ -20,11 +20,11 @@ pub fn time_to_time64ns(time: &NaiveTime) -> i64 {
 impl TimeChunked {
     /// Convert from Time into Utf8 with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn to_string(&self, format: &str) -> Utf8Chunked {
+    pub fn to_string(&self, format: &str) -> StringChunked {
         let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
         let fmted = format!("{}", time.format(format));
 
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
+        let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
             let mut mutarr =
                 MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
@@ -53,7 +53,7 @@ impl TimeChunked {
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.
-    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+    pub fn strftime(&self, format: &str) -> StringChunked {
         self.to_string(format)
     }
 

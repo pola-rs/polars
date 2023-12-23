@@ -202,7 +202,7 @@ pub fn apply_lambda_with_utf8_out_type<'a>(
     lambda: &'a PyAny,
     init_null_count: usize,
     first_value: Option<&str>,
-) -> Utf8Chunked {
+) -> StringChunked {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         ChunkedArray::full_null("map", df.height())

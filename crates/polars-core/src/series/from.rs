@@ -82,7 +82,7 @@ impl Series {
             },
             List(_) => ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                 .into_series(),
-            String => Utf8Chunked::from_chunks(name, chunks).into_series(),
+            String => StringChunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map, ordering) => {
@@ -137,10 +137,10 @@ impl Series {
         dtype: &ArrowDataType,
     ) -> PolarsResult<Self> {
         match dtype {
-            ArrowDataType::LargeUtf8 => Ok(Utf8Chunked::from_chunks(name, chunks).into_series()),
+            ArrowDataType::LargeUtf8 => Ok(StringChunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Utf8 => {
                 let chunks = cast_chunks(&chunks, &DataType::String, false).unwrap();
-                Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
+                Ok(StringChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::LargeBinary => {
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())

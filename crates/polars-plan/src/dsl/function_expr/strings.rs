@@ -704,7 +704,7 @@ impl From<StringFunction> for FunctionExpr {
 }
 
 #[cfg(feature = "regex")]
-fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
+fn get_pat(pat: &StringChunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(
         || polars_err!(ComputeError: "pattern cannot be 'null' in 'replace' expression"),
     )
@@ -712,11 +712,11 @@ fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
 
 // used only if feature="regex"
 #[allow(dead_code)]
-fn iter_and_replace<'a, F>(ca: &'a Utf8Chunked, val: &'a Utf8Chunked, f: F) -> Utf8Chunked
+fn iter_and_replace<'a, F>(ca: &'a StringChunked, val: &'a StringChunked, f: F) -> StringChunked
 where
     F: Fn(&'a str, &'a str) -> Cow<'a, str>,
 {
-    let mut out: Utf8Chunked = ca
+    let mut out: StringChunked = ca
         .into_iter()
         .zip(val)
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
@@ -736,12 +736,12 @@ fn is_literal_pat(pat: &str) -> bool {
 
 #[cfg(feature = "regex")]
 fn replace_n<'a>(
-    ca: &'a Utf8Chunked,
-    pat: &'a Utf8Chunked,
-    val: &'a Utf8Chunked,
+    ca: &'a StringChunked,
+    pat: &'a StringChunked,
+    val: &'a StringChunked,
     literal: bool,
     n: usize,
-) -> PolarsResult<Utf8Chunked> {
+) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
@@ -797,11 +797,11 @@ fn replace_n<'a>(
 
 #[cfg(feature = "regex")]
 fn replace_all<'a>(
-    ca: &'a Utf8Chunked,
-    pat: &'a Utf8Chunked,
-    val: &'a Utf8Chunked,
+    ca: &'a StringChunked,
+    pat: &'a StringChunked,
+    val: &'a StringChunked,
     literal: bool,
-) -> PolarsResult<Utf8Chunked> {
+) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;

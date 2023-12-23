@@ -129,7 +129,7 @@ where
     }
 }
 
-impl<'a> ChunkedSet<&'a str> for &'a Utf8Chunked {
+impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<&'a str>>,

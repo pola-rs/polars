@@ -78,13 +78,13 @@ fn cast_rhs(
 pub trait ListNameSpaceImpl: AsList {
     /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
     /// single string separated by `separator`.
-    fn lst_join(&self, separator: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
+    fn lst_join(&self, separator: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         match ca.inner_dtype() {
             DataType::String => match separator.len() {
                 1 => match separator.get(0) {
                     Some(separator) => self.join_literal(separator),
-                    _ => Ok(Utf8Chunked::full_null(ca.name(), ca.len())),
+                    _ => Ok(StringChunked::full_null(ca.name(), ca.len())),
                 },
                 _ => self.join_many(separator),
             },
@@ -92,7 +92,7 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
-    fn join_literal(&self, separator: &str) -> PolarsResult<Utf8Chunked> {
+    fn join_literal(&self, separator: &str) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
@@ -122,7 +122,7 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(builder.finish())
     }
 
-    fn join_many(&self, separator: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
+    fn join_many(&self, separator: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
