@@ -86,7 +86,7 @@ impl Series {
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::String]`
     pub fn utf8(&self) -> PolarsResult<&StringChunked> {
-        unpack_chunked!(self, DataType::String => StringChunked, "Utf8")
+        unpack_chunked!(self, DataType::String => StringChunked, "String")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Binary]`
