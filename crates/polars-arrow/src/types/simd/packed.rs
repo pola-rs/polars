@@ -1,4 +1,4 @@
-pub use std::simd::{
+pub use std::simd::prelude::{
     f32x16, f32x8, f64x8, i16x32, i16x8, i32x16, i32x8, i64x8, i8x64, i8x8, mask32x16 as m32x16,
     mask64x8 as m64x8, mask8x64 as m8x64, u16x32, u16x8, u32x16, u32x8, u64x8, u8x64, u8x8,
     SimdPartialEq,
