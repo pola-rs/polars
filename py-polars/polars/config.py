@@ -62,6 +62,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
+    "POLARS_PLOTTING_BACKEND",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -757,6 +758,43 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_CELL_LIST_LEN", None)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_LIST_LEN"] = str(n)
+        return cls
+
+    @classmethod
+    def set_plotting_backend(cls, backend: str | None) -> type[Config]:
+        """
+        Set plotting backend.
+
+        Parameters
+        ----------
+        backend : str
+            Name of module to use as plotting backend.
+            This can be a third-party library, or a local module.
+            See `Dataframe Plotting API <https://github.com/data-apis/dataframe-plotting-api>`_
+            for more information on what needs to be implemented for it to be supported.
+
+            Backends currently supported:
+
+            - 'hvplot' (requires ``hvplot>=0.9.1`` package)
+            - 'plotly' (requires ``plotly>=5.16.0`` package)
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+        ...         "stock_1": [1.0, 2.0, 3.0],
+        ...         "stock_2": [1.0, 0.9, 3.5],
+        ...     }
+        ... )
+        >>> with pl.Config(plotting_backend="hvplot"):
+        ...     df.plot.line(x="date", y=["stock_1", "stock_2"])  # doctest: +SKIP
+        """
+        if backend is None:
+            os.environ.pop("POLARS_PLOTTING_BACKEND", None)
+        else:
+            os.environ["POLARS_PLOTTING_BACKEND"] = backend
         return cls
 
     @classmethod
