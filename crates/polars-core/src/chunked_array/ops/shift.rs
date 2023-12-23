@@ -65,7 +65,7 @@ impl ChunkShiftFill<StringType, Option<&str>> for StringChunked {
         let ca = self.as_binary();
         unsafe {
             ca.shift_and_fill(periods, fill_value.map(|v| v.as_bytes()))
-                .to_utf8()
+                .to_string()
         }
     }
 }

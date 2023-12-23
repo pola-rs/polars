@@ -288,8 +288,8 @@ unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
 
 impl BinaryChunked {
     /// # Safety
-    /// Utf8 is not validated
-    pub unsafe fn to_utf8(&self) -> StringChunked {
+    /// String is not validated
+    pub unsafe fn to_string(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
             .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
@@ -328,7 +328,7 @@ impl ChunkCast for BinaryChunked {
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::String => unsafe { Ok(self.to_utf8().into_series()) },
+            DataType::String => unsafe { Ok(self.to_string().into_series()) },
             _ => self.cast(data_type),
         }
     }

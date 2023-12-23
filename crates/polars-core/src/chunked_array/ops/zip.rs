@@ -201,7 +201,7 @@ impl ChunkZip<StringType> for StringChunked {
         unsafe {
             self.as_binary()
                 .zip_with(mask, &other.as_binary())
-                .map(|ca| ca.to_utf8())
+                .map(|ca| ca.to_string())
         }
     }
 }
