@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
-from polars.datatypes import Float64
+from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    Boolean,
+    Float64,
+    List,
+    Utf8,
+)
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 
@@ -112,11 +119,24 @@ def repeat(
     """
     if isinstance(n, int):
         n = F.lit(n)
-    value = parse_as_expression(value, str_as_lit=True)
+    value = parse_as_expression(value, str_as_lit=True, list_as_lit=True, dtype=dtype)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
     if eager:
         return F.select(expr).to_series()
     return expr
+
+
+# dtypes that have a reasonable one/zero mapping;
+# for anything more elaborate should use `repeat`
+_ones_zeros = {
+    Utf8: ("0", "1"),
+    Boolean: (False, True),
+    List(Utf8): (["0"], ["1"]),
+    List(Boolean): ([False], [True]),
+}
+for dtype in INTEGER_DTYPES | FLOAT_DTYPES:
+    _ones_zeros[dtype] = (0, 1)
+    _ones_zeros[List(dtype)] = ([0], [1])
 
 
 @overload
@@ -158,7 +178,7 @@ def ones(
     """
     Construct a column of length `n` filled with ones.
 
-    Syntactic sugar for `repeat(1.0, ...)`.
+    This is syntactic sugar for the `repeat` function.
 
     Parameters
     ----------
@@ -192,7 +212,14 @@ def ones(
     ]
 
     """
-    return repeat(1.0, n=n, dtype=dtype, eager=eager).alias("ones")
+    value: Any
+    if (one_zero := _ones_zeros.get(dtype)) is not None:
+        value = one_zero[1]
+    else:
+        raise TypeError(
+            f"invalid dtype for `ones`, consider using `repeat` instead; found {dtype})"
+        )
+    return repeat(value, n=n, dtype=dtype, eager=eager).alias("ones")
 
 
 @overload
@@ -234,7 +261,7 @@ def zeros(
     """
     Construct a column of length `n` filled with zeros.
 
-    Syntactic sugar for `repeat(0.0, ...)`.
+    This is syntactic sugar for the `repeat` function.
 
     Parameters
     ----------
@@ -268,4 +295,11 @@ def zeros(
     ]
 
     """
-    return repeat(0.0, n=n, dtype=dtype, eager=eager).alias("zeros")
+    value: Any
+    if (one_zero := _ones_zeros.get(dtype)) is not None:
+        value = one_zero[0]
+    else:
+        raise TypeError(
+            f"invalid dtype for `zeros`, consider using `repeat` instead; found {dtype})"
+        )
+    return repeat(value, n=n, dtype=dtype, eager=eager).alias("zeros")
