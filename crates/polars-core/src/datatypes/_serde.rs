@@ -40,8 +40,7 @@ pub enum SerializableDataType {
     Int64,
     Float32,
     Float64,
-    /// String data
-    Utf8,
+    String,
     Binary,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
@@ -80,7 +79,7 @@ impl From<&DataType> for SerializableDataType {
             Int64 => Self::Int64,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
-            String => Self::Utf8,
+            String => Self::String,
             Binary => Self::Binary,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(*tu, tz.clone()),
@@ -114,7 +113,7 @@ impl From<SerializableDataType> for DataType {
             Int64 => Self::Int64,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
-            Utf8 => Self::String,
+            String => Self::String,
             Binary => Self::Binary,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(tu, tz),

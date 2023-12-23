@@ -41,7 +41,7 @@ mod test {
     fn sample_dataframe() -> DataFrame {
         let s1 = Series::new("foo", &[1, 2, 3]);
         let s2 = Series::new("bar", &[Some(true), None, Some(false)]);
-        let s3 = Series::new("utf8", &["mouse", "elephant", "dog"]);
+        let s3 = Series::new("string", &["mouse", "elephant", "dog"]);
         let s_list = Series::new("list", &[s1.clone(), s1.clone(), s1.clone()]);
 
         DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
