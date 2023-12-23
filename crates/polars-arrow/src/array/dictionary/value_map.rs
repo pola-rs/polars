@@ -70,7 +70,6 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         })
     }
 
-    #[allow(clippy::blocks_in_conditions)]
     pub fn from_values(values: M) -> PolarsResult<Self>
     where
         M: Indexable,
@@ -123,7 +122,6 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
     }
 
     /// Try to insert a value and return its index (it may or may not get inserted).
-    #[allow(clippy::blocks_in_conditions)]
     pub fn try_push_valid<V>(
         &mut self,
         value: V,
