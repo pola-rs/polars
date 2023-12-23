@@ -33,7 +33,19 @@ pub fn replace(
         return Ok(default);
     }
 
-    let old = old.strict_cast(s.dtype())?;
+    let old = match (s.dtype(), old.dtype()) {
+        (s_dt, old_dt) if s_dt == old_dt => old.clone(),
+        (DataType::Categorical(opt_rev_map, ord), DataType::Utf8) => {
+            let dt = opt_rev_map
+                .as_ref()
+                .filter(|rev_map| rev_map.is_enum())
+                .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), *ord))
+                .unwrap_or(DataType::Categorical(None, *ord));
+
+            old.strict_cast(&dt)?
+        },
+        _ => old.strict_cast(s.dtype())?,
+    };
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
@@ -89,8 +101,12 @@ fn replace_by_multiple(
             replaced.zip_with(mask, default)
         },
         Err(_) => {
-            let mask = &replaced.is_not_null();
-            replaced.zip_with(mask, default)
+            if replaced.null_count() > 0 {
+                let mask = &replaced.is_not_null();
+                replaced.zip_with(mask, default)
+            } else {
+                Ok(replaced.clone())
+            }
         },
     }
 }
