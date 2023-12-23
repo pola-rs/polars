@@ -35,7 +35,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     } else if out.is_instance_of::<PyString>() {
         let first_value = out.extract::<&str>().unwrap();
         applyer
-            .apply_lambda_with_utf8_out_type(py, lambda, null_count, Some(first_value))
+            .apply_lambda_with_string_out_type(py, lambda, null_count, Some(first_value))
             .map(|ca| ca.into_series().into())
     } else if out.hasattr("_s")? {
         let py_pyseries = out.getattr("_s").unwrap();
@@ -159,8 +159,8 @@ pub trait ApplyLambda<'a> {
         first_value: Option<bool>,
     ) -> PyResult<ChunkedArray<BooleanType>>;
 
-    /// Apply a lambda with utf8 output type
-    fn apply_lambda_with_utf8_out_type(
+    /// Apply a lambda with string output type
+    fn apply_lambda_with_string_out_type(
         &'a self,
         py: Python,
         lambda: &'a PyAny,
@@ -361,7 +361,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         }
     }
 
-    fn apply_lambda_with_utf8_out_type(
+    fn apply_lambda_with_string_out_type(
         &'a self,
         py: Python,
         lambda: &'a PyAny,
@@ -377,7 +377,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).ok());
 
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -391,7 +391,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
                 });
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -657,7 +657,7 @@ where
         }
     }
 
-    fn apply_lambda_with_utf8_out_type(
+    fn apply_lambda_with_string_out_type(
         &'a self,
         py: Python,
         lambda: &'a PyAny,
@@ -673,7 +673,7 @@ where
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).ok());
 
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -687,7 +687,7 @@ where
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
                 });
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -839,7 +839,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
     }
 
     fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        let ca = self.apply_lambda_with_utf8_out_type(py, lambda, 0, None)?;
+        let ca = self.apply_lambda_with_string_out_type(py, lambda, 0, None)?;
         Ok(ca.into_series().into())
     }
 
@@ -948,7 +948,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
         }
     }
 
-    fn apply_lambda_with_utf8_out_type(
+    fn apply_lambda_with_string_out_type(
         &self,
         py: Python,
         lambda: &PyAny,
@@ -964,7 +964,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).ok());
 
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -978,7 +978,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
                 });
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -1435,7 +1435,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         }
     }
 
-    fn apply_lambda_with_utf8_out_type(
+    fn apply_lambda_with_string_out_type(
         &'a self,
         py: Python,
         lambda: &'a PyAny,
@@ -1464,7 +1464,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
                 });
 
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -1488,7 +1488,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
                     })
                 });
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -1914,7 +1914,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         }
     }
 
-    fn apply_lambda_with_utf8_out_type(
+    fn apply_lambda_with_string_out_type(
         &'a self,
         py: Python,
         lambda: &'a PyAny,
@@ -1943,7 +1943,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                     call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
                 });
 
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -1967,7 +1967,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
                     })
                 });
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -2261,7 +2261,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         }
     }
 
-    fn apply_lambda_with_utf8_out_type(
+    fn apply_lambda_with_string_out_type(
         &'a self,
         py: Python,
         lambda: &'a PyAny,
@@ -2277,7 +2277,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).ok());
 
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -2291,7 +2291,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
                 });
-            Ok(iterator_to_utf8(
+            Ok(iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
@@ -2521,7 +2521,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         ))
     }
 
-    fn apply_lambda_with_utf8_out_type(
+    fn apply_lambda_with_string_out_type(
         &'a self,
         py: Python,
         lambda: &'a PyAny,
@@ -2536,7 +2536,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             call_lambda_and_extract(py, lambda, arg).ok()
         });
 
-        Ok(iterator_to_utf8(
+        Ok(iterator_to_string(
             it,
             init_null_count,
             first_value,

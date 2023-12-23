@@ -213,7 +213,7 @@ fn iterator_to_object(
     ca.with_name(name)
 }
 
-fn iterator_to_utf8<'a>(
+fn iterator_to_string<'a>(
     it: impl Iterator<Item = Option<&'a str>>,
     init_null_count: usize,
     first_value: Option<&'a str>,

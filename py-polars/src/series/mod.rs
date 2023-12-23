@@ -523,7 +523,7 @@ impl PySeries {
                 Some(DataType::String) => {
                     let ca = dispatch_apply!(
                         series,
-                        apply_lambda_with_utf8_out_type,
+                        apply_lambda_with_string_out_type,
                         py,
                         lambda,
                         0,
@@ -724,7 +724,7 @@ macro_rules! impl_set_with_mask {
     };
 }
 
-impl_set_with_mask!(set_with_mask_str, &str, string, Utf8);
+impl_set_with_mask!(set_with_mask_str, &str, string, String);
 impl_set_with_mask!(set_with_mask_f64, f64, f64, Float64);
 impl_set_with_mask!(set_with_mask_f32, f32, f32, Float32);
 impl_set_with_mask!(set_with_mask_u8, u8, u8, UInt8);

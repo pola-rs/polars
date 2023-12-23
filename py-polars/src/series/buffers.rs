@@ -130,7 +130,7 @@ fn get_offsets(s: &Series) -> PyResult<PySeries> {
             let ca = s.string().unwrap();
             Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
         },
-        _ => return Err(PyValueError::new_err("expected list/utf8")),
+        _ => return Err(PyValueError::new_err("expected list/string")),
     };
     let buffers = buffers
         .map(|arr| PrimitiveArray::from_data_default(arr.buffer().clone(), None).boxed())
