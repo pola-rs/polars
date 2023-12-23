@@ -21,9 +21,9 @@ mod list;
 pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;
+mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-mod string;
 
 #[cfg(feature = "object")]
 use std::any::Any;

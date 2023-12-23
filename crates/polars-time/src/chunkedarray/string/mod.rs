@@ -100,11 +100,11 @@ fn sniff_fmt_time(ca_utf8: &StringChunked) -> PolarsResult<&'static str> {
     time_pattern(val, NaiveTime::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "time"))
 }
 
-pub trait Utf8Methods: AsUtf8 {
+pub trait StringMethods: AsString {
     #[cfg(feature = "dtype-time")]
     /// Parsing string values and return a [`TimeChunked`]
     fn as_time(&self, fmt: Option<&str>, use_cache: bool) -> PolarsResult<TimeChunked> {
-        let utf8_ca = self.as_utf8();
+        let utf8_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_time(utf8_ca)?,
@@ -124,7 +124,7 @@ pub trait Utf8Methods: AsUtf8 {
     /// Different from `as_date` this function allows matches that not contain the whole string
     /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
     fn as_date_not_exact(&self, fmt: Option<&str>) -> PolarsResult<DateChunked> {
-        let utf8_ca = self.as_utf8();
+        let utf8_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_date(utf8_ca)?,
@@ -166,7 +166,7 @@ pub trait Utf8Methods: AsUtf8 {
         tz: Option<&TimeZone>,
         _ambiguous: &StringChunked,
     ) -> PolarsResult<DatetimeChunked> {
-        let utf8_ca = self.as_utf8();
+        let utf8_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_datetime(utf8_ca)?,
@@ -226,7 +226,7 @@ pub trait Utf8Methods: AsUtf8 {
     #[cfg(feature = "dtype-date")]
     /// Parsing string values and return a [`DateChunked`]
     fn as_date(&self, fmt: Option<&str>, use_cache: bool) -> PolarsResult<DateChunked> {
-        let utf8_ca = self.as_utf8();
+        let utf8_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => return infer::to_date(utf8_ca),
@@ -269,7 +269,7 @@ pub trait Utf8Methods: AsUtf8 {
         tz: Option<&TimeZone>,
         ambiguous: &StringChunked,
     ) -> PolarsResult<DatetimeChunked> {
-        let utf8_ca = self.as_utf8();
+        let utf8_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu, tz, ambiguous),
@@ -330,14 +330,14 @@ pub trait Utf8Methods: AsUtf8 {
     }
 }
 
-pub trait AsUtf8 {
-    fn as_utf8(&self) -> &StringChunked;
+pub trait AsString {
+    fn as_string(&self) -> &StringChunked;
 }
 
-impl AsUtf8 for StringChunked {
-    fn as_utf8(&self) -> &StringChunked {
+impl AsString for StringChunked {
+    fn as_string(&self) -> &StringChunked {
         self
     }
 }
 
-impl Utf8Methods for StringChunked {}
+impl StringMethods for StringChunked {}
