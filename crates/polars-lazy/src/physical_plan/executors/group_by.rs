@@ -115,6 +115,7 @@ impl GroupByExec {
 
 impl Executor for GroupByExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        state.should_stop()?;
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

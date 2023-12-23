@@ -1,7 +1,10 @@
+mod exitable;
+
 use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
+pub use exitable::PyInProcessQuery;
 #[cfg(feature = "csv")]
 use polars::io::csv::SerializeOptions;
 use polars::io::RowCount;

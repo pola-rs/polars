@@ -52,6 +52,7 @@ from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
+from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
 from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
@@ -1581,6 +1582,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
+    @overload
     def collect(
         self,
         *,
@@ -1593,8 +1595,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        background: Literal[True],
+        _eager: bool = False,
+    ) -> InProcessQuery:
+        ...
+
+    @overload
+    def collect(
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        no_optimization: bool = False,
+        streaming: bool = False,
+        background: Literal[False] = False,
         _eager: bool = False,
     ) -> DataFrame:
+        ...
+
+    def collect(
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        no_optimization: bool = False,
+        streaming: bool = False,
+        background: bool = False,
+        _eager: bool = False,
+    ) -> DataFrame | InProcessQuery:
         """
         Materialize this LazyFrame into a DataFrame.
 
@@ -1630,6 +1668,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Use :func:`explain` to see if Polars can process the query in streaming
                 mode.
+        background
+            Run the query in the background and get a handle to the query.
+            This handle can be used to fetch the result or cancel the query.
 
         Returns
         -------
@@ -1702,6 +1743,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
             _eager,
         )
+        if background:
+            return InProcessQuery(ldf.collect_concurrently())
+
         return wrap_df(ldf.collect())
 
     @overload
