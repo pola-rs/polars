@@ -226,7 +226,6 @@ def _get_all_caller_variables() -> dict[str, Any]:
 class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
 
-    _can_attempt_rewrite: dict[str, bool]
     _map_target_name: str | None = None
 
     def __init__(self, function: Callable[[Any], Any], map_target: MapTarget):
@@ -237,7 +236,6 @@ class BytecodeParser:
             # unavailable, like a bare numpy ufunc that isn't in a lambda/function)
             original_instructions = iter([])
 
-        self._can_attempt_rewrite = {}
         self._function = function
         self._map_target = map_target
         self._param_name = self._get_param_name(function)
@@ -251,13 +249,13 @@ class BytecodeParser:
         try:
             # note: we do not parse/handle functions with > 1 params
             sig = signature(function)
-            return (
-                next(iter(parameters.keys()))
-                if len(parameters := sig.parameters) == 1
-                else None
-            )
         except ValueError:
             return None
+        return (
+            next(iter(parameters.keys()))
+            if len(parameters := sig.parameters) == 1
+            else None
+        )
 
     def _inject_nesting(
         self,
@@ -323,30 +321,22 @@ class BytecodeParser:
         guaranteed that using the equivalent bare constant value will return the
         same output. (Hopefully nobody is writing lambdas like that anyway...)
         """
-        if (
-            can_attempt_rewrite := self._can_attempt_rewrite.get(self._map_target, None)
-        ) is not None:
-            return can_attempt_rewrite
-        else:
-            self._can_attempt_rewrite[self._map_target] = False
-            if self._rewritten_instructions and self._param_name is not None:
-                self._can_attempt_rewrite[self._map_target] = (
-                    # check minimum number of ops, ensuring all are parseable
-                    len(self._rewritten_instructions) >= 2
-                    and all(
-                        inst.opname in OpNames.PARSEABLE_OPS
-                        for inst in self._rewritten_instructions
-                    )
-                    # exclude constructs/functions with multiple RETURN_VALUE ops
-                    and sum(
-                        1
-                        for inst in self.original_instructions
-                        if inst.opname == "RETURN_VALUE"
-                    )
-                    == 1
-                )
-
-        return self._can_attempt_rewrite[self._map_target]
+        return (
+            self._param_name is not None
+            # check minimum number of ops, ensuring all are parseable
+            and len(self._rewritten_instructions) >= 2
+            and all(
+                inst.opname in OpNames.PARSEABLE_OPS
+                for inst in self._rewritten_instructions
+            )
+            # exclude constructs/functions with multiple RETURN_VALUE ops
+            and sum(
+                1
+                for inst in self.original_instructions
+                if inst.opname == "RETURN_VALUE"
+            )
+            == 1
+        )
 
     def dis(self) -> None:
         """Print disassembled function bytecode."""
@@ -390,8 +380,8 @@ class BytecodeParser:
                 control_flow_blocks[jump_offset].append(inst)
 
         # convert each block to a polars expression string
+        caller_variables: dict[str, Any] = {}
         try:
-            caller_variables: dict[str, Any] = {}
             expression_strings = self._inject_nesting(
                 {
                     offset: InstructionTranslator(
@@ -407,10 +397,9 @@ class BytecodeParser:
                 },
                 logical_instructions,
             )
-            polars_expr = " ".join(expr for _offset, expr in expression_strings)
         except NotImplementedError:
-            self._can_attempt_rewrite[self._map_target] = False
             return None
+        polars_expr = " ".join(expr for _offset, expr in expression_strings)
 
         # note: if no 'pl.col' in the expression, it likely represents a compound
         # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
@@ -826,26 +815,22 @@ class RewrittenInstructions:
 
 def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
     """Identify translatable calls that aren't wrapped inside a lambda/function."""
-    try:
-        func_module = function.__class__.__module__
-        func_name = function.__name__
+    func_module = function.__class__.__module__
+    func_name = function.__name__
 
-        # numpy function calls
-        if func_module == "numpy" and func_name in _NUMPY_FUNCTIONS:
-            return "np", f"{func_name}()"
+    # numpy function calls
+    if func_module == "numpy" and func_name in _NUMPY_FUNCTIONS:
+        return "np", f"{func_name}()"
 
-        # python function calls
-        elif func_module == "builtins":
-            if func_name in _PYTHON_CASTS_MAP:
-                return "builtins", f"cast(pl.{_PYTHON_CASTS_MAP[func_name]})"
-            elif func_name == "loads":
-                import json  # double-check since it is referenced via 'builtins'
+    # python function calls
+    elif func_module == "builtins":
+        if func_name in _PYTHON_CASTS_MAP:
+            return "builtins", f"cast(pl.{_PYTHON_CASTS_MAP[func_name]})"
+        elif func_name == "loads":
+            import json  # double-check since it is referenced via 'builtins'
 
-                if function is json.loads:
-                    return "json", "str.json_decode()"
-
-    except AttributeError:
-        pass
+            if function is json.loads:
+                return "json", "str.json_decode()"
 
     return "", ""
 
