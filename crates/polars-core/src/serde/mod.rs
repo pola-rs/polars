@@ -107,7 +107,11 @@ mod test {
     #[cfg(feature = "dtype-struct")]
     fn test_serde_struct_series_owned_json() {
         let row_1 = AnyValue::StructOwned(Box::new((
-            vec![AnyValue::Utf8("1:1"), AnyValue::Null, AnyValue::Utf8("1:3")],
+            vec![
+                AnyValue::String("1:1"),
+                AnyValue::Null,
+                AnyValue::String("1:3"),
+            ],
             vec![
                 Field::new("fld_1", DataType::String),
                 Field::new("fld_2", DataType::String),
@@ -121,9 +125,9 @@ mod test {
         ]);
         let row_2 = AnyValue::StructOwned(Box::new((
             vec![
-                AnyValue::Utf8("2:1"),
-                AnyValue::Utf8("2:2"),
-                AnyValue::Utf8("2:3"),
+                AnyValue::String("2:1"),
+                AnyValue::String("2:2"),
+                AnyValue::String("2:3"),
             ],
             vec![
                 Field::new("fld_1", DataType::String),

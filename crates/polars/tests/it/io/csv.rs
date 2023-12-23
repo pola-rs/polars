@@ -103,8 +103,8 @@ fn test_parser() -> PolarsResult<()> {
         .unwrap();
 
     let col = df.column("variety").unwrap();
-    assert_eq!(col.get(0)?, AnyValue::Utf8("Setosa"));
-    assert_eq!(col.get(2)?, AnyValue::Utf8("Setosa"));
+    assert_eq!(col.get(0)?, AnyValue::String("Setosa"));
+    assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
     assert_eq!("sepal.length", df.get_columns()[0].name());
     assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
@@ -169,9 +169,9 @@ fn test_projection() -> PolarsResult<()> {
         .finish()
         .unwrap();
     let col_1 = df.select_at_idx(0).unwrap();
-    assert_eq!(col_1.get(0)?, AnyValue::Utf8("vegetables"));
-    assert_eq!(col_1.get(1)?, AnyValue::Utf8("seafood"));
-    assert_eq!(col_1.get(2)?, AnyValue::Utf8("meat"));
+    assert_eq!(col_1.get(0)?, AnyValue::String("vegetables"));
+    assert_eq!(col_1.get(1)?, AnyValue::String("seafood"));
+    assert_eq!(col_1.get(2)?, AnyValue::String("meat"));
 
     let col_2 = df.select_at_idx(1).unwrap();
     assert_eq!(col_2.get(0)?, AnyValue::Float64(0.5));
@@ -1015,7 +1015,7 @@ fn test_trailing_empty_string_cols() -> PolarsResult<()> {
 
     assert_eq!(
         df.get(1).unwrap(),
-        &[AnyValue::Utf8("xyz"), AnyValue::Utf8("mno")]
+        &[AnyValue::String("xyz"), AnyValue::String("mno")]
     );
     assert_eq!(df.get(2).unwrap(), &[AnyValue::Null, AnyValue::Null]);
 

@@ -90,7 +90,7 @@ impl LiteralValue {
             Int64(v) => AnyValue::Int64(*v),
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
-            Utf8(v) => AnyValue::Utf8(v),
+            Utf8(v) => AnyValue::String(v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, tu) => AnyValue::Duration(*v, *tu),
             #[cfg(feature = "dtype-date")]
@@ -174,7 +174,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
         match value {
             AnyValue::Null => Ok(Self::Null),
             AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
-            AnyValue::Utf8(s) => Ok(Self::Utf8(s.to_string())),
+            AnyValue::String(s) => Ok(Self::Utf8(s.to_string())),
             AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
             #[cfg(feature = "dtype-u8")]
             AnyValue::UInt8(u) => Ok(Self::UInt8(u)),

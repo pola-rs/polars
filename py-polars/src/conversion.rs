@@ -225,7 +225,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Float64(v) => v.into_py(py),
             AnyValue::Null => py.None(),
             AnyValue::Boolean(v) => v.into_py(py),
-            AnyValue::Utf8(v) => v.into_py(py),
+            AnyValue::String(v) => v.into_py(py),
             AnyValue::Utf8Owned(v) => v.into_py(py),
             AnyValue::Categorical(idx, rev, arr) => {
                 let s = if arr.is_null() {
@@ -798,7 +798,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
 
         fn get_str(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {
             let value = ob.extract::<&str>().unwrap();
-            Ok(AnyValue::Utf8(value).into())
+            Ok(AnyValue::String(value).into())
         }
 
         fn get_struct(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {

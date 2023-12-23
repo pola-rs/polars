@@ -433,9 +433,9 @@ fn take_aggregations() -> PolarsResult<()> {
         .collect()?;
 
     let s = out.column("fav_book")?;
-    assert_eq!(s.get(0)?, AnyValue::Utf8("a"));
-    assert_eq!(s.get(1)?, AnyValue::Utf8("c"));
-    assert_eq!(s.get(2)?, AnyValue::Utf8("a"));
+    assert_eq!(s.get(0)?, AnyValue::String("a"));
+    assert_eq!(s.get(1)?, AnyValue::String("c"));
+    assert_eq!(s.get(2)?, AnyValue::String("a"));
 
     let out = df
         .clone()

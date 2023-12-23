@@ -487,7 +487,7 @@ mod test {
             AnyValue::List(s) => {
                 assert!(matches!(s.dtype(), DataType::Categorical(_, _)));
                 let str_s = s.cast(&DataType::String).unwrap();
-                assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
+                assert_eq!(str_s.get(0)?, AnyValue::String("a"));
                 assert_eq!(s.len(), 1);
             },
             _ => panic!(),

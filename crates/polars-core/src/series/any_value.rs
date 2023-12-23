@@ -16,7 +16,7 @@ fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChun
 
     for av in avs {
         match av {
-            AnyValue::Utf8(s) => builder.append_value(s),
+            AnyValue::String(s) => builder.append_value(s),
             AnyValue::Utf8Owned(s) => builder.append_value(s),
             AnyValue::Null => builder.append_null(),
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => {
@@ -424,7 +424,7 @@ impl Series {
             DataType::Categorical(rev_map, ordering) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
-                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
+                        AnyValue::String(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
                             any_values_to_utf8(av, strict)?
                         },
                         _ => polars_bail!(
@@ -490,7 +490,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
         match val {
             Null => DataType::Null,
             Boolean(_) => DataType::Boolean,
-            Utf8(_) | Utf8Owned(_) => DataType::String,
+            String(_) | Utf8Owned(_) => DataType::String,
             Binary(_) | BinaryOwned(_) => DataType::Binary,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,

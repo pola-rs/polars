@@ -75,7 +75,7 @@ unsafe fn write_anyvalue(
 ) -> PolarsResult<()> {
     match value {
         // First do the string-like types as they know how to deal with quoting.
-        AnyValue::Utf8(v) => {
+        AnyValue::String(v) => {
             fmt_and_escape_str(f, v, options)?;
             Ok(())
         },

@@ -71,7 +71,7 @@ pub(super) fn shift_and_fill(args: &[Series]) -> PolarsResult<Series> {
             String => {
                 let ca = s.utf8()?;
                 let fill_value = match fill_value {
-                    AnyValue::Utf8(v) => Some(v),
+                    AnyValue::String(v) => Some(v),
                     AnyValue::Null => None,
                     v => polars_bail!(ComputeError: "fill value '{}' is not supported", v),
                 };
