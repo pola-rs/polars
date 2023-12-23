@@ -4,7 +4,7 @@ use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::frame::join::*;
 use crate::prelude::*;
-use crate::series::is_in;
+use crate::series::{is_in, is_unique};
 
 pub fn replace(
     s: &Series,
@@ -123,5 +123,15 @@ fn create_replacer(mut old: Series, mut new: Series) -> PolarsResult<DataFrame> 
         vec![old, new]
     };
     let out = DataFrame::new_no_checks(cols);
+
+    // Duplicates create extra rows in the join, which fails the subsequent zip_with
+    let out = out.unique(None, UniqueKeepStrategy::Any, None)?;
+
+    // If there are still duplicates in `old`, the replacement operation is ambiguous
+    polars_ensure!(
+        is_unique(out.column("__POLARS_REPLACE_OLD").unwrap())?.all(),
+        ComputeError: "ambiguous input to `replace` operation: multiple replacement values specified for the same value"
+    );
+
     Ok(out)
 }
