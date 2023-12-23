@@ -137,7 +137,6 @@ mod test {
     use polars_utils::idxvec;
 
     use super::*;
-    use crate::chunked_array::object::registry::register_object_builder;
 
     #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
     struct Foo {
