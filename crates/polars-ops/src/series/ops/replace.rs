@@ -4,7 +4,7 @@ use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::frame::join::*;
 use crate::prelude::*;
-use crate::series::{is_in, is_unique};
+use crate::series::is_in;
 
 pub fn replace(
     s: &Series,
@@ -99,16 +99,19 @@ fn replace_by_multiple(
         return Ok(replaced.clone());
     }
 
-    match joined.column("__POLARS_REPLACE_MASK") {
+    let out = match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {
-            let mask = col.bool()?;
+            let mask = col.bool().unwrap();
             replaced.zip_with(mask, default)
         },
         Err(_) => {
             let mask = &replaced.is_not_null();
             replaced.zip_with(mask, default)
         },
-    }
+    };
+    out.map_err(|_|
+        polars_err!(ComputeError: "ambiguous input to `replace` operation: multiple replacement values specified for the same value")
+    )
 }
 
 // Build replacer dataframe
@@ -124,14 +127,5 @@ fn create_replacer(mut old: Series, mut new: Series) -> PolarsResult<DataFrame> 
     };
     let out = DataFrame::new_no_checks(cols);
 
-    // Duplicates create extra rows in the join, which fails the subsequent zip_with
-    let out = out.unique(None, UniqueKeepStrategy::Any, None)?;
-
-    // If there are still duplicates in `old`, the replacement operation is ambiguous
-    polars_ensure!(
-        is_unique(out.column("__POLARS_REPLACE_OLD").unwrap())?.all(),
-        ComputeError: "ambiguous input to `replace` operation: multiple replacement values specified for the same value"
-    );
-
-    Ok(out)
+    out.unique(None, UniqueKeepStrategy::Any, None)
 }
