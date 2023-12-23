@@ -334,7 +334,7 @@ impl ChunkCast for BinaryChunked {
     }
 }
 
-fn boolean_to_utf8(ca: &BooleanChunked) -> StringChunked {
+fn boolean_to_string(ca: &BooleanChunked) -> StringChunked {
     ca.into_iter()
         .map(|opt_b| match opt_b {
             Some(true) => Some("true"),
@@ -348,7 +348,7 @@ impl ChunkCast for BooleanChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             DataType::String => {
-                let mut ca = boolean_to_utf8(self);
+                let mut ca = boolean_to_string(self);
                 ca.rename(self.name());
                 Ok(ca.into_series())
             },
