@@ -352,6 +352,9 @@ impl PipeLine {
                 let mut next_batches = src.get_batches(ec)?;
 
                 while let SourceResult::GotMoreData(chunks) = next_batches {
+                    // Every batches iteration we check if we must continue.
+                    ec.execution_state.should_stop()?;
+
                     let (sink_result, next_batches2) = self.par_process_chunks(
                         chunks,
                         &mut sink,
@@ -368,6 +371,9 @@ impl PipeLine {
                     }
                 }
             }
+
+            // Before we reduce we also check if we should continue.
+            ec.execution_state.should_stop()?;
 
             // The sinks have taken all chunks thread locally, now we reduce them into a single
             // result sink.
