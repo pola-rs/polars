@@ -358,7 +358,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         if pat.dtype() == &DataType::Null {
             Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim())))
         } else {
-            Ok(strip_chars(ca, pat.utf8()?))
+            Ok(strip_chars(ca, pat.string()?))
         }
     }
 
@@ -367,7 +367,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         if pat.dtype() == &DataType::Null {
             return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start())));
         } else {
-            Ok(strip_chars_start(ca, pat.utf8()?))
+            Ok(strip_chars_start(ca, pat.string()?))
         }
     }
 
@@ -376,7 +376,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         if pat.dtype() == &DataType::Null {
             return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end())));
         } else {
-            Ok(strip_chars_end(ca, pat.utf8()?))
+            Ok(strip_chars_end(ca, pat.string()?))
         }
     }
 

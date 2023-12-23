@@ -321,7 +321,7 @@ pub(super) fn cast_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
 
 pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
     let time_series = &s[0];
-    let every = s[1].utf8()?;
+    let every = s[1].string()?;
 
     let mut out = match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {

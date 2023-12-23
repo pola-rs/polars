@@ -106,7 +106,7 @@ pub trait ListNameSpaceImpl: AsList {
             let opt_val = opt_s.map(|s| {
                 // make sure that we don't write values of previous iteration
                 buf.clear();
-                let ca = s.as_ref().utf8().unwrap();
+                let ca = s.as_ref().string().unwrap();
                 let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
 
                 for val in iter {
@@ -137,7 +137,7 @@ pub trait ListNameSpaceImpl: AsList {
                         let opt_val = opt_s.map(|s| {
                             // make sure that we don't write values of previous iteration
                             buf.clear();
-                            let ca = s.as_ref().utf8().unwrap();
+                            let ca = s.as_ref().string().unwrap();
                             let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
 
                             for val in iter {

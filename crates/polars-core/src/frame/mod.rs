@@ -1652,7 +1652,7 @@ impl DataFrame {
         }
         let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
             DataType::String => {
-                let ca = s.utf8().unwrap();
+                let ca = s.string().unwrap();
                 if ca.get_values_size() / 24 <= ca.len() {
                     s.filter(mask)
                 } else {
@@ -1685,7 +1685,7 @@ impl DataFrame {
         let new_col = POOL.install(|| {
             self.try_apply_columns_par(&|s| match s.dtype() {
                 DataType::String => {
-                    let ca = s.utf8().unwrap();
+                    let ca = s.string().unwrap();
                     if ca.get_values_size() / 24 <= ca.len() {
                         s.take(indices)
                     } else {
@@ -2006,7 +2006,7 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// fn str_to_len(str_val: &Series) -> Series {
-    ///     str_val.utf8()
+    ///     str_val.string()
     ///         .unwrap()
     ///         .into_iter()
     ///         .map(|opt_name: Option<&str>| {
@@ -2128,7 +2128,7 @@ impl DataFrame {
     /// let idx = vec![0, 1, 4];
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.utf8()?
+    ///     s.string()?
     ///     .scatter_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
     /// # Ok::<(), PolarsError>(())
@@ -2194,7 +2194,7 @@ impl DataFrame {
     /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.utf8()?
+    ///     s.string()?
     ///     .set(&mask, Some("not_within_bounds"))
     /// });
     /// # Ok::<(), PolarsError>(())

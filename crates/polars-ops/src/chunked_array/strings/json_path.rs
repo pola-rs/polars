@@ -148,7 +148,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.string().unwrap();
 
         let inner_dtype = DataType::Struct(vec![Field::new("c", DataType::Int64)]);
         let expected_dtype = DataType::Struct(vec![
@@ -173,7 +173,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.string().unwrap();
 
         let expected_series = StructChunked::new(
             "",
@@ -207,7 +207,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.string().unwrap();
 
         assert!(ca
             .json_path_select("$")
@@ -249,7 +249,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.string().unwrap();
 
         let c_series = Series::new(
             "",

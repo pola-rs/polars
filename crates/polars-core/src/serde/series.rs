@@ -30,7 +30,7 @@ impl Serialize for Series {
                 ca.serialize(serializer)
             },
             DataType::String => {
-                let ca = self.utf8().unwrap();
+                let ca = self.string().unwrap();
                 ca.serialize(serializer)
             },
             #[cfg(feature = "dtype-struct")]

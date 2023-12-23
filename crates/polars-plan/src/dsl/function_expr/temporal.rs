@@ -127,7 +127,7 @@ pub(super) fn datetime(
     if _ambiguous.len() < max_len {
         _ambiguous = _ambiguous.new_from_index(0, max_len);
     }
-    let _ambiguous = _ambiguous.utf8()?;
+    let _ambiguous = _ambiguous.string()?;
 
     let ca: Int64Chunked = year
         .into_iter()
@@ -209,7 +209,7 @@ fn apply_offsets_to_datetime(
 #[cfg(feature = "date_offset")]
 pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
     let ts = &s[0];
-    let offsets = &s[1].utf8().unwrap();
+    let offsets = &s[1].string().unwrap();
 
     let preserve_sortedness: bool;
     let out = match ts.dtype() {

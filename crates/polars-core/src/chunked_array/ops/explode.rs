@@ -473,7 +473,7 @@ mod test {
         let ca = StringChunked::from_slice_options("", &[None, Some("b"), Some("c")]);
         let out = ca.explode_by_offsets(offsets);
         assert_eq!(
-            Vec::from(out.utf8().unwrap()),
+            Vec::from(out.string().unwrap()),
             &[None, Some("b"), Some("c"), None]
         );
         Ok(())
@@ -542,7 +542,7 @@ mod test {
         let ca = builder.finish();
         let exploded = ca.explode()?;
         assert_eq!(
-            Vec::from(exploded.utf8()?),
+            Vec::from(exploded.string()?),
             &[Some("abc"), None, Some("de"), None, Some("fg"), None]
         );
 

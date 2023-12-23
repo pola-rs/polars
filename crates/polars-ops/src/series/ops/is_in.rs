@@ -361,7 +361,7 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
             is_in_helper_ca(ca_in.physical(), other_in.physical())
         },
         DataType::String => {
-            let ca_other = other.utf8().unwrap();
+            let ca_other = other.string().unwrap();
             let categories = ca_in.get_rev_map().get_categories();
 
             let others: PlHashSet<&str> = ca_other.downcast_iter().flatten().flatten().collect();
@@ -400,7 +400,7 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             is_in_struct(ca, other)
         },
         DataType::String => {
-            let ca = s.utf8().unwrap();
+            let ca = s.string().unwrap();
             is_in_utf8(ca, other)
         },
         DataType::Binary => {

@@ -271,7 +271,7 @@ impl Utf8GroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.string().unwrap().downcast_iter().next().unwrap().clone();
 
         // set all bits to false
         self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
@@ -349,7 +349,7 @@ impl Sink for Utf8GroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.string().unwrap().downcast_iter().next().unwrap().clone();
 
         for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&hashes).enumerate() {
             let current_partition = self.get_partitions(h);

@@ -23,7 +23,7 @@ fn test_describe() {
     let actual = df
         .column("Logical Plan")
         .unwrap()
-        .utf8()
+        .string()
         .unwrap()
         .into_iter()
         .collect::<Vec<_>>();

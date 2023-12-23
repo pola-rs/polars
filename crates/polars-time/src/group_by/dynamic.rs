@@ -847,7 +847,7 @@ mod test {
         keys.push(time_key);
         let out = DataFrame::new(keys).unwrap();
         let g = out.column("groups").unwrap();
-        let g = g.utf8().unwrap();
+        let g = g.string().unwrap();
         let g = g.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(g, &["a", "a", "a", "a", "b", "b"]);
 

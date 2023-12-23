@@ -69,7 +69,7 @@ pub(super) fn shift_and_fill(args: &[Series]) -> PolarsResult<Series> {
                 ca.shift_and_fill(n, fill_value).into_series().cast(logical)
             },
             String => {
-                let ca = s.utf8()?;
+                let ca = s.string()?;
                 let fill_value = match fill_value {
                     AnyValue::String(v) => Some(v),
                     AnyValue::Null => None,

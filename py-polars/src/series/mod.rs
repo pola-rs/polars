@@ -724,7 +724,7 @@ macro_rules! impl_set_with_mask {
     };
 }
 
-impl_set_with_mask!(set_with_mask_str, &str, utf8, Utf8);
+impl_set_with_mask!(set_with_mask_str, &str, string, Utf8);
 impl_set_with_mask!(set_with_mask_f64, f64, f64, Float64);
 impl_set_with_mask!(set_with_mask_f32, f32, f32, Float32);
 impl_set_with_mask!(set_with_mask_u8, u8, u8, UInt8);
@@ -767,7 +767,7 @@ impl_get!(get_i8, i8, i8);
 impl_get!(get_i16, i16, i16);
 impl_get!(get_i32, i32, i32);
 impl_get!(get_i64, i64, i64);
-impl_get!(get_str, utf8, &str);
+impl_get!(get_str, string, &str);
 impl_get!(get_date, date, i32);
 impl_get!(get_datetime, datetime, i64);
 impl_get!(get_duration, duration, i64);

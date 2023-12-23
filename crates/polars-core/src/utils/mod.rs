@@ -263,7 +263,7 @@ macro_rules! match_dtype_to_logical_apply_macro {
 macro_rules! match_arrow_data_type_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
-            DataType::String => $macro_utf8!($self.utf8().unwrap() $(, $opt_args)*),
+            DataType::String => $macro_utf8!($self.string().unwrap() $(, $opt_args)*),
             DataType::Boolean => $macro_bool!($self.bool().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!($self.u8().unwrap() $(, $opt_args)*),
@@ -472,7 +472,7 @@ macro_rules! apply_method_all_arrow_series {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
             DataType::Boolean => $self.bool().unwrap().$method($($args),*),
-            DataType::String => $self.utf8().unwrap().$method($($args),*),
+            DataType::String => $self.string().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u16")]

@@ -1066,7 +1066,13 @@ mod test {
         // is equal, then, the grouped columns shall be equal and in the same order.
         for series_name in &series_names {
             assert_eq!(
-                Vec::from(&adf.column(series_name).unwrap().utf8().unwrap().sort(false)),
+                Vec::from(
+                    &adf.column(series_name)
+                        .unwrap()
+                        .string()
+                        .unwrap()
+                        .sort(false)
+                ),
                 &[Some("A"), Some("B"), Some("C")]
             );
         }

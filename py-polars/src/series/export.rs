@@ -45,7 +45,7 @@ impl PySeries {
                 }
             },
             DataType::String => {
-                let ca = s.utf8().unwrap();
+                let ca = s.string().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 Ok(np_arr.into_py(py))
             },
@@ -165,7 +165,7 @@ impl PySeries {
                         return Wrap(ca).to_object(py);
                     },
                     DataType::String => {
-                        let ca = series.utf8().unwrap();
+                        let ca = series.string().unwrap();
                         return Wrap(ca).to_object(py);
                     },
                     DataType::Struct(_) => {

@@ -688,7 +688,7 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
         .map(|s| {
             match s.dtype() {
                 DataType::String => {
-                    let ca = s.utf8().unwrap();
+                    let ca = s.string().unwrap();
                     // don't change columns that are in the fixed schema.
                     if fixed_schema.index_of(s.name()).is_some() {
                         return s;

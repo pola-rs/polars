@@ -215,7 +215,7 @@ mod test {
         let s = Series::new("a", ["a", "b", "c"]);
         let shifted = s.shift(-1);
         assert_eq!(
-            Vec::from(shifted.utf8().unwrap()),
+            Vec::from(shifted.string().unwrap()),
             &[Some("b"), Some("c"), None]
         );
     }

@@ -14,7 +14,7 @@ use crate::POOL;
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
-        DataType::String => series.utf8().unwrap().explode_and_offsets(),
+        DataType::String => series.string().unwrap().explode_and_offsets(),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(),
         _ => polars_bail!(opq = explode, series.dtype()),
@@ -377,7 +377,7 @@ mod test {
         assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(6), Some(1));
         assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(6), Some(3));
         assert_eq!(
-            exploded.column("foo").unwrap().utf8().unwrap().get(6),
+            exploded.column("foo").unwrap().string().unwrap().get(6),
             Some("g")
         );
     }
@@ -458,7 +458,7 @@ mod test {
         let melted = df.melt2(args).unwrap();
         let value = melted.column("value")?;
         // utf8 because of supertype
-        let value = value.utf8()?;
+        let value = value.string()?;
         let value = value.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(
             value,
@@ -477,7 +477,7 @@ mod test {
         let value = value.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(value, &[1, 3, 5, 10, 11, 12, 2, 4, 6]);
         let variable = melted.column("variable")?;
-        let variable = variable.utf8()?;
+        let variable = variable.string()?;
         let variable = variable.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(variable, &["B", "B", "B", "C", "C", "C", "D", "D", "D"]);
         assert!(melted.column("A").is_ok());

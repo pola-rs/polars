@@ -69,7 +69,7 @@ impl ListBuilderTrait for ListStringChunkedBuilder {
         if s.is_empty() {
             self.fast_explode = false;
         }
-        let ca = s.utf8()?;
+        let ca = s.string()?;
         self.append(ca);
         Ok(())
     }

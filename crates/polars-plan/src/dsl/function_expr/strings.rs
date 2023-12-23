@@ -373,17 +373,17 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 
 #[cfg(feature = "find_many")]
 fn contains_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let patterns = s[1].utf8()?;
+    let ca = s[0].string()?;
+    let patterns = s[1].string()?;
     polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
         .map(|out| out.into_series())
 }
 
 #[cfg(feature = "find_many")]
 fn replace_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let patterns = s[1].utf8()?;
-    let replace_with = s[2].utf8()?;
+    let ca = s[0].string()?;
+    let patterns = s[1].string()?;
+    let replace_with = s[2].string()?;
     polars_ops::chunked_array::strings::replace_all(
         ca,
         patterns,
@@ -394,49 +394,49 @@ fn replace_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Seri
 }
 
 fn uppercase(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.to_uppercase().into_series())
 }
 
 fn lowercase(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.to_lowercase().into_series())
 }
 
 #[cfg(feature = "nightly")]
 pub(super) fn titlecase(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.to_titlecase().into_series())
 }
 
 pub(super) fn len_chars(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.str_len_chars().into_series())
 }
 
 pub(super) fn len_bytes(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.str_len_bytes().into_series())
 }
 
 #[cfg(feature = "regex")]
 pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let pat = s[1].utf8()?;
+    let ca = s[0].string()?;
+    let pat = s[1].string()?;
     ca.contains_chunked(pat, literal, strict)
         .map(|ok| ok.into_series())
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?.as_binary();
-    let suffix = &s[1].utf8()?.as_binary();
+    let ca = &s[0].string()?.as_binary();
+    let suffix = &s[1].string()?.as_binary();
 
     Ok(ca.ends_with_chunked(suffix).into_series())
 }
 
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?.as_binary();
-    let prefix = &s[1].utf8()?.as_binary();
+    let ca = &s[0].string()?.as_binary();
+    let prefix = &s[1].string()?.as_binary();
 
     Ok(ca.starts_with_chunked(prefix).into_series())
 }
@@ -445,62 +445,62 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
 pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult<Series> {
     let pat = pat.to_string();
 
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     ca.extract(&pat, group_index).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "extract_groups")]
 /// Extract all capture groups from a regex pattern as a struct
 pub(super) fn extract_groups(s: &Series, pat: &str, dtype: &DataType) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     ca.extract_groups(pat, dtype)
 }
 
 #[cfg(feature = "string_pad")]
 pub(super) fn pad_start(s: &Series, length: usize, fill_char: char) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.pad_start(length, fill_char).into_series())
 }
 
 #[cfg(feature = "string_pad")]
 pub(super) fn pad_end(s: &Series, length: usize, fill_char: char) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.pad_end(length, fill_char).into_series())
 }
 
 #[cfg(feature = "string_pad")]
 pub(super) fn zfill(s: &Series, length: usize) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.zfill(length).into_series())
 }
 
 pub(super) fn strip_chars(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
+    let ca = s[0].string()?;
     let pat_s = &s[1];
     ca.strip_chars(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_chars_start(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
+    let ca = s[0].string()?;
     let pat_s = &s[1];
     ca.strip_chars_start(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_chars_end(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
+    let ca = s[0].string()?;
     let pat_s = &s[1];
     ca.strip_chars_end(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_prefix(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let prefix = s[1].utf8()?;
+    let ca = s[0].string()?;
+    let prefix = s[1].string()?;
     Ok(ca.strip_prefix(prefix).into_series())
 }
 
 pub(super) fn strip_suffix(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let suffix = s[1].utf8()?;
+    let ca = s[0].string()?;
+    let suffix = s[1].string()?;
     Ok(ca.strip_suffix(suffix).into_series())
 }
 
@@ -508,8 +508,8 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
     let pat = &args[1];
 
-    let ca = s.utf8()?;
-    let pat = pat.utf8()?;
+    let ca = s.string()?;
+    let pat = pat.string()?;
 
     if pat.len() == 1 {
         if let Some(pat) = pat.get(0) {
@@ -530,8 +530,8 @@ pub(super) fn count_matches(args: &[Series], literal: bool) -> PolarsResult<Seri
     let s = &args[0];
     let pat = &args[1];
 
-    let ca = s.utf8()?;
-    let pat = pat.utf8()?;
+    let ca = s.string()?;
+    let pat = pat.string()?;
     if pat.len() == 1 {
         if let Some(pat) = pat.get(0) {
             ca.count_matches(pat, literal).map(|ca| ca.into_series())
@@ -562,8 +562,8 @@ pub(super) fn strptime(
 
 #[cfg(feature = "dtype-struct")]
 pub(super) fn split_exact(s: &[Series], n: usize, inclusive: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let by = s[1].utf8()?;
+    let ca = s[0].string()?;
+    let by = s[1].string()?;
 
     if inclusive {
         ca.split_exact_inclusive(by, n).map(|ca| ca.into_series())
@@ -574,15 +574,15 @@ pub(super) fn split_exact(s: &[Series], n: usize, inclusive: bool) -> PolarsResu
 
 #[cfg(feature = "dtype-struct")]
 pub(super) fn splitn(s: &[Series], n: usize) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let by = s[1].utf8()?;
+    let ca = s[0].string()?;
+    let by = s[1].string()?;
 
     ca.splitn(by, n).map(|ca| ca.into_series())
 }
 
 pub(super) fn split(s: &[Series], inclusive: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let by = s[1].utf8()?;
+    let ca = s[0].string()?;
+    let by = s[1].string()?;
 
     if inclusive {
         Ok(ca.split_inclusive(by).into_series())
@@ -593,7 +593,7 @@ pub(super) fn split(s: &[Series], inclusive: bool) -> PolarsResult<Series> {
 
 #[cfg(feature = "dtype-date")]
 fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     let out = {
         if options.exact {
             ca.as_date(options.format.as_deref(), options.cache)?
@@ -617,8 +617,8 @@ fn to_datetime(
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
-    let datetime_strings = &s[0].utf8().unwrap();
-    let ambiguous = &s[1].utf8().unwrap();
+    let datetime_strings = &s[0].string().unwrap();
+    let ambiguous = &s[1].string().unwrap();
     let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
         Some(format) => TZ_AWARE_RE.is_match(format),
@@ -669,7 +669,7 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         options.exact, ComputeError: "non-exact not implemented for Time data type"
     );
 
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     let out = ca
         .as_time(options.format.as_deref(), options.cache)?
         .into_series();
@@ -683,7 +683,7 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 #[cfg(feature = "concat_str")]
 pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
     let str_s = s.cast(&DataType::String)?;
-    let concat = polars_ops::chunked_array::str_concat(str_s.utf8()?, delimiter, ignore_nulls);
+    let concat = polars_ops::chunked_array::str_concat(str_s.string()?, delimiter, ignore_nulls);
     Ok(concat.into_series())
 }
 
@@ -693,7 +693,7 @@ pub(super) fn concat_hor(series: &[Series], delimiter: &str) -> PolarsResult<Ser
         .iter()
         .map(|s| s.cast(&DataType::String))
         .collect::<PolarsResult<_>>()?;
-    let cas: Vec<_> = str_series.iter().map(|s| s.utf8().unwrap()).collect();
+    let cas: Vec<_> = str_series.iter().map(|s| s.string().unwrap()).collect();
     Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter)?.into_series())
 }
 
@@ -848,9 +848,9 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
 
     let all = n < 0;
 
-    let column = column.utf8()?;
-    let pat = pat.utf8()?;
-    let val = val.utf8()?;
+    let column = column.string()?;
+    let pat = pat.string()?;
+    let val = val.string()?;
 
     if all {
         replace_all(column, pat, val, literal)
@@ -862,48 +862,48 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
 
 #[cfg(feature = "string_reverse")]
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.str_reverse().into_series())
 }
 
 #[cfg(feature = "string_to_integer")]
 pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     ca.to_integer(base, strict).map(|ok| ok.into_series())
 }
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     Ok(ca.str_slice(start, length).into_series())
 }
 
 #[cfg(feature = "string_encoding")]
 pub(super) fn hex_encode(s: &Series) -> PolarsResult<Series> {
-    Ok(s.utf8()?.hex_encode().into_series())
+    Ok(s.string()?.hex_encode().into_series())
 }
 
 #[cfg(feature = "binary_encoding")]
 pub(super) fn hex_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
-    s.utf8()?.hex_decode(strict).map(|ca| ca.into_series())
+    s.string()?.hex_decode(strict).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "string_encoding")]
 pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
-    Ok(s.utf8()?.base64_encode().into_series())
+    Ok(s.string()?.base64_encode().into_series())
 }
 
 #[cfg(feature = "binary_encoding")]
 pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
-    s.utf8()?.base64_decode(strict).map(|ca| ca.into_series())
+    s.string()?.base64_decode(strict).map(|ca| ca.into_series())
 }
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     ca.explode()
 }
 
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     ca.to_decimal(infer_len)
 }
 
@@ -913,6 +913,6 @@ pub(super) fn json_decode(
     dtype: Option<DataType>,
     infer_schema_len: Option<usize>,
 ) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.string()?;
     ca.json_decode(dtype, infer_schema_len)
 }

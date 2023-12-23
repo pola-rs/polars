@@ -135,8 +135,8 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         DataType::String => {
-            let lhs = lhs_s.utf8().unwrap();
-            let rhs = rhs_s.utf8().unwrap();
+            let lhs = lhs_s.string().unwrap();
+            let rhs = rhs_s.string().unwrap();
 
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
