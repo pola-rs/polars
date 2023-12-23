@@ -52,7 +52,7 @@ impl Hash for Key {
 // those indexes point into the keys buffer and the values buffer
 // the keys buffer are buffers of AnyValue per partition
 // and the values are buffer of Aggregation functions per partition
-pub struct Utf8GroupbySink {
+pub struct StringGroupbySink {
     thread_no: usize,
     // idx is the offset in the array with keys
     // idx is the offset in the array with aggregators
@@ -83,7 +83,7 @@ pub struct Utf8GroupbySink {
     ooc_state: OocState,
 }
 
-impl Utf8GroupbySink {
+impl StringGroupbySink {
     pub(crate) fn new(
         key_column: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -324,7 +324,7 @@ impl Utf8GroupbySink {
     }
 }
 
-impl Sink for Utf8GroupbySink {
+impl Sink for StringGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         if chunk.is_empty() {
             return Ok(SinkResult::CanHaveMoreInput);
@@ -516,7 +516,7 @@ impl Sink for Utf8GroupbySink {
         self
     }
     fn fmt(&self) -> &str {
-        "utf8_group_by"
+        "string_group_by"
     }
 }
 

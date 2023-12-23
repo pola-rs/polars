@@ -8,7 +8,7 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
         .collect_trusted()
 }
 
-fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
+fn any_values_to_string(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
     let mut builder = StringChunkedBuilder::new("", avs.len(), avs.len() * 10);
 
     // amortize allocations
@@ -21,13 +21,13 @@ fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChun
             AnyValue::Null => builder.append_null(),
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
                 }
                 builder.append_null()
             },
             av => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
                 }
                 owned.clear();
                 write!(owned, "{av}").unwrap();
@@ -285,7 +285,7 @@ impl Series {
             DataType::UInt64 => any_values_to_primitive::<UInt64Type>(av).into_series(),
             DataType::Float32 => any_values_to_primitive::<Float32Type>(av).into_series(),
             DataType::Float64 => any_values_to_primitive::<Float64Type>(av).into_series(),
-            DataType::String => any_values_to_utf8(av, strict)?.into_series(),
+            DataType::String => any_values_to_string(av, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(av).into_series(),
             DataType::Boolean => any_values_to_bool(av).into_series(),
             #[cfg(feature = "dtype-date")]
@@ -425,7 +425,7 @@ impl Series {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
                         AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
-                            any_values_to_utf8(av, strict)?
+                            any_values_to_string(av, strict)?
                         },
                         _ => polars_bail!(
                              ComputeError:

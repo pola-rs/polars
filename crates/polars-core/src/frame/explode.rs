@@ -457,7 +457,7 @@ mod test {
 
         let melted = df.melt2(args).unwrap();
         let value = melted.column("value")?;
-        // utf8 because of supertype
+        // String because of supertype
         let value = value.string()?;
         let value = value.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(

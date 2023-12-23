@@ -30,7 +30,7 @@ impl DateChunked {
         Int32Chunked::from_vec(name, unit).into()
     }
 
-    /// Convert from Date into Utf8 with the given format.
+    /// Convert from Date into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> StringChunked {
         let date = NaiveDate::from_ymd_opt(2001, 1, 1).unwrap();
@@ -60,7 +60,7 @@ impl DateChunked {
         ca
     }
 
-    /// Convert from Date into Utf8 with the given format.
+    /// Convert from Date into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.

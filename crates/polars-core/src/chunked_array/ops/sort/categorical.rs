@@ -84,7 +84,7 @@ impl CategoricalChunked {
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl
-            // as bytes already is used for binary and utf8 sorting
+            // as bytes already is used for binary and string sorting
             let vals: Vec<_> = self
                 .iter_str()
                 .map(|v| {

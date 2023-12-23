@@ -61,7 +61,7 @@ pub(crate) fn get_file_chunks(
 /// Infer the data type of a record
 fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
-    // Utf8 for them
+    // String for them
     if string.starts_with('"') {
         if try_parse_dates {
             #[cfg(feature = "polars-time")]
@@ -414,7 +414,7 @@ pub fn infer_file_schema_inner(
                         DataType::Datetime(TimeUnit::Microseconds, None),
                     ));
                 } else {
-                    // default to Utf8 for conflicting datatypes (e.g bool and int)
+                    // default to String for conflicting datatypes (e.g bool and int)
                     fields.push(Field::new(field_name, DataType::String));
                 }
             },

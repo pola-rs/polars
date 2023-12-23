@@ -515,7 +515,7 @@ mod test {
             &[Some(1), None, Some(2), None, Some(3), Some(4)]
         );
 
-        // utf8
+        // string
         let mut builder = get_list_builder(&DataType::String, 5, 5, "a")?;
         builder.append_series(&Series::new("", &["abc"])).unwrap();
         builder

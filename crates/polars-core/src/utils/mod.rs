@@ -208,9 +208,9 @@ pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, us
 /// Apply a macro on the Series
 #[macro_export]
 macro_rules! match_dtype_to_physical_apply_macro {
-    ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+    ($obj:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
-            DataType::String => $macro_utf8!($($opt_args)*),
+            DataType::String => $macro_string!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!(u8 $(, $opt_args)*),
@@ -234,9 +234,9 @@ macro_rules! match_dtype_to_physical_apply_macro {
 /// Apply a macro on the Series
 #[macro_export]
 macro_rules! match_dtype_to_logical_apply_macro {
-    ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+    ($obj:expr, $macro:ident, $macro_string:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
-            DataType::String => $macro_utf8!($($opt_args)*),
+            DataType::String => $macro_string!($($opt_args)*),
             DataType::Binary => $macro_binary!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
@@ -261,9 +261,9 @@ macro_rules! match_dtype_to_logical_apply_macro {
 /// Apply a macro on the Downcasted ChunkedArray's
 #[macro_export]
 macro_rules! match_arrow_data_type_apply_macro_ca {
-    ($self:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+    ($self:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
-            DataType::String => $macro_utf8!($self.string().unwrap() $(, $opt_args)*),
+            DataType::String => $macro_string!($self.string().unwrap() $(, $opt_args)*),
             DataType::Boolean => $macro_bool!($self.bool().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!($self.u8().unwrap() $(, $opt_args)*),
@@ -518,7 +518,7 @@ macro_rules! apply_method_physical_integer {
     }
 }
 
-// doesn't include Bool and Utf8
+// doesn't include Bool and String
 #[macro_export]
 macro_rules! apply_method_physical_numeric {
     ($self:expr, $method:ident, $($args:expr),*) => {

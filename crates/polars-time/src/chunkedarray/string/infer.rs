@@ -317,7 +317,7 @@ impl<T: PolarsNumericType> DatetimeInfer<T>
 where
     ChunkedArray<T>: IntoSeries,
 {
-    fn coerce_utf8(&mut self, ca: &StringChunked) -> Series {
+    fn coerce_string(&mut self, ca: &StringChunked) -> Series {
         let chunks = ca.downcast_iter().map(|array| {
             let iter = array
                 .into_iter()
@@ -458,12 +458,12 @@ pub(crate) fn to_datetime(
             }
             match pattern {
                 #[cfg(feature = "timezones")]
-                Pattern::DatetimeYMDZ => infer.coerce_utf8(ca).datetime().map(|ca| {
+                Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
                     polars_ops::prelude::replace_time_zone(&ca, Some("UTC"), _ambiguous)
                 })?,
-                _ => infer.coerce_utf8(ca).datetime().map(|ca| {
+                _ => infer.coerce_string(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
                     match tz {
@@ -489,7 +489,7 @@ pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
-            infer.coerce_utf8(ca).date().cloned()
+            infer.coerce_string(ca).date().cloned()
         },
     }
 }

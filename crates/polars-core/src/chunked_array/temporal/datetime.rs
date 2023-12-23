@@ -91,7 +91,7 @@ impl DatetimeChunked {
         }
     }
 
-    /// Convert from Datetime into Utf8 with the given format.
+    /// Convert from Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
         #[cfg(feature = "timezones")]
@@ -140,7 +140,7 @@ impl DatetimeChunked {
         Ok(ca)
     }
 
-    /// Convert from Datetime into Utf8 with the given format.
+    /// Convert from Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.

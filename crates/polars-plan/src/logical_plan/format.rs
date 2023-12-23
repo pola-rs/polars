@@ -256,7 +256,7 @@ impl Debug for Expr {
                 match v {
                     LiteralValue::String(v) => {
                         // dot breaks with debug fmt due to \"
-                        write!(f, "Utf8({v})")
+                        write!(f, "String({v})")
                     },
                     _ => {
                         write!(f, "{v:?}")

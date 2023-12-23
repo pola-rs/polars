@@ -600,7 +600,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_categorical_utf8() {
+    fn test_categorical_string() {
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
         let optimizer = StackOptimizer {};
@@ -623,7 +623,7 @@ mod test {
             .unwrap();
         let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-        // we test that the fruits column is not casted to utf8 for the comparison
+        // we test that the fruits column is not cast to string for the comparison
         if let LogicalPlan::Projection { expr, .. } = lp {
             assert_eq!(expr, expr_in);
         };
@@ -638,7 +638,7 @@ mod test {
             .unwrap();
         let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-        // we test that the fruits column is casted to utf8 for the addition
+        // we test that the fruits column is cast to string for the addition
         let expected = vec![col("fruits").cast(DataType::String) + lit("somestr")];
         if let LogicalPlan::Projection { expr, .. } = lp {
             assert_eq!(expr, expected);

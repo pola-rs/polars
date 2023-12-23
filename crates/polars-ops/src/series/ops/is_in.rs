@@ -94,7 +94,7 @@ where
     }
 }
 
-fn is_in_utf8(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanChunked> {
+fn is_in_string(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::List(dt) if matches!(&**dt, DataType::Categorical(_, _)) => {
@@ -401,7 +401,7 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
         },
         DataType::String => {
             let ca = s.string().unwrap();
-            is_in_utf8(ca, other)
+            is_in_string(ca, other)
         },
         DataType::Binary => {
             let ca = s.binary().unwrap();

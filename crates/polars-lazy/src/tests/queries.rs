@@ -1363,7 +1363,7 @@ fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
 fn test_categorical_addition() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    // test if we can do that arithmetic operation with utf8 and categorical
+    // test if we can do that arithmetic operation with String and Categorical
     let out = df
         .lazy()
         .select([

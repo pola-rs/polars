@@ -3116,7 +3116,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_filter_broadcast_on_utf8_col() {
+    fn test_filter_broadcast_on_string_col() {
         let col_name = "some_col";
         let v = vec!["test".to_string()];
         let s0 = Series::new(col_name, v);

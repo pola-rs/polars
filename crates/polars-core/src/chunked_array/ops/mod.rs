@@ -87,7 +87,7 @@ pub trait ChunkAnyValue {
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
 }
 
-/// Explode/ flatten a List or Utf8 Series
+/// Explode/flatten a List or String Series
 pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)

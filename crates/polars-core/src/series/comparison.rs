@@ -80,13 +80,13 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     {
         let mismatch = matches!(left, String | Categorical(_, _)) && right.is_numeric()
             || left.is_numeric() && matches!(right, String | Categorical(_, _));
-        polars_ensure!(!mismatch, ComputeError: "cannot compare utf-8 with numeric data");
+        polars_ensure!(!mismatch, ComputeError: "cannot compare string with numeric data");
     }
     #[cfg(not(feature = "dtype-categorical"))]
     {
-        let mismatch = matches!(left, Utf8) && right.is_numeric()
-            || left.is_numeric() && matches!(right, Utf8);
-        polars_ensure!(!mismatch, ComputeError: "cannot compare utf-8 with numeric data");
+        let mismatch = matches!(left, String) && right.is_numeric()
+            || left.is_numeric() && matches!(right, String);
+        polars_ensure!(!mismatch, ComputeError: "cannot compare string with numeric data");
     }
     Ok(())
 }

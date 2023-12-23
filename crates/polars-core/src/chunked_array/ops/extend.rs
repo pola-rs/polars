@@ -255,7 +255,7 @@ mod test {
     }
 
     #[test]
-    fn test_extend_utf8() {
+    fn test_extend_string() {
         let mut ca = StringChunked::new("a", &["a", "b", "c"]);
         let to_append = StringChunked::new("a", &["a", "b", "e"]);
 

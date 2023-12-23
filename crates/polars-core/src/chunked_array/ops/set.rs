@@ -341,7 +341,7 @@ mod test {
         let ca = ca.set(&mask, None).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(true), None, Some(true)]);
 
-        // test utf8
+        // test string
         let ca = StringChunked::new("a", &["foo", "foo", "foo"]);
         let mask = BooleanChunked::new("mask", &[false, true, false]);
         let ca = ca.set(&mask, Some("bar")).unwrap();

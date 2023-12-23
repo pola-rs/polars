@@ -63,7 +63,7 @@ impl Series {
                         ChunkedArray::<BooleanType>::full_null(name, size).into_series()
                     }};
                 }
-                macro_rules! utf8 {
+                macro_rules! string {
                     () => {{
                         ChunkedArray::<StringType>::full_null(name, size).into_series()
                     }};
@@ -73,7 +73,7 @@ impl Series {
                         ChunkedArray::<BinaryType>::full_null(name, size).into_series()
                     }};
                 }
-                match_dtype_to_logical_apply_macro!(dtype, primitive, utf8, binary, bool)
+                match_dtype_to_logical_apply_macro!(dtype, primitive, string, binary, bool)
             },
         }
     }

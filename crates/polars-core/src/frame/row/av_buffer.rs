@@ -453,7 +453,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type
     /// belonging to [`Self`]. This should only be used with physical buffers
     ///
-    /// If a type is not primitive or utf8, the anyvalue will be converted to static
+    /// If a type is not primitive or String, the anyvalue will be converted to static
     ///
     /// # Safety
     /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is owned.

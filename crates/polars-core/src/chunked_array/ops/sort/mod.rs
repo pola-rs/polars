@@ -740,7 +740,7 @@ mod test {
     }
 
     #[test]
-    fn test_sort_utf8() {
+    fn test_sort_string() {
         let ca = StringChunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
         let out = ca.sort_with(SortOptions {
             descending: false,

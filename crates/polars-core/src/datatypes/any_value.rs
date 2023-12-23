@@ -121,10 +121,10 @@ impl Serialize for AnyValue<'_> {
             AnyValue::Float64(v) => serializer.serialize_newtype_variant(name, 10, "Float64", v),
             AnyValue::List(v) => serializer.serialize_newtype_variant(name, 11, "List", v),
             AnyValue::Boolean(v) => serializer.serialize_newtype_variant(name, 12, "Bool", v),
-            // both utf8 variants same number
-            AnyValue::String(v) => serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v),
+            // both string variants same number
+            AnyValue::String(v) => serializer.serialize_newtype_variant(name, 13, "StringOwned", v),
             AnyValue::StringOwned(v) => {
-                serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v.as_str())
+                serializer.serialize_newtype_variant(name, 13, "StringOwned", v.as_str())
             },
             AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
             AnyValue::BinaryOwned(v) => {
