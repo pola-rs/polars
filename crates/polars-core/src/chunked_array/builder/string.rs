@@ -8,7 +8,7 @@ pub struct StringChunkedBuilder {
 }
 
 impl StringChunkedBuilder {
-    /// Create a new UtfChunkedBuilder
+    /// Create a new StringChunkedBuilder
     ///
     /// # Arguments
     ///
