@@ -38,7 +38,7 @@ pub enum AnyValueBuffer<'a> {
     Time(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
-    Utf8(StringChunkedBuilder),
+    String(StringChunkedBuilder),
     Null(NullChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
@@ -66,9 +66,9 @@ impl<'a> AnyValueBuffer<'a> {
             (Float64(builder), AnyValue::Null) => builder.append_null(),
             (Float32(builder), val) => builder.append_value(val.extract()?),
             (Float64(builder), val) => builder.append_value(val.extract()?),
-            (Utf8(builder), AnyValue::String(v)) => builder.append_value(v),
-            (Utf8(builder), AnyValue::StringOwned(v)) => builder.append_value(v),
-            (Utf8(builder), AnyValue::Null) => builder.append_null(),
+            (String(builder), AnyValue::String(v)) => builder.append_value(v),
+            (String(builder), AnyValue::StringOwned(v)) => builder.append_value(v),
+            (String(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-i8")]
             (Int8(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-i8")]
@@ -114,7 +114,7 @@ impl<'a> AnyValueBuffer<'a> {
             (All(_, vals), v) => vals.push(v),
 
             // dynamic types
-            (Utf8(builder), av) => match av {
+            (String(builder), av) => match av {
                 AnyValue::Int64(v) => builder.append_value(&format!("{v}")),
                 AnyValue::Float64(v) => builder.append_value(&format!("{v}")),
                 AnyValue::Boolean(true) => builder.append_value("true"),
@@ -204,7 +204,7 @@ impl<'a> AnyValueBuffer<'a> {
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
-            Utf8(b) => {
+            String(b) => {
                 let avg_values_len = b
                     .builder
                     .values()
@@ -294,7 +294,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
-            String => AnyValueBuffer::Utf8(StringChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBuffer::String(StringChunkedBuilder::new("", len, len * 5)),
             Null => AnyValueBuffer::Null(NullChunkedBuilder::new("", 0)),
             // Struct and List can be recursive so use anyvalues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
@@ -320,7 +320,7 @@ pub enum AnyValueBufferTrusted<'a> {
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
-    Utf8(StringChunkedBuilder),
+    String(StringChunkedBuilder),
     #[cfg(feature = "dtype-struct")]
     // not the trusted variant!
     Struct(Vec<(AnyValueBuffer<'a>, SmartString)>),
@@ -352,7 +352,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             UInt64(builder) => builder.append_null(),
             Float32(builder) => builder.append_null(),
             Float64(builder) => builder.append_null(),
-            Utf8(builder) => builder.append_null(),
+            String(builder) => builder.append_null(),
             #[cfg(feature = "dtype-struct")]
             Struct(builders) => {
                 for (b, _) in builders.iter_mut() {
@@ -464,7 +464,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             AnyValue::Null => self.add_null(),
             _ => {
                 match self {
-                    Utf8(builder) => {
+                    String(builder) => {
                         let AnyValue::StringOwned(v) = val else {
                             unreachable_unchecked_release!()
                         };
@@ -503,7 +503,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             AnyValue::Null => self.add_null(),
             _ => {
                 match self {
-                    Utf8(builder) => {
+                    String(builder) => {
                         let AnyValue::String(v) = val else {
                             unreachable_unchecked_release!()
                         };
@@ -573,7 +573,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
-            Utf8(b) => {
+            String(b) => {
                 let avg_values_len =
                     (b.builder.values().len() as f64) / ((b.builder.capacity() + 1) as f64) + 1.0;
                 // alloc some extra to reduce realloc prob.
@@ -656,7 +656,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
             UInt16 => AnyValueBufferTrusted::UInt16(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBufferTrusted::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBufferTrusted::Float64(PrimitiveChunkedBuilder::new("", len)),
-            String => AnyValueBufferTrusted::Utf8(StringChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBufferTrusted::String(StringChunkedBuilder::new("", len, len * 5)),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let buffers = fields

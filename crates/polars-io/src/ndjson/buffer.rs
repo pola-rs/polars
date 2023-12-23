@@ -93,7 +93,7 @@ impl Buffer<'_> {
                 Ok(())
             },
 
-            Utf8(buf) => {
+            String(buf) => {
                 match value {
                     Value::String(v) => buf.append_value(v),
                     _ => buf.append_null(),
