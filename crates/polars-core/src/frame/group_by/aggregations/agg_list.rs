@@ -181,7 +181,7 @@ impl AggList for StringChunked {
         match groups {
             GroupsProxy::Idx(groups) => {
                 let mut builder =
-                    ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
+                    ListStringChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
                     let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
@@ -190,7 +190,7 @@ impl AggList for StringChunked {
             },
             GroupsProxy::Slice { groups, .. } => {
                 let mut builder =
-                    ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
+                    ListStringChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for [first, len] in groups {
                     let ca = self.slice(*first as i64, *len as usize);
                     builder.append(&ca)

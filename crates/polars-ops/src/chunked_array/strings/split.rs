@@ -85,7 +85,7 @@ where
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
             let mut builder =
-                ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+                ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
             ca.for_each(|opt_s| match opt_s {
                 Some(s) => {
@@ -99,7 +99,7 @@ where
             ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::String)
         }
     } else {
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
         binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
             (Some(s), Some(by)) => {

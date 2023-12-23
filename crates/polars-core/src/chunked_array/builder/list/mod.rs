@@ -153,7 +153,7 @@ pub fn get_list_builder(
             macro_rules! get_utf8_builder {
                 () => {{
                     let builder =
-                        ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                        ListStringChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
                     Box::new(builder)
                 }};
             }

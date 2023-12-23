@@ -343,7 +343,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
 
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
         for opt_s in ca.into_iter() {
             match opt_s {
                 None => builder.append_null(),
@@ -434,7 +434,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
         // A sqrt(n) regex cache is not too small, not too large.
         let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
         binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
             (_, None) | (None, _) => builder.append_null(),
             (Some(s), Some(pat)) => {
