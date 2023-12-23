@@ -24,14 +24,14 @@ macro_rules! impl_compare {
                     .$method(rhs.categorical().unwrap())?
                     .with_name(lhs.name()));
             },
-            (Categorical(_, _), Utf8) => {
+            (Categorical(_, _), String) => {
                 return Ok(lhs
                     .categorical()
                     .unwrap()
                     .$method(rhs.utf8().unwrap())?
                     .with_name(lhs.name()));
             },
-            (Utf8, Categorical(_, _)) => {
+            (String, Categorical(_, _)) => {
                 return Ok(rhs
                     .categorical()
                     .unwrap()
@@ -46,7 +46,7 @@ macro_rules! impl_compare {
         let rhs = rhs.to_physical_repr();
         let mut out = match lhs.dtype() {
             Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
-            Utf8 => lhs.utf8().unwrap().$method(rhs.utf8().unwrap()),
+            String => lhs.utf8().unwrap().$method(rhs.utf8().unwrap()),
             Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
             UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
             UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),

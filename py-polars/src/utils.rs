@@ -23,7 +23,7 @@ macro_rules! apply_method_all_arrow_series2 {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
             DataType::Boolean => $self.bool().unwrap().$method($($args),*),
-            DataType::Utf8 => $self.utf8().unwrap().$method($($args),*),
+            DataType::String => $self.utf8().unwrap().$method($($args),*),
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
