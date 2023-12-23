@@ -633,3 +633,50 @@ def test_write_parquet_with_null_col(tmp_path: Path) -> None:
     df.write_parquet(file_path, row_group_size=3)
     out = pl.read_parquet(file_path)
     assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk()
+def test_read_parquet_binary_buffered_reader(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with file_path.open("rb") as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk()
+def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with file_path.open("rb", buffering=0) as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
+def test_read_parquet_binary_bytes_io() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+
+    out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.xfail(reason="Reading bytes directly is not supported yet")
+def test_read_parquet_binary_bytes() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_parquet(f)
+    bytes = f.getvalue()
+
+    out = pl.read_parquet(bytes)
+    assert_frame_equal(out, df)
