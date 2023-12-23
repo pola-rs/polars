@@ -422,7 +422,7 @@ impl SqlExprVisitor<'_> {
             SqlValue::SingleQuotedString(s)
             | SqlValue::NationalStringLiteral(s)
             | SqlValue::HexStringLiteral(s)
-            | SqlValue::DoubleQuotedString(s) => AnyValue::Utf8Owned(s.into()),
+            | SqlValue::DoubleQuotedString(s) => AnyValue::StringOwned(s.into()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
     }

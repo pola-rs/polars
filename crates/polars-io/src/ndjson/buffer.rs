@@ -189,7 +189,7 @@ fn deserialize_all<'a>(
         Value::Static(StaticNode::U64(u)) => AnyValue::UInt64(*u),
         Value::Static(StaticNode::F64(f)) => AnyValue::Float64(*f),
         Value::Static(StaticNode::Null) => AnyValue::Null,
-        Value::String(s) => AnyValue::Utf8Owned(s.as_ref().into()),
+        Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
         Value::Array(arr) => {
             let Some(inner_dtype) = dtype.inner_dtype() else {
                 if ignore_errors {
@@ -230,7 +230,7 @@ fn deserialize_all<'a>(
             }
         },
         #[cfg(not(feature = "dtype-struct"))]
-        val => AnyValue::Utf8Owned(format!("{:#?}", val).into()),
+        val => AnyValue::StringOwned(format!("{:#?}", val).into()),
     };
     Ok(out)
 }

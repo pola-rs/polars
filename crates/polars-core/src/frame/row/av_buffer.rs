@@ -67,7 +67,7 @@ impl<'a> AnyValueBuffer<'a> {
             (Float32(builder), val) => builder.append_value(val.extract()?),
             (Float64(builder), val) => builder.append_value(val.extract()?),
             (Utf8(builder), AnyValue::String(v)) => builder.append_value(v),
-            (Utf8(builder), AnyValue::Utf8Owned(v)) => builder.append_value(v),
+            (Utf8(builder), AnyValue::StringOwned(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-i8")]
             (Int8(builder), AnyValue::Null) => builder.append_null(),
@@ -465,7 +465,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             _ => {
                 match self {
                     Utf8(builder) => {
-                        let AnyValue::Utf8Owned(v) = val else {
+                        let AnyValue::StringOwned(v) = val else {
                             unreachable_unchecked_release!()
                         };
                         builder.append_value(v)

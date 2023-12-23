@@ -971,7 +971,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
-            AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{v}\"")),
+            AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),

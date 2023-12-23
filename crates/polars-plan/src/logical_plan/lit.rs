@@ -199,7 +199,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
-            AnyValue::Utf8Owned(o) => Ok(Self::Utf8(o.into())),
+            AnyValue::StringOwned(o) => Ok(Self::Utf8(o.into())),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(c, rev_mapping, arr) => {
                 if arr.is_null() {

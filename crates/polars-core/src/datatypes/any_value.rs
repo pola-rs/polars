@@ -92,7 +92,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// An UTF8 encoded string type.
-    Utf8Owned(smartstring::alias::String),
+    StringOwned(smartstring::alias::String),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number.
@@ -123,7 +123,7 @@ impl Serialize for AnyValue<'_> {
             AnyValue::Boolean(v) => serializer.serialize_newtype_variant(name, 12, "Bool", v),
             // both utf8 variants same number
             AnyValue::String(v) => serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v),
-            AnyValue::Utf8Owned(v) => {
+            AnyValue::StringOwned(v) => {
                 serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v.as_str())
             },
             AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
@@ -156,7 +156,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             Float64,
             List,
             Bool,
-            Utf8Owned,
+            StringOwned,
             BinaryOwned,
         }
         const VARIANTS: &[&str] = &[
@@ -173,7 +173,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             "Float64",
             "List",
             "Boolean",
-            "Utf8Owned",
+            "StringOwned",
             "BinaryOwned",
         ];
         const LAST: u8 = unsafe { std::mem::transmute::<_, u8>(AvField::BinaryOwned) };
@@ -238,7 +238,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                     b"Float64" => AvField::Float64,
                     b"List" => AvField::List,
                     b"Bool" => AvField::Bool,
-                    b"Utf8Owned" | b"Utf8" => AvField::Utf8Owned,
+                    b"StringOwned" | b"String" => AvField::StringOwned,
                     b"BinaryOwned" | b"Binary" => AvField::BinaryOwned,
                     _ => {
                         return Err(serde::de::Error::unknown_variant(
@@ -323,9 +323,9 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         let value = variant.newtype_variant()?;
                         AnyValue::List(value)
                     },
-                    (AvField::Utf8Owned, variant) => {
+                    (AvField::StringOwned, variant) => {
                         let value: String = variant.newtype_variant()?;
-                        AnyValue::Utf8Owned(value.into())
+                        AnyValue::StringOwned(value.into())
                     },
                     (AvField::BinaryOwned, variant) => {
                         let value = variant.newtype_variant()?;
@@ -506,7 +506,7 @@ impl<'a> AnyValue<'a> {
                     #[cfg(feature = "dtype-time")]
                     DataType::Time => AnyValue::Time(self.try_extract::<i64>()?),
                     DataType::String => {
-                        AnyValue::Utf8Owned(format_smartstring!("{}", self.try_extract::<i64>()?))
+                        AnyValue::StringOwned(format_smartstring!("{}", self.try_extract::<i64>()?))
                     },
                     DataType::Boolean => return cast_boolean(self),
                     _ => return cast_numeric(self, dtype),
@@ -608,7 +608,7 @@ impl AnyValue<'_> {
             UInt32(v) => v.hash(state),
             UInt64(v) => v.hash(state),
             String(v) => v.hash(state),
-            Utf8Owned(v) => v.hash(state),
+            StringOwned(v) => v.hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
             Float64(v) => v.to_ne_bytes().hash(state),
             Binary(v) => v.hash(state),
@@ -743,7 +743,7 @@ impl<'a> AnyValue<'a> {
     pub fn as_borrowed(&self) -> AnyValue<'_> {
         match self {
             AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
-            AnyValue::Utf8Owned(data) => AnyValue::String(data),
+            AnyValue::StringOwned(data) => AnyValue::String(data),
             av => av.clone(),
         }
     }
@@ -771,8 +771,8 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-time")]
             Time(v) => Time(v),
             List(v) => List(v),
-            String(v) => Utf8Owned(v.into()),
-            Utf8Owned(v) => Utf8Owned(v),
+            String(v) => StringOwned(v.into()),
+            StringOwned(v) => StringOwned(v),
             Binary(v) => BinaryOwned(v.to_vec()),
             BinaryOwned(v) => BinaryOwned(v),
             #[cfg(feature = "object")]
@@ -806,7 +806,7 @@ impl<'a> AnyValue<'a> {
     pub fn get_str(&self) -> Option<&str> {
         match self {
             AnyValue::String(s) => Some(s),
-            AnyValue::Utf8Owned(s) => Some(s),
+            AnyValue::StringOwned(s) => Some(s),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev, arr) => {
                 let s = if arr.is_null() {
@@ -860,9 +860,9 @@ impl AnyValue<'_> {
             (Float32(l), Float32(r)) => *l == *r,
             (Float64(l), Float64(r)) => *l == *r,
             (String(l), String(r)) => l == r,
-            (String(l), Utf8Owned(r)) => l == r,
-            (Utf8Owned(l), String(r)) => l == r,
-            (Utf8Owned(l), Utf8Owned(r)) => l == r,
+            (String(l), StringOwned(r)) => l == r,
+            (StringOwned(l), String(r)) => l == r,
+            (StringOwned(l), StringOwned(r)) => l == r,
             (Boolean(l), Boolean(r)) => *l == *r,
             (Binary(l), Binary(r)) => l == r,
             (BinaryOwned(l), BinaryOwned(r)) => l == r,

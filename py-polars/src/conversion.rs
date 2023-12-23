@@ -226,7 +226,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Null => py.None(),
             AnyValue::Boolean(v) => v.into_py(py),
             AnyValue::String(v) => v.into_py(py),
-            AnyValue::Utf8Owned(v) => v.into_py(py),
+            AnyValue::StringOwned(v) => v.into_py(py),
             AnyValue::Categorical(idx, rev, arr) => {
                 let s = if arr.is_null() {
                     rev.get(idx)
