@@ -23,7 +23,7 @@ pub(crate) mod null;
 mod object;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-mod utf8;
+mod string;
 
 #[cfg(feature = "object")]
 use std::any::Any;

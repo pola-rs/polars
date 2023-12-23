@@ -5,7 +5,7 @@ pub mod fixed_size_list;
 pub mod list;
 mod null;
 mod primitive;
-mod utf8;
+mod string;
 
 use std::borrow::Cow;
 use std::iter::FromIterator;
@@ -21,7 +21,7 @@ pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use null::*;
 pub use primitive::*;
-pub use utf8::*;
+pub use string::*;
 
 use crate::chunked_array::to_primitive;
 use crate::prelude::*;
