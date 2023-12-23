@@ -40,12 +40,12 @@ pub use split::*;
 #[cfg(feature = "strings")]
 pub use strip::*;
 
-pub trait AsUtf8 {
-    fn as_utf8(&self) -> &StringChunked;
+pub trait AsString {
+    fn as_string(&self) -> &StringChunked;
 }
 
-impl AsUtf8 for StringChunked {
-    fn as_utf8(&self) -> &StringChunked {
+impl AsString for StringChunked {
+    fn as_string(&self) -> &StringChunked {
         self
     }
 }
