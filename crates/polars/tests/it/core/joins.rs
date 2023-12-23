@@ -94,7 +94,7 @@ fn test_left_join() {
         );
         assert_eq!(joined.column("rain").unwrap().null_count(), 3);
 
-        // test join on utf8
+        // test join on string
         let s0 = Series::new("days", &["mo", "tue", "wed", "thu", "fri"]);
         let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
