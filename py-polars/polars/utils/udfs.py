@@ -365,7 +365,7 @@ class BytecodeParser:
     def to_expression(self, col: str) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
         self._map_target_name = None
-        if not self.can_attempt_rewrite() or self._param_name is None:
+        if self._param_name is None:
             return None
 
         # decompose bytecode into logical 'and'/'or' expression blocks (if present)
