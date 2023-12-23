@@ -263,21 +263,21 @@ impl SqlExprVisitor<'_> {
             // Regular expression operators
             // ----
             SQLBinaryOperator::PGRegexMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true),
+                Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true),
                 _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true).not(),
+                Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true).not(),
                 _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexIMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
                 },
                 _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
                 _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
@@ -463,7 +463,7 @@ impl SqlExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
         let trim_what = match trim_what {
-            Some(Expr::Literal(LiteralValue::Utf8(val))) => Some(val),
+            Some(Expr::Literal(LiteralValue::String(val))) => Some(val),
             None => None,
             _ => return self.err(&expr),
         };

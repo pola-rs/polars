@@ -254,7 +254,7 @@ impl Debug for Expr {
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => {
                 match v {
-                    LiteralValue::Utf8(v) => {
+                    LiteralValue::String(v) => {
                         // dot breaks with debug fmt due to \"
                         write!(f, "Utf8({v})")
                     },
