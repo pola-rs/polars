@@ -160,7 +160,7 @@ impl Series {
     pub fn clear(&self) -> Series {
         // Only the inner of objects know their type, so use this hack.
         #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_)) {
+        if matches!(self.dtype(), DataType::Object(_, _)) {
             return if self.is_empty() {
                 self.clone()
             } else {
@@ -297,7 +297,7 @@ impl Series {
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         // Best leave as is.
-        if matches!(dtype, DataType::Unknown) || (dtype == self.dtype() && dtype.is_primitive()) {
+        if !dtype.is_known() || (dtype == self.dtype() && dtype.is_primitive()) {
             return Ok(self.clone());
         }
         let ret = self.0.cast(dtype);
@@ -569,8 +569,10 @@ impl Series {
     }
 
     /// Traverse and collect every nth element in a new array.
-    pub fn gather_every(&self, n: usize) -> Series {
-        let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
+    pub fn gather_every(&self, n: usize, offset: usize) -> Series {
+        let idx = ((offset as IdxSize)..self.len() as IdxSize)
+            .step_by(n)
+            .collect_ca("");
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
     }

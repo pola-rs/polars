@@ -98,10 +98,10 @@ fn parse_value<'a>(scratch: &'a mut Vec<u8>, val: &[u8]) -> PolarsResult<Borrowe
 /// # Implementation
 /// This implementation reads the file line by line and infers the type of each line.
 /// It performs both `O(N)` IO and CPU-bounded operations where `N` is the number of rows.
-pub fn infer<R: std::io::BufRead>(
+pub fn iter_unique_dtypes<R: std::io::BufRead>(
     reader: &mut R,
     number_of_rows: Option<usize>,
-) -> PolarsResult<ArrowDataType> {
+) -> PolarsResult<impl Iterator<Item = ArrowDataType>> {
     if reader.fill_buf().map(|b| b.is_empty())? {
         return Err(PolarsError::ComputeError(
             "Cannot infer NDJSON types on empty reader because empty string is not a valid JSON value".into(),
@@ -117,14 +117,9 @@ pub fn infer<R: std::io::BufRead>(
         // 0 because it is row by row
         let value = parse_value(&mut buf, rows[0].as_bytes())?;
         let data_type = crate::json::infer(&value)?;
-
-        if data_type != ArrowDataType::Null {
-            data_types.insert(data_type);
-        }
+        data_types.insert(data_type);
     }
-
-    let v: Vec<&ArrowDataType> = data_types.iter().collect();
-    Ok(crate::json::infer_schema::coerce_data_type(&v))
+    Ok(data_types.into_iter())
 }
 
 /// Infers the [`ArrowDataType`] from an iterator of JSON strings. A limited number of

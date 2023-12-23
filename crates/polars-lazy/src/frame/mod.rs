@@ -3,6 +3,8 @@
 mod python;
 
 mod err;
+#[cfg(not(target_arch = "wasm32"))]
+mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
@@ -20,6 +22,8 @@ pub use anonymous_scan::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "csv")]
 pub use csv::*;
+#[cfg(not(target_arch = "wasm32"))]
+pub use exitable::*;
 pub use file_list_reader::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
@@ -1669,6 +1673,11 @@ impl LazyFrame {
         } else {
             self
         }
+    }
+
+    /// Return the number of non-null elements for each column.
+    pub fn count(self) -> LazyFrame {
+        self.select(vec![col("*").count()])
     }
 
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be

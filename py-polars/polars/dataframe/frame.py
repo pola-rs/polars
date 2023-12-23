@@ -10,6 +10,7 @@ from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
 from pathlib import Path
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
     BinaryIO,
@@ -343,7 +344,6 @@ class DataFrame:
 
     >>> class MyDataFrame(pl.DataFrame):
     ...     pass
-    ...
     >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
     False
 
@@ -672,7 +672,7 @@ class DataFrame:
     @classmethod
     def _read_csv(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
@@ -823,7 +823,7 @@ class DataFrame:
     @classmethod
     def _read_parquet(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -920,7 +920,7 @@ class DataFrame:
     @classmethod
     def _read_ipc(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -1002,7 +1002,7 @@ class DataFrame:
     @classmethod
     def _read_ipc_stream(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -2965,7 +2965,6 @@ class DataFrame:
         ...     )
         ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
         ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
-        ...
 
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customised options (and positioning)
@@ -3945,7 +3944,6 @@ class DataFrame:
         ...     while True:
         ...         yield f"{base_name}{count}"
         ...         count += 1
-        ...
         >>> df.transpose(include_header=False, column_names=name_generator())
         shape: (2, 3)
         ┌─────────────┬─────────────┬─────────────┐
@@ -5154,7 +5152,6 @@ class DataFrame:
         --------
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
-        ...
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
         >>> df.pipe(cast_str_to_int, col_name="b")
         shape: (4, 2)
@@ -5334,7 +5331,6 @@ class DataFrame:
         >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        ...
         a
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -7998,7 +7994,6 @@ class DataFrame:
         ...     df.select(
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
         ...     )
-        ...
         shape: (3, 1)
         ┌───────────┐
         │ is_odd    │
@@ -8173,7 +8168,6 @@ class DataFrame:
         ...     df.drop("c").with_columns(
         ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
         ...     )
-        ...
         shape: (4, 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │
@@ -8355,7 +8349,7 @@ class DataFrame:
                 6.0
         ]
         """
-        return self.select(F.max_horizontal(F.all())).to_series()
+        return self.select(max=F.max_horizontal(F.all())).to_series()
 
     @overload
     def min(self, axis: Literal[0] | None = ...) -> Self:
@@ -8444,7 +8438,7 @@ class DataFrame:
                 3.0
         ]
         """
-        return self.select(F.min_horizontal(F.all())).to_series()
+        return self.select(min=F.min_horizontal(F.all())).to_series()
 
     @overload
     def sum(
@@ -9872,7 +9866,6 @@ class DataFrame:
         ... )
         >>> for idx, frame in enumerate(df.iter_slices()):
         ...     print(f"{type(frame).__name__}:[{idx}]:{len(frame)}")
-        ...
         DataFrame:[0]:10000
         DataFrame:[1]:7500
 
@@ -9882,7 +9875,6 @@ class DataFrame:
         >>> for frame in df.iter_slices(n_rows=15_000):
         ...     record_batch = frame.to_arrow().to_batches()[0]
         ...     print(f"{record_batch.schema}\n<< {len(record_batch)}")
-        ...
         a: int32
         b: date32[day]
         c: large_string
@@ -9916,7 +9908,7 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
-    def gather_every(self, n: int) -> DataFrame:
+    def gather_every(self, n: int, offset: int = 0) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -9924,6 +9916,8 @@ class DataFrame:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
 
         Examples
         --------
@@ -9939,8 +9933,19 @@ class DataFrame:
         │ 3   ┆ 7   │
         └─────┴─────┘
 
+        >>> s.gather_every(2, offset=1)
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 2   ┆ 6   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+
         """
-        return self.select(F.col("*").gather_every(n))
+        return self.select(F.col("*").gather_every(n, offset))
 
     def hash_rows(
         self,
@@ -10404,6 +10409,27 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    def count(self) -> DataFrame:
+        """
+        Return the number of non-null elements for each column.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> df.count()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 3   ┆ 0   │
+        └─────┴─────┴─────┘
+        """
+        return self.lazy().count().collect(_eager=True)
+
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
         self,
@@ -10690,7 +10716,7 @@ class DataFrame:
         return self.shift(n, fill_value=fill_value)
 
     @deprecate_renamed_function("gather_every", version="0.19.12")
-    def take_every(self, n: int) -> DataFrame:
+    def take_every(self, n: int, offset: int = 0) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -10701,8 +10727,10 @@ class DataFrame:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("get_column_index", version="0.19.14")
     def find_idx_by_name(self, name: str) -> int:

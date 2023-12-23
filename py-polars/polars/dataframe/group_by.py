@@ -73,7 +73,6 @@ class GroupBy:
         >>> for name, data in df.group_by("foo"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        ...
         a
         shape: (2, 2)
         ┌─────┬─────┐

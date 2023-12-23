@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-from io import BytesIO
+import io
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars.convert import from_arrow
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def read_parquet(
-    source: str | Path | list[str] | list[Path] | BinaryIO | BytesIO | bytes,
+    source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -78,9 +78,9 @@ def read_parquet(
         The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:
 
-        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
-        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
-        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
@@ -145,7 +145,7 @@ def read_parquet(
             )
 
     # Read binary types using `read_parquet`
-    elif isinstance(source, (BinaryIO, BytesIO, bytes)):
+    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
         with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
             return pl.DataFrame._read_parquet(
                 source_prep,
@@ -161,7 +161,7 @@ def read_parquet(
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
-        source,
+        source,  # type: ignore[arg-type]
         n_rows=n_rows,
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
@@ -183,9 +183,7 @@ def read_parquet(
     return lf.collect(no_optimization=True)
 
 
-def read_parquet_schema(
-    source: str | BinaryIO | Path | bytes,
-) -> dict[str, DataType]:
+def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
     """
     Get the schema of a Parquet file without reading data.
 
@@ -265,9 +263,9 @@ def scan_parquet(
         The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:
 
-        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
-        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
-        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.

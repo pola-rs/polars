@@ -89,7 +89,7 @@ pub(super) fn shift_and_fill(args: &[Series]) -> PolarsResult<Series> {
                     .cast(logical)
             },
             #[cfg(feature = "object")]
-            Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
+            Object(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-categorical")]

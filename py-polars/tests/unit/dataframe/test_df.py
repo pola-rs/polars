@@ -388,6 +388,9 @@ def test_gather_every() -> None:
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
     assert_frame_equal(expected_df, df.gather_every(2))
 
+    expected_df = pl.DataFrame({"a": [2, 4], "b": ["x", "z"]})
+    assert_frame_equal(expected_df, df.gather_every(2, offset=1))
+
 
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars

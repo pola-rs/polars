@@ -13,10 +13,10 @@ pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -
 }
 
 #[pyfunction]
-pub fn int_ranges(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -> PyExpr {
+pub fn int_ranges(start: PyExpr, end: PyExpr, step: PyExpr, dtype: Wrap<DataType>) -> PyExpr {
     let dtype = dtype.0;
 
-    let mut result = dsl::int_ranges(start.inner, end.inner, step);
+    let mut result = dsl::int_ranges(start.inner, end.inner, step.inner);
 
     if dtype != DataType::Int64 {
         result = result.cast(DataType::List(Box::new(dtype)))

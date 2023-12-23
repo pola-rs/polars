@@ -103,7 +103,7 @@ impl Series {
                 Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap()
             },
             #[cfg(feature = "object")]
-            Object(_) => {
+            Object(_, _) => {
                 assert_eq!(chunks.len(), 1);
                 let arr = chunks[0]
                     .as_any()

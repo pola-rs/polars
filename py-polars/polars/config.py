@@ -94,14 +94,12 @@ class Config(contextlib.ContextDecorator):
     >>> with pl.Config() as cfg:
     ...     # set verbose for more detailed output within the scope
     ...     cfg.set_verbose(True)  # doctest: +IGNORE_RESULT
-    ...
     >>> # scope exit - no longer in verbose mode
 
     This can also be written more compactly as:
 
     >>> with pl.Config(verbose=True):
     ...     pass
-    ...
 
     (The compact format is available for all `Config` methods that take a single value).
 
@@ -111,7 +109,6 @@ class Config(contextlib.ContextDecorator):
     >>> @pl.Config(verbose=True)
     ... def test():
     ...     pass
-    ...
 
     """
 
@@ -414,7 +411,6 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
         >>> with pl.Config(set_auto_structify=True):
         ...     out = df.select(pl.all())
-        ...
         >>> out
         shape: (3, 1)
         ┌───────────┐
@@ -577,7 +573,6 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame({"const": ["pi", "e"], "value": [pi, e]})
         >>> with pl.Config(float_precision=15):
         ...     print(df)
-        ...
         shape: (2, 2)
         ┌───────┬───────────────────┐
         │ const ┆ value             │
@@ -639,7 +634,6 @@ class Config(contextlib.ContextDecorator):
         >>> s = pl.Series([1.2304980958725870923, 1e6, 1e-8])
         >>> with pl.Config(set_fmt_float="mixed"):
         ...     print(s)
-        ...
         shape: (3,)
         Series: '' [f64]
         [
@@ -652,7 +646,6 @@ class Config(contextlib.ContextDecorator):
 
         >>> with pl.Config(set_fmt_float="full"):
         ...     print(s)
-        ...
         shape: (3,)
         Series: '' [f64]
         [
@@ -697,7 +690,6 @@ class Config(contextlib.ContextDecorator):
         └───────────────────────────────────┴─────┘
         >>> with pl.Config(fmt_str_lengths=50):
         ...     print(df)
-        ...
         shape: (2, 1)
         ┌──────────────────────────────────────────────────┐
         │ txt                                              │
@@ -752,7 +744,6 @@ class Config(contextlib.ContextDecorator):
         └─────────────┘
         >>> with pl.Config(fmt_table_cell_list_len=10):
         ...     print(df)
-        ...
         shape: (1, 1)
         ┌────────────────────┐
         │ nums               │
@@ -907,7 +898,6 @@ class Config(contextlib.ContextDecorator):
         ...     cfg.set_tbl_cols(5)
         ...     df = pl.DataFrame({str(i): [i] for i in range(100)})
         ...     print(df)
-        ...
         <class 'polars.config.Config'>
         shape: (1, 100)
         ┌─────┬─────┬─────┬───┬─────┬─────┐
@@ -920,7 +910,6 @@ class Config(contextlib.ContextDecorator):
 
         >>> with pl.Config(tbl_cols=10):
         ...     print(df)
-        ...
         shape: (1, 100)
         ┌─────┬─────┬─────┬─────┬─────┬───┬─────┬─────┬─────┬─────┬─────┐
         │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ … ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
@@ -1206,7 +1195,6 @@ class Config(contextlib.ContextDecorator):
         ... )
         >>> with pl.Config(tbl_rows=2):
         ...     print(df)
-        ...
         shape: (4, 2)
         ┌─────┬───────┐
         │ abc ┆ xyz   │
@@ -1261,7 +1249,6 @@ class Config(contextlib.ContextDecorator):
         ... )
         >>> with pl.Config(trim_decimal_zeros=False):
         ...     print(df)
-        ...
         shape: (2, 1)
         ┌──────────────┐
         │ d            │
@@ -1273,7 +1260,6 @@ class Config(contextlib.ContextDecorator):
         └──────────────┘
         >>> with pl.Config(trim_decimal_zeros=True):
         ...     print(df)
-        ...
         shape: (2, 1)
         ┌──────────────┐
         │ d            │
@@ -1298,7 +1284,6 @@ class Config(contextlib.ContextDecorator):
         >>> pl.Config.set_verbose(True)  # doctest: +SKIP
         >>> with pl.Config(verbose=True):  # doctest: +SKIP
         ...     do_polars_operations()
-        ...
         """
         if active is None:
             os.environ.pop("POLARS_VERBOSE", None)

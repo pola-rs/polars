@@ -632,7 +632,6 @@ def map_batches(
     --------
     >>> def test_func(a, b, c):
     ...     return a + b + c
-    ...
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2, 3, 4],
@@ -1601,7 +1600,7 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     --------
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select(pl.min_horizontal(foo, bar))
+    >>> pl.select(min=pl.min_horizontal(foo, bar))
     shape: (3, 1)
     ┌─────┐
     │ min │

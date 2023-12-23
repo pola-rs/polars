@@ -483,7 +483,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
 def test_excel_compound_types(
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]
+    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"],
 ) -> None:
     df = pl.DataFrame(
         {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}

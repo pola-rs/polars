@@ -381,7 +381,7 @@ impl ToPyObject for Wrap<DataType> {
                 duration_class.call1((tu.to_ascii(),)).unwrap().into()
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 let class = pl.getattr(intern!(py, "Object")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -469,7 +469,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME),
+                    "Object" => DataType::Object(OBJECT_NAME, None),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Struct" => DataType::Struct(vec![]),
