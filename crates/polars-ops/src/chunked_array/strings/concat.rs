@@ -131,7 +131,7 @@ mod test {
     #[test]
     fn test_str_concat() {
         let ca = Int32Chunked::new("foo", &[Some(1), None, Some(3)]);
-        let ca_str = ca.cast(&DataType::Utf8).unwrap();
+        let ca_str = ca.cast(&DataType::String).unwrap();
         let out = str_concat(ca_str.utf8().unwrap(), "-", true);
 
         let out = out.get(0);

@@ -198,7 +198,7 @@ fn test_join_multiple_columns() {
     let mut s = df_a
         .column("a")
         .unwrap()
-        .cast(&DataType::Utf8)
+        .cast(&DataType::String)
         .unwrap()
         .utf8()
         .unwrap()
@@ -209,7 +209,7 @@ fn test_join_multiple_columns() {
     let mut s = df_b
         .column("foo")
         .unwrap()
-        .cast(&DataType::Utf8)
+        .cast(&DataType::String)
         .unwrap()
         .utf8()
         .unwrap()
@@ -592,9 +592,9 @@ fn test_join_floats() -> PolarsResult<()> {
         out.dtypes(),
         &[
             DataType::Float64,
-            DataType::Utf8,
+            DataType::String,
             DataType::Float64,
-            DataType::Utf8
+            DataType::String
         ]
     );
     Ok(())

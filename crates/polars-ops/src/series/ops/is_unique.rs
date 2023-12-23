@@ -49,7 +49,7 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             let ca = s.binary().unwrap();
             is_unique_ca(ca, invert)
         },
-        Utf8 => {
+        String => {
             let s = s.cast(&Binary).unwrap();
             let ca = s.binary().unwrap();
             is_unique_ca(ca, invert)

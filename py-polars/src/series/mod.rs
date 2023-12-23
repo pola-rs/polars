@@ -128,7 +128,7 @@ impl PySeries {
 
     fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
         let val = format!("{}", self.series.get(index).unwrap());
-        if let DataType::Utf8 | DataType::Categorical(_, _) = self.series.dtype() {
+        if let DataType::String | DataType::Categorical(_, _) = self.series.dtype() {
             let v_trunc = &val[..val
                 .char_indices()
                 .take(str_lengths)
@@ -520,7 +520,7 @@ impl PySeries {
                     )?;
                     ca.into_series()
                 },
-                Some(DataType::Utf8) => {
+                Some(DataType::String) => {
                     let ca = dispatch_apply!(
                         series,
                         apply_lambda_with_utf8_out_type,

@@ -37,13 +37,13 @@ pub(crate) fn cast_columns(
     let cast_fn = |s: &Series, fld: &Field| {
         let out = match (s.dtype(), fld.data_type()) {
             #[cfg(feature = "temporal")]
-            (DataType::Utf8, DataType::Date) => s
+            (DataType::String, DataType::Date) => s
                 .utf8()
                 .unwrap()
                 .as_date(None, false)
                 .map(|ca| ca.into_series()),
             #[cfg(feature = "temporal")]
-            (DataType::Utf8, DataType::Datetime(tu, _)) => s
+            (DataType::String, DataType::Datetime(tu, _)) => s
                 .utf8()
                 .unwrap()
                 .as_datetime(
@@ -515,7 +515,7 @@ impl<'a> CoreReader<'a> {
                 )
             })?;
 
-            if dtype == &DataType::Utf8 {
+            if dtype == &DataType::String {
                 new_projection.push(*i)
             }
         }

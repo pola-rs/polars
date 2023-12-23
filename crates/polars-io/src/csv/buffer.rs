@@ -532,7 +532,7 @@ pub(crate) fn init_buffers<'a>(
             let (name, dtype) = schema.get_at_index(i).unwrap();
             let mut str_capacity = 0;
             // determine the needed capacity for this column
-            if dtype == &DataType::Utf8 {
+            if dtype == &DataType::String {
                 str_capacity = str_capacities[str_index].size_hint();
                 str_index += 1;
             }
@@ -545,7 +545,7 @@ pub(crate) fn init_buffers<'a>(
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
+                &DataType::String => Buffer::Utf8(Utf8Field::new(
                     name,
                     capacity,
                     str_capacity,
@@ -723,7 +723,7 @@ impl<'a> Buffer<'a> {
             Buffer::UInt64(_) => DataType::UInt64,
             Buffer::Float32(_) => DataType::Float32,
             Buffer::Float64(_) => DataType::Float64,
-            Buffer::Utf8(_) => DataType::Utf8,
+            Buffer::Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
             #[cfg(feature = "dtype-date")]

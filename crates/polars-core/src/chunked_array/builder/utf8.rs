@@ -18,7 +18,7 @@ impl Utf8ChunkedBuilder {
         Utf8ChunkedBuilder {
             builder: MutableUtf8Array::<i64>::with_capacities(capacity, bytes_capacity),
             capacity,
-            field: Field::new(name, DataType::Utf8),
+            field: Field::new(name, DataType::String),
         }
     }
 

@@ -161,7 +161,7 @@ fn test_projection_5086() -> PolarsResult<()> {
 fn test_unnest_pushdown() -> PolarsResult<()> {
     let df = df![
         "collection" => Series::full_null("", 1, &DataType::Int32),
-        "users" => Series::full_null("", 1, &DataType::List(Box::new(DataType::Struct(vec![Field::new("email", DataType::Utf8)])))),
+        "users" => Series::full_null("", 1, &DataType::List(Box::new(DataType::Struct(vec![Field::new("email", DataType::String)])))),
     ]?;
 
     let out = df

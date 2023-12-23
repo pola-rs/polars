@@ -59,7 +59,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = Utf8Array::new_null(DataType::Utf8.to_arrow(), length);
+        let arr = Utf8Array::new_null(DataType::String.to_arrow(), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }

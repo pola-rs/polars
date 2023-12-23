@@ -285,7 +285,7 @@ impl Series {
             DataType::UInt64 => any_values_to_primitive::<UInt64Type>(av).into_series(),
             DataType::Float32 => any_values_to_primitive::<Float32Type>(av).into_series(),
             DataType::Float64 => any_values_to_primitive::<Float64Type>(av).into_series(),
-            DataType::Utf8 => any_values_to_utf8(av, strict)?.into_series(),
+            DataType::String => any_values_to_utf8(av, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(av).into_series(),
             DataType::Boolean => any_values_to_bool(av).into_series(),
             #[cfg(feature = "dtype-date")]
@@ -490,7 +490,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
         match val {
             Null => DataType::Null,
             Boolean(_) => DataType::Boolean,
-            Utf8(_) | Utf8Owned(_) => DataType::Utf8,
+            Utf8(_) | Utf8Owned(_) => DataType::String,
             Binary(_) | BinaryOwned(_) => DataType::Binary,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,

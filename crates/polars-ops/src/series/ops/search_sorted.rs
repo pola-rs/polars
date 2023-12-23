@@ -207,7 +207,7 @@ pub fn search_sorted(
     let phys_dtype = s.dtype();
 
     match phys_dtype {
-        DataType::Utf8 => {
+        DataType::String => {
             let ca = s.utf8().unwrap();
             let ca = ca.as_binary();
             let search_values = search_values.utf8()?;

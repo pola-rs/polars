@@ -96,7 +96,7 @@ where
             });
             builder.finish()
         } else {
-            ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::Utf8)
+            ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::String)
         }
     } else {
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());

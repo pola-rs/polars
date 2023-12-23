@@ -354,7 +354,7 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
         .collect()?;
     let out = out.column("name")?;
 
-    assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::Utf8)));
+    assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::String)));
     assert_eq!(
         out.explode()?
             .utf8()?

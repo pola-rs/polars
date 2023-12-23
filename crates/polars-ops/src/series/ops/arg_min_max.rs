@@ -19,7 +19,7 @@ impl ArgAgg for Series {
         use DataType::*;
         let s = self.to_physical_repr();
         match s.dtype() {
-            Utf8 => {
+            String => {
                 let ca = s.utf8().unwrap();
                 arg_min_str(ca)
             },
@@ -47,7 +47,7 @@ impl ArgAgg for Series {
         use DataType::*;
         let s = self.to_physical_repr();
         match s.dtype() {
-            Utf8 => {
+            String => {
                 let ca = s.utf8().unwrap();
                 arg_max_str(ca)
             },

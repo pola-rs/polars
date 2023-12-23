@@ -81,7 +81,7 @@ pub trait ListNameSpaceImpl: AsList {
     fn lst_join(&self, separator: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_list();
         match ca.inner_dtype() {
-            DataType::Utf8 => match separator.len() {
+            DataType::String => match separator.len() {
                 1 => match separator.get(0) {
                     Some(separator) => self.join_literal(separator),
                     _ => Ok(Utf8Chunked::full_null(ca.name(), ca.len())),

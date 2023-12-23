@@ -290,7 +290,7 @@ impl BinaryChunked {
             .downcast_iter()
             .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
             .collect();
-        let field = Arc::new(Field::new(self.name(), DataType::Utf8));
+        let field = Arc::new(Field::new(self.name(), DataType::String));
         Utf8Chunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
     }
 }
@@ -324,7 +324,7 @@ impl ChunkCast for BinaryChunked {
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::Utf8 => unsafe { Ok(self.to_utf8().into_series()) },
+            DataType::String => unsafe { Ok(self.to_utf8().into_series()) },
             _ => self.cast(data_type),
         }
     }
@@ -343,7 +343,7 @@ fn boolean_to_utf8(ca: &BooleanChunked) -> Utf8Chunked {
 impl ChunkCast for BooleanChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::Utf8 => {
+            DataType::String => {
                 let mut ca = boolean_to_utf8(self);
                 ca.rename(self.name());
                 Ok(ca.into_series())
@@ -369,7 +369,7 @@ impl ChunkCast for ListChunked {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _))
-                        if !matches!(dt, Categorical(_, _) | Utf8 | Null) =>
+                        if !matches!(dt, Categorical(_, _) | String | Null) =>
                     {
                         polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     },
@@ -423,7 +423,7 @@ impl ChunkCast for ArrayChunked {
             Array(child_type, width) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _)) if !matches!(dt, Utf8) => {
+                    (dt, Categorical(None, _)) if !matches!(dt, String) => {
                         polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
                     },
                     _ => {

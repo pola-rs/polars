@@ -271,7 +271,7 @@ impl Debug for Series {
             DataType::Boolean => {
                 format_array!(f, self.bool().unwrap(), "bool", self.name(), "Series")
             },
-            DataType::Utf8 => {
+            DataType::String => {
                 format_array!(f, self.utf8().unwrap(), "str", self.name(), "Series")
             },
             DataType::UInt8 => {

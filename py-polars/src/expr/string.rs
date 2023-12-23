@@ -226,7 +226,7 @@ impl PyExpr {
         };
         self.inner
             .clone()
-            .map(function, GetOutput::from_type(DataType::Utf8))
+            .map(function, GetOutput::from_type(DataType::String))
             .with_fmt("str.json_path_match")
             .into()
     }

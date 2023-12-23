@@ -65,7 +65,7 @@ impl TemporalFunction {
                 mapper.with_dtype(DataType::Int8)
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
-            ToString(_) => mapper.with_dtype(DataType::Utf8),
+            ToString(_) => mapper.with_dtype(DataType::String),
             WithTimeUnit(_) => mapper.with_same_dtype(),
             CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),

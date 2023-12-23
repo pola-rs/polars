@@ -14,7 +14,7 @@ use crate::POOL;
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
-        DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
+        DataType::String => series.utf8().unwrap().explode_and_offsets(),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(),
         _ => polars_bail!(opq = explode, series.dtype()),
@@ -335,7 +335,7 @@ impl DataFrame {
             Series::from_chunks_and_dtype_unchecked(
                 variable_name,
                 vec![variable_col],
-                &DataType::Utf8,
+                &DataType::String,
             )
         };
 

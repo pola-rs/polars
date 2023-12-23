@@ -334,7 +334,7 @@ impl StructChunked {
                     .collect::<PolarsResult<Vec<_>>>()?;
                 StructChunked::new(self.name(), &new_fields).map(|ca| ca.into_series())
             },
-            DataType::Utf8 => {
+            DataType::String => {
                 let mut ca = self.clone();
                 ca.rechunk();
                 let mut iters = ca.fields.iter().map(|s| s.iter()).collect::<Vec<_>>();

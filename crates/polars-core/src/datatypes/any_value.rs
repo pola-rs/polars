@@ -363,7 +363,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(tu),
             Boolean(_) => DataType::Boolean,
-            Utf8(_) => DataType::Utf8,
+            Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
@@ -505,7 +505,7 @@ impl<'a> AnyValue<'a> {
                     DataType::Duration(tu) => AnyValue::Duration(self.try_extract::<i64>()?, *tu),
                     #[cfg(feature = "dtype-time")]
                     DataType::Time => AnyValue::Time(self.try_extract::<i64>()?),
-                    DataType::Utf8 => {
+                    DataType::String => {
                         AnyValue::Utf8Owned(format_smartstring!("{}", self.try_extract::<i64>()?))
                     },
                     DataType::Boolean => return cast_boolean(self),
@@ -1177,8 +1177,8 @@ mod test {
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
                 DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
             ),
-            (ArrowDataType::LargeUtf8, DataType::Utf8),
-            (ArrowDataType::Utf8, DataType::Utf8),
+            (ArrowDataType::LargeUtf8, DataType::String),
+            (ArrowDataType::Utf8, DataType::String),
             (ArrowDataType::LargeBinary, DataType::Binary),
             (ArrowDataType::Binary, DataType::Binary),
             (

@@ -27,7 +27,7 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let ca = s.binary().unwrap();
             is_last_distinct_bin(ca)
         },
-        Utf8 => {
+        String => {
             let s = s.cast(&Binary).unwrap();
             return is_last_distinct(&s);
         },

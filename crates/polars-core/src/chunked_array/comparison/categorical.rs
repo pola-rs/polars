@@ -179,7 +179,7 @@ where
             },
         }
     } else {
-        let lhs_string = lhs.cast(&DataType::Utf8)?;
+        let lhs_string = lhs.cast(&DataType::String)?;
         Ok(str_compare_function(lhs_string.utf8().unwrap(), rhs))
     }
 }
@@ -213,7 +213,7 @@ where
             ),
         }
     } else {
-        let lhs_string = lhs.cast(&DataType::Utf8)?;
+        let lhs_string = lhs.cast(&DataType::String)?;
         Ok(str_compare_function(lhs_string.utf8().unwrap(), rhs))
     }
 }

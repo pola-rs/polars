@@ -277,7 +277,7 @@ fn string_addition_to_linear_concat(
             return None;
         }
 
-        if type_a == DataType::Utf8 {
+        if type_a == DataType::String {
             match (left_aexpr, right_aexpr) {
                 // concat + concat
                 (

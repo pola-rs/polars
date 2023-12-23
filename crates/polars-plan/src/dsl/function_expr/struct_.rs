@@ -61,7 +61,7 @@ impl StructFunction {
                 ),
             }),
             #[cfg(feature = "json")]
-            JsonEncode => mapper.with_dtype(DataType::Utf8),
+            JsonEncode => mapper.with_dtype(DataType::String),
         }
     }
 }

@@ -122,7 +122,7 @@ impl LiteralValue {
             LiteralValue::Int64(_) => DataType::Int64,
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
-            LiteralValue::Utf8(_) => DataType::Utf8,
+            LiteralValue::Utf8(_) => DataType::String,
             LiteralValue::Binary(_) => DataType::Binary,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
             #[cfg(all(feature = "temporal", feature = "dtype-date"))]

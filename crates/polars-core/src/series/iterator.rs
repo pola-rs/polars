@@ -117,7 +117,7 @@ impl Series {
             }
         } else {
             match dtype {
-                DataType::Utf8 => {
+                DataType::String => {
                     let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                     if arr.null_count() == 0 {
                         Box::new(arr.values_iter().map(AnyValue::Utf8))

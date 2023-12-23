@@ -107,7 +107,7 @@ mod test {
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
-        let s = ca.cast(&DataType::Utf8).unwrap();
+        let s = ca.cast(&DataType::String).unwrap();
         let ca = s.utf8().unwrap();
         assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), cmp);
     }

@@ -346,7 +346,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Boolean")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Utf8 => {
+            DataType::String => {
                 let class = pl.getattr(intern!(py, "Utf8")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -452,7 +452,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
-                    "Utf8" => DataType::Utf8,
+                    "Utf8" => DataType::String,
                     "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
                     "Categorical" => DataType::Categorical(None, Default::default()),
@@ -490,7 +490,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
-            "Utf8" => DataType::Utf8,
+            "Utf8" => DataType::String,
             "Binary" => DataType::Binary,
             "Boolean" => DataType::Boolean,
             "Categorical" => {

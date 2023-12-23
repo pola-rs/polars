@@ -55,14 +55,14 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
 
             merge_ca(lhs, rhs, merge_indicator).into_series()
         },
-        Utf8 => {
+        String => {
             // dispatch via binary
             let lhs = lhs.cast(&Binary).unwrap();
             let rhs = rhs.cast(&Binary).unwrap();
             let lhs = lhs.binary().unwrap();
             let rhs = rhs.binary().unwrap();
             let out = merge_ca(lhs, rhs, merge_indicator);
-            unsafe { out.cast_unchecked(&Utf8).unwrap() }
+            unsafe { out.cast_unchecked(&String).unwrap() }
         },
         Binary => {
             let lhs = lhs.binary().unwrap();
@@ -134,7 +134,7 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
             let rhs = rhs_s.bool().unwrap();
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
-        DataType::Utf8 => {
+        DataType::String => {
             let lhs = lhs_s.utf8().unwrap();
             let rhs = rhs_s.utf8().unwrap();
 

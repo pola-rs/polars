@@ -123,7 +123,7 @@ pub(super) fn datetime(
         microsecond = microsecond.new_from_index(0, max_len);
     }
     let microsecond = microsecond.u32()?;
-    let mut _ambiguous = ambiguous.cast(&DataType::Utf8)?;
+    let mut _ambiguous = ambiguous.cast(&DataType::String)?;
     if _ambiguous.len() < max_len {
         _ambiguous = _ambiguous.new_from_index(0, max_len);
     }

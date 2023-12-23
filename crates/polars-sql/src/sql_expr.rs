@@ -36,7 +36,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::String(_)
         | SQLDataType::Text
         | SQLDataType::Uuid
-        | SQLDataType::Varchar(_) => DataType::Utf8,
+        | SQLDataType::Varchar(_) => DataType::String,
         SQLDataType::Date => DataType::Date,
         SQLDataType::Double | SQLDataType::DoublePrecision => DataType::Float64,
         SQLDataType::Float(_) => DataType::Float32,
@@ -256,7 +256,7 @@ impl SqlExprVisitor<'_> {
             SQLBinaryOperator::Plus => left + right,
             SQLBinaryOperator::Spaceship => left.eq_missing(right),
             SQLBinaryOperator::StringConcat => {
-                left.cast(DataType::Utf8) + right.cast(DataType::Utf8)
+                left.cast(DataType::String) + right.cast(DataType::String)
             },
             SQLBinaryOperator::Xor => left.xor(right),
             // ----

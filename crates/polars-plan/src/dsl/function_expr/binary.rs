@@ -31,7 +31,7 @@ impl BinaryFunction {
             #[cfg(feature = "binary_encoding")]
             HexDecode(_) | Base64Decode(_) => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
-            HexEncode | Base64Encode => mapper.with_dtype(DataType::Utf8),
+            HexEncode | Base64Encode => mapper.with_dtype(DataType::String),
         }
     }
 }

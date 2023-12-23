@@ -1340,7 +1340,7 @@ impl PyDataFrame {
                 Some(DataType::Date) => apply::<Int32Type>(df, py, lambda, 0, None).into_date().into_series(),
                 Some(DataType::Datetime(tu, tz)) => apply::<Int64Type>(df, py, lambda, 0, None).into_datetime(tu, tz).into_series(),
                 Some(DataType::Boolean) => apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series(),
-                Some(DataType::Utf8) => apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series(),
+                Some(DataType::String) => apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series(),
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 

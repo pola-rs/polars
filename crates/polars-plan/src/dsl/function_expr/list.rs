@@ -88,7 +88,7 @@ impl ListFunction {
             Any => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_any_all")]
             All => mapper.with_dtype(DataType::Boolean),
-            Join => mapper.with_dtype(DataType::Utf8),
+            Join => mapper.with_dtype(DataType::String),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
         }

@@ -380,7 +380,7 @@ fn test_quoted_numeric() {
 
 #[test]
 fn test_empty_bytes_to_dataframe() {
-    let fields = vec![Field::new("test_field", DataType::Utf8)];
+    let fields = vec![Field::new("test_field", DataType::String)];
     let schema = Schema::from_iter(fields);
     let file = Cursor::new(vec![]);
 
@@ -448,7 +448,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
     assert_eq!(
         df.dtypes(),
         &[
-            DataType::Utf8,
+            DataType::String,
             DataType::Datetime(TimeUnit::Nanoseconds, None),
             DataType::Float64,
             DataType::Float64,
@@ -702,7 +702,7 @@ fn test_header_inference() -> PolarsResult<()> {
 "#;
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).has_header(false).finish()?;
-    assert_eq!(df.dtypes(), vec![DataType::Utf8; 4]);
+    assert_eq!(df.dtypes(), vec![DataType::String; 4]);
     Ok(())
 }
 
@@ -734,10 +734,10 @@ fn test_ignore_parse_dates() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .with_try_parse_dates(true)
-        .with_dtypes_slice(Some(&[Utf8, Utf8, Utf8]))
+        .with_dtypes_slice(Some(&[String, String, String]))
         .finish()?;
 
-    assert_eq!(df.dtypes(), &[Utf8, Utf8, Utf8]);
+    assert_eq!(df.dtypes(), &[String, String, String]);
     Ok(())
 }
 
@@ -781,10 +781,10 @@ fn test_infer_schema_0_rows() -> PolarsResult<()> {
     assert_eq!(
         df.dtypes(),
         &[
-            DataType::Utf8,
-            DataType::Utf8,
-            DataType::Utf8,
-            DataType::Utf8
+            DataType::String,
+            DataType::String,
+            DataType::String,
+            DataType::String
         ]
     );
     Ok(())
@@ -796,7 +796,7 @@ fn test_infer_schema_eol() -> PolarsResult<()> {
     let no_eol = "colx,coly\nabcdef,1234";
     let file = Cursor::new(no_eol);
     let df = CsvReader::new(file).finish()?;
-    assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64,]);
+    assert_eq!(df.dtypes(), &[DataType::String, DataType::Int64,]);
     Ok(())
 }
 
@@ -845,7 +845,7 @@ fn test_tsv_header_offset() -> PolarsResult<()> {
         .finish()?;
 
     assert_eq!(df.shape(), (3, 2));
-    assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64]);
+    assert_eq!(df.dtypes(), &[DataType::String, DataType::Int64]);
     let a = df.column("foo")?;
     let a = a.utf8()?;
     assert_eq!(a.get(0), None);
@@ -873,7 +873,7 @@ fn test_comma_separated_field_in_tsv() -> PolarsResult<()> {
     let csv = "first\tsecond\n1\t2.3,2.4\n3\t4.5,4.6\n";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).with_separator(b'\t').finish()?;
-    assert_eq!(df.dtypes(), &[DataType::Int64, DataType::Utf8]);
+    assert_eq!(df.dtypes(), &[DataType::Int64, DataType::String]);
     Ok(())
 }
 
@@ -1050,7 +1050,7 @@ fn test_header_only() -> PolarsResult<()> {
         assert_eq!(df.shape(), (0, 3));
         assert_eq!(
             df.dtypes(),
-            &[DataType::Utf8, DataType::Utf8, DataType::Utf8]
+            &[DataType::String, DataType::String, DataType::String]
         );
     }
 

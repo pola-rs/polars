@@ -337,7 +337,7 @@ impl ExplodeByOffsets for Utf8Chunked {
         unsafe {
             self.as_binary()
                 .explode_by_offsets(offsets)
-                .cast_unchecked(&DataType::Utf8)
+                .cast_unchecked(&DataType::String)
                 .unwrap()
         }
     }
@@ -516,7 +516,7 @@ mod test {
         );
 
         // utf8
-        let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a")?;
+        let mut builder = get_list_builder(&DataType::String, 5, 5, "a")?;
         builder.append_series(&Series::new("", &["abc"])).unwrap();
         builder
             .append_series(

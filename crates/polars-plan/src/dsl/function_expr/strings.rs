@@ -123,14 +123,14 @@ impl StringFunction {
         use StringFunction::*;
         match self {
             #[cfg(feature = "concat_str")]
-            ConcatVertical { .. } | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
+            ConcatVertical { .. } | ConcatHorizontal(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
-            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
@@ -145,7 +145,7 @@ impl StringFunction {
             Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
-            Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
@@ -171,13 +171,13 @@ impl StringFunction {
             #[cfg(feature = "dtype-struct")]
             SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
                 (0..n + 1)
-                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
+                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::String))
                     .collect(),
             )),
             #[cfg(feature = "dtype-struct")]
             SplitN(n) => mapper.with_dtype(DataType::Struct(
                 (0..*n)
-                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
+                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::String))
                     .collect(),
             )),
             #[cfg(feature = "find_many")]
@@ -518,7 +518,7 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
             Ok(Series::full_null(
                 ca.name(),
                 ca.len(),
-                &DataType::List(Box::new(DataType::Utf8)),
+                &DataType::List(Box::new(DataType::String)),
             ))
         }
     } else {
@@ -682,7 +682,7 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 
 #[cfg(feature = "concat_str")]
 pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
-    let str_s = s.cast(&DataType::Utf8)?;
+    let str_s = s.cast(&DataType::String)?;
     let concat = polars_ops::chunked_array::str_concat(str_s.utf8()?, delimiter, ignore_nulls);
     Ok(concat.into_series())
 }
@@ -691,7 +691,7 @@ pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsR
 pub(super) fn concat_hor(series: &[Series], delimiter: &str) -> PolarsResult<Series> {
     let str_series: Vec<_> = series
         .iter()
-        .map(|s| s.cast(&DataType::Utf8))
+        .map(|s| s.cast(&DataType::String))
         .collect::<PolarsResult<_>>()?;
     let cas: Vec<_> = str_series.iter().map(|s| s.utf8().unwrap()).collect();
     Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter)?.into_series())

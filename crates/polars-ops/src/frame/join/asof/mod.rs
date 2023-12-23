@@ -257,7 +257,7 @@ pub trait AsofJoin: IntoDf {
                 let ca = left_key.binary().unwrap();
                 join_asof::<BinaryType>(ca, &right_key, strategy)
             },
-            DataType::Utf8 => {
+            DataType::String => {
                 let ca = left_key.utf8().unwrap();
                 let right_binary = right_key.cast(&DataType::Binary).unwrap();
                 join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy)

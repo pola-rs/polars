@@ -32,7 +32,7 @@ fn read_json() {
 fn read_json_with_whitespace() {
     let basic_json = r#"{   "a":1, "b":2.0, "c"   :false  , "d":"4"}
 {"a":-10, "b":-3.5, "c":true, "d":"4"}
-{"a":2, "b":0.6, "c":false, "d":"text"   }      
+{"a":2, "b":0.6, "c":false, "d":"text"   }
 {"a":1, "b":2.0, "c":false, "d":"4"}
 
 
@@ -68,7 +68,7 @@ fn read_json_with_escapes() {
     {"id": 5, "text":".h\"h1hh\\21hi1e2emm...","date":"2009-05-19 21:07:53"}
     {"id": 6, "text":"xxxx....","date":"2009-05-19 21:07:53"}
     {"id": 7, "text":".\"quoted text\".","date":"2009-05-19 21:07:53"}
-    
+
 "#;
     let file = Cursor::new(escaped_json);
     let df = JsonLineReader::new(file)
@@ -142,7 +142,7 @@ fn test_read_ndjson_iss_5875() {
 
     let field_int_inner = Field::new("int_inner", DataType::List(Box::new(DataType::Int64)));
     let field_float_inner = Field::new("float_inner", DataType::Float64);
-    let field_str_inner = Field::new("str_inner", DataType::List(Box::new(DataType::Utf8)));
+    let field_str_inner = Field::new("str_inner", DataType::List(Box::new(DataType::String)));
 
     let mut schema = Schema::new();
     schema.with_column(

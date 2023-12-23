@@ -294,7 +294,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
-            Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
             Null => AnyValueBuffer::Null(NullChunkedBuilder::new("", 0)),
             // Struct and List can be recursive so use anyvalues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
@@ -656,7 +656,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
             UInt16 => AnyValueBufferTrusted::UInt16(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBufferTrusted::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBufferTrusted::Float64(PrimitiveChunkedBuilder::new("", len)),
-            Utf8 => AnyValueBufferTrusted::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBufferTrusted::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let buffers = fields

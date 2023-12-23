@@ -1587,9 +1587,9 @@ pub fn test_select_by_dtypes() -> PolarsResult<()> {
     ]?;
     let out = df
         .lazy()
-        .select([dtype_cols([DataType::Float32, DataType::Utf8])])
+        .select([dtype_cols([DataType::Float32, DataType::String])])
         .collect()?;
-    assert_eq!(out.dtypes(), &[DataType::Utf8, DataType::Float32]);
+    assert_eq!(out.dtypes(), &[DataType::String, DataType::Float32]);
 
     Ok(())
 }

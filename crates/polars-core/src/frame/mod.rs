@@ -1651,7 +1651,7 @@ impl DataFrame {
             return self.clone().filter_vertical(mask);
         }
         let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => {
+            DataType::String => {
                 let ca = s.utf8().unwrap();
                 if ca.get_values_size() / 24 <= ca.len() {
                     s.filter(mask)
@@ -1684,7 +1684,7 @@ impl DataFrame {
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let new_col = POOL.install(|| {
             self.try_apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => {
+                DataType::String => {
                     let ca = s.utf8().unwrap();
                     if ca.get_values_size() / 24 <= ca.len() {
                         s.take(indices)
@@ -1709,7 +1709,7 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| {
                 self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::Utf8 => s.take_unchecked_threaded(idx, true),
+                    DataType::String => s.take_unchecked_threaded(idx, true),
                     _ => s.take_unchecked(idx),
                 })
             })
@@ -1727,7 +1727,7 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| {
                 self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::Utf8 => s.take_slice_unchecked_threaded(idx, true),
+                    DataType::String => s.take_slice_unchecked_threaded(idx, true),
                     _ => s.take_slice_unchecked(idx),
                 })
             })
@@ -2837,7 +2837,7 @@ impl DataFrame {
     #[doc(hidden)]
     pub unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = self.apply_columns(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
             _ => s._take_opt_chunked_unchecked(idx),
         });
 
@@ -2849,7 +2849,7 @@ impl DataFrame {
     /// Doesn't perform any bound checks
     pub unsafe fn _take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, sorted, true),
+            DataType::String => s._take_chunked_unchecked_threaded(idx, sorted, true),
             _ => s._take_chunked_unchecked(idx, sorted),
         });
 
@@ -2861,7 +2861,7 @@ impl DataFrame {
     /// Doesn't perform any bound checks
     pub unsafe fn _take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
             _ => s._take_opt_chunked_unchecked(idx),
         });
 

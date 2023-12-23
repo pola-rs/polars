@@ -146,7 +146,7 @@ impl StringNameSpace {
         let dtype = DataType::Struct(
             names
                 .iter()
-                .map(|name| Field::new(name.as_str(), DataType::Utf8))
+                .map(|name| Field::new(name.as_str(), DataType::String))
                 .collect(),
         );
 

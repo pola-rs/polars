@@ -32,7 +32,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         }};
     }
     match dtype {
-        DataType::Utf8 => downcast_and_pack!(LargeStringArray, Utf8),
+        DataType::String => downcast_and_pack!(LargeStringArray, Utf8),
         DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
         DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),

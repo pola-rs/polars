@@ -312,7 +312,7 @@ impl LogicalType for CategoricalChunked {
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         match dtype {
-            DataType::Utf8 => {
+            DataType::String => {
                 let mapping = &**self.get_rev_map();
 
                 let mut builder =
@@ -486,7 +486,7 @@ mod test {
         match aggregated.get(0)? {
             AnyValue::List(s) => {
                 assert!(matches!(s.dtype(), DataType::Categorical(_, _)));
-                let str_s = s.cast(&DataType::Utf8).unwrap();
+                let str_s = s.cast(&DataType::String).unwrap();
                 assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
                 assert_eq!(s.len(), 1);
             },

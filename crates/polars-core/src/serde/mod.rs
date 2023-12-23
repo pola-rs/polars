@@ -109,15 +109,15 @@ mod test {
         let row_1 = AnyValue::StructOwned(Box::new((
             vec![AnyValue::Utf8("1:1"), AnyValue::Null, AnyValue::Utf8("1:3")],
             vec![
-                Field::new("fld_1", DataType::Utf8),
-                Field::new("fld_2", DataType::Utf8),
-                Field::new("fld_3", DataType::Utf8),
+                Field::new("fld_1", DataType::String),
+                Field::new("fld_2", DataType::String),
+                Field::new("fld_3", DataType::String),
             ],
         )));
         let dtype = DataType::Struct(vec![
-            Field::new("fld_1", DataType::Utf8),
-            Field::new("fld_2", DataType::Utf8),
-            Field::new("fld_3", DataType::Utf8),
+            Field::new("fld_1", DataType::String),
+            Field::new("fld_2", DataType::String),
+            Field::new("fld_3", DataType::String),
         ]);
         let row_2 = AnyValue::StructOwned(Box::new((
             vec![
@@ -126,9 +126,9 @@ mod test {
                 AnyValue::Utf8("2:3"),
             ],
             vec![
-                Field::new("fld_1", DataType::Utf8),
-                Field::new("fld_2", DataType::Utf8),
-                Field::new("fld_3", DataType::Utf8),
+                Field::new("fld_1", DataType::String),
+                Field::new("fld_2", DataType::String),
+                Field::new("fld_3", DataType::String),
             ],
         )));
         let row_3 = AnyValue::Null;

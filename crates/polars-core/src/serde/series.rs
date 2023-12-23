@@ -29,7 +29,7 @@ impl Serialize for Series {
                 let ca = self.bool().unwrap();
                 ca.serialize(serializer)
             },
-            DataType::Utf8 => {
+            DataType::String => {
                 let ca = self.utf8().unwrap();
                 ca.serialize(serializer)
             },
@@ -199,7 +199,7 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<f64>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     },
-                    DataType::Utf8 => {
+                    DataType::String => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     },

@@ -76,7 +76,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                             DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
                         },
                     },
-                    None => DataType::Utf8,
+                    None => DataType::String,
                 }
             }
             #[cfg(not(feature = "polars-time"))]
@@ -84,7 +84,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                 panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
             }
         } else {
-            DataType::Utf8
+            DataType::String
         }
     }
     // match regex in a particular order
@@ -107,7 +107,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                         DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
                     },
                 },
-                None => DataType::Utf8,
+                None => DataType::String,
             }
         }
         #[cfg(not(feature = "polars-time"))]
@@ -115,7 +115,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
             panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
         }
     } else {
-        DataType::Utf8
+        DataType::String
     }
 }
 
@@ -400,13 +400,13 @@ pub fn infer_file_schema_inner(
                     fields.push(Field::new(field_name, DataType::Float64));
                 }
                 // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::Utf8)
+                else if possibilities.contains(&DataType::String)
                     && possibilities.contains(&DataType::Date)
                 {
                     fields.push(Field::new(field_name, DataType::Date));
                 }
                 // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::Utf8)
+                else if possibilities.contains(&DataType::String)
                     && possibilities.contains(&DataType::Datetime(TimeUnit::Microseconds, None))
                 {
                     fields.push(Field::new(
@@ -415,10 +415,10 @@ pub fn infer_file_schema_inner(
                     ));
                 } else {
                     // default to Utf8 for conflicting datatypes (e.g bool and int)
-                    fields.push(Field::new(field_name, DataType::Utf8));
+                    fields.push(Field::new(field_name, DataType::String));
                 }
             },
-            _ => fields.push(Field::new(field_name, DataType::Utf8)),
+            _ => fields.push(Field::new(field_name, DataType::String)),
         }
     }
     // if there is a single line after the header without an eol
