@@ -1,6 +1,6 @@
 use super::function_expr::StringFunction;
 use super::*;
-/// Specialized expressions for [`Series`] of [`DataType::Utf8`].
+/// Specialized expressions for [`Series`] of [`DataType::String`].
 pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {

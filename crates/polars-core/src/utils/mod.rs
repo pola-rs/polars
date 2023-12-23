@@ -210,7 +210,7 @@ pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, us
 macro_rules! match_dtype_to_physical_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
-            DataType::Utf8 => $macro_utf8!($($opt_args)*),
+            DataType::String => $macro_utf8!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!(u8 $(, $opt_args)*),
@@ -236,7 +236,7 @@ macro_rules! match_dtype_to_physical_apply_macro {
 macro_rules! match_dtype_to_logical_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
-            DataType::Utf8 => $macro_utf8!($($opt_args)*),
+            DataType::String => $macro_utf8!($($opt_args)*),
             DataType::Binary => $macro_binary!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
@@ -263,7 +263,7 @@ macro_rules! match_dtype_to_logical_apply_macro {
 macro_rules! match_arrow_data_type_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
-            DataType::Utf8 => $macro_utf8!($self.utf8().unwrap() $(, $opt_args)*),
+            DataType::String => $macro_utf8!($self.utf8().unwrap() $(, $opt_args)*),
             DataType::Boolean => $macro_bool!($self.bool().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!($self.u8().unwrap() $(, $opt_args)*),
@@ -472,7 +472,7 @@ macro_rules! apply_method_all_arrow_series {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
             DataType::Boolean => $self.bool().unwrap().$method($($args),*),
-            DataType::Utf8 => $self.utf8().unwrap().$method($($args),*),
+            DataType::String => $self.utf8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u16")]

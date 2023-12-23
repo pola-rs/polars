@@ -1074,7 +1074,7 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .anti_join(other, col("foo"), col("bar").cast(DataType::Utf8))
+    ///         .anti_join(other, col("foo"), col("bar").cast(DataType::String))
     /// }
     /// ```
     #[cfg(feature = "semi_anti_join")]
@@ -1131,7 +1131,7 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     /// fn inner_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .inner_join(other, col("foo"), col("bar").cast(DataType::Utf8))
+    ///         .inner_join(other, col("foo"), col("bar").cast(DataType::String))
     /// }
     /// ```
     pub fn inner_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
@@ -1181,7 +1181,7 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     /// fn semi_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .semi_join(other, col("foo"), col("bar").cast(DataType::Utf8))
+    ///         .semi_join(other, col("foo"), col("bar").cast(DataType::String))
     /// }
     /// ```
     #[cfg(feature = "semi_anti_join")]

@@ -20,7 +20,7 @@ impl Field {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let f1 = Field::new("Fruit name", DataType::Utf8);
+    /// let f1 = Field::new("Fruit name", DataType::String);
     /// let f2 = Field::new("Lawful", DataType::Boolean);
     /// let f2 = Field::new("Departure", DataType::Time);
     /// ```

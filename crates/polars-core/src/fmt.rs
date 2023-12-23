@@ -93,7 +93,7 @@ macro_rules! format_array {
             $name,
             $dtype
         )?;
-        let truncate = matches!($a.dtype(), DataType::Utf8);
+        let truncate = matches!($a.dtype(), DataType::String);
         let truncate_len = if truncate {
             std::env::var(FMT_STR_LEN)
                 .as_deref()

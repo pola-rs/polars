@@ -385,7 +385,7 @@ pub fn infer_file_schema_inner(
         }
 
         // determine data type based on possible types
-        // if there are incompatible types, use DataType::Utf8
+        // if there are incompatible types, use DataType::String
         match possibilities.len() {
             1 => {
                 for dtype in possibilities.iter() {

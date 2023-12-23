@@ -76,7 +76,7 @@ fn cast_rhs(
 }
 
 pub trait ListNameSpaceImpl: AsList {
-    /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
+    /// In case the inner dtype [`DataType::String`], the individual items will be joined into a
     /// single string separated by `separator`.
     fn lst_join(&self, separator: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_list();

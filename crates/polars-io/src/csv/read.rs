@@ -354,7 +354,7 @@ where
         self
     }
 
-    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
+    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::String]`.
     pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
         self.try_parse_dates = toggle;
         self

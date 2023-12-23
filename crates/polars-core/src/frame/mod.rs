@@ -490,7 +490,7 @@ impl DataFrame {
     /// let df: DataFrame = df!("Thing" => &["Observable universe", "Human stupidity"],
     ///                         "Diameter (m)" => &[8.8e26, f64::INFINITY])?;
     ///
-    /// let f1: Field = Field::new("Thing", DataType::Utf8);
+    /// let f1: Field = Field::new("Thing", DataType::String);
     /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
     /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
@@ -614,7 +614,7 @@ impl DataFrame {
     /// let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
     ///                                "Fraction" => &[0.965, 0.035])?;
     ///
-    /// assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
+    /// assert_eq!(venus_air.dtypes(), &[DataType::String, DataType::Float64]);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn dtypes(&self) -> Vec<DataType> {
@@ -638,7 +638,7 @@ impl DataFrame {
     /// let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
     ///                            "Fraction" => &[0.708, 0.292])?;
     ///
-    /// let f1: Field = Field::new("Surface type", DataType::Utf8);
+    /// let f1: Field = Field::new("Surface type", DataType::String);
     /// let f2: Field = Field::new("Fraction", DataType::Float64);
     ///
     /// assert_eq!(earth.fields(), &[f1, f2]);
