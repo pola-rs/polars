@@ -6,9 +6,9 @@ use std::mem::MaybeUninit;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
-use polars_time::chunkedarray::utf8::infer as date_infer;
+use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
-use polars_time::prelude::utf8::Pattern;
+use polars_time::prelude::string::Pattern;
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;

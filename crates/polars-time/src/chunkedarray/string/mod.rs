@@ -12,7 +12,7 @@ use polars_utils::cache::CachedFunc;
 use super::*;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-use crate::prelude::utf8::strptime::StrpTimeState;
+use crate::prelude::string::strptime::StrpTimeState;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>

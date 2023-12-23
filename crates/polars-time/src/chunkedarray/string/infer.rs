@@ -7,8 +7,8 @@ use regex::Regex;
 use super::patterns::{self, Pattern};
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-use crate::chunkedarray::utf8::strptime;
-use crate::prelude::utf8::strptime::StrpTimeState;
+use crate::chunkedarray::string::strptime;
+use crate::prelude::string::strptime::StrpTimeState;
 
 const DATETIME_DMY_PATTERN: &str = r#"(?x)
         ^
