@@ -5,7 +5,7 @@ import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
+from typing import IO, Any, ContextManager, Iterator, overload
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
@@ -31,48 +31,48 @@ def _is_local_file(file: str) -> bool:
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | Path | BinaryIO | bytes,
+    file: str | list[str] | Path | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | BinaryIO]:
+) -> ContextManager[str | BytesIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: str | TextIO | Path | BinaryIO | bytes,
+    file: str | Path | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | BinaryIO]:
+) -> ContextManager[str | BytesIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | Path | TextIO | BinaryIO | bytes,
+    file: str | list[str] | Path | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | list[str] | BinaryIO | list[BinaryIO]]:
+) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
     ...
 
 
 def _prepare_file_arg(
-    file: str | list[str] | Path | TextIO | BinaryIO | bytes,
+    file: str | list[str] | Path | IO[str] | IO[bytes] | bytes,
     encoding: str | None = None,
     *,
     use_pyarrow: bool = False,
     raise_if_empty: bool = True,
     storage_options: dict[str, Any] | None = None,
-) -> ContextManager[str | list[str] | BinaryIO | list[BinaryIO]]:
+) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
     """
     Prepare file argument.
 
@@ -116,15 +116,10 @@ def _prepare_file_arg(
 
     if isinstance(file, bytes):
         if not has_utf8_utf8_lossy_encoding:
-            return _check_empty(
-                BytesIO(file.decode(encoding_str).encode("utf8")),
-                context="bytes",
-                raise_if_empty=raise_if_empty,
-            )
-        if use_pyarrow:
-            return _check_empty(
-                BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
-            )
+            file = file.decode(encoding_str).encode("utf8")
+        return _check_empty(
+            BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
+        )
 
     if isinstance(file, StringIO):
         return _check_empty(
