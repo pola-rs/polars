@@ -289,8 +289,8 @@ fn ordering_other_columns<'a>(
     Ordering::Equal
 }
 
-impl ChunkSort<Utf8Type> for StringChunked {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
+impl ChunkSort<StringType> for StringChunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<StringType> {
         unsafe { self.as_binary().sort_with(options).to_utf8() }
     }
 

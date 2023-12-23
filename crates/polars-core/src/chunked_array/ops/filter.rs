@@ -63,8 +63,8 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkFilter<Utf8Type> for StringChunked {
-    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<Utf8Type>> {
+impl ChunkFilter<StringType> for StringChunked {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<StringType>> {
         let out = self.as_binary().filter(filter)?;
         unsafe { Ok(out.to_utf8()) }
     }

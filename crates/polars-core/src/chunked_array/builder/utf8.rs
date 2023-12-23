@@ -71,7 +71,7 @@ impl StringChunkedBuilderCow {
     }
 }
 
-impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for StringChunkedBuilderCow {
+impl ChunkedBuilder<Cow<'_, str>, StringType> for StringChunkedBuilderCow {
     #[inline]
     fn append_value(&mut self, val: Cow<'_, str>) {
         self.builder.append_value(val.as_ref())
@@ -82,7 +82,7 @@ impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for StringChunkedBuilderCow {
         self.builder.append_null()
     }
 
-    fn finish(self) -> ChunkedArray<Utf8Type> {
+    fn finish(self) -> ChunkedArray<StringType> {
         self.builder.finish()
     }
 

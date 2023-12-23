@@ -171,7 +171,7 @@ where
     }
 }
 
-impl ChunkUnique<Utf8Type> for StringChunked {
+impl ChunkUnique<StringType> for StringChunked {
     fn unique(&self) -> PolarsResult<Self> {
         let out = self.as_binary().unique()?;
         Ok(unsafe { out.to_utf8() })

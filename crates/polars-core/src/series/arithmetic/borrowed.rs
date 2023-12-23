@@ -89,7 +89,7 @@ where
     }
 }
 
-impl NumOpsDispatchInner for Utf8Type {
+impl NumOpsDispatchInner for StringType {
     fn add_to(lhs: &StringChunked, rhs: &Series) -> PolarsResult<Series> {
         let rhs = lhs.unpack_series_matching_type(rhs)?;
         let out = lhs + rhs;

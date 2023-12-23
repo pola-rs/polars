@@ -123,7 +123,7 @@ impl NewChunkedArray<BooleanType, bool> for BooleanChunked {
     }
 }
 
-impl<S> NewChunkedArray<Utf8Type, S> for StringChunked
+impl<S> NewChunkedArray<StringType, S> for StringChunked
 where
     S: AsRef<str>,
 {

@@ -62,7 +62,7 @@ macro_rules! impl_named_from {
     };
 }
 
-impl_named_from!([String], Utf8Type, from_slice);
+impl_named_from!([String], StringType, from_slice);
 impl_named_from!([Vec<u8>], BinaryType, from_slice);
 impl_named_from!([bool], BooleanType, from_slice);
 #[cfg(feature = "dtype-u8")]
@@ -79,7 +79,7 @@ impl_named_from!([i32], Int32Type, from_slice);
 impl_named_from!([i64], Int64Type, from_slice);
 impl_named_from!([f32], Float32Type, from_slice);
 impl_named_from!([f64], Float64Type, from_slice);
-impl_named_from!([Option<String>], Utf8Type, from_slice_options);
+impl_named_from!([Option<String>], StringType, from_slice_options);
 impl_named_from!([Option<Vec<u8>>], BinaryType, from_slice_options);
 impl_named_from!([Option<bool>], BooleanType, from_slice_options);
 #[cfg(feature = "dtype-u8")]

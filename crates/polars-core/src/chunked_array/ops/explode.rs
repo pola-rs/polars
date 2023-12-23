@@ -520,21 +520,21 @@ mod test {
         builder.append_series(&Series::new("", &["abc"])).unwrap();
         builder
             .append_series(
-                &<StringChunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();
         builder.append_series(&Series::new("", &["de"])).unwrap();
         builder
             .append_series(
-                &<StringChunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();
         builder.append_series(&Series::new("", &["fg"])).unwrap();
         builder
             .append_series(
-                &<StringChunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();

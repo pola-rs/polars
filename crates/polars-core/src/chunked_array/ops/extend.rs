@@ -90,7 +90,7 @@ where
 #[doc(hidden)]
 impl StringChunked {
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append::<Utf8Type>(self, other);
+        update_sorted_flag_before_append::<StringType>(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();

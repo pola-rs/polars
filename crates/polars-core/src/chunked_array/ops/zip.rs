@@ -192,7 +192,7 @@ impl ChunkZip<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkZip<Utf8Type> for StringChunked {
+impl ChunkZip<StringType> for StringChunked {
     fn zip_with(
         &self,
         mask: &BooleanChunked,

@@ -65,7 +65,7 @@ impl Series {
                 }
                 macro_rules! utf8 {
                     () => {{
-                        ChunkedArray::<Utf8Type>::full_null(name, size).into_series()
+                        ChunkedArray::<StringType>::full_null(name, size).into_series()
                     }};
                 }
                 macro_rules! binary {
