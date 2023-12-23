@@ -57,7 +57,7 @@ impl TimeChunked {
         self.to_string(format)
     }
 
-    pub fn as_time_iter(&self) -> impl Iterator<Item = Option<NaiveTime>> + TrustedLen + '_ {
+    pub fn as_time_iter(&self) -> impl TrustedLen<Item = Option<NaiveTime>> + '_ {
         // we know the iterators len
         unsafe {
             self.downcast_iter()

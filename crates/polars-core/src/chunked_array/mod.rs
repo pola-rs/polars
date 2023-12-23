@@ -584,20 +584,15 @@ where
     /// Get slices of the underlying arrow data.
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
-    pub fn data_views(&self) -> impl Iterator<Item = &[T::Native]> + DoubleEndedIterator {
+    pub fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
         self.downcast_iter().map(|arr| arr.values().as_slice())
     }
 
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = T::Native>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = T::Native> + DoubleEndedIterator + TrustedLen
+    {
         // .copied was significantly slower in benchmark, next call did not inline?
         #[allow(clippy::map_clone)]
         // we know the iterators len

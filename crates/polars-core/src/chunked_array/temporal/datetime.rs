@@ -63,9 +63,7 @@ fn format_naive(
 }
 
 impl DatetimeChunked {
-    pub fn as_datetime_iter(
-        &self,
-    ) -> impl Iterator<Item = Option<NaiveDateTime>> + TrustedLen + '_ {
+    pub fn as_datetime_iter(&self) -> impl TrustedLen<Item = Option<NaiveDateTime>> + '_ {
         let func = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
