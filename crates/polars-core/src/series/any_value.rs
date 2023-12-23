@@ -9,7 +9,7 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
 }
 
 fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
-    let mut builder = Utf8ChunkedBuilder::new("", avs.len(), avs.len() * 10);
+    let mut builder = StringChunkedBuilder::new("", avs.len(), avs.len() * 10);
 
     // amortize allocations
     let mut owned = String::new();

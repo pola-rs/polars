@@ -1,13 +1,13 @@
 use super::*;
 
 #[derive(Clone)]
-pub struct Utf8ChunkedBuilder {
+pub struct StringChunkedBuilder {
     pub(crate) builder: MutableUtf8Array<i64>,
     pub capacity: usize,
     pub(crate) field: Field,
 }
 
-impl Utf8ChunkedBuilder {
+impl StringChunkedBuilder {
     /// Create a new UtfChunkedBuilder
     ///
     /// # Arguments
@@ -15,7 +15,7 @@ impl Utf8ChunkedBuilder {
     /// * `capacity` - Number of string elements in the final array.
     /// * `bytes_capacity` - Number of bytes needed to store the string values.
     pub fn new(name: &str, capacity: usize, bytes_capacity: usize) -> Self {
-        Utf8ChunkedBuilder {
+        StringChunkedBuilder {
             builder: MutableUtf8Array::<i64>::with_capacities(capacity, bytes_capacity),
             capacity,
             field: Field::new(name, DataType::String),
@@ -60,13 +60,13 @@ impl Utf8ChunkedBuilder {
 }
 
 pub struct Utf8ChunkedBuilderCow {
-    builder: Utf8ChunkedBuilder,
+    builder: StringChunkedBuilder,
 }
 
 impl Utf8ChunkedBuilderCow {
     pub fn new(name: &str, capacity: usize) -> Self {
         Utf8ChunkedBuilderCow {
-            builder: Utf8ChunkedBuilder::new(name, capacity, capacity),
+            builder: StringChunkedBuilder::new(name, capacity, capacity),
         }
     }
 }

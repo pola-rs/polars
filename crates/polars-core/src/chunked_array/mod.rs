@@ -847,7 +847,7 @@ pub(crate) mod test {
     #[test]
     #[ignore]
     fn test_shrink_to_fit() {
-        let mut builder = Utf8ChunkedBuilder::new("foo", 2048, 100 * 2048);
+        let mut builder = StringChunkedBuilder::new("foo", 2048, 100 * 2048);
         builder.append_value("foo");
         let mut arr = builder.finish();
         let before = arr

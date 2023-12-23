@@ -316,7 +316,7 @@ impl LogicalType for CategoricalChunked {
                 let mapping = &**self.get_rev_map();
 
                 let mut builder =
-                    Utf8ChunkedBuilder::new(self.physical.name(), self.len(), self.len() * 5);
+                    StringChunkedBuilder::new(self.physical.name(), self.len(), self.len() * 5);
 
                 let f = |idx: u32| mapping.get(idx);
 

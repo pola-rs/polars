@@ -79,7 +79,7 @@ pub fn hor_str_concat(cas: &[&StringChunked], delimiter: &str) -> PolarsResult<S
         })
         .sum();
     let capacity = tot_strings_bytes + (cas.len() - 1) * delimiter.len() * len;
-    let mut builder = Utf8ChunkedBuilder::new(cas[0].name(), len, capacity);
+    let mut builder = StringChunkedBuilder::new(cas[0].name(), len, capacity);
 
     // Broadcast if appropriate.
     let mut cols: Vec<_> = cas

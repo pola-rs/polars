@@ -137,7 +137,8 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         check_bounds(idx, self.len() as IdxSize)?;
         check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder =
+            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
         for (current_idx, current_value) in idx.iter().zip(values) {
             for (cnt_idx, opt_val_self) in &mut ca_iter {

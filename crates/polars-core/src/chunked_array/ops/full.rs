@@ -46,7 +46,7 @@ impl ChunkFullNull for BooleanChunked {
 
 impl<'a> ChunkFull<&'a str> for StringChunked {
     fn full(name: &str, value: &'a str, length: usize) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, length, length * value.len());
+        let mut builder = StringChunkedBuilder::new(name, length, length * value.len());
 
         for _ in 0..length {
             builder.append_value(value);

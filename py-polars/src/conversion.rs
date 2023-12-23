@@ -127,7 +127,7 @@ impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
 impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
-        let mut builder = Utf8ChunkedBuilder::new("", len, len * 25);
+        let mut builder = StringChunkedBuilder::new("", len, len * 25);
 
         for res in obj.iter()? {
             let item = res?;

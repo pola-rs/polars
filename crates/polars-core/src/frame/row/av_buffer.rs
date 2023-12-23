@@ -38,7 +38,7 @@ pub enum AnyValueBuffer<'a> {
     Time(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
-    Utf8(Utf8ChunkedBuilder),
+    Utf8(StringChunkedBuilder),
     Null(NullChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
@@ -212,7 +212,7 @@ impl<'a> AnyValueBuffer<'a> {
                     .saturating_div(b.builder.capacity() + 1)
                     + 1;
                 let mut new =
-                    Utf8ChunkedBuilder::new(b.field.name(), capacity, avg_values_len * capacity);
+                    StringChunkedBuilder::new(b.field.name(), capacity, avg_values_len * capacity);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
@@ -294,7 +294,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
-            String => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBuffer::Utf8(StringChunkedBuilder::new("", len, len * 5)),
             Null => AnyValueBuffer::Null(NullChunkedBuilder::new("", 0)),
             // Struct and List can be recursive so use anyvalues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
@@ -320,7 +320,7 @@ pub enum AnyValueBufferTrusted<'a> {
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
-    Utf8(Utf8ChunkedBuilder),
+    Utf8(StringChunkedBuilder),
     #[cfg(feature = "dtype-struct")]
     // not the trusted variant!
     Struct(Vec<(AnyValueBuffer<'a>, SmartString)>),
@@ -578,7 +578,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                     (b.builder.values().len() as f64) / ((b.builder.capacity() + 1) as f64) + 1.0;
                 // alloc some extra to reduce realloc prob.
                 let new_values_len = (avg_values_len * capacity as f64 * 1.3) as usize;
-                let mut new = Utf8ChunkedBuilder::new(b.field.name(), capacity, new_values_len);
+                let mut new = StringChunkedBuilder::new(b.field.name(), capacity, new_values_len);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
@@ -656,7 +656,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
             UInt16 => AnyValueBufferTrusted::UInt16(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBufferTrusted::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBufferTrusted::Float64(PrimitiveChunkedBuilder::new("", len)),
-            String => AnyValueBufferTrusted::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBufferTrusted::Utf8(StringChunkedBuilder::new("", len, len * 5)),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let buffers = fields

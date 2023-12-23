@@ -184,7 +184,8 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
     {
         let idx_iter = idx.into_iter();
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder =
+            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
         for current_idx in idx_iter.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
@@ -215,7 +216,8 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
     {
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder =
+            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         impl_scatter_with!(self, builder, idx, f)
     }
 
