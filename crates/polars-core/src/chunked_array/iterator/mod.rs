@@ -7,7 +7,7 @@ use crate::prelude::*;
 use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 
-type LargeStringArray = Utf8Array<i64>;
+type LargeUtf8Array = Utf8Array<i64>;
 type LargeBinaryArray = BinaryArray<i64>;
 type LargeListArray = ListArray<i64>;
 pub mod par;
@@ -133,14 +133,14 @@ impl<'a> IntoIterator for &'a StringChunked {
 }
 
 pub struct Utf8IterNoNull<'a> {
-    array: &'a LargeStringArray,
+    array: &'a LargeUtf8Array,
     current: usize,
     current_end: usize,
 }
 
 impl<'a> Utf8IterNoNull<'a> {
     /// create a new iterator
-    pub fn new(array: &'a LargeStringArray) -> Self {
+    pub fn new(array: &'a LargeUtf8Array) -> Self {
         Utf8IterNoNull {
             array,
             current: 0,
