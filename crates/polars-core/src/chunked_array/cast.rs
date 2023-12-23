@@ -210,12 +210,16 @@ impl ChunkCast for StringChunked {
                 },
                 Some(rev_map) => {
                     polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
-                    CategoricalChunked::from_utf8_to_enum(self, rev_map.get_categories(), *ordering)
-                        .map(|ca| {
-                            let mut s = ca.into_series();
-                            s.rename(self.name());
-                            s
-                        })
+                    CategoricalChunked::from_string_to_enum(
+                        self,
+                        rev_map.get_categories(),
+                        *ordering,
+                    )
+                    .map(|ca| {
+                        let mut s = ca.into_series();
+                        s.rename(self.name());
+                        s
+                    })
                 },
             },
             #[cfg(feature = "dtype-struct")]

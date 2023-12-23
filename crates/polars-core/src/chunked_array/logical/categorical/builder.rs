@@ -568,7 +568,7 @@ impl CategoricalChunked {
 
     /// Create a [`CategoricalChunked`] from a fixed list of categories and a List of strings.
     /// This will error if a string is not in the fixed list of categories
-    pub fn from_utf8_to_enum(
+    pub fn from_string_to_enum(
         values: &StringChunked,
         categories: &Utf8Array<i64>,
         ordering: CategoricalOrdering,
