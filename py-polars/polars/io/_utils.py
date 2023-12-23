@@ -116,15 +116,10 @@ def _prepare_file_arg(
 
     if isinstance(file, bytes):
         if not has_utf8_utf8_lossy_encoding:
-            return _check_empty(
-                BytesIO(file.decode(encoding_str).encode("utf8")),
-                context="bytes",
-                raise_if_empty=raise_if_empty,
-            )
-        if use_pyarrow:
-            return _check_empty(
-                BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
-            )
+            file = file.decode(encoding_str).encode("utf8")
+        return _check_empty(
+            BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
+        )
 
     if isinstance(file, StringIO):
         return _check_empty(

@@ -671,7 +671,6 @@ def test_read_parquet_binary_bytes_io() -> None:
     assert_frame_equal(out, df)
 
 
-@pytest.mark.xfail(reason="Reading bytes directly is not supported yet")
 def test_read_parquet_binary_bytes() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     f = io.BytesIO()
