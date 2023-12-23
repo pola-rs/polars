@@ -59,19 +59,19 @@ impl StringChunkedBuilder {
     }
 }
 
-pub struct Utf8ChunkedBuilderCow {
+pub struct StringChunkedBuilderCow {
     builder: StringChunkedBuilder,
 }
 
-impl Utf8ChunkedBuilderCow {
+impl StringChunkedBuilderCow {
     pub fn new(name: &str, capacity: usize) -> Self {
-        Utf8ChunkedBuilderCow {
+        StringChunkedBuilderCow {
             builder: StringChunkedBuilder::new(name, capacity, capacity),
         }
     }
 }
 
-impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
+impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for StringChunkedBuilderCow {
     #[inline]
     fn append_value(&mut self, val: Cow<'_, str>) {
         self.builder.append_value(val.as_ref())
