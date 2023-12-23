@@ -796,7 +796,7 @@ def test_repr_long_expression() -> None:
     result = repr(expr).split("0x")[0]
 
     # note the … denoting that there was truncated text
-    expected = "<Expr ['dtype_columns([Utf8]).str.coun…'] at "
+    expected = "<Expr ['dtype_columns([String]).str.co…'] at "
     assert result == expected
     assert repr(expr).endswith(">")
 
