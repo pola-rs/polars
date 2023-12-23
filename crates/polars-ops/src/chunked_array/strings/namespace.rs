@@ -24,7 +24,7 @@ where
     f
 }
 
-pub trait Utf8NameSpaceImpl: AsString {
+pub trait StringNameSpaceImpl: AsString {
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<StringChunked> {
         panic!("activate 'binary_encoding' feature")
@@ -550,4 +550,4 @@ pub trait Utf8NameSpaceImpl: AsString {
     }
 }
 
-impl Utf8NameSpaceImpl for StringChunked {}
+impl StringNameSpaceImpl for StringChunked {}
