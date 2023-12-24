@@ -472,6 +472,20 @@ impl<'a> CoreReader<'a> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
+
+        // keep track of the desired order of the columns, as the projection may change the order
+        let column_order: Option<Vec<_>> = if self.projection.is_some() {
+            self.projection.as_ref().map(|projection| {
+                projection
+                    .iter()
+                    .map(|&index| self.schema.iter_fields().nth(index).unwrap().name().clone())
+                    .collect()
+            })
+        } else {
+            None
+        };
+
+        // this projection can alter the column order
         let projection = self.get_projection()?;
 
         // An empty file with a schema should return an empty DataFrame with that schema
@@ -657,7 +671,14 @@ impl<'a> CoreReader<'a> {
             if self.row_index.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
-            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
+            let mut df = accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))?;
+
+            // set the column order if it was specified
+            if let Some(ref column_order) = column_order {
+                df = df.select(column_order)?;
+            }
+
+            Ok(df)
         }
     }
 
