@@ -35,6 +35,7 @@ pub fn replace(
 
     let old = match (s.dtype(), old.dtype()) {
         (s_dt, old_dt) if s_dt == old_dt => old.clone(),
+        #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(opt_rev_map, ord), DataType::Utf8) => {
             let dt = opt_rev_map
                 .as_ref()
