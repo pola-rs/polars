@@ -194,3 +194,177 @@ fn iss_9560_join_as() {
 
     assert!(actual.equals(&expected));
 }
+
+
+// -------- Below are the tests for https://github.com/pola-rs/polars/issues/11290 --------------
+
+
+fn prepare_compound_join_context() -> SQLContext {
+    let df1 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 3, 4, 4, 5],
+    }
+    .unwrap();
+    let df2 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [0, 3, 4, 5, 6]
+    }
+    .unwrap();
+
+    let df3 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [0, 3, 4, 5, 6],
+        "c" => [0, 3, 4, 5, 6]
+    }
+    .unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("df1", df1.lazy());
+    ctx.register("df2", df2.lazy());
+    ctx.register("df3", df3.lazy());
+    return ctx;
+}
+
+#[test]
+fn test_compound_join_basic() {
+    let mut ctx = prepare_compound_join_context();
+    let sql = r#"
+        SELECT * FROM df1
+        JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "a" => [2, 3],
+        "b" => [3, 4],
+    }
+    .unwrap();
+
+    println!("expected = {:?}", expected);
+    println!("actual = {:?}", actual);
+    assert!(actual.equals(&expected));
+}
+
+#[test]
+fn test_compound_join_different_column_names() {
+    let df1 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 2, 3, 4, 5],
+    }
+    .unwrap();
+    let df2 = df! {
+        "a" => [0, 2, 3, 4, 5],
+        "b" => [1, 2, 3, 5, 6],
+        "c" => [7, 8, 9, 10, 11],
+    }
+    .unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("df1", df1.lazy());
+    ctx.register("df2", df2.lazy());
+
+    let sql = r#"
+        SELECT * FROM df1 JOIN df2 ON df1.a = df2.b AND df1.b = df2.a
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "a" => [2, 3],
+        "b" => [2, 3],
+        "c" => [8, 9],
+    }
+    .unwrap();
+
+    println!("expected = {:?}", expected);
+    println!("actual = {:?}", actual);
+    assert!(actual.equals(&expected));
+}
+
+#[test]
+fn test_compound_join_three_tables() {
+    let mut ctx = prepare_compound_join_context();
+    let sql = r#"
+        SELECT * FROM df1
+            JOIN df2
+                ON df1.a = df2.a AND df1.b = df2.b
+            JOIN df3
+                ON df1.a = df3.a AND df1.b = df3.b
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "a" => [2, 3],
+        "b" => [3, 4],
+        "c" => [3, 4],
+    }
+    .unwrap();
+
+    println!("expected = {:?}", expected);
+    println!("actual = {:?}", actual);
+    assert!(actual.equals(&expected));
+}
+
+#[test]
+fn test_compound_join_nested_and() {
+    let df1 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 2, 3, 4, 5],
+        "c" => [0, 3, 4, 5, 6],
+        "d" => [0, 3, 4, 5, 6],
+    }
+    .unwrap();
+    let df2 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 3, 3, 5, 6],
+        "c" => [0, 3, 4, 5, 6],
+        "d" => [0, 3, 4, 5, 6]
+    }
+    .unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("df1", df1.lazy());
+    ctx.register("df2", df2.lazy());
+
+    let sql = r#"
+        SELECT * FROM df1
+            JOIN df2 ON
+                df1.a = df2.a AND
+                df1.b = df2.b AND
+                df1.c = df2.c AND
+                df1.d = df2.d
+     "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "a" => [1, 3],
+        "b" => [1, 3],
+        "c" => [0, 4],
+        "d" => [0, 4],
+    }
+    .unwrap();
+
+    println!("expected = {:?}", expected);
+    println!("actual = {:?}", actual);
+    assert!(actual.equals(&expected));
+}
+
+#[test]
+#[should_panic]
+fn test_compound_invalid_1() {
+    let mut ctx = prepare_compound_join_context();
+    let sql = "SELECT * FROM df1 JOIN df2 ON a AND b";
+    ctx.execute(sql).unwrap().collect().unwrap();
+}
+
+#[test]
+#[should_panic]
+fn test_compound_invalid_2() {
+    let mut ctx = prepare_compound_join_context();
+    let sql = "SELECT * FROM df1 JOIN df2 ON df1.a = df2.a AND b = b";
+    ctx.execute(sql).unwrap().collect().unwrap();
+}
+
+#[test]
+#[should_panic]
+fn test_compound_invalid_3() {
+    let mut ctx = prepare_compound_join_context();
+    let sql = "SELECT * FROM df1 JOIN df2 ON df1.a = df2.a AND b";
+    ctx.execute(sql).unwrap().collect().unwrap();
+}

@@ -727,29 +727,92 @@ pub(super) fn process_join(
         .finish())
 }
 
+pub(super) fn collect_compound_identifiers(
+    left: &Vec<Ident>,
+    right: &Vec<Ident>,
+    left_name: &str,
+    right_name: &str,
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
+    if left.len() == 2 && right.len() == 2 {
+        let (tbl_a, col_a) = (&left[0].value, &left[1].value);
+        let (tbl_b, col_b) = (&right[0].value, &right[1].value);
+
+        if left_name == tbl_a && right_name == tbl_b {
+            return Ok((vec![col(col_a)], vec![col(col_b)]));
+        } else if left_name == tbl_b && right_name == tbl_a {
+            return Ok((vec![col(col_b)], vec![col(col_a)]));
+        } else {
+            polars_bail!(InvalidOperation: "collect_compound_identifiers: left_name={:?}, right_name={:?}, tbl_a={:?}, tbl_b={:?}", left_name, right_name, tbl_a, tbl_b);
+        }
+    } else {
+        polars_bail!(InvalidOperation: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
+    }
+}
+
+pub(super) fn process_and_constraint(
+    expression: &Box<sqlparser::ast::Expr>,
+    left_name: &str,
+    right_name: &str,
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
+    let mut left_on: Vec<Expr> = vec![];
+    let mut right_on: Vec<Expr> = vec![];
+
+    if let SqlExpr::BinaryOp { left, op, right } = expression.as_ref() {
+        match op {
+            &BinaryOperator::Eq => {
+                if let (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) =
+                    (left.as_ref(), right.as_ref())
+                {
+                    let (mut left_i, mut right_i) =
+                        collect_compound_identifiers(left, right, left_name, right_name)?;
+                    left_on.append(&mut left_i);
+                    right_on.append(&mut right_i);
+                } else {
+                    polars_bail!(InvalidOperation: "process_and_constraint: BinaryOperator::Eq supports only SqlExpr::CompoundIdentifier, but found: left={:?}, right={:?}", left, right);
+                }
+            },
+            &BinaryOperator::And => {
+                let (mut left_i, mut right_i) =
+                    process_and_constraint(left, left_name, right_name)?;
+                let (mut left_j, mut right_j) =
+                    process_and_constraint(right, left_name, right_name)?;
+                left_on.append(&mut left_i);
+                right_on.append(&mut right_i);
+                left_on.append(&mut left_j);
+                right_on.append(&mut right_j);
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "process_and_constraint supports only BinaryOperator::Eq and BinaryOperator::And, but found op = {:?}", op);
+            },
+        }
+    } else {
+        polars_bail!(InvalidOperation: "process_and_constraint supports only SqlExpr::BinaryOp, but found expression = {:?}", expression);
+    }
+    return Ok((left_on, right_on));
+}
+
 pub(super) fn process_join_constraint(
     constraint: &JoinConstraint,
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
+    if let JoinConstraint::On(SqlExpr::BinaryOp { left, op, right }) = constraint {
+        if op == &BinaryOperator::And {
+            let (mut left_on, mut right_on) = process_and_constraint(left, left_name, right_name)?;
+            let (mut left_on_2, mut right_on_2) =
+                process_and_constraint(right, left_name, right_name)?;
+            left_on.append(&mut left_on_2);
+            right_on.append(&mut right_on_2);
+            return Ok((left_on, right_on));
+        }
         if op != &BinaryOperator::Eq {
             polars_bail!(InvalidOperation:
-                "SQL interface (currently) only supports basic equi-join \
+                "process_join_constraint: SQL interface (currently) only supports basic equi-join \
                  constraints; found '{:?}' op in\n{:?}", op, constraint)
         }
         match (left.as_ref(), right.as_ref()) {
-            (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
-                if left.len() == 2 && right.len() == 2 {
-                    let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-                    let (tbl_b, col_b) = (&right[0].value, &right[1].value);
-
-                    if left_name == tbl_a && right_name == tbl_b {
-                        return Ok((vec![col(col_a)], vec![col(col_b)]));
-                    } else if left_name == tbl_b && right_name == tbl_a {
-                        return Ok((vec![col(col_b)], vec![col(col_a)]));
-                    }
-                }
+            (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
+                return collect_compound_identifiers(left, right, left_name, right_name);
             },
             (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
                 return Ok((vec![col(&left.value)], vec![col(&right.value)]))
