@@ -29,7 +29,6 @@ impl Series {
 
         // differences from Partial::eq in that numerical dtype may be different
         self.len() == other.len()
-            && self.name() == other.name()
             && self.null_count() == other.null_count()
             && {
                 let eq = self.equal_missing(other);
