@@ -728,8 +728,8 @@ pub(super) fn process_join(
 }
 
 pub(super) fn collect_compound_identifiers(
-    left: &Vec<Ident>,
-    right: &Vec<Ident>,
+    left: &[Ident],
+    right: &[Ident],
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
@@ -738,9 +738,9 @@ pub(super) fn collect_compound_identifiers(
         let (tbl_b, col_b) = (&right[0].value, &right[1].value);
 
         if left_name == tbl_a && right_name == tbl_b {
-            return Ok((vec![col(col_a)], vec![col(col_b)]));
+            Ok((vec![col(col_a)], vec![col(col_b)]))
         } else if left_name == tbl_b && right_name == tbl_a {
-            return Ok((vec![col(col_b)], vec![col(col_a)]));
+            Ok((vec![col(col_b)], vec![col(col_a)]))
         } else {
             polars_bail!(InvalidOperation: "collect_compound_identifiers: left_name={:?}, right_name={:?}, tbl_a={:?}, tbl_b={:?}", left_name, right_name, tbl_a, tbl_b);
         }
@@ -750,16 +750,16 @@ pub(super) fn collect_compound_identifiers(
 }
 
 pub(super) fn process_and_constraint(
-    expression: &Box<sqlparser::ast::Expr>,
+    expression: &sqlparser::ast::Expr,
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     let mut left_on: Vec<Expr> = vec![];
     let mut right_on: Vec<Expr> = vec![];
 
-    if let SqlExpr::BinaryOp { left, op, right } = expression.as_ref() {
-        match op {
-            &BinaryOperator::Eq => {
+    if let SqlExpr::BinaryOp { left, op, right } = expression {
+        match *op {
+            BinaryOperator::Eq => {
                 if let (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) =
                     (left.as_ref(), right.as_ref())
                 {
@@ -771,7 +771,7 @@ pub(super) fn process_and_constraint(
                     polars_bail!(InvalidOperation: "process_and_constraint: BinaryOperator::Eq supports only SqlExpr::CompoundIdentifier, but found: left={:?}, right={:?}", left, right);
                 }
             },
-            &BinaryOperator::And => {
+            BinaryOperator::And => {
                 let (mut left_i, mut right_i) =
                     process_and_constraint(left, left_name, right_name)?;
                 let (mut left_j, mut right_j) =
@@ -788,7 +788,7 @@ pub(super) fn process_and_constraint(
     } else {
         polars_bail!(InvalidOperation: "process_and_constraint supports only SqlExpr::BinaryOp, but found expression = {:?}", expression);
     }
-    return Ok((left_on, right_on));
+    Ok((left_on, right_on))
 }
 
 pub(super) fn process_join_constraint(

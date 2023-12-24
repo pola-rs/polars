@@ -195,9 +195,7 @@ fn iss_9560_join_as() {
     assert!(actual.equals(&expected));
 }
 
-
-// -------- Below are the tests for https://github.com/pola-rs/polars/issues/11290 --------------
-
+// Tests for https://github.com/pola-rs/polars/issues/11290 --------------
 
 fn prepare_compound_join_context() -> SQLContext {
     let df1 = df! {
