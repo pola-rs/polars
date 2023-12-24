@@ -13,4 +13,4 @@ The following methods are available under the `DataFrame.plot` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
-   # DataFrame.plot.line
+   DataFrame.plot.line

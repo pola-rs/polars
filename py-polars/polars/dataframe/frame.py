@@ -349,7 +349,9 @@ class DataFrame:
 
     """
 
-    _accessors: ClassVar[set[str]] = set("plot")
+    _accessors: ClassVar[set[str]] = {
+        "plot",
+    }
 
     @property
     def plot(self) -> PlotNameSpace:
