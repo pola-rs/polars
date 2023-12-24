@@ -727,7 +727,7 @@ pub(super) fn process_join(
         .finish())
 }
 
-pub(super) fn collect_compound_identifiers(
+fn collect_compound_identifiers(
     left: &[Ident],
     right: &[Ident],
     left_name: &str,
@@ -749,7 +749,7 @@ pub(super) fn collect_compound_identifiers(
     }
 }
 
-pub(super) fn process_and_constraint(
+fn process_and_constraint(
     expression: &sqlparser::ast::Expr,
     left_name: &str,
     right_name: &str,
