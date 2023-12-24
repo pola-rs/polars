@@ -84,6 +84,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
             // safety: we only iterate within bounds
             let value = unsafe { values.value_unchecked_at(index) };
             let hash = ahash_hash(value.borrow());
+
             match map.raw_entry_mut().from_hash(hash, |item| {
                 // safety: invariant of the struct, it's always in bounds since we maintain it
                 let stored_value = unsafe { values.value_unchecked_at(item.key.as_usize()) };

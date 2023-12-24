@@ -303,7 +303,7 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
@@ -353,7 +353,7 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
@@ -403,7 +403,7 @@ pub(crate) fn group_by_values_iter_lookahead(
     tz: Option<Tz>,
     start_offset: usize,
     upper_bound: Option<usize>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let upper_bound = upper_bound.unwrap_or(time.len());
 
     let add = match tu {

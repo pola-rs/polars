@@ -112,13 +112,8 @@ impl BooleanChunked {
     #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = bool>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = bool> + DoubleEndedIterator + TrustedLen
+    {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
@@ -194,13 +189,8 @@ impl Utf8Chunked {
     #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = &str>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = &str> + DoubleEndedIterator + TrustedLen
+    {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
@@ -276,13 +266,8 @@ impl BinaryChunked {
     #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = &[u8]>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = &[u8]> + DoubleEndedIterator + TrustedLen
+    {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
@@ -399,13 +384,8 @@ impl ListChunked {
     #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = Series>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = Series> + DoubleEndedIterator + TrustedLen
+    {
         // we know that we only iterate over length == self.len()
         let inner_type = self.inner_dtype();
         unsafe {
@@ -530,13 +510,8 @@ impl ArrayChunked {
     #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = Series>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = Series> + DoubleEndedIterator + TrustedLen
+    {
         // we know that we only iterate over length == self.len()
         let inner_type = self.inner_dtype();
         unsafe {
@@ -566,7 +541,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
     #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator + TrustedLen
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = &T> + DoubleEndedIterator + TrustedLen
     {
         // we know that we only iterate over length == self.len()
         unsafe {

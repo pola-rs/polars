@@ -1,4 +1,4 @@
-use std::simd::{Simd, SimdPartialEq, SimdPartialOrd, ToBitMask};
+use std::simd::prelude::{Simd, SimdPartialEq, SimdPartialOrd};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
@@ -81,67 +81,67 @@ macro_rules! impl_int_total_ord_kernel {
 
             fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
                 apply_binary_kernel::<$width, $mask, _, _>(self, other, |l, r| {
-                    Simd::from(*l).simd_eq(Simd::from(*r)).to_bitmask()
+                    Simd::from(*l).simd_eq(Simd::from(*r)).to_bitmask() as $mask
                 })
             }
 
             fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
                 apply_binary_kernel::<$width, $mask, _, _>(self, other, |l, r| {
-                    Simd::from(*l).simd_ne(Simd::from(*r)).to_bitmask()
+                    Simd::from(*l).simd_ne(Simd::from(*r)).to_bitmask() as $mask
                 })
             }
 
             fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
                 apply_binary_kernel::<$width, $mask, _, _>(self, other, |l, r| {
-                    Simd::from(*l).simd_lt(Simd::from(*r)).to_bitmask()
+                    Simd::from(*l).simd_lt(Simd::from(*r)).to_bitmask() as $mask
                 })
             }
 
             fn tot_le_kernel(&self, other: &Self) -> Bitmap {
                 apply_binary_kernel::<$width, $mask, _, _>(self, other, |l, r| {
-                    Simd::from(*l).simd_le(Simd::from(*r)).to_bitmask()
+                    Simd::from(*l).simd_le(Simd::from(*r)).to_bitmask() as $mask
                 })
             }
 
             fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
                 let r = Simd::splat(*other);
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
-                    Simd::from(*l).simd_eq(r).to_bitmask()
+                    Simd::from(*l).simd_eq(r).to_bitmask() as $mask
                 })
             }
 
             fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
                 let r = Simd::splat(*other);
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
-                    Simd::from(*l).simd_ne(r).to_bitmask()
+                    Simd::from(*l).simd_ne(r).to_bitmask() as $mask
                 })
             }
 
             fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
                 let r = Simd::splat(*other);
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
-                    Simd::from(*l).simd_lt(r).to_bitmask()
+                    Simd::from(*l).simd_lt(r).to_bitmask() as $mask
                 })
             }
 
             fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
                 let r = Simd::splat(*other);
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
-                    Simd::from(*l).simd_le(r).to_bitmask()
+                    Simd::from(*l).simd_le(r).to_bitmask() as $mask
                 })
             }
 
             fn tot_gt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
                 let r = Simd::splat(*other);
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
-                    Simd::from(*l).simd_gt(r).to_bitmask()
+                    Simd::from(*l).simd_gt(r).to_bitmask() as $mask
                 })
             }
 
             fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
                 let r = Simd::splat(*other);
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
-                    Simd::from(*l).simd_ge(r).to_bitmask()
+                    Simd::from(*l).simd_ge(r).to_bitmask() as $mask
                 })
             }
         }
@@ -159,7 +159,7 @@ macro_rules! impl_float_total_ord_kernel {
                     let rs = Simd::from(*r);
                     let lhs_is_nan = ls.simd_ne(ls);
                     let rhs_is_nan = rs.simd_ne(rs);
-                    ((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs)).to_bitmask()
+                    ((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs)).to_bitmask() as $mask
                 })
             }
 
@@ -169,7 +169,7 @@ macro_rules! impl_float_total_ord_kernel {
                     let rs = Simd::from(*r);
                     let lhs_is_nan = ls.simd_ne(ls);
                     let rhs_is_nan = rs.simd_ne(rs);
-                    (!((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs))).to_bitmask()
+                    (!((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs))).to_bitmask() as $mask
                 })
             }
 
@@ -178,7 +178,7 @@ macro_rules! impl_float_total_ord_kernel {
                     let ls = Simd::from(*l);
                     let rs = Simd::from(*r);
                     let lhs_is_nan = ls.simd_ne(ls);
-                    (!(lhs_is_nan | ls.simd_ge(rs))).to_bitmask()
+                    (!(lhs_is_nan | ls.simd_ge(rs))).to_bitmask() as $mask
                 })
             }
 
@@ -187,7 +187,7 @@ macro_rules! impl_float_total_ord_kernel {
                     let ls = Simd::from(*l);
                     let rs = Simd::from(*r);
                     let rhs_is_nan = rs.simd_ne(rs);
-                    (rhs_is_nan | ls.simd_le(rs)).to_bitmask()
+                    (rhs_is_nan | ls.simd_le(rs)).to_bitmask() as $mask
                 })
             }
 
@@ -197,7 +197,7 @@ macro_rules! impl_float_total_ord_kernel {
                     let ls = Simd::from(*l);
                     let lhs_is_nan = ls.simd_ne(ls);
                     let rhs_is_nan = rs.simd_ne(rs);
-                    ((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs)).to_bitmask()
+                    ((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs)).to_bitmask() as $mask
                 })
             }
 
@@ -207,7 +207,7 @@ macro_rules! impl_float_total_ord_kernel {
                     let ls = Simd::from(*l);
                     let lhs_is_nan = ls.simd_ne(ls);
                     let rhs_is_nan = rs.simd_ne(rs);
-                    (!((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs))).to_bitmask()
+                    (!((lhs_is_nan & rhs_is_nan) | ls.simd_eq(rs))).to_bitmask() as $mask
                 })
             }
 
@@ -216,7 +216,7 @@ macro_rules! impl_float_total_ord_kernel {
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
                     let ls = Simd::from(*l);
                     let lhs_is_nan = ls.simd_ne(ls);
-                    (!(lhs_is_nan | ls.simd_ge(rs))).to_bitmask()
+                    (!(lhs_is_nan | ls.simd_ge(rs))).to_bitmask() as $mask
                 })
             }
 
@@ -225,7 +225,7 @@ macro_rules! impl_float_total_ord_kernel {
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
                     let ls = Simd::from(*l);
                     let rhs_is_nan = rs.simd_ne(rs);
-                    (rhs_is_nan | ls.simd_le(rs)).to_bitmask()
+                    (rhs_is_nan | ls.simd_le(rs)).to_bitmask() as $mask
                 })
             }
 
@@ -234,7 +234,7 @@ macro_rules! impl_float_total_ord_kernel {
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
                     let ls = Simd::from(*l);
                     let rhs_is_nan = rs.simd_ne(rs);
-                    (!(rhs_is_nan | rs.simd_ge(ls))).to_bitmask()
+                    (!(rhs_is_nan | rs.simd_ge(ls))).to_bitmask() as $mask
                 })
             }
 
@@ -243,7 +243,7 @@ macro_rules! impl_float_total_ord_kernel {
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
                     let ls = Simd::from(*l);
                     let lhs_is_nan = ls.simd_ne(ls);
-                    (lhs_is_nan | rs.simd_le(ls)).to_bitmask()
+                    (lhs_is_nan | rs.simd_le(ls)).to_bitmask() as $mask
                 })
             }
         }

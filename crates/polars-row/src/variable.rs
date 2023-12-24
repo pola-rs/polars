@@ -70,7 +70,7 @@ unsafe fn encode_one(
     field: &SortField,
 ) -> usize {
     match val {
-        Some(val) if val.is_empty() => {
+        Some([]) => {
             let byte = if field.descending {
                 !EMPTY_SENTINEL
             } else {

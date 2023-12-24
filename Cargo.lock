@@ -2644,7 +2644,6 @@ dependencies = [
  "rand",
  "regex",
  "regex-syntax 0.8.2",
- "rustc_version",
  "ryu",
  "sample-arrow2",
  "sample-std",
@@ -2655,6 +2654,7 @@ dependencies = [
  "strength_reduce",
  "tokio",
  "tokio-util",
+ "version_check",
  "zstd",
 ]
 
