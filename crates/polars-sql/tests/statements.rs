@@ -219,7 +219,7 @@ fn prepare_compound_join_context() -> SQLContext {
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
     ctx.register("df3", df3.lazy());
-    return ctx;
+    ctx
 }
 
 #[test]
