@@ -192,10 +192,13 @@ Install Polars with all optional dependencies.
 
 ```sh
 pip install 'polars[all]'
-pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional dependencies
 ```
 
-You can also install the dependencies directly.
+You can also install a subset of all optional dependencies.
+
+```sh
+pip install 'polars[numpy,pandas,pyarrow]'
+```
 
 | Tag        | Description                                                                  |
 | ---------- | ---------------------------------------------------------------------------- |
@@ -210,6 +213,7 @@ You can also install the dependencies directly.
 | deltalake  | Support for reading from Delta Lake Tables                                   |
 | pyiceberg  | Support for reading from Apache Iceberg tables                               |
 | timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
+| plotting   | Support for plot functions on Dataframes                                     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
 

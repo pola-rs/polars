@@ -348,7 +348,7 @@ class DataFrame:
 
     """
 
-    _accessors: ClassVar[set[str]] = set()
+    _accessors: ClassVar[set[str]] = {"plot"}
 
     def __init__(
         self,
@@ -1115,6 +1115,50 @@ class DataFrame:
         """Replace a column by a new Series (in place)."""
         self._df.replace(column, new_column._s)
         return self
+
+    @property
+    def plot(self) -> Any:
+        """
+        Create a plot namespace.
+
+        Polars does not implement plotting logic itself, but instead defers to
+        hvplot. Please see `hvplot Plotting Extensions <https://hvplot.holoviz.org/user_guide/Plotting_Extensions.html>`_
+        for more information and documentation.
+
+        Examples
+        --------
+        Scatter plot:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "length": [1, 4, 6],
+        ...         "width": [4, 5, 6],
+        ...         "species": ["setosa", "setosa", "versicolor"],
+        ...     }
+        ... )
+        >>> df.plot.scatter(x="length", y="width", by="species")  # doctest: +SKIP
+
+        Line plot:
+
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 3)],
+        ...         "stock_1": [1, 4, 6],
+        ...         "stock_2": [1, 5, 2],
+        ...     }
+        ... )
+        >>> df.plot.line(x="date", y=["stock_1", "stock_2"])  # doctest: +SKIP
+        """
+        try:
+            import hvplot.polars  # noqa: F401
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                "hvplot is not installed, or is older than version 0.9.0.\n\n"
+                "Please see https://hvplot.holoviz.org/getting_started/installation.html "
+                "for installation instructions."
+            ) from None
+        return self.hvplot  # type: ignore[attr-defined]
 
     @property
     def shape(self) -> tuple[int, int]:

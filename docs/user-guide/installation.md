@@ -56,6 +56,7 @@ pip install 'polars[numpy,fsspec]'
 | xlsx2csv   | Support for reading from Excel files                                                                                                  |
 | deltalake  | Support for reading from Delta Lake Tables                                                                                            |
 | timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
+| plotting   | Support for plotting Dataframes                                                                                                       |
 
 ### Rust
 
