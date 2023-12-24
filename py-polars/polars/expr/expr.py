@@ -109,7 +109,8 @@ elif BUILDING_SPHINX_DOCS:
 class Expr:
     """Expressions that can be used in various contexts."""
 
-    _pyexpr: PyExpr = None
+    __slots__ = ("_pyexpr",)
+    _pyexpr: PyExpr
     _accessors: ClassVar[set[str]] = {
         "arr",
         "cat",

@@ -43,7 +43,6 @@ class NameSpace:
             return self._ns
 
         ns_instance = self._ns(instance)  # type: ignore[call-arg]
-        setattr(instance, self._accessor, ns_instance)
         return ns_instance
 
 
