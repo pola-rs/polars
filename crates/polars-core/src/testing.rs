@@ -28,15 +28,13 @@ impl Series {
         }
 
         // differences from Partial::eq in that numerical dtype may be different
-        self.len() == other.len()
-            && self.null_count() == other.null_count()
-            && {
-                let eq = self.equal_missing(other);
-                match eq {
-                    Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
-                    Err(_) => false,
-                }
+        self.len() == other.len() && self.null_count() == other.null_count() && {
+            let eq = self.equal_missing(other);
+            match eq {
+                Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
+                Err(_) => false,
             }
+        }
     }
 
     /// Get a pointer to the underlying data of this [`Series`].
@@ -98,6 +96,9 @@ impl DataFrame {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
+            if left.name() != right.name() {
+                return false;
+            }
             if !left.equals(right) {
                 return false;
             }
@@ -124,6 +125,9 @@ impl DataFrame {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
+            if left.name() != right.name() {
+                return false;
+            }
             if !left.equals_missing(right) {
                 return false;
             }
