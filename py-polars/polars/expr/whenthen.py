@@ -24,6 +24,8 @@ class When:
     In this state, `then` must be called to continue to finish the expression.
     """
 
+    __slots__ = ("_when",)
+
     def __init__(self, when: Any):
         self._when = when
 
@@ -48,6 +50,8 @@ class Then(Expr):
 
     Represents the state of the expression after `pl.when(...).then(...)` is called.
     """
+
+    __slots__ = ("_then",)
 
     def __init__(self, then: Any):
         self._then = then
@@ -106,6 +110,8 @@ class ChainedWhen(Expr):
     In this state, `then` must be called to continue to finish the expression.
     """
 
+    __slots__ = ("_chained_when",)
+
     def __init__(self, chained_when: Any):
         self._chained_when = chained_when
 
@@ -130,6 +136,8 @@ class ChainedThen(Expr):
 
     Represents the state of the expression after an additional `then` is called.
     """
+
+    __slots__ = ("_chained_then",)
 
     def __init__(self, chained_then: Any):
         self._chained_then = chained_then

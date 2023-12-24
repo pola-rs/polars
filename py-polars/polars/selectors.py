@@ -242,6 +242,7 @@ def _combine_as_selector(
 class _selector_proxy_(Expr):
     """Base column selector expression/proxy."""
 
+    __slots__ = ("_attrs", "_repr_override")
     _attrs: dict[str, Any]
     _repr_override: str
 
