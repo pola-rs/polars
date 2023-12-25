@@ -756,6 +756,7 @@ def test_list_arithmetic() -> None:
     assert_series_equal(s.list.mean(), pl.Series("a", [1.5, 2.0]))
     assert_series_equal(s.list.max(), pl.Series("a", [2, 3]))
     assert_series_equal(s.list.min(), pl.Series("a", [1, 1]))
+    assert_series_equal(s.list.product(), pl.Series("a", [2, 6]))
 
 
 def test_list_ordering() -> None:

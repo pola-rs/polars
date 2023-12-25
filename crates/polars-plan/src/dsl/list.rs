@@ -101,6 +101,12 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Sum))
     }
 
+    /// Compute the product of the items in every sublist.
+    pub fn product(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Product))
+    }
+
     /// Compute the mean of every sublist and return a `Series` of dtype `Float64`
     pub fn mean(self) -> Expr {
         self.0

@@ -443,6 +443,19 @@ impl<'a> FieldsMapper<'a> {
         Ok(first)
     }
 
+    pub fn nested_product_type(&self) -> PolarsResult<Field> {
+        let mut first = self.fields[0].clone();
+        use DataType::*;
+        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+
+        if matches!(dt, UInt8 | Int8 | UInt16 | Int16 | UInt32 | Int32) {
+            first.coerce(Int64);
+        } else {
+            first.coerce(dt);
+        }
+        Ok(first)
+    }
+
     pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
         // base, exponent
         match (self.fields[0].data_type(), self.fields[1].data_type()) {

@@ -12,10 +12,12 @@ use polars_core::export::num::{NumCast, Signed, Zero};
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
 
+use super::product::{product_boolean, product_list_numerical};
 use super::*;
 #[cfg(feature = "list_any_all")]
 use crate::chunked_array::list::any_all::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
+use crate::chunked_array::list::product::product_with_nulls;
 use crate::chunked_array::list::sum_mean::sum_with_nulls;
 #[cfg(feature = "diff")]
 use crate::prelude::diff;
@@ -187,6 +189,20 @@ pub trait ListNameSpaceImpl: AsList {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
             dt if dt.is_numeric() => Ok(sum_list_numerical(ca, &dt)),
             dt => sum_with_nulls(ca, &dt),
+        }
+    }
+
+    fn lst_product(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+
+        if has_inner_nulls(ca) {
+            return product_with_nulls(ca, &ca.inner_dtype());
+        }
+
+        match ca.inner_dtype() {
+            DataType::Boolean => product_boolean(ca),
+            dt if dt.is_numeric() => Ok(product_list_numerical(ca, &dt)),
+            dt => product_with_nulls(ca, &dt),
         }
     }
 

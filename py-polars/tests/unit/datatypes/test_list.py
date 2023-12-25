@@ -356,6 +356,69 @@ def test_list_sum_and_dtypes() -> None:
     ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {"a": [1, 2, 3]}
 
 
+def test_list_product_and_dtypes() -> None:
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int64),
+        (pl.Int64, pl.Int64),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.Int64),
+        (pl.UInt64, pl.UInt64),
+    ]:
+        df = pl.DataFrame(
+            {"a": [[1], [None, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+            schema={"a": pl.List(dt_in)},
+        )
+
+        product = df.explode("a").product()
+        assert product.dtypes == [dt_out]
+        assert df.select(pl.col("a").list.product()).dtypes == [dt_out]
+
+    # Lists of numerics
+    assert pl.DataFrame(
+        {"a": [[1], [2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {
+        "a": [1, 6, 24, 120]
+    }
+
+    # Lists of numerics with nulls
+    assert pl.DataFrame(
+        {"a": [[1], [None, 2, 3], [1, 2, 3, 4, None], [1, 2, 3, 4, 5]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {
+        "a": [1, 6, 24, 120]
+    }
+
+    # Lists of booleans
+    product_series = (
+        pl.DataFrame(
+            {"a": [[True], [True, True], [True, False], [False, False]]},
+        )
+        .select(pl.col("a").list.product())
+        .to_series()
+    )
+    assert_series_equal(product_series, pl.Series("a", [1, 1, 0, 0], dtype=pl.Int64))
+
+    # Lists of booleans with nulls
+    product_series = (
+        pl.DataFrame(
+            {
+                "a": [
+                    [True],
+                    [True, True],
+                    [True, False],
+                    [True, True, None],
+                    [False, False],
+                ]
+            },
+        )
+        .select(pl.col("a").list.product())
+        .to_series()
+    )
+    assert_series_equal(product_series, pl.Series("a", [1, 1, 0, 1, 0], dtype=pl.Int64))
+
+
 def test_list_mean() -> None:
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
         pl.col("a").list.mean()

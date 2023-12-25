@@ -32,6 +32,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.max
     Expr.list.mean
     Expr.list.min
+    Expr.list.product
     Expr.list.reverse
     Expr.list.sample
     Expr.list.set_difference
