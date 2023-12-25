@@ -108,7 +108,7 @@ mod test {
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::String).unwrap();
-        let ca = s.string().unwrap();
+        let ca = s.str().unwrap();
         assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), cmp);
     }
 

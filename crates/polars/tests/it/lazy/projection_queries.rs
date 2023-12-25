@@ -60,11 +60,11 @@ fn test_outer_join_with_column_2988() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.get_column_names(), &["key1", "key2", "val1", "val2"]);
     assert_eq!(
-        Vec::from(out.column("key1")?.string()?),
+        Vec::from(out.column("key1")?.str()?),
         &[Some("bar"), Some("baz"), Some("foo")]
     );
     assert_eq!(
-        Vec::from(out.column("key2")?.string()?),
+        Vec::from(out.column("key2")?.str()?),
         &[Some("bar"), Some("baz"), Some("foo")]
     );
     assert_eq!(

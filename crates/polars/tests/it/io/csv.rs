@@ -847,7 +847,7 @@ fn test_tsv_header_offset() -> PolarsResult<()> {
     assert_eq!(df.shape(), (3, 2));
     assert_eq!(df.dtypes(), &[DataType::String, DataType::Int64]);
     let a = df.column("foo")?;
-    let a = a.string()?;
+    let a = a.str()?;
     assert_eq!(a.get(0), None);
 
     Ok(())
@@ -980,7 +980,7 @@ fn test_empty_string_cols() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).has_header(false).finish()?;
     let s = df.column("column_1")?;
-    let ca = s.string()?;
+    let ca = s.str()?;
     assert_eq!(
         ca.into_iter().collect::<Vec<_>>(),
         &[None, Some("abc"), None, Some("xyz")]
@@ -1003,7 +1003,7 @@ fn test_trailing_empty_string_cols() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish()?;
     let col = df.column("colx")?;
-    let col = col.string()?;
+    let col = col.str()?;
     assert_eq!(
         col.into_no_null_iter().collect::<Vec<_>>(),
         &["abc", "xyz", ""]
@@ -1028,7 +1028,7 @@ fn test_escaping_quotes() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish()?;
     let col = df.column("a")?;
-    let col = col.string()?;
+    let col = col.str()?;
     assert_eq!(col.into_no_null_iter().collect::<Vec<_>>(), &["\""]);
     Ok(())
 }

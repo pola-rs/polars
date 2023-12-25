@@ -27,7 +27,7 @@ impl PySeries {
                 (0, ca.len(), get_ptr(ca))
             })),
             DataType::String => {
-                let ca = s.string().unwrap();
+                let ca = s.str().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
                 Ok((0, arr.len(), arr.values().as_ptr() as usize))
             },
@@ -91,7 +91,7 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>
                     Box::new(ca.downcast_iter().map(|arr| arr.values().clone()))
                 },
                 DataType::String => {
-                    let ca = s.string().unwrap();
+                    let ca = s.str().unwrap();
                     Box::new(ca.downcast_iter().map(|arr| {
                         PrimitiveArray::from_data_default(arr.values().clone(), None).boxed()
                     }))
@@ -127,7 +127,7 @@ fn get_offsets(s: &Series) -> PyResult<PySeries> {
             Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
         },
         DataType::String => {
-            let ca = s.string().unwrap();
+            let ca = s.str().unwrap();
             Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
         },
         _ => return Err(PyValueError::new_err("expected list/string")),

@@ -1373,10 +1373,7 @@ fn test_categorical_addition() -> PolarsResult<()> {
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;
 
-    assert_eq!(
-        out.column("foo")?.string()?.get(0).unwrap(),
-        "banana beetle"
-    );
+    assert_eq!(out.column("foo")?.str()?.get(0).unwrap(), "banana beetle");
 
     Ok(())
 }

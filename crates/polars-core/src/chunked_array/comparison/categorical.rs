@@ -180,7 +180,7 @@ where
         }
     } else {
         let lhs_string = lhs.cast(&DataType::String)?;
-        Ok(str_compare_function(lhs_string.string().unwrap(), rhs))
+        Ok(str_compare_function(lhs_string.str().unwrap(), rhs))
     }
 }
 
@@ -214,7 +214,7 @@ where
         }
     } else {
         let lhs_string = lhs.cast(&DataType::String)?;
-        Ok(str_compare_function(lhs_string.string().unwrap(), rhs))
+        Ok(str_compare_function(lhs_string.str().unwrap(), rhs))
     }
 }
 

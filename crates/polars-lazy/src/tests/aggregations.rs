@@ -251,7 +251,7 @@ fn test_binary_agg_context_0() -> PolarsResult<()> {
 
     let out = out.column("foo")?;
     let out = out.explode()?;
-    let out = out.string()?;
+    let out = out.str()?;
     assert_eq!(
         Vec::from(out),
         &[
@@ -460,7 +460,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .collect()?;
     let s = out.column("ordered")?;
     let flat = s.explode()?;
-    let flat = flat.string()?;
+    let flat = flat.str()?;
     let vals = flat.into_no_null_iter().collect::<Vec<_>>();
     assert_eq!(vals, ["a", "b", "c", "a", "a"]);
 
@@ -472,7 +472,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .collect()?;
 
     let taken = out.column("take_lit")?;
-    let taken = taken.string()?;
+    let taken = taken.str()?;
     let vals = taken.into_no_null_iter().collect::<Vec<_>>();
     assert_eq!(vals, ["b", "c", "a"]);
 

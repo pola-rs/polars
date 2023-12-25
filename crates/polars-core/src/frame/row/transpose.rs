@@ -93,7 +93,7 @@ impl DataFrame {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
             Some(cn) => match cn {
                 Either::Left(name) => {
-                    let new_names = self.column(&name).and_then(|x| x.string())?;
+                    let new_names = self.column(&name).and_then(|x| x.str())?;
                     polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
                     df = Cow::Owned(self.drop(&name)?);
                     new_names

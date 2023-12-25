@@ -200,9 +200,9 @@ fn test_join_multiple_columns() {
         .unwrap()
         .cast(&DataType::String)
         .unwrap()
-        .string()
+        .str()
         .unwrap()
-        + df_a.column("b").unwrap().string().unwrap();
+        + df_a.column("b").unwrap().str().unwrap();
     s.rename("dummy");
 
     df_a.with_column(s).unwrap();
@@ -211,15 +211,15 @@ fn test_join_multiple_columns() {
         .unwrap()
         .cast(&DataType::String)
         .unwrap()
-        .string()
+        .str()
         .unwrap()
-        + df_b.column("bar").unwrap().string().unwrap();
+        + df_b.column("bar").unwrap().str().unwrap();
     s.rename("dummy");
     df_b.with_column(s).unwrap();
 
     let joined = df_a.left_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let ham_col = joined.column("ham").unwrap();
-    let ca = ham_col.string().unwrap();
+    let ca = ham_col.str().unwrap();
 
     let correct_ham = &[
         Some("let"),
@@ -236,7 +236,7 @@ fn test_join_multiple_columns() {
     let joined = df_a
         .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left.into())
         .unwrap();
-    let ca = joined.column("ham").unwrap().string().unwrap();
+    let ca = joined.column("ham").unwrap().str().unwrap();
     assert_eq!(Vec::from(ca), correct_ham);
     let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_inner = df_a
@@ -295,7 +295,7 @@ fn test_join_categorical() {
         Some("const"),
     ];
     let ham_col = out.column("ham").unwrap();
-    let ca = ham_col.string().unwrap();
+    let ca = ham_col.str().unwrap();
 
     assert_eq!(Vec::from(ca), correct_ham);
 
@@ -578,7 +578,7 @@ fn test_join_floats() -> PolarsResult<()> {
         JoinType::Left.into(),
     )?;
     assert_eq!(
-        Vec::from(out.column("ham")?.string()?),
+        Vec::from(out.column("ham")?.str()?),
         &[None, Some("var"), None, None]
     );
 

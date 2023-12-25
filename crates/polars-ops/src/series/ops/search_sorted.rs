@@ -208,9 +208,9 @@ pub fn search_sorted(
 
     match phys_dtype {
         DataType::String => {
-            let ca = s.string().unwrap();
+            let ca = s.str().unwrap();
             let ca = ca.as_binary();
-            let search_values = search_values.string()?;
+            let search_values = search_values.str()?;
             let search_values = search_values.as_binary();
             let idx = search_sorted_bin_array(&ca, &search_values, side, descending);
 

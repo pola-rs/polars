@@ -38,13 +38,13 @@ pub(crate) fn cast_columns(
         let out = match (s.dtype(), fld.data_type()) {
             #[cfg(feature = "temporal")]
             (DataType::String, DataType::Date) => s
-                .string()
+                .str()
                 .unwrap()
                 .as_date(None, false)
                 .map(|ca| ca.into_series()),
             #[cfg(feature = "temporal")]
             (DataType::String, DataType::Datetime(tu, _)) => s
-                .string()
+                .str()
                 .unwrap()
                 .as_datetime(
                     None,
@@ -780,7 +780,7 @@ fn update_string_stats(
 ) -> PolarsResult<()> {
     // update the running str bytes statistics
     for (str_index, name) in str_columns.iter().enumerate() {
-        let ca = local_df.column(name)?.string()?;
+        let ca = local_df.column(name)?.str()?;
         let str_bytes_len = ca.get_values_size();
 
         let _ = str_capacities[str_index].update(str_bytes_len);

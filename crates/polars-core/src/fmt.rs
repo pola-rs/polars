@@ -272,7 +272,7 @@ impl Debug for Series {
                 format_array!(f, self.bool().unwrap(), "bool", self.name(), "Series")
             },
             DataType::String => {
-                format_array!(f, self.string().unwrap(), "str", self.name(), "Series")
+                format_array!(f, self.str().unwrap(), "str", self.name(), "Series")
             },
             DataType::UInt8 => {
                 format_array!(f, self.u8().unwrap(), "u8", self.name(), "Series")

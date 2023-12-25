@@ -37,7 +37,7 @@ fn ternary_expand_sizes() -> PolarsResult<()> {
         .collect()?;
     let vals = out
         .column("c")?
-        .string()?
+        .str()?
         .into_no_null_iter()
         .collect::<Vec<_>>();
     assert_eq!(vals, &["a1", "b2", "otherwise"]);
@@ -357,7 +357,7 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
     assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::String)));
     assert_eq!(
         out.explode()?
-            .string()?
+            .str()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
         &["a", "b", "c", "d"]

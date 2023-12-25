@@ -553,7 +553,7 @@ pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].list()?;
-    let separator = s[1].string()?;
+    let separator = s[1].str()?;
     Ok(ca.lst_join(separator)?.into_series())
 }
 

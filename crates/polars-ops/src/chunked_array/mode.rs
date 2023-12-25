@@ -69,7 +69,7 @@ pub fn mode(s: &Series) -> PolarsResult<Series> {
         DataType::Boolean => mode_primitive(s_phys.bool().unwrap())?.into_series(),
         DataType::Float32 => mode_f32(s_phys.f32().unwrap())?.into_series(),
         DataType::Float64 => mode_64(s_phys.f64().unwrap())?.into_series(),
-        DataType::String => mode_primitive(&s_phys.string().unwrap().as_binary())?.into_series(),
+        DataType::String => mode_primitive(&s_phys.str().unwrap().as_binary())?.into_series(),
         dt if dt.is_integer() => {
             with_match_physical_integer_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s_phys.as_ref().as_ref().as_ref();

@@ -319,8 +319,8 @@ where
         );
         match left_dtype {
             DataType::String => {
-                let left_by = &left_by_s.string().unwrap().as_binary();
-                let right_by = right_by_s.string().unwrap().as_binary();
+                let left_by = &left_by_s.str().unwrap().as_binary();
+                let right_by = right_by_s.str().unwrap().as_binary();
                 asof_join_by_binary::<T, A, F>(left_by, &right_by, left_asof, right_asof, filter)
             },
             DataType::Binary => {
@@ -467,7 +467,7 @@ fn dispatch_join_type(
             dispatch_join_strategy::<BinaryType>(ca, right_asof, left_by, right_by, strategy)
         },
         DataType::String => {
-            let ca = left_asof.string().unwrap();
+            let ca = left_asof.str().unwrap();
             let right_binary = right_asof.cast(&DataType::Binary).unwrap();
             dispatch_join_strategy::<BinaryType>(
                 &ca.as_binary(),

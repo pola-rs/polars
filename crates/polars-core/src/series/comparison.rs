@@ -28,14 +28,14 @@ macro_rules! impl_compare {
                 return Ok(lhs
                     .categorical()
                     .unwrap()
-                    .$method(rhs.string().unwrap())?
+                    .$method(rhs.str().unwrap())?
                     .with_name(lhs.name()));
             },
             (String, Categorical(_, _)) => {
                 return Ok(rhs
                     .categorical()
                     .unwrap()
-                    .$method(lhs.string().unwrap())?
+                    .$method(lhs.str().unwrap())?
                     .with_name(lhs.name()));
             },
             _ => (),
@@ -46,7 +46,7 @@ macro_rules! impl_compare {
         let rhs = rhs.to_physical_repr();
         let mut out = match lhs.dtype() {
             Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
-            String => lhs.string().unwrap().$method(rhs.string().unwrap()),
+            String => lhs.str().unwrap().$method(rhs.str().unwrap()),
             Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
             UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
             UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),
@@ -216,7 +216,7 @@ impl ChunkCompare<&str> for Series {
     fn equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().equal(rhs)),
+            DataType::String => Ok(self.str().unwrap().equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().equal(rhs),
             _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
@@ -226,7 +226,7 @@ impl ChunkCompare<&str> for Series {
     fn equal_missing(&self, rhs: &str) -> Self::Item {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().equal_missing(rhs)),
+            DataType::String => Ok(self.str().unwrap().equal_missing(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().equal_missing(rhs),
             _ => Ok(replace_non_null(self.name(), self.0.chunks(), false)),
@@ -236,7 +236,7 @@ impl ChunkCompare<&str> for Series {
     fn not_equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().not_equal(rhs)),
+            DataType::String => Ok(self.str().unwrap().not_equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().not_equal(rhs),
             _ => Ok(BooleanChunked::full(self.name(), true, self.len())),
@@ -246,7 +246,7 @@ impl ChunkCompare<&str> for Series {
     fn not_equal_missing(&self, rhs: &str) -> Self::Item {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().not_equal_missing(rhs)),
+            DataType::String => Ok(self.str().unwrap().not_equal_missing(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().not_equal_missing(rhs),
             _ => Ok(replace_non_null(self.name(), self.0.chunks(), true)),
@@ -256,7 +256,7 @@ impl ChunkCompare<&str> for Series {
     fn gt(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().gt(rhs)),
+            DataType::String => Ok(self.str().unwrap().gt(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().gt(rhs),
             _ => polars_bail!(
@@ -268,7 +268,7 @@ impl ChunkCompare<&str> for Series {
     fn gt_eq(&self, rhs: &str) -> Self::Item {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().gt_eq(rhs)),
+            DataType::String => Ok(self.str().unwrap().gt_eq(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().gt_eq(rhs),
             _ => polars_bail!(
@@ -280,7 +280,7 @@ impl ChunkCompare<&str> for Series {
     fn lt(&self, rhs: &str) -> Self::Item {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().lt(rhs)),
+            DataType::String => Ok(self.str().unwrap().lt(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().lt(rhs),
             _ => polars_bail!(
@@ -292,7 +292,7 @@ impl ChunkCompare<&str> for Series {
     fn lt_eq(&self, rhs: &str) -> Self::Item {
         validate_types(self.dtype(), &DataType::String)?;
         match self.dtype() {
-            DataType::String => Ok(self.string().unwrap().lt_eq(rhs)),
+            DataType::String => Ok(self.str().unwrap().lt_eq(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => self.categorical().unwrap().lt_eq(rhs),
             _ => polars_bail!(

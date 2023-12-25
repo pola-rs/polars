@@ -100,8 +100,8 @@ fn scatter(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series>
             ca.scatter(idx, values)
         },
         DataType::String => {
-            let ca = s.string()?;
-            let values = values.string()?;
+            let ca = s.str()?;
+            let values = values.str()?;
             ca.scatter(idx, values)
         },
         _ => panic!("not yet implemented for dtype: {logical_dtype}"),

@@ -20,7 +20,7 @@ impl ArgAgg for Series {
         let s = self.to_physical_repr();
         match s.dtype() {
             String => {
-                let ca = s.string().unwrap();
+                let ca = s.str().unwrap();
                 arg_min_str(ca)
             },
             Boolean => {
@@ -48,7 +48,7 @@ impl ArgAgg for Series {
         let s = self.to_physical_repr();
         match s.dtype() {
             String => {
-                let ca = s.string().unwrap();
+                let ca = s.str().unwrap();
                 arg_max_str(ca)
             },
             Boolean => {
