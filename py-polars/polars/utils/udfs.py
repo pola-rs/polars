@@ -752,7 +752,7 @@ class RewrittenInstructions:
                 ],
             ):
                 attribute_count = len(function_kind["attribute_name"])
-                inst1, inst2, *_, inst3 = matching_instructions[
+                inst1, inst2, inst3 = matching_instructions[
                     attribute_count : 3 + attribute_count
                 ]
                 if inst1.argval == "json":
