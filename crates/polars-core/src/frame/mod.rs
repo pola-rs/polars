@@ -2006,7 +2006,7 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// fn str_to_len(str_val: &Series) -> Series {
-    ///     str_val.string()
+    ///     str_val.str()
     ///         .unwrap()
     ///         .into_iter()
     ///         .map(|opt_name: Option<&str>| {
@@ -2128,7 +2128,7 @@ impl DataFrame {
     /// let idx = vec![0, 1, 4];
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.string()?
+    ///     s.str()?
     ///     .scatter_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
     /// # Ok::<(), PolarsError>(())
@@ -2194,7 +2194,7 @@ impl DataFrame {
     /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.string()?
+    ///     s.str()?
     ///     .set(&mask, Some("not_within_bounds"))
     /// });
     /// # Ok::<(), PolarsError>(())

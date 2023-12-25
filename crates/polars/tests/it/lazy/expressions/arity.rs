@@ -55,7 +55,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
         .with_column(
             when(col("a").map(
                 move |s| {
-                    s.string()?
+                    s.str()?
                         .to_lowercase()
                         .contains("not_exist", true)
                         .map(|ca| Some(ca.into_series()))
@@ -85,7 +85,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
         .with_column(
             when(col("b").map(
                 move |s| {
-                    s.string()?
+                    s.str()?
                         .to_lowercase()
                         .contains_literal("non-existent")
                         .map(|ca| Some(ca.into_series()))

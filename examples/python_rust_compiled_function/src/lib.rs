@@ -16,9 +16,9 @@ fn hamming_distance(series_a: &PyAny, series_b: &PyAny) -> PyResult<PyObject> {
 
 /// This function iterates over 2 `StringChunked` arrays and computes the hamming distance between the values .
 fn hamming_distance_impl(a: &Series, b: &Series) -> PolarsResult<UInt32Chunked> {
-    Ok(a.string()?
+    Ok(a.str()?
         .into_iter()
-        .zip(b.string()?)
+        .zip(b.str()?)
         .map(|(lhs, rhs)| hamming_distance_strs(lhs, rhs))
         .collect())
 }
