@@ -1,3 +1,4 @@
+import datetime
 from typing import Any
 
 import pytest
@@ -170,10 +171,38 @@ def test_array_data_type_equality() -> None:
         ([[True, False], None, [True, None], [None, None]], pl.Boolean),
         ([[1.0, 2.0], None, [3.0, None], [None, None]], pl.Float32),
         ([["a", "b"], None, ["c", None], [None, None]], pl.String),
+        (
+                [
+                    [datetime.datetime(2021, 1, 1), datetime.datetime(2022, 1, 1, 10, 30)],
+                    None,
+                    [datetime.datetime(2023, 12, 25), None],
+                    [None, None],
+                ],
+                pl.Datetime,
+        ),
+        (
+                [
+                    [datetime.date(2021, 1, 1), datetime.date(2022, 1, 15)],
+                    None,
+                    [datetime.date(2023, 12, 25), None],
+                    [None, None],
+                ],
+                pl.Date,
+        ),
+        (
+                [
+                    [datetime.timedelta(10), datetime.timedelta(1, 22)],
+                    None,
+                    [datetime.timedelta(20), None],
+                    [None, None],
+                ],
+                pl.Duration,
+        ),
         ([[[1, 2], None], None, [[3], None], [None, None]], pl.List(pl.Int32)),
     ],
 )
 def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     s = pl.Series(data, dtype=pl.List(inner_type))
     s = s.cast(pl.Array(inner_type, 2))
+    assert s.dtype == pl.Array(inner_type, width=2)
     assert s.to_list() == data
