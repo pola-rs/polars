@@ -107,6 +107,21 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Mean))
     }
 
+    pub fn median(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Median))
+    }
+
+    pub fn std(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Std))
+    }
+
+    pub fn var(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Var))
+    }
+
     /// Sort every sublist.
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0

@@ -31,6 +31,9 @@ pub enum ListFunction {
     Max,
     Min,
     Mean,
+    Median,
+    Std,
+    Var,
     ArgMin,
     ArgMax,
     #[cfg(feature = "diff")]
@@ -74,6 +77,9 @@ impl ListFunction {
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.with_dtype(DataType::Float64),
+            Median => mapper.map_to_list_and_array_inner_dtype(),
+            Std => mapper.with_dtype(DataType::Float64),
+            Var => mapper.with_dtype(DataType::Float64),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
@@ -133,6 +139,9 @@ impl Display for ListFunction {
             Min => "min",
             Max => "max",
             Mean => "mean",
+            Median => "median",
+            Std => "std",
+            Var => "var",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             #[cfg(feature = "diff")]
@@ -482,6 +491,18 @@ pub(super) fn min(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn mean(s: &Series) -> PolarsResult<Series> {
     Ok(s.list()?.lst_mean())
+}
+
+pub(super) fn median(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_median())
+}
+
+pub(super) fn std(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_std())
+}
+
+pub(super) fn var(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_var())
 }
 
 pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {

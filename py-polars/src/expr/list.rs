@@ -70,6 +70,35 @@ impl PyExpr {
             .into()
     }
 
+    
+    fn list_median(&self) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .median()
+            .with_fmt("list.median")
+            .into()
+    }
+
+    
+    fn list_std(&self) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .std()
+            .with_fmt("list.std")
+            .into()
+    }
+    
+    fn list_var(&self) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .var()
+            .with_fmt("list.var")
+            .into()
+    }
+
     fn list_min(&self) -> Self {
         self.inner.clone().list().min().into()
     }

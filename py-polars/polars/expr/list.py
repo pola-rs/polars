@@ -283,6 +283,28 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_mean())
 
+    ## SORT later in code
+    def std(self) -> Expr:
+        """
+        Compute the std value of the lists in the array.
+
+        """
+        return wrap_expr(self._pyexpr.list_std())
+
+    def var(self) -> Expr:
+        """
+        Compute the var value of the lists in the array.
+
+        """
+        return wrap_expr(self._pyexpr.list_var())
+
+    def median(self) -> Expr:
+        """
+        Compute the var value of the lists in the array.
+
+        """
+        return wrap_expr(self._pyexpr.list_median())
+
     def sort(self, *, descending: bool = False) -> Expr:
         """
         Sort the lists in this column.
