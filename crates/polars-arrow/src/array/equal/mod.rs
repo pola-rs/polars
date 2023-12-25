@@ -14,6 +14,7 @@ mod primitive;
 mod struct_;
 mod union;
 mod utf8;
+mod binary_view;
 
 impl PartialEq for dyn Array + '_ {
     fn eq(&self, that: &dyn Array) -> bool {
@@ -283,5 +284,11 @@ pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
             let rhs = rhs.as_any().downcast_ref().unwrap();
             map::equal(lhs, rhs)
         },
+        BinaryView => {
+            let lhs = lhs.as_any().downcast_ref().unwrap();
+            let rhs = rhs.as_any().downcast_ref().unwrap();
+            map::equal(lhs, rhs)
+
+        }
     }
 }

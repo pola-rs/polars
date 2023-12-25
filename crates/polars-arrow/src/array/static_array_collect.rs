@@ -10,6 +10,7 @@ use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
 use crate::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
+#[cfg(feature = "compute_concatenate")]
 use crate::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
 use crate::legacy::trusted_len::{TrustedLen, TrustedLenPush};
 use crate::types::NativeType;
@@ -695,6 +696,7 @@ impl<'a> AsArray for &'a dyn Array {
 }
 
 // TODO: more efficient (fixed size) list collect routines.
+#[cfg(feature = "compute_concatenate")]
 impl<T: AsArray> ArrayFromIterDtype<T> for ListArray<i64> {
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = T>>(dtype: ArrowDataType, iter: I) -> Self {
         let iter_values: Vec<T> = iter.into_iter().collect();
@@ -719,6 +721,7 @@ impl<T: AsArray> ArrayFromIterDtype<T> for ListArray<i64> {
     }
 }
 
+#[cfg(feature = "compute_concatenate")]
 impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = Option<T>>>(
         dtype: ArrowDataType,

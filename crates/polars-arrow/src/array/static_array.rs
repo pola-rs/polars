@@ -239,6 +239,7 @@ impl ParameterFreeDtypeStaticArray for BinaryArray<i64> {
     }
 }
 
+#[cfg(feature = "compute_concatenate")]
 impl StaticArray for ListArray<i64> {
     type ValueT<'a> = Box<dyn Array>;
     type ZeroableValueT<'a> = Option<Box<dyn Array>>;

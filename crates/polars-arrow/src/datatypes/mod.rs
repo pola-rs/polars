@@ -157,6 +157,8 @@ pub enum ArrowDataType {
     Decimal256(usize, usize),
     /// Extension type.
     Extension(String, Box<ArrowDataType>, Option<String>),
+    BinaryView,
+    Utf8View
 }
 
 #[cfg(feature = "arrow_rs")]
@@ -218,6 +220,9 @@ impl From<ArrowDataType> for arrow_schema::DataType {
                 Self::Decimal256(precision as _, scale as _)
             },
             ArrowDataType::Extension(_, d, _) => (*d).into(),
+            ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
+                panic!("view datatypes not supported by arrow-rs")
+            }
         }
     }
 }
@@ -444,7 +449,10 @@ impl ArrowDataType {
             FixedSizeBinary(_) => PhysicalType::FixedSizeBinary,
             LargeBinary => PhysicalType::LargeBinary,
             Utf8 => PhysicalType::Utf8,
+            Utf8 => PhysicalType::Utf8,
             LargeUtf8 => PhysicalType::LargeUtf8,
+            BinaryView => PhysicalType::BinaryView,
+            Utf8View => PhysicalType::Utf8View,
             List(_) => PhysicalType::List,
             FixedSizeList(_, _) => PhysicalType::FixedSizeList,
             LargeList(_) => PhysicalType::LargeList,
