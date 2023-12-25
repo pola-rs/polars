@@ -32,8 +32,8 @@ pub enum ListFunction {
     Min,
     Mean,
     Median,
-    Std,
-    Var,
+    Std(u8),
+    Var(u8),
     ArgMin,
     ArgMax,
     #[cfg(feature = "diff")]
@@ -78,8 +78,8 @@ impl ListFunction {
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.with_dtype(DataType::Float64),
             Median => mapper.map_to_list_and_array_inner_dtype(),
-            Std => mapper.with_dtype(DataType::Float64),
-            Var => mapper.with_dtype(DataType::Float64),
+            Std(_) => mapper.with_dtype(DataType::Float64),
+            Var(_) => mapper.with_dtype(DataType::Float64),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
@@ -140,8 +140,8 @@ impl Display for ListFunction {
             Max => "max",
             Mean => "mean",
             Median => "median",
-            Std => "std",
-            Var => "var",
+            Std(_) => "std",
+            Var(_) => "var",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             #[cfg(feature = "diff")]
@@ -204,6 +204,9 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Max => map!(max),
             Min => map!(min),
             Mean => map!(mean),
+            Median => map!(median),
+            Std(ddof) => map!(std, ddof),
+            Var(ddof) => map!(var, ddof),
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
             #[cfg(feature = "diff")]
@@ -497,12 +500,12 @@ pub(super) fn median(s: &Series) -> PolarsResult<Series> {
     Ok(s.list()?.lst_median())
 }
 
-pub(super) fn std(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_std())
+pub(super) fn std(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_std(ddof))
 }
 
-pub(super) fn var(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_var())
+pub(super) fn var(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_var(ddof))
 }
 
 pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {

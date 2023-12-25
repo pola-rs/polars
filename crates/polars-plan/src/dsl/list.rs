@@ -112,14 +112,14 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Median))
     }
 
-    pub fn std(self) -> Expr {
+    pub fn std(self, ddof: u8) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Std))
+            .map_private(FunctionExpr::ListExpr(ListFunction::Std(ddof)))
     }
 
-    pub fn var(self) -> Expr {
+    pub fn var(self, ddof: u8) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Var))
+            .map_private(FunctionExpr::ListExpr(ListFunction::Var(ddof)))
     }
 
     /// Sort every sublist.

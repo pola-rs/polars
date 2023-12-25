@@ -193,6 +193,14 @@ macro_rules! impl_dyn_series {
                 self.0.median().map(|v| v as f64)
             }
 
+            fn std(&self, ddof: u8) -> Option<f64> {
+                self.0.std(ddof)
+            }
+
+            fn var(&self, ddof: u8) -> Option<f64> {
+                self.0.var(ddof)
+            }
+
             #[cfg(feature = "chunked_ids")]
             unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
                 self.0.take_chunked_unchecked(by, sorted).into_series()

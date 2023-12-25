@@ -70,7 +70,6 @@ impl PyExpr {
             .into()
     }
 
-    
     fn list_median(&self) -> Self {
         self.inner
             .clone()
@@ -80,21 +79,20 @@ impl PyExpr {
             .into()
     }
 
-    
-    fn list_std(&self) -> Self {
+    fn list_std(&self, ddof: u8) -> Self {
         self.inner
             .clone()
             .list()
-            .std()
+            .std(ddof)
             .with_fmt("list.std")
             .into()
     }
-    
-    fn list_var(&self) -> Self {
+
+    fn list_var(&self, ddof: u8) -> Self {
         self.inner
             .clone()
             .list()
-            .var()
+            .var(ddof)
             .with_fmt("list.var")
             .into()
     }

@@ -283,27 +283,79 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_mean())
 
-    ## SORT later in code
-    def std(self) -> Expr:
+    def median(self) -> Expr:
+        """
+        Compute the median value of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.median().alias("median"))
+        shape: (2, 2)
+        ┌────────────┬────────┐
+        │ values     ┆ median │
+        │ ---        ┆ ---    │
+        │ list[i64]  ┆ f64    │
+        ╞════════════╪════════╡
+        │ [-1, 0, 1] ┆ 0.0    │
+        │ [1, 10]    ┆ 5.5    │
+        └────────────┴────────┘
+        """
+        return wrap_expr(self._pyexpr.list_median())
+
+    def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std value of the lists in the array.
 
-        """
-        return wrap_expr(self._pyexpr.list_std())
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
 
-    def var(self) -> Expr:
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.std().alias("std"))
+        shape: (2, 2)
+        ┌────────────┬──────────┐
+        │ values     ┆ std      │
+        │ ---        ┆ ---      │
+        │ list[i64]  ┆ f64      │
+        ╞════════════╪══════════╡
+        │ [-1, 0, 1] ┆ 1.0      │
+        │ [1, 10]    ┆ 6.363961 │
+        └────────────┴──────────┘
+        """
+        return wrap_expr(self._pyexpr.list_std(ddof))
+
+    def var(self, ddof: int = 1) -> Expr:
         """
         Compute the var value of the lists in the array.
 
-        """
-        return wrap_expr(self._pyexpr.list_var())
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
 
-    def median(self) -> Expr:
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.var().alias("var"))
+        shape: (2, 2)
+        ┌────────────┬──────┐
+        │ values     ┆ var  │
+        │ ---        ┆ ---  │
+        │ list[i64]  ┆ f64  │
+        ╞════════════╪══════╡
+        │ [-1, 0, 1] ┆ 1.0  │
+        │ [1, 10]    ┆ 40.5 │
+        └────────────┴──────┘
         """
-        Compute the var value of the lists in the array.
-
-        """
-        return wrap_expr(self._pyexpr.list_median())
+        return wrap_expr(self._pyexpr.list_var(ddof))
 
     def sort(self, *, descending: bool = False) -> Expr:
         """
