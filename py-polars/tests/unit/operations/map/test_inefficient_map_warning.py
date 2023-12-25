@@ -129,7 +129,7 @@ TEST_CASES = [
     # ---------------------------------------------
     # string expr: case/cast ops
     # ---------------------------------------------
-    ("b", "lambda x: str(x).title()", 'pl.col("b").cast(pl.Utf8).str.to_titlecase()'),
+    ("b", "lambda x: x.title()", 'pl.col("b").str.to_titlecase()'),
     (
         "b",
         'lambda x: x.lower() + ":" + x.upper() + ":" + x.title()',
@@ -194,6 +194,7 @@ NOOP_TEST_CASES = [
     "lambda x: MY_DICT[1]",
     'lambda x: "first" if x == 1 else "not first"',
     'lambda x: np.sign(x, casting="unsafe")',
+    "lambda x: str(x)",
 ]
 
 EVAL_ENVIRONMENT = {
