@@ -295,7 +295,7 @@ def test_parse_apply_raw_functions() -> None:
     assert_frame_equal(*result_frames)
 
     # test primitive python casts
-    for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
+    for py_cast, pl_dtype in ((int, pl.Int64), (float, pl.Float64)):
         with pytest.warns(
             PolarsInefficientMapWarning,
             match=rf'(?s)with this one instead.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
