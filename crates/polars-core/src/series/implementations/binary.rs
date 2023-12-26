@@ -183,12 +183,12 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        ChunkSort::sort_with(&self.0, options).into_series()
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(self.0.sort_with(options).into_series())
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        ChunkSort::arg_sort(&self.0, options)
+    fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
+        Ok(self.0.arg_sort(options))
     }
 
     fn null_count(&self) -> usize {

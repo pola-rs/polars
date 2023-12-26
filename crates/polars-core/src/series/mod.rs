@@ -282,7 +282,7 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool) -> Self {
+    pub fn sort(&self, descending: bool) -> PolarsResult<Self> {
         self.sort_with(SortOptions {
             descending,
             ..Default::default()

@@ -351,7 +351,10 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(Some(s.arg_sort(sort_options).into_series())),
+            move |s: Series| match s.arg_sort(sort_options) {
+                Ok(sorted) => Ok(Some(sorted.into_series())),
+                Err(e) => Err(e),
+            },
             GetOutput::from_type(IDX_DTYPE),
             options,
         )

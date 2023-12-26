@@ -54,7 +54,7 @@ impl PhysicalExpr for SortExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
-        Ok(series.sort_with(self.options))
+        series.sort_with(self.options)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -85,7 +85,7 @@ impl PhysicalExpr for SortExpr {
                                     // SAFETY: group tuples are always in bounds.
                                     let group = unsafe { series.take_slice_unchecked(idx) };
 
-                                    let sorted_idx = group.arg_sort(sort_options);
+                                    let sorted_idx = group.arg_sort(sort_options).unwrap();
                                     let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
                                     (new_idx.first().copied().unwrap_or(first), new_idx)
                                 })
@@ -95,7 +95,7 @@ impl PhysicalExpr for SortExpr {
                             .par_iter()
                             .map(|&[first, len]| {
                                 let group = series.slice(first as i64, len as usize);
-                                let sorted_idx = group.arg_sort(sort_options);
+                                let sorted_idx = group.arg_sort(sort_options).unwrap();
                                 let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                                 (new_idx.first().copied().unwrap_or(first), new_idx)
                             })
