@@ -23,8 +23,12 @@ fn count_bits_set_by_offsets(values: &Bitmap, offset: &[i64]) -> Vec<IdxSize> {
 
             let len = (end - current_offset) as usize;
 
-            let set_ones = len - count_zeros(bits, bitmap_offset + current_offset as usize, len);
-            set_ones as IdxSize
+            // Fast path where all bits are set.
+            if values.unset_bits() == 0 {
+                return len as IdxSize;
+            }
+
+            (len - count_zeros(bits, bitmap_offset + current_offset as usize, len)) as IdxSize
         })
         .collect_trusted()
 }

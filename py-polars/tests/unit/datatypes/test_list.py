@@ -358,6 +358,10 @@ def test_list_sum_and_dtypes() -> None:
         {"a": [[False], [False, False], [False, False, False]]},
     ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {"a": [0, 0, 0]}
 
+    assert pl.DataFrame(
+        {"a": [[True], [True, True], [True, True, True]]},
+    ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {"a": [1, 2, 3]}
+
 
 def test_list_mean() -> None:
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
