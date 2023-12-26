@@ -279,7 +279,7 @@ class ListNameSpace:
         """
         Join all string items in a sublist and place a separator between them.
 
-        This errors if inner type of list `!= Utf8`.
+        This errors if inner type of list `!= String`.
 
         Parameters
         ----------
@@ -289,7 +289,7 @@ class ListNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Utf8`.
+            Series of data type :class:`String`.
 
         Examples
         --------

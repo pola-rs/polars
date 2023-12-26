@@ -20,8 +20,8 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Object,
+    String,
     Time,
-    Utf8,
     is_polars_dtype,
 )
 from polars.expr import Expr
@@ -334,7 +334,7 @@ def all() -> SelectorType:
 
     Select all columns, casting them to string:
 
-    >>> df.select(cs.all().cast(pl.Utf8))
+    >>> df.select(cs.all().cast(pl.String))
     shape: (2, 2)
     ┌────────────┬─────────┐
     │ dt         ┆ value   │
@@ -1796,7 +1796,7 @@ def starts_with(*prefix: str) -> SelectorType:
 @deprecate_nonkeyword_arguments(version="0.19.3")
 def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     """
-    Select all Utf8 (and, optionally, Categorical) string columns .
+    Select all String (and, optionally, Categorical) string columns .
 
     See Also
     --------
@@ -1848,7 +1848,7 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     └─────┴─────┴─────┴──────┘
 
     """
-    string_dtypes: list[PolarsDataType] = [Utf8]
+    string_dtypes: list[PolarsDataType] = [String]
     if include_categorical:
         string_dtypes.append(Categorical)
 

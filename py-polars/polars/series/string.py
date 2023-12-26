@@ -40,7 +40,7 @@ class StringNameSpace:
         cache: bool = True,
     ) -> Series:
         """
-        Convert a Utf8 column into a Date column.
+        Convert a String column into a Date column.
 
         Parameters
         ----------
@@ -89,7 +89,7 @@ class StringNameSpace:
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
-        Convert a Utf8 column into a Datetime column.
+        Convert a String column into a Datetime column.
 
         Parameters
         ----------
@@ -161,7 +161,7 @@ class StringNameSpace:
         cache: bool = True,
     ) -> Series:
         """
-        Convert a Utf8 column into a Time column.
+        Convert a String column into a Time column.
 
         Parameters
         ----------
@@ -201,7 +201,7 @@ class StringNameSpace:
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
-        Convert a Utf8 column into a Date/Datetime/Time column.
+        Convert a String column into a Date/Datetime/Time column.
 
         Parameters
         ----------
@@ -292,7 +292,7 @@ class StringNameSpace:
         inference_length: int = 100,
     ) -> Series:
         """
-        Convert a Utf8 column into a Decimal column.
+        Convert a String column into a Decimal column.
 
         This method infers the needed parameters `precision` and `scale`.
 
@@ -407,7 +407,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Utf8`.
+            Series of data type :class:`String`.
 
         Examples
         --------
@@ -575,7 +575,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Utf8`.
+            Series of data type :class:`String`.
 
         Examples
         --------
@@ -632,7 +632,7 @@ class StringNameSpace:
         Extract the first match of json string with provided JSONPath expression.
 
         Throw errors if encounter invalid json strings.
-        All return value will be casted to Utf8 regardless of the original value.
+        All return value will be casted to String regardless of the original value.
 
         Documentation on JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
@@ -645,7 +645,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Utf8`. Contains null values if the original
+            Series of data type :class:`String`. Contains null values if the original
             value is null or the json_path returns nothing.
 
         Examples
@@ -683,7 +683,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Utf8`. Contains null values if the original
+            Series of data type :class:`String`. Contains null values if the original
             value is null or regex captures nothing.
 
         Notes
@@ -784,7 +784,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type `List(Utf8)`.
+            Series of data type `List(String)`.
 
         Examples
         --------
@@ -834,7 +834,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+            Series of data type :class:`Struct` with fields of data type
+            :class:`String`.
 
         Examples
         --------
@@ -917,7 +918,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type `List(Utf8)`.
+            Series of data type `List(String)`.
 
         """
 
@@ -977,7 +978,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+            Series of data type :class:`Struct` with fields of data type
+            :class:`String`.
 
         """
 
@@ -1035,7 +1037,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+            Series of data type :class:`Struct` with fields of data type
+            :class:`String`.
 
         """
 
@@ -1378,7 +1381,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series([-1, 123, 999999, None])
-        >>> s.cast(pl.Utf8).str.zfill(4)
+        >>> s.cast(pl.String).str.zfill(4)
         shape: (4,)
         Series: '' [str]
         [
@@ -1460,7 +1463,7 @@ class StringNameSpace:
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
-        Create subslices of the string values of a Utf8 Series.
+        Create subslices of the string values of a String Series.
 
         Parameters
         ----------
@@ -1473,7 +1476,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+            Series of data type :class:`Struct` with fields of data type
+            :class:`String`.
 
         Examples
         --------
@@ -1509,7 +1513,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Utf8`.
+            Series of data type :class:`String`.
 
         Examples
         --------
@@ -1530,7 +1534,7 @@ class StringNameSpace:
 
     def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
         """
-        Convert an Utf8 column into an Int64 column with base radix.
+        Convert an String column into an Int64 column with base radix.
 
         Parameters
         ----------

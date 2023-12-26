@@ -133,7 +133,7 @@ _NUMPY_FUNCTIONS = frozenset(
 )
 
 # python functions that we can map to native expressions
-_PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "Utf8"}
+_PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "String"}
 _PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
 _PYTHON_METHODS_MAP = {
     "lower": "str.to_lowercase",
