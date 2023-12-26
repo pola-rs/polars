@@ -62,19 +62,7 @@ pub(super) fn var_with_nulls(ca: &ListChunked, ddof: u8) -> Series {
                 .with_name(ca.name());
             out.into_duration(TimeUnit::Milliseconds).into_series()
         },
-        DataType::Duration(TimeUnit::Microseconds) => {
-            let out: Int64Chunked = ca
-                .cast(&DataType::List(Box::new(DataType::Duration(
-                    TimeUnit::Milliseconds,
-                ))))
-                .unwrap()
-                .list()
-                .unwrap()
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().var(ddof).map(|v| v as i64)))
-                .with_name(ca.name());
-            out.into_duration(TimeUnit::Milliseconds).into_series()
-        },
-        DataType::Duration(TimeUnit::Nanoseconds) => {
+        DataType::Duration(TimeUnit::Microseconds | TimeUnit::Nanoseconds) => {
             let out: Int64Chunked = ca
                 .cast(&DataType::List(Box::new(DataType::Duration(
                     TimeUnit::Milliseconds,
