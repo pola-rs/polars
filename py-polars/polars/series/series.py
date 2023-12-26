@@ -1797,8 +1797,6 @@ class Series:
         >>> s.std()
         datetime.timedelta(microseconds=4)
         """
-        if not self.dtype.is_numeric():
-            return None
         return self._s.std(ddof)
 
     def var(self, ddof: int = 1) -> float | timedelta | None:
@@ -1829,8 +1827,6 @@ class Series:
         >>> s.var()
         datetime.timedelta(microseconds=24)
         """
-        if not self.dtype.is_numeric():
-            return None
         return self._s.var(ddof)
 
     def median(self) -> float | None:
