@@ -270,7 +270,7 @@ def test_explode_binary() -> None:
 
 
 def test_explode_null_list() -> None:
-    assert pl.Series([["a"], None], dtype=pl.List(pl.Utf8))[
+    assert pl.Series([["a"], None], dtype=pl.List(pl.String))[
         1:2
     ].list.min().to_list() == [None]
 

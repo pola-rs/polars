@@ -81,7 +81,7 @@ def test_filter_is_in_4572() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype", [pl.Int32, pl.Boolean, pl.Utf8, pl.Binary, pl.List(pl.Int64), pl.Object]
+    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Binary, pl.List(pl.Int64), pl.Object]
 )
 def test_filter_on_empty(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"a": []}, schema={"a": dtype})
@@ -195,7 +195,7 @@ def test_agg_function_of_filter_10565() -> None:
         as_series=False
     ) == {"a": []}
 
-    df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.Utf8})
+    df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.String})
     assert df_str.filter(pl.col("a").n_unique().over("a") == 1).to_dict(
         as_series=False
     ) == {"a": []}

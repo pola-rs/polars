@@ -44,13 +44,13 @@ def test_to_from_buffer_arraywise_schema() -> None:
     ]"""
     )
 
-    read_df = pl.read_json(buf, schema={"b": pl.Utf8, "e": pl.Int16})
+    read_df = pl.read_json(buf, schema={"b": pl.String, "e": pl.Int16})
 
     assert_frame_equal(
         read_df,
         pl.DataFrame(
             {
-                "b": pl.Series(["foo", None, "bar"], dtype=pl.Utf8),
+                "b": pl.Series(["foo", None, "bar"], dtype=pl.String),
                 "e": pl.Series([None, None, None], dtype=pl.Int16),
             }
         ),
@@ -74,7 +74,7 @@ def test_to_from_buffer_arraywise_schema_override() -> None:
         pl.DataFrame(
             {
                 "a": pl.Series([5, 11.4, -25.8], dtype=pl.Float64),
-                "b": pl.Series(["foo", None, "bar"], dtype=pl.Utf8),
+                "b": pl.Series(["foo", None, "bar"], dtype=pl.String),
                 "c": pl.Series([None, 1, 0], dtype=pl.Int64),
                 "d": pl.Series([None, 8, None], dtype=pl.Float64),
             }
@@ -195,7 +195,7 @@ def test_json_sliced_list_serialization() -> None:
 
 
 def test_json_deserialize_empty_list_10458() -> None:
-    schema = {"LIST_OF_STRINGS": pl.List(pl.Utf8)}
+    schema = {"LIST_OF_STRINGS": pl.List(pl.String)}
     serialized_schema = pl.DataFrame(schema=schema).write_json()
     df = pl.read_json(io.StringIO(serialized_schema))
     assert df.schema == schema
@@ -247,7 +247,7 @@ def test_ndjson_ignore_errors() -> None:
 
     schema = {
         "Fields": pl.List(
-            pl.Struct([pl.Field("Name", pl.Utf8), pl.Field("Value", pl.Int64)])
+            pl.Struct([pl.Field("Name", pl.String), pl.Field("Value", pl.Int64)])
         )
     }
     # schema argument only parses Fields

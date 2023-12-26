@@ -22,7 +22,7 @@ protocol_dtypes = [
     pl.Float32,
     pl.Float64,
     pl.Boolean,
-    pl.Utf8,
+    pl.String,
     pl.Datetime,
     pl.Categorical,
 ]

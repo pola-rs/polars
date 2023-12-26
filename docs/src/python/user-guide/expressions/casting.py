@@ -61,8 +61,8 @@ df = pl.DataFrame(
 )
 
 out = df.select(
-    pl.col("integers").cast(pl.Utf8),
-    pl.col("float").cast(pl.Utf8),
+    pl.col("integers").cast(pl.String),
+    pl.col("float").cast(pl.String),
     pl.col("floats_as_string").cast(pl.Float64),
 )
 print(out)

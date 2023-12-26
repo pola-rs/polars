@@ -180,7 +180,7 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
     0.01,a"""
 
     df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal(scale=2)})
-    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.Utf8]
+    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.String]
     assert df["a"].to_list() == [
         D("123.12"),
         D("1.10"),

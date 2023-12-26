@@ -178,7 +178,7 @@ def test_equality_enum(
     s2 = pl.Series([None, "c", "b", "c"], dtype=dtype)
 
     assert_series_equal(op(s, s2), expected)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected)
 
 
 @pytest.mark.parametrize(

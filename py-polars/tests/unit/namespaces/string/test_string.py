@@ -19,7 +19,7 @@ def test_str_concat() -> None:
     s = pl.Series(["1", None, "2", None])
     # propagate null
     assert_series_equal(
-        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.Utf8)
+        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.String)
     )
     # ignore null
     assert_series_equal(s.str.concat(), pl.Series(["1-2"]))
@@ -41,21 +41,21 @@ def test_str_concat2() -> None:
 
 
 def test_str_concat_all_null() -> None:
-    s = pl.Series([None, None, None], dtype=pl.Utf8)
+    s = pl.Series([None, None, None], dtype=pl.String)
     assert_series_equal(
-        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.Utf8)
+        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.String)
     )
     assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
 
 
 def test_str_concat_empty_list() -> None:
-    s = pl.Series([], dtype=pl.Utf8)
+    s = pl.Series([], dtype=pl.String)
     assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series([""]))
     assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
 
 
 def test_str_concat_empty_list2() -> None:
-    s = pl.Series([], dtype=pl.Utf8)
+    s = pl.Series([], dtype=pl.String)
     df = pl.DataFrame({"foo": s})
     result = df.select(pl.col("foo").str.concat()).item()
     expected = ""
@@ -63,7 +63,7 @@ def test_str_concat_empty_list2() -> None:
 
 
 def test_str_concat_empty_list_agg_context() -> None:
-    df = pl.DataFrame(data={"i": [1], "v": [None]}, schema_overrides={"v": pl.Utf8})
+    df = pl.DataFrame(data={"i": [1], "v": [None]}, schema_overrides={"v": pl.String})
     result = df.group_by("i").agg(pl.col("v").drop_nulls().str.concat())["v"].item()
     expected = ""
     assert result == expected
@@ -387,8 +387,8 @@ def test_str_strip_prefix_literal() -> None:
     expected = pl.Series([":bar", "foo:bar", "bar:bar", "", "", None])
     assert_series_equal(s.str.strip_prefix("foo"), expected)
     # test null literal
-    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
-    assert_series_equal(s.str.strip_prefix(pl.lit(None, dtype=pl.Utf8)), expected)
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.String)
+    assert_series_equal(s.str.strip_prefix(pl.lit(None, dtype=pl.String)), expected)
 
 
 def test_str_strip_prefix_suffix_expr() -> None:
@@ -414,8 +414,8 @@ def test_str_strip_suffix() -> None:
     expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", "", None])
     assert_series_equal(s.str.strip_suffix("bar"), expected)
     # test null literal
-    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
-    assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.Utf8)), expected)
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.String)
+    assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.String)), expected)
 
 
 def test_str_split() -> None:
@@ -451,7 +451,7 @@ def test_json_decode_series() -> None:
     dtype2 = pl.Struct([pl.Field("a", pl.Int64)])
     assert_series_equal(s.str.json_decode(dtype2), expected)
 
-    s = pl.Series([], dtype=pl.Utf8)
+    s = pl.Series([], dtype=pl.String)
     expected = pl.Series([], dtype=pl.List(pl.Int64))
     dtype = pl.List(pl.Int64)
     assert_series_equal(s.str.json_decode(dtype), expected)
@@ -485,9 +485,9 @@ def test_json_decode_nested_struct() -> None:
     expected_dtype = pl.List(
         pl.Struct(
             [
-                pl.Field("key_1", pl.Utf8),
+                pl.Field("key_1", pl.String),
                 pl.Field("key_2", pl.Int64),
-                pl.Field("key_3", pl.Utf8),
+                pl.Field("key_3", pl.String),
             ]
         )
     )
@@ -522,8 +522,8 @@ def test_json_decode_primitive_to_list_11053() -> None:
     )
     schema = pl.Struct(
         {
-            "col1": pl.List(pl.Utf8),
-            "col2": pl.List(pl.Utf8),
+            "col1": pl.List(pl.String),
+            "col2": pl.List(pl.String),
         }
     )
 
@@ -567,7 +567,7 @@ def test_str_concat_returns_scalar() -> None:
         .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))
         .get_column("grouped")
     )
-    assert grouped.dtype == pl.Utf8
+    assert grouped.dtype == pl.String
 
 
 def test_contains() -> None:
@@ -843,7 +843,7 @@ def test_extract_all_many() -> None:
         "a": [["a"], ["a"], ["a"], [], None, []],
         "null": [None] * 6,
     }
-    assert broad.schema == {"a": pl.List(pl.Utf8), "null": pl.List(pl.Utf8)}
+    assert broad.schema == {"a": pl.List(pl.String), "null": pl.List(pl.String)}
 
 
 def test_extract_groups() -> None:
@@ -1036,7 +1036,7 @@ def test_split_exact() -> None:
         {
             "field_0": ["a", None, "b", "c"],
             "field_1": ["a", None, None, "c"],
-            "field_2": pl.Series([None, None, None, None], dtype=pl.Utf8),
+            "field_2": pl.Series([None, None, None, None], dtype=pl.String),
         }
     )
 
@@ -1067,7 +1067,7 @@ def test_split_exact_expr() -> None:
         {
             "field_0": ["a", None, "b", "c", None],
             "field_1": ["a", None, None, "c", None],
-            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.String),
         }
     )
 
@@ -1081,7 +1081,7 @@ def test_split_exact_expr() -> None:
         {
             "field_0": ["a_", None, "b", "c^", None],
             "field_1": ["a", None, None, "c^", None],
-            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.String),
         }
     )
     assert_frame_equal(out2, expected2)
@@ -1167,7 +1167,7 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
         "captures"
     )
 
-    assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}
+    assert df.schema == {"candidate": pl.String, "ref": pl.String}
 
 
 def test_string_reverse() -> None:
@@ -1181,7 +1181,7 @@ def test_string_reverse() -> None:
             pl.Series(
                 "text",
                 [None, "oof", "rab", "#&azzip ekil i", None, "anan\u0303am"],
-                dtype=pl.Utf8,
+                dtype=pl.String,
             ),
         ]
     )

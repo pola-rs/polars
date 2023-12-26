@@ -38,7 +38,7 @@ def test_init_invalid_input() -> None:
         (pl.Series([1, 2], dtype=pl.Int8), 2),
         (pl.Series([1, 2], dtype=pl.Int64), 16),
         (pl.Series([1.4, 2.9, 3.0], dtype=pl.Float32), 12),
-        (pl.Series(["a", "bc", "éâç"], dtype=pl.Utf8), 9),
+        (pl.Series(["a", "bc", "éâç"], dtype=pl.String), 9),
         (pl.Series(["a", "b", "a", "c", "a"], dtype=pl.Categorical), 20),
         (pl.Series([True, False], dtype=pl.Boolean), 1),
         (pl.Series([True] * 9, dtype=pl.Boolean), 2),

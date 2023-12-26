@@ -71,7 +71,7 @@ def test_describe_categorical_lexical_ordering() -> None:
 
 
 def test_describe_categorical_other_dtype() -> None:
-    s = pl.Series(["a", "b", "a"], dtype=pl.Utf8)
+    s = pl.Series(["a", "b", "a"], dtype=pl.String)
     col = PolarsColumn(s)
     with pytest.raises(TypeError):
         col.describe_categorical
@@ -241,7 +241,7 @@ def test_get_buffers_chunked_zero_copy_fails() -> None:
             (DtypeKind.FLOAT, 64, "g", "="),
         ),
         (
-            pl.Series(["a", "bc", None, "éâç"], dtype=pl.Utf8),
+            pl.Series(["a", "bc", None, "éâç"], dtype=pl.String),
             pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8),
             (DtypeKind.STRING, 8, "U", "="),
         ),
