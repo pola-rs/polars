@@ -168,7 +168,7 @@ class ExprArrayNameSpace:
         >>> df.with_columns(any=pl.col("a").arr.any())
         shape: (5, 2)
         ┌────────────────┬───────┐
-        │ a              ┆ all   │
+        │ a              ┆ any   │
         │ ---            ┆ ---   │
         │ array[bool, 2] ┆ bool  │
         ╞════════════════╪═══════╡
