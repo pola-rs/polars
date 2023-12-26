@@ -2746,6 +2746,7 @@ def test_series_duration_std_var() -> None:
     assert s.std() == timedelta(seconds=1, microseconds=527525)
     assert s.var() == timedelta(days=27, seconds=533, microseconds=333333)
 
+
 def test_comp_series_with_str_13123() -> None:
     s = pl.Series(["1", "2", None])
     assert_series_equal(s != "1", pl.Series([False, True, None]))

@@ -149,6 +149,7 @@ def implode(name: str) -> Expr:
     return F.col(name).implode()
 
 
+@overload
 def std(column: str, ddof: int = 1) -> Expr:
     ...
 
@@ -192,6 +193,7 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | timedelta | None:
     return F.col(column).std(ddof)
 
 
+@overload
 def var(column: str, ddof: int = 1) -> Expr:
     ...
 
