@@ -1,5 +1,5 @@
-use std::simd::prelude::{Simd, SimdPartialEq, SimdPartialOrd};
 use std::ptr;
+use std::simd::prelude::{Simd, SimdPartialEq, SimdPartialOrd};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
@@ -33,7 +33,10 @@ where
     let mut p = v.as_mut_ptr() as *mut M;
     for (l, r) in lhs_chunks.zip(rhs_chunks) {
         unsafe {
-            let mask = f(l.try_into().unwrap_unchecked(), r.try_into().unwrap_unchecked());
+            let mask = f(
+                l.try_into().unwrap_unchecked(),
+                r.try_into().unwrap_unchecked(),
+            );
             p.write_unaligned(mask);
             p = p.wrapping_add(1);
         }
@@ -48,7 +51,7 @@ where
             p.write_unaligned(f(&l, &r));
         }
     }
-    
+
     unsafe {
         v.set_len(num_masks * std::mem::size_of::<M>());
     }
