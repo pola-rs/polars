@@ -241,6 +241,9 @@ impl PyExpr {
     fn count(&self) -> Self {
         self.inner.clone().count().into()
     }
+    fn len(&self) -> Self {
+        self.inner.clone().len().into()
+    }
     fn value_counts(&self, sort: bool, parallel: bool) -> Self {
         self.inner.clone().value_counts(sort, parallel).into()
     }
@@ -413,13 +416,13 @@ impl PyExpr {
         self.inner.clone().explode().into()
     }
 
-    fn gather_every(&self, n: usize) -> Self {
+    fn gather_every(&self, n: usize, offset: usize) -> Self {
         self.inner
             .clone()
             .map(
                 move |s: Series| {
                     polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
-                    Ok(Some(s.gather_every(n)))
+                    Ok(Some(s.gather_every(n, offset)))
                 },
                 GetOutput::same_type(),
             )
@@ -663,14 +666,15 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, agg_list))]
+    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<Wrap<DataType>>,
         agg_list: bool,
+        is_elementwise: bool,
     ) -> Self {
-        map_single(self, lambda, output_type, agg_list)
+        map_single(self, lambda, output_type, agg_list, is_elementwise)
     }
 
     fn dot(&self, other: Self) -> Self {
@@ -867,6 +871,24 @@ impl PyExpr {
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 
+    fn replace(
+        &self,
+        old: PyExpr,
+        new: PyExpr,
+        default: Option<PyExpr>,
+        return_dtype: Option<Wrap<DataType>>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .replace(
+                old.inner,
+                new.inner,
+                default.map(|e| e.inner),
+                return_dtype.map(|dt| dt.0),
+            )
+            .into()
+    }
+
     #[cfg(feature = "ffi_plugin")]
     fn register_plugin(
         &self,
@@ -913,5 +935,21 @@ impl PyExpr {
             },
         }
         .into())
+    }
+
+    #[cfg(feature = "hist")]
+    #[pyo3(signature = (bins, bin_count, include_category, include_breakpoint))]
+    fn hist(
+        &self,
+        bins: Option<PyExpr>,
+        bin_count: Option<usize>,
+        include_category: bool,
+        include_breakpoint: bool,
+    ) -> Self {
+        let bins = bins.map(|e| e.inner);
+        self.inner
+            .clone()
+            .hist(bins, bin_count, include_category, include_breakpoint)
+            .into()
     }
 }

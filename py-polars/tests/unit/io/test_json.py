@@ -326,3 +326,18 @@ def test_ndjson_null_buffer() -> None:
             ("null_column", pl.Null),
         ]
     )
+
+
+def test_ndjson_null_inference_13183() -> None:
+    assert pl.read_ndjson(
+        b"""
+    {"map": "a", "start_time": 0.795, "end_time": 1.495}
+    {"map": "a", "start_time": 1.6239999999999999, "end_time": 2.0540000000000003}
+    {"map": "c", "start_time": 2.184, "end_time": 2.645}
+    {"map": "a", "start_time": null, "end_time": null}
+    """.strip()
+    ).to_dict(as_series=False) == {
+        "map": ["a", "a", "c", "a"],
+        "start_time": [0.795, 1.6239999999999999, 2.184, None],
+        "end_time": [1.495, 2.0540000000000003, 2.645, None],
+    }

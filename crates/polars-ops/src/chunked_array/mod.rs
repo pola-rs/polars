@@ -10,8 +10,8 @@ pub mod list;
 pub mod nan_propagating_aggregate;
 #[cfg(feature = "peaks")]
 pub mod peaks;
-mod set;
-mod strings;
+mod scatter;
+pub mod strings;
 mod sum;
 #[cfg(feature = "top_k")]
 mod top_k;
@@ -21,13 +21,18 @@ pub mod mode;
 
 #[cfg(feature = "cov")]
 pub mod cov;
+#[cfg(feature = "gather")]
 pub mod gather_skip_nulls;
+#[cfg(feature = "hist")]
+mod hist;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
 
 pub use binary::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;
+#[cfg(feature = "hist")]
+pub use hist::*;
 #[cfg(feature = "interpolate")]
 pub use interpolate::*;
 pub use list::*;
@@ -35,7 +40,7 @@ pub use list::*;
 use polars_core::prelude::*;
 #[cfg(feature = "repeat_by")]
 pub use repeat_by::*;
-pub use set::ChunkedSet;
+pub use scatter::ChunkedSet;
 pub use strings::*;
 #[cfg(feature = "top_k")]
 pub use top_k::*;

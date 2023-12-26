@@ -20,6 +20,13 @@ pub fn _merge_sorted_dfs(
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
     );
 
+    // If one frame is empty, we can return the other immediately.
+    if right_s.is_empty() {
+        return Ok(left.clone());
+    } else if left_s.is_empty() {
+        return Ok(right.clone());
+    }
+
     let merge_indicator = series_to_merge_indicator(left_s, right_s);
     let new_columns = left
         .get_columns()

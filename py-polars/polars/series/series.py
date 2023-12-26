@@ -13,6 +13,7 @@ from typing import (
     Generator,
     Iterable,
     Literal,
+    Mapping,
     NoReturn,
     Sequence,
     Union,
@@ -29,6 +30,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Float64,
     Int8,
     Int16,
@@ -131,6 +133,9 @@ if TYPE_CHECKING:
         SearchSortedSide,
         SizeUnit,
         TemporalLiteral,
+    )
+    from polars.utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -276,7 +281,7 @@ class Series:
             self._s = series_to_pyseries(name, values)
 
         elif isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s  # type: ignore[arg-type]
+            self._s = range_to_series(name, values, dtype=dtype)._s
 
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
@@ -533,7 +538,7 @@ class Series:
             assert f is not None
             return self._from_pyseries(f(td))
 
-        elif self.dtype == Categorical and not isinstance(other, Series):
+        elif self.dtype in [Categorical, Enum] and not isinstance(other, Series):
             other = Series([other])
 
         elif isinstance(other, date) and self.dtype == Date:
@@ -760,7 +765,7 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
         if isinstance(other, pl.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-            other = self.to_frame().select(other).to_series()
+            other = self.to_frame().select_seq(other).to_series()
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
@@ -854,7 +859,7 @@ class Series:
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
-        return self.to_frame().select(F.col(self.name) // other).to_series()
+        return self.to_frame().select_seq(F.col(self.name) // other).to_series()
 
     def __invert__(self) -> Series:
         return self.not_()
@@ -941,7 +946,7 @@ class Series:
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
-        return self.to_frame().select(other ** F.col(self.name)).to_series()
+        return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -1383,11 +1388,7 @@ class Series:
         >>> pl.Series([None, False]).any(ignore_nulls=False)  # Returns None
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).any(ignore_nulls=ignore_nulls))
-            .item()
-        )
+        return self._s.any(ignore_nulls=ignore_nulls)
 
     @overload
     def all(self, *, ignore_nulls: Literal[True] = ...) -> bool:
@@ -1433,11 +1434,7 @@ class Series:
         >>> pl.Series([None, True]).all(ignore_nulls=False)  # Returns None
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).all(ignore_nulls=ignore_nulls))
-            .item()
-        )
+        return self._s.all(ignore_nulls=ignore_nulls)
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
@@ -1576,8 +1573,8 @@ class Series:
 
         Examples
         --------
-        >>> series_num = pl.Series([1, 2, 3, 4, 5])
-        >>> series_num.describe()
+        >>> s = pl.Series([1, 2, 3, 4, 5])
+        >>> s.describe()
         shape: (9, 2)
         ┌────────────┬──────────┐
         │ statistic  ┆ value    │
@@ -1595,64 +1592,70 @@ class Series:
         │ max        ┆ 5.0      │
         └────────────┴──────────┘
 
-        >>> series_str = pl.Series(["a", "a", None, "b", "c"])
-        >>> series_str.describe()
+        Non-numeric data types may not have all statistics available.
+
+        >>> s = pl.Series(["a", "a", None, "b", "c"])
+        >>> s.describe()
         shape: (3, 2)
         ┌────────────┬───────┐
         │ statistic  ┆ value │
         │ ---        ┆ ---   │
         │ str        ┆ i64   │
         ╞════════════╪═══════╡
-        │ count      ┆ 5     │
+        │ count      ┆ 4     │
         │ null_count ┆ 1     │
         │ unique     ┆ 4     │
         └────────────┴───────┘
 
         """
         stats: dict[str, PythonLiteral | None]
+        stats_dtype: PolarsDataType
 
-        if self.len() == 0:
-            raise ValueError("Series must contain at least one value")
-
-        elif self.dtype.is_numeric():
-            s = self.cast(Float64)
+        if self.dtype.is_numeric():
+            stats_dtype = Float64
             stats = {
-                "count": s.len(),
-                "null_count": s.null_count(),
-                "mean": s.mean(),
-                "std": s.std(),
-                "min": s.min(),
+                "count": self.count(),
+                "null_count": self.null_count(),
+                "mean": self.mean(),
+                "std": self.std(),
+                "min": self.min(),
             }
             for p in parse_percentiles(percentiles):
-                stats[f"{p:.0%}"] = s.quantile(p)
-            stats["max"] = s.max()
+                stats[f"{p:.0%}"] = self.quantile(p)
+            stats["max"] = self.max()
 
         elif self.dtype == Boolean:
+            stats_dtype = Int64
             stats = {
-                "count": self.len(),
+                "count": self.count(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
         elif self.dtype == Utf8:
+            stats_dtype = Int64
             stats = {
-                "count": self.len(),
+                "count": self.count(),
                 "null_count": self.null_count(),
-                "unique": len(self.unique()),
+                "unique": self.n_unique(),
             }
         elif self.dtype.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
+            stats_dtype = Utf8
             stats = {
-                "count": str(self.len()),
+                "count": str(self.count()),
                 "null_count": str(self.null_count()),
                 "min": str(self.dt.min()),
                 "50%": str(self.dt.median()),
                 "max": str(self.dt.max()),
             }
         else:
-            raise TypeError("this type is not supported")
+            raise TypeError(f"cannot describe Series of data type {self.dtype}")
 
-        return pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+        return pl.DataFrame(
+            {"statistic": stats.keys(), "value": stats.values()},
+            schema={"statistic": Utf8, "value": stats_dtype},
+        )
 
     def sum(self) -> int | float:
         """
@@ -1687,7 +1690,7 @@ class Series:
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
-        return self.to_frame().select(F.col(self.name).product()).to_series().item()
+        return self._s.product()
 
     def pow(self, exponent: int | float | None | Series) -> Series:
         """
@@ -1718,7 +1721,7 @@ class Series:
             )
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
             exponent = Series(exponent)
-        return self.to_frame().select(F.col(self.name).pow(exponent)).to_series()
+        return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
 
     def min(self) -> PythonLiteral | None:
         """
@@ -1754,7 +1757,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(F.col(self.name).nan_max()).item()
+        return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -1764,7 +1767,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(F.col(self.name).nan_min()).item()
+        return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
     def std(self, ddof: int = 1) -> float | timedelta | None:
         """
@@ -1794,7 +1797,9 @@ class Series:
         >>> s.std()
         datetime.timedelta(microseconds=4)
         """
-        return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
+        if not self.dtype.is_numeric():
+            return None
+        return self._s.std(ddof)
 
     def var(self, ddof: int = 1) -> float | timedelta | None:
         """
@@ -1824,7 +1829,9 @@ class Series:
         >>> s.var()
         datetime.timedelta(microseconds=24)
         """
-        return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
+        if not self.dtype.is_numeric():
+            return None
+        return self._s.var(ddof)
 
     def median(self) -> float | None:
         """
@@ -1931,7 +1938,6 @@ class Series:
         ...
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
-    @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
     @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
     def cut(
         self,
@@ -2066,7 +2072,7 @@ class Series:
 
         result = (
             self.to_frame()
-            .select(
+            .select_seq(
                 F.col(self.name).cut(
                     breaks,
                     labels=labels,
@@ -2127,8 +2133,6 @@ class Series:
     ) -> Series | DataFrame:
         ...
 
-    @deprecate_renamed_parameter("series", "as_series", version="0.18.14")
-    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -2252,13 +2256,13 @@ class Series:
             issue_deprecation_warning(
                 "The `break_point_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if category_label != "category":
             issue_deprecation_warning(
                 "The `category_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if not as_series:
             issue_deprecation_warning(
@@ -2266,7 +2270,7 @@ class Series:
                 " The same behavior can be achieved by setting `include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
-                version="0.18.14",
+                version="0.19.0",
             )
             temp_name = self.name + "_bin"
             return (
@@ -2372,6 +2376,8 @@ class Series:
         bins: list[float] | None = None,
         *,
         bin_count: int | None = None,
+        include_category: bool = True,
+        include_breakpoint: bool = True,
     ) -> DataFrame:
         """
         Bin values into buckets and count their occurrences.
@@ -2384,6 +2390,10 @@ class Series:
         bin_count
             If no bins provided, this will be used to determine
             the distance of the bins
+        include_breakpoint
+            Include a column that indicates the upper breakpoint.
+        include_category
+            Include a column that shows the intervals as categories.
 
         Returns
         -------
@@ -2399,22 +2409,35 @@ class Series:
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
         shape: (5, 3)
-        ┌─────────────┬─────────────┬─────────┐
-        │ break_point ┆ category    ┆ a_count │
-        │ ---         ┆ ---         ┆ ---     │
-        │ f64         ┆ cat         ┆ u32     │
-        ╞═════════════╪═════════════╪═════════╡
-        │ 0.0         ┆ (-inf, 0.0] ┆ 0       │
-        │ 2.25        ┆ (0.0, 2.25] ┆ 3       │
-        │ 4.5         ┆ (2.25, 4.5] ┆ 2       │
-        │ 6.75        ┆ (4.5, 6.75] ┆ 0       │
-        │ inf         ┆ (6.75, inf] ┆ 2       │
-        └─────────────┴─────────────┴─────────┘
+        ┌─────────────┬─────────────┬───────┐
+        │ break_point ┆ category    ┆ count │
+        │ ---         ┆ ---         ┆ ---   │
+        │ f64         ┆ cat         ┆ u32   │
+        ╞═════════════╪═════════════╪═══════╡
+        │ 0.0         ┆ (-inf, 0.0] ┆ 0     │
+        │ 2.25        ┆ (0.0, 2.25] ┆ 3     │
+        │ 4.5         ┆ (2.25, 4.5] ┆ 2     │
+        │ 6.75        ┆ (4.5, 6.75] ┆ 0     │
+        │ inf         ┆ (6.75, inf] ┆ 2     │
+        └─────────────┴─────────────┴───────┘
 
         """
-        if bins:
-            bins = Series(bins, dtype=Float64)._s
-        return wrap_df(self._s.hist(bins, bin_count))
+        out = (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name).hist(
+                    bins=bins,
+                    bin_count=bin_count,
+                    include_category=include_category,
+                    include_breakpoint=include_breakpoint,
+                )
+            )
+            .to_series()
+        )
+        if not include_breakpoint and not include_category:
+            return out.to_frame()
+        else:
+            return out.struct.unnest()
 
     def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
         """
@@ -2466,10 +2489,8 @@ class Series:
         │ green ┆ 1     │
         └───────┴───────┘
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).value_counts(sort=sort, parallel=parallel))
-            .unnest(self.name)
+        return pl.DataFrame._from_pydf(
+            self._s.value_counts(sort=sort, parallel=parallel)
         )
 
     def unique_counts(self) -> Series:
@@ -2515,7 +2536,7 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(F.col(self.name).entropy(base, normalize=normalize))
+            .select_seq(F.col(self.name).entropy(base, normalize=normalize))
             .to_series()
             .item()
         )
@@ -2785,43 +2806,18 @@ class Series:
         ]
 
         """
+        return self._from_pyseries(self._s.slice(offset=offset, length=length))
 
-    def append(self, other: Series, *, append_chunks: bool | None = None) -> Self:
+    def append(self, other: Series) -> Self:
         """
         Append a Series to this one.
+
+        The resulting series will consist of multiple chunks.
 
         Parameters
         ----------
         other
             Series to append.
-        append_chunks
-            .. deprecated:: 0.18.8
-                This argument will be removed and `append` will change to always
-                behave like `append_chunks=True` (the previous default). For the
-                behavior of `append_chunks=False`, use `Series.extend`.
-
-            If set to `True` the append operation will add the chunks from `other` to
-            self. This is super cheap.
-
-            If set to `False` the append operation will do the same as
-            `DataFrame.extend` which extends the memory backed by this `Series` with
-            the values from `other`.
-
-            Different from `append chunks`, `extend` appends the data from `other` to
-            the underlying memory locations and thus may cause a reallocation (which are
-            expensive).
-
-            If this does not cause a reallocation, the resulting data structure will not
-            have any extra chunks and thus will yield faster queries.
-
-            Prefer `extend` over `append_chunks` when you want to do a query after a
-            single append. For instance during online operations where you add `n` rows
-            and rerun a query.
-
-            Prefer `append_chunks` over `extend` when you want to append many times
-            before doing a query. For instance when you read in multiple files and when
-            to store them in a single `Series`. In the latter case, finish the sequence
-            of `append_chunks` operations with a `rechunk`.
 
         Warnings
         --------
@@ -2853,19 +2849,6 @@ class Series:
         2
 
         """
-        if append_chunks is not None:
-            issue_deprecation_warning(
-                "the `append_chunks` argument will be removed and `append` will change"
-                " to always behave like `append_chunks=True` (the previous default)."
-                " For the behavior of `append_chunks=False`, use `Series.extend`.",
-                version="0.18.8",
-            )
-        else:
-            append_chunks = True
-
-        if not append_chunks:
-            return self.extend(other)
-
         try:
             self._s.append(other._s)
         except RuntimeError as exc:
@@ -3006,7 +2989,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(F.col(self.name).head(n)).to_series()
+        return self._from_pyseries(self._s.head(n))
 
     def tail(self, n: int = 10) -> Series:
         """
@@ -3047,7 +3030,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(F.col(self.name).tail(n)).to_series()
+        return self._from_pyseries(self._s.tail(n))
 
     def limit(self, n: int = 10) -> Series:
         """
@@ -3068,7 +3051,7 @@ class Series:
         """
         return self.head(n)
 
-    def gather_every(self, n: int) -> Series:
+    def gather_every(self, n: int, offset: int = 0) -> Series:
         """
         Take every nth value in the Series and return as new Series.
 
@@ -3076,6 +3059,8 @@ class Series:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Start the row count at this offset.
 
         Examples
         --------
@@ -3086,6 +3071,13 @@ class Series:
         [
             1
             3
+        ]
+        >>> s.gather_every(2, offset=1)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            2
+            4
         ]
 
         """
@@ -3795,21 +3787,6 @@ class Series:
         """
         return self._s.equals(other._s, null_equal, strict)
 
-    def len(self) -> int:
-        """
-        Return the number of elements in this Series.
-
-        Null values are treated like regular elements in this context.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, None])
-        >>> s.len()
-        3
-
-        """
-        return self._s.len()
-
     def cast(
         self,
         dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
@@ -4007,16 +3984,19 @@ class Series:
         ]
 
         """
-        if isinstance(lower_bound, str):
-            lower_bound = F.lit(lower_bound)
-        if isinstance(upper_bound, str):
-            upper_bound = F.lit(upper_bound)
+        if closed == "none":
+            out = (self > lower_bound) & (self < upper_bound)
+        elif closed == "both":
+            out = (self >= lower_bound) & (self <= upper_bound)
+        elif closed == "right":
+            out = (self > lower_bound) & (self <= upper_bound)
+        elif closed == "left":
+            out = (self >= lower_bound) & (self < upper_bound)
 
-        return (
-            self.to_frame()
-            .select(F.col(self.name).is_between(lower_bound, upper_bound, closed))
-            .to_series()
-        )
+        if isinstance(out, pl.Expr):
+            out = F.select(out).to_series()
+
+        return out
 
     def to_numpy(
         self,
@@ -4098,9 +4078,9 @@ class Series:
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
 
-        elif self.dtype == Time:
+        elif self.dtype in (Time, Decimal):
             raise_no_zero_copy()
-            # note: there is no native numpy "time" dtype
+            # note: there are no native numpy "time" or "decimal" dtypes
             return np.array(self.to_list(), dtype="object")
         else:
             if not self.null_count():
@@ -4289,6 +4269,40 @@ class Series:
         return (
             f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
         )
+
+    def count(self) -> int:
+        """
+        Return the number of non-null elements in the column.
+
+        See Also
+        --------
+        len
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.count()
+        2
+        """
+        return self.len() - self.null_count()
+
+    def len(self) -> int:
+        """
+        Return the number of elements in the Series.
+
+        Null values count towards the total.
+
+        See Also
+        --------
+        count
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.len()
+        3
+        """
+        return self._s.len()
 
     def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
         """
@@ -5852,7 +5866,7 @@ class Series:
 
         Notes
         -----
-        This implementation of :func:`hash` does not guarantee stable results
+        This implementation of `hash` does not guarantee stable results
         across different Polars versions. Its stability is only guaranteed within a
         single version.
 
@@ -6259,40 +6273,49 @@ class Series:
 
     def replace(
         self,
-        mapping: dict[Any, Any],
+        old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
+        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
         *,
-        default: Any = no_default,
+        default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values according to the given mapping.
-
-        Needs a global string cache for lazily evaluated queries on columns of
-        type `Categorical`.
+        Replace values by different values.
 
         Parameters
         ----------
-        mapping
-            Mapping of values to their replacement.
+        old
+            Value or sequence of values to replace.
+            Also accepts a mapping of values to their replacement as syntactic sugar for
+            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+        new
+            Value or sequence of values to replace by.
+            Length must match the length of `old` or have length 1.
         default
-            Value to use when the mapping does not contain the lookup value.
+            Set values that were not replaced to this value.
             Defaults to keeping the original value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
-            Set return dtype to override automatic return dtype determination.
+            The data type of the resulting Series. If set to `None` (default),
+            the data type is determined automatically based on the other inputs.
 
         See Also
         --------
         str.replace
 
+        Notes
+        -----
+        The global string cache must be enabled when replacing categorical values.
+
         Examples
         --------
-        Replace a single value by another value. Values not in the mapping remain
+        Replace a single value by another value. Values that were not replaced remain
         unchanged.
 
-        >>> s = pl.Series("a", [1, 2, 2, 3])
-        >>> s.replace({2: 100})
+        >>> s = pl.Series([1, 2, 2, 3])
+        >>> s.replace(2, 100)
         shape: (4,)
-        Series: 'a' [i64]
+        Series: '' [i64]
         [
                 1
                 100
@@ -6300,37 +6323,78 @@ class Series:
                 3
         ]
 
-        Replace multiple values. Specify a default to set values not in the given map
-        to the default value.
+        Replace multiple values by passing sequences to the `old` and `new` parameters.
 
-        >>> s = pl.Series("country_code", ["FR", "ES", "DE", None])
-        >>> country_code_map = {
-        ...     "CA": "Canada",
-        ...     "DE": "Germany",
-        ...     "FR": "France",
-        ...     None: "unspecified",
-        ... }
-        >>> s.replace(country_code_map, default=None)
+        >>> s.replace([2, 3], [100, 200])
         shape: (4,)
-        Series: 'country_code' [str]
+        Series: '' [i64]
         [
-                "France"
-                null
-                "Germany"
-                "unspecified"
+                1
+                100
+                100
+                200
         ]
 
-        The return type can be overridden with the `return_dtype` argument.
+        Passing a mapping with replacements is also supported as syntactic sugar.
+        Specify a default to set all values that were not matched.
 
-        >>> s = pl.Series("a", [0, 1, 2, 3])
-        >>> s.replace({1: 10, 2: 20}, default=0, return_dtype=pl.UInt8)
+        >>> mapping = {2: 100, 3: 200}
+        >>> s.replace(mapping, default=-1)
         shape: (4,)
-        Series: 'a' [u8]
+        Series: '' [i64]
         [
-                0
-                10
-                20
-                0
+                -1
+                100
+                100
+                200
+        ]
+
+
+        The default can be another Series.
+
+        >>> default = pl.Series([2.5, 5.0, 7.5, 10.0])
+        >>> s.replace(2, 100, default=default)
+        shape: (4,)
+        Series: '' [f64]
+        [
+                2.5
+                100.0
+                100.0
+                10.0
+        ]
+
+        Replacing by values of a different data type sets the return type based on
+        a combination of the `new` data type and either the original data type or the
+        default data type if it was set.
+
+        >>> s = pl.Series(["x", "y", "z"])
+        >>> mapping = {"x": 1, "y": 2, "z": 3}
+        >>> s.replace(mapping)
+        shape: (3,)
+        Series: '' [str]
+        [
+                "1"
+                "2"
+                "3"
+        ]
+        >>> s.replace(mapping, default=None)
+        shape: (3,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+        ]
+
+        Set the `return_dtype` parameter to control the resulting data type directly.
+
+        >>> s.replace(mapping, return_dtype=pl.UInt8)
+        shape: (3,)
+        Series: '' [u8]
+        [
+                1
+                2
+                3
         ]
         """
 
@@ -7011,7 +7075,7 @@ class Series:
         return self.dtype == Utf8
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int) -> Series:
+    def take_every(self, n: int, offset: int = 0) -> Series:
         """
         Take every nth value in the Series and return as new Series.
 
@@ -7022,8 +7086,10 @@ class Series:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("gather", version="0.19.14")
     def take(

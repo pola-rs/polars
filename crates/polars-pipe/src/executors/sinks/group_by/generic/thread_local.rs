@@ -69,8 +69,12 @@ impl SpillPartitions {
             .map(|_| MutableBinaryArray::with_capacity(OB_SIZE))
             .collect();
 
-        let hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
-        let chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
+        let hash_partitioned = (0..PARTITION_SIZE)
+            .map(|_| Vec::with_capacity(OB_SIZE))
+            .collect::<Vec<_>>();
+        let chunk_index_partitioned = (0..PARTITION_SIZE)
+            .map(|_| Vec::with_capacity(OB_SIZE))
+            .collect::<Vec<_>>();
 
         Self {
             keys_partitioned,

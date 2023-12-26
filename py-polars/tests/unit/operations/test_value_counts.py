@@ -55,3 +55,14 @@ def test_value_counts_duplicate_name() -> None:
 
     with pytest.raises(pl.DuplicateError, match="count"):
         s.value_counts()
+
+    def test_count() -> None:
+        assert pl.Series([None, 1, None, 2, 3]).count() == 3
+
+    df = pl.DataFrame({"a": [None, 1, None, 2, 3]})
+    assert df.select(pl.col("a").count()).item() == 3
+
+    assert df.group_by(1).agg(pl.col("a").count()).to_dict(as_series=False) == {
+        "literal": [1],
+        "a": [3],
+    }

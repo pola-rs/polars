@@ -161,3 +161,69 @@ def test_int_range_input_shape_multiple_values() -> None:
         pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.int_range(multiple, multiple, eager=True)
+
+
+# https://github.com/pola-rs/polars/issues/10867
+def test_int_range_index_type_negative() -> None:
+    result = pl.select(pl.int_range(pl.lit(3).cast(pl.UInt32), -1, -1))
+    expected = pl.DataFrame({"int": [3, 2, 1, 0]})
+    assert_frame_equal(result, expected)
+
+
+def test_int_range_null_input() -> None:
+    with pytest.raises(pl.ComputeError, match="invalid null input for `int_range`"):
+        pl.select(pl.int_range(3, pl.lit(None), -1, dtype=pl.UInt32))
+
+
+def test_int_range_invalid_conversion() -> None:
+    with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
+        pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
+
+
+def test_int_range_non_integer_dtype() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
+    ):
+        pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]
+
+
+def test_int_ranges_broadcasting() -> None:
+    df = pl.DataFrame({"int": [1, 2, 3]})
+    result = df.select(
+        # result column name means these columns will be broadcast
+        pl.int_ranges(1, pl.Series([2, 4, 6]), "int").alias("start"),
+        pl.int_ranges("int", 6, "int").alias("end"),
+        pl.int_ranges("int", pl.col("int") + 2, 1).alias("step"),
+        pl.int_ranges("int", 3, 1).alias("end_step"),
+        pl.int_ranges(1, "int", 1).alias("start_step"),
+        pl.int_ranges(1, 6, "int").alias("start_end"),
+        pl.int_ranges("int", pl.Series([4, 5, 10]), "int").alias("no_broadcast"),
+    )
+    expected = pl.DataFrame(
+        {
+            "start": [[1], [1, 3], [1, 4]],
+            "end": [
+                [1, 2, 3, 4, 5],
+                [2, 4],
+                [3],
+            ],
+            "step": [[1, 2], [2, 3], [3, 4]],
+            "end_step": [
+                [1, 2],
+                [2],
+                [],
+            ],
+            "start_step": [
+                [],
+                [1],
+                [1, 2],
+            ],
+            "start_end": [
+                [1, 2, 3, 4, 5],
+                [1, 3, 5],
+                [1, 4],
+            ],
+            "no_broadcast": [[1, 2, 3], [2, 4], [3, 6, 9]],
+        }
+    )
+    assert_frame_equal(result, expected)

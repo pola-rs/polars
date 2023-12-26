@@ -92,7 +92,7 @@ impl ColumnStats {
                 let s = self.null_count.as_ref()?;
                 // if all null, there are no statistics.
                 if s.null_count() != s.len() {
-                    s.sum()
+                    s.sum().ok()
                 } else {
                     None
                 }

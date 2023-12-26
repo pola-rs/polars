@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.18"
+version = "0.20.2"
 edition = "2021"
 
 [lib]
@@ -8,7 +8,6 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars-algo = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
@@ -69,6 +68,7 @@ features = [
   "range",
   "rank",
   "reinterpret",
+  "replace",
   "rolling_window",
   "round_series",
   "row_hash",
@@ -76,6 +76,7 @@ features = [
   "semi_anti_join",
   "serde-lazy",
   "string_encoding",
+  "string_reverse",
   "string_to_integer",
   "string_pad",
   "strings",
@@ -147,6 +148,8 @@ extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 peaks = ["polars/peaks"]
+hist = ["polars/hist"]
+find_many = ["polars/find_many"]
 
 dtypes = [
   "dtype-i8",
@@ -183,6 +186,8 @@ operations = [
   "propagate_nans",
   "timezones",
   "peaks",
+  "hist",
+  "find_many",
 ]
 
 io = [

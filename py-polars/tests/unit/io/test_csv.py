@@ -508,6 +508,11 @@ def test_compressed_csv(io_files_path: Path) -> None:
 
     # zstd compressed file
     csv_file = io_files_path / "zstd_compressed.csv.zst"
+    with pytest.raises(
+        ComputeError,
+        match="cannot scan compressed csv; use `read_csv` for compressed data",
+    ):
+        pl.scan_csv(csv_file)
     out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 
@@ -1214,7 +1219,7 @@ def test_error_message() -> None:
     data = io.StringIO("target,wind,energy,miso\n" "1,2,3,4\n" "1,2,1e5,1\n")
     with pytest.raises(
         ComputeError,
-        match=r"Could not parse `1e5` as dtype `i64` at column 'energy' \(column number 3\)",
+        match=r"could not parse `1e5` as dtype `i64` at column 'energy' \(column number 3\)",
     ):
         pl.read_csv(data, infer_schema_length=1)
 
@@ -1710,3 +1715,15 @@ def test_csv_no_new_line_last() -> None:
         "a": [1, 2, 3],
         "b": [1.0, 2.0, 2.1],
     }
+
+
+def test_invalid_csv_raise() -> None:
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            b"""
+    "WellCompletionCWI","FacilityID","ProductionMonth","ReportedHoursProdInj","ProdAccountingProductType","ReportedVolume","VolumetricActivityType"
+    "SK0000608V001","SK BT B1H3780","202001","","GAS","1.700","PROD"
+    "SK0127960V000","SK BT 0018977","202001","","GAS","45.500","PROD"
+    "SK0127960V000","SK BT 0018977","
+    """.strip()
+        )

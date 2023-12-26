@@ -301,15 +301,21 @@ def test_bitwise_ops() -> None:
     # Note that the type annotations only allow Series to be passed in, but there is
     # specific code to deal with non-Series inputs.
     assert_series_equal(
-        (True & a),  # type: ignore[operator]
+        (
+            True & a  # type: ignore[operator]
+        ),
         pl.Series([True, False, True]),
     )
     assert_series_equal(
-        (True | a),  # type: ignore[operator]
+        (
+            True | a  # type: ignore[operator]
+        ),
         pl.Series([True, True, True]),
     )
     assert_series_equal(
-        (True ^ a),  # type: ignore[operator]
+        (
+            True ^ a  # type: ignore[operator]
+        ),
         pl.Series([False, True, False]),
     )
 
@@ -1190,58 +1196,6 @@ def test_empty() -> None:
         not empty_a
 
 
-def test_describe() -> None:
-    num_s = pl.Series([1, 2, 3])
-    float_s = pl.Series([1.3, 4.6, 8.9])
-    str_s = pl.Series(["abc", "pqr", "xyz"])
-    bool_s = pl.Series([True, False, None, True, True])
-    date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-    empty_s = pl.Series(np.empty(0))
-
-    assert dict(num_s.describe().rows()) == {
-        "count": 3.0,
-        "mean": 2.0,
-        "null_count": 0.0,
-        "std": 1.0,
-        "min": 1.0,
-        "25%": 1.0,
-        "50%": 2.0,
-        "75%": 3.0,
-        "max": 3.0,
-    }
-    assert dict(float_s.describe().rows()) == {
-        "count": 3.0,
-        "mean": 4.933333333333334,
-        "null_count": 0.0,
-        "std": 3.8109491381194442,
-        "min": 1.3,
-        "25%": 1.3,
-        "50%": 4.6,
-        "75%": 8.9,
-        "max": 8.9,
-    }
-    assert dict(str_s.describe().rows()) == {
-        "count": 3,
-        "null_count": 0,
-        "unique": 3,
-    }
-    assert dict(bool_s.describe().rows()) == {
-        "count": 5,
-        "null_count": 1,
-        "sum": 3,
-    }
-    assert dict(date_s.describe().rows()) == {
-        "count": "3",
-        "min": "2021-01-01",
-        "50%": "2021-01-02",
-        "max": "2021-01-03",
-        "null_count": "0",
-    }
-
-    with pytest.raises(ValueError):
-        assert empty_s.describe()
-
-
 def test_round() -> None:
     a = pl.Series("f", [1.003, 2.003])
     b = a.round(2)
@@ -1491,14 +1445,6 @@ def test_true_divide() -> None:
         pl.DataFrame({"a": vals}).select([pl.col("a") / 1])["a"],
         pl.Series("a", vals, dtype=Float64),
     )
-
-
-def test_invalid_categorical() -> None:
-    s = pl.Series("cat_series", ["a", "b", "b", "c", "a"]).cast(pl.Categorical)
-    assert s.std() is None
-    assert s.var() is None
-    assert s.median() is None
-    assert s.quantile(0.5) is None
 
 
 def test_bitwise() -> None:
@@ -1788,6 +1734,7 @@ def test_filter() -> None:
 def test_gather_every() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
     assert_series_equal(s.gather_every(2), pl.Series("a", [1, 3]))
+    assert_series_equal(s.gather_every(2, offset=1), pl.Series("a", [2, 4]))
 
 
 def test_arg_sort() -> None:
@@ -2374,20 +2321,6 @@ def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
     assert_series_equal(s.extend_constant(const, 3), expected)
 
 
-def test_any_all() -> None:
-    a = pl.Series("a", [True, False, True])
-    assert a.any() is True
-    assert a.all() is False
-
-    a = pl.Series("a", [True, True, True])
-    assert a.any() is True
-    assert a.all() is True
-
-    a = pl.Series("a", [False, False, False])
-    assert a.any() is False
-    assert a.all() is False
-
-
 def test_product() -> None:
     a = pl.Series("a", [1, 2, 3])
     out = a.product()
@@ -2812,3 +2745,10 @@ def test_series_duration_std_var() -> None:
 
     assert s.std() == timedelta(seconds=1, microseconds=527525)
     assert s.var() == timedelta(days=27, seconds=533, microseconds=333333)
+
+def test_comp_series_with_str_13123() -> None:
+    s = pl.Series(["1", "2", None])
+    assert_series_equal(s != "1", pl.Series([False, True, None]))
+    assert_series_equal(s == "1", pl.Series([True, False, None]))
+    assert_series_equal(s.eq_missing("1"), pl.Series([True, False, False]))
+    assert_series_equal(s.ne_missing("1"), pl.Series([False, True, True]))

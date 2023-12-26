@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from typing import Any, NamedTuple
 
+import numpy as np
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -29,12 +31,13 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
 
 @pytest.mark.slow()
 def test_series_from_pydecimal_and_ints(
-    permutations_int_dec_none: list[tuple[D | int | None, ...]]
+    permutations_int_dec_none: list[tuple[D | int | None, ...]],
 ) -> None:
     # TODO: check what happens if there are strings, floats arrow scalars in the list
     for data in permutations_int_dec_none:
         s = pl.Series("name", data)
         assert s.dtype == pl.Decimal(scale=7)  # inferred scale = 7, precision = None
+        assert s.dtype.is_decimal()
         assert s.name == "name"
         assert s.null_count() == 1
         for i, d in enumerate(data):
@@ -266,3 +269,20 @@ def test_decimal_write_parquet_12375() -> None:
     assert df["bye"].dtype == pl.Decimal
 
     df.write_parquet(f)
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_decimal_numpy_export(use_pyarrow: bool) -> None:
+    decimal_data = [D("1.234"), D("2.345"), D("-3.456")]
+
+    s = pl.Series("n", decimal_data)
+    df = s.to_frame()
+
+    assert_array_equal(
+        np.array(decimal_data),
+        s.to_numpy(use_pyarrow=use_pyarrow),
+    )
+    assert_array_equal(
+        np.array(decimal_data).reshape((-1, 1)),
+        df.to_numpy(use_pyarrow=use_pyarrow),
+    )

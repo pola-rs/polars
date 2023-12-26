@@ -39,7 +39,6 @@ fn remove_exclude(mut expr: Expr) -> Expr {
 
 fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
     // the blocks are added by cargo fmt
-    #[allow(clippy::blocks_in_if_conditions)]
     if has_expr(&expr, |e| {
         matches!(e, Expr::KeepName(_) | Expr::RenameAlias { .. })
     }) {

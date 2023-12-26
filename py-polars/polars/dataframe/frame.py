@@ -10,6 +10,7 @@ from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
 from pathlib import Path
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
     BinaryIO,
@@ -36,10 +37,13 @@ from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
-    NUMERIC_DTYPES,
     Boolean,
+    Categorical,
+    Enum,
     Float64,
+    Null,
     Object,
+    Unknown,
     Utf8,
     py_type_to_dtype,
 )
@@ -101,7 +105,6 @@ from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     _warn_null_comparison,
-    can_create_dicts_with_pyarrow,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -340,7 +343,6 @@ class DataFrame:
 
     >>> class MyDataFrame(pl.DataFrame):
     ...     pass
-    ...
     >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
     False
 
@@ -664,7 +666,7 @@ class DataFrame:
     @classmethod
     def _read_csv(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
@@ -815,7 +817,7 @@ class DataFrame:
     @classmethod
     def _read_parquet(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -912,7 +914,7 @@ class DataFrame:
     @classmethod
     def _read_ipc(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -994,7 +996,7 @@ class DataFrame:
     @classmethod
     def _read_ipc_stream(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -2041,7 +2043,7 @@ class DataFrame:
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
 
         """
-        return list(self.iter_rows(named=True))
+        return self.rows(named=True)
 
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
@@ -2049,6 +2051,7 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
+        use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -2068,11 +2071,16 @@ class DataFrame:
             one-dimensional array. Note that this option only takes effect if
             `structured` is set to `False` and the DataFrame dtypes allow for a
             global dtype for all columns.
+        use_pyarrow
+            Use `pyarrow.Array.to_numpy
+            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
+
+            function for the conversion to numpy if necessary.
 
         Notes
         -----
-        If you're attempting to convert Utf8 to an array you'll need to install
-        `pyarrow`.
+        If you're attempting to convert Utf8 or Decimal to an array, you'll need to
+        install `pyarrow`.
 
         Examples
         --------
@@ -2099,7 +2107,7 @@ class DataFrame:
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
-        ...optionally zero-copying as a record array view:
+        ...optionally going on to view as a record array:
 
         >>> import numpy as np
         >>> df.to_numpy(structured=True).view(np.recarray)
@@ -2112,7 +2120,7 @@ class DataFrame:
             arrays = []
             for c, tp in self.schema.items():
                 s = self[c]
-                a = s.to_numpy()
+                a = s.to_numpy(use_pyarrow=use_pyarrow)
                 arrays.append(
                     a.astype(str, copy=False)
                     if tp == Utf8 and not s.null_count()
@@ -2128,7 +2136,10 @@ class DataFrame:
             out = self._df.to_numpy(order)
             if out is None:
                 return np.vstack(
-                    [self.to_series(i).to_numpy() for i in range(self.width)]
+                    [
+                        self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
+                        for i in range(self.width)
+                    ]
                 ).T
 
         return out
@@ -2298,7 +2309,7 @@ class DataFrame:
         ...     [
         ...         pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
         ...         pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-        ...         pl.Series("ham", ["a", "b", "c"], dtype=pl.Categorical),
+        ...         pl.Series("ham", ["a", "b", "c"], dtype=pl.Utf8),
         ...     ]
         ... )
         >>> print(df.to_init_repr())
@@ -2306,7 +2317,7 @@ class DataFrame:
             [
                 pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
                 pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.Categorical),
+                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.Utf8),
             ]
         )
 
@@ -2316,7 +2327,7 @@ class DataFrame:
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
-        │ u8  ┆ f32 ┆ cat │
+        │ u8  ┆ f32 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6.0 ┆ a   │
         │ 2   ┆ 7.0 ┆ b   │
@@ -2948,7 +2959,6 @@ class DataFrame:
         ...     )
         ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
         ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
-        ...
 
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customised options (and positioning)
@@ -3434,7 +3444,6 @@ class DataFrame:
                 data_page_size,
             )
 
-    @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
     @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
@@ -3595,15 +3604,40 @@ class DataFrame:
         else:
             raise ValueError(f"engine {engine!r} is not supported")
 
+    @overload
     def write_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
-        mode: Literal["error", "append", "overwrite", "ignore"] = "error",
+        mode: Literal["error", "append", "overwrite", "ignore"] = ...,
+        overwrite_schema: bool = ...,
+        storage_options: dict[str, str] | None = ...,
+        delta_write_options: dict[str, Any] | None = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def write_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["merge"],
+        overwrite_schema: bool = ...,
+        storage_options: dict[str, str] | None = ...,
+        delta_merge_options: dict[str, Any],
+    ) -> deltalake.table.TableMerger:
+        ...
+
+    def write_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool = False,
         storage_options: dict[str, str] | None = None,
         delta_write_options: dict[str, Any] | None = None,
-    ) -> None:
+        delta_merge_options: dict[str, Any] | None = None,
+    ) -> deltalake.table.TableMerger | None:
         """
         Write DataFrame as delta table.
 
@@ -3611,25 +3645,30 @@ class DataFrame:
         ----------
         target
             URI of a table or a DeltaTable object.
-        mode : {'error', 'append', 'overwrite', 'ignore'}
+        mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
             How to handle existing data.
 
-            * If 'error', throw an error if the table already exists (default).
-            * If 'append', will add new data.
-            * If 'overwrite', will replace table with new data.
-            * If 'ignore', will not write anything if table already exists.
+            - If 'error', throw an error if the table already exists (default).
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+            - If 'ignore', will not write anything if table already exists.
+            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
+              with the existing data.
         overwrite_schema
             If True, allows updating the schema of the table.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
 
-            * See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
-            * See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
-            * See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+            - See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
+            - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
+            - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
-            See a list of supported write options `here <https://github.com/delta-io/delta-rs/blob/395d48b47ea638b70415899dc035cc895b220e55/python/deltalake/writer.py#L65>`__.
+            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+        delta_merge_options
+            Keyword arguments which are required to `MERGE` a Delta lake Table.
+            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
 
         Raises
         ------
@@ -3638,21 +3677,14 @@ class DataFrame:
         ArrowInvalidError
             If the DataFrame contains data types that could not be cast to their
             primitive type.
+        TableNotFoundError
+            If the delta table doesn't exist and MERGE action is triggered
 
         Notes
         -----
         The Polars data types :class:`Null`, :class:`Categorical` and :class:`Time`
         are not supported by the delta protocol specification and will raise a
         TypeError.
-
-        Some other data types are not supported but have an associated `primitive type
-        <https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types>`__
-        to which they can be cast. This affects the following data types:
-
-        - Unsigned integers
-        - :class:`Datetime` types with millisecond or nanosecond precision or with
-            time zone information
-        - :class:`Utf8`, :class:`Binary`, and :class:`List` ('large' types)
 
         Polars columns are always nullable. To write data to a delta table with
         non-nullable columns, a custom pyarrow schema has to be passed to the
@@ -3687,7 +3719,7 @@ class DataFrame:
         ...     existing_table_path, mode="overwrite", overwrite_schema=True
         ... )  # doctest: +SKIP
 
-        Write a dataframe as a Delta Lake table to a cloud object store like S3.
+        Write a DataFrame as a Delta Lake table to a cloud object store like S3.
 
         >>> table_path = "s3://bucket/prefix/to/delta-table/"
         >>> df.write_delta(
@@ -3710,44 +3742,81 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+        Merge the DataFrame with an existing Delta Lake table.
+        For all `TableMerger` methods, check the deltalake docs
+        `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
+
+        Schema evolution is not yet supported in by the `deltalake` package, therefore
+        `overwrite_schema` will not have any effect on a merge operation.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> table_path = "/path/to/delta-table/"
+        >>> (
+        ...     df.write_delta(
+        ...         "table_path",
+        ...         mode="merge",
+        ...         delta_merge_options={
+        ...             "predicate": "s.foo = t.foo",
+        ...             "source_alias": "s",
+        ...             "target_alias": "t",
+        ...         },
+        ...     )
+        ...     .when_matched_update_all()
+        ...     .when_not_matched_insert_all()
+        ...     .execute()
+        ... )  # doctest: +SKIP
         """
         from polars.io.delta import (
             _check_for_unsupported_types,
             _check_if_delta_available,
-            _convert_pa_schema_to_delta,
             _resolve_delta_lake_uri,
         )
 
         _check_if_delta_available()
 
-        from deltalake.writer import write_deltalake
+        from deltalake import DeltaTable, write_deltalake
 
-        if delta_write_options is None:
-            delta_write_options = {}
+        _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        _check_for_unsupported_types(self.dtypes)
-
         data = self.to_arrow()
 
-        schema = delta_write_options.pop("schema", None)
-        if schema is None:
-            schema = _convert_pa_schema_to_delta(data.schema)
+        if mode == "merge":
+            if delta_merge_options is None:
+                raise ValueError(
+                    "You need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
+                )
+            if isinstance(target, str):
+                dt = DeltaTable(table_uri=target, storage_options=storage_options)
+            else:
+                dt = target
 
-        data = data.cast(schema)
+            return dt.merge(data, **delta_merge_options)
 
-        write_deltalake(
-            table_or_uri=target,
-            data=data,
-            schema=schema,
-            mode=mode,
-            overwrite_schema=overwrite_schema,
-            storage_options=storage_options,
-            large_dtypes=True,
-            **delta_write_options,
-        )
+        else:
+            if delta_write_options is None:
+                delta_write_options = {}
+
+            schema = delta_write_options.pop("schema", None)
+            write_deltalake(
+                table_or_uri=target,
+                data=data,
+                schema=schema,
+                mode=mode,
+                overwrite_schema=overwrite_schema,
+                storage_options=storage_options,
+                large_dtypes=True,
+                **delta_write_options,
+            )
+            return None
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
@@ -3869,7 +3938,6 @@ class DataFrame:
         ...     while True:
         ...         yield f"{base_name}{count}"
         ...         count += 1
-        ...
         >>> df.transpose(include_header=False, column_names=name_generator())
         shape: (2, 3)
         ┌─────────────┬─────────────┬─────────────┐
@@ -4248,6 +4316,12 @@ class DataFrame:
         -----
         The median is included by default as the 50% percentile.
 
+        Warnings
+        --------
+        We will never guarantee the output of describe to be stable.
+        It will show statistics that we deem informative and may
+        be updated in the future.
+
         See Also
         --------
         glimpse
@@ -4257,71 +4331,103 @@ class DataFrame:
         >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1.0, 2.8, 3.0],
-        ...         "b": [4, 5, None],
-        ...         "c": [True, False, True],
-        ...         "d": [None, "b", "c"],
-        ...         "e": ["usd", "eur", None],
-        ...         "f": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
+        ...         "float": [1.0, 2.8, 3.0],
+        ...         "int": [4, 5, None],
+        ...         "bool": [True, False, True],
+        ...         "str": [None, "b", "c"],
+        ...         "str2": ["usd", "eur", None],
+        ...         "date": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
         ...     }
         ... )
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬──────────┬──────┬──────┬────────────┐
-        │ describe   ┆ a        ┆ b        ┆ c        ┆ d    ┆ e    ┆ f          │
-        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
-        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str  ┆ str        │
-        ╞════════════╪══════════╪══════════╪══════════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 3.0      ┆ 3.0      ┆ 3    ┆ 3    ┆ 3          │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 1    ┆ 1    ┆ 0          │
-        │ mean       ┆ 2.266667 ┆ 4.5      ┆ 0.666667 ┆ null ┆ null ┆ null       │
-        │ std        ┆ 1.101514 ┆ 0.707107 ┆ 0.57735  ┆ null ┆ null ┆ null       │
-        │ min        ┆ 1.0      ┆ 4.0      ┆ 0.0      ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ 25%        ┆ 1.0      ┆ 4.0      ┆ null     ┆ null ┆ null ┆ null       │
-        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
-        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ 1.0      ┆ c    ┆ usd  ┆ 2022-01-01 │
-        └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
+        ┌────────────┬──────────┬──────────┬───────┬──────┬──────┬────────────┐
+        │ describe   ┆ float    ┆ int      ┆ bool  ┆ str  ┆ str2 ┆ date       │
+        │ ---        ┆ ---      ┆ ---      ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
+        │ str        ┆ f64      ┆ f64      ┆ str   ┆ str  ┆ str  ┆ str        │
+        ╞════════════╪══════════╪══════════╪═══════╪══════╪══════╪════════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3     ┆ 2    ┆ 2    ┆ 3          │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0     ┆ 1    ┆ 1    ┆ 0          │
+        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ null       │
+        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null       │
+        │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-01-01 │
+        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null       │
+        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
+        │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01 │
+        └────────────┴──────────┴──────────┴───────┴──────┴──────┴────────────┘
 
         """
-        # determine metrics and optional/additional percentiles
+        if not self.columns:
+            raise TypeError("cannot describe a DataFrame without any columns")
+
+        # Determine which columns should get std/mean/percentile statistics
+        stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
+
+        # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
         for p in parse_percentiles(percentiles):
-            percentile_exprs.append(F.all().quantile(p).name.prefix(f"{p}:"))
+            for c in self.columns:
+                expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
+                expr = expr.alias(f"{p}:{c}")
+                percentile_exprs.append(expr)
             metrics.append(f"{p:.0%}")
         metrics.append("max")
 
-        # execute metrics in parallel
+        mean_exprs = [
+            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
+            for c in self.columns
+        ]
+        std_exprs = [
+            (F.col(c).std() if c in stat_cols else F.lit(None)).alias(f"std:{c}")
+            for c in self.columns
+        ]
+
+        minmax_cols = {
+            c
+            for c, dt in self.schema.items()
+            if not dt.is_nested()
+            and dt not in (Object, Null, Unknown, Categorical, Enum)
+        }
+        min_exprs = [
+            (F.col(c).min() if c in minmax_cols else F.lit(None)).alias(f"min:{c}")
+            for c in self.columns
+        ]
+        max_exprs = [
+            (F.col(c).max() if c in minmax_cols else F.lit(None)).alias(f"max:{c}")
+            for c in self.columns
+        ]
+
+        # Calculate metrics in parallel
         df_metrics = self.select(
             F.all().count().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
-            F.all().mean().name.prefix("mean:"),
-            F.all().std().name.prefix("std:"),
-            F.all().min().name.prefix("min:"),
+            *mean_exprs,
+            *std_exprs,
+            *min_exprs,
             *percentile_exprs,
-            F.all().max().name.prefix("max:"),
-        ).row(0)
+            *max_exprs,
+        )
 
-        # reshape wide result
-        n_cols = len(self.columns)
+        # Reshape wide result
         described = [
-            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(len(metrics))
+            df_metrics.row(0)[(n * self.width) : (n + 1) * self.width]
+            for n in range(len(metrics))
         ]
 
-        # cast by column type (numeric/bool -> float), (other -> string)
+        # Cast by column type (numeric/bool -> float), (other -> string)
         summary = dict(zip(self.columns, list(zip(*described))))
-        num_or_bool = NUMERIC_DTYPES | {Boolean}
-        for c, tp in self.schema.items():
+        for c in self.columns:
             summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
-                else (float(v) if tp in num_or_bool else str(v))
+                else (float(v) if c in stat_cols else str(v))
                 for v in summary[c]
             ]
 
-        # return results as a frame
-        df_summary = self.__class__(summary)
+        # Return results as a DataFrame
+        df_summary = self._from_dict(summary)
         df_summary.insert_column(0, pl.Series("describe", metrics))
         return df_summary
 
@@ -5040,7 +5146,6 @@ class DataFrame:
         --------
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
-        ...
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
         >>> df.pipe(cast_str_to_int, col_name="b")
         shape: (4, 2)
@@ -5220,7 +5325,6 @@ class DataFrame:
         >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        ...
         a
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -6038,8 +6142,24 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
             Join strategy.
+
+            * *inner*
+                Returns rows that have matching values in both tables
+            * *left*
+                Returns all rows from the left table, and the matched rows from the
+                right table
+            * *outer*
+                 Returns all rows when there is a match in either left or right table
+            * *outer_coalesce*
+                 Same as 'outer', but coalesces the key columns
+            * *cross*
+                 Returns the cartisian product of rows from both tables
+            * *semi*
+                 Filter rows that have a match in the right table.
+            * *anti*
+                 Filter rows that not have a match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
@@ -6103,17 +6223,17 @@ class DataFrame:
         └─────┴─────┴─────┴───────┘
 
         >>> df.join(other_df, on="ham", how="outer")
-        shape: (4, 4)
-        ┌──────┬──────┬─────┬───────┐
-        │ foo  ┆ bar  ┆ ham ┆ apple │
-        │ ---  ┆ ---  ┆ --- ┆ ---   │
-        │ i64  ┆ f64  ┆ str ┆ str   │
-        ╞══════╪══════╪═════╪═══════╡
-        │ 1    ┆ 6.0  ┆ a   ┆ x     │
-        │ 2    ┆ 7.0  ┆ b   ┆ y     │
-        │ null ┆ null ┆ d   ┆ z     │
-        │ 3    ┆ 8.0  ┆ c   ┆ null  │
-        └──────┴──────┴─────┴───────┘
+        shape: (4, 5)
+        ┌──────┬──────┬──────┬───────┬───────────┐
+        │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   ┆ ---       │
+        │ i64  ┆ f64  ┆ str  ┆ str   ┆ str       │
+        ╞══════╪══════╪══════╪═══════╪═══════════╡
+        │ 1    ┆ 6.0  ┆ a    ┆ x     ┆ a         │
+        │ 2    ┆ 7.0  ┆ b    ┆ y     ┆ b         │
+        │ null ┆ null ┆ null ┆ z     ┆ d         │
+        │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
+        └──────┴──────┴──────┴───────┴───────────┘
 
         >>> df.join(other_df, on="ham", how="left")
         shape: (3, 4)
@@ -6320,7 +6440,6 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    @deprecate_renamed_parameter("df", "other", version="0.18.8")
     def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
@@ -7869,7 +7988,6 @@ class DataFrame:
         ...     df.select(
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
         ...     )
-        ...
         shape: (3, 1)
         ┌───────────┐
         │ is_odd    │
@@ -8044,7 +8162,6 @@ class DataFrame:
         ...     df.drop("c").with_columns(
         ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
         ...     )
-        ...
         shape: (4, 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │
@@ -8195,7 +8312,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.max())
+            return self.lazy().max().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             return wrap_s(self._df.max_horizontal())
         raise ValueError("axis should be 0 or 1")
@@ -8226,7 +8343,7 @@ class DataFrame:
                 6.0
         ]
         """
-        return self.select(F.max_horizontal(F.all())).to_series()
+        return self.select(max=F.max_horizontal(F.all())).to_series()
 
     @overload
     def min(self, axis: Literal[0] | None = ...) -> Self:
@@ -8284,7 +8401,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.min())
+            return self.lazy().min().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             return wrap_s(self._df.min_horizontal())
         raise ValueError("axis should be 0 or 1")
@@ -8315,7 +8432,7 @@ class DataFrame:
                 3.0
         ]
         """
-        return self.select(F.min_horizontal(F.all())).to_series()
+        return self.select(min=F.min_horizontal(F.all())).to_series()
 
     @overload
     def sum(
@@ -8397,7 +8514,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.sum())
+            return self.lazy().sum().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             if null_strategy == "ignore":
                 ignore_nulls = True
@@ -8525,7 +8642,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.mean())
+            return self.lazy().mean().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             if null_strategy == "ignore":
                 ignore_nulls = True
@@ -8612,7 +8729,7 @@ class DataFrame:
         └──────────┴──────────┴──────┘
 
         """
-        return self._from_pydf(self._df.std(ddof))
+        return self.lazy().std(ddof).collect(_eager=True)  # type: ignore[return-value]
 
     def var(self, ddof: int = 1) -> Self:
         """
@@ -8654,7 +8771,7 @@ class DataFrame:
         └──────────┴──────────┴──────┘
 
         """
-        return self._from_pydf(self._df.var(ddof))
+        return self.lazy().var(ddof).collect(_eager=True)  # type: ignore[return-value]
 
     def median(self) -> Self:
         """
@@ -8680,7 +8797,7 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return self._from_pydf(self._df.median())
+        return self.lazy().median().collect(_eager=True)  # type: ignore[return-value]
 
     def product(self) -> DataFrame:
         """
@@ -8707,7 +8824,14 @@ class DataFrame:
         └─────┴──────┴─────┘
 
         """
-        return self.select(F.all().product())
+        exprs = []
+        for name, dt in self.schema.items():
+            if dt.is_numeric() or isinstance(dt, Boolean):
+                exprs.append(F.col(name).product())
+            else:
+                exprs.append(F.lit(None).alias(name))
+
+        return self.select(exprs)
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
@@ -8742,7 +8866,7 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return self._from_pydf(self._df.quantile(quantile, interpolation))
+        return self.lazy().quantile(quantile, interpolation).collect(_eager=True)  # type: ignore[return-value]
 
     def to_dummies(
         self,
@@ -9005,17 +9129,6 @@ class DataFrame:
 
         """
         return self.lazy().approx_n_unique().collect(_eager=True)
-
-    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
-    def approx_unique(self) -> DataFrame:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`DataFrame.approx_n_unique`.
-
-        """
-        return self.approx_n_unique()
 
     def rechunk(self) -> Self:
         """
@@ -9655,12 +9768,9 @@ class DataFrame:
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size and not has_object:
-            create_with_pyarrow = named and can_create_dicts_with_pyarrow(self.dtypes)
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)
-                if create_with_pyarrow:
-                    yield from zerocopy_slice.to_arrow().to_pylist()
-                elif named:
+                if named:
                     for row in zerocopy_slice.rows(named=False):
                         yield dict_(zip_(columns, row))
                 else:
@@ -9750,7 +9860,6 @@ class DataFrame:
         ... )
         >>> for idx, frame in enumerate(df.iter_slices()):
         ...     print(f"{type(frame).__name__}:[{idx}]:{len(frame)}")
-        ...
         DataFrame:[0]:10000
         DataFrame:[1]:7500
 
@@ -9760,7 +9869,6 @@ class DataFrame:
         >>> for frame in df.iter_slices(n_rows=15_000):
         ...     record_batch = frame.to_arrow().to_batches()[0]
         ...     print(f"{record_batch.schema}\n<< {len(record_batch)}")
-        ...
         a: int32
         b: date32[day]
         c: large_string
@@ -9794,7 +9902,7 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
-    def gather_every(self, n: int) -> DataFrame:
+    def gather_every(self, n: int, offset: int = 0) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -9802,6 +9910,8 @@ class DataFrame:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
 
         Examples
         --------
@@ -9817,8 +9927,19 @@ class DataFrame:
         │ 3   ┆ 7   │
         └─────┴─────┘
 
+        >>> s.gather_every(2, offset=1)
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 2   ┆ 6   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+
         """
-        return self.select(F.col("*").gather_every(n))
+        return self.select(F.col("*").gather_every(n, offset))
 
     def hash_rows(
         self,
@@ -9845,7 +9966,7 @@ class DataFrame:
 
         Notes
         -----
-        This implementation of :func:`hash_rows` does not guarantee stable results
+        This implementation of `hash_rows` does not guarantee stable results
         across different Polars versions. Its stability is only guaranteed within a
         single version.
 
@@ -9918,7 +10039,7 @@ class DataFrame:
         """
         return self.height == 0
 
-    def to_struct(self, name: str) -> Series:
+    def to_struct(self, name: str = "") -> Series:
         """
         Convert a `DataFrame` to a `Series` of type `Struct`.
 
@@ -10132,27 +10253,22 @@ class DataFrame:
         self,
         other: DataFrame,
         on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner", "outer"] = "left",
+        *,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner", "outer"] = "left",
-        include_nulls: bool | None = False,
+        include_nulls: bool = False,
     ) -> DataFrame:
         """
         Update the values in this `DataFrame` with the values in `other`.
 
+        .. warning::
+            This functionality is experimental and may change without it being
+            considered a breaking change.
+
         By default, null values in the right frame are ignored. Use
         `include_nulls=False` to overwrite values in this frame with
         null values in the other frame.
-
-        Notes
-        -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce
-        when `include_nulls = False`
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Parameters
         ----------
@@ -10161,19 +10277,24 @@ class DataFrame:
         on
             Column names that will be joined on.
             If none given the row count is used.
-        left_on
-           Join column(s) of the left DataFrame.
-        right_on
-           Join column(s) of the right DataFrame.
         how : {'left', 'inner', 'outer'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
             * 'inner' keeps only those rows where the key exists in both frames.
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
         include_nulls
             If True, null values from the right dataframe will be used to update the
             left dataframe.
+
+        Notes
+        -----
+        This is syntactic sugar for a left/inner join, with an optional coalesce
+        when `include_nulls = False`
 
         Examples
         --------
@@ -10271,9 +10392,37 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .update(other.lazy(), on, left_on, right_on, how, include_nulls)
+            .update(
+                other.lazy(),
+                on,
+                how,
+                left_on=left_on,
+                right_on=right_on,
+                include_nulls=include_nulls,
+            )
             .collect(_eager=True)
         )
+
+    def count(self) -> DataFrame:
+        """
+        Return the number of non-null elements for each column.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> df.count()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 3   ┆ 0   │
+        └─────┴─────┴─────┘
+        """
+        return self.lazy().count().collect(_eager=True)
 
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
@@ -10561,7 +10710,7 @@ class DataFrame:
         return self.shift(n, fill_value=fill_value)
 
     @deprecate_renamed_function("gather_every", version="0.19.12")
-    def take_every(self, n: int) -> DataFrame:
+    def take_every(self, n: int, offset: int = 0) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -10572,8 +10721,10 @@ class DataFrame:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("get_column_index", version="0.19.14")
     def find_idx_by_name(self, name: str) -> int:

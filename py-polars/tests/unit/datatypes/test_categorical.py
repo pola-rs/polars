@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import io
-from typing import Any
+import operator
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -11,7 +12,10 @@ from polars.exceptions import (
     CategoricalRemappingWarning,
     StringCacheMismatchError,
 )
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 @StringCache()
@@ -33,8 +37,15 @@ def test_categorical_outer_join() -> None:
     ).lazy()
 
     expected = pl.DataFrame(
-        {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
-        schema_overrides={"key2": pl.Categorical},
+        {
+            "key1": [42],
+            "key2": ["bar"],
+            "val1": [1],
+            "key1_right": [42],
+            "key2_right": ["bar"],
+            "val2": [2],
+        },
+        schema_overrides={"key2": pl.Categorical, "key2_right": pl.Categorical},
     )
 
     out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
@@ -55,7 +66,8 @@ def test_categorical_outer_join() -> None:
 
     df = dfa.join(dfb, on="key", how="outer")
     # the cast is important to test the rev map
-    assert df["key"].cast(pl.Utf8).to_list() == ["bar", "baz", "foo"]
+    assert df["key"].cast(pl.Utf8).to_list() == ["bar", None, "foo"]
+    assert df["key_right"].cast(pl.Utf8).to_list() == ["bar", "baz", None]
 
 
 def test_read_csv_categorical() -> None:
@@ -78,13 +90,6 @@ def test_cat_to_dummies() -> None:
         "bar_b": [0, 1, 0, 0],
         "bar_c": [0, 0, 0, 1],
     }
-
-
-def test_categorical_describe_3487() -> None:
-    # test if we don't err
-    df = pl.DataFrame({"cats": ["a", "b"]})
-    df = df.with_columns(pl.col("cats").cast(pl.Categorical))
-    df.describe()
 
 
 @StringCache()
@@ -121,6 +126,264 @@ def test_unset_sorted_on_append() -> None:
     assert df.group_by("key").count()["count"].to_list() == [4, 4]
 
 
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.eq, pl.Series([True, True, True, False, None, None])),
+        (operator.ne, pl.Series([False, False, False, True, None, None])),
+        (pl.Series.ne_missing, pl.Series([False, False, False, True, True, True])),
+        (pl.Series.eq_missing, pl.Series([True, True, True, False, False, False])),
+    ],
+)
+def test_categorical_equality(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series(["a", "b", "c", "c", None, None], dtype=pl.Categorical)
+    s2 = pl.Series("b_cat", ["a", "b", "c", "a", "b", "c"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected)
+    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.eq, pl.Series([False, False, False, False, None, None])),
+        (operator.ne, pl.Series([True, True, True, True, None, None])),
+        (pl.Series.eq_missing, pl.Series([False, False, False, False, False, False])),
+        (pl.Series.ne_missing, pl.Series([True, True, True, True, True, True])),
+    ],
+)
+@StringCache()
+def test_categorical_equality_global_fastpath(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series(["a", "b", "c", "c", None, None], dtype=pl.Categorical)
+    s2 = pl.Series(["d"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected)
+    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected_phys", "expected_lexical"),
+    [
+        (
+            operator.le,
+            pl.Series([True, True, True, True, False]),
+            pl.Series([False, True, True, False, True]),
+        ),
+        (
+            operator.lt,
+            pl.Series([True, False, False, True, False]),
+            pl.Series([False, False, False, False, True]),
+        ),
+        (
+            operator.ge,
+            pl.Series([False, True, True, False, True]),
+            pl.Series([True, True, True, True, False]),
+        ),
+        (
+            operator.gt,
+            pl.Series([False, False, False, False, True]),
+            pl.Series([True, False, False, True, False]),
+        ),
+    ],
+)
+@StringCache()
+def test_categorical_global_ordering(
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected_phys: pl.Series,
+    expected_lexical: pl.Series,
+) -> None:
+    s = pl.Series(["z", "b", "c", "c", "a"], dtype=pl.Categorical)
+    s2 = pl.Series("b_cat", ["a", "b", "c", "a", "c"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected_phys)
+
+    s = s.cast(pl.Categorical("lexical"))
+    s2 = s2.cast(pl.Categorical("lexical"))
+    assert_series_equal(op(s, s2), expected_lexical)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected_phys", "expected_lexical"),
+    [
+        (operator.le, pl.Series([True, True, False]), pl.Series([False, True, False])),
+        (
+            operator.lt,
+            pl.Series([True, False, False]),
+            pl.Series([False, False, False]),
+        ),
+        (operator.ge, pl.Series([False, True, True]), pl.Series([True, True, True])),
+        (operator.gt, pl.Series([False, False, True]), pl.Series([True, False, True])),
+    ],
+)
+@StringCache()
+def test_categorical_global_ordering_broadcast_rhs(
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected_phys: pl.Series,
+    expected_lexical: pl.Series,
+) -> None:
+    s = pl.Series(["c", "a", "b"], dtype=pl.Categorical)
+    s2 = pl.Series("b_cat", ["a"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected_phys)
+
+    s = s.cast(pl.Categorical("lexical"))
+    s2 = s2.cast(pl.Categorical("lexical"))
+    assert_series_equal(op(s, s2), expected_lexical)
+    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected_lexical)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected_phys", "expected_lexical"),
+    [
+        (operator.le, pl.Series([True, True, True]), pl.Series([True, False, True])),
+        (operator.lt, pl.Series([True, True, False]), pl.Series([True, False, False])),
+        (operator.ge, pl.Series([False, False, True]), pl.Series([False, True, True])),
+        (
+            operator.gt,
+            pl.Series([False, False, False]),
+            pl.Series([False, True, False]),
+        ),
+    ],
+)
+@StringCache()
+def test_categorical_global_ordering_broadcast_lhs(
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected_phys: pl.Series,
+    expected_lexical: pl.Series,
+) -> None:
+    s = pl.Series(["b"], dtype=pl.Categorical)
+    s2 = pl.Series(["c", "a", "b"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected_phys)
+
+    s = s.cast(pl.Categorical("lexical"))
+    s2 = s2.cast(pl.Categorical("lexical"))
+    assert_series_equal(op(s, s2), expected_lexical)
+    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected_lexical)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([True, True, True, False, True, True])),
+        (operator.lt, pl.Series([False, False, False, False, True, False])),
+        (operator.ge, pl.Series([True, True, True, True, False, True])),
+        (operator.gt, pl.Series([False, False, False, True, False, False])),
+    ],
+)
+def test_categorical_ordering(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series(["a", "b", "c", "c", "a", "b"], dtype=pl.Categorical)
+    s2 = pl.Series("b_cat", ["a", "b", "c", "a", "c", "b"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True, True, True])),
+        (operator.lt, pl.Series([None, False, False, False, True, True])),
+        (operator.ge, pl.Series([None, True, True, True, False, False])),
+        (operator.gt, pl.Series([None, False, False, False, False, False])),
+    ],
+)
+def test_compare_categorical(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series([None, "a", "b", "c", "c", "b"])
+
+    assert_series_equal(op(s, s2), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, False, True, True])),
+        (operator.lt, pl.Series([None, True, False, False, False, True])),
+        (operator.ge, pl.Series([None, False, True, True, True, False])),
+        (operator.gt, pl.Series([None, False, False, True, False, False])),
+        (operator.eq, pl.Series([None, False, True, False, True, False])),
+        (operator.ne, pl.Series([None, True, False, True, False, True])),
+        (pl.Series.eq_missing, pl.Series([False, False, True, False, True, False])),
+        (pl.Series.ne_missing, pl.Series([True, True, False, True, False, True])),
+    ],
+)
+def test_compare_categorical_single(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = "b"
+
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True, True, True])),
+        (operator.lt, pl.Series([None, True, True, True, True, True])),
+        (operator.ge, pl.Series([None, False, False, False, False, False])),
+        (operator.gt, pl.Series([None, False, False, False, False, False])),
+        (operator.eq, pl.Series([None, False, False, False, False, False])),
+        (operator.ne, pl.Series([None, True, True, True, True, True])),
+        (pl.Series.ne_missing, pl.Series([True, True, True, True, True, True])),
+        (pl.Series.eq_missing, pl.Series([False, False, False, False, False, False])),
+    ],
+)
+@StringCache()
+def test_compare_categorical_single_non_existent(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = "d"
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
+    s_cat = pl.Series(["d"], dtype=pl.Categorical)
+    assert_series_equal(op(s, s_cat), expected)
+    assert_series_equal(op(s, s_cat.cast(pl.Utf8)), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (
+            operator.le,
+            pl.Series([None, None, None, None, None, None], dtype=pl.Boolean),
+        ),
+        (
+            operator.lt,
+            pl.Series([None, None, None, None, None, None], dtype=pl.Boolean),
+        ),
+        (
+            operator.ge,
+            pl.Series([None, None, None, None, None, None], dtype=pl.Boolean),
+        ),
+        (
+            operator.gt,
+            pl.Series([None, None, None, None, None, None], dtype=pl.Boolean),
+        ),
+        (
+            operator.eq,
+            pl.Series([None, None, None, None, None, None], dtype=pl.Boolean),
+        ),
+        (
+            operator.ne,
+            pl.Series([None, None, None, None, None, None], dtype=pl.Boolean),
+        ),
+        (pl.Series.ne_missing, pl.Series([False, True, True, True, True, True])),
+        (pl.Series.eq_missing, pl.Series([True, False, False, False, False, False])),
+    ],
+)
+@StringCache()
+def test_compare_categorical_single_none(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series([None], dtype=pl.Categorical)
+    assert_series_equal(op(s, s2), expected)
+    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+
+
 def test_categorical_error_on_local_cmp() -> None:
     df_cat = pl.DataFrame(
         [
@@ -129,11 +392,8 @@ def test_categorical_error_on_local_cmp() -> None:
         ]
     )
     with pytest.raises(
-        pl.ComputeError,
-        match=(
-            "cannot compare categoricals originating from different sources; consider"
-            " setting a global string cache"
-        ),
+        StringCacheMismatchError,
+        match="cannot compare categoricals coming from different sources",
     ):
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
 
@@ -192,14 +452,6 @@ def test_nested_cache_composition() -> None:
     assert pl.using_string_cache() is False
 
 
-def test_categorical_max_null_5437() -> None:
-    assert (
-        pl.DataFrame({"strings": ["c", "b", "a", "c"], "values": [0, 1, 2, 3]})
-        .with_columns(pl.col("strings").cast(pl.Categorical).alias("cats"))
-        .select(pl.all().max())
-    ).to_dict(as_series=False) == {"strings": ["c"], "values": [3], "cats": [None]}
-
-
 def test_categorical_in_struct_nulls() -> None:
     s = pl.Series(
         "job", ["doctor", "waiter", None, None, None, "doctor"], pl.Categorical
@@ -239,7 +491,24 @@ def test_stringcache() -> None:
         }
 
 
+@pytest.mark.parametrize(
+    ("dtype", "outcome"),
+    [
+        (pl.Categorical, ["foo", "bar", "baz"]),
+        (pl.Categorical("physical"), ["foo", "bar", "baz"]),
+        (pl.Categorical("lexical"), ["bar", "baz", "foo"]),
+    ],
+)
+def test_categorical_sort_order_by_parameter(
+    dtype: PolarsDataType, outcome: list[str]
+) -> None:
+    s = pl.Series(["foo", "bar", "baz"], dtype=dtype)
+    df = pl.DataFrame({"cat": s})
+    assert df.sort(["cat"])["cat"].to_list() == outcome
+
+
 @StringCache()
+@pytest.mark.filterwarnings("ignore:`set_ordering` is deprecated:DeprecationWarning")
 def test_categorical_sort_order(monkeypatch: Any) -> None:
     # create the categorical ordering first
     pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)
@@ -260,6 +529,9 @@ def test_categorical_sort_order(monkeypatch: Any) -> None:
     assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
         "x"
     ].to_list() == ["bar", "baz", "foo"]
+    assert df.with_columns(pl.col("x").cast(pl.Categorical("lexical"))).sort(
+        ["n", "x"]
+    )["x"].to_list() == ["bar", "baz", "foo"]
 
 
 def test_err_on_categorical_asof_join_by_arg() -> None:
@@ -479,3 +751,18 @@ def test_categorical_vstack_with_local_different_rev_map() -> None:
         "f",
     ]
     assert df3.get_column("a").cast(pl.UInt32).to_list() == [0, 1, 2, 3, 4, 5]
+
+
+def test_shift_over_13041() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [0, 0, 0, 1, 1, 1],
+            "cat_col": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical),
+        }
+    )
+    result = df.with_columns(pl.col("cat_col").shift(2).over("id"))
+
+    assert result.to_dict(as_series=False) == {
+        "id": [0, 0, 0, 1, 1, 1],
+        "cat_col": [None, None, "a", None, None, "d"],
+    }

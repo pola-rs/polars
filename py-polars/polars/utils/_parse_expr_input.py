@@ -80,6 +80,7 @@ def parse_as_expression(
     input: IntoExpr,
     *,
     str_as_lit: bool = False,
+    list_as_lit: bool = True,
     structify: bool = False,
 ) -> PyExpr:
     """
@@ -92,6 +93,9 @@ def parse_as_expression(
     str_as_lit
         Interpret string input as a string literal. If set to `False` (default),
         strings are parsed as column names.
+    list_as_lit
+        Interpret list input as a lit literal, If set to `False`,
+        lists are parsed as `Series` literals.
     structify
         Convert multi-column expressions to a single struct expression.
 
@@ -103,6 +107,9 @@ def parse_as_expression(
         expr = input
     elif isinstance(input, str) and not str_as_lit:
         expr = F.col(input)
+        structify = False
+    elif isinstance(input, list) and not list_as_lit:
+        expr = F.lit(pl.Series(input))
         structify = False
     else:
         expr = F.lit(input)

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 import polars as pl
@@ -100,7 +102,7 @@ def test_filter_aggregation_any() -> None:
     result = (
         df.group_by("group")
         .agg(
-            pl.any_horizontal("pred_a", "pred_b"),
+            pl.any_horizontal("pred_a", "pred_b").alias("any"),
             pl.col("id")
             .filter(pl.any_horizontal("pred_a", "pred_b"))
             .alias("filtered"),
@@ -126,7 +128,7 @@ def test_predicate_order_explode_5950() -> None:
     assert (
         df.lazy()
         .explode("i")
-        .filter(pl.col("n").count().over(["i"]) == 2)
+        .filter(pl.count().over(["i"]) == 2)
         .filter(pl.col("n").is_not_null())
     ).collect().to_dict(as_series=False) == {"i": [1], "n": [0]}
 
@@ -201,3 +203,36 @@ def test_agg_function_of_filter_10565() -> None:
     assert df_str.lazy().filter(pl.col("a").n_unique().over("a") == 1).collect(
         predicate_pushdown=False
     ).to_dict(as_series=False) == {"a": []}
+
+
+def test_filter_logical_type_13194() -> None:
+    data = {
+        "id": [1, 1, 2],
+        "date": [
+            [datetime(year=2021, month=1, day=1)],
+            [datetime(year=2021, month=1, day=1)],
+            [datetime(year=2025, month=1, day=30)],
+        ],
+        "cat": [
+            ["a", "b", "c"],
+            ["a", "b", "c"],
+            ["d", "e", "f"],
+        ],
+    }
+
+    df = pl.DataFrame(data).with_columns(pl.col("cat").cast(pl.List(pl.Categorical())))
+
+    df = df.filter(pl.col("id") == pl.col("id").shift(1))
+    expected_df = pl.DataFrame(
+        {
+            "id": [1],
+            "date": [[datetime(year=2021, month=1, day=1)]],
+            "cat": [["a", "b", "c"]],
+        },
+        schema={
+            "id": pl.Int64,
+            "date": pl.List(pl.Datetime),
+            "cat": pl.List(pl.Categorical),
+        },
+    )
+    assert_frame_equal(df, expected_df)

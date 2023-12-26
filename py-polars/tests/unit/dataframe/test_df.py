@@ -388,6 +388,9 @@ def test_gather_every() -> None:
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
     assert_frame_equal(expected_df, df.gather_every(2))
 
+    expected_df = pl.DataFrame({"a": [2, 4], "b": ["x", "z"]})
+    assert_frame_equal(expected_df, df.gather_every(2, offset=1))
+
 
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
@@ -911,119 +914,6 @@ def test_cast_frame() -> None:
         "c": ["true", "false", "true"],
         "d": ["2020-01-02", "2021-03-04", "2022-05-06"],
     }
-
-
-def test_describe() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1.0, 2.8, 3.0],
-            "b": [4, 5, None],
-            "c": [True, False, True],
-            "d": [None, "b", "c"],
-            "e": ["usd", "eur", None],
-            "f": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
-        }
-    )
-    df = df.with_columns(pl.col("e").cast(pl.Categorical))
-    expected = pl.DataFrame(
-        {
-            "describe": [
-                "count",
-                "null_count",
-                "mean",
-                "std",
-                "min",
-                "25%",
-                "50%",
-                "75%",
-                "max",
-            ],
-            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 1.0, 2.8, 3.0, 3.0],
-            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 4.0, 5.0, 5.0, 5.0],
-            "c": [
-                3.0,
-                0.0,
-                0.6666666666666666,
-                0.5773502588272095,
-                0.0,
-                None,
-                None,
-                None,
-                1.0,
-            ],
-            "d": ["3", "1", None, None, "b", None, None, None, "c"],
-            "e": ["3", "1", None, None, None, None, None, None, None],
-            "f": ["3", "0", None, None, "2020-01-01", None, None, None, "2022-01-01"],
-        }
-    )
-    assert_frame_equal(df.describe(), expected)
-
-    # struct
-    df = pl.DataFrame(
-        {
-            "numerical": [1, 2, 1, None],
-            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}, None],
-            "list": [[1, 2], [3, 4], [1, 2], None],
-        }
-    )
-
-    assert df.describe().to_dict(as_series=False) == {
-        "describe": [
-            "count",
-            "null_count",
-            "mean",
-            "std",
-            "min",
-            "25%",
-            "50%",
-            "75%",
-            "max",
-        ],
-        "numerical": [
-            4.0,
-            1.0,
-            1.3333333333333333,
-            0.5773502691896257,
-            1.0,
-            1.0,
-            1.0,
-            2.0,
-            2.0,
-        ],
-        "struct": ["4", "1", None, None, None, None, None, None, None],
-        "list": ["4", "1", None, None, None, None, None, None, None],
-    }
-
-    for pcts in (None, []):  # type:ignore[var-annotated]
-        assert df.describe(percentiles=pcts).rows() == [
-            ("count", 4.0, "4", "4"),
-            ("null_count", 1.0, "1", "1"),
-            ("mean", 1.3333333333333333, None, None),
-            ("std", 0.5773502691896257, None, None),
-            ("min", 1.0, None, None),
-            ("max", 2.0, None, None),
-        ]
-
-    described = df.describe(percentiles=(0.2, 0.4, 0.5, 0.6, 0.8))
-    assert described.schema == {
-        "describe": pl.Utf8,
-        "numerical": pl.Float64,
-        "struct": pl.Utf8,
-        "list": pl.Utf8,
-    }
-    assert described.rows() == [
-        ("count", 4.0, "4", "4"),
-        ("null_count", 1.0, "1", "1"),
-        ("mean", 1.3333333333333333, None, None),
-        ("std", 0.5773502691896257, None, None),
-        ("min", 1.0, None, None),
-        ("20%", 1.0, None, None),
-        ("40%", 1.0, None, None),
-        ("50%", 1.0, None, None),
-        ("60%", 1.0, None, None),
-        ("80%", 2.0, None, None),
-        ("max", 2.0, None, None),
-    ]
 
 
 def test_duration_arithmetic() -> None:

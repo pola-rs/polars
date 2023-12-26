@@ -1,3 +1,4 @@
+use arrow::array::PrimitiveArray;
 use num_traits::NumCast;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
@@ -132,7 +133,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         other: &Series,
         validate: JoinValidation,
         join_nulls: bool,
-    ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
+    ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, true)?;
@@ -329,7 +330,7 @@ fn hash_join_outer<T>(
     other: &ChunkedArray<T>,
     validate: JoinValidation,
     join_nulls: bool,
-) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
+) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
     T: PolarsIntegerType + Sync,
     T::Native: Eq + Hash + NumCast,

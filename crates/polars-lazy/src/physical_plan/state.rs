@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
@@ -92,112 +92,10 @@ pub struct ExecutionState {
     pub(super) flags: AtomicU8,
     pub(super) ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
+    stop: Arc<AtomicBool>,
 }
 
 impl ExecutionState {
-    /// Toggle this to measure execution times.
-    pub(crate) fn time_nodes(&mut self) {
-        self.node_timer = Some(NodeTimer::new())
-    }
-    pub(super) fn has_node_timer(&self) -> bool {
-        self.node_timer.is_some()
-    }
-
-    pub(crate) fn finish_timer(self) -> PolarsResult<DataFrame> {
-        self.node_timer.unwrap().finish()
-    }
-
-    pub(super) fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
-        match &self.node_timer {
-            None => func(),
-            Some(timer) => {
-                let start = std::time::Instant::now();
-                let out = func();
-                let end = std::time::Instant::now();
-
-                timer.store(start, end, name.as_ref().to_string());
-                out
-            },
-        }
-    }
-
-    /// Partially clones and partially clears state
-    pub(super) fn split(&self) -> Self {
-        Self {
-            df_cache: self.df_cache.clone(),
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            file_cache: self.file_cache.clone(),
-            schema_cache: Default::default(),
-            group_tuples: Default::default(),
-            join_tuples: Default::default(),
-            branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
-        }
-    }
-
-    /// clones and partially clears state
-    pub(super) fn clone(&self) -> Self {
-        Self {
-            df_cache: self.df_cache.clone(),
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            file_cache: self.file_cache.clone(),
-            schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            group_tuples: self.group_tuples.clone(),
-            join_tuples: self.join_tuples.clone(),
-            branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
-        }
-    }
-
-    #[cfg(not(any(
-        feature = "parquet",
-        feature = "csv",
-        feature = "ipc",
-        feature = "json"
-    )))]
-    pub(crate) fn with_finger_prints(_finger_prints: Option<usize>) -> Self {
-        Self::new()
-    }
-    #[cfg(any(
-        feature = "parquet",
-        feature = "csv",
-        feature = "ipc",
-        feature = "json"
-    ))]
-    pub(crate) fn with_finger_prints(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
-        Self {
-            df_cache: Arc::new(Mutex::new(PlHashMap::default())),
-            schema_cache: Default::default(),
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            file_cache: FileCache::new(finger_prints),
-            group_tuples: Arc::new(RwLock::new(PlHashMap::default())),
-            join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
-            branch_idx: 0,
-            flags: AtomicU8::new(StateFlags::init().as_u8()),
-            ext_contexts: Default::default(),
-            node_timer: None,
-        }
-    }
-
     pub fn new() -> Self {
         let mut flags: StateFlags = Default::default();
         if verbose() {
@@ -219,8 +117,112 @@ impl ExecutionState {
             flags: AtomicU8::new(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
             node_timer: None,
+            stop: Arc::new(AtomicBool::new(false)),
         }
     }
+
+    /// Toggle this to measure execution times.
+    pub(crate) fn time_nodes(&mut self) {
+        self.node_timer = Some(NodeTimer::new())
+    }
+    pub(super) fn has_node_timer(&self) -> bool {
+        self.node_timer.is_some()
+    }
+
+    pub(crate) fn finish_timer(self) -> PolarsResult<DataFrame> {
+        self.node_timer.unwrap().finish()
+    }
+
+    // This is wrong when the U64 overflows which will never happen.
+    pub(super) fn should_stop(&self) -> PolarsResult<()> {
+        polars_ensure!(!self.stop.load(Ordering::Relaxed), ComputeError: "query interrupted");
+        Ok(())
+    }
+
+    pub(crate) fn cancel_token(&self) -> Arc<AtomicBool> {
+        self.stop.clone()
+    }
+
+    pub(super) fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
+        match &self.node_timer {
+            None => func(),
+            Some(timer) => {
+                let start = std::time::Instant::now();
+                let out = func();
+                let end = std::time::Instant::now();
+
+                timer.store(start, end, name.as_ref().to_string());
+                out
+            },
+        }
+    }
+
+    /// Partially clones and partially clears state
+    /// This should be used when splitting a node, like a join or union
+    pub(super) fn split(&self) -> Self {
+        Self {
+            df_cache: self.df_cache.clone(),
+            #[cfg(any(
+                feature = "ipc",
+                feature = "parquet",
+                feature = "csv",
+                feature = "json"
+            ))]
+            file_cache: self.file_cache.clone(),
+            schema_cache: Default::default(),
+            group_tuples: Default::default(),
+            join_tuples: Default::default(),
+            branch_idx: self.branch_idx,
+            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
+            ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
+            stop: self.stop.clone(),
+        }
+    }
+
+    /// clones, but clears no state.
+    pub(super) fn clone(&self) -> Self {
+        Self {
+            df_cache: self.df_cache.clone(),
+            #[cfg(any(
+                feature = "ipc",
+                feature = "parquet",
+                feature = "csv",
+                feature = "json"
+            ))]
+            file_cache: self.file_cache.clone(),
+            schema_cache: self.schema_cache.read().unwrap().clone().into(),
+            group_tuples: self.group_tuples.clone(),
+            join_tuples: self.join_tuples.clone(),
+            branch_idx: self.branch_idx,
+            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
+            ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
+            stop: self.stop.clone(),
+        }
+    }
+
+    #[cfg(not(any(
+        feature = "parquet",
+        feature = "csv",
+        feature = "ipc",
+        feature = "json"
+    )))]
+    pub(crate) fn with_finger_prints(_finger_prints: Option<usize>) -> Self {
+        Self::new()
+    }
+    #[cfg(any(
+        feature = "parquet",
+        feature = "csv",
+        feature = "ipc",
+        feature = "json"
+    ))]
+    pub(crate) fn with_finger_prints(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
+        let mut new = Self::new();
+        new.file_cache = FileCache::new(finger_prints);
+        new
+    }
+
     pub(crate) fn set_schema(&self, schema: SchemaRef) {
         let mut lock = self.schema_cache.write().unwrap();
         *lock = Some(schema);

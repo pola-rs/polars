@@ -471,6 +471,38 @@ def test_json_decode_lazy_expr() -> None:
     assert_frame_equal(ldf, expected)
 
 
+def test_json_decode_nested_struct() -> None:
+    json = [
+        '[{"key_1": "a"}]',
+        '[{"key_1": "a2", "key_2": 2}]',
+        '[{"key_1": "a3", "key_2": 3, "key_3": "c"}]',
+    ]
+    df = pl.DataFrame({"json_str": json})
+    df_parsed = df.with_columns(
+        pl.col("json_str").str.json_decode().alias("parsed_list_json")
+    )
+
+    expected_dtype = pl.List(
+        pl.Struct(
+            [
+                pl.Field("key_1", pl.Utf8),
+                pl.Field("key_2", pl.Int64),
+                pl.Field("key_3", pl.Utf8),
+            ]
+        )
+    )
+    assert df_parsed.get_column("parsed_list_json").dtype == expected_dtype
+
+    key_1_values = df_parsed.select(
+        pl.col("parsed_list_json")
+        .list.get(0)
+        .struct.field("key_1")
+        .alias("key_1_values")
+    )
+    expected_values = pl.Series("key_1_values", ["a", "a2", "a3"])
+    assert_series_equal(key_1_values.get_column("key_1_values"), expected_values)
+
+
 def test_json_extract_deprecated() -> None:
     s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
     expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
@@ -526,11 +558,10 @@ def test_extract_binary() -> None:
     assert out[0] == "aron"
 
 
-def test_auto_explode() -> None:
+def test_str_concat_returns_scalar() -> None:
     df = pl.DataFrame(
         [pl.Series("val", ["A", "B", "C", "D"]), pl.Series("id", [1, 1, 2, 2])]
     )
-    pl.col("val").str.concat(delimiter=",")
     grouped = (
         df.group_by("id")
         .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))
@@ -1137,3 +1168,23 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
     )
 
     assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}
+
+
+def test_string_reverse() -> None:
+    df = pl.DataFrame(
+        {
+            "text": [None, "foo", "bar", "i like pizza&#", None, "man\u0303ana"],
+        }
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series(
+                "text",
+                [None, "oof", "rab", "#&azzip ekil i", None, "anan\u0303am"],
+                dtype=pl.Utf8,
+            ),
+        ]
+    )
+
+    result = df.select(pl.col("text").str.reverse())
+    assert_frame_equal(result, expected)

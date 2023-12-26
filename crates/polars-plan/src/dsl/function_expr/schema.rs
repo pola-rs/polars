@@ -56,8 +56,9 @@ impl FunctionExpr {
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) | Median(_)
-                    | MedianBy(_) => mapper.with_same_dtype(),
+                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) => {
+                        mapper.with_same_dtype()
+                    },
                     Mean(_) | MeanBy(_) | Quantile(_) | QuantileBy(_) | Var(_) | VarBy(_)
                     | Std(_) | StdBy(_) => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
@@ -110,6 +111,29 @@ impl FunctionExpr {
             CumMax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "hist")]
+            Hist {
+                include_category,
+                include_breakpoint,
+                ..
+            } => {
+                if *include_breakpoint || *include_category {
+                    let mut fields = Vec::with_capacity(3);
+                    if *include_breakpoint {
+                        fields.push(Field::new("break_point", DataType::Float64));
+                    }
+                    if *include_category {
+                        fields.push(Field::new(
+                            "category",
+                            DataType::Categorical(None, Default::default()),
+                        ));
+                    }
+                    fields.push(Field::new("count", IDX_DTYPE));
+                    mapper.with_dtype(DataType::Struct(fields))
+                } else {
+                    mapper.with_dtype(IDX_DTYPE)
+                }
+            },
             #[cfg(feature = "diff")]
             Diff(_, _) => mapper.map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]
@@ -175,7 +199,7 @@ impl FunctionExpr {
             Cut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None)),
+            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
             #[cfg(feature = "cutqcut")]
             Cut {
                 include_breaks: true,
@@ -185,7 +209,10 @@ impl FunctionExpr {
                 let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
                     Field::new("brk", DataType::Float64),
-                    Field::new(name_bin.as_str(), DataType::Categorical(None)),
+                    Field::new(
+                        name_bin.as_str(),
+                        DataType::Categorical(None, Default::default()),
+                    ),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
@@ -203,7 +230,7 @@ impl FunctionExpr {
             QCut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None)),
+            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
             #[cfg(feature = "cutqcut")]
             QCut {
                 include_breaks: true,
@@ -213,7 +240,10 @@ impl FunctionExpr {
                 let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
                     Field::new("brk", DataType::Float64),
-                    Field::new(name_bin.as_str(), DataType::Categorical(None)),
+                    Field::new(
+                        name_bin.as_str(),
+                        DataType::Categorical(None, Default::default()),
+                    ),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
@@ -245,6 +275,8 @@ impl FunctionExpr {
             EwmStd { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "replace")]
+            Replace { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
         }
     }
 }
@@ -426,6 +458,23 @@ impl<'a> FieldsMapper<'a> {
     #[cfg(feature = "extract_jsonpath")]
     pub fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
         let dtype = dtype.unwrap_or(DataType::Unknown);
+        self.with_dtype(dtype)
+    }
+
+    #[cfg(feature = "replace")]
+    pub fn replace_dtype(&self, return_dtype: Option<DataType>) -> PolarsResult<Field> {
+        let dtype = match return_dtype {
+            Some(dtype) => dtype,
+            // Supertype of `new` and `default`
+            None => {
+                let default = if let Some(default) = self.fields.get(3) {
+                    default
+                } else {
+                    &self.fields[0]
+                };
+                try_get_supertype(self.fields[2].data_type(), default.data_type())?
+            },
+        };
         self.with_dtype(dtype)
     }
 }

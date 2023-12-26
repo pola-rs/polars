@@ -37,12 +37,7 @@ pub enum BooleanFunction {
 
 impl BooleanFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        use BooleanFunction::*;
-        match self {
-            AllHorizontal => Ok(Field::new("all", DataType::Boolean)),
-            AnyHorizontal => Ok(Field::new("any", DataType::Boolean)),
-            _ => mapper.with_dtype(DataType::Boolean),
-        }
+        mapper.with_dtype(DataType::Boolean)
     }
 }
 

@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
 from polars.utils._parse_expr_input import parse_when_constraint_expressions
-from polars.utils.deprecation import deprecate_renamed_parameter
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -14,7 +13,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExprColumn
 
 
-@deprecate_renamed_parameter("expr", "condition", version="0.18.9")
 def when(
     *predicates: IntoExprColumn | Iterable[IntoExprColumn] | bool,
     **constraints: Any,

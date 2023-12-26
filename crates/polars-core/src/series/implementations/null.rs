@@ -11,7 +11,6 @@ use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
-use crate::utils::slice_offsets;
 
 impl Series {
     pub fn new_null(name: &str, len: usize) -> Series {
@@ -70,6 +69,18 @@ impl PrivateSeries for NullChunked {
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         ExplodeByOffsets::explode_by_offsets(self, offsets)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+        Ok(if self.is_empty() {
+            GroupsProxy::default()
+        } else {
+            GroupsProxy::Slice {
+                groups: vec![[0, self.length]],
+                rolling: false,
+            }
+        })
     }
 
     fn _get_flags(&self) -> Settings {
@@ -153,8 +164,13 @@ impl SeriesTrait for NullChunked {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        let (_, length) = slice_offsets(offset, length, self.len());
-        NullChunked::new(self.name.clone(), length).into_series()
+        let (chunks, len) = chunkops::slice(&self.chunks, offset, length, self.len());
+        NullChunked {
+            name: self.name.clone(),
+            length: len as IdxSize,
+            chunks,
+        }
+        .into_series()
     }
 
     fn is_null(&self) -> BooleanChunked {

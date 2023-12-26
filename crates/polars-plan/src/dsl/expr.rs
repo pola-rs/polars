@@ -26,7 +26,8 @@ pub enum AggExpr {
     Last(Box<Expr>),
     Mean(Box<Expr>),
     Implode(Box<Expr>),
-    Count(Box<Expr>),
+    // include_nulls
+    Count(Box<Expr>, bool),
     Quantile {
         expr: Box<Expr>,
         quantile: Box<Expr>,
@@ -50,7 +51,7 @@ impl AsRef<Expr> for AggExpr {
             Last(e) => e,
             Mean(e) => e,
             Implode(e) => e,
-            Count(e) => e,
+            Count(e, _) => e,
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,
@@ -296,6 +297,8 @@ pub enum Operator {
     And,
     Or,
     Xor,
+    LogicalAnd,
+    LogicalOr,
 }
 
 impl Display for Operator {
@@ -317,8 +320,8 @@ impl Display for Operator {
             TrueDivide => "/",
             FloorDivide => "floor_div",
             Modulus => "%",
-            And => "&",
-            Or => "|",
+            And | LogicalAnd => "&",
+            Or | LogicalOr => "|",
             Xor => "^",
         };
         write!(f, "{tkn}")

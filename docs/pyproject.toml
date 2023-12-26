@@ -1,0 +1,6 @@
+[tool.ruff]
+fix = true
+
+ignore = [
+  "E402", # Module level import not at top of file
+]

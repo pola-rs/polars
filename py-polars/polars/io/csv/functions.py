@@ -230,7 +230,7 @@ def read_csv(
             encoding=None,
             use_pyarrow=True,
             raise_if_empty=raise_if_empty,
-            **storage_options,
+            storage_options=storage_options,
         ) as data:
             import pyarrow as pa
             import pyarrow.csv
@@ -364,7 +364,7 @@ def read_csv(
         encoding=encoding,
         use_pyarrow=False,
         raise_if_empty=raise_if_empty,
-        **storage_options,
+        storage_options=storage_options,
     ) as data:
         df = pl.DataFrame._read_csv(
             data,
@@ -550,7 +550,6 @@ def read_csv_batched(
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
     ...     print(df)
-    ...
 
     Read big CSV file in batches and write a CSV file for each "group" of interest.
 
@@ -571,7 +570,6 @@ def read_csv_batched(
     ...         seen_groups.add(group)
     ...
     ...     batches = reader.next_batches(100)
-    ...
 
     """
     projection, columns = handle_projection_columns(columns)

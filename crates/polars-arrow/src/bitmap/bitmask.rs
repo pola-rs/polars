@@ -1,8 +1,5 @@
 #[cfg(feature = "simd")]
-use std::simd::ToBitMask;
-
-#[cfg(feature = "simd")]
-use num_traits::AsPrimitive;
+use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 
 use crate::bitmap::Bitmap;
 
@@ -136,16 +133,15 @@ impl<'a> BitMask<'a> {
 
     #[cfg(feature = "simd")]
     #[inline]
-    pub fn get_simd<T>(&self, idx: usize) -> T
+    pub fn get_simd<T, const N: usize>(&self, idx: usize) -> Mask<T, N>
     where
-        T: ToBitMask,
-        <T as ToBitMask>::BitMask: Copy + 'static,
-        u64: AsPrimitive<<T as ToBitMask>::BitMask>,
+        T: MaskElement,
+        LaneCount<N>: SupportedLaneCount,
     {
         // We don't support 64-lane masks because then we couldn't load our
         // bitwise mask as a u64 and then do the byteshift on it.
 
-        let lanes = std::mem::size_of::<T::BitMask>() * 8;
+        let lanes = LaneCount::<N>::BITMASK_LEN;
         assert!(lanes < 64);
 
         let start_byte_idx = (self.offset + idx) / 8;
@@ -153,16 +149,16 @@ impl<'a> BitMask<'a> {
         if idx + lanes <= self.len {
             // SAFETY: fast path, we know this is completely in-bounds.
             let mask = load_padded_le_u64(unsafe { self.bytes.get_unchecked(start_byte_idx..) });
-            T::from_bitmask((mask >> byte_shift).as_())
+            Mask::from_bitmask(mask >> byte_shift)
         } else if idx < self.len {
             // SAFETY: we know that at least the first byte is in-bounds.
             // This is partially out of bounds, we have to do extra masking.
             let mask = load_padded_le_u64(unsafe { self.bytes.get_unchecked(start_byte_idx..) });
             let num_out_of_bounds = idx + lanes - self.len;
             let shifted = (mask << num_out_of_bounds) >> (num_out_of_bounds + byte_shift);
-            T::from_bitmask(shifted.as_())
+            Mask::from_bitmask(shifted)
         } else {
-            T::from_bitmask((0u64).as_())
+            Mask::from_bitmask(0u64)
         }
     }
 

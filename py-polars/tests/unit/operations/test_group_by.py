@@ -316,7 +316,7 @@ def test_group_by_dynamic_flat_agg_4814() -> None:
         (timedelta(seconds=10), "100s"),
     ],
 )
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
+@pytest.mark.parametrize("time_zone", [None, "UTC", "Asia/Kathmandu"])
 def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
@@ -850,4 +850,13 @@ def test_group_by_when_then_no_aggregation_predicate() -> None:
         "key": ["aa", "bb"],
         "pos": [5, 5],
         "neg": [-8, 0],
+    }
+
+
+def test_group_by_apply_first_input_is_literal() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 4, 5], "g": [1, 1, 2, 2, 2]})
+    pow = df.group_by("g").agg(2 ** pl.col("x"))
+    assert pow.sort("g").to_dict(as_series=False) == {
+        "g": [1, 2],
+        "x": [[2.0, 4.0], [8.0, 16.0, 32.0]],
     }

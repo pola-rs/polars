@@ -41,7 +41,7 @@ openpyxl
 pyxlsb
 xlsx2csv
 XlsxWriter
-deltalake>=0.13.0
+deltalake>=0.14.0
 # Dataframe interchange protocol
 dataframe-api-compat >= 0.1.6
 pyiceberg >= 0.5.0
@@ -55,7 +55,7 @@ gevent
 # TOOLING
 # -------
 
-hypothesis==6.91.0
+hypothesis==6.92.1
 pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.5.0

@@ -35,3 +35,13 @@ pub(crate) fn validate_time_zone(tz: &str) -> PolarsResult<()> {
         },
     }
 }
+
+#[cfg(feature = "timezones")]
+pub fn parse_time_zone(tz: &str) -> PolarsResult<Tz> {
+    match tz.parse::<Tz>() {
+        Ok(tz) => Ok(tz),
+        Err(_) => {
+            polars_bail!(ComputeError: "unable to parse time zone: '{}'. Please check the Time Zone Database for a list of available time zones", tz)
+        },
+    }
+}

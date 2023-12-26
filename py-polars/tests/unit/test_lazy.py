@@ -75,9 +75,7 @@ def test_apply() -> None:
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    with pytest.warns(
-        PolarsInefficientMapWarning, match="In this case, you can replace"
-    ):
+    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
@@ -113,6 +111,8 @@ def test_gather_every() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
     assert_frame_equal(expected_df, ldf.gather_every(2).collect())
+    expected_df = pl.DataFrame({"a": [2, 4], "b": ["x", "z"]})
+    assert_frame_equal(expected_df, ldf.gather_every(2, offset=1).collect())
 
 
 def test_agg() -> None:
@@ -1500,7 +1500,7 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     ],
 )
 def test_lazy_comparison_operators(
-    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]]
+    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]],
 ) -> None:
     # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(

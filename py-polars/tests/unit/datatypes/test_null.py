@@ -12,3 +12,13 @@ def test_null_index() -> None:
         schema_overrides={"null_col": pl.Null},
     )
     assert_frame_equal(result, expected)
+
+
+def test_null_grouping_12950() -> None:
+    assert pl.DataFrame({"x": None}).unique().to_dict(as_series=False) == {"x": [None]}
+    assert pl.DataFrame({"x": [None, None]}).unique().to_dict(as_series=False) == {
+        "x": [None]
+    }
+    assert pl.DataFrame({"x": None}).slice(0, 0).unique().to_dict(as_series=False) == {
+        "x": []
+    }

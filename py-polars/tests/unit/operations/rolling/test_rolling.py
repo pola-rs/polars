@@ -618,9 +618,7 @@ def test_rolling_aggregations_unsorted_raise_10991() -> None:
     with pytest.warns(
         UserWarning, match="Series is not known to be sorted by `by` column."
     ):
-        _ = df.with_columns(
-            roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
-        )
+        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
 
 
 def test_rolling_aggregations_with_over_11225() -> None:
@@ -733,9 +731,7 @@ def test_rolling_by_date() -> None:
         }
     ).sort("dt")
 
-    result = df.with_columns(
-        roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
-    )
+    result = df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)
 
@@ -752,9 +748,7 @@ def test_rolling_nanoseconds_11003() -> None:
         }
     )
     df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns")).set_sorted("dt")
-    result = df.with_columns(
-        pl.col("val").rolling_sum("500ns", by="dt", closed="right")
-    )
+    result = df.with_columns(pl.col("val").rolling_sum("500ns", by="dt"))
     expected = df.with_columns(val=pl.Series([1, 3, 6]))
     assert_frame_equal(result, expected)
 
@@ -827,3 +821,27 @@ def test_index_expr_output_name_12244() -> None:
         "int": [0, 1, 2],
         "A": [[1], [1, 2], [2, 3]],
     }
+
+
+def test_rolling_median() -> None:
+    for n in range(10, 25):
+        array = np.random.randint(0, 20, n)
+        for k in [3, 5, 7]:
+            a = pl.Series(array)
+            assert_series_equal(
+                a.rolling_median(k), pl.from_pandas(a.to_pandas().rolling(k).median())
+            )
+
+
+@pytest.mark.slow()
+def test_rolling_median_2() -> None:
+    np.random.seed(12)
+    n = 1000
+    df = pl.DataFrame({"x": np.random.normal(0, 1, n)})
+    # this can differ because simd sizes and non-associativity of floats.
+    assert df.select(
+        pl.col("x").rolling_median(window_size=10).sum()
+    ).item() == pytest.approx(5.139429061527812)
+    assert df.select(
+        pl.col("x").rolling_median(window_size=100).sum()
+    ).item() == pytest.approx(26.60506093611384)

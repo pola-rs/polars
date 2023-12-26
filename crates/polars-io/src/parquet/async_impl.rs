@@ -64,7 +64,7 @@ impl ParquetObjectStore {
     async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
         // Object-store has a maximum of 10 concurrent.
         with_concurrency_budget(
-            (ranges.len() as u16).clamp(0, MAX_BUDGET_PER_REQUEST as u16),
+            (ranges.len() as u32).clamp(0, MAX_BUDGET_PER_REQUEST as u32),
             || async {
                 self.store
                     .get_ranges(&self.path, ranges)

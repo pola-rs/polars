@@ -33,6 +33,46 @@ impl StringNameSpace {
         )
     }
 
+    /// Uses aho-corasick to find many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to an Utf8 column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
+    ///  When this option is enabled, searching will be performed without respect to case for ASCII letters (a-z and A-Z) only.
+    #[cfg(feature = "find_many")]
+    pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ContainsMany {
+                ascii_case_insensitive,
+            }),
+            &[patterns],
+            false,
+            false,
+        )
+    }
+
+    /// Uses aho-corasick to replace many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to an Utf8 column
+    /// - `replace_with`: an expression that evaluates to an Utf8 column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
+    ///  When this option is enabled, searching will be performed without respect to case for ASCII letters (a-z and A-Z) only.
+    #[cfg(feature = "find_many")]
+    pub fn replace_many(
+        self,
+        patterns: Expr,
+        replace_with: Expr,
+        ascii_case_insensitive: bool,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ReplaceMany {
+                ascii_case_insensitive,
+            }),
+            &[patterns, replace_with],
+            false,
+            false,
+        )
+    }
+
     /// Check if a string value ends with the `sub` string.
     pub fn ends_with(self, sub: Expr) -> Expr {
         self.0.map_many_private(
@@ -327,6 +367,17 @@ impl StringNameSpace {
             &[pat, value],
             false,
             true,
+        )
+    }
+
+    #[cfg(feature = "string_reverse")]
+    /// Reverse each string
+    pub fn reverse(self) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Reverse),
+            &[],
+            false,
+            false,
         )
     }
 

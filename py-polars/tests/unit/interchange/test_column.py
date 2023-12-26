@@ -62,8 +62,7 @@ def test_describe_categorical() -> None:
 
 
 def test_describe_categorical_lexical_ordering() -> None:
-    s = pl.Series(["b", "a", "a", "c", None, "b"], dtype=pl.Categorical)
-    s = s.cat.set_ordering("lexical")
+    s = pl.Series(["b", "a", "a", "c", None, "b"], dtype=pl.Categorical("lexical"))
     col = PolarsColumn(s)
 
     out = col.describe_categorical

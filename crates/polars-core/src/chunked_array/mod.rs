@@ -481,7 +481,8 @@ where
                 })
                 .collect();
 
-            unsafe { Self::from_chunks(self.name(), chunks) }
+            // SAFETY: We just slice the original chunks, their type will not change.
+            unsafe { Self::from_chunks_and_dtype(self.name(), chunks, self.dtype().clone()) }
         };
 
         if self.chunks.len() != 1 {
@@ -584,20 +585,15 @@ where
     /// Get slices of the underlying arrow data.
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
-    pub fn data_views(&self) -> impl Iterator<Item = &[T::Native]> + DoubleEndedIterator {
+    pub fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
         self.downcast_iter().map(|arr| arr.values().as_slice())
     }
 
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = T::Native>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = T::Native> + DoubleEndedIterator + TrustedLen
+    {
         // .copied was significantly slower in benchmark, next call did not inline?
         #[allow(clippy::map_clone)]
         // we know the iterators len
@@ -840,7 +836,9 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         disable_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
-        let ca = ca.cast(&DataType::Categorical(None)).unwrap();
+        let ca = ca
+            .cast(&DataType::Categorical(None, Default::default()))
+            .unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);

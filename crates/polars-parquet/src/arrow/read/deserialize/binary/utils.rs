@@ -1,37 +1,11 @@
 use arrow::offset::{Offset, Offsets};
-
-use super::super::utils::Pushable;
+use arrow::pushable::Pushable;
 
 /// [`Pushable`] for variable length binary data.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Binary<O: Offset> {
     pub offsets: Offsets<O>,
     pub values: Vec<u8>,
-}
-
-impl<O: Offset> Pushable<usize> for Offsets<O> {
-    fn reserve(&mut self, additional: usize) {
-        self.reserve(additional)
-    }
-    #[inline]
-    fn len(&self) -> usize {
-        self.len_proxy()
-    }
-
-    #[inline]
-    fn push(&mut self, value: usize) {
-        self.try_push(value).unwrap()
-    }
-
-    #[inline]
-    fn push_null(&mut self) {
-        self.extend_constant(1);
-    }
-
-    #[inline]
-    fn extend_constant(&mut self, additional: usize, _: usize) {
-        self.extend_constant(additional)
-    }
 }
 
 impl<O: Offset> Binary<O> {

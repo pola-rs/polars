@@ -123,6 +123,7 @@ list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 row_hash = ["polars-plan/row_hash"]
 string_pad = ["polars-plan/string_pad"]
+string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
@@ -153,6 +154,8 @@ rle = ["polars-plan/rle", "polars-ops/rle"]
 extract_groups = ["polars-plan/extract_groups"]
 peaks = ["polars-plan/peaks"]
 cov = ["polars-ops/cov", "polars-plan/cov"]
+hist = ["polars-plan/hist"]
+replace = ["polars-plan/replace"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 string_encoding = ["polars-plan/string_encoding"]
@@ -251,6 +254,7 @@ features = [
   "top_k",
   "approx_unique",
   "concat_str",
+  "string_reverse",
   "string_to_integer",
   "cse",
   "dot_diagram",
@@ -293,6 +297,8 @@ features = [
   "cumulative_eval",
   "list_eval",
   "diagonal_concat",
+  "hist",
+  "replace",
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

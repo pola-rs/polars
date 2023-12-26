@@ -156,7 +156,7 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(builder.finish())
     }
 
-    fn lst_max(&self) -> Series {
+    fn lst_max(&self) -> PolarsResult<Series> {
         list_max_function(self.as_list())
     }
 
@@ -172,11 +172,11 @@ pub trait ListNameSpaceImpl: AsList {
         list_any(ca)
     }
 
-    fn lst_min(&self) -> Series {
+    fn lst_min(&self) -> PolarsResult<Series> {
         list_min_function(self.as_list())
     }
 
-    fn lst_sum(&self) -> Series {
+    fn lst_sum(&self) -> PolarsResult<Series> {
         let ca = self.as_list();
 
         if has_inner_nulls(ca) {
@@ -184,8 +184,8 @@ pub trait ListNameSpaceImpl: AsList {
         };
 
         match ca.inner_dtype() {
-            DataType::Boolean => count_boolean_bits(ca).into_series(),
-            dt if dt.is_numeric() => sum_list_numerical(ca, &dt),
+            DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
+            dt if dt.is_numeric() => Ok(sum_list_numerical(ca, &dt)),
             dt => sum_with_nulls(ca, &dt),
         }
     }
@@ -371,7 +371,7 @@ pub trait ListNameSpaceImpl: AsList {
             },
             UInt32 | UInt64 => index_typed_index(idx),
             dt if dt.is_signed_integer() => {
-                if let Some(min) = idx.min::<i64>() {
+                if let Some(min) = idx.min::<i64>().unwrap() {
                     if min >= 0 {
                         index_typed_index(idx)
                     } else {
@@ -496,14 +496,14 @@ pub trait ListNameSpaceImpl: AsList {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_) = &inner_super_type {
+                    if let DataType::Categorical(_, _) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
                     }
                 },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_) = &inner_super_type {
+                    if let DataType::Categorical(_, _) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, dt)?;
                     }
                 },

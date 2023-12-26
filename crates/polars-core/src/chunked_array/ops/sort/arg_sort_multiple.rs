@@ -1,5 +1,4 @@
 use polars_row::{convert_columns, RowsEncoded, SortField};
-use polars_utils::float::IsFloat;
 use polars_utils::iter::EnumerateIdxTrait;
 
 use super::*;
@@ -23,7 +22,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
     Ok(())
 }
 
-pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
+pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + Send + Copy>(
     mut vals: Vec<(IdxSize, T)>,
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
@@ -32,13 +31,13 @@ pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
     let compare_inner: Vec<_> = options
         .other
         .iter()
-        .map(|s| s.into_partial_ord_inner())
+        .map(|s| s.into_total_ord_inner())
         .collect_trusted();
 
     let first_descending = descending[0];
     POOL.install(|| {
         vals.par_sort_by(|tpl_a, tpl_b| {
-            match (first_descending, compare_fn_nan_max(&tpl_a.1, &tpl_b.1)) {
+            match (first_descending, tpl_a.1.tot_cmp(&tpl_b.1)) {
                 // if ordering is equal, we check the other arrays until we find a non-equal ordering
                 // if we have exhausted all arrays, we keep the equal ordering.
                 (_, Ordering::Equal) => {
@@ -70,7 +69,7 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
 
     let out = match by.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
+        DataType::Categorical(_, _) => {
             let ca = by.categorical().unwrap();
             if ca.uses_lexical_ordering() {
                 by.to_arrow(0)

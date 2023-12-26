@@ -218,9 +218,13 @@ fn modify_supertype(
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, AExpr::Literal(_))
-            | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
-                st = Categorical(None);
+            (Categorical(opt_rev_map, ordering), Utf8, _, AExpr::Literal(_))
+            | (Utf8, Categorical(opt_rev_map, ordering), AExpr::Literal(_), _) => {
+                st = opt_rev_map
+                    .as_ref()
+                    .filter(|rev_map| rev_map.is_enum())
+                    .map(|rev_map| Categorical(Some(rev_map.clone()), *ordering))
+                    .unwrap_or_else(|| Categorical(None, *ordering))
             },
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
@@ -356,14 +360,8 @@ impl OptimizationRule for TypeCoercionRule {
                         data_type: type_left,
                         strict: false,
                     },
-                    // cast both local and global string cache
-                    // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_), DataType::Utf8) => AExpr::Cast {
-                        expr: other_node,
-                        data_type: DataType::Categorical(None),
-                        strict: false,
-                    },
+                    (DataType::Categorical(_, _), DataType::Utf8) => return Ok(None),
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
@@ -610,7 +608,7 @@ mod test {
 
         let df = DataFrame::new(Vec::from([Series::new_empty(
             "fruits",
-            &DataType::Categorical(None),
+            &DataType::Categorical(None, Default::default()),
         )]))
         .unwrap();
 

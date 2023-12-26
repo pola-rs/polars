@@ -16,7 +16,6 @@ use arrow::legacy::kernels::rolling::{RollingQuantileParams, RollingVarParams};
 use arrow::legacy::kernels::take_agg::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::trusted_len::TrustedLenPush;
-use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
@@ -36,7 +35,7 @@ use crate::series::IsSorted;
 use crate::utils::NoNull;
 use crate::{apply_method_physical_integer, POOL};
 
-fn idx2usize(idx: &[IdxSize]) -> impl Iterator<Item = usize> + ExactSizeIterator + '_ {
+fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
 
@@ -447,14 +446,10 @@ where
         + Num
         + NumCast
         + Zero
-        + Simd
         + Bounded
         + std::iter::Sum<T::Native>
         + TakeExtremum,
-    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
-        + arrow::compute::aggregate::Sum<T::Native>
-        + arrow::compute::aggregate::SimdOrd<T::Native>,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths
@@ -665,12 +660,13 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>:
-        IntoSeries + ChunkVar + VarAggSeries + ChunkQuantile<T::Native> + QuantileAggSeries,
-    T::Native: Simd + NumericNative + Pow<T::Native, Output = T::Native>,
-    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
-        + arrow::compute::aggregate::Sum<T::Native>
-        + arrow::compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: IntoSeries
+        + ChunkVar
+        + VarAggSeries
+        + ChunkQuantile<T::Native>
+        + QuantileAggSeries
+        + ChunkAgg<T::Native>,
+    T::Native: Pow<T::Native, Output = T::Native>,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {
@@ -906,11 +902,8 @@ impl Float64Chunked {
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native> + ChunkVar,
     T::Native: NumericNative + Ord,
-    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
-        + arrow::compute::aggregate::Sum<T::Native>
-        + arrow::compute::aggregate::SimdOrd<T::Native>,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {

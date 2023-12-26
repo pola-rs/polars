@@ -26,10 +26,9 @@ use crate::prelude::SeriesUdf;
 pub enum RangeFunction {
     IntRange {
         step: i64,
+        dtype: DataType,
     },
-    IntRanges {
-        step: i64,
-    },
+    IntRanges,
     #[cfg(feature = "temporal")]
     DateRange {
         interval: Duration,
@@ -74,8 +73,8 @@ impl RangeFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use RangeFunction::*;
         let field = match self {
-            IntRange { .. } => Field::new("int", DataType::Int64),
-            IntRanges { .. } => Field::new("int_range", DataType::List(Box::new(DataType::Int64))),
+            IntRange { dtype, .. } => Field::new("int", dtype.clone()),
+            IntRanges => Field::new("int_range", DataType::List(Box::new(DataType::Int64))),
             #[cfg(feature = "temporal")]
             DateRange {
                 interval,
@@ -157,7 +156,7 @@ impl Display for RangeFunction {
         use RangeFunction::*;
         let s = match self {
             IntRange { .. } => "int_range",
-            IntRanges { .. } => "int_ranges",
+            IntRanges => "int_ranges",
             #[cfg(feature = "temporal")]
             DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
@@ -179,11 +178,11 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: RangeFunction) -> Self {
         use RangeFunction::*;
         match func {
-            IntRange { step } => {
-                map_as_slice!(int_range::int_range, step)
+            IntRange { step, dtype } => {
+                map_as_slice!(int_range::int_range, step, dtype.clone())
             },
-            IntRanges { step } => {
-                map_as_slice!(int_range::int_ranges, step)
+            IntRanges => {
+                map_as_slice!(int_range::int_ranges)
             },
             #[cfg(feature = "temporal")]
             DateRange {

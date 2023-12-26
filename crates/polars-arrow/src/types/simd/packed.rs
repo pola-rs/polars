@@ -1,4 +1,4 @@
-pub use std::simd::{
+pub use std::simd::prelude::{
     f32x16, f32x8, f64x8, i16x32, i16x8, i32x16, i32x8, i64x8, i8x64, i8x8, mask32x16 as m32x16,
     mask64x8 as m64x8, mask8x64 as m8x64, u16x32, u16x8, u32x16, u32x8, u64x8, u8x64, u8x8,
     SimdPartialEq,
@@ -103,9 +103,9 @@ fn from_chunk_u32(chunk: u32) -> m16x32 {
         1024, 2048, 4096, 8192, 16384, 32768,
     ]);
 
-    let a = chunk.to_ne_bytes();
-    let a1 = u16::from_ne_bytes([a[2], a[3]]);
-    let a2 = u16::from_ne_bytes([a[0], a[1]]);
+    let a = chunk.to_le_bytes();
+    let a1 = u16::from_le_bytes([a[0], a[1]]);
+    let a2 = u16::from_le_bytes([a[2], a[3]]);
 
     let vecmask1 = u16x32::splat(a1);
     let vecmask2 = u16x32::splat(a2);
@@ -179,19 +179,25 @@ mod tests {
 
     #[test]
     fn test_basic1() {
-        let a = 0b00000001000000010000000100000001u32;
+        let a = 0b00000000000000000000000000010001u32;
         let a = from_chunk_u32(a);
-        for i in 0..32 {
-            assert_eq!(a.test(i), i % 8 == 0)
+        for i in 0..8 {
+            assert_eq!(a.test(i), i % 4 == 0)
+        }
+        for i in 8..32 {
+            assert!(!a.test(i))
         }
     }
 
     #[test]
     fn test_basic2() {
-        let a = 0b0000000100000001000000010000000100000001000000010000000100000001u64;
+        let a = 0b0000000000000000000000000000000000000001000000010000000100000001u64;
         let a = from_chunk_u64(a);
-        for i in 0..64 {
+        for i in 0..32 {
             assert_eq!(a.test(i), i % 8 == 0)
+        }
+        for i in 32..64 {
+            assert!(!a.test(i))
         }
     }
 }

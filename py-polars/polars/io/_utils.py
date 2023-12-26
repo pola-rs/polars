@@ -5,7 +5,7 @@ import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
+from typing import IO, Any, ContextManager, Iterator, overload
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
@@ -31,33 +31,48 @@ def _is_local_file(file: str) -> bool:
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | Path | BinaryIO | bytes, **kwargs: Any
-) -> ContextManager[str | BinaryIO]:
+    file: str | list[str] | Path | IO[bytes] | bytes,
+    encoding: str | None = ...,
+    *,
+    use_pyarrow: bool = ...,
+    raise_if_empty: bool = ...,
+    storage_options: dict[str, Any] | None = ...,
+) -> ContextManager[str | BytesIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: str | TextIO | Path | BinaryIO | bytes, **kwargs: Any
-) -> ContextManager[str | BinaryIO]:
+    file: str | Path | IO[str] | IO[bytes] | bytes,
+    encoding: str | None = ...,
+    *,
+    use_pyarrow: bool = ...,
+    raise_if_empty: bool = ...,
+    storage_options: dict[str, Any] | None = ...,
+) -> ContextManager[str | BytesIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes, **kwargs: Any
-) -> ContextManager[str | list[str] | BinaryIO | list[BinaryIO]]:
+    file: str | list[str] | Path | IO[str] | IO[bytes] | bytes,
+    encoding: str | None = ...,
+    *,
+    use_pyarrow: bool = ...,
+    raise_if_empty: bool = ...,
+    storage_options: dict[str, Any] | None = ...,
+) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
     ...
 
 
 def _prepare_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes,
+    file: str | list[str] | Path | IO[str] | IO[bytes] | bytes,
     encoding: str | None = None,
     *,
-    use_pyarrow: bool | None = None,
+    use_pyarrow: bool = False,
     raise_if_empty: bool = True,
-    **kwargs: Any,
-) -> ContextManager[str | BinaryIO | list[str] | list[BinaryIO]]:
+    storage_options: dict[str, Any] | None = None,
+) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
     """
     Prepare file argument.
 
@@ -80,6 +95,7 @@ def _prepare_file_arg(
     fsspec too.
 
     """
+    storage_options = storage_options or {}
 
     # Small helper to use a variable as context
     @contextmanager
@@ -100,15 +116,10 @@ def _prepare_file_arg(
 
     if isinstance(file, bytes):
         if not has_utf8_utf8_lossy_encoding:
-            return _check_empty(
-                BytesIO(file.decode(encoding_str).encode("utf8")),
-                context="bytes",
-                raise_if_empty=raise_if_empty,
-            )
-        if use_pyarrow:
-            return _check_empty(
-                BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
-            )
+            file = file.decode(encoding_str).encode("utf8")
+        return _check_empty(
+            BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
+        )
 
     if isinstance(file, StringIO):
         return _check_empty(
@@ -167,8 +178,8 @@ def _prepare_file_arg(
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
-            kwargs["encoding"] = encoding
-            return fsspec.open(file, **kwargs)
+            storage_options["encoding"] = encoding
+            return fsspec.open(file, **storage_options)
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
@@ -182,8 +193,8 @@ def _prepare_file_arg(
                             for f in file
                         ]
                     )
-            kwargs["encoding"] = encoding
-            return fsspec.open_files(file, **kwargs)
+            storage_options["encoding"] = encoding
+            return fsspec.open_files(file, **storage_options)
 
     if isinstance(file, str):
         file = normalize_filepath(file, check_not_directory=check_not_dir)

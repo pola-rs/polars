@@ -11,7 +11,6 @@ use std::borrow::Cow;
 use std::ops::Deref;
 
 use ahash::RandomState;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
@@ -346,45 +345,11 @@ macro_rules! impl_dyn_series {
                 self.0.shift(periods).$into_logical().into_series()
             }
 
-            fn _sum_as_series(&self) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
+            fn max_as_series(&self) -> PolarsResult<Series> {
+                Ok(self.0.max_as_series().$into_logical())
             }
-            fn max_as_series(&self) -> Series {
-                self.0.max_as_series().$into_logical()
-            }
-            fn min_as_series(&self) -> Series {
-                self.0.min_as_series().$into_logical()
-            }
-            fn median_as_series(&self) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
-            }
-            fn var_as_series(&self, _ddof: u8) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
-            }
-            fn std_as_series(&self, _ddof: u8) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
-            }
-            fn quantile_as_series(
-                &self,
-                _quantile: f64,
-                _interpol: QuantileInterpolOptions,
-            ) -> PolarsResult<Series> {
-                Ok(Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into())
+            fn min_as_series(&self) -> PolarsResult<Series> {
+                Ok(self.0.min_as_series().$into_logical())
             }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

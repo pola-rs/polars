@@ -49,7 +49,7 @@ impl<'a, T> Chunks<'a, T> {
 #[doc(hidden)]
 impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
-    pub fn downcast_iter(&self) -> impl Iterator<Item = &T::Array> + DoubleEndedIterator {
+    pub fn downcast_iter(&self) -> impl DoubleEndedIterator<Item = &T::Array> {
         self.chunks.iter().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let arr = &**arr;
@@ -62,9 +62,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///     * the length remains correct.
     ///     * the flags (sorted, etc) remain correct.
     #[inline]
-    pub unsafe fn downcast_iter_mut(
-        &mut self,
-    ) -> impl Iterator<Item = &mut T::Array> + DoubleEndedIterator {
+    pub unsafe fn downcast_iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut T::Array> {
         self.chunks.iter_mut().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let arr = &mut **arr;

@@ -214,7 +214,7 @@ fn test_lazy_binary_ops() {
         .select([col("a").eq(lit(2)).alias("foo")])
         .collect()
         .unwrap();
-    assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
+    assert_eq!(new.column("foo").unwrap().sum::<i32>().unwrap(), 1);
 }
 
 #[test]
@@ -1367,8 +1367,8 @@ fn test_categorical_addition() -> PolarsResult<()> {
     let out = df
         .lazy()
         .select([
-            col("fruits").cast(DataType::Categorical(None)),
-            col("cars").cast(DataType::Categorical(None)),
+            col("fruits").cast(DataType::Categorical(None, Default::default())),
+            col("cars").cast(DataType::Categorical(None, Default::default())),
         ])
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;

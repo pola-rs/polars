@@ -66,7 +66,7 @@ pub fn set_with_mask<T: NativeType>(
 
 /// Efficiently sets value at the indices from the iterator to `set_value`.
 /// The new array is initialized with a `memcpy` from the old values.
-pub fn set_at_idx_no_null<T, I>(
+pub fn scatter_single_non_null<T, I>(
     array: &PrimitiveArray<T>,
     idx: I,
     set_value: T,
@@ -131,11 +131,12 @@ mod test {
     }
 
     #[test]
-    fn test_set_at_idx() {
+    fn test_scatter_single_non_null() {
         let val = UInt32Array::from_slice([1, 2, 3]);
-        let out = set_at_idx_no_null(&val, std::iter::once(1), 100, ArrowDataType::UInt32).unwrap();
+        let out =
+            scatter_single_non_null(&val, std::iter::once(1), 100, ArrowDataType::UInt32).unwrap();
         assert_eq!(out.values().as_slice(), &[1, 100, 3]);
-        let out = set_at_idx_no_null(&val, std::iter::once(100), 100, ArrowDataType::UInt32);
+        let out = scatter_single_non_null(&val, std::iter::once(100), 100, ArrowDataType::UInt32);
         assert!(out.is_err())
     }
 }

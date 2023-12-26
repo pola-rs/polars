@@ -11,11 +11,11 @@ repository = { workspace = true }
 description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
-polars-algo = { workspace = true, optional = true }
-polars-core = { workspace = true }
+polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
-polars-ops = { workspace = true }
+polars-ops = { workspace = true, optional = true }
+polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 
@@ -33,9 +33,9 @@ getrandom = { version = "0.2", features = ["js"] }
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd", "polars-ops/simd"]
+simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
 avx512 = ["polars-core/avx512"]
-nightly = ["polars-core/nightly", "polars-ops/nightly", "simd", "polars-lazy?/nightly", "polars-sql/nightly"]
+nightly = ["polars-core/nightly", "polars-ops?/nightly", "simd", "polars-lazy?/nightly", "polars-sql/nightly"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy?/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy?/random", "polars-ops/random"]
@@ -54,8 +54,8 @@ serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
   "polars-time?/serde",
-  "polars-io/serde",
-  "polars-ops/serde",
+  "polars-io?/serde",
+  "polars-ops?/serde",
 ]
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
@@ -107,13 +107,10 @@ performant = [
 fmt = ["polars-core/fmt"]
 fmt_no_tty = ["polars-core/fmt_no_tty"]
 
-# sort by multiple columns
-sort_multiple = ["polars-core/sort_multiple"]
-
 # extra operations
 approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique"]
 is_in = ["polars-lazy?/is_in"]
-zip_with = ["polars-core/zip_with", "polars-ops/zip_with"]
+zip_with = ["polars-core/zip_with"]
 round_series = ["polars-ops/round_series", "polars-lazy?/round_series"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
@@ -172,6 +169,7 @@ list_gather = ["polars-ops/list_gather", "polars-lazy?/list_gather"]
 describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones", "polars-lazy?/timezones", "polars-io/timezones"]
 string_pad = ["polars-lazy?/string_pad", "polars-ops/string_pad"]
+string_reverse = ["polars-lazy?/string_reverse", "polars-ops/string_reverse"]
 string_to_integer = ["polars-lazy?/string_to_integer", "polars-ops/string_to_integer"]
 arg_where = ["polars-lazy?/arg_where"]
 search_sorted = ["polars-lazy?/search_sorted"]
@@ -182,7 +180,6 @@ trigonometry = ["polars-lazy?/trigonometry"]
 sign = ["polars-lazy?/sign"]
 pivot = ["polars-lazy?/pivot"]
 top_k = ["polars-lazy?/top_k"]
-algo = ["polars-algo"]
 cse = ["polars-lazy?/cse"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 coalesce = ["polars-lazy?/coalesce"]
@@ -197,6 +194,8 @@ rle = ["polars-lazy?/rle"]
 extract_groups = ["polars-lazy?/extract_groups"]
 peaks = ["polars-lazy/peaks"]
 cov = ["polars-lazy/cov"]
+replace = ["polars-ops/replace", "polars-lazy?/replace"]
+find_many = ["polars-plan/find_many"]
 
 test = [
   "lazy",
@@ -289,6 +288,7 @@ dtype-struct = [
   "polars-ops/dtype-struct",
   "polars-io/dtype-struct",
 ]
+hist = ["polars-ops/hist", "polars-lazy/hist"]
 
 docs-selection = [
   "csv",
@@ -315,6 +315,7 @@ docs-selection = [
   "asof_join",
   "cross_join",
   "concat_str",
+  "string_reverse",
   "string_to_integer",
   "decompress",
   "mode",
@@ -341,6 +342,7 @@ docs-selection = [
   "coalesce",
   "dynamic_group_by",
   "extract_groups",
+  "replace",
 ]
 
 bench = [

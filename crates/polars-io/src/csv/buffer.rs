@@ -2,6 +2,7 @@ use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::prelude::FromDataUtf8;
 use polars_core::prelude::*;
+use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::chunkedarray::utf8::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -201,6 +202,7 @@ impl ParsedBuffer for Utf8Field {
 
         // note that one branch writes without updating the length, so we must do that later.
         let n_written = if needs_escaping {
+            polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
             // Safety:
             // we just allocated enough capacity and data_len is correct.
             unsafe { escape_field(bytes, self.quote_char, self.data.spare_capacity_mut()) }
@@ -265,8 +267,13 @@ pub(crate) struct CategoricalField<'a> {
 
 #[cfg(feature = "dtype-categorical")]
 impl<'a> CategoricalField<'a> {
-    fn new(name: &str, capacity: usize, quote_char: Option<u8>) -> Self {
-        let builder = CategoricalChunkedBuilder::new(name, capacity);
+    fn new(
+        name: &str,
+        capacity: usize,
+        quote_char: Option<u8>,
+        ordering: CategoricalOrdering,
+    ) -> Self {
+        let builder = CategoricalChunkedBuilder::new(name, capacity, ordering);
 
         Self {
             escape_scratch: vec![],
@@ -292,6 +299,7 @@ impl<'a> CategoricalField<'a> {
 
         if validate_utf8(bytes) {
             if needs_escaping {
+                polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
                 self.escape_scratch.clear();
                 self.escape_scratch.reserve(bytes.len());
                 // Safety:
@@ -554,12 +562,12 @@ pub(crate) fn init_buffers<'a>(
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(rev_map) => {
+                DataType::Categorical(rev_map,ordering) => {
                     if let Some(rev_map) = &rev_map {
                         polars_ensure!(!rev_map.is_enum(),InvalidOperation: "user defined categoricals are not supported when reading csv")
                     }
 
-                    Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
+                    Buffer::Categorical(CategoricalField::new(name, capacity, quote_char,*ordering))
                 },
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
@@ -723,7 +731,7 @@ impl<'a> Buffer<'a> {
             Buffer::Categorical(_) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    DataType::Categorical(None)
+                    DataType::Categorical(None, Default::default())
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]

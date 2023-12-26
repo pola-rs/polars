@@ -1,7 +1,3 @@
-use std::ops::Add;
-
-use arrow::compute;
-use arrow::types::simd::Simd;
 use num_traits::{ToPrimitive, Zero};
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
@@ -105,9 +101,6 @@ pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Op
 where
     T: PolarsNumericType,
     T::Native: ToPrimitive,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: ChunkVar,
 {
     let (a, b) = align_chunks_binary(a, b);

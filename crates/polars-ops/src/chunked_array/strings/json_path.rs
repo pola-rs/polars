@@ -75,7 +75,6 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             Some(dt) => dt,
             None => ca.json_infer(infer_schema_len)?,
         };
-
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
         let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
 

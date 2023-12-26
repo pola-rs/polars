@@ -1,7 +1,11 @@
 use std::any::Any;
 
+use polars_core::prelude::*;
+
 pub trait SExecutionContext: Send + Sync {
     fn as_any(&self) -> &dyn Any;
+
+    fn should_stop(&self) -> PolarsResult<()>;
 }
 
 pub struct PExecutionContext {

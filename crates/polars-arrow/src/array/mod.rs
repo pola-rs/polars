@@ -482,7 +482,7 @@ macro_rules! impl_sliced {
                 offset + length <= self.len(),
                 "the offset of the new Buffer cannot exceed the existing length"
             );
-            unsafe { self.sliced_unchecked(offset, length) }
+            unsafe { Self::sliced_unchecked(self, offset, length) }
         }
 
         /// Returns this array sliced.
@@ -493,7 +493,7 @@ macro_rules! impl_sliced {
         #[inline]
         #[must_use]
         pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
-            self.slice_unchecked(offset, length);
+            Self::slice_unchecked(&mut self, offset, length);
             self
         }
     };
@@ -668,6 +668,8 @@ mod map;
 mod null;
 mod primitive;
 pub mod specification;
+mod static_array;
+mod static_array_collect;
 mod struct_;
 mod total_ord;
 mod union;
@@ -678,7 +680,7 @@ mod ffi;
 mod fmt;
 #[doc(hidden)]
 pub mod indexable;
-mod iterator;
+pub mod iterator;
 
 pub mod growable;
 mod values;
@@ -697,6 +699,8 @@ pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray};
 use polars_error::PolarsResult;
 pub use primitive::*;
+pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};
+pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
 pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};

@@ -1441,6 +1441,23 @@ class StringNameSpace:
 
         """
 
+    def reverse(self) -> Series:
+        """
+        Returns string values in reversed order.
+
+        Examples
+        --------
+        >>> s = pl.Series("text", ["foo", "bar", "man\u0303ana"])
+        >>> s.str.reverse()
+        shape: (3,)
+        Series: 'text' [str]
+        [
+            "oof"
+            "rab"
+            "anañam"
+        ]
+        """
+
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -1724,3 +1741,86 @@ class StringNameSpace:
             If `None` all rows are used.
         """
         return self.json_decode(dtype, infer_schema_length)
+
+    def contains_any(
+        self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to find matches.
+
+        This version determines if any of the patterns find a match.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.contains_any(["you", "me"])
+        shape: (3,)
+        Series: 'lyrics' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """
+
+    def replace_many(
+        self,
+        patterns: Series | list[str],
+        replace_with: Series | list[str] | str,
+        *,
+        ascii_case_insensitive: bool = False,
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to replace many matches.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search and replace.
+        replace_with
+            Strings to replace where a pattern was a match.
+            This can be broadcasted. So it supports many:one and many:many.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.replace_many(["you", "me"], ["me", "you"])
+        shape: (3,)
+        Series: 'lyrics' [str]
+        [
+            "Everybody wants to rule the world"
+            "Tell you what me want, what me really really want"
+            "Can me feel the love tonight"
+        ]
+
+        """

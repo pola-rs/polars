@@ -35,7 +35,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     match series.dtype() {
         #[cfg(feature = "dtype-categorical")]
         // for Categoricals we first need to check if the category already exist
-        DataType::Categorical(Some(rev_map)) => {
+        DataType::Categorical(Some(rev_map), _) => {
             if rev_map.is_local() && fill_value.len() == 1 && fill_value.null_count() == 0 {
                 let fill_av = fill_value.get(0).unwrap();
                 let fill_str = fill_av.get_str().unwrap();
@@ -56,15 +56,5 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
 }
 
 pub(super) fn coalesce(s: &mut [Series]) -> PolarsResult<Series> {
-    polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
-    let mut out = s[0].clone();
-    for s in s {
-        if !out.null_count() == 0 {
-            return Ok(out);
-        } else {
-            let mask = out.is_not_null();
-            out = out.zip_with_same_type(&mask, s)?;
-        }
-    }
-    Ok(out)
+    coalesce_series(s)
 }

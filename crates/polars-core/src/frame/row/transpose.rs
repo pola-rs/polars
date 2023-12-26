@@ -40,7 +40,7 @@ impl DataFrame {
             DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_out, &mut cols_t),
             DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 // this requires to support `Object` in Series::iter which we don't yet
                 polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
             },
@@ -119,11 +119,11 @@ impl DataFrame {
         let dtype = df.get_supertype().unwrap()?;
         match dtype {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
+            DataType::Categorical(_, _) => {
                 let mut valid = true;
                 let mut rev_map: Option<&Arc<RevMapping>> = None;
                 for s in self.columns.iter() {
-                    if let DataType::Categorical(Some(col_rev_map)) = &s.dtype() {
+                    if let DataType::Categorical(Some(col_rev_map), _) = &s.dtype() {
                         match rev_map {
                             Some(rev_map) => valid = valid && rev_map.same_src(col_rev_map),
                             None => {

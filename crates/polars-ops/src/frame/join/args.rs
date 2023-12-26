@@ -31,6 +31,18 @@ pub struct JoinArgs {
     pub join_nulls: bool,
 }
 
+impl Default for JoinArgs {
+    fn default() -> Self {
+        Self {
+            how: JoinType::Inner,
+            validation: Default::default(),
+            suffix: None,
+            slice: None,
+            join_nulls: false,
+        }
+    }
+}
+
 impl JoinArgs {
     pub fn new(how: JoinType) -> Self {
         Self {
@@ -52,7 +64,9 @@ impl JoinArgs {
 pub enum JoinType {
     Left,
     Inner,
-    Outer,
+    Outer {
+        coalesce: bool,
+    },
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
     Cross,
@@ -60,6 +74,18 @@ pub enum JoinType {
     Semi,
     #[cfg(feature = "semi_anti_join")]
     Anti,
+}
+
+impl JoinType {
+    pub fn merges_join_keys(&self) -> bool {
+        match self {
+            Self::Outer { coalesce } => *coalesce,
+            // Merges them if they are equal
+            #[cfg(feature = "asof_join")]
+            Self::AsOf(_) => false,
+            _ => true,
+        }
+    }
 }
 
 impl From<JoinType> for JoinArgs {
@@ -74,7 +100,7 @@ impl Display for JoinType {
         let val = match self {
             Left => "LEFT",
             Inner => "INNER",
-            Outer => "OUTER",
+            Outer { .. } => "OUTER",
             #[cfg(feature = "asof_join")]
             AsOf(_) => "ASOF",
             Cross => "CROSS",
@@ -131,7 +157,7 @@ impl JoinValidation {
             return Ok(());
         }
         polars_ensure!(n_keys == 1, ComputeError: "{self} validation on a {join_type} is not yet supported for multiple keys");
-        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Outer | JoinType::Left),
+        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Outer{..} | JoinType::Left),
                       ComputeError: "{self} validation on a {join_type} join is not supported");
         Ok(())
     }

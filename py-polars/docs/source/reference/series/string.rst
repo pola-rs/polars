@@ -11,6 +11,7 @@ The following methods are available under the `Series.str` attribute.
 
     Series.str.concat
     Series.str.contains
+    Series.str.contains_any
     Series.str.count_match
     Series.str.count_matches
     Series.str.decode
@@ -33,6 +34,8 @@ The following methods are available under the `Series.str` attribute.
     Series.str.pad_start
     Series.str.replace
     Series.str.replace_all
+    Series.str.replace_many
+    Series.str.reverse
     Series.str.rjust
     Series.str.rstrip
     Series.str.slice
@@ -50,6 +53,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.to_date
     Series.str.to_datetime
     Series.str.to_decimal
+    Series.str.to_integer
     Series.str.to_lowercase
     Series.str.to_time
     Series.str.to_titlecase

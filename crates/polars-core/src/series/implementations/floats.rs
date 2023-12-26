@@ -7,7 +7,7 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::aggregate::{ChunkAggSeries, QuantileAggSeries, VarAggSeries};
 use crate::chunked_array::ops::compare_inner::{
-    IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
+    IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
@@ -58,11 +58,11 @@ macro_rules! impl_dyn_series {
                 ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
                     .map(|ca| ca.into_series())
             }
-            fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-                (&self.0).into_partial_eq_inner()
+            fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+                (&self.0).into_total_eq_inner()
             }
-            fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-                (&self.0).into_partial_ord_inner()
+            fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+                (&self.0).into_total_ord_inner()
             }
 
             fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -295,23 +295,23 @@ macro_rules! impl_dyn_series {
                 ChunkShift::shift(&self.0, periods).into_series()
             }
 
-            fn _sum_as_series(&self) -> Series {
-                ChunkAggSeries::sum_as_series(&self.0)
+            fn _sum_as_series(&self) -> PolarsResult<Series> {
+                Ok(ChunkAggSeries::sum_as_series(&self.0))
             }
-            fn max_as_series(&self) -> Series {
-                ChunkAggSeries::max_as_series(&self.0)
+            fn max_as_series(&self) -> PolarsResult<Series> {
+                Ok(ChunkAggSeries::max_as_series(&self.0))
             }
-            fn min_as_series(&self) -> Series {
-                ChunkAggSeries::min_as_series(&self.0)
+            fn min_as_series(&self) -> PolarsResult<Series> {
+                Ok(ChunkAggSeries::min_as_series(&self.0))
             }
-            fn median_as_series(&self) -> Series {
-                QuantileAggSeries::median_as_series(&self.0)
+            fn median_as_series(&self) -> PolarsResult<Series> {
+                Ok(QuantileAggSeries::median_as_series(&self.0))
             }
-            fn var_as_series(&self, ddof: u8) -> Series {
-                VarAggSeries::var_as_series(&self.0, ddof)
+            fn var_as_series(&self, ddof: u8) -> PolarsResult<Series> {
+                Ok(VarAggSeries::var_as_series(&self.0, ddof))
             }
-            fn std_as_series(&self, ddof: u8) -> Series {
-                VarAggSeries::std_as_series(&self.0, ddof)
+            fn std_as_series(&self, ddof: u8) -> PolarsResult<Series> {
+                Ok(VarAggSeries::std_as_series(&self.0, ddof))
             }
             fn quantile_as_series(
                 &self,

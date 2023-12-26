@@ -16,18 +16,6 @@ def test_append() -> None:
     assert a.n_chunks() == 2
 
 
-def test_append_deprecated_append_chunks() -> None:
-    a = pl.Series("a", [1, 2])
-    b = pl.Series("b", [8, 9, None])
-
-    with pytest.deprecated_call():
-        a.append(b, append_chunks=False)
-
-    expected = pl.Series("a", [1, 2, 8, 9, None])
-    assert_series_equal(a, expected)
-    assert a.n_chunks() == 1
-
-
 def test_append_self_3915() -> None:
     a = pl.Series("a", [1, 2])
 

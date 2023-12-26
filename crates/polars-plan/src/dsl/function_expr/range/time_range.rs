@@ -2,7 +2,10 @@ use polars_core::prelude::*;
 use polars_core::series::Series;
 use polars_time::{time_range_impl, ClosedWindow, Duration};
 
-use super::utils::{ensure_range_bounds_contain_exactly_one_value, temporal_series_to_i64_scalar};
+use super::utils::{
+    ensure_range_bounds_contain_exactly_one_value, temporal_ranges_impl_broadcast,
+    temporal_series_to_i64_scalar,
+};
 
 const CAPACITY_FACTOR: usize = 5;
 
@@ -34,37 +37,30 @@ pub(super) fn time_ranges(
     let start = &s[0];
     let end = &s[1];
 
-    polars_ensure!(
-        start.len() == end.len(),
-        ComputeError: "`start` and `end` must have the same length",
-    );
+    let start = start.cast(&DataType::Time)?;
+    let end = end.cast(&DataType::Time)?;
 
-    let start = time_series_to_i64_ca(start)?;
-    let end = time_series_to_i64_ca(end)?;
+    let start_phys = start.to_physical_repr();
+    let end_phys = end.to_physical_repr();
+    let start = start_phys.i64().unwrap();
+    let end = end_phys.i64().unwrap();
 
+    let len = std::cmp::max(start.len(), end.len());
     let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
         "time_range",
-        start.len(),
-        start.len() * CAPACITY_FACTOR,
+        len,
+        len * CAPACITY_FACTOR,
         DataType::Int64,
     );
-    for (start, end) in start.as_ref().into_iter().zip(&end) {
-        match (start, end) {
-            (Some(start), Some(end)) => {
-                let rng = time_range_impl("", start, end, interval, closed)?;
-                builder.append_slice(rng.cont_slice().unwrap())
-            },
-            _ => builder.append_null(),
-        }
-    }
-    let list = builder.finish().into_series();
+
+    let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
+        let rng = time_range_impl("", start, end, interval, closed)?;
+        builder.append_slice(rng.cont_slice().unwrap());
+        Ok(())
+    };
+
+    let out = temporal_ranges_impl_broadcast(start, end, range_impl, &mut builder)?;
 
     let to_type = DataType::List(Box::new(DataType::Time));
-    list.cast(&to_type)
-}
-fn time_series_to_i64_ca(s: &Series) -> PolarsResult<ChunkedArray<Int64Type>> {
-    let s = s.cast(&DataType::Time)?;
-    let s = s.to_physical_repr();
-    let result = s.i64().unwrap();
-    Ok(result.clone())
+    out.cast(&to_type)
 }

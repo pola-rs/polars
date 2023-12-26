@@ -1,6 +1,9 @@
+use std::ops::Range;
+
 use either::Either;
 
 use super::Array;
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
@@ -13,11 +16,13 @@ mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
-mod iterator;
+pub mod iterator;
 
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::index::{Bounded, Indexable, NullCount};
+use polars_utils::slice::SliceAble;
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -146,6 +151,12 @@ impl<T: NativeType> PrimitiveArray<T> {
         self.values().iter()
     }
 
+    /// Returns an iterator of the non-null values `T`.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, [T]> {
+        NonNullValuesIter::new(self.values(), self.validity())
+    }
+
     /// Returns the length of this array
     #[inline]
     pub fn len(&self) -> usize {
@@ -190,18 +201,18 @@ impl<T: NativeType> PrimitiveArray<T> {
         *self.values.get_unchecked(i)
     }
 
-    /// Returns the element at index `i` or `None` if it is null
-    /// # Panics
-    /// iff `i >= self.len()`
-    #[inline]
-    pub fn get(&self, i: usize) -> Option<T> {
-        if !self.is_null(i) {
-            // soundness: Array::is_null panics if i >= self.len
-            unsafe { Some(self.value_unchecked(i)) }
-        } else {
-            None
-        }
-    }
+    // /// Returns the element at index `i` or `None` if it is null
+    // /// # Panics
+    // /// iff `i >= self.len()`
+    // #[inline]
+    // pub fn get(&self, i: usize) -> Option<T> {
+    //     if !self.is_null(i) {
+    //         // soundness: Array::is_null panics if i >= self.len
+    //         unsafe { Some(self.value_unchecked(i)) }
+    //     } else {
+    //         None
+    //     }
+    // }
 
     /// Slices this [`PrimitiveArray`] by an offset and length.
     /// # Implementation
@@ -438,6 +449,37 @@ impl<T: NativeType> Array for PrimitiveArray<T> {
     }
 }
 
+impl<T: NativeType> SliceAble for PrimitiveArray<T> {
+    unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self {
+        self.clone().sliced_unchecked(range.start, range.len())
+    }
+
+    fn slice(&self, range: Range<usize>) -> Self {
+        self.clone().sliced(range.start, range.len())
+    }
+}
+
+impl<T: NativeType> Indexable for PrimitiveArray<T> {
+    type Item = Option<T>;
+
+    fn get(&self, i: usize) -> Self::Item {
+        if !self.is_null(i) {
+            // soundness: Array::is_null panics if i >= self.len
+            unsafe { Some(self.value_unchecked(i)) }
+        } else {
+            None
+        }
+    }
+
+    unsafe fn get_unchecked(&self, i: usize) -> Self::Item {
+        if !self.is_null_unchecked(i) {
+            Some(self.value_unchecked(i))
+        } else {
+            None
+        }
+    }
+}
+
 /// A type definition [`PrimitiveArray`] for `i8`
 pub type Int8Array = PrimitiveArray<i8>;
 /// A type definition [`PrimitiveArray`] for `i16`
@@ -503,5 +545,17 @@ pub type UInt64Vec = MutablePrimitiveArray<u64>;
 impl<T: NativeType> Default for PrimitiveArray<T> {
     fn default() -> Self {
         PrimitiveArray::new(T::PRIMITIVE.into(), Default::default(), None)
+    }
+}
+
+impl<T: NativeType> Bounded for PrimitiveArray<T> {
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
+impl<T: NativeType> NullCount for PrimitiveArray<T> {
+    fn null_count(&self) -> usize {
+        <Self as Array>::null_count(self)
     }
 }

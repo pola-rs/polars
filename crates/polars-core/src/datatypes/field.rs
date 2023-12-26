@@ -138,7 +138,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
+            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None,Default::default()),
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
@@ -146,7 +146,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
-                    DataType::Object("extension")
+                    DataType::Object("extension", None)
                 }
                 #[cfg(not(feature = "object"))]
                 {

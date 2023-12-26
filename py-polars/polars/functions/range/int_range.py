@@ -83,7 +83,8 @@ def arange(
 
     Returns
     -------
-    Column of data type `dtype`.
+    Expr or Series
+        Column of integer data type `dtype`.
 
     See Also
     --------
@@ -100,7 +101,6 @@ def arange(
             1
             2
     ]
-
     """
     return int_range(start, end, step, dtype=dtype, eager=eager)
 
@@ -161,7 +161,7 @@ def int_range(
     step
         Step size of the range.
     dtype
-        Data type of the range. Defaults to `Int64`.
+        Data type of the range.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
@@ -169,7 +169,7 @@ def int_range(
     Returns
     -------
     Expr or Series
-        Column of data type :class:`Int64`.
+        Column of integer data type `dtype`.
 
     See Also
     --------
@@ -185,7 +185,6 @@ def int_range(
             1
             2
     ]
-
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
@@ -201,7 +200,7 @@ def int_range(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = ...,
+    step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[False] = ...,
@@ -213,7 +212,7 @@ def int_ranges(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = ...,
+    step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[True],
@@ -225,7 +224,7 @@ def int_ranges(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = ...,
+    step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
     eager: bool,
@@ -236,7 +235,7 @@ def int_ranges(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = 1,
+    step: int | IntoExprColumn = 1,
     *,
     dtype: PolarsIntegerType = Int64,
     eager: bool = False,
@@ -284,6 +283,7 @@ def int_ranges(
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
+    step = parse_as_expression(step)
     result = wrap_expr(plr.int_ranges(start, end, step, dtype))
 
     if eager:

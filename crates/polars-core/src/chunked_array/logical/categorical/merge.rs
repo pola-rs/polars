@@ -201,6 +201,7 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
         Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
             new_physical,
             new_rev_map,
+            cat_left.get_ordering(),
         ))
     }
 }

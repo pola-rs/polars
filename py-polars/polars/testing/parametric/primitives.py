@@ -227,7 +227,6 @@ def columns(
     ...     df = pl.DataFrame(schema=[(c.name, c.dtype) for c in columns(punctuation)])
     ...     assert len(cols) == len(df.columns)
     ...     assert 0 == len(df.rows())
-    ...
 
     """
     # create/assign named columns

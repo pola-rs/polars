@@ -30,7 +30,6 @@ SIMPLE_DTYPES: list[DataTypeClass] = list(
         pl.Binary,
         pl.Time,
         pl.Date,
-        pl.Categorical,
         pl.Object,
         pl.Null,
         pl.Unknown,
@@ -140,7 +139,7 @@ def test_dtypes_hashable() -> None:
         (pl.Struct, "Struct"),
         (
             pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
-            "Struct([Field('name', Utf8), Field('ids', List(UInt32))])",
+            "Struct({'name': Utf8, 'ids': List(UInt32)})",
         ),
     ],
 )

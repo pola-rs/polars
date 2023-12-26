@@ -29,6 +29,7 @@ macro_rules! iter_to_values {
                 },
                 None => {
                     $validity.push(false);
+                    $offsets.push($length_so_far);
                     None
                 },
             })
@@ -131,6 +132,7 @@ pub trait ListFromIter {
                 },
                 None => {
                     validity.push(false);
+                    offsets.push(length_so_far);
                     None
                 },
             })
@@ -177,6 +179,7 @@ pub trait ListFromIter {
                 },
                 None => {
                     validity.push(false);
+                    offsets.push(length_so_far);
                     None
                 },
             })

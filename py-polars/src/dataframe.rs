@@ -15,7 +15,7 @@ use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
-use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
+use polars_core::prelude::IndexOrder;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "pivot")]
@@ -391,7 +391,7 @@ impl PyDataFrame {
         use polars::io::avro::AvroWriter;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             AvroWriter::new(f)
                 .with_compression(compression.0)
                 .with_name(name)
@@ -616,8 +616,8 @@ impl PyDataFrame {
         let null = null_value.unwrap_or_default();
 
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .include_bom(include_bom)
@@ -665,8 +665,8 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 IpcWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -691,8 +691,8 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 IpcStreamWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -723,7 +723,7 @@ impl PyDataFrame {
             PyTuple::new(
                 py,
                 self.df.get_columns().iter().map(|s| match s.dtype() {
-                    DataType::Object(_) => {
+                    DataType::Object(_, _) => {
                         let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                         obj.to_object(py)
                     },
@@ -746,7 +746,7 @@ impl PyDataFrame {
                         py,
                         self.df.get_columns().iter().map(|s| match s.dtype() {
                             DataType::Null => py.None(),
-                            DataType::Object(_) => {
+                            DataType::Object(_, _) => {
                                 let obj: Option<&ObjectValue> =
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
@@ -802,7 +802,7 @@ impl PyDataFrame {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
                 ParquetWriter::new(f)
                     .with_compression(compression)
@@ -851,7 +851,7 @@ impl PyDataFrame {
                 .get_columns()
                 .iter()
                 .enumerate()
-                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_)))
+                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_, _)))
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
 
@@ -1256,34 +1256,6 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    pub fn max(&self) -> Self {
-        self.df.max().into()
-    }
-
-    pub fn min(&self) -> Self {
-        self.df.min().into()
-    }
-
-    pub fn sum(&self) -> Self {
-        self.df.sum().into()
-    }
-
-    pub fn mean(&self) -> Self {
-        self.df.mean().into()
-    }
-
-    pub fn std(&self, ddof: u8) -> Self {
-        self.df.std(ddof).into()
-    }
-
-    pub fn var(&self, ddof: u8) -> Self {
-        self.df.var(ddof).into()
-    }
-
-    pub fn median(&self) -> Self {
-        self.df.median().into()
-    }
-
     pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
         let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
@@ -1318,18 +1290,6 @@ impl PyDataFrame {
             .mean_horizontal(null_strategy)
             .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
-    }
-
-    pub fn quantile(
-        &self,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyResult<Self> {
-        let df = self
-            .df
-            .quantile(quantile, interpolation.0)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
     }
 
     #[pyo3(signature = (columns, separator, drop_first=false))]

@@ -275,6 +275,7 @@
 //!     - `propagate_nans` - NaN propagating min/max aggregations.
 //!     - `extract_groups` - Extract multiple regex groups from strings.
 //!     - `cov` - Covariance and correlation functions.
+//!     - `find_many` - Find/replace multiple string patterns at once.
 //! * [`DataFrame`] pretty printing
 //!     - `fmt` - Activate [`DataFrame`] formatting
 //!

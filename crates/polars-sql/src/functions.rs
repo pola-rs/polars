@@ -755,9 +755,10 @@ impl SqlFunctionVisitor<'_> {
             },
             StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
             Substring => match function.args.len() {
+                // note that SQL is 1-indexed, not 0-indexed
                 2 => self.try_visit_binary(|e, start| {
                     Ok(e.str().slice(match start {
-                        Expr::Literal(LiteralValue::Int64(n)) => n,
+                        Expr::Literal(LiteralValue::Int64(n)) => n - 1 ,
                         _ => {
                             polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
                         }
@@ -766,7 +767,7 @@ impl SqlFunctionVisitor<'_> {
                 3 => self.try_visit_ternary(|e, start, length| {
                     Ok(e.str().slice(
                         match start {
-                            Expr::Literal(LiteralValue::Int64(n)) => n,
+                            Expr::Literal(LiteralValue::Int64(n)) => n - 1,
                             _ => {
                                 polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
                             }

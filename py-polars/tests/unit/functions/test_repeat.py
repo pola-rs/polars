@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -127,6 +129,13 @@ def test_zeros(
     assert_series_equal(result_lazy, expected)
 
 
+def test_zeros_ones_bool_type() -> None:
+    zeros = pl.zeros(3, pl.Boolean, eager=True)
+    ones = pl.ones(3, pl.Boolean, eager=True)
+    assert zeros.to_list() == [False, False, False]
+    assert ones.to_list() == [True, True, True]
+
+
 def test_repeat_by_logical_dtype() -> None:
     with pl.StringCache():
         df = pl.DataFrame(
@@ -154,3 +163,19 @@ def test_repeat_by_logical_dtype() -> None:
         )
 
         assert_frame_equal(out, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("data", "expected_data"),
+    [
+        (["a", "b", None], [["a", "a"], None, [None, None, None]]),
+        ([1, 2, None], [[1, 1], None, [None, None, None]]),
+        ([1.1, 2.2, None], [[1.1, 1.1], None, [None, None, None]]),
+        ([True, False, None], [[True, True], None, [None, None, None]]),
+    ],
+)
+def test_repeat_by_none_13053(data: list[Any], expected_data: list[list[Any]]) -> None:
+    df = pl.DataFrame({"x": data, "by": [2, None, 3]})
+    res = df.select(repeat=pl.col("x").repeat_by("by"))
+    expected = pl.Series("repeat", expected_data)
+    assert_series_equal(res.to_series(), expected)

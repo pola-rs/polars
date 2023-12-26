@@ -17,7 +17,7 @@ polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
-polars-ops = { workspace = true, features = ["zip_with"] }
+polars-ops = { workspace = true, features = [] }
 polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
@@ -125,6 +125,7 @@ chunked_ids = ["polars-core/chunked_ids"]
 list_to_struct = ["polars-ops/list_to_struct"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 string_pad = ["polars-ops/string_pad"]
+string_reverse = ["polars-ops/string_reverse"]
 string_to_integer = ["polars-ops/string_to_integer"]
 arg_where = []
 search_sorted = ["polars-ops/search_sorted"]
@@ -148,6 +149,9 @@ ffi_plugin = ["libloading", "polars-ffi"]
 hive_partitions = []
 peaks = ["polars-ops/peaks"]
 cov = ["polars-ops/cov"]
+hist = ["polars-ops/hist"]
+replace = ["polars-ops/replace"]
+find_many = ["polars-ops/find_many"]
 
 bigidx = ["polars-core/bigidx"]
 

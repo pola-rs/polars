@@ -25,7 +25,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
-from polars.utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
@@ -120,30 +120,6 @@ def expand_selector(
         target = DataFrame(schema=target)
 
     return tuple(target.select(selector).columns)
-
-
-@deprecate_function(
-    message="This function has been superseded by `expand_selector`; please update accordingly",
-    version="0.18.14",
-)
-def selector_column_names(
-    frame: DataFrame | LazyFrame, selector: SelectorType
-) -> tuple[str, ...]:
-    """
-    Return the column names that would be selected from the given frame.
-
-    .. deprecated:: 0.18.14
-       Use :func:`expand_selector` instead.
-
-    Parameters
-    ----------
-    frame
-        A polars DataFrame or LazyFrame.
-    selector
-        An arbitrary polars selector (or compound selector).
-
-    """
-    return expand_selector(target=frame, selector=selector)
 
 
 def _expand_selectors(
@@ -958,7 +934,7 @@ def datetime(
             [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
         )
 
-    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]  # type: ignore[union-attr]
+    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]
 
     return _selector_proxy_(
         F.col(datetime_dtypes),
@@ -1705,7 +1681,6 @@ def object() -> SelectorType:
     ...         schema_overrides={"idx": pl.Int32},
     ...     )
     ...     print(df)  # doctest: +IGNORE_RESULT
-    ...
     shape: (2, 3)
     ┌─────┬──────────────────────────────────────┬──────────────────────────────────────┐
     │ idx ┆ uuid_obj                             ┆ uuid_str                             │
@@ -1840,7 +1815,7 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     ...         "z": ["a", "b", "a", "b", "b"],
     ...     },
     ... ).with_columns(
-    ...     z=pl.col("z").cast(pl.Categorical).cat.set_ordering("lexical"),
+    ...     z=pl.col("z").cast(pl.Categorical("lexical")),
     ... )
 
     Group by all string columns, sum the numeric columns, then sort by the string cols:

@@ -16,6 +16,7 @@ from polars import api
 from polars.config import Config
 from polars.convert import (
     from_arrow,
+    from_dataframe,
     from_dict,
     from_dicts,
     from_numpy,
@@ -91,7 +92,6 @@ from polars.functions import (
     arctan2d,
     arg_sort_by,
     arg_where,
-    avg,
     coalesce,
     col,
     collect_all,
@@ -161,7 +161,6 @@ from polars.functions import (
     when,
     zeros,
 )
-from polars.interchange.from_dataframe import from_dataframe
 from polars.io import (
     read_avro,
     read_csv,
@@ -186,7 +185,7 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
-from polars.lazyframe import LazyFrame
+from polars.lazyframe import InProcessQuery, LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import (
@@ -229,6 +228,7 @@ __all__ = [
     "Expr",
     "LazyFrame",
     "Series",
+    "InProcessQuery",
     # polars.datatypes
     "Array",
     "Binary",
@@ -336,7 +336,6 @@ __all__ = [
     "arctan2",
     "arctan2d",
     "arg_sort_by",
-    "avg",
     "coalesce",
     "col",
     "collect_all",

@@ -123,6 +123,12 @@ pub enum FunctionExpr {
     Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
+    #[cfg(feature = "hist")]
+    Hist {
+        bin_count: Option<usize>,
+        include_category: bool,
+        include_breakpoint: bool,
+    },
     NullCount,
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
@@ -309,6 +315,10 @@ pub enum FunctionExpr {
     #[cfg(feature = "ewma")]
     EwmVar {
         options: EWMOptions,
+    },
+    #[cfg(feature = "replace")]
+    Replace {
+        return_dtype: Option<DataType>,
     },
 }
 
@@ -499,6 +509,18 @@ impl Hash for FunctionExpr {
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
             EwmVar { options } => options.hash(state),
+            #[cfg(feature = "hist")]
+            Hist {
+                bin_count,
+                include_category,
+                include_breakpoint,
+            } => {
+                bin_count.hash(state);
+                include_category.hash(state);
+                include_breakpoint.hash(state);
+            },
+            #[cfg(feature = "replace")]
+            Replace { return_dtype } => return_dtype.hash(state),
         }
     }
 }
@@ -663,6 +685,10 @@ impl Display for FunctionExpr {
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
             EwmVar { .. } => "ewm_var",
+            #[cfg(feature = "hist")]
+            Hist { .. } => "hist",
+            #[cfg(feature = "replace")]
+            Replace { .. } => "replace",
         };
         write!(f, "{s}")
     }
@@ -824,8 +850,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     MeanBy(options) => map_as_slice!(rolling::rolling_mean_by, options.clone()),
                     Sum(options) => map!(rolling::rolling_sum, options.clone()),
                     SumBy(options) => map_as_slice!(rolling::rolling_sum_by, options.clone()),
-                    Median(options) => map!(rolling::rolling_median, options.clone()),
-                    MedianBy(options) => map_as_slice!(rolling::rolling_median_by, options.clone()),
                     Quantile(options) => map!(rolling::rolling_quantile, options.clone()),
                     QuantileBy(options) => {
                         map_as_slice!(rolling::rolling_quantile_by, options.clone())
@@ -837,6 +861,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "moment")]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
                 }
+            },
+            #[cfg(feature = "hist")]
+            Hist {
+                bin_count,
+                include_category,
+                include_breakpoint,
+            } => {
+                map_as_slice!(
+                    dispatch::hist,
+                    bin_count,
+                    include_category,
+                    include_breakpoint
+                )
             },
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
@@ -990,7 +1027,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
-            SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
+            SumHorizontal => wrap!(dispatch::sum_horizontal),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
             #[cfg(feature = "ewma")]
@@ -999,6 +1036,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]
             EwmVar { options } => map!(ewm::ewm_var, options),
+            #[cfg(feature = "replace")]
+            Replace { return_dtype } => {
+                map_as_slice!(dispatch::replace, return_dtype.clone())
+            },
         }
     }
 }

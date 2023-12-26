@@ -465,7 +465,7 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
 }
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_sum())
+    s.list()?.lst_sum()
 }
 
 pub(super) fn length(s: &Series) -> PolarsResult<Series> {
@@ -473,11 +473,11 @@ pub(super) fn length(s: &Series) -> PolarsResult<Series> {
 }
 
 pub(super) fn max(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_max())
+    s.list()?.lst_max()
 }
 
 pub(super) fn min(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_min())
+    s.list()?.lst_min()
 }
 
 pub(super) fn mean(s: &Series) -> PolarsResult<Series> {
@@ -517,6 +517,27 @@ pub(super) fn unique(s: &Series, is_stable: bool) -> PolarsResult<Series> {
 pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResult<Series> {
     let s0 = &s[0];
     let s1 = &s[1];
+
+    if s0.len() == 0 || s1.len() == 0 {
+        return match set_type {
+            SetOperation::Intersection => {
+                if s0.len() == 0 {
+                    Ok(s0.clone())
+                } else {
+                    Ok(s1.clone().with_name(s0.name()))
+                }
+            },
+            SetOperation::Difference => Ok(s0.clone()),
+            SetOperation::Union | SetOperation::SymmetricDifference => {
+                if s0.len() == 0 {
+                    Ok(s1.clone().with_name(s0.name()))
+                } else {
+                    Ok(s0.clone())
+                }
+            },
+        };
+    }
+
     list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
 }
 

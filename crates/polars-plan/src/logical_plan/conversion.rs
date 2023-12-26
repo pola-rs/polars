@@ -79,7 +79,9 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 AggExpr::Last(expr) => AAggExpr::Last(to_aexpr(*expr, arena)),
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr(*expr, arena)),
                 AggExpr::Implode(expr) => AAggExpr::Implode(to_aexpr(*expr, arena)),
-                AggExpr::Count(expr) => AAggExpr::Count(to_aexpr(*expr, arena)),
+                AggExpr::Count(expr, include_nulls) => {
+                    AAggExpr::Count(to_aexpr(*expr, arena), include_nulls)
+                },
                 AggExpr::Quantile {
                     expr,
                     quantile,
@@ -519,9 +521,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Box::new(exp)).into()
             },
-            AAggExpr::Count(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Count(Box::new(exp)).into()
+            AAggExpr::Count(expr, include_nulls) => {
+                let expr = node_to_expr(expr, expr_arena);
+                AggExpr::Count(Box::new(expr), include_nulls).into()
             },
         },
         AExpr::Ternary {

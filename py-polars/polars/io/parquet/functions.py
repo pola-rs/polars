@@ -1,43 +1,109 @@
 from __future__ import annotations
 
 import contextlib
+import io
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.various import normalize_filepath
+from polars.utils.various import is_int_sequence, normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
-    from io import BytesIO
-
     from polars import DataFrame, DataType, LazyFrame
     from polars.type_aliases import ParallelStrategy
 
 
 def read_parquet(
-    source: str | Path | BinaryIO | BytesIO | bytes,
+    source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
-    use_pyarrow: bool = False,
-    memory_map: bool = True,
-    storage_options: dict[str, Any] | None = None,
-    parallel: ParallelStrategy = "auto",
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    low_memory: bool = False,
-    pyarrow_options: dict[str, Any] | None = None,
+    parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
+    hive_partitioning: bool = True,
     rechunk: bool = True,
+    low_memory: bool = False,
+    storage_options: dict[str, Any] | None = None,
+    retries: int = 0,
+    use_pyarrow: bool = False,
+    pyarrow_options: dict[str, Any] | None = None,
+    memory_map: bool = True,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
+
+    Parameters
+    ----------
+    source
+        Path to a file, or a file-like object. If the path is a directory, files in that
+        directory will all be read.
+    columns
+        Columns to select. Accepts a list of column indices (starting at zero) or a list
+        of column names.
+    n_rows
+        Stop reading from parquet file after reading `n_rows`.
+        Only valid when `use_pyarrow=False`.
+    row_count_name
+        If not None, this will insert a row count column with give name into the
+        DataFrame.
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set).
+    parallel : {'auto', 'columns', 'row_groups', 'none'}
+        This determines the direction of parallelism. 'auto' will try to determine the
+        optimal direction.
+    use_statistics
+        Use statistics in the parquet to determine if pages
+        can be skipped from reading.
+    hive_partitioning
+        Infer statistics and schema from hive partitioned URL and use them
+        to prune reads.
+    rechunk
+        Make sure that all columns are contiguous in memory by
+        aggregating the chunks into a single array.
+    low_memory
+        Reduce memory pressure at the expense of performance.
+    storage_options
+        Options that indicate how to connect to a cloud provider.
+        If the cloud provider is not supported by Polars, the storage options
+        are passed to `fsspec.open()`.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
+    retries
+        Number of retries if accessing a cloud instance fails.
+    use_pyarrow
+        Use pyarrow instead of the Rust native parquet reader. The pyarrow reader is
+        more stable.
+    pyarrow_options
+        Keyword arguments for `pyarrow.parquet.read_table
+        <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
+    memory_map
+        Memory map underlying file. This will likely increase performance.
+        Only used when `use_pyarrow=True`.
+
+    Returns
+    -------
+    DataFrame
+
+    See Also
+    --------
+    scan_parquet
+    scan_pyarrow_dataset
 
     Notes
     -----
@@ -49,76 +115,26 @@ def read_parquet(
         data will be stored continuously in memory. Set `rechunk=False` if you are
         benchmarking the parquet-reader as `rechunk` can be an expensive operation
         that should not contribute to the timings.
-
-    Parameters
-    ----------
-    source
-        Path to a file, or a file-like object. If the path is a directory, files in that
-        directory will all be read. If `fsspec` is installed, it will be used to open
-        remote files.
-    columns
-        Columns to select. Accepts a list of column indices (starting at zero) or a list
-        of column names.
-    n_rows
-        Stop reading from parquet file after reading `n_rows`.
-        Only valid when `use_pyarrow=False`.
-    use_pyarrow
-        Use pyarrow instead of the Rust native parquet reader. The pyarrow reader is
-        more stable.
-    memory_map
-        Memory map underlying file. This will likely increase performance.
-        Only used when `use_pyarrow=True`.
-    storage_options
-        Extra options that make sense for `fsspec.open()` or a particular storage
-        connection, e.g. host, port, username, password, etc.
-    parallel : {'auto', 'columns', 'row_groups', 'none'}
-        This determines the direction of parallelism. 'auto' will try to determine the
-        optimal direction.
-    row_count_name
-        If not None, this will insert a row count column with give name into the
-        DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only use if the name is set).
-    low_memory
-        Reduce memory pressure at the expense of performance.
-    pyarrow_options
-        Keyword arguments for `pyarrow.parquet.read_table
-        <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
-    use_statistics
-        Use statistics in the parquet to determine if pages
-        can be skipped from reading.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
-
-    See Also
-    --------
-    scan_parquet
-    scan_pyarrow_dataset
-
-    Returns
-    -------
-    DataFrame
-
     """
-    if use_pyarrow and n_rows:
-        raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
+    # Dispatch to pyarrow if requested
+    if use_pyarrow:
+        if not _PYARROW_AVAILABLE:
+            raise ModuleNotFoundError(
+                "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
+            )
+        if n_rows is not None:
+            raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
 
-    storage_options = storage_options or {}
-    pyarrow_options = pyarrow_options or {}
+        import pyarrow as pa
+        import pyarrow.parquet
 
-    with _prepare_file_arg(
-        source, use_pyarrow=use_pyarrow, **storage_options
-    ) as source_prep:
-        if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                raise ModuleNotFoundError(
-                    "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
-                )
+        pyarrow_options = pyarrow_options or {}
 
-            import pyarrow as pa
-            import pyarrow.parquet
-
+        with _prepare_file_arg(
+            source,  # type: ignore[arg-type]
+            use_pyarrow=True,
+            storage_options=storage_options,
+        ) as source_prep:
             return from_arrow(  # type: ignore[return-value]
                 pa.parquet.read_table(
                     source_prep,
@@ -128,22 +144,46 @@ def read_parquet(
                 )
             )
 
-        return pl.DataFrame._read_parquet(
-            source_prep,
-            columns=columns,
-            n_rows=n_rows,
-            parallel=parallel,
-            row_count_name=row_count_name,
-            row_count_offset=row_count_offset,
-            low_memory=low_memory,
-            use_statistics=use_statistics,
-            rechunk=rechunk,
-        )
+    # Read binary types using `read_parquet`
+    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
+        with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
+            return pl.DataFrame._read_parquet(
+                source_prep,
+                columns=columns,
+                n_rows=n_rows,
+                parallel=parallel,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
+                low_memory=low_memory,
+                use_statistics=use_statistics,
+                rechunk=rechunk,
+            )
+
+    # For other inputs, defer to `scan_parquet`
+    lf = scan_parquet(
+        source,  # type: ignore[arg-type]
+        n_rows=n_rows,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
+        parallel=parallel,
+        use_statistics=use_statistics,
+        hive_partitioning=hive_partitioning,
+        rechunk=rechunk,
+        low_memory=low_memory,
+        cache=False,
+        storage_options=storage_options,
+        retries=retries,
+    )
+
+    if columns is not None:
+        if is_int_sequence(columns):
+            columns = [lf.columns[i] for i in columns]
+        lf = lf.select(columns)
+
+    return lf.collect(no_optimization=True)
 
 
-def read_parquet_schema(
-    source: str | BinaryIO | Path | bytes,
-) -> dict[str, DataType]:
+def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
     """
     Get the schema of a Parquet file without reading data.
 
@@ -170,15 +210,15 @@ def scan_parquet(
     source: str | Path | list[str] | list[Path],
     *,
     n_rows: int | None = None,
-    cache: bool = True,
-    parallel: ParallelStrategy = "auto",
-    rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: dict[str, Any] | None = None,
-    low_memory: bool = False,
+    parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    rechunk: bool = True,
+    low_memory: bool = False,
+    cache: bool = True,
+    storage_options: dict[str, Any] | None = None,
     retries: int = 0,
 ) -> LazyFrame:
     """
@@ -194,40 +234,41 @@ def scan_parquet(
         If a single path is given, it can be a globbing pattern.
     n_rows
         Stop reading from parquet file after reading `n_rows`.
-    cache
-        Cache the result after reading.
+    row_count_name
+        If not None, this will insert a row count column with the given name into the
+        DataFrame
+    row_count_offset
+        Offset to start the row_count column (only used if the name is set)
     parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the
         optimal direction.
-    rechunk
-        In case of reading multiple files via a glob pattern rechunk the final DataFrame
-        into contiguous memory chunks.
-    row_count_name
-        If not None, this will insert a row count column with give name into the
-        DataFrame
-    row_count_offset
-        Offset to start the row_count column (only use if the name is set)
-    storage_options
-        Options that inform use how to connect to the cloud provider.
-        If the cloud provider is not supported by us, the storage options
-        are passed to `fsspec.open()`.
-        Currently supported providers are: {'aws', 'gcp', 'azure' }.
-        See supported keys here:
-
-        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
-        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
-        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
-
-        If `storage_options` are not provided we will try to infer them from the
-        environment variables.
-    low_memory
-        Reduce memory pressure at the expense of performance.
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
     hive_partitioning
         Infer statistics and schema from hive partitioned URL and use them
         to prune reads.
+    rechunk
+        In case of reading multiple files via a glob pattern rechunk the final DataFrame
+        into contiguous memory chunks.
+    low_memory
+        Reduce memory pressure at the expense of performance.
+    cache
+        Cache the result after reading.
+    storage_options
+        Options that indicate how to connect to a cloud provider.
+        If the cloud provider is not supported by Polars, the storage options
+        are passed to `fsspec.open()`.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
     retries
         Number of retries if accessing a cloud instance fails.
 

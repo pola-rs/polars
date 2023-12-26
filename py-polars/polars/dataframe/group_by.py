@@ -73,7 +73,6 @@ class GroupBy:
         >>> for name, data in df.group_by("foo"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        ...
         a
         shape: (2, 2)
         ┌─────┬─────┐
@@ -453,33 +452,28 @@ class GroupBy:
 
     def count(self) -> DataFrame:
         """
-        Count the number of values in each group.
+        Return the number of rows in each group.
 
-        .. warning::
-            `null` is deemed a value in this context.
+        Rows containing null values count towards the total.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...         "a": ["apple", "apple", "orange"],
+        ...         "b": [1, None, 2],
         ...     }
         ... )
-        >>> df.group_by("d", maintain_order=True).count()
-        shape: (3, 2)
+        >>> df.group_by("a").count()  # doctest: +SKIP
+        shape: (2, 2)
         ┌────────┬───────┐
-        │ d      ┆ count │
+        │ a      ┆ count │
         │ ---    ┆ ---   │
         │ str    ┆ u32   │
         ╞════════╪═══════╡
-        │ Apple  ┆ 3     │
-        │ Orange ┆ 1     │
-        │ Banana ┆ 2     │
+        │ apple  ┆ 2     │
+        │ orange ┆ 1     │
         └────────┴───────┘
-
         """
         return self.agg(F.count())
 

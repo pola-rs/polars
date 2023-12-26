@@ -61,8 +61,8 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(tu) => Duration(*tu),
             DataType::Time => Time,
             #[cfg(feature = "object")]
-            DataType::Object(_) => Object,
-            DataType::Categorical(rev_map) => rev_map.as_ref().map_or_else(
+            DataType::Object(_, _) => Object,
+            DataType::Categorical(rev_map, _) => rev_map.as_ref().map_or_else(
                 || Categorical,
                 |rev_map| {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
@@ -109,8 +109,8 @@ impl From<PyDataType> for DataType {
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
-            PyDataType::Object => Object(OBJECT_NAME),
-            PyDataType::Categorical => Categorical(None),
+            PyDataType::Object => Object(OBJECT_NAME, None),
+            PyDataType::Categorical => Categorical(None, Default::default()),
             PyDataType::Enum(categories) => create_enum_data_type(categories),
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),

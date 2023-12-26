@@ -71,8 +71,6 @@ fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
 
 # opt-in features
-# sort by multiple columns
-sort_multiple = []
 # create from row values
 # and include pivot operation
 rows = []

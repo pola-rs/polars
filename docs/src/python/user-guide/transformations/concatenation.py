@@ -1,6 +1,5 @@
 # --8<-- [start:setup]
 import polars as pl
-from datetime import datetime
 
 # --8<-- [end:setup]
 
@@ -50,6 +49,29 @@ df_horizontal_concat = pl.concat(
 )
 print(df_horizontal_concat)
 # --8<-- [end:horizontal]
+
+# --8<-- [start:horizontal_different_lengths]
+df_h1 = pl.DataFrame(
+    {
+        "l1": [1, 2],
+        "l2": [3, 4],
+    }
+)
+df_h2 = pl.DataFrame(
+    {
+        "r1": [5, 6, 7],
+        "r2": [8, 9, 10],
+    }
+)
+df_horizontal_concat = pl.concat(
+    [
+        df_h1,
+        df_h2,
+    ],
+    how="horizontal",
+)
+print(df_horizontal_concat)
+# --8<-- [end:horizontal_different_lengths]
 
 # --8<-- [start:cross]
 df_d1 = pl.DataFrame(

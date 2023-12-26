@@ -96,9 +96,10 @@ pub fn get_list_builder(
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     match inner_type_logical {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(rev_map)) => {
+        DataType::Categorical(Some(rev_map), ordering) => {
             return Ok(create_categorical_chunked_listbuilder(
                 name,
+                *ordering,
                 list_capacity,
                 value_capacity,
                 rev_map.clone(),
@@ -111,7 +112,7 @@ pub fn get_list_builder(
 
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_) => polars_bail!(opq = list_builder, &physical_type),
+        DataType::Object(_, _) => polars_bail!(opq = list_builder, &physical_type),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,

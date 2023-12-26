@@ -283,7 +283,7 @@ def test_nested_aggregation_window_expression() -> None:
         {
             "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
             "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
+            "foo": [None, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1, 1, None, None, 1],
         },
         # Resulting column is Int32, see https://github.com/pola-rs/polars/issues/8041
         schema_overrides={"foo": pl.Int32},
@@ -424,3 +424,21 @@ def test_window_10417() -> None:
             pl.col("c") - pl.col("c").mean().over("a"),
         ]
     ).collect().to_dict(as_series=False) == {"a": [1], "b": [0.0], "c": [0.0]}
+
+
+def test_window_13173() -> None:
+    df = pl.DataFrame(
+        data={
+            "color": ["yellow", "yellow"],
+            "color2": [None, "light"],
+            "val": ["2", "3"],
+        }
+    )
+    assert df.with_columns(
+        pl.min("val").over(["color", "color2"]).alias("min_val_per_color")
+    ).to_dict(as_series=False) == {
+        "color": ["yellow", "yellow"],
+        "color2": [None, "light"],
+        "val": ["2", "3"],
+        "min_val_per_color": ["2", "3"],
+    }

@@ -11,6 +11,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![cfg_attr(feature = "nightly", allow(clippy::non_canonical_partial_ord_impl))] // Remove once stable.
+#![cfg_attr(feature = "nightly", allow(clippy::blocks_in_conditions))] // Remove once stable.
 
 extern crate core;
 
@@ -36,6 +37,7 @@ pub mod datatypes;
 
 pub mod ffi;
 pub mod legacy;
+pub mod pushable;
 pub mod util;
 
 // re-exported because we return `Either` in our public API

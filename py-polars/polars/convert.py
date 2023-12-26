@@ -17,6 +17,7 @@ from polars.utils.various import _cast_repr_strings_with_schema
 if TYPE_CHECKING:
     from polars import DataFrame, Series
     from polars.dependencies import numpy as np
+    from polars.interchange.protocol import SupportsInterchange
     from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 
 
@@ -730,3 +731,56 @@ def from_pandas(
         raise TypeError(
             f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
         )
+
+
+def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
+    """
+    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+
+    Parameters
+    ----------
+    df
+        Object supporting the dataframe interchange protocol, i.e. must have implemented
+        the `__dataframe__` method.
+    allow_copy
+        Allow memory to be copied to perform the conversion. If set to False, causes
+        conversions that are not zero-copy to fail.
+
+    Notes
+    -----
+    Details on the Python dataframe interchange protocol:
+    https://data-apis.org/dataframe-protocol/latest/index.html
+
+    Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
+    efficient method of conversion.
+
+    Polars currently relies on pyarrow's implementation of the dataframe interchange
+    protocol for `from_dataframe`. Therefore, pyarrow>=11.0.0 is required for this
+    function to work.
+
+    Because Polars can not currently guarantee zero-copy conversion from Arrow for
+    categorical columns, `allow_copy=False` will not work if the dataframe contains
+    categorical data.
+
+    Examples
+    --------
+    Convert a pandas dataframe to Polars through the interchange protocol.
+
+    >>> import pandas as pd
+    >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
+    >>> dfi = df_pd.__dataframe__()
+    >>> pl.from_dataframe(dfi)
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ f64 ┆ str │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3.0 ┆ x   │
+    │ 2   ┆ 4.0 ┆ y   │
+    └─────┴─────┴─────┘
+
+    """
+    from polars.interchange.from_dataframe import from_dataframe
+
+    return from_dataframe(df, allow_copy=allow_copy)
