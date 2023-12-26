@@ -11,7 +11,9 @@ pub enum ArrayFunction {
     Sum,
     ToList,
     Unique(bool),
+    #[cfg(feature = "array_any_all")]
     Any,
+    #[cfg(feature = "array_any_all")]
     All,
 }
 
@@ -23,6 +25,7 @@ impl ArrayFunction {
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
             Unique(_) => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
+            #[cfg(feature = "array_any_all")]
             Any | All => mapper.with_dtype(DataType::Boolean),
         }
     }
@@ -45,7 +48,9 @@ impl Display for ArrayFunction {
             Sum => "sum",
             ToList => "to_list",
             Unique(_) => "unique",
+            #[cfg(feature = "array_any_all")]
             Any => "any",
+            #[cfg(feature = "array_any_all")]
             All => "all",
         };
         write!(f, "arr.{name}")
@@ -61,7 +66,9 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Sum => map!(sum),
             ToList => map!(to_list),
             Unique(stable) => map!(unique, stable),
+            #[cfg(feature = "array_any_all")]
             Any => map!(any),
+            #[cfg(feature = "array_any_all")]
             All => map!(all),
         }
     }
@@ -94,10 +101,12 @@ pub(super) fn to_list(s: &Series) -> PolarsResult<Series> {
     s.cast(&list_dtype)
 }
 
+#[cfg(feature = "array_any_all")]
 pub(super) fn any(s: &Series) -> PolarsResult<Series> {
     s.array()?.array_any()
 }
 
+#[cfg(feature = "array_any_all")]
 pub(super) fn all(s: &Series) -> PolarsResult<Series> {
     s.array()?.array_all()
 }
