@@ -11,6 +11,9 @@ The following methods are available under the `expr.arr` attribute.
 
     Expr.arr.max
     Expr.arr.min
+    Expr.arr.median
     Expr.arr.sum
+    Expr.arr.std
     Expr.arr.to_list
     Expr.arr.unique
+    Expr.arr.var

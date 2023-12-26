@@ -16,6 +16,18 @@ impl PyExpr {
         self.inner.clone().arr().sum().into()
     }
 
+    fn arr_std(&self, ddof: u8) -> Self {
+        self.inner.clone().arr().std(ddof).into()
+    }
+
+    fn arr_var(&self, ddof: u8) -> Self {
+        self.inner.clone().arr().var(ddof).into()
+    }
+
+    fn arr_median(&self) -> Self {
+        self.inner.clone().arr().median().into()
+    }
+
     fn arr_unique(&self, maintain_order: bool) -> Self {
         if maintain_order {
             self.inner.clone().arr().unique_stable().into()

@@ -11,6 +11,9 @@ pub enum ArrayFunction {
     Sum,
     ToList,
     Unique(bool),
+    Std(u8),
+    Var(u8),
+    Median,
 }
 
 impl ArrayFunction {
@@ -21,6 +24,9 @@ impl ArrayFunction {
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
             Unique(_) => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
+            Std(_) => mapper.map_to_float_dtype(),
+            Var(_) => mapper.map_to_float_dtype(),
+            Median => mapper.map_to_float_dtype(),
         }
     }
 }
@@ -42,6 +48,9 @@ impl Display for ArrayFunction {
             Sum => "sum",
             ToList => "to_list",
             Unique(_) => "unique",
+            Std(_) => "std",
+            Var(_) => "var",
+            Median => "median",
         };
         write!(f, "arr.{name}")
     }
@@ -56,6 +65,9 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Sum => map!(sum),
             ToList => map!(to_list),
             Unique(stable) => map!(unique, stable),
+            Std(ddof) => map!(std, ddof),
+            Var(ddof) => map!(var, ddof),
+            Median => map!(median),
         }
     }
 }
@@ -70,6 +82,17 @@ pub(super) fn min(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
     s.array()?.array_sum()
+}
+
+pub(super) fn std(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    s.array()?.array_std(ddof)
+}
+
+pub(super) fn var(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    s.array()?.array_var(ddof)
+}
+pub(super) fn median(s: &Series) -> PolarsResult<Series> {
+    s.array()?.array_median()
 }
 
 pub(super) fn unique(s: &Series, stable: bool) -> PolarsResult<Series> {

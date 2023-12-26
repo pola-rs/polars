@@ -1,3 +1,4 @@
+mod dispersion;
 mod min_max;
 mod namespace;
 mod sum_mean;

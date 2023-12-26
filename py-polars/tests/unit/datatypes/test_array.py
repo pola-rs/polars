@@ -4,7 +4,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_cast_list_array() -> None:
@@ -177,3 +177,71 @@ def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     s = pl.Series(data, dtype=pl.List(inner_type))
     s = s.cast(pl.Array(inner_type, 2))
     assert s.to_list() == data
+
+
+@pytest.fixture()
+def data_dispersion() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "int": [[1, 2, 3, 4, 5]],
+            "float": [[1.0, 2.0, 3.0, 4.0, 5.0]],
+        },
+        schema={
+            "int": pl.Array(pl.Int64, 5),
+            "float": pl.Array(pl.Float64, 5),
+        },
+    )
+
+
+def test_arr_var(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.var().name.suffix("_var"),
+        pl.col("float").arr.var().name.suffix("_var"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_var", [2.5], dtype=pl.Float64),
+            pl.Series("float_var", [2.5], dtype=pl.Float64),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_std(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.std().name.suffix("_std"),
+        pl.col("float").arr.std().name.suffix("_std"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_median(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.median().name.suffix("_median"),
+        pl.col("float").arr.median().name.suffix("_median"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_median", [3.0], dtype=pl.Float64),
+            pl.Series("float_median", [3.0], dtype=pl.Float64),
+        ]
+    )
+
+    assert_frame_equal(result, expected)

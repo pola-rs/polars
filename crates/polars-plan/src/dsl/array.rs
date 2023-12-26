@@ -26,6 +26,24 @@ impl ArrayNameSpace {
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Sum))
     }
 
+    /// Compute the std of the items in every subarray.
+    pub fn std(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Std(ddof)))
+    }
+
+    /// Compute the var of the items in every subarray.
+    pub fn var(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Var(ddof)))
+    }
+
+    /// Compute the median of the items in every subarray.
+    pub fn median(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Median))
+    }
+
     /// Keep only the unique values in every sub-array.
     pub fn unique(self) -> Expr {
         self.0
