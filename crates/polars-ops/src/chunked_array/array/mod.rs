@@ -1,3 +1,4 @@
+mod any_all;
 mod min_max;
 mod namespace;
 mod sum_mean;
