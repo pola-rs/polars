@@ -350,9 +350,9 @@ def test_parse_apply_miscellaneous() -> None:
     ("data", "func", "expr_repr"),
     [
         (
-            [1, 2, 3],
-            lambda x: str(x),
-            "s.cast(pl.Utf8)",
+            [1., 2., 3.],
+            lambda x: int(x),
+            "s.cast(pl.Int64)",
         ),
         (
             [-20, -12, -5, 0, 5, 12, 20],
