@@ -10,6 +10,12 @@ pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name());
             out.into_series()
         },
+        DataType::Duration(tu) => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as i64)))
+                .with_name(ca.name());
+            out.into_duration(tu).into_series()
+        },
         _ => {
             let out: Float64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median()))
@@ -27,6 +33,12 @@ pub(super) fn std_with_nulls(ca: &ListChunked, ddof: u8) -> Series {
                 .with_name(ca.name());
             out.into_series()
         },
+        DataType::Duration(tu) => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().std(ddof).map(|v| v as i64)))
+                .with_name(ca.name());
+            out.into_duration(tu).into_series()
+        },
         _ => {
             let out: Float64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().std(ddof)))
@@ -43,6 +55,36 @@ pub(super) fn var_with_nulls(ca: &ListChunked, ddof: u8) -> Series {
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().var(ddof).map(|v| v as f32)))
                 .with_name(ca.name());
             out.into_series()
+        },
+        DataType::Duration(TimeUnit::Milliseconds) => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().var(ddof).map(|v| v as i64)))
+                .with_name(ca.name());
+            out.into_duration(TimeUnit::Milliseconds).into_series()
+        },
+        DataType::Duration(TimeUnit::Microseconds) => {
+            let out: Int64Chunked = ca
+                .cast(&DataType::List(Box::new(DataType::Duration(
+                    TimeUnit::Milliseconds,
+                ))))
+                .unwrap()
+                .list()
+                .unwrap()
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().var(ddof).map(|v| v as i64)))
+                .with_name(ca.name());
+            out.into_duration(TimeUnit::Milliseconds).into_series()
+        },
+        DataType::Duration(TimeUnit::Nanoseconds) => {
+            let out: Int64Chunked = ca
+                .cast(&DataType::List(Box::new(DataType::Duration(
+                    TimeUnit::Milliseconds,
+                ))))
+                .unwrap()
+                .list()
+                .unwrap()
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().var(ddof).map(|v| v as i64)))
+                .with_name(ca.name());
+            out.into_duration(TimeUnit::Milliseconds).into_series()
         },
         _ => {
             let out: Float64Chunked = ca
