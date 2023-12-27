@@ -933,7 +933,7 @@ class Expr:
             else:
                 raise TypeError(
                     "invalid input for `exclude`"
-                    f"\n\nExpected one or more `str`, `DataType`, or selector; found {type(item).__name__!r} instead."
+                    f"\n\nExpected one or more `str` or `DataType`; found {item!r} instead."
                 )
 
         if exclude_cols and exclude_dtypes:
