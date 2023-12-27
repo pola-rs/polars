@@ -8,9 +8,9 @@ mod view;
 use std::any::Any;
 use std::marker::PhantomData;
 
+pub use mutable::*;
 use polars_error::*;
 use view::View;
-pub use mutable::*;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
@@ -28,6 +28,9 @@ use private::Sealed;
 use crate::array::binview::iterator::BinaryViewValueIter;
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
+
+pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
+pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 
 pub trait ViewType: Sealed + 'static + PartialEq {
     const IS_UTF8: bool;
@@ -67,9 +70,6 @@ impl ViewType for [u8] {
         self
     }
 }
-
-pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
-pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 
 pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     data_type: ArrowDataType,
@@ -197,7 +197,6 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
-            let prefix = (v >> 64) as u32;
             let buffer_idx = (v >> 64) as u32;
             let offset = (v >> 96) as u32;
             let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(buffer_idx as usize);

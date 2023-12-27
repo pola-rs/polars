@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use super::utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits};
 use super::Growable;
-use crate::array::{Array, BinaryArray};
 use crate::array::binview::{BinaryViewArrayGeneric, MutableBinaryViewArray, ViewType};
+use crate::array::{Array, BinaryArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
