@@ -789,7 +789,7 @@ def test_sort_categorical_retain_none(
         df_sorted = df.with_columns(pl.col("e").sort())
         assert (
             df_sorted.get_column("e").null_count()
-            == df_sorted.get_column("e").null_count()
+            == df.get_column("e").null_count()
             == 2
         )
         if ordering == "lexical":
