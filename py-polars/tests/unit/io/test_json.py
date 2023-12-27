@@ -410,13 +410,12 @@ def test_ndjson_null_inference_13183() -> None:
     }
 
 
-@pytest.mark.parametrize("pretty",[True,False])
+@pytest.mark.parametrize("pretty", [True, False])
 def test_json_enum(pretty: bool) -> None:
-    dtype = pl.Enum(["foo","bar","ham"])
-    df = pl.DataFrame([pl.Series("e",[ "foo","bar","ham"],dtype=dtype)])
+    dtype = pl.Enum(["foo", "bar", "ham"])
+    df = pl.DataFrame([pl.Series("e", ["foo", "bar", "ham"], dtype=dtype)])
     buf = io.StringIO()
-    df.write_json(buf,pretty=pretty)
+    df.write_json(buf, pretty=pretty)
     buf.seek(0)
     df_in = pl.read_json(buf)
     assert df_in.schema["e"] == dtype
-
