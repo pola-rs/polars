@@ -84,6 +84,41 @@ impl PySeries {
     }
 
     #[staticmethod]
+    unsafe fn _from_buffer(
+        py: Python,
+        pointer: usize,
+        offset: usize,
+        length: usize,
+        dtype: Wrap<DataType>,
+        base: &PyAny,
+    ) -> PyResult<Self> {
+        let dtype = dtype.0;
+        let base = base.to_object(py);
+
+        let s = match dtype {
+            DataType::Int8 => unsafe { from_buffer_impl::<i8>(pointer, length, base) },
+            DataType::Int16 => unsafe { from_buffer_impl::<i16>(pointer, length, base) },
+            DataType::Int32 => unsafe { from_buffer_impl::<i32>(pointer, length, base) },
+            DataType::Int64 => unsafe { from_buffer_impl::<i64>(pointer, length, base) },
+            DataType::UInt8 => unsafe { from_buffer_impl::<u8>(pointer, length, base) },
+            DataType::UInt16 => unsafe { from_buffer_impl::<u16>(pointer, length, base) },
+            DataType::UInt32 => unsafe { from_buffer_impl::<u32>(pointer, length, base) },
+            DataType::UInt64 => unsafe { from_buffer_impl::<u64>(pointer, length, base) },
+            DataType::Float32 => unsafe { from_buffer_impl::<f32>(pointer, length, base) },
+            DataType::Float64 => unsafe { from_buffer_impl::<f64>(pointer, length, base) },
+            DataType::Boolean => {
+                unsafe { from_buffer_boolean_impl(pointer, offset, length, base) }?
+            },
+            dt => {
+                return Err(PyTypeError::new_err(format!(
+                    "`from_buffer` requires a physical type as input for `dtype`, got {dt}",
+                )))
+            },
+        };
+        Ok(s.into())
+    }
+
+    #[staticmethod]
     unsafe fn _from_buffers(
         dtype: Wrap<DataType>,
         data: PySeries,
@@ -143,15 +178,14 @@ impl PySeries {
                 let data = series_to_bitmap(data)?;
                 from_buffers_bool_impl(data, validity)?
             },
-            DataType::Utf8 => {
+            DataType::String => {
                 let data = series_to_buffer::<UInt8Type>(data)?;
-                let offsets =
-                    match offsets {
-                        Some(s) => series_to_offsets(s.series)?,
-                        None => return Err(PyTypeError::new_err(
-                            "`from_buffers` cannot create a Utf8 column without an offsets buffer",
-                        )),
-                    };
+                let offsets = match offsets {
+                    Some(s) => series_to_offsets(s.series)?,
+                    None => return Err(PyTypeError::new_err(
+                        "`from_buffers` cannot create a String column without an offsets buffer",
+                    )),
+                };
                 from_buffers_string_impl(data, validity, offsets)?
             },
             DataType::Date => {
@@ -178,16 +212,16 @@ impl PySeries {
                     .cast(&DataType::Duration(tu))
                     .map_err(PyPolarsErr::from)?
             },
-            DataType::Categorical(rev_map, ordering) if let Some() => {
-                let data = series_to_buffer::<UInt32Type>(data)?;
-                let physical = from_buffers_num_impl::<u32>(data, validity)?;
-                physical
-                    .cast(&DataType::Categorical(
-                        Some(RevMapping::Enum(categories, id)),
-                        ordering,
-                    ))
-                    .map_err(PyPolarsErr::from)?
-            },
+            // DataType::Categorical(rev_map, ordering) if let Some() => {
+            //     let data = series_to_buffer::<UInt32Type>(data)?;
+            //     let physical = from_buffers_num_impl::<u32>(data, validity)?;
+            //     physical
+            //         .cast(&DataType::Categorical(
+            //             Some(RevMapping::Enum(categories, id)),
+            //             ordering,
+            //         ))
+            //         .map_err(PyPolarsErr::from)?
+            // },
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "`from_buffers` not implemented for `dtype` {dt}",
@@ -195,41 +229,6 @@ impl PySeries {
             },
         };
 
-        Ok(s.into())
-    }
-
-    #[staticmethod]
-    unsafe fn _from_buffer(
-        py: Python,
-        pointer: usize,
-        offset: usize,
-        length: usize,
-        dtype: Wrap<DataType>,
-        base: &PyAny,
-    ) -> PyResult<Self> {
-        let dtype = dtype.0;
-        let base = base.to_object(py);
-
-        let s = match dtype {
-            DataType::Int8 => unsafe { from_buffer_impl::<i8>(pointer, length, base) },
-            DataType::Int16 => unsafe { from_buffer_impl::<i16>(pointer, length, base) },
-            DataType::Int32 => unsafe { from_buffer_impl::<i32>(pointer, length, base) },
-            DataType::Int64 => unsafe { from_buffer_impl::<i64>(pointer, length, base) },
-            DataType::UInt8 => unsafe { from_buffer_impl::<u8>(pointer, length, base) },
-            DataType::UInt16 => unsafe { from_buffer_impl::<u16>(pointer, length, base) },
-            DataType::UInt32 => unsafe { from_buffer_impl::<u32>(pointer, length, base) },
-            DataType::UInt64 => unsafe { from_buffer_impl::<u64>(pointer, length, base) },
-            DataType::Float32 => unsafe { from_buffer_impl::<f32>(pointer, length, base) },
-            DataType::Float64 => unsafe { from_buffer_impl::<f64>(pointer, length, base) },
-            DataType::Boolean => {
-                unsafe { from_buffer_boolean_impl(pointer, offset, length, base) }?
-            },
-            dt => {
-                return Err(PyTypeError::new_err(format!(
-                    "`from_buffer` requires a physical type as input for `dtype`, got {dt}",
-                )))
-            },
-        };
         Ok(s.into())
     }
 }
