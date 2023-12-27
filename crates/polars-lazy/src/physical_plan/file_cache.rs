@@ -50,10 +50,7 @@ impl FileCache {
     where
         F: FnMut() -> PolarsResult<DataFrame>,
     {
-        #[cfg(debug_assertions)]
-        {
-            assert_ne!(total_read_count, 0);
-        }
+        debug_assert_ne!(total_read_count, 0);
         if total_read_count == 1 {
             reader()
         } else {
