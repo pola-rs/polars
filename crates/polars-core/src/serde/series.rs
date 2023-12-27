@@ -260,11 +260,15 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(s)
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, ordering) => {
+                    DataType::Categorical(opt_rev_map, ordering) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
-                        Ok(Series::new(&name, values)
-                            .cast(&DataType::Categorical(None, ordering))
-                            .unwrap())
+                        let dt = opt_rev_map
+                            .as_ref()
+                            .filter(|rev_map| rev_map.is_enum())
+                            .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), ordering))
+                            .unwrap_or_else(|| DataType::Categorical(None, ordering));
+
+                        Ok(Series::new(&name, values).cast(&dt).unwrap())
                     },
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")
