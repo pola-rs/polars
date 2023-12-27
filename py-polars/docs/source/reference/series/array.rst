@@ -14,3 +14,5 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.sum
     Series.arr.to_list
     Series.arr.unique
+    Series.arr.all
+    Series.arr.any
