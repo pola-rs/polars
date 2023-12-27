@@ -262,11 +262,7 @@ impl<'de> Deserialize<'de> for Series {
                     #[cfg(feature = "dtype-categorical")]
                     DataType::Categorical(opt_rev_map, ordering) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
-                        let dt = opt_rev_map
-                            .as_ref()
-                            .filter(|rev_map| rev_map.is_enum())
-                            .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), ordering))
-                            .unwrap_or_else(|| DataType::Categorical(None, ordering));
+                        let dt = enum_or_default_categorical(&opt_rev_map, ordering);
 
                         Ok(Series::new(&name, values).cast(&dt).unwrap())
                     },
