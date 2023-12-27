@@ -6,9 +6,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # we set this once on import
 
     # This must be done before import the Rust polars.
-    from polars._cpu_check import check_cpu_flags
+    import polars._cpu_check
 
-    check_cpu_flags()
+    polars._cpu_check.check_cpu_flags()
 
     # we also set other function pointers needed
     # on the rust side. This function is highly
