@@ -35,6 +35,9 @@ impl Executor for HConcatExec {
             if state.verbose() {
                 println!("HCONCAT: hconcat is run in parallel")
             }
+            // We don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
+            // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
+            // within bounds
             let out = POOL.install(|| {
                 inputs
                     .chunks_mut(POOL.current_num_threads() * 3)
