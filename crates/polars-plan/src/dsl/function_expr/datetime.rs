@@ -65,7 +65,7 @@ impl TemporalFunction {
                 mapper.with_dtype(DataType::Int8)
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
-            ToString(_) => mapper.with_dtype(DataType::Utf8),
+            ToString(_) => mapper.with_dtype(DataType::String),
             WithTimeUnit(_) => mapper.with_same_dtype(),
             CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
@@ -195,7 +195,7 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, Some(_)) => polars_ops::prelude::replace_time_zone(
             s.datetime().unwrap(),
             None,
-            &Utf8Chunked::from_iter(std::iter::once("raise")),
+            &StringChunked::from_iter(std::iter::once("raise")),
         )?
         .cast(&DataType::Time),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
@@ -212,7 +212,7 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
                 polars_ops::chunked_array::replace_time_zone(
                     s.datetime().unwrap(),
                     None,
-                    &Utf8Chunked::from_iter(std::iter::once("raise")),
+                    &StringChunked::from_iter(std::iter::once("raise")),
                 )?
                 .cast(&DataType::Date)?
             };
@@ -235,7 +235,7 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
                 polars_ops::chunked_array::replace_time_zone(
                     s.datetime().unwrap(),
                     None,
-                    &Utf8Chunked::from_iter(std::iter::once("raise")),
+                    &StringChunked::from_iter(std::iter::once("raise")),
                 )?
                 .cast(&DataType::Datetime(*tu, None))?
             };
@@ -321,7 +321,7 @@ pub(super) fn cast_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
 
 pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
     let time_series = &s[0];
-    let every = s[1].utf8()?;
+    let every = s[1].str()?;
 
     let mut out = match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {

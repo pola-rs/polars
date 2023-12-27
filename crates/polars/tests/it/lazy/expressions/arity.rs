@@ -37,7 +37,7 @@ fn ternary_expand_sizes() -> PolarsResult<()> {
         .collect()?;
     let vals = out
         .column("c")?
-        .utf8()?
+        .str()?
         .into_no_null_iter()
         .collect::<Vec<_>>();
     assert_eq!(vals, &["a1", "b2", "otherwise"]);
@@ -55,7 +55,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
         .with_column(
             when(col("a").map(
                 move |s| {
-                    s.utf8()?
+                    s.str()?
                         .to_lowercase()
                         .contains("not_exist", true)
                         .map(|ca| Some(ca.into_series()))
@@ -85,7 +85,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
         .with_column(
             when(col("b").map(
                 move |s| {
-                    s.utf8()?
+                    s.str()?
                         .to_lowercase()
                         .contains_literal("non-existent")
                         .map(|ca| Some(ca.into_series()))
@@ -354,10 +354,10 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
         .collect()?;
     let out = out.column("name")?;
 
-    assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::Utf8)));
+    assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::String)));
     assert_eq!(
         out.explode()?
-            .utf8()?
+            .str()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
         &["a", "b", "c", "d"]

@@ -25,7 +25,7 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         Boolean => s.bool().and_then(approx_n_unique_ca),
         Binary => s.binary().and_then(approx_n_unique_ca),
-        Utf8 => {
+        String => {
             let s = s.cast(&Binary).unwrap();
             let ca = s.binary().unwrap();
             approx_n_unique_ca(ca)

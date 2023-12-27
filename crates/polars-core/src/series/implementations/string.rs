@@ -14,7 +14,7 @@ use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
-impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
+impl private::PrivateSeries for SeriesWrap<StringChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
@@ -100,7 +100,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<Utf8Chunked> {
+impl SeriesTrait for SeriesWrap<StringChunked> {
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }
@@ -265,7 +265,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     }
 
     #[cfg(feature = "concat_str")]
-    fn str_concat(&self, delimiter: &str) -> Utf8Chunked {
+    fn str_concat(&self, delimiter: &str) -> StringChunked {
         self.0.str_concat(delimiter)
     }
 }

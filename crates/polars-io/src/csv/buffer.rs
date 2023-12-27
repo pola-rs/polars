@@ -4,9 +4,9 @@ use arrow::legacy::prelude::FromDataUtf8;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::chunkedarray::utf8::Pattern;
+use polars_time::chunkedarray::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{
+use polars_time::prelude::string::infer::{
     infer_pattern_single, DatetimeInfer, StrpTimeParser, TryFromWithUnit,
 };
 
@@ -532,7 +532,7 @@ pub(crate) fn init_buffers<'a>(
             let (name, dtype) = schema.get_at_index(i).unwrap();
             let mut str_capacity = 0;
             // determine the needed capacity for this column
-            if dtype == &DataType::Utf8 {
+            if dtype == &DataType::String {
                 str_capacity = str_capacities[str_index].size_hint();
                 str_index += 1;
             }
@@ -545,7 +545,7 @@ pub(crate) fn init_buffers<'a>(
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
+                &DataType::String => Buffer::Utf8(Utf8Field::new(
                     name,
                     capacity,
                     str_capacity,
@@ -666,7 +666,7 @@ impl<'a> Buffer<'a> {
                         Some(v.validity.into()),
                     )
                 };
-                Utf8Chunked::with_chunk(v.name.as_str(), arr).into_series()
+                StringChunked::with_chunk(v.name.as_str(), arr).into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {
@@ -723,7 +723,7 @@ impl<'a> Buffer<'a> {
             Buffer::UInt64(_) => DataType::UInt64,
             Buffer::Float32(_) => DataType::Float32,
             Buffer::Float64(_) => DataType::Float64,
-            Buffer::Utf8(_) => DataType::Utf8,
+            Buffer::Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
             #[cfg(feature = "dtype-date")]

@@ -87,7 +87,7 @@ pub trait ChunkAnyValue {
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
 }
 
-/// Explode/ flatten a List or Utf8 Series
+/// Explode/flatten a List or String Series
 pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)
@@ -511,8 +511,8 @@ impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
-    fn new_from_index(&self, index: usize, length: usize) -> Utf8Chunked {
+impl ChunkExpandAtIndex<StringType> for StringChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> StringChunked {
         let mut out = impl_chunk_expand!(self, length, index);
         out.set_sorted_flag(IsSorted::Ascending);
         out

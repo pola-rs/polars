@@ -1,6 +1,8 @@
 use super::min_max::AggType;
 use super::*;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
+#[cfg(feature = "array_any_all")]
+use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::sum_mean::sum_array_numerical;
 
 pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
@@ -65,6 +67,18 @@ pub trait ArrayNameSpace: AsArray {
     fn array_unique_stable(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_array();
         ca.try_apply_amortized(|s| s.as_ref().unique_stable())
+    }
+
+    #[cfg(feature = "array_any_all")]
+    fn array_any(&self) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        array_any(ca)
+    }
+
+    #[cfg(feature = "array_any_all")]
+    fn array_all(&self) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        array_all(ca)
     }
 }
 

@@ -48,7 +48,8 @@ where
         }
         if arr.len() % N > 0 {
             let mut rest: [T; N] = identity.to_array();
-            rest.copy_from_slice(arr_chunks.remainder());
+            let arr_rest = arr_chunks.remainder();
+            rest[..arr_rest.len()].copy_from_slice(arr_rest);
             let m: Mask<_, N> = mask.get_simd(offset);
             state = simd_f(state, m.select(Simd::from_array(rest), identity));
         }
@@ -58,7 +59,8 @@ where
         }
         if arr.len() % N > 0 {
             let mut rest: [T; N] = identity.to_array();
-            rest.copy_from_slice(arr_chunks.remainder());
+            let arr_rest = arr_chunks.remainder();
+            rest[..arr_rest.len()].copy_from_slice(arr_rest);
             state = simd_f(state, Simd::from_array(rest));
         }
     }

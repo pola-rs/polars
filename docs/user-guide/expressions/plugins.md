@@ -63,7 +63,7 @@ fn pig_latin_str(value: &str, output: &mut String) {
 #[polars_expr(output_type=Utf8)]
 fn pig_latinnify(inputs: &[Series]) -> PolarsResult<Series> {
     let ca = inputs[0].utf8()?;
-    let out: Utf8Chunked = ca.apply_to_buffer(pig_latin_str);
+    let out: StringChunked = ca.apply_to_buffer(pig_latin_str);
     Ok(out.into_series())
 }
 ```

@@ -30,7 +30,7 @@ use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
 use crate::map::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
-    apply_lambda_with_utf8_out_type,
+    apply_lambda_with_string_out_type,
 };
 use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
 use crate::series::{PySeries, ToPySeries, ToSeries};
@@ -1340,7 +1340,7 @@ impl PyDataFrame {
                 Some(DataType::Date) => apply::<Int32Type>(df, py, lambda, 0, None).into_date().into_series(),
                 Some(DataType::Datetime(tu, tz)) => apply::<Int64Type>(df, py, lambda, 0, None).into_datetime(tu, tz).into_series(),
                 Some(DataType::Boolean) => apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series(),
-                Some(DataType::Utf8) => apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series(),
+                Some(DataType::String) => apply_lambda_with_string_out_type(df, py, lambda, 0, None).into_series(),
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 

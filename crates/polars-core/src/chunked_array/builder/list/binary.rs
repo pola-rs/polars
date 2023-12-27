@@ -1,18 +1,18 @@
 use super::*;
 
-pub struct ListUtf8ChunkedBuilder {
+pub struct ListStringChunkedBuilder {
     builder: LargeListUtf8Builder,
     field: Field,
     fast_explode: bool,
 }
 
-impl ListUtf8ChunkedBuilder {
+impl ListStringChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableUtf8Array::<i64>::with_capacity(values_capacity);
         let builder = LargeListUtf8Builder::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(Box::new(DataType::Utf8)));
+        let field = Field::new(name, DataType::List(Box::new(DataType::String)));
 
-        ListUtf8ChunkedBuilder {
+        ListStringChunkedBuilder {
             builder,
             field,
             fast_explode: true,
@@ -47,7 +47,7 @@ impl ListUtf8ChunkedBuilder {
     }
 
     #[inline]
-    pub(crate) fn append(&mut self, ca: &Utf8Chunked) {
+    pub(crate) fn append(&mut self, ca: &StringChunked) {
         if ca.is_empty() {
             self.fast_explode = false;
         }
@@ -57,7 +57,7 @@ impl ListUtf8ChunkedBuilder {
     }
 }
 
-impl ListBuilderTrait for ListUtf8ChunkedBuilder {
+impl ListBuilderTrait for ListStringChunkedBuilder {
     #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
@@ -69,7 +69,7 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         if s.is_empty() {
             self.fast_explode = false;
         }
-        let ca = s.utf8()?;
+        let ca = s.str()?;
         self.append(ca);
         Ok(())
     }

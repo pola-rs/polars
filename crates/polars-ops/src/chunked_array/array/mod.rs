@@ -1,4 +1,6 @@
 mod dispersion;
+#[cfg(feature = "array_any_all")]
+mod any_all;
 mod min_max;
 mod namespace;
 mod sum_mean;

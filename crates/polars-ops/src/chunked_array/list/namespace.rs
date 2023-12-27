@@ -76,27 +76,27 @@ fn cast_rhs(
 }
 
 pub trait ListNameSpaceImpl: AsList {
-    /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
+    /// In case the inner dtype [`DataType::String`], the individual items will be joined into a
     /// single string separated by `separator`.
-    fn lst_join(&self, separator: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
+    fn lst_join(&self, separator: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         match ca.inner_dtype() {
-            DataType::Utf8 => match separator.len() {
+            DataType::String => match separator.len() {
                 1 => match separator.get(0) {
                     Some(separator) => self.join_literal(separator),
-                    _ => Ok(Utf8Chunked::full_null(ca.name(), ca.len())),
+                    _ => Ok(StringChunked::full_null(ca.name(), ca.len())),
                 },
                 _ => self.join_many(separator),
             },
-            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "Utf8"),
+            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "String"),
         }
     }
 
-    fn join_literal(&self, separator: &str) -> PolarsResult<Utf8Chunked> {
+    fn join_literal(&self, separator: &str) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
-        let mut builder = Utf8ChunkedBuilder::new(
+        let mut builder = StringChunkedBuilder::new(
             ca.name(),
             ca.len(),
             ca.get_values_size() + separator.len() * ca.len(),
@@ -106,7 +106,7 @@ pub trait ListNameSpaceImpl: AsList {
             let opt_val = opt_s.map(|s| {
                 // make sure that we don't write values of previous iteration
                 buf.clear();
-                let ca = s.as_ref().utf8().unwrap();
+                let ca = s.as_ref().str().unwrap();
                 let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
 
                 for val in iter {
@@ -122,12 +122,12 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(builder.finish())
     }
 
-    fn join_many(&self, separator: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
+    fn join_many(&self, separator: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder =
-            Utf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size() + ca.len());
+            StringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size() + ca.len());
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca.amortized_iter()
@@ -137,7 +137,7 @@ pub trait ListNameSpaceImpl: AsList {
                         let opt_val = opt_s.map(|s| {
                             // make sure that we don't write values of previous iteration
                             buf.clear();
-                            let ca = s.as_ref().utf8().unwrap();
+                            let ca = s.as_ref().str().unwrap();
                             let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
 
                             for val in iter {

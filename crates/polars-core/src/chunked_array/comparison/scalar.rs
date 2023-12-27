@@ -164,7 +164,7 @@ impl ChunkCompare<&[u8]> for BinaryChunked {
     }
 }
 
-impl ChunkCompare<&str> for Utf8Chunked {
+impl ChunkCompare<&str> for StringChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &str) -> BooleanChunked {

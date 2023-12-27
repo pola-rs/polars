@@ -183,7 +183,7 @@ impl ListNameSpace {
 
     /// Join all string items in a sublist and place a separator between them.
     /// # Error
-    /// This errors if inner type of list `!= DataType::Utf8`.
+    /// This errors if inner type of list `!= DataType::String`.
     pub fn join(self, separator: Expr) -> Expr {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Join),

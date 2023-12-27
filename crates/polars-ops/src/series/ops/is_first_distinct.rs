@@ -122,7 +122,7 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let ca = s.binary().unwrap();
             is_first_distinct_bin(ca)
         },
-        Utf8 => {
+        String => {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },

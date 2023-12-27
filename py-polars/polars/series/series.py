@@ -1326,6 +1326,18 @@ class Series:
             1.414214
         ]
 
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.sqrt()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.0
+            1.414214
+            1.732051
+        ]
+
         """
 
     def cbrt(self) -> Series:
@@ -1340,6 +1352,18 @@ class Series:
         [
             1.0
             1.259921
+        ]
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.cbrt()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.0
+            1.259921
+            1.44225
         ]
 
         """
@@ -1437,16 +1461,72 @@ class Series:
         return self._s.all(ignore_nulls=ignore_nulls)
 
     def log(self, base: float = math.e) -> Series:
-        """Compute the logarithm to a given base."""
+        """
+        Compute the logarithm to a given base.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.log()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            0.0
+            0.693147
+            1.098612
+        ]
+        """
 
     def log1p(self) -> Series:
-        """Compute the natural logarithm of the input array plus one, element-wise."""
+        """
+        Compute the natural logarithm of the input array plus one, element-wise.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.log1p()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            0.693147
+            1.098612
+            1.386294
+        ]
+        """
 
     def log10(self) -> Series:
-        """Compute the base 10 logarithm of the input array, element-wise."""
+        """
+        Compute the base 10 logarithm of the input array, element-wise.
+
+        Examples
+        --------
+        >>> s = pl.Series([10, 100, 1000])
+        >>> s.log10()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.0
+            2.0
+            3.0
+        ]
+        """
 
     def exp(self) -> Series:
-        """Compute the exponential, element-wise."""
+        """
+        Compute the exponential, element-wise.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.exp()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            2.718282
+            7.389056
+            20.085537
+        ]
+        """
 
     def drop_nulls(self) -> Series:
         """
@@ -3332,7 +3412,15 @@ class Series:
         """
 
     def null_count(self) -> int:
-        """Count the null values in this Series."""
+        """
+        Count the null values in this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, None, None])
+        >>> s.null_count()
+        2
+        """
         return self._s.null_count()
 
     def has_validity(self) -> bool:
@@ -3374,6 +3462,16 @@ class Series:
         ----------
         descending
             Check if the Series is sorted in descending order
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 3, 2])
+        >>> s.is_sorted()
+        False
+
+        >>> s = pl.Series([3, 2, 1])
+        >>> s.is_sorted(descending=True)
+        True
 
         """
         return self._s.is_sorted(descending)
@@ -5908,6 +6006,18 @@ class Series:
         Compute absolute values.
 
         Same as `abs(series)`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, -2, -3])
+        >>> s.abs()
+        shape: (3,)
+        Series: '' [i64]
+        [
+            1
+            2
+            3
+        ]
         """
 
     def rank(
@@ -6111,6 +6221,12 @@ class Series:
 
         .. math::
             G_1 = \frac{k_3}{k_2^{3/2}} = \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 2, 4, 5])
+        >>> s.skew()
+        0.34776706224699483
 
         """
         return self._s.skew(bias)

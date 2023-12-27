@@ -76,11 +76,11 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
         return datatypes[0].borrow().clone();
     }
     if datatypes.len() > 2 {
-        return Utf8;
+        return String;
     }
 
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
-    try_get_supertype(lhs, rhs).unwrap_or(Utf8)
+    try_get_supertype(lhs, rhs).unwrap_or(String)
 }
 
 fn is_nested_null(av: &AnyValue) -> bool {

@@ -289,12 +289,12 @@ fn ordering_other_columns<'a>(
     Ordering::Equal
 }
 
-impl ChunkSort<Utf8Type> for Utf8Chunked {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
-        unsafe { self.as_binary().sort_with(options).to_utf8() }
+impl ChunkSort<StringType> for StringChunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<StringType> {
+        unsafe { self.as_binary().sort_with(options).to_string() }
     }
 
-    fn sort(&self, descending: bool) -> Utf8Chunked {
+    fn sort(&self, descending: bool) -> StringChunked {
         self.sort_with(SortOptions {
             descending,
             nulls_last: false,
@@ -540,7 +540,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
         #[cfg(feature = "dtype-categorical")]
         Categorical(_, _) => s.rechunk(),
         Binary | Boolean => s.clone(),
-        Utf8 => s.cast(&Binary).unwrap(),
+        String => s.cast(&Binary).unwrap(),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap();
@@ -687,7 +687,7 @@ mod test {
     fn test_arg_sort_multiple() -> PolarsResult<()> {
         let a = Int32Chunked::new("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
         let b = Int64Chunked::new("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
-        let c = Utf8Chunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
+        let c = StringChunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
         let df = DataFrame::new(vec![a.into_series(), b.into_series(), c.into_series()])?;
 
         let out = df.sort(["a", "b", "c"], false, false)?;
@@ -706,7 +706,7 @@ mod test {
         );
 
         // now let the first sort be a string
-        let a = Utf8Chunked::new("a", &["a", "b", "c", "a", "b", "c"]).into_series();
+        let a = StringChunked::new("a", &["a", "b", "c", "a", "b", "c"]).into_series();
         let b = Int32Chunked::new("b", &[5, 4, 2, 3, 4, 5]).into_series();
         let df = DataFrame::new(vec![a, b])?;
 
@@ -740,8 +740,8 @@ mod test {
     }
 
     #[test]
-    fn test_sort_utf8() {
-        let ca = Utf8Chunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
+    fn test_sort_string() {
+        let ca = StringChunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
@@ -780,7 +780,7 @@ mod test {
         assert_eq!(Vec::from(&out), expected);
 
         // no nulls
-        let ca = Utf8Chunked::new("a", &[Some("a"), Some("c"), Some("b")]);
+        let ca = StringChunked::new("a", &[Some("a"), Some("c"), Some("b")]);
         let out = ca.sort(false);
         let expected = &[Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);

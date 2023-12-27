@@ -16,20 +16,19 @@ where
     let validity = arr.validity().cloned();
 
     // Fast path where all values set (all is free).
-    let all_set = arrow::compute::boolean::all(values);
-    if all_set && is_all {
-        let mut bits = MutableBitmap::with_capacity(arr.len());
-        bits.extend_constant(arr.len(), true);
-        return Ok(BooleanArray::from_data_default(bits.into(), None).with_validity(validity));
+    if is_all {
+        let all_set = arrow::compute::boolean::all(values);
+        if all_set {
+            let mut bits = MutableBitmap::with_capacity(arr.len());
+            bits.extend_constant(arr.len(), true);
+            return Ok(BooleanArray::from_data_default(bits.into(), None).with_validity(validity));
+        }
     }
 
     let mut start = offsets[0] as usize;
     let iter = offsets[1..].iter().map(|&end| {
         let end = end as usize;
         let len = end - start;
-        // TODO!
-        // We can speed this upp if the boolean array doesn't have nulls
-        // Then we can work directly on the byte slice.
         let val = unsafe { values.clone().sliced_unchecked(start, len) };
         start = end;
         op(&val)

@@ -94,7 +94,7 @@ impl ListFunction {
             Any => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_any_all")]
             All => mapper.with_dtype(DataType::Boolean),
-            Join => mapper.with_dtype(DataType::Utf8),
+            Join => mapper.with_dtype(DataType::String),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
         }
@@ -577,7 +577,7 @@ pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].list()?;
-    let separator = s[1].utf8()?;
+    let separator = s[1].str()?;
     Ok(ca.lst_join(separator)?.into_series())
 }
 

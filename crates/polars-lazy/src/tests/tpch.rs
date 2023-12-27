@@ -88,13 +88,13 @@ fn test_q2() -> PolarsResult<()> {
     let out = q.collect()?;
     let schema = Schema::from_iter([
         Field::new("s_acctbal", DataType::Float64),
-        Field::new("s_name", DataType::Utf8),
-        Field::new("n_name", DataType::Utf8),
+        Field::new("s_name", DataType::String),
+        Field::new("n_name", DataType::String),
         Field::new("p_partkey", DataType::Int64),
-        Field::new("p_mfgr", DataType::Utf8),
-        Field::new("s_address", DataType::Utf8),
-        Field::new("s_phone", DataType::Utf8),
-        Field::new("s_comment", DataType::Utf8),
+        Field::new("p_mfgr", DataType::String),
+        Field::new("s_address", DataType::String),
+        Field::new("s_phone", DataType::String),
+        Field::new("s_comment", DataType::String),
     ]);
     assert_eq!(&out.schema(), &schema);
 

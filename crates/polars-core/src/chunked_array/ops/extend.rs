@@ -88,9 +88,9 @@ where
 }
 
 #[doc(hidden)]
-impl Utf8Chunked {
+impl StringChunked {
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append::<Utf8Type>(self, other);
+        update_sorted_flag_before_append::<StringType>(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();
@@ -255,9 +255,9 @@ mod test {
     }
 
     #[test]
-    fn test_extend_utf8() {
-        let mut ca = Utf8Chunked::new("a", &["a", "b", "c"]);
-        let to_append = Utf8Chunked::new("a", &["a", "b", "e"]);
+    fn test_extend_string() {
+        let mut ca = StringChunked::new("a", &["a", "b", "c"]);
+        let to_append = StringChunked::new("a", &["a", "b", "e"]);
 
         ca.extend(&to_append);
         assert_eq!(ca.len(), 6);

@@ -20,7 +20,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
         use DataType::*;
         match lhs.dtype() {
-            Utf8 => {
+            String => {
                 let lhs = lhs.cast(&Binary).unwrap();
                 let rhs = rhs.cast(&Binary).unwrap();
                 lhs.hash_join_left(&rhs, JoinValidation::ManyToMany, join_nulls)
@@ -54,7 +54,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
         use DataType::*;
         match lhs.dtype() {
-            Utf8 => {
+            String => {
                 let lhs = lhs.cast(&Binary).unwrap();
                 let rhs = rhs.cast(&Binary).unwrap();
                 lhs.hash_join_semi_anti(&rhs, anti)
@@ -98,7 +98,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
         use DataType::*;
         match lhs.dtype() {
-            Utf8 => {
+            String => {
                 let lhs = lhs.cast(&Binary).unwrap();
                 let rhs = rhs.cast(&Binary).unwrap();
                 lhs.hash_join_inner(&rhs, JoinValidation::ManyToMany, join_nulls)
@@ -140,7 +140,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
         use DataType::*;
         match lhs.dtype() {
-            Utf8 => {
+            String => {
                 let lhs = lhs.cast(&Binary).unwrap();
                 let rhs = rhs.cast(&Binary).unwrap();
                 lhs.hash_join_outer(&rhs, JoinValidation::ManyToMany, join_nulls)

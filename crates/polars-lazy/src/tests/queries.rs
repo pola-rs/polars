@@ -1363,7 +1363,7 @@ fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
 fn test_categorical_addition() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    // test if we can do that arithmetic operation with utf8 and categorical
+    // test if we can do that arithmetic operation with String and Categorical
     let out = df
         .lazy()
         .select([
@@ -1373,7 +1373,7 @@ fn test_categorical_addition() -> PolarsResult<()> {
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;
 
-    assert_eq!(out.column("foo")?.utf8()?.get(0).unwrap(), "banana beetle");
+    assert_eq!(out.column("foo")?.str()?.get(0).unwrap(), "banana beetle");
 
     Ok(())
 }
@@ -1587,9 +1587,9 @@ pub fn test_select_by_dtypes() -> PolarsResult<()> {
     ]?;
     let out = df
         .lazy()
-        .select([dtype_cols([DataType::Float32, DataType::Utf8])])
+        .select([dtype_cols([DataType::Float32, DataType::String])])
         .collect()?;
-    assert_eq!(out.dtypes(), &[DataType::Utf8, DataType::Float32]);
+    assert_eq!(out.dtypes(), &[DataType::String, DataType::Float32]);
 
     Ok(())
 }

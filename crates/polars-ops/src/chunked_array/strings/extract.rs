@@ -44,7 +44,7 @@ fn extract_groups_array(
 
 #[cfg(feature = "extract_groups")]
 pub(super) fn extract_groups(
-    ca: &Utf8Chunked,
+    ca: &StringChunked,
     pat: &str,
     dtype: &DataType,
 ) -> PolarsResult<Series> {
@@ -96,10 +96,10 @@ fn extract_group_array(
 }
 
 pub(super) fn extract_group(
-    ca: &Utf8Chunked,
+    ca: &StringChunked,
     pat: &str,
     group_index: usize,
-) -> PolarsResult<Utf8Chunked> {
+) -> PolarsResult<StringChunked> {
     let reg = Regex::new(pat)?;
     let chunks = ca
         .downcast_iter()

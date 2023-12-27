@@ -14,6 +14,10 @@ pub enum ArrayFunction {
     Std(u8),
     Var(u8),
     Median,
+    #[cfg(feature = "array_any_all")]
+    Any,
+    #[cfg(feature = "array_any_all")]
+    All,
 }
 
 impl ArrayFunction {
@@ -27,6 +31,8 @@ impl ArrayFunction {
             Std(_) => mapper.map_to_float_dtype(),
             Var(_) => mapper.map_to_float_dtype(),
             Median => mapper.map_to_float_dtype(),
+            #[cfg(feature = "array_any_all")]
+            Any | All => mapper.with_dtype(DataType::Boolean),
         }
     }
 }
@@ -51,6 +57,10 @@ impl Display for ArrayFunction {
             Std(_) => "std",
             Var(_) => "var",
             Median => "median",
+            #[cfg(feature = "array_any_all")]
+            Any => "any",
+            #[cfg(feature = "array_any_all")]
+            All => "all",
         };
         write!(f, "arr.{name}")
     }
@@ -68,6 +78,10 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Std(ddof) => map!(std, ddof),
             Var(ddof) => map!(var, ddof),
             Median => map!(median),
+            #[cfg(feature = "array_any_all")]
+            Any => map!(any),
+            #[cfg(feature = "array_any_all")]
+            All => map!(all),
         }
     }
 }
@@ -108,4 +122,14 @@ pub(super) fn unique(s: &Series, stable: bool) -> PolarsResult<Series> {
 pub(super) fn to_list(s: &Series) -> PolarsResult<Series> {
     let list_dtype = map_array_dtype_to_list_dtype(s.dtype())?;
     s.cast(&list_dtype)
+}
+
+#[cfg(feature = "array_any_all")]
+pub(super) fn any(s: &Series) -> PolarsResult<Series> {
+    s.array()?.array_any()
+}
+
+#[cfg(feature = "array_any_all")]
+pub(super) fn all(s: &Series) -> PolarsResult<Series> {
+    s.array()?.array_all()
 }

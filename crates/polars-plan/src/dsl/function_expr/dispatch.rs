@@ -38,7 +38,7 @@ pub(super) fn set_sorted_flag(s: &Series, sorted: IsSorted) -> PolarsResult<Seri
 pub(super) fn replace_time_zone(s: &[Series], time_zone: Option<&str>) -> PolarsResult<Series> {
     let s1 = &s[0];
     let ca = s1.datetime().unwrap();
-    let s2 = &s[1].utf8()?;
+    let s2 = &s[1].str()?;
     Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2)?.into_series())
 }
 

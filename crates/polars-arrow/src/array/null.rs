@@ -21,7 +21,7 @@ impl NullArray {
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
     pub fn try_new(data_type: ArrowDataType, length: usize) -> PolarsResult<Self> {
         if data_type.to_physical_type() != PhysicalType::Null {
-            polars_bail!(ComputeError: "NullArray can only be initialized with a DataType whose physical type is Boolean");
+            polars_bail!(ComputeError: "NullArray can only be initialized with a DataType whose physical type is Null");
         }
 
         Ok(Self { data_type, length })
