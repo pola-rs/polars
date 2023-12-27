@@ -8,26 +8,26 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
         .collect_trusted()
 }
 
-fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<Utf8Chunked> {
-    let mut builder = Utf8ChunkedBuilder::new("", avs.len(), avs.len() * 10);
+fn any_values_to_string(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
+    let mut builder = StringChunkedBuilder::new("", avs.len(), avs.len() * 10);
 
     // amortize allocations
     let mut owned = String::new();
 
     for av in avs {
         match av {
-            AnyValue::Utf8(s) => builder.append_value(s),
-            AnyValue::Utf8Owned(s) => builder.append_value(s),
+            AnyValue::String(s) => builder.append_value(s),
+            AnyValue::StringOwned(s) => builder.append_value(s),
             AnyValue::Null => builder.append_null(),
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
                 }
                 builder.append_null()
             },
             av => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
                 }
                 owned.clear();
                 write!(owned, "{av}").unwrap();
@@ -285,7 +285,7 @@ impl Series {
             DataType::UInt64 => any_values_to_primitive::<UInt64Type>(av).into_series(),
             DataType::Float32 => any_values_to_primitive::<Float32Type>(av).into_series(),
             DataType::Float64 => any_values_to_primitive::<Float64Type>(av).into_series(),
-            DataType::Utf8 => any_values_to_utf8(av, strict)?.into_series(),
+            DataType::String => any_values_to_string(av, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(av).into_series(),
             DataType::Boolean => any_values_to_bool(av).into_series(),
             #[cfg(feature = "dtype-date")]
@@ -424,8 +424,8 @@ impl Series {
             DataType::Categorical(rev_map, ordering) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
-                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
-                            any_values_to_utf8(av, strict)?
+                        AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
+                            any_values_to_string(av, strict)?
                         },
                         _ => polars_bail!(
                              ComputeError:
@@ -434,7 +434,7 @@ impl Series {
                         ),
                     }
                 } else {
-                    Utf8Chunked::full("", "", 0)
+                    StringChunked::full("", "", 0)
                 };
 
                 ca.cast(&DataType::Categorical(rev_map.clone(), *ordering))
@@ -490,7 +490,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
         match val {
             Null => DataType::Null,
             Boolean(_) => DataType::Boolean,
-            Utf8(_) | Utf8Owned(_) => DataType::Utf8,
+            String(_) | StringOwned(_) => DataType::String,
             Binary(_) | BinaryOwned(_) => DataType::Binary,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,

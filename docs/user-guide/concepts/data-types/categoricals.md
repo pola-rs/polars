@@ -269,7 +269,7 @@ Polars will raise an `OutOfBounds` error when a value is encountered which is no
 The following types of comparisons operators are allowed for categorical data:
 
 - Categorical vs Categorical
-- Categorical vs Utf8
+- Categorical vs String
 
 #### `Categorical` Type
 
@@ -282,7 +282,7 @@ For the `Categorical` type comparisons are valid if they have the same global ca
 --8<-- "python/user-guide/concepts/data-types/categoricals.py:global_equality"
 ```
 
-For `Categorical` vs `Utf8` comparisons Polars uses lexical ordering to determine the result:
+For `Categorical` vs `String` comparisons Polars uses lexical ordering to determine the result:
 
 {{code_block('user-guide/concepts/data-types/categoricals','str_compare_single',[])}}
 
@@ -306,7 +306,7 @@ For `Enum` type comparisons are valid if they have the same categories.
 --8<-- "python/user-guide/concepts/data-types/categoricals.py:equality"
 ```
 
-For `Enum` vs `Utf8` comparisons the order within the categories is used instead of lexical ordering. In order for a comparison to be valid all values in the `Utf8` column should be present in the `Enum` categories list.
+For `Enum` vs `String` comparisons the order within the categories is used instead of lexical ordering. In order for a comparison to be valid all values in the `String` column should be present in the `Enum` categories list.
 
 {{code_block('user-guide/concepts/data-types/categoricals','str_enum_compare_error',[])}}
 

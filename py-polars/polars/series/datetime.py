@@ -113,9 +113,9 @@ class DateTimeNameSpace:
 
     def to_string(self, format: str) -> Series:
         """
-        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+        Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
+        Similar to `cast(pl.String)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Parameters
@@ -145,9 +145,9 @@ class DateTimeNameSpace:
 
     def strftime(self, format: str) -> Series:
         """
-        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+        Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
+        Similar to `cast(pl.String)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Alias for :func:`to_string`.

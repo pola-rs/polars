@@ -39,7 +39,6 @@ fn remove_exclude(mut expr: Expr) -> Expr {
 
 fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
     // the blocks are added by cargo fmt
-    #[allow(clippy::blocks_in_if_conditions)]
     if has_expr(&expr, |e| {
         matches!(e, Expr::KeepName(_) | Expr::RenameAlias { .. })
     }) {
@@ -365,7 +364,7 @@ fn prepare_excluded(
     Ok(exclude)
 }
 
-// functions can have col(["a", "b"]) or col(Utf8) as inputs
+// functions can have col(["a", "b"]) or col(String) as inputs
 fn expand_function_inputs(mut expr: Expr, schema: &Schema) -> Expr {
     expr.mutate().apply(|e| match e {
         Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
@@ -458,7 +457,7 @@ pub(crate) fn rewrite_projections(
     for mut expr in exprs {
         let result_offset = result.len();
 
-        // functions can have col(["a", "b"]) or col(Utf8) as inputs
+        // functions can have col(["a", "b"]) or col(String) as inputs
         expr = expand_function_inputs(expr, schema);
 
         let mut flags = find_flags(&expr);

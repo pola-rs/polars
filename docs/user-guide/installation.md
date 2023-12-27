@@ -90,7 +90,7 @@ The opt-in features are:
 - `ndarray`- Convert from `DataFrame` to `ndarray`
 - `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 - `timezones` - Activate timezone support.
-- `strings` - Extra string utilities for `Utf8Chunked`
+- `strings` - Extra string utilities for `StringChunked`
     - `string_pad` - `pad_start`, `pad_end`, `zfill`
     - `string_to_integer` - `parse_int`
 - `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
@@ -147,7 +147,7 @@ The opt-in features are:
     - `cum_agg` - cum_sum, cum_min, cum_max aggregation.
     - `rolling_window` - rolling window functions, like rolling_mean
     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
-    - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
+    - `extract_jsonpath` - [Run jsonpath queries on StringChunked](https://goessner.net/articles/JsonPath/)
     - `list` - List utils.
       - `list_gather` take sublist by multiple indices
     - `rank` - Ranking algorithms.

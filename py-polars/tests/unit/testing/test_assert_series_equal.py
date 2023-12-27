@@ -233,8 +233,8 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
             id="equal_int",
         ),
         pytest.param(
-            pl.Series(["a", "b", "c"], dtype=pl.Utf8),
-            pl.Series(["a", "b", "c"], dtype=pl.Utf8),
+            pl.Series(["a", "b", "c"], dtype=pl.String),
+            pl.Series(["a", "b", "c"], dtype=pl.String),
             {},
             id="equal_str",
         ),
@@ -471,7 +471,7 @@ def test_assert_series_equal_raises_assertion_error(
 
 def test_assert_series_equal_categorical_vs_str() -> None:
     s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    s2 = pl.Series(["a", "b", "a"], dtype=pl.Utf8)
+    s2 = pl.Series(["a", "b", "a"], dtype=pl.String)
 
     with pytest.raises(AssertionError, match="dtype mismatch"):
         assert_series_equal(s1, s2, categorical_as_str=True)

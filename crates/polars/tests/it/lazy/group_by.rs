@@ -94,7 +94,7 @@ fn test_group_by_lit_agg() -> PolarsResult<()> {
         .agg([lit("foo").alias("foo")])
         .collect()?;
 
-    assert_eq!(out.column("foo")?.dtype(), &DataType::Utf8);
+    assert_eq!(out.column("foo")?.dtype(), &DataType::String);
 
     Ok(())
 }

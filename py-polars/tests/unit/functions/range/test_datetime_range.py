@@ -69,7 +69,7 @@ def test_datetime_range() -> None:
     assert len(result) == 61
     assert result.dtype.time_unit == "ns"  # type: ignore[attr-defined]
     assert result.dt.second()[-1] == 59
-    assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
+    assert result.cast(pl.String)[-1] == "2022-01-01 00:00:59.247379260"
 
 
 @pytest.mark.parametrize(

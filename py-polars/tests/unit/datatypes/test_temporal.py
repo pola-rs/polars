@@ -938,7 +938,7 @@ def test_asof_join() -> None:
     ).set_sorted("dates")
     assert trades.schema == {
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
+        "ticker": pl.String,
         "bid": pl.Float64,
     }
     out = trades.join_asof(quotes, on="dates", strategy="backward")
@@ -947,8 +947,8 @@ def test_asof_join() -> None:
         "bid": pl.Float64,
         "bid_right": pl.Float64,
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
-        "ticker_right": pl.Utf8,
+        "ticker": pl.String,
+        "ticker_right": pl.String,
     }
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int)).to_list() == [
@@ -1556,7 +1556,11 @@ def test_strptime_with_tz() -> None:
     ],
 )
 def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
-    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(time_unit, time_zone))
+    ts = (
+        pl.Series([None])
+        .cast(pl.String)
+        .str.strptime(pl.Datetime(time_unit, time_zone))
+    )
     assert ts.dtype == pl.Datetime(time_unit, time_zone)
 
 
@@ -2245,7 +2249,7 @@ def test_truncate_propagate_null() -> None:
     ) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
     assert df.select(
         pl.col("date").dt.truncate(
-            every=pl.lit(None, dtype=pl.Utf8),
+            every=pl.lit(None, dtype=pl.String),
         )
     ).to_dict(as_series=False) == {"date": [None, None, None]}
 

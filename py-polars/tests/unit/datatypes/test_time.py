@@ -3,7 +3,7 @@ from datetime import time
 import polars as pl
 
 
-def test_time_to_utf8_cast() -> None:
+def test_time_to_string_cast() -> None:
     assert pl.Series([time(12, 1, 1)]).cast(str).to_list() == ["12:01:01"]
 
 

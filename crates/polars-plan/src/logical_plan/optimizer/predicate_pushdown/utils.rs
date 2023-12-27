@@ -260,7 +260,7 @@ pub enum PushdownEligibility {
 #[allow(clippy::type_complexity)]
 pub fn pushdown_eligibility(
     input_schema: &Schema,
-    projection_nodes: &Vec<Node>,
+    projection_nodes: &[Node],
     acc_predicates: &PlHashMap<Arc<str>, Node>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(PushdownEligibility, PlHashMap<Arc<str>, Arc<str>>)> {

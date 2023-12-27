@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 import polars as pl
@@ -79,7 +81,7 @@ def test_filter_is_in_4572() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype", [pl.Int32, pl.Boolean, pl.Utf8, pl.Binary, pl.List(pl.Int64), pl.Object]
+    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Binary, pl.List(pl.Int64), pl.Object]
 )
 def test_filter_on_empty(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"a": []}, schema={"a": dtype})
@@ -193,7 +195,7 @@ def test_agg_function_of_filter_10565() -> None:
         as_series=False
     ) == {"a": []}
 
-    df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.Utf8})
+    df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.String})
     assert df_str.filter(pl.col("a").n_unique().over("a") == 1).to_dict(
         as_series=False
     ) == {"a": []}
@@ -201,3 +203,36 @@ def test_agg_function_of_filter_10565() -> None:
     assert df_str.lazy().filter(pl.col("a").n_unique().over("a") == 1).collect(
         predicate_pushdown=False
     ).to_dict(as_series=False) == {"a": []}
+
+
+def test_filter_logical_type_13194() -> None:
+    data = {
+        "id": [1, 1, 2],
+        "date": [
+            [datetime(year=2021, month=1, day=1)],
+            [datetime(year=2021, month=1, day=1)],
+            [datetime(year=2025, month=1, day=30)],
+        ],
+        "cat": [
+            ["a", "b", "c"],
+            ["a", "b", "c"],
+            ["d", "e", "f"],
+        ],
+    }
+
+    df = pl.DataFrame(data).with_columns(pl.col("cat").cast(pl.List(pl.Categorical())))
+
+    df = df.filter(pl.col("id") == pl.col("id").shift(1))
+    expected_df = pl.DataFrame(
+        {
+            "id": [1],
+            "date": [[datetime(year=2021, month=1, day=1)]],
+            "cat": [["a", "b", "c"]],
+        },
+        schema={
+            "id": pl.Int64,
+            "date": pl.List(pl.Datetime),
+            "cat": pl.List(pl.Categorical),
+        },
+    )
+    assert_frame_equal(df, expected_df)

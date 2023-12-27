@@ -59,5 +59,6 @@ Other
     Enum
     Null
     Object
+    String
     Utf8
     Unknown

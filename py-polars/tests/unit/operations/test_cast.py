@@ -16,7 +16,7 @@ from polars.utils.convert import (
 )
 
 
-def test_utf8_date() -> None:
+def test_string_date() -> None:
     df = pl.DataFrame({"x1": ["2021-01-01"]}).with_columns(
         **{"x1-date": pl.col("x1").cast(pl.Date)}
     )
@@ -25,14 +25,14 @@ def test_utf8_date() -> None:
     assert_frame_equal(expected, out)
 
 
-def test_invalid_utf8_date() -> None:
+def test_invalid_string_date() -> None:
     df = pl.DataFrame({"x1": ["2021-01-aa"]})
 
     with pytest.raises(ComputeError):
         df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
 
 
-def test_utf8_datetime() -> None:
+def test_string_datetime() -> None:
     df = pl.DataFrame(
         {"x1": ["2021-12-19T00:39:57", "2022-12-19T16:39:57"]}
     ).with_columns(
@@ -62,7 +62,7 @@ def test_utf8_datetime() -> None:
     assert_frame_equal(expected, out)
 
 
-def test_invalid_utf8_datetime() -> None:
+def test_invalid_string_datetime() -> None:
     df = pl.DataFrame({"x1": ["2021-12-19 00:39:57", "2022-12-19 16:39:57"]})
     with pytest.raises(ComputeError):
         df.with_columns(
@@ -70,7 +70,7 @@ def test_invalid_utf8_datetime() -> None:
         )
 
 
-def test_utf8_datetime_timezone() -> None:
+def test_string_datetime_timezone() -> None:
     ccs_tz = "America/Caracas"
     stg_tz = "America/Santiago"
     utc_tz = "UTC"

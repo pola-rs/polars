@@ -4,7 +4,8 @@ use arrow::legacy::index::IdxSize;
 use num_traits::ToPrimitive;
 use polars_core::datatypes::PolarsNumericType;
 use polars_core::prelude::{
-    ChunkCast, ChunkSort, ChunkedArray, DataType, StructChunked, UInt32Type, Utf8ChunkedBuilder, *,
+    ChunkCast, ChunkSort, ChunkedArray, DataType, StringChunkedBuilder, StructChunked, UInt32Type,
+    *,
 };
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_error::PolarsResult;
@@ -119,7 +120,7 @@ where
     if include_category {
         // Use AnyValue for formatting.
         let mut lower = AnyValue::Float64(f64::NEG_INFINITY);
-        let mut categories = Utf8ChunkedBuilder::new("category", breaks.len(), breaks.len() * 20);
+        let mut categories = StringChunkedBuilder::new("category", breaks.len(), breaks.len() * 20);
 
         let mut buf = String::new();
         for br in &breaks {

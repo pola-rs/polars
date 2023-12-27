@@ -218,8 +218,8 @@ fn modify_supertype(
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(opt_rev_map, ordering), Utf8, _, AExpr::Literal(_))
-            | (Utf8, Categorical(opt_rev_map, ordering), AExpr::Literal(_), _) => {
+            (Categorical(opt_rev_map, ordering), String, _, AExpr::Literal(_))
+            | (String, Categorical(opt_rev_map, ordering), AExpr::Literal(_), _) => {
                 st = opt_rev_map
                     .as_ref()
                     .filter(|rev_map| rev_map.is_enum())
@@ -361,7 +361,7 @@ impl OptimizationRule for TypeCoercionRule {
                         strict: false,
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _), DataType::Utf8) => return Ok(None),
+                    (DataType::Categorical(_, _), DataType::String) => return Ok(None),
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
@@ -600,7 +600,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_categorical_utf8() {
+    fn test_categorical_string() {
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
         let optimizer = StackOptimizer {};
@@ -623,7 +623,7 @@ mod test {
             .unwrap();
         let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-        // we test that the fruits column is not casted to utf8 for the comparison
+        // we test that the fruits column is not cast to string for the comparison
         if let LogicalPlan::Projection { expr, .. } = lp {
             assert_eq!(expr, expr_in);
         };
@@ -638,8 +638,8 @@ mod test {
             .unwrap();
         let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-        // we test that the fruits column is casted to utf8 for the addition
-        let expected = vec![col("fruits").cast(DataType::Utf8) + lit("somestr")];
+        // we test that the fruits column is cast to string for the addition
+        let expected = vec![col("fruits").cast(DataType::String) + lit("somestr")];
         if let LogicalPlan::Projection { expr, .. } = lp {
             assert_eq!(expr, expected);
         };

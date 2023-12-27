@@ -145,7 +145,7 @@ def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
 
 
-def test_utf8_to_decimal() -> None:
+def test_string_to_decimal() -> None:
     s = pl.Series(
         [
             "40.12",
@@ -180,7 +180,7 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
     0.01,a"""
 
     df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal(scale=2)})
-    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.Utf8]
+    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.String]
     assert df["a"].to_list() == [
         D("123.12"),
         D("1.10"),

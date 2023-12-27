@@ -99,4 +99,4 @@ def test_object_row_construction() -> None:
 def test_object_apply_to_struct() -> None:
     s = pl.Series([0, 1, 2], dtype=pl.Object)
     out = s.map_elements(lambda x: {"a": str(x), "b": x})
-    assert out.dtype == pl.Struct([pl.Field("a", pl.Utf8), pl.Field("b", pl.Int64)])
+    assert out.dtype == pl.Struct([pl.Field("a", pl.String), pl.Field("b", pl.Int64)])

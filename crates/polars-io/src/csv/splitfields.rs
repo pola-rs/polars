@@ -135,7 +135,7 @@ mod inner {
 #[cfg(feature = "simd")]
 mod inner {
     use std::ops::BitOr;
-    use std::simd::*;
+    use std::simd::prelude::*;
 
     use polars_utils::slice::GetSaferUnchecked;
     use polars_utils::unwrap::UnwrapUncheckedRelease;

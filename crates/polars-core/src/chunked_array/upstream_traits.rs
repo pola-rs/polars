@@ -82,9 +82,9 @@ impl FromIterator<bool> for NoNull<BooleanChunked> {
     }
 }
 
-// FromIterator for Utf8Chunked variants.
+// FromIterator for StringChunked variants.
 
-impl<Ptr> FromIterator<Option<Ptr>> for Utf8Chunked
+impl<Ptr> FromIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str>,
 {
@@ -102,7 +102,7 @@ impl PolarsAsRef<str> for &str {}
 impl PolarsAsRef<str> for &&str {}
 impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
 
-impl<Ptr> FromIterator<Ptr> for Utf8Chunked
+impl<Ptr> FromIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str>,
 {
@@ -508,7 +508,7 @@ impl FromParallelIterator<Option<bool>> for BooleanChunked {
     }
 }
 
-impl<Ptr> FromParallelIterator<Ptr> for Utf8Chunked
+impl<Ptr> FromParallelIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str> + Send + Sync,
 {
@@ -526,7 +526,7 @@ where
     }
 }
 
-impl<Ptr> FromParallelIterator<Option<Ptr>> for Utf8Chunked
+impl<Ptr> FromParallelIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str> + Send + Sync,
 {
@@ -597,14 +597,14 @@ where
 }
 
 /// From trait
-impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
-    fn from(ca: &'a Utf8Chunked) -> Self {
+impl<'a> From<&'a StringChunked> for Vec<Option<&'a str>> {
+    fn from(ca: &'a StringChunked) -> Self {
         ca.into_iter().collect()
     }
 }
 
-impl From<Utf8Chunked> for Vec<Option<String>> {
-    fn from(ca: Utf8Chunked) -> Self {
+impl From<StringChunked> for Vec<Option<String>> {
+    fn from(ca: StringChunked) -> Self {
         ca.into_iter()
             .map(|opt| opt.map(|s| s.to_string()))
             .collect()

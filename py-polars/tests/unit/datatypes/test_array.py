@@ -58,7 +58,7 @@ def test_array_construction() -> None:
         {"row_id": "a", "data": [1, 2, 3]},
         {"row_id": "b", "data": [2, 3, 4]},
     ]
-    schema = {"row_id": pl.Utf8(), "data": pl.Array(inner=pl.Int64, width=3)}
+    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, width=3)}
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
@@ -159,7 +159,7 @@ def test_array_data_type_equality() -> None:
     assert pl.Array(pl.Int64, 2) == pl.Array
     assert pl.Array(pl.Int64, 2) == pl.Array(pl.Int64, 2)
     assert pl.Array(pl.Int64, 2) != pl.Array(pl.Int64, 3)
-    assert pl.Array(pl.Int64, 2) != pl.Array(pl.Utf8, 2)
+    assert pl.Array(pl.Int64, 2) != pl.Array(pl.String, 2)
     assert pl.Array(pl.Int64, 2) != pl.List(pl.Int64)
 
 
@@ -169,7 +169,7 @@ def test_array_data_type_equality() -> None:
         ([[1, 2], None, [3, None], [None, None]], pl.Int64),
         ([[True, False], None, [True, None], [None, None]], pl.Boolean),
         ([[1.0, 2.0], None, [3.0, None], [None, None]], pl.Float32),
-        ([["a", "b"], None, ["c", None], [None, None]], pl.Utf8),
+        ([["a", "b"], None, ["c", None], [None, None]], pl.String),
         ([[[1, 2], None], None, [[3], None], [None, None]], pl.List(pl.Int32)),
     ],
 )

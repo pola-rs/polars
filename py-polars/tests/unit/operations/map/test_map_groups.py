@@ -127,7 +127,7 @@ def test_map_groups_object_output() -> None:
         )
     )
 
-    assert result.dtypes == [pl.Utf8, pl.Object]
+    assert result.dtypes == [pl.String, pl.Object]
 
 
 def test_map_groups_numpy_output_3057() -> None:

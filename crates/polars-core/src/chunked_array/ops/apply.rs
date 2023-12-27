@@ -381,7 +381,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     }
 }
 
-impl Utf8Chunked {
+impl StringChunked {
     pub fn apply_mut<'a, F>(&'a self, mut f: F) -> Self
     where
         F: FnMut(&'a str) -> &'a str,
@@ -393,7 +393,7 @@ impl Utf8Chunked {
             let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
             new.with_validity(arr.validity().cloned())
         });
-        Utf8Chunked::from_chunk_iter(self.name(), chunks)
+        StringChunked::from_chunk_iter(self.name(), chunks)
     }
 
     /// Utility that reuses an string buffer to amortize allocations.
@@ -428,7 +428,7 @@ impl BinaryChunked {
     }
 }
 
-impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
+impl<'a> ChunkApply<'a, &'a str> for StringChunked {
     type FuncRet = Cow<'a, str>;
 
     fn apply_values<F>(&'a self, f: F) -> Self
@@ -548,7 +548,7 @@ where
     }
 }
 
-impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
+impl ChunkApplyKernel<LargeStringArray> for StringChunked {
     fn apply_kernel(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)
     }

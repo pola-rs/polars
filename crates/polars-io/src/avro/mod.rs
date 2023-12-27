@@ -21,7 +21,7 @@ mod test {
         let mut write_df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],
-            "utf8" => &["a", "b"]
+            "string" => &["a", "b"]
         )?;
 
         let compressions = vec![
@@ -50,7 +50,7 @@ mod test {
         let mut df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],
-            "utf8" => &["a", "b"]
+            "string" => &["a", "b"]
         )?;
 
         let expected_df = df!(
@@ -77,12 +77,12 @@ mod test {
         let mut df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],
-            "utf8" => &["a", "b"]
+            "string" => &["a", "b"]
         )?;
 
         let expected_df = df!(
             "i64" => &[1, 2],
-            "utf8" => &["a", "b"]
+            "string" => &["a", "b"]
         )?;
 
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
@@ -91,7 +91,7 @@ mod test {
         buf.set_position(0);
 
         let read_df = AvroReader::new(buf)
-            .with_columns(Some(vec!["i64".to_string(), "utf8".to_string()]))
+            .with_columns(Some(vec!["i64".to_string(), "string".to_string()]))
             .finish()?;
 
         assert!(expected_df.equals(&read_df));

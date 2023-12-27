@@ -130,7 +130,7 @@ def test_ipc_schema(compression: IpcCompression) -> None:
     df.write_ipc(f, compression=compression)
     f.seek(0)
 
-    expected = {"a": pl.Int64(), "b": pl.Utf8(), "c": pl.Boolean()}
+    expected = {"a": pl.Int64(), "b": pl.String(), "c": pl.Boolean()}
     assert pl.read_ipc_schema(f) == expected
 
 
@@ -158,8 +158,8 @@ def test_ipc_schema_from_file(
         "int_nulls": pl.Int64(),
         "floats": pl.Float64(),
         "floats_nulls": pl.Float64(),
-        "strings": pl.Utf8(),
-        "strings_nulls": pl.Utf8(),
+        "strings": pl.String(),
+        "strings_nulls": pl.String(),
         "date": pl.Date(),
         "datetime": pl.Datetime(),
         "time": pl.Time(),

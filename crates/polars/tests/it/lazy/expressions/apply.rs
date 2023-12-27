@@ -99,7 +99,7 @@ fn test_apply_groups_empty() -> PolarsResult<()> {
 
     assert_eq!(
         out.dtypes(),
-        &[DataType::Int32, DataType::List(Box::new(DataType::Utf8))]
+        &[DataType::Int32, DataType::List(Box::new(DataType::String))]
     );
     assert_eq!(out.shape(), (0, 2));
 

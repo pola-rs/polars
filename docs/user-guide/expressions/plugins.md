@@ -60,10 +60,10 @@ fn pig_latin_str(value: &str, output: &mut String) {
     }
 }
 
-#[polars_expr(output_type=Utf8)]
+#[polars_expr(output_type=String)]
 fn pig_latinnify(inputs: &[Series]) -> PolarsResult<Series> {
-    let ca = inputs[0].utf8()?;
-    let out: Utf8Chunked = ca.apply_to_buffer(pig_latin_str);
+    let ca = inputs[0].str()?;
+    let out: StringChunked = ca.apply_to_buffer(pig_latin_str);
     Ok(out.into_series())
 }
 ```
@@ -151,11 +151,11 @@ pub struct MyKwargs {
 /// If you want to accept `kwargs`. You define a `kwargs` argument
 /// on the second position in you plugin. You can provide any custom struct that is deserializable
 /// with the pickle protocol (on the Rust side).
-#[polars_expr(output_type=Utf8)]
+#[polars_expr(output_type=String)]
 fn append_kwargs(input: &[Series], kwargs: MyKwargs) -> PolarsResult<Series> {
     let input = &input[0];
-    let input = input.cast(&DataType::Utf8)?;
-    let ca = input.utf8().unwrap();
+    let input = input.cast(&DataType::String)?;
+    let ca = input.str().unwrap();
 
     Ok(ca
         .apply_to_buffer(|val, buf| {

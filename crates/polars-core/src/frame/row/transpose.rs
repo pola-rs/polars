@@ -18,7 +18,7 @@ impl DataFrame {
             None => Vec::<Series>::with_capacity(new_width),
             Some(name) => {
                 let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
-                tmp.push(Utf8Chunked::new(name, self.get_column_names()).into());
+                tmp.push(StringChunked::new(name, self.get_column_names()).into());
                 tmp
             },
         };
@@ -93,7 +93,7 @@ impl DataFrame {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
             Some(cn) => match cn {
                 Either::Left(name) => {
-                    let new_names = self.column(&name).and_then(|x| x.utf8())?;
+                    let new_names = self.column(&name).and_then(|x| x.str())?;
                     polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
                     df = Cow::Owned(self.drop(&name)?);
                     new_names

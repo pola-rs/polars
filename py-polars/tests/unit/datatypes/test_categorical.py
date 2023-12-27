@@ -66,8 +66,8 @@ def test_categorical_outer_join() -> None:
 
     df = dfa.join(dfb, on="key", how="outer")
     # the cast is important to test the rev map
-    assert df["key"].cast(pl.Utf8).to_list() == ["bar", None, "foo"]
-    assert df["key_right"].cast(pl.Utf8).to_list() == ["bar", "baz", None]
+    assert df["key"].cast(pl.String).to_list() == ["bar", None, "foo"]
+    assert df["key_right"].cast(pl.String).to_list() == ["bar", "baz", None]
 
 
 def test_read_csv_categorical() -> None:
@@ -141,7 +141,7 @@ def test_categorical_equality(
     s = pl.Series(["a", "b", "c", "c", None, None], dtype=pl.Categorical)
     s2 = pl.Series("b_cat", ["a", "b", "c", "a", "b", "c"], dtype=pl.Categorical)
     assert_series_equal(op(s, s2), expected)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected)
 
 
 @pytest.mark.parametrize(
@@ -160,7 +160,7 @@ def test_categorical_equality_global_fastpath(
     s = pl.Series(["a", "b", "c", "c", None, None], dtype=pl.Categorical)
     s2 = pl.Series(["d"], dtype=pl.Categorical)
     assert_series_equal(op(s, s2), expected)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected)
 
 
 @pytest.mark.parametrize(
@@ -229,7 +229,7 @@ def test_categorical_global_ordering_broadcast_rhs(
     s = s.cast(pl.Categorical("lexical"))
     s2 = s2.cast(pl.Categorical("lexical"))
     assert_series_equal(op(s, s2), expected_lexical)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected_lexical)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected_lexical)
 
 
 @pytest.mark.parametrize(
@@ -258,7 +258,7 @@ def test_categorical_global_ordering_broadcast_lhs(
     s = s.cast(pl.Categorical("lexical"))
     s2 = s2.cast(pl.Categorical("lexical"))
     assert_series_equal(op(s, s2), expected_lexical)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected_lexical)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected_lexical)
 
 
 @pytest.mark.parametrize(
@@ -340,7 +340,7 @@ def test_compare_categorical_single_non_existent(
     assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
     s_cat = pl.Series(["d"], dtype=pl.Categorical)
     assert_series_equal(op(s, s_cat), expected)
-    assert_series_equal(op(s, s_cat.cast(pl.Utf8)), expected)
+    assert_series_equal(op(s, s_cat.cast(pl.String)), expected)
 
 
 @pytest.mark.parametrize(
@@ -381,7 +381,7 @@ def test_compare_categorical_single_none(
     s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
     s2 = pl.Series([None], dtype=pl.Categorical)
     assert_series_equal(op(s, s2), expected)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected)
 
 
 def test_categorical_error_on_local_cmp() -> None:
@@ -484,7 +484,7 @@ def test_stringcache() -> None:
     with pl.StringCache():
         # create a large enough column that the categorical map is reallocated
         df = pl.DataFrame({"cats": pl.arange(0, N, eager=True)}).select(
-            [pl.col("cats").cast(pl.Utf8).cast(pl.Categorical)]
+            [pl.col("cats").cast(pl.String).cast(pl.Categorical)]
         )
         assert df.filter(pl.col("cats").is_in(["1", "2"])).to_dict(as_series=False) == {
             "cats": ["1", "2"]
@@ -668,7 +668,7 @@ def test_list_builder_different_categorical_rev_maps() -> None:
 def test_categorical_collect_11408() -> None:
     df = pl.DataFrame(
         data={"groups": ["a", "b", "c"], "cats": ["a", "b", "c"], "amount": [1, 2, 3]},
-        schema={"groups": pl.Utf8, "cats": pl.Categorical, "amount": pl.Int8},
+        schema={"groups": pl.String, "cats": pl.Categorical, "amount": pl.Int8},
     )
 
     assert df.group_by("groups").agg(

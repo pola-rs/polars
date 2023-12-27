@@ -428,7 +428,7 @@ def test_list_gather() -> None:
 
 def test_list_eval_all_null() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_columns(
-        pl.col("bar").cast(pl.List(pl.Utf8))
+        pl.col("bar").cast(pl.List(pl.String))
     )
 
     assert df.select(pl.col("bar").list.eval(pl.element())).to_dict(

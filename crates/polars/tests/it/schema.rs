@@ -66,11 +66,11 @@ fn test_schema_insert_at_index() {
     ) {
         println!("{index:?} -- {name:?} -- {expected:?}");
         let new = schema
-            .new_inserting_at_index(index, name.into(), Utf8)
+            .new_inserting_at_index(index, name.into(), String)
             .unwrap();
 
         let mut new_mut = schema.clone();
-        let old_dtype = new_mut.insert_at_index(index, name.into(), Utf8).unwrap();
+        let old_dtype = new_mut.insert_at_index(index, name.into(), String).unwrap();
 
         let (expected_dtype, expected_fields) = expected;
         let expected = Schema::from_iter(expected_fields);
@@ -94,7 +94,7 @@ fn test_schema_insert_at_index() {
         (
             None,
             vec![
-                Field::new("new", Utf8),
+                Field::new("new", String),
                 Field::new("a", UInt64),
                 Field::new("b", Int32),
                 Field::new("c", Int8),
@@ -109,7 +109,7 @@ fn test_schema_insert_at_index() {
         (
             Some(UInt64),
             vec![
-                Field::new("a", Utf8),
+                Field::new("a", String),
                 Field::new("b", Int32),
                 Field::new("c", Int8),
             ],
@@ -123,7 +123,7 @@ fn test_schema_insert_at_index() {
         (
             Some(Int32),
             vec![
-                Field::new("b", Utf8),
+                Field::new("b", String),
                 Field::new("a", UInt64),
                 Field::new("c", Int8),
             ],
@@ -138,7 +138,7 @@ fn test_schema_insert_at_index() {
             Some(UInt64),
             vec![
                 Field::new("b", Int32),
-                Field::new("a", Utf8),
+                Field::new("a", String),
                 Field::new("c", Int8),
             ],
         ),
@@ -153,7 +153,7 @@ fn test_schema_insert_at_index() {
             vec![
                 Field::new("b", Int32),
                 Field::new("c", Int8),
-                Field::new("a", Utf8),
+                Field::new("a", String),
             ],
         ),
     );
@@ -167,7 +167,7 @@ fn test_schema_insert_at_index() {
             vec![
                 Field::new("b", Int32),
                 Field::new("c", Int8),
-                Field::new("a", Utf8),
+                Field::new("a", String),
             ],
         ),
     );
@@ -182,7 +182,7 @@ fn test_schema_insert_at_index() {
                 Field::new("a", UInt64),
                 Field::new("b", Int32),
                 Field::new("c", Int8),
-                Field::new("new", Utf8),
+                Field::new("new", String),
             ],
         ),
     );
@@ -196,7 +196,7 @@ fn test_schema_insert_at_index() {
             vec![
                 Field::new("a", UInt64),
                 Field::new("b", Int32),
-                Field::new("c", Utf8),
+                Field::new("c", String),
             ],
         ),
     );
@@ -210,13 +210,13 @@ fn test_schema_insert_at_index() {
             vec![
                 Field::new("a", UInt64),
                 Field::new("b", Int32),
-                Field::new("c", Utf8),
+                Field::new("c", String),
             ],
         ),
     );
 
     assert!(schema
-        .new_inserting_at_index(4, "oob".into(), Utf8)
+        .new_inserting_at_index(4, "oob".into(), String)
         .is_err());
 }
 
@@ -247,11 +247,11 @@ fn test_with_column() {
     test_case(
         &schema,
         "a",
-        Utf8,
+        String,
         (
             Some(UInt64),
             vec![
-                Field::new("a", Utf8),
+                Field::new("a", String),
                 Field::new("b", Int32),
                 Field::new("c", Int8),
             ],
@@ -261,12 +261,12 @@ fn test_with_column() {
     test_case(
         &schema,
         "b",
-        Utf8,
+        String,
         (
             Some(Int32),
             vec![
                 Field::new("a", UInt64),
-                Field::new("b", Utf8),
+                Field::new("b", String),
                 Field::new("c", Int8),
             ],
         ),
@@ -275,13 +275,13 @@ fn test_with_column() {
     test_case(
         &schema,
         "c",
-        Utf8,
+        String,
         (
             Some(Int8),
             vec![
                 Field::new("a", UInt64),
                 Field::new("b", Int32),
-                Field::new("c", Utf8),
+                Field::new("c", String),
             ],
         ),
     );
@@ -289,14 +289,14 @@ fn test_with_column() {
     test_case(
         &schema,
         "d",
-        Utf8,
+        String,
         (
             None,
             vec![
                 Field::new("a", UInt64),
                 Field::new("b", Int32),
                 Field::new("c", Int8),
-                Field::new("d", Utf8),
+                Field::new("d", String),
             ],
         ),
     );
@@ -469,7 +469,7 @@ fn test_set_dtype() {
         // test set_dtype
         {
             let mut schema = schema.clone();
-            let old_dtype = schema.set_dtype(name, Utf8);
+            let old_dtype = schema.set_dtype(name, String);
             let (exp_dtype, exp_fields) = &expected;
             assert_eq!(&old_dtype, exp_dtype);
             assert_eq!(Schema::from_iter(exp_fields.clone()), schema);
@@ -478,7 +478,7 @@ fn test_set_dtype() {
         // test set_dtype_at_index
         {
             let mut schema = schema.clone();
-            let old_dtype = schema.set_dtype_at_index(index, Utf8);
+            let old_dtype = schema.set_dtype_at_index(index, String);
             let (exp_dtype, exp_fields) = &expected;
             assert_eq!(&old_dtype, exp_dtype);
             assert_eq!(Schema::from_iter(exp_fields.clone()), schema);
@@ -498,7 +498,7 @@ fn test_set_dtype() {
         (
             Some(UInt64),
             vec![
-                Field::new("a", Utf8),
+                Field::new("a", String),
                 Field::new("b", Int32),
                 Field::new("c", Int8),
             ],
@@ -512,7 +512,7 @@ fn test_set_dtype() {
             Some(Int32),
             vec![
                 Field::new("a", UInt64),
-                Field::new("b", Utf8),
+                Field::new("b", String),
                 Field::new("c", Int8),
             ],
         ),
@@ -526,7 +526,7 @@ fn test_set_dtype() {
             vec![
                 Field::new("a", UInt64),
                 Field::new("b", Int32),
-                Field::new("c", Utf8),
+                Field::new("c", String),
             ],
         ),
     );

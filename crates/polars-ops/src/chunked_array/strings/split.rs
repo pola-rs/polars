@@ -7,8 +7,8 @@ use super::*;
 
 #[cfg(feature = "dtype-struct")]
 pub fn split_to_struct<'a, F, I>(
-    ca: &'a Utf8Chunked,
-    by: &'a Utf8Chunked,
+    ca: &'a StringChunked,
+    by: &'a StringChunked,
     n: usize,
     op: F,
 ) -> PolarsResult<StructChunked>
@@ -77,7 +77,7 @@ where
     StructChunked::new(ca.name(), &fields)
 }
 
-pub fn split_helper<'a, F, I>(ca: &'a Utf8Chunked, by: &'a Utf8Chunked, op: F) -> ListChunked
+pub fn split_helper<'a, F, I>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked
 where
     F: Fn(&'a str, &'a str) -> I,
     I: Iterator<Item = &'a str>,
@@ -85,7 +85,7 @@ where
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
             let mut builder =
-                ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+                ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
             ca.for_each(|opt_s| match opt_s {
                 Some(s) => {
@@ -96,10 +96,10 @@ where
             });
             builder.finish()
         } else {
-            ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::Utf8)
+            ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::String)
         }
     } else {
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
         binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
             (Some(s), Some(by)) => {

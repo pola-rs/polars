@@ -38,7 +38,7 @@ if not _DOCUMENTING:
         dt.Duration: PySeries.new_opt_i64,
         dt.Time: PySeries.new_opt_i64,
         dt.Boolean: PySeries.new_opt_bool,
-        dt.Utf8: PySeries.new_str,
+        dt.String: PySeries.new_str,
         dt.Object: PySeries.new_object,
         dt.Categorical: PySeries.new_str,
         dt.Enum: PySeries.new_str,

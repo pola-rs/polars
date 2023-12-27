@@ -124,7 +124,7 @@ def test_is_in_series() -> None:
     out = s.is_in(["a", "b"])
     assert out.to_list() == [True, True, False]
 
-    # Check if empty list is converted to pl.Utf8.
+    # Check if empty list is converted to pl.String
     out = s.is_in([])
     assert out.to_list() == [False] * out.len()
 
@@ -141,7 +141,7 @@ def test_is_in_series() -> None:
 
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"`is_in` cannot check for Utf8 values in Int64 data",
+        match=r"`is_in` cannot check for String values in Int64 data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
@@ -197,7 +197,7 @@ def test_is_in_float(dtype: pl.PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"`is_in` cannot check for Utf8 values in List\(Int64\) data",
+            r"`is_in` cannot check for String values in List\(Int64\) data",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
@@ -252,7 +252,7 @@ def test_cat_is_in_series(dtype: pl.DataType) -> None:
     expected = pl.Series([False, True, True, None])
     assert_series_equal(s.is_in(s2), expected)
 
-    s2_str = s2.cast(pl.Utf8)
+    s2_str = s2.cast(pl.String)
     assert_series_equal(s.is_in(s2_str), expected)
 
 
@@ -264,7 +264,7 @@ def test_cat_is_in_series_non_existent() -> None:
     expected = pl.Series([True, False, False, None])
     assert_series_equal(s.is_in(s2), expected)
 
-    s2_str = s2.cast(pl.Utf8)
+    s2_str = s2.cast(pl.String)
     assert_series_equal(s.is_in(s2_str), expected)
 
 

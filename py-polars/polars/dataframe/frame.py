@@ -43,8 +43,8 @@ from polars.datatypes import (
     Float64,
     Null,
     Object,
+    String,
     Unknown,
-    Utf8,
     py_type_to_dtype,
 )
 from polars.dependencies import (
@@ -1277,7 +1277,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.dtypes
-        [Int64, Float64, Utf8]
+        [Int64, Float64, String]
         >>> df
         shape: (3, 3)
         ┌─────┬─────┬─────┐
@@ -1320,7 +1320,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.schema
-        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': Utf8})
+        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': String})
 
         """
         return OrderedDict(zip(self.columns, self.dtypes))
@@ -1768,7 +1768,7 @@ class DataFrame:
 
         if isinstance(item, pl.Series):
             dtype = item.dtype
-            if dtype == Utf8:
+            if dtype == String:
                 return self._from_pydf(self._df.select(item))
             elif dtype.is_integer():
                 return self._take_with_series(item._pos_idxs(self.shape[0]))
@@ -2128,7 +2128,7 @@ class DataFrame:
 
         Notes
         -----
-        If you're attempting to convert Utf8 or Decimal to an array, you'll need to
+        If you're attempting to convert String or Decimal to an array, you'll need to
         install `pyarrow`.
 
         Examples
@@ -2172,7 +2172,7 @@ class DataFrame:
                 a = s.to_numpy(use_pyarrow=use_pyarrow)
                 arrays.append(
                     a.astype(str, copy=False)
-                    if tp == Utf8 and not s.null_count()
+                    if tp == String and not s.null_count()
                     else a
                 )
 
@@ -2358,7 +2358,7 @@ class DataFrame:
         ...     [
         ...         pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
         ...         pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-        ...         pl.Series("ham", ["a", "b", "c"], dtype=pl.Utf8),
+        ...         pl.Series("ham", ["a", "b", "c"], dtype=pl.String),
         ...     ]
         ... )
         >>> print(df.to_init_repr())
@@ -2366,7 +2366,7 @@ class DataFrame:
             [
                 pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
                 pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.Utf8),
+                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.String),
             ]
         )
 
@@ -3897,7 +3897,7 @@ class DataFrame:
         ...         "y": [v / 1000 for v in range(1_000_000)],
         ...         "z": [str(v) for v in range(1_000_000)],
         ...     },
-        ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
+        ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.String)],
         ... )
         >>> df.estimated_size()
         25888898
@@ -4316,7 +4316,7 @@ class DataFrame:
         schema = self.schema
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
-            fn = repr if schema[col_name] == Utf8 else str
+            fn = repr if schema[col_name] == String else str
             values = self[:max_n_values][col_name].to_list()
             val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
             if len(col_name) > max_colname_length:
@@ -6776,7 +6776,7 @@ class DataFrame:
 
         Cast all frame columns to the specified dtype:
 
-        >>> df.cast(pl.Utf8).to_dict(as_series=False)
+        >>> df.cast(pl.String).to_dict(as_series=False)
         {'foo': ['1', '2', '3'],
          'bar': ['6.0', '7.0', '8.0'],
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
@@ -6784,7 +6784,7 @@ class DataFrame:
         Use selectors to define the columns being cast:
 
         >>> import polars.selectors as cs
-        >>> df.cast({cs.numeric(): pl.UInt32, cs.temporal(): pl.Utf8})
+        >>> df.cast({cs.numeric(): pl.UInt32, cs.temporal(): pl.String})
         shape: (3, 3)
         ┌─────┬─────┬────────────┐
         │ foo ┆ bar ┆ ham        │
@@ -7138,7 +7138,7 @@ class DataFrame:
         ----------
         columns
             Column names, expressions, or a selector defining them. The underlying
-            columns being exploded must be of List or Utf8 datatype.
+            columns being exploded must be of List or String datatype.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 
@@ -9297,7 +9297,7 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        - Int8 + Utf8 = Utf8
+        - Int8 + String = String
         - Float32 + Int64 = Float32
         - Float32 + Float64 = Float64
 

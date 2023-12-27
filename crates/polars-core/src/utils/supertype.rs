@@ -191,9 +191,9 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Time, Float64) => Some(Float64),
 
             // every known type can be casted to a string except binary
-            (dt, Utf8) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(Utf8),
+            (dt, String) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(String),
 
-            (dt, Utf8) if dt != &DataType::Unknown => Some(Utf8),
+            (dt, String) if dt != &DataType::Unknown => Some(String),
 
             (dt, Null) => Some(dt.clone()),
 

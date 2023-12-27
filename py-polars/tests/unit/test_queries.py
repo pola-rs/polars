@@ -160,7 +160,7 @@ def test_group_by_agg_equals_zero_3535() -> None:
             ("cc", None, 0.0),
         ],
         schema=[
-            ("key", pl.Utf8),
+            ("key", pl.String),
             ("val1", pl.Int16),
             ("val2", pl.Float32),
         ],
@@ -288,7 +288,7 @@ def test_edge_cast_string_duplicates_4259() -> None:
             "a": [99, 54612, 546121],
             "b": [1, 14484, 4484],
         }
-    ).with_columns(pl.all().cast(pl.Utf8))
+    ).with_columns(pl.all().cast(pl.String))
 
     mask = df.select(["a", "b"]).is_duplicated()
     df_filtered = df.filter(pl.lit(mask))

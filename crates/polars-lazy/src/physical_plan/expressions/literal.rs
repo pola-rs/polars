@@ -75,7 +75,7 @@ impl PhysicalExpr for LiteralExpr {
                     InvalidOperation: "datatype `{}` is not supported as range", dt
                 ),
             },
-            Utf8(v) => Utf8Chunked::full(LITERAL_NAME, v, 1).into_series(),
+            String(v) => StringChunked::full(LITERAL_NAME, v, 1).into_series(),
             Binary(v) => BinaryChunked::full(LITERAL_NAME, v, 1).into_series(),
             #[cfg(feature = "dtype-datetime")]
             DateTime(timestamp, tu, tz) => Int64Chunked::full(LITERAL_NAME, *timestamp, 1)

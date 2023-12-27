@@ -69,10 +69,10 @@ impl Series {
         use DataType::*;
         let out = match s.dtype() {
             Boolean => fill_null_bool(s.bool().unwrap(), strategy),
-            Utf8 => {
+            String => {
                 let s = unsafe { s.cast_unchecked(&Binary)? };
                 let out = s.fill_null(strategy)?;
-                return unsafe { out.cast_unchecked(&Utf8) };
+                return unsafe { out.cast_unchecked(&String) };
             },
             Binary => {
                 let ca = s.binary().unwrap();

@@ -40,8 +40,7 @@ pub enum SerializableDataType {
     Int64,
     Float32,
     Float64,
-    /// String data
-    Utf8,
+    String,
     Binary,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
@@ -54,6 +53,8 @@ pub enum SerializableDataType {
     /// A 64-bit time representing elapsed time since midnight in the given TimeUnit.
     Time,
     List(Box<SerializableDataType>),
+    #[cfg(feature = "dtype-array")]
+    Array(Box<SerializableDataType>, usize),
     Null,
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
@@ -80,13 +81,15 @@ impl From<&DataType> for SerializableDataType {
             Int64 => Self::Int64,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
-            Utf8 => Self::Utf8,
+            String => Self::String,
             Binary => Self::Binary,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(*tu, tz.clone()),
             Duration(tu) => Self::Duration(*tu),
             Time => Self::Time,
             List(dt) => Self::List(Box::new(dt.as_ref().into())),
+            #[cfg(feature = "dtype-array")]
+            Array(dt, width) => Self::Array(Box::new(dt.as_ref().into()), *width),
             Null => Self::Null,
             Unknown => Self::Unknown,
             #[cfg(feature = "dtype-struct")]
@@ -114,13 +117,15 @@ impl From<SerializableDataType> for DataType {
             Int64 => Self::Int64,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
-            Utf8 => Self::Utf8,
+            String => Self::String,
             Binary => Self::Binary,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(tu, tz),
             Duration(tu) => Self::Duration(tu),
             Time => Self::Time,
             List(dt) => Self::List(Box::new((*dt).into())),
+            #[cfg(feature = "dtype-array")]
+            Array(dt, width) => Self::Array(Box::new((*dt).into()), width),
             Null => Self::Null,
             Unknown => Self::Unknown,
             #[cfg(feature = "dtype-struct")]

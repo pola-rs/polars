@@ -5,7 +5,7 @@ pub mod fixed_size_list;
 pub mod list;
 mod null;
 mod primitive;
-mod utf8;
+mod string;
 
 use std::borrow::Cow;
 use std::iter::FromIterator;
@@ -21,7 +21,7 @@ pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use null::*;
 pub use primitive::*;
-pub use utf8::*;
+pub use string::*;
 
 use crate::chunked_array::to_primitive;
 use crate::prelude::*;
@@ -123,7 +123,7 @@ impl NewChunkedArray<BooleanType, bool> for BooleanChunked {
     }
 }
 
-impl<S> NewChunkedArray<Utf8Type, S> for Utf8Chunked
+impl<S> NewChunkedArray<StringType, S> for StringChunked
 where
     S: AsRef<str>,
 {
@@ -148,7 +148,7 @@ where
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
         let cap = get_iter_capacity(&it);
-        let mut builder = Utf8ChunkedBuilder::new(name, cap, cap * 5);
+        let mut builder = StringChunkedBuilder::new(name, cap, cap * 5);
         it.for_each(|opt| builder.append_option(opt));
         builder.finish()
     }
@@ -156,7 +156,7 @@ where
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: &str, it: impl Iterator<Item = S>) -> Self {
         let cap = get_iter_capacity(&it);
-        let mut builder = Utf8ChunkedBuilder::new(name, cap, cap * 5);
+        let mut builder = StringChunkedBuilder::new(name, cap, cap * 5);
         it.for_each(|v| builder.append_value(v));
         builder.finish()
     }
