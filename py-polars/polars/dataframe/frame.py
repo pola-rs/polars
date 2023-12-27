@@ -1153,7 +1153,7 @@ class DataFrame:
         For more info on what you can pass, you can use ``hvplot.help``:
 
         >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help('scatter')  # doctest: +SKIP
+        >>> hvplot.help("scatter")  # doctest: +SKIP
         """
         try:
             import hvplot.polars  # noqa: F401
