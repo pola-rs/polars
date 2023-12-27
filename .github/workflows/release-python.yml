@@ -92,6 +92,9 @@ jobs:
           - os: windows-32gb-ram
             architecture: aarch64
 
+    env:
+      SED_INPLACE: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,33 +123,31 @@ jobs:
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
           
       - name: Set _POLARS_ARCH variable
-        run: sed -i 's/^_POLARS_ARCH = \"unknown\"$/_POLARS_ARCH = \"${{ matrix.architecture }}\"/g' py-polars/polars/_cpu_check.py
+        run: sed $SED_INPLACE 's/^_POLARS_ARCH = \"unknown\"$/_POLARS_ARCH = \"${{ matrix.architecture }}\"/g' py-polars/polars/_cpu_check.py
 
           
       - name: Set _POLARS_LTS_CPU variable
         if: matrix.package == 'polars-lts-cpu'
-        env:
-          SED_OPTIONS: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
-        run: sed $SED_OPTIONS 's/^_LTS_CPU = False$/_LTS_CPU = True/g' py-polars/polars/_cpu_check.py
+        run: sed $SED_INPLACE 's/^_LTS_CPU = False$/_LTS_CPU = True/g' py-polars/polars/_cpu_check.py
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os != 'macos-latest'
         run: |
           FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
           echo "RUSTFLAGS=-C target-feature=$FEATURES" >> $GITHUB_ENV
-          sed -i 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
+          sed $SED_INPLACE 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
       - name: Set RUSTFLAGS for x86-64 MacOS
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os == 'macos-latest'
         run: |
           FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
           echo "RUSTFLAGS=-C target-feature=$FEATURES" >> $GITHUB_ENV
-          sed -i 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
+          sed $SED_INPLACE 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
       - name: Set RUSTFLAGS for x86-64 LTS CPU
         if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
         run: |
           FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
           echo "RUSTFLAGS=-C target-feature=$FEATURES --cfg use_mimalloc" >> $GITHUB_ENV
-          sed -i 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
+          sed $SED_INPLACE 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
 
       - name: Set Rust target for aarch64
         if: matrix.architecture == 'aarch64'
