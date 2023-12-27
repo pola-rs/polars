@@ -1,4 +1,6 @@
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
+mod ffi;
+pub(super) mod fmt;
 mod iterator;
 mod mutable;
 mod view;
@@ -22,10 +24,16 @@ mod private {
 }
 use private::Sealed;
 
-pub trait ViewType: Sealed + 'static {
+use crate::array::binview::iterator::BinaryViewValueIter;
+use crate::array::iterator::NonNullValuesIter;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+
+pub trait ViewType: Sealed + 'static + PartialEq {
     const IS_UTF8: bool;
 
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
+
+    fn to_bytes(&self) -> &[u8];
 }
 
 impl ViewType for str {
@@ -34,6 +42,11 @@ impl ViewType for str {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         std::str::from_utf8_unchecked(slice)
+    }
+
+    #[inline(always)]
+    fn to_bytes(&self) -> &[u8] {
+        self.as_bytes()
     }
 }
 
@@ -44,12 +57,16 @@ impl ViewType for [u8] {
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         slice
     }
+
+    #[inline(always)]
+    fn to_bytes(&self) -> &[u8] {
+        self
+    }
 }
 
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 
-#[derive(Debug)]
 pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     data_type: ArrowDataType,
     views: Buffer<u128>,
@@ -149,7 +166,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// # Panics
     /// iff `i >= self.len()`
     #[inline]
-    pub fn value(&self, i: usize) -> &[u8] {
+    pub fn value(&self, i: usize) -> &T {
         assert!(i < self.len());
         unsafe { self.value_unchecked(i) }
     }
@@ -185,6 +202,22 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             data.get_unchecked(offset..offset + len as usize)
         };
         T::from_bytes_unchecked(bytes)
+    }
+
+    /// Returns an iterator of `Option<&T>` over every element of this array.
+    pub fn iter(&self) -> ZipValidity<&T, BinaryViewValueIter<T>, BitmapIter> {
+        ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
+    }
+
+    /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
+    pub fn values_iter(&self) -> BinaryViewValueIter<T> {
+        BinaryViewValueIter::new(self)
+    }
+
+    /// Returns an iterator of the non-null values.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, BinaryViewArrayGeneric<T>> {
+        NonNullValuesIter::new(self, self.validity())
     }
 }
 

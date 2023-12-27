@@ -1,6 +1,7 @@
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::{new_empty_array, new_null_array, Array};
+use crate::array::ToFfi;
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, Field, UnionMode};

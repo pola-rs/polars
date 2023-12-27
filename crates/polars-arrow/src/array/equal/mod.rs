@@ -287,7 +287,12 @@ pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
         BinaryView => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
-            map::equal(lhs, rhs)
+            binary_view::equal::<[u8]>(lhs, rhs)
+        },
+        Utf8View => {
+            let lhs = lhs.as_any().downcast_ref().unwrap();
+            let rhs = rhs.as_any().downcast_ref().unwrap();
+            binary_view::equal::<str>(lhs, rhs)
         },
     }
 }

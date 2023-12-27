@@ -54,6 +54,7 @@ impl_is_null!(u8);
 impl_is_null!(u16);
 impl_is_null!(u32);
 impl_is_null!(u64);
+impl_is_null!(u128);
 
 impl<'a> IsNull for &'a [u8] {
     const HAS_NULLS: bool = false;
