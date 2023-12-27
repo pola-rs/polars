@@ -35,7 +35,7 @@ pub fn replace(
 
     let old = match (s.dtype(), old.dtype()) {
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(opt_rev_map, ord), DataType::Utf8) => {
+        (DataType::Categorical(opt_rev_map, ord), DataType::String) => {
             let dt = opt_rev_map
                 .as_ref()
                 .filter(|rev_map| rev_map.is_enum())
