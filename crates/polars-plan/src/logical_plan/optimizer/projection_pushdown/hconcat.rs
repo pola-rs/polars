@@ -22,9 +22,9 @@ pub(super) fn process_hconcat(
 
         for input in inputs.iter() {
             let mut input_pushdown = Vec::new();
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
 
             for proj in remaining_projections.iter() {
-                let input_schema = lp_arena.get(*input).schema(lp_arena);
                 if check_input_node(*proj, input_schema.as_ref(), expr_arena) {
                     input_pushdown.push(*proj);
                 }
@@ -47,18 +47,12 @@ pub(super) fn process_hconcat(
             )?;
         }
 
-        let schema_size = inputs
-            .iter()
-            .map(|input| lp_arena.get(*input).schema(lp_arena).len())
-            .sum();
-        let mut new_schema = Schema::with_capacity(schema_size);
+        let mut schemas = Vec::with_capacity(inputs.len());
         for input in inputs.iter() {
             let schema = lp_arena.get(*input).schema(lp_arena);
-            schema.as_ref().iter().for_each(|(name, dtype)| {
-                new_schema.with_column(name.clone(), dtype.clone());
-            });
+            schemas.push(schema.as_ref().clone());
         }
-
+        let new_schema = merge_schemas(&schemas)?;
         Arc::new(new_schema)
     };
 

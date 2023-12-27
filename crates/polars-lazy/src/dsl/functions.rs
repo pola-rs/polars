@@ -185,30 +185,18 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
         opt_state.file_caching |= lf.opt_state.file_caching;
     }
 
-    let schema_size = lfs
-        .iter()
-        .map(|lf| lf.schema().map(|schema| schema.len()))
-        .sum::<PolarsResult<_>>()?;
-    let mut column_names = PlHashSet::with_capacity(schema_size);
-    let mut combined_schema = Schema::with_capacity(schema_size);
-
     let mut lps = Vec::with_capacity(lfs.len());
+    let mut schemas = Vec::with_capacity(lfs.len());
 
     for lf in lfs.iter() {
         let mut lf = lf.clone();
         let schema = lf.schema()?;
-        schema.iter().try_for_each(|(name, dtype)| {
-            if !column_names.contains(name) {
-                column_names.insert(name.clone());
-                combined_schema.with_column(name.clone(), dtype.clone());
-                Ok(())
-            } else {
-               Err(polars_err!(Duplicate: "Column with name '{}' has more than one occurrence", name))
-            }
-        })?;
+        schemas.push(schema);
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp);
     }
+
+    let combined_schema = merge_schemas(&schemas)?;
 
     let options = HConcatOptions {
         parallel: args.parallel,
