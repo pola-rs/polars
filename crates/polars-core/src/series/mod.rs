@@ -297,12 +297,12 @@ impl Series {
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         // Best leave as is.
-        if !dtype.is_known() || (dtype == self.dtype() && dtype.is_primitive()) {
+        if !dtype.is_known() || (dtype.is_primitive() && dtype == self.dtype()) {
             return Ok(self.clone());
         }
         let ret = self.0.cast(dtype);
         let len = self.len();
-        if ret.is_err() && self.null_count() == len {
+        if self.null_count() == len {
             return Ok(Series::full_null(self.name(), len, dtype));
         }
         ret
@@ -647,20 +647,8 @@ impl Series {
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let null_count = self.null_count();
-        let len = self.len();
-
-        match self.dtype() {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {},
-            _ => {
-                if null_count == len {
-                    return Ok(Series::full_null(self.name(), len, dtype));
-                }
-            },
-        }
-        let s = self.0.cast(dtype)?;
-        if null_count != s.null_count() {
+        let s = self.cast(dtype)?;
+        if self.null_count() != s.null_count() {
             handle_casting_failures(self, &s)?;
         }
         Ok(s)
