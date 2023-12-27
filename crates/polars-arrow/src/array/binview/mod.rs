@@ -1,6 +1,7 @@
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
 mod mutable;
 mod iterator;
+mod view;
 
 use std::any::Any;
 use polars_error::*;
