@@ -1,3 +1,4 @@
+use std::ptr;
 use std::simd::prelude::{Simd, SimdPartialEq, SimdPartialOrd};
 
 use arrow::array::PrimitiveArray;
@@ -16,36 +17,46 @@ where
     T: NativeType,
     F: FnMut(&[T; N], &[T; N]) -> M,
 {
-    assert!(std::mem::size_of::<M>() == N);
+    assert_eq!(N, std::mem::size_of::<M>() * 8);
     assert!(lhs.len() == rhs.len());
     let n = lhs.len();
 
     let lhs_buf = lhs.values().as_slice();
     let rhs_buf = rhs.values().as_slice();
-    let mut lhs_chunks = lhs_buf.chunks_exact(N);
-    let mut rhs_chunks = rhs_buf.chunks_exact(N);
-    let mut v = Vec::with_capacity(n.div_ceil(N));
-    v.extend(
-        lhs_chunks
-            .by_ref()
-            .zip(rhs_chunks.by_ref())
-            .map(|(l, r)| unsafe {
-                f(
-                    l.try_into().unwrap_unchecked(),
-                    r.try_into().unwrap_unchecked(),
-                )
-            }),
-    );
+    let lhs_chunks = lhs_buf.chunks_exact(N);
+    let rhs_chunks = rhs_buf.chunks_exact(N);
+    let lhs_rest = lhs_chunks.remainder();
+    let rhs_rest = rhs_chunks.remainder();
+
+    let num_masks = n.div_ceil(N);
+    let mut v: Vec<u8> = Vec::with_capacity(num_masks * std::mem::size_of::<M>());
+    let mut p = v.as_mut_ptr() as *mut M;
+    for (l, r) in lhs_chunks.zip(rhs_chunks) {
+        unsafe {
+            let mask = f(
+                l.try_into().unwrap_unchecked(),
+                r.try_into().unwrap_unchecked(),
+            );
+            p.write_unaligned(mask);
+            p = p.wrapping_add(1);
+        }
+    }
 
     if n % N > 0 {
         let mut l: [T; N] = [T::zeroed(); N];
         let mut r: [T; N] = [T::zeroed(); N];
-        l.copy_from_slice(lhs_chunks.remainder());
-        r.copy_from_slice(rhs_chunks.remainder());
-        v.push(f(&l, &r));
+        unsafe {
+            ptr::copy_nonoverlapping(lhs_rest.as_ptr(), l.as_mut_ptr(), n % N);
+            ptr::copy_nonoverlapping(rhs_rest.as_ptr(), r.as_mut_ptr(), n % N);
+            p.write_unaligned(f(&l, &r));
+        }
     }
 
-    Bitmap::from_u8_vec(bytemuck::cast_vec(v), n)
+    unsafe {
+        v.set_len(num_masks * std::mem::size_of::<M>());
+    }
+
+    Bitmap::from_u8_vec(v, n)
 }
 
 fn apply_unary_kernel<const N: usize, M: Pod, T, F>(arg: &PrimitiveArray<T>, mut f: F) -> Bitmap
@@ -53,25 +64,37 @@ where
     T: NativeType,
     F: FnMut(&[T; N]) -> M,
 {
-    assert!(std::mem::size_of::<M>() == N);
+    assert_eq!(N, std::mem::size_of::<M>() * 8);
     let n = arg.len();
 
     let arg_buf = arg.values().as_slice();
-    let mut arg_chunks = arg_buf.chunks_exact(N);
-    let mut v = Vec::with_capacity(n.div_ceil(N));
-    v.extend(
-        arg_chunks
-            .by_ref()
-            .map(|l| unsafe { f(l.try_into().unwrap_unchecked()) }),
-    );
+    let arg_chunks = arg_buf.chunks_exact(N);
+    let arg_rest = arg_chunks.remainder();
 
-    if n % N > 0 {
-        let mut l: [T; N] = [T::zeroed(); N];
-        l.copy_from_slice(arg_chunks.remainder());
-        v.push(f(&l));
+    let num_masks = n.div_ceil(N);
+    let mut v: Vec<u8> = Vec::with_capacity(num_masks * std::mem::size_of::<M>());
+    let mut p = v.as_mut_ptr() as *mut M;
+    for a in arg_chunks {
+        unsafe {
+            let mask = f(a.try_into().unwrap_unchecked());
+            p.write_unaligned(mask);
+            p = p.wrapping_add(1);
+        }
     }
 
-    Bitmap::from_u8_vec(bytemuck::cast_vec(v), n)
+    if n % N > 0 {
+        let mut a: [T; N] = [T::zeroed(); N];
+        unsafe {
+            ptr::copy_nonoverlapping(arg_rest.as_ptr(), a.as_mut_ptr(), n % N);
+            p.write_unaligned(f(&a));
+        }
+    }
+
+    unsafe {
+        v.set_len(num_masks * std::mem::size_of::<M>());
+    }
+
+    Bitmap::from_u8_vec(v, n)
 }
 
 macro_rules! impl_int_total_ord_kernel {
