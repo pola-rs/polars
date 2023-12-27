@@ -44,6 +44,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_favicon",
+    "sphinx_toolbox.more_autodoc.overloads",
 ]
 
 # Render docstring text in `single backticks` as code.
@@ -60,6 +61,11 @@ templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["Thumbs.db", ".DS_Store"]
+
+# Hide overload type signatures
+# sphinx_toolbox - Box of handy tools for Sphinx
+# https://sphinx-toolbox.readthedocs.io/en/latest/
+overloads_location = ["bottom"]
 
 # -- Extension settings  -----------------------------------------------------
 
