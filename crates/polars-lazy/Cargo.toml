@@ -148,6 +148,7 @@ serde = [
 fused = ["polars-plan/fused", "polars-ops/fused"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
+array_any_all = ["polars-ops/array_any_all", "polars-plan/array_any_all", "dtype-array"]
 list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-plan/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample", "polars-plan/list_sample"]
 cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]

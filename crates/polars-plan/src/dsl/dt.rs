@@ -4,7 +4,7 @@ use super::*;
 pub struct DateLikeNameSpace(pub(crate) Expr);
 
 impl DateLikeNameSpace {
-    /// Convert from Date/Time/Datetime into Utf8 with the given format.
+    /// Convert from Date/Time/Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(self, format: &str) -> Expr {
         let format = format.to_string();
@@ -14,7 +14,7 @@ impl DateLikeNameSpace {
             )))
     }
 
-    /// Convert from Date/Time/Datetime into Utf8 with the given format.
+    /// Convert from Date/Time/Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.

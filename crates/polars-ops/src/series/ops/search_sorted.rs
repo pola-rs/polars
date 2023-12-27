@@ -207,10 +207,10 @@ pub fn search_sorted(
     let phys_dtype = s.dtype();
 
     match phys_dtype {
-        DataType::Utf8 => {
-            let ca = s.utf8().unwrap();
+        DataType::String => {
+            let ca = s.str().unwrap();
             let ca = ca.as_binary();
-            let search_values = search_values.utf8()?;
+            let search_values = search_values.str()?;
             let search_values = search_values.as_binary();
             let idx = search_sorted_bin_array(&ca, &search_values, side, descending);
 

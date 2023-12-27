@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import CategoricalRemappingWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -55,15 +57,47 @@ def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) ->
     assert_frame_equal(result, expected)
 
 
-@pl.StringCache()
-def test_replace_cat_to_str(str_mapping: dict[str | None, str]) -> None:
-    df = pl.DataFrame(
-        {"country_code": ["FR", None, "ES", "DE"]},
-        schema={"country_code": pl.Categorical},
-    )
+def test_replace_str_to_cat() -> None:
+    s = pl.Series(["a", "b", "c"])
+    mapping = {"a": "c", "b": "d"}
+    result = s.replace(mapping, return_dtype=pl.Categorical)
+    expected = pl.Series(["c", "d", "c"], dtype=pl.Categorical)
+    assert_series_equal(result, expected, categorical_as_str=True)
 
-    with pytest.raises(pl.InvalidOperationError):
-        df.select(pl.col("country_code").replace(str_mapping))
+
+def test_replace_enum() -> None:
+    dtype = pl.Enum(["a", "b", "c", "d"])
+    s = pl.Series(["a", "b", "c"], dtype=dtype)
+    old = ["a", "b"]
+    new = pl.Series(["c", "d"], dtype=dtype)
+
+    result = s.replace(old, new)
+
+    expected = pl.Series(["c", "d", "c"], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
+def test_replace_enum_to_str() -> None:
+    dtype = pl.Enum(["a", "b", "c", "d"])
+    s = pl.Series(["a", "b", "c"], dtype=dtype)
+
+    result = s.replace({"a": "c", "b": "d"})
+
+    expected = pl.Series(["c", "d", "c"], dtype=pl.String)
+    assert_series_equal(result, expected)
+
+
+def test_replace_enum_to_new_enum() -> None:
+    s = pl.Series(["a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
+    old = ["a", "b"]
+
+    new_dtype = pl.Enum(["a", "b", "c", "d", "e"])
+    new = pl.Series(["c", "e"], dtype=new_dtype)
+
+    result = s.replace(old, new)
+
+    expected = pl.Series(["c", "e", "c"], dtype=new_dtype)
+    assert_series_equal(result, expected)
 
 
 @pl.StringCache()
@@ -84,6 +118,13 @@ def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
         schema_overrides={"replaced": pl.Categorical},
     )
     assert_frame_equal(result, expected)
+
+
+def test_replace_invalid_old_dtype() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    mapping = {"a": 10, "b": 20}
+    with pytest.raises(pl.ComputeError, match="conversion from `str` to `i64` failed"):
+        lf.select(pl.col("a").replace(mapping)).collect()
 
 
 def test_replace_int_to_int() -> None:
@@ -257,7 +298,7 @@ def test_replace_mix() -> None:
         [
             pl.Series("float_to_boolean", [True, None], dtype=pl.Boolean),
             pl.Series("boolean_to_int", [1, 0], dtype=pl.Int64),
-            pl.Series("boolean_to_str", ["1", "0"], dtype=pl.Utf8),
+            pl.Series("boolean_to_str", ["1", "0"], dtype=pl.String),
         ]
     )
     assert_frame_equal(result, expected)
@@ -437,3 +478,60 @@ def test_map_dict_deprecated() -> None:
     with pytest.deprecated_call():
         result = s.to_frame().select(pl.col("a").map_dict({2: 100})).to_series()
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("context", "dtype"),
+    [
+        (pl.StringCache(), pl.Categorical),
+        (pytest.warns(CategoricalRemappingWarning), pl.Categorical),
+        (contextlib.nullcontext(), pl.Enum(["a", "b", "OTHER"])),
+    ],
+)
+def test_replace_cat_str(
+    context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
+    dtype: pl.DataType,
+) -> None:
+    with context:
+        for old, new, expected in [
+            ("a", "c", pl.Series("s", ["c", None], dtype=pl.Utf8)),
+            (["a", "b"], ["c", "d"], pl.Series("s", ["c", "d"], dtype=pl.Utf8)),
+            (pl.lit("a", dtype=dtype), "c", pl.Series("s", ["c", None], dtype=pl.Utf8)),
+            (
+                pl.Series(["a", "b"], dtype=dtype),
+                ["c", "d"],
+                pl.Series("s", ["c", "d"], dtype=pl.Utf8),
+            ),
+        ]:
+            s = pl.Series("s", ["a", "b"], dtype=dtype)
+            s_replaced = s.replace(old, new, default=None)  # type: ignore[arg-type]
+            assert_series_equal(s_replaced, expected)
+
+            s = pl.Series("s", ["a", "b"], dtype=dtype)
+            s_replaced = s.replace(old, new, default="OTHER")  # type: ignore[arg-type]
+            assert_series_equal(s_replaced, expected.fill_null("OTHER"))
+
+
+@pytest.mark.parametrize(
+    "context", [pl.StringCache(), pytest.warns(CategoricalRemappingWarning)]
+)
+def test_replace_cat_cat(
+    context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
+) -> None:
+    with context:
+        dt = pl.Categorical
+        for old, new, expected in [
+            ("a", pl.lit("c", dtype=dt), pl.Series("s", ["c", None], dtype=dt)),
+            (
+                ["a", "b"],
+                pl.Series(["c", "d"], dtype=dt),
+                pl.Series("s", ["c", "d"], dtype=dt),
+            ),
+        ]:
+            s = pl.Series("s", ["a", "b"], dtype=dt)
+            s_replaced = s.replace(old, new, default=None)  # type: ignore[arg-type]
+            assert_series_equal(s_replaced, expected)
+
+            s = pl.Series("s", ["a", "b"], dtype=dt)
+            s_replaced = s.replace(old, new, default=pl.lit("OTHER", dtype=dt))  # type: ignore[arg-type]
+            assert_series_equal(s_replaced, expected.fill_null("OTHER"))

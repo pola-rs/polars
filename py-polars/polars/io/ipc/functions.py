@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import IO, TYPE_CHECKING, Any, BinaryIO
 
 import polars._reexport as pl
 from polars.dependencies import _PYARROW_AVAILABLE
@@ -186,7 +186,7 @@ def read_ipc_stream(
         )
 
 
-def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, DataType]:
+def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
     """
     Get the schema of an IPC file without reading data.
 

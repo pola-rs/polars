@@ -52,7 +52,7 @@ impl Hash for Key {
 // those indexes point into the keys buffer and the values buffer
 // the keys buffer are buffers of AnyValue per partition
 // and the values are buffer of Aggregation functions per partition
-pub struct Utf8GroupbySink {
+pub struct StringGroupbySink {
     thread_no: usize,
     // idx is the offset in the array with keys
     // idx is the offset in the array with aggregators
@@ -83,7 +83,7 @@ pub struct Utf8GroupbySink {
     ooc_state: OocState,
 }
 
-impl Utf8GroupbySink {
+impl StringGroupbySink {
     pub(crate) fn new(
         key_column: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -187,7 +187,7 @@ impl Utf8GroupbySink {
                             .collect::<Vec<_>>();
 
                         let cap = std::cmp::min(slice_len, agg_map.len());
-                        let mut key_builder = Utf8ChunkedBuilder::new("", cap, cap * 8);
+                        let mut key_builder = StringChunkedBuilder::new("", cap, cap * 8);
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
@@ -271,7 +271,7 @@ impl Utf8GroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.str().unwrap().downcast_iter().next().unwrap().clone();
 
         // set all bits to false
         self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
@@ -324,7 +324,7 @@ impl Utf8GroupbySink {
     }
 }
 
-impl Sink for Utf8GroupbySink {
+impl Sink for StringGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         if chunk.is_empty() {
             return Ok(SinkResult::CanHaveMoreInput);
@@ -349,7 +349,7 @@ impl Sink for Utf8GroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.str().unwrap().downcast_iter().next().unwrap().clone();
 
         for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&hashes).enumerate() {
             let current_partition = self.get_partitions(h);
@@ -516,7 +516,7 @@ impl Sink for Utf8GroupbySink {
         self
     }
     fn fmt(&self) -> &str {
-        "utf8_group_by"
+        "string_group_by"
     }
 }
 

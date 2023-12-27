@@ -14,3 +14,5 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.sum
     Expr.arr.to_list
     Expr.arr.unique
+    Expr.arr.all
+    Expr.arr.any

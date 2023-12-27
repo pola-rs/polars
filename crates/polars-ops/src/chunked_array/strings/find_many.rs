@@ -1,7 +1,7 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use polars_core::prelude::*;
 
-fn build_ac(patterns: &Utf8Chunked, ascii_case_insensitive: bool) -> PolarsResult<AhoCorasick> {
+fn build_ac(patterns: &StringChunked, ascii_case_insensitive: bool) -> PolarsResult<AhoCorasick> {
     AhoCorasickBuilder::new()
         .ascii_case_insensitive(ascii_case_insensitive)
         .build(patterns.downcast_iter().flatten().flatten())
@@ -9,8 +9,8 @@ fn build_ac(patterns: &Utf8Chunked, ascii_case_insensitive: bool) -> PolarsResul
 }
 
 pub fn contains_any(
-    ca: &Utf8Chunked,
-    patterns: &Utf8Chunked,
+    ca: &StringChunked,
+    patterns: &StringChunked,
     ascii_case_insensitive: bool,
 ) -> PolarsResult<BooleanChunked> {
     let ac = build_ac(patterns, ascii_case_insensitive)?;
@@ -19,11 +19,11 @@ pub fn contains_any(
 }
 
 pub fn replace_all(
-    ca: &Utf8Chunked,
-    patterns: &Utf8Chunked,
-    replace_with: &Utf8Chunked,
+    ca: &StringChunked,
+    patterns: &StringChunked,
+    replace_with: &StringChunked,
     ascii_case_insensitive: bool,
-) -> PolarsResult<Utf8Chunked> {
+) -> PolarsResult<StringChunked> {
     let replace_with = if replace_with.len() == 1 && patterns.len() > 1 {
         replace_with.new_from_index(0, patterns.len())
     } else {

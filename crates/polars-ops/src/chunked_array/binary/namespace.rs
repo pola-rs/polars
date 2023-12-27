@@ -92,7 +92,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let ca = self.as_binary();
         unsafe {
             ca.apply_values(|s| hex::encode(s).into_bytes().into())
-                .cast_unchecked(&DataType::Utf8)
+                .cast_unchecked(&DataType::String)
                 .unwrap()
         }
     }
@@ -122,7 +122,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let ca = self.as_binary();
         unsafe {
             ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
-                .cast_unchecked(&DataType::Utf8)
+                .cast_unchecked(&DataType::String)
                 .unwrap()
         }
     }

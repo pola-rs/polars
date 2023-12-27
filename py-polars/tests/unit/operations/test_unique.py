@@ -16,7 +16,7 @@ def test_unique_predicate_pd() -> None:
         .filter(pl.col("z"))
         .collect()
     )
-    expected = pl.DataFrame(schema={"x": pl.Utf8, "y": pl.Utf8, "z": pl.Boolean})
+    expected = pl.DataFrame(schema={"x": pl.String, "y": pl.String, "z": pl.Boolean})
     assert_frame_equal(result, expected)
 
     result = (

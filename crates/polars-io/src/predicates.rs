@@ -154,7 +154,11 @@ impl ColumnStats {
     }
 
     fn use_min_max(dtype: &DataType) -> bool {
-        dtype.is_numeric() || matches!(dtype, DataType::Utf8 | DataType::Binary | DataType::Boolean)
+        dtype.is_numeric()
+            || matches!(
+                dtype,
+                DataType::String | DataType::Binary | DataType::Boolean
+            )
     }
 }
 

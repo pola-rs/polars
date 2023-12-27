@@ -9,7 +9,7 @@ use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
 
 #[inline]
-fn slice(
+pub(crate) fn slice(
     chunks: &[ArrayRef],
     offset: i64,
     slice_length: usize,

@@ -90,8 +90,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            col("integers").cast(DataType::Utf8),
-            col("float").cast(DataType::Utf8),
+            col("integers").cast(DataType::String),
+            col("float").cast(DataType::String),
             col("floats_as_string").cast(DataType::Float64),
         ])
         .collect()?;

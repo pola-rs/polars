@@ -239,7 +239,7 @@ def test_invalid_filter_predicates(predicate: Any) -> None:
 
 def test_fast_path_boolean_filter_predicates() -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
-    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.Utf8}))
+    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.String}))
     assert_frame_equal(df.filter(True), df)
 
 

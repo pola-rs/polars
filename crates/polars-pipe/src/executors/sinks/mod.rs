@@ -1,29 +1,23 @@
-#[cfg(any(
-    feature = "parquet",
-    feature = "ipc",
-    feature = "csv",
-    feature = "json"
-))]
-mod file_sink;
 pub(crate) mod group_by;
 mod io;
 mod joins;
 mod memory;
 mod ordered;
+mod output;
 mod reproject;
 mod slice;
 mod sort;
 mod utils;
 
+pub(crate) use joins::*;
+pub(crate) use ordered::*;
 #[cfg(any(
     feature = "parquet",
     feature = "ipc",
     feature = "csv",
     feature = "json"
 ))]
-pub(crate) use file_sink::*;
-pub(crate) use joins::*;
-pub(crate) use ordered::*;
+pub(crate) use output::*;
 pub(crate) use reproject::*;
 pub(crate) use slice::*;
 pub(crate) use sort::*;

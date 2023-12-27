@@ -62,7 +62,7 @@ Examples
             "JJK": pl.Date,
             "Lmn": pl.Duration,
             "opp": pl.Datetime("ms"),
-            "qqR": pl.Utf8,
+            "qqR": pl.String,
         },
     )
 
@@ -73,7 +73,7 @@ Examples
         "JJK": pl.Date,
         "Lmn": pl.Duration,
         "opp": pl.Datetime("ms"),
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
     # Select the INTERSECTION of temporal and column names that match "opp" OR "JJK"
@@ -98,7 +98,7 @@ Examples
         "fgg": pl.Boolean,
         "JJK": pl.Date,
         "opp": pl.Datetime("ms"),
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
 

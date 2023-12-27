@@ -45,14 +45,14 @@ from_iterator!(bool, BooleanType);
 
 impl<'a> FromIterator<&'a str> for Series {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
-        let ca: Utf8Chunked = iter.into_iter().collect();
+        let ca: StringChunked = iter.into_iter().collect();
         ca.into_series()
     }
 }
 
 impl FromIterator<String> for Series {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
-        let ca: Utf8Chunked = iter.into_iter().collect();
+        let ca: StringChunked = iter.into_iter().collect();
         ca.into_series()
     }
 }
@@ -117,15 +117,15 @@ impl Series {
             }
         } else {
             match dtype {
-                DataType::Utf8 => {
+                DataType::String => {
                     let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                     if arr.null_count() == 0 {
-                        Box::new(arr.values_iter().map(AnyValue::Utf8))
+                        Box::new(arr.values_iter().map(AnyValue::String))
                             as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
                     } else {
                         let zipvalid = arr.iter();
                         Box::new(zipvalid.unwrap_optional().map(|v| match v {
-                            Some(value) => AnyValue::Utf8(value),
+                            Some(value) => AnyValue::String(value),
                             None => AnyValue::Null,
                         }))
                             as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>

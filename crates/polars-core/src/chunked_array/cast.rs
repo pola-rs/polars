@@ -193,7 +193,7 @@ where
     }
 }
 
-impl ChunkCast for Utf8Chunked {
+impl ChunkCast for StringChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
@@ -210,12 +210,16 @@ impl ChunkCast for Utf8Chunked {
                 },
                 Some(rev_map) => {
                     polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
-                    CategoricalChunked::from_utf8_to_enum(self, rev_map.get_categories(), *ordering)
-                        .map(|ca| {
-                            let mut s = ca.into_series();
-                            s.rename(self.name());
-                            s
-                        })
+                    CategoricalChunked::from_string_to_enum(
+                        self,
+                        rev_map.get_categories(),
+                        *ordering,
+                    )
+                    .map(|ca| {
+                        let mut s = ca.into_series();
+                        s.rename(self.name());
+                        s
+                    })
                 },
             },
             #[cfg(feature = "dtype-struct")]
@@ -284,18 +288,18 @@ unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
 
 impl BinaryChunked {
     /// # Safety
-    /// Utf8 is not validated
-    pub unsafe fn to_utf8(&self) -> Utf8Chunked {
+    /// String is not validated
+    pub unsafe fn to_string(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
             .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
             .collect();
-        let field = Arc::new(Field::new(self.name(), DataType::Utf8));
-        Utf8Chunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+        let field = Arc::new(Field::new(self.name(), DataType::String));
+        StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
     }
 }
 
-impl Utf8Chunked {
+impl StringChunked {
     pub fn as_binary(&self) -> BinaryChunked {
         let chunks = self
             .downcast_iter()
@@ -324,13 +328,13 @@ impl ChunkCast for BinaryChunked {
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::Utf8 => unsafe { Ok(self.to_utf8().into_series()) },
+            DataType::String => unsafe { Ok(self.to_string().into_series()) },
             _ => self.cast(data_type),
         }
     }
 }
 
-fn boolean_to_utf8(ca: &BooleanChunked) -> Utf8Chunked {
+fn boolean_to_string(ca: &BooleanChunked) -> StringChunked {
     ca.into_iter()
         .map(|opt_b| match opt_b {
             Some(true) => Some("true"),
@@ -343,8 +347,8 @@ fn boolean_to_utf8(ca: &BooleanChunked) -> Utf8Chunked {
 impl ChunkCast for BooleanChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::Utf8 => {
-                let mut ca = boolean_to_utf8(self);
+            DataType::String => {
+                let mut ca = boolean_to_string(self);
                 ca.rename(self.name());
                 Ok(ca.into_series())
             },
@@ -369,7 +373,7 @@ impl ChunkCast for ListChunked {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _))
-                        if !matches!(dt, Categorical(_, _) | Utf8 | Null) =>
+                        if !matches!(dt, Categorical(_, _) | String | Null) =>
                     {
                         polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     },
@@ -423,7 +427,7 @@ impl ChunkCast for ArrayChunked {
             Array(child_type, width) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _)) if !matches!(dt, Utf8) => {
+                    (dt, Categorical(None, _)) if !matches!(dt, String) => {
                         polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
                     },
                     _ => {
@@ -557,7 +561,7 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
-        let ca = Utf8Chunked::new("foo", &["bar", "ham"]);
+        let ca = StringChunked::new("foo", &["bar", "ham"]);
         let out = ca
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();

@@ -161,7 +161,7 @@ vec_hash_int!(UInt32Chunked);
 vec_hash_int!(UInt16Chunked);
 vec_hash_int!(UInt8Chunked);
 
-impl VecHash for Utf8Chunked {
+impl VecHash for StringChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.as_binary().vec_hash(random_state, buf)?;
         Ok(())

@@ -58,8 +58,8 @@ nan = float("nan")
             id="equal_int",
         ),
         pytest.param(
-            pl.DataFrame({"a": ["a", "b", "c"]}, schema={"a": pl.Utf8}),
-            pl.DataFrame({"a": ["a", "b", "c"]}, schema={"a": pl.Utf8}),
+            pl.DataFrame({"a": ["a", "b", "c"]}, schema={"a": pl.String}),
+            pl.DataFrame({"a": ["a", "b", "c"]}, schema={"a": pl.String}),
             {},
             id="equal_str",
         ),

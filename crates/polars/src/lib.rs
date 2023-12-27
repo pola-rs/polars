@@ -188,7 +188,7 @@
 //! * `ndarray`- Convert from [`DataFrame`] to [ndarray](https://docs.rs/ndarray/)
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 //! * `timezones` - Activate timezone support.
-//! * `strings` - Extra string utilities for [`Utf8Chunked`] //!     - `string_pad` - `zfill`, `ljust`, `rjust`
+//! * `strings` - Extra string utilities for [`StringChunked`] //!     - `string_pad` - `zfill`, `ljust`, `rjust`
 //!     - `string_to_integer` - `parse_int`
 //! * `object` - Support for generic ChunkedArrays called [`ObjectChunked<T>`] (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
@@ -213,7 +213,7 @@
 //!                         * zip
 //!                         * gzip
 //!
-//! [`Utf8Chunked`]: crate::datatypes::Utf8Chunked
+//! [`StringChunked`]: crate::datatypes::StringChunked
 //! [column selection]: polars_lazy::dsl::col
 //! [`ObjectChunked<T>`]: polars_core::datatypes::ObjectChunked
 //!
@@ -249,7 +249,7 @@
 //!     - `cum_agg` - [`cum_sum`], [`cum_min`], [`cum_max`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
 //!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
-//!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
+//!     - `extract_jsonpath` - [Run jsonpath queries on StringChunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
 //!         - `list_gather` take sublist by multiple indices
 //!     - `rank` - Ranking algorithms.

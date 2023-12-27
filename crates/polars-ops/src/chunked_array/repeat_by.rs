@@ -114,8 +114,8 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
     use DataType::*;
     let out = match s_phys.dtype() {
         Boolean => repeat_by_bool(s_phys.bool().unwrap(), by),
-        Utf8 => {
-            let ca = s_phys.utf8().unwrap();
+        String => {
+            let ca = s_phys.str().unwrap();
             repeat_by_binary(&ca.as_binary(), by)
         },
         Binary => repeat_by_binary(s_phys.binary().unwrap(), by),

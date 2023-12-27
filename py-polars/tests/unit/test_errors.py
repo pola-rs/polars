@@ -47,7 +47,8 @@ def test_error_on_reducing_map() -> None:
         df.select(
             pl.col("x")
             .map_batches(
-                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
+                is_elementwise=True,
             )
             .over("group")
         )
@@ -97,7 +98,9 @@ def test_not_found_error() -> None:
 
 
 def test_string_numeric_comp_err() -> None:
-    with pytest.raises(pl.ComputeError, match="cannot compare utf-8 with numeric data"):
+    with pytest.raises(
+        pl.ComputeError, match="cannot compare string with numeric data"
+    ):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
 

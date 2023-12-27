@@ -213,15 +213,15 @@ fn iterator_to_object(
     ca.with_name(name)
 }
 
-fn iterator_to_utf8<'a>(
+fn iterator_to_string<'a>(
     it: impl Iterator<Item = Option<&'a str>>,
     init_null_count: usize,
     first_value: Option<&'a str>,
     name: &str,
     capacity: usize,
-) -> Utf8Chunked {
+) -> StringChunked {
     // SAFETY: we know the iterators len.
-    let ca: Utf8Chunked = unsafe {
+    let ca: StringChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
                 .map(|_| None)

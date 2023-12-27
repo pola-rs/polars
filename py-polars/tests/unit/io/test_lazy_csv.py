@@ -82,10 +82,10 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     file_path = io_files_path / file_name
     df = pl.scan_csv(
         file_path,
-        dtypes={"calories_foo": pl.Utf8, "fats_g_foo": pl.Float32},
+        dtypes={"calories_foo": pl.String, "fats_g_foo": pl.Float32},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
     ).collect()
-    assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Float32, pl.Int64]
+    assert df.dtypes == [pl.String, pl.String, pl.Float32, pl.Int64]
     assert df.columns == [
         "category_foo",
         "calories_foo",
@@ -102,10 +102,10 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
     file_path = io_files_path / file_name
     df = pl.scan_csv(
         file_path,
-        dtypes={"calories_foo": pl.Utf8, "sugars_g_foo": dtype},
+        dtypes={"calories_foo": pl.String, "sugars_g_foo": dtype},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
     ).collect()
-    assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, dtype]
+    assert df.dtypes == [pl.String, pl.String, pl.Float64, dtype]
     assert df.columns == [
         "category_foo",
         "calories_foo",
@@ -124,16 +124,16 @@ def test_scan_csv_schema_new_columns_dtypes(
         # assign 'new_columns', providing partial dtype overrides
         df1 = pl.scan_csv(
             file_path,
-            dtypes={"calories": pl.Utf8, "sugars": dtype},
+            dtypes={"calories": pl.String, "sugars": dtype},
             new_columns=["category", "calories", "fats", "sugars"],
         ).collect()
-        assert df1.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, dtype]
+        assert df1.dtypes == [pl.String, pl.String, pl.Float64, dtype]
         assert df1.columns == ["category", "calories", "fats", "sugars"]
 
         # assign 'new_columns' with 'dtypes' list
         df2 = pl.scan_csv(
             file_path,
-            dtypes=[pl.Utf8, pl.Utf8, pl.Float64, dtype],
+            dtypes=[pl.String, pl.String, pl.Float64, dtype],
             new_columns=["category", "calories", "fats", "sugars"],
         ).collect()
         assert df1.rows() == df2.rows()
@@ -143,7 +143,7 @@ def test_scan_csv_schema_new_columns_dtypes(
         file_path,
         new_columns=["colw", "colx", "coly", "colz"],
     )
-    assert df3.dtypes == [pl.Utf8, pl.Int64, pl.Float64, pl.Int64]
+    assert df3.dtypes == [pl.String, pl.Int64, pl.Float64, pl.Int64]
     assert df3.columns == ["colw", "colx", "coly", "colz"]
     assert (
         df3.select(["colz", "colx"]).collect().rows()
@@ -153,17 +153,17 @@ def test_scan_csv_schema_new_columns_dtypes(
     # partially rename columns / overwrite dtypes
     df4 = pl.scan_csv(
         file_path,
-        dtypes=[pl.Utf8, pl.Utf8],
+        dtypes=[pl.String, pl.String],
         new_columns=["category", "calories"],
     ).collect()
-    assert df4.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, pl.Int64]
+    assert df4.dtypes == [pl.String, pl.String, pl.Float64, pl.Int64]
     assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
 
     # cannot have len(new_columns) > len(actual columns)
     with pytest.raises(pl.ShapeError):
         pl.scan_csv(
             file_path,
-            dtypes=[pl.Utf8, pl.Utf8],
+            dtypes=[pl.String, pl.String],
             new_columns=["category", "calories", "c3", "c4", "c5"],
         ).collect()
 
@@ -171,7 +171,7 @@ def test_scan_csv_schema_new_columns_dtypes(
     with pytest.raises(ValueError, match="mutually.exclusive"):
         pl.scan_csv(
             file_path,
-            dtypes=[pl.Utf8, pl.Utf8],
+            dtypes=[pl.String, pl.String],
             new_columns=["category", "calories", "fats", "sugars"],
             with_column_names=lambda cols: [col.capitalize() for col in cols],
         ).collect()
@@ -203,7 +203,7 @@ def test_lazy_row_count_no_push_down(foods_file_path: Path) -> None:
     # related to row count is not pushed.
     assert 'FILTER [(col("row_nr")) == (1)] FROM' in plan
     # unrelated to row count is pushed.
-    assert 'SELECTION: [(col("category")) == (Utf8(vegetables))]' in plan
+    assert 'SELECTION: [(col("category")) == (String(vegetables))]' in plan
 
 
 @pytest.mark.write_disk()
@@ -250,7 +250,7 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
     df = (
         pl.scan_csv(
             foods_file_path,
-            dtypes={"calories": pl.Utf8, "sugars_g": pl.Int8},
+            dtypes={"calories": pl.String, "sugars_g": pl.Int8},
         )
         .select(pl.count())
         .collect()
@@ -284,4 +284,4 @@ def test_scan_empty_csv_with_row_count(tmp_path: Path) -> None:
     df.write_csv(file_path)
 
     read = pl.scan_csv(file_path).with_row_count("idx")
-    assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Utf8)])
+    assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.String)])

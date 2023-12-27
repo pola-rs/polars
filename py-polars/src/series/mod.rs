@@ -128,7 +128,7 @@ impl PySeries {
 
     fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
         let val = format!("{}", self.series.get(index).unwrap());
-        if let DataType::Utf8 | DataType::Categorical(_, _) = self.series.dtype() {
+        if let DataType::String | DataType::Categorical(_, _) = self.series.dtype() {
             let v_trunc = &val[..val
                 .char_indices()
                 .take(str_lengths)
@@ -520,10 +520,10 @@ impl PySeries {
                     )?;
                     ca.into_series()
                 },
-                Some(DataType::Utf8) => {
+                Some(DataType::String) => {
                     let ca = dispatch_apply!(
                         series,
-                        apply_lambda_with_utf8_out_type,
+                        apply_lambda_with_string_out_type,
                         py,
                         lambda,
                         0,
@@ -724,7 +724,7 @@ macro_rules! impl_set_with_mask {
     };
 }
 
-impl_set_with_mask!(set_with_mask_str, &str, utf8, Utf8);
+impl_set_with_mask!(set_with_mask_str, &str, str, String);
 impl_set_with_mask!(set_with_mask_f64, f64, f64, Float64);
 impl_set_with_mask!(set_with_mask_f32, f32, f32, Float32);
 impl_set_with_mask!(set_with_mask_u8, u8, u8, UInt8);
@@ -767,7 +767,7 @@ impl_get!(get_i8, i8, i8);
 impl_get!(get_i16, i16, i16);
 impl_get!(get_i32, i32, i32);
 impl_get!(get_i64, i64, i64);
-impl_get!(get_str, utf8, &str);
+impl_get!(get_str, str, &str);
 impl_get!(get_date, date, i32);
 impl_get!(get_datetime, datetime, i64);
 impl_get!(get_duration, duration, i64);

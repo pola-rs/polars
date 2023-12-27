@@ -58,7 +58,7 @@ use crate::error::{
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
-use crate::lazyframe::PyLazyFrame;
+use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
@@ -78,6 +78,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
+    m.add_class::<PyInProcessQuery>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();

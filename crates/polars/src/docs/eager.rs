@@ -255,7 +255,7 @@
 //!
 //! // count string lengths
 //! let s = Series::new("foo", &["foo", "bar", "foobar"]);
-//! s.utf8()?.apply_values_generic(|str_val| str_val.len() as u64);
+//! s.str()?.apply_values_generic(|str_val| str_val.len() as u64);
 //!
 //! # Ok(())
 //! # }
@@ -310,7 +310,7 @@
 //!
 //! // transform letters to uppercase letters
 //! df.try_apply("letters", |s: &Series| {
-//!     Ok(s.utf8()?.to_uppercase())
+//!     Ok(s.str()?.to_uppercase())
 //! });
 //!
 //! # Ok(())
@@ -703,7 +703,7 @@
 //!     let to_vec: Vec<Option<f32>> = Vec::from(ca);
 //!
 //!     // We can also do this with iterators
-//!     let ca = df.column("str")?.utf8()?;
+//!     let ca = df.column("str")?.str()?;
 //!     let to_vec: Vec<Option<&str>> = ca.into_iter().collect();
 //!     let to_vec_no_options: Vec<&str> = ca.into_no_null_iter().collect();
 //!

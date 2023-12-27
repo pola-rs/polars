@@ -7,7 +7,7 @@ from polars.type_aliases import TransferEncoding
 
 def test_binary_conversions() -> None:
     df = pl.DataFrame({"blob": [b"abc", None, b"cde"]}).with_columns(
-        pl.col("blob").cast(pl.Utf8).alias("decoded_blob")
+        pl.col("blob").cast(pl.String).alias("decoded_blob")
     )
 
     assert df.to_dict(as_series=False) == {
@@ -16,7 +16,7 @@ def test_binary_conversions() -> None:
     }
     assert df[0, 0] == b"abc"
     assert df[1, 0] is None
-    assert df.dtypes == [pl.Binary, pl.Utf8]
+    assert df.dtypes == [pl.Binary, pl.String]
 
 
 def test_contains() -> None:

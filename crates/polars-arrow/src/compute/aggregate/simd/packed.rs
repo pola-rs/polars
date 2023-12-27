@@ -1,4 +1,4 @@
-use std::simd::{SimdFloat as _, SimdInt as _, SimdUint as _};
+use std::simd::prelude::{SimdFloat as _, SimdInt as _, SimdUint as _};
 
 use super::super::sum::Sum;
 use crate::types::simd::*;

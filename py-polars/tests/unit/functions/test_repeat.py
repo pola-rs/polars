@@ -16,7 +16,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
         (2**31 - 1, 5, None, pl.Int32),
         (-(2**31) - 1, 3, None, pl.Int64),
         (-(2**31), 3, None, pl.Int32),
-        ("foo", 2, None, pl.Utf8),
+        ("foo", 2, None, pl.String),
         (1.0, 5, None, pl.Float64),
         (True, 4, None, pl.Boolean),
         (None, 7, None, pl.Null),

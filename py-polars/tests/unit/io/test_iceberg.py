@@ -35,7 +35,7 @@ def test_scan_iceberg_plain(iceberg_path: str) -> None:
     assert len(df.collect()) == 3
     assert df.schema == {
         "id": pl.Int32,
-        "str": pl.Utf8,
+        "str": pl.String,
         "ts": pl.Datetime(time_unit="us", time_zone=None),
     }
 

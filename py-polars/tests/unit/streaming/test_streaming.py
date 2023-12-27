@@ -249,7 +249,7 @@ def test_streaming_9776() -> None:
 def test_stream_empty_file(tmp_path: Path) -> None:
     p = tmp_path / "in.parquet"
     schema = {
-        "KLN_NR": pl.Utf8,
+        "KLN_NR": pl.String,
     }
 
     df = pl.DataFrame(

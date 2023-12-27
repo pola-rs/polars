@@ -240,7 +240,7 @@ impl<'a> PredicatePushDown<'a> {
                 let tmp_key = Arc::<str>::from(&*temporary_unique_key(&acc_predicates));
                 acc_predicates.insert(tmp_key.clone(), predicate);
 
-                let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &vec![], &acc_predicates, expr_arena)?.0 {
+                let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &[], &acc_predicates, expr_arena)?.0 {
                     PushdownEligibility::Full => vec![],
                     PushdownEligibility::Partial { to_local } => {
                         let mut out = Vec::<Node>::with_capacity(to_local.len());

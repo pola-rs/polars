@@ -13,7 +13,7 @@ use polars_core::prelude::*;
 pub fn replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
     time_zone: Option<&str>,
-    ambiguous: &Utf8Chunked,
+    ambiguous: &StringChunked,
 ) -> PolarsResult<DatetimeChunked> {
     let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
     let from_tz = parse_time_zone(from_time_zone)?;

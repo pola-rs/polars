@@ -8,26 +8,26 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
         .collect_trusted()
 }
 
-fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<Utf8Chunked> {
-    let mut builder = Utf8ChunkedBuilder::new("", avs.len(), avs.len() * 10);
+fn any_values_to_string(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
+    let mut builder = StringChunkedBuilder::new("", avs.len(), avs.len() * 10);
 
     // amortize allocations
     let mut owned = String::new();
 
     for av in avs {
         match av {
-            AnyValue::Utf8(s) => builder.append_value(s),
-            AnyValue::Utf8Owned(s) => builder.append_value(s),
+            AnyValue::String(s) => builder.append_value(s),
+            AnyValue::StringOwned(s) => builder.append_value(s),
             AnyValue::Null => builder.append_null(),
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
                 }
                 builder.append_null()
             },
             av => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
                 }
                 owned.clear();
                 write!(owned, "{av}").unwrap();
@@ -124,6 +124,80 @@ fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
         .collect_trusted()
 }
 
+#[cfg(feature = "dtype-array")]
+fn any_values_to_array(
+    avs: &[AnyValue],
+    inner_type: &DataType,
+    strict: bool,
+    width: usize,
+) -> PolarsResult<ArrayChunked> {
+    fn to_arr(s: &Series) -> Option<ArrayRef> {
+        if s.chunks().len() > 1 {
+            let s = s.rechunk();
+            Some(s.chunks()[0].clone())
+        } else {
+            Some(s.chunks()[0].clone())
+        }
+    }
+
+    // this is handled downstream. The builder will choose the first non null type
+    let mut valid = true;
+    #[allow(unused_mut)]
+    let mut out: ArrayChunked = if inner_type == &DataType::Null {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) | AnyValue::Array(b, _) => to_arr(b),
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
+    }
+    // make sure that wrongly inferred anyvalues don't deviate from the datatype
+    else {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) | AnyValue::Array(b, _) => {
+                    if b.dtype() == inner_type {
+                        to_arr(b)
+                    } else {
+                        let s = match b.cast(inner_type) {
+                            Ok(out) => out,
+                            Err(_) => Series::full_null(b.name(), b.len(), inner_type),
+                        };
+                        to_arr(&s)
+                    }
+                },
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
+    };
+    if let DataType::Array(_, s) = out.dtype() {
+        polars_ensure!(*s == width, ComputeError: "got mixed size array widths where width {} was expected", width)
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null)
+        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
+    {
+        // ensure the logical type is correct
+        unsafe {
+            out.set_dtype(DataType::Array(Box::new(inner_type.clone()), width));
+        };
+    }
+    if valid || !strict {
+        Ok(out)
+    } else {
+        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
+    }
+}
+
 fn any_values_to_list(
     avs: &[AnyValue],
     inner_type: &DataType,
@@ -211,7 +285,7 @@ impl Series {
             DataType::UInt64 => any_values_to_primitive::<UInt64Type>(av).into_series(),
             DataType::Float32 => any_values_to_primitive::<Float32Type>(av).into_series(),
             DataType::Float64 => any_values_to_primitive::<Float64Type>(av).into_series(),
-            DataType::Utf8 => any_values_to_utf8(av, strict)?.into_series(),
+            DataType::String => any_values_to_string(av, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(av).into_series(),
             DataType::Boolean => any_values_to_bool(av).into_series(),
             #[cfg(feature = "dtype-date")]
@@ -235,6 +309,10 @@ impl Series {
                 any_values_to_decimal(av, *precision, *scale)?.into_series()
             },
             DataType::List(inner) => any_values_to_list(av, inner, strict)?.into_series(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, size) => any_values_to_array(av, inner, strict, *size)?
+                .into_series()
+                .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(dtype_fields) => {
                 // fast path for empty structs
@@ -346,8 +424,8 @@ impl Series {
             DataType::Categorical(rev_map, ordering) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
-                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
-                            any_values_to_utf8(av, strict)?
+                        AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
+                            any_values_to_string(av, strict)?
                         },
                         _ => polars_bail!(
                              ComputeError:
@@ -356,7 +434,7 @@ impl Series {
                         ),
                     }
                 } else {
-                    Utf8Chunked::full("", "", 0)
+                    StringChunked::full("", "", 0)
                 };
 
                 ca.cast(&DataType::Categorical(rev_map.clone(), *ordering))
@@ -412,7 +490,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
         match val {
             Null => DataType::Null,
             Boolean(_) => DataType::Boolean,
-            Utf8(_) | Utf8Owned(_) => DataType::Utf8,
+            String(_) | StringOwned(_) => DataType::String,
             Binary(_) | BinaryOwned(_) => DataType::Binary,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,

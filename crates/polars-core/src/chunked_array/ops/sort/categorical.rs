@@ -84,7 +84,7 @@ impl CategoricalChunked {
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl
-            // as bytes already is used for binary and utf8 sorting
+            // as bytes already is used for binary and string sorting
             let vals: Vec<_> = self
                 .iter_str()
                 .map(|v| {
@@ -107,8 +107,8 @@ mod test {
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
-        let s = ca.cast(&DataType::Utf8).unwrap();
-        let ca = s.utf8().unwrap();
+        let s = ca.cast(&DataType::String).unwrap();
+        let ca = s.str().unwrap();
         assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), cmp);
     }
 

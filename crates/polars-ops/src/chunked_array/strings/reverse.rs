@@ -1,4 +1,4 @@
-use polars_core::prelude::Utf8Chunked;
+use polars_core::prelude::StringChunked;
 use unicode_reverse::reverse_grapheme_clusters_in_place;
 
 fn to_reverse_helper(s: Option<&str>) -> Option<String> {
@@ -9,6 +9,6 @@ fn to_reverse_helper(s: Option<&str>) -> Option<String> {
     })
 }
 
-pub fn reverse(ca: &Utf8Chunked) -> Utf8Chunked {
+pub fn reverse(ca: &StringChunked) -> StringChunked {
     ca.apply_generic(to_reverse_helper)
 }

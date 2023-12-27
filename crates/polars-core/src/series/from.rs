@@ -82,7 +82,7 @@ impl Series {
             },
             List(_) => ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                 .into_series(),
-            Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
+            String => StringChunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map, ordering) => {
@@ -137,10 +137,10 @@ impl Series {
         dtype: &ArrowDataType,
     ) -> PolarsResult<Self> {
         match dtype {
-            ArrowDataType::LargeUtf8 => Ok(Utf8Chunked::from_chunks(name, chunks).into_series()),
+            ArrowDataType::LargeUtf8 => Ok(StringChunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Utf8 => {
-                let chunks = cast_chunks(&chunks, &DataType::Utf8, false).unwrap();
-                Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
+                let chunks = cast_chunks(&chunks, &DataType::String, false).unwrap();
+                Ok(StringChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::LargeBinary => {
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
@@ -498,7 +498,7 @@ unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataTy
                 let arr = arr.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
                 Box::from(utf8_to_large_utf8(arr))
             }),
-            DataType::Utf8,
+            DataType::String,
         ),
         #[allow(unused_variables)]
         dt @ ArrowDataType::Dictionary(_, _, _) => {
