@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import ctypes
 import os
-import platform
 from ctypes import CFUNCTYPE, POINTER, c_long, c_size_t, c_uint32, c_ulong, c_void_p
 from typing import ClassVar
 
@@ -37,6 +36,8 @@ were to try it on the Rust side the compiler could emit illegal instructions
 before/during the CPU feature check code.
 """
 
+# Replaced during the build process with the architecture of our wheel.
+_POLARS_ARCH = "unknown"
 
 # Replaced during the build process with our list of required feature flags
 # enabled at compile time.
@@ -48,7 +49,6 @@ _POLARS_LTS_CPU = False
 
 _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
-_IS_X86 = platform.machine() in ("AMD64", "x86_64", "x86", "i686")
 
 # Posix x86_64:
 # Three first call registers : RDI, RSI, RDX
@@ -122,7 +122,7 @@ class CPUID_struct(ctypes.Structure):
 
 class CPUID:
     def __init__(self) -> None:
-        if not _IS_X86:
+        if _POLARS_ARCH != "x86-64":
             raise SystemError("CPUID is only available for x86")
 
         if _IS_WINDOWS:
@@ -187,7 +187,7 @@ class CPUID:
 
 def read_cpu_flags() -> dict[str, bool]:
     # Right now we only enable extra feature flags for x86.
-    if not _IS_X86:
+    if _POLARS_ARCH != "x86-64":
         return {}
 
     # CPU flags from https://en.wikipedia.org/wiki/CPUID
