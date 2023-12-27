@@ -124,7 +124,7 @@ def test_is_in_series() -> None:
     out = s.is_in(["a", "b"])
     assert out.to_list() == [True, True, False]
 
-    # Check if empty list is converted to pl.Utf8.
+    # Check if empty list is converted to pl.String
     out = s.is_in([])
     assert out.to_list() == [False] * out.len()
 

@@ -145,7 +145,7 @@ def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
 
 
-def test_utf8_to_decimal() -> None:
+def test_string_to_decimal() -> None:
     s = pl.Series(
         [
             "40.12",

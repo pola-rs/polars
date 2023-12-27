@@ -334,7 +334,7 @@ def test_dtype_overwrite_with_column_idx_selection() -> None:
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, columns=[2, 1, 3], dtypes=[pl.Int32, pl.String])
-    # Columns without an explicit dtype set will get pl.Utf8 if dtypes is a list
+    # Columns without an explicit dtype set will get pl.String if dtypes is a list
     # if the column selection is done with column indices instead of column names.
     assert df.dtypes == [pl.String, pl.Int32, pl.String]
     # Projections are sorted.
@@ -673,7 +673,7 @@ def test_ignore_try_parse_dates() -> None:
     headers = ["a", "b", "c"]
     dtypes: dict[str, type[pl.DataType]] = {
         k: pl.String for k in headers
-    }  # Forces Utf8 type for every column
+    }  # Forces String type for every column
     df = pl.read_csv(csv, columns=headers, dtypes=dtypes)
     assert df.dtypes == [pl.String, pl.String, pl.String]
 

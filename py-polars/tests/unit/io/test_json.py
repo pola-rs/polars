@@ -157,7 +157,7 @@ def test_ndjson_nested_null() -> None:
     assert df.to_dict(as_series=False) == {"foo": [{"bar": []}]}
 
 
-def test_ndjson_nested_utf8_int() -> None:
+def test_ndjson_nested_string_int() -> None:
     ndjson = """{"Accumulables":[{"Value":32395888},{"Value":"539454"}]}"""
     assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(as_series=False) == {
         "Accumulables": [[{"Value": "32395888"}, {"Value": "539454"}]]

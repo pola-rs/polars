@@ -1899,8 +1899,8 @@ def test_fill_null() -> None:
         df.fill_null(strategy="max"), pl.DataFrame({"a": [1, 2], "b": [3, 3]})
     )
 
-    # utf8 and list data
-    # utf8 goes via binary
+    # string and list data
+    # string goes via binary
     df = pl.DataFrame(
         {
             "c": [
