@@ -380,6 +380,7 @@ class String(DataType):
     """UTF-8 encoded string type."""
 
 
+# Allow Utf8 as an alias for String
 Utf8 = String
 
 
