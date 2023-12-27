@@ -62,7 +62,7 @@ lazy = []
 # more fast paths, slower compilation
 performant = ["arrow/performant", "reinterpret"]
 
-# extra utilities for Utf8Chunked
+# extra utilities for StringChunked
 strings = ["regex", "arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]

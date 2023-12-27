@@ -133,7 +133,7 @@ def test_pickle_udf_expression() -> None:
     # tests that 'GetOutput' is also deserialized
     with pytest.raises(
         pl.SchemaError,
-        match=r"expected output type 'Utf8', got 'Int64'; set `return_dtype` to the proper datatype",
+        match=r"expected output type 'String', got 'Int64'; set `return_dtype` to the proper datatype",
     ):
         df.select(e)
 

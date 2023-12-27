@@ -66,14 +66,14 @@ pub(super) fn datetime_range(
             polars_ops::prelude::replace_time_zone(
                 start.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series(),
             polars_ops::prelude::replace_time_zone(
                 end.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series(),
@@ -152,7 +152,7 @@ pub(super) fn datetime_ranges(
             polars_ops::prelude::replace_time_zone(
                 start.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series()
@@ -161,7 +161,7 @@ pub(super) fn datetime_ranges(
             polars_ops::prelude::replace_time_zone(
                 end.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series()

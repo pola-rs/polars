@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let s_b = &ca.fields()[1];
 
                         // downcast the `Series` to their known type
-                        let ca_a = s_a.utf8()?;
+                        let ca_a = s_a.str()?;
                         let ca_b = s_b.i32()?;
 
                         // iterate both `ChunkedArrays`

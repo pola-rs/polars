@@ -279,7 +279,7 @@ impl Float32Chunked {
     }
 }
 
-impl ChunkQuantile<String> for Utf8Chunked {}
+impl ChunkQuantile<String> for StringChunked {}
 impl ChunkQuantile<Series> for ListChunked {}
 #[cfg(feature = "dtype-array")]
 impl ChunkQuantile<Series> for ArrayChunked {}

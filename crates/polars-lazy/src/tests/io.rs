@@ -362,7 +362,7 @@ fn skip_rows_and_slice() -> PolarsResult<()> {
         .finish()?
         .limit(1)
         .collect()?;
-    assert_eq!(out.column("fruit")?.get(0)?, AnyValue::Utf8("seafood"));
+    assert_eq!(out.column("fruit")?.get(0)?, AnyValue::String("seafood"));
     assert_eq!(out.shape(), (1, 4));
     Ok(())
 }

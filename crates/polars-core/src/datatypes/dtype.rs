@@ -22,7 +22,7 @@ pub enum DataType {
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
     Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
     /// String data
-    Utf8,
+    String,
     Binary,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
@@ -171,7 +171,11 @@ impl DataType {
     /// Check if datatype is a primitive type. By that we mean that
     /// it is not a container type.
     pub fn is_primitive(&self) -> bool {
-        self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
+        self.is_numeric()
+            | matches!(
+                self,
+                DataType::Boolean | DataType::String | DataType::Binary
+            )
     }
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
@@ -192,7 +196,11 @@ impl DataType {
         let is_cat = false;
 
         let phys = self.to_physical();
-        (phys.is_numeric() || matches!(phys, DataType::Binary | DataType::Utf8 | DataType::Boolean))
+        (phys.is_numeric()
+            || matches!(
+                phys,
+                DataType::Binary | DataType::String | DataType::Boolean
+            ))
             && !is_cat
     }
 
@@ -275,7 +283,7 @@ impl DataType {
                 (*precision).unwrap_or(38),
                 scale.unwrap_or(0), // and what else can we do here?
             )),
-            Utf8 => Ok(ArrowDataType::LargeUtf8),
+            String => Ok(ArrowDataType::LargeUtf8),
             Binary => Ok(ArrowDataType::LargeBinary),
             Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
@@ -359,7 +367,7 @@ impl Display for DataType {
                     _ => f.write_str("decimal[?]"), // shouldn't happen
                 };
             },
-            DataType::Utf8 => "str",
+            DataType::String => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
             DataType::Datetime(tu, tz) => {

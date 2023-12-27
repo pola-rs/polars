@@ -1,4 +1,4 @@
-use polars_core::prelude::Utf8Chunked;
+use polars_core::prelude::StringChunked;
 
 // Inlined from std.
 fn convert_while_ascii(b: &[u8], convert: fn(&u8) -> u8, out: &mut Vec<u8>) {
@@ -91,7 +91,7 @@ fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
     *buf = s.into_bytes();
 }
 
-pub(super) fn to_lowercase<'a>(ca: &'a Utf8Chunked) -> Utf8Chunked {
+pub(super) fn to_lowercase<'a>(ca: &'a StringChunked) -> StringChunked {
     // Amortize allocation.
     let mut buf = Vec::new();
     let f = |s: &'a str| -> &'a str {
@@ -104,7 +104,7 @@ pub(super) fn to_lowercase<'a>(ca: &'a Utf8Chunked) -> Utf8Chunked {
 }
 
 // Inlined from std.
-pub(super) fn to_uppercase<'a>(ca: &'a Utf8Chunked) -> Utf8Chunked {
+pub(super) fn to_uppercase<'a>(ca: &'a StringChunked) -> StringChunked {
     // Amortize allocation.
     let mut buf = Vec::new();
     let f = |s: &'a str| -> &'a str {
@@ -132,7 +132,7 @@ pub(super) fn to_uppercase<'a>(ca: &'a Utf8Chunked) -> Utf8Chunked {
 }
 
 #[cfg(feature = "nightly")]
-pub(super) fn to_titlecase<'a>(ca: &'a Utf8Chunked) -> Utf8Chunked {
+pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
     // Amortize allocation.
     let mut buf = Vec::new();
 

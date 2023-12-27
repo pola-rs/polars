@@ -218,7 +218,7 @@ impl PyExpr {
     #[cfg(feature = "extract_jsonpath")]
     fn str_json_path_match(&self, pat: String) -> Self {
         let function = move |s: Series| {
-            let ca = s.utf8()?;
+            let ca = s.str()?;
             match ca.json_path_match(&pat) {
                 Ok(ca) => Ok(Some(ca.into_series())),
                 Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
@@ -226,7 +226,7 @@ impl PyExpr {
         };
         self.inner
             .clone()
-            .map(function, GetOutput::from_type(DataType::Utf8))
+            .map(function, GetOutput::from_type(DataType::String))
             .with_fmt("str.json_path_match")
             .into()
     }

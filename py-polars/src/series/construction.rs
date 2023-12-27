@@ -209,7 +209,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
+    fn new_str(name: &str, val: Wrap<StringChunked>, _strict: bool) -> Self {
         val.0.into_series().with_name(name).into()
     }
 

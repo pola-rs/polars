@@ -203,7 +203,7 @@ def test_lazy_row_count_no_push_down(foods_file_path: Path) -> None:
     # related to row count is not pushed.
     assert 'FILTER [(col("row_nr")) == (1)] FROM' in plan
     # unrelated to row count is pushed.
-    assert 'SELECTION: [(col("category")) == (Utf8(vegetables))]' in plan
+    assert 'SELECTION: [(col("category")) == (String(vegetables))]' in plan
 
 
 @pytest.mark.write_disk()

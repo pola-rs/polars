@@ -1,7 +1,7 @@
 mod agg_list;
 mod boolean;
 mod dispatch;
-mod utf8;
+mod string;
 
 use std::cmp::Ordering;
 

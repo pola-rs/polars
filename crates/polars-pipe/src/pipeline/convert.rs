@@ -456,7 +456,7 @@ where
                             )) as Box<dyn SinkTrait>
                         })
                     },
-                    (DataType::Utf8, 1) => Box::new(group_by::Utf8GroupbySink::new(
+                    (DataType::String, 1) => Box::new(group_by::StringGroupbySink::new(
                         key_columns[0].clone(),
                         aggregation_columns,
                         agg_fns,

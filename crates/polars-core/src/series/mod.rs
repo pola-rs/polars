@@ -758,7 +758,7 @@ impl Series {
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         let out = match self.0.get(index)? {
-            AnyValue::Utf8(s) => Cow::Borrowed(s),
+            AnyValue::String(s) => Cow::Borrowed(s),
             AnyValue::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev, arr) => {

@@ -94,7 +94,7 @@ where
     }
 }
 
-fn is_in_utf8(ca_in: &Utf8Chunked, other: &Series) -> PolarsResult<BooleanChunked> {
+fn is_in_string(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::List(dt) if matches!(&**dt, DataType::Categorical(_, _)) => {
@@ -134,13 +134,15 @@ fn is_in_utf8(ca_in: &Utf8Chunked, other: &Series) -> PolarsResult<BooleanChunke
                 unreachable!()
             }
         },
-        DataType::List(dt) if DataType::Utf8 == **dt => is_in_binary(
+        DataType::List(dt) if DataType::String == **dt => is_in_binary(
             &ca_in.as_binary(),
             &other
                 .cast(&DataType::List(Box::new(DataType::Binary)))
                 .unwrap(),
         ),
-        DataType::Utf8 => is_in_binary(&ca_in.as_binary(), &other.cast(&DataType::Binary).unwrap()),
+        DataType::String => {
+            is_in_binary(&ca_in.as_binary(), &other.cast(&DataType::Binary).unwrap())
+        },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
 }
@@ -358,8 +360,8 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
                 make_categoricals_compatible(ca_in, other.categorical().unwrap())?;
             is_in_helper_ca(ca_in.physical(), other_in.physical())
         },
-        DataType::Utf8 => {
-            let ca_other = other.utf8().unwrap();
+        DataType::String => {
+            let ca_other = other.str().unwrap();
             let categories = ca_in.get_rev_map().get_categories();
 
             let others: PlHashSet<&str> = ca_other.downcast_iter().flatten().flatten().collect();
@@ -397,9 +399,9 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             let ca = s.struct_().unwrap();
             is_in_struct(ca, other)
         },
-        DataType::Utf8 => {
-            let ca = s.utf8().unwrap();
-            is_in_utf8(ca, other)
+        DataType::String => {
+            let ca = s.str().unwrap();
+            is_in_string(ca, other)
         },
         DataType::Binary => {
             let ca = s.binary().unwrap();

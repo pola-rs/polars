@@ -354,7 +354,7 @@ where
         self
     }
 
-    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
+    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::String]`.
     pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
         self.try_parse_dates = toggle;
         self
@@ -460,7 +460,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                     Decimal(precision, scale) => match (precision, scale) {
                         (_, Some(_)) => {
                             to_cast.push(fld.clone());
-                            fld.coerce(Utf8);
+                            fld.coerce(String);
                             Some(fld)
                         },
                         _ => {
@@ -687,8 +687,8 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
         .into_par_iter()
         .map(|s| {
             match s.dtype() {
-                DataType::Utf8 => {
-                    let ca = s.utf8().unwrap();
+                DataType::String => {
+                    let ca = s.str().unwrap();
                     // don't change columns that are in the fixed schema.
                     if fixed_schema.index_of(s.name()).is_some() {
                         return s;

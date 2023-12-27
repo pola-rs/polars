@@ -152,7 +152,7 @@ impl_polars_datatype!(DatetimeType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
 impl_polars_datatype!(DurationType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
 impl_polars_datatype!(CategoricalType, Unknown, PrimitiveArray<u32>, 'a, u32, u32);
 impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64);
-impl_polars_datatype!(Utf8Type, Utf8, Utf8Array<i64>, 'a, &'a str, Option<&'a str>);
+impl_polars_datatype!(StringType, String, Utf8Array<i64>, 'a, &'a str, Option<&'a str>);
 impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>);
 impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool);
 
@@ -234,7 +234,7 @@ pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Int128Chunked = ChunkedArray<Int128Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
-pub type Utf8Chunked = ChunkedArray<Utf8Type>;
+pub type StringChunked = ChunkedArray<StringType>;
 pub type BinaryChunked = ChunkedArray<BinaryType>;
 #[cfg(feature = "object")]
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;

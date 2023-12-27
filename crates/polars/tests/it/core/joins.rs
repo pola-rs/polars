@@ -94,7 +94,7 @@ fn test_left_join() {
         );
         assert_eq!(joined.column("rain").unwrap().null_count(), 3);
 
-        // test join on utf8
+        // test join on string
         let s0 = Series::new("days", &["mo", "tue", "wed", "thu", "fri"]);
         let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
@@ -198,28 +198,28 @@ fn test_join_multiple_columns() {
     let mut s = df_a
         .column("a")
         .unwrap()
-        .cast(&DataType::Utf8)
+        .cast(&DataType::String)
         .unwrap()
-        .utf8()
+        .str()
         .unwrap()
-        + df_a.column("b").unwrap().utf8().unwrap();
+        + df_a.column("b").unwrap().str().unwrap();
     s.rename("dummy");
 
     df_a.with_column(s).unwrap();
     let mut s = df_b
         .column("foo")
         .unwrap()
-        .cast(&DataType::Utf8)
+        .cast(&DataType::String)
         .unwrap()
-        .utf8()
+        .str()
         .unwrap()
-        + df_b.column("bar").unwrap().utf8().unwrap();
+        + df_b.column("bar").unwrap().str().unwrap();
     s.rename("dummy");
     df_b.with_column(s).unwrap();
 
     let joined = df_a.left_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let ham_col = joined.column("ham").unwrap();
-    let ca = ham_col.utf8().unwrap();
+    let ca = ham_col.str().unwrap();
 
     let correct_ham = &[
         Some("let"),
@@ -236,7 +236,7 @@ fn test_join_multiple_columns() {
     let joined = df_a
         .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left.into())
         .unwrap();
-    let ca = joined.column("ham").unwrap().utf8().unwrap();
+    let ca = joined.column("ham").unwrap().str().unwrap();
     assert_eq!(Vec::from(ca), correct_ham);
     let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_inner = df_a
@@ -295,7 +295,7 @@ fn test_join_categorical() {
         Some("const"),
     ];
     let ham_col = out.column("ham").unwrap();
-    let ca = ham_col.utf8().unwrap();
+    let ca = ham_col.str().unwrap();
 
     assert_eq!(Vec::from(ca), correct_ham);
 
@@ -578,7 +578,7 @@ fn test_join_floats() -> PolarsResult<()> {
         JoinType::Left.into(),
     )?;
     assert_eq!(
-        Vec::from(out.column("ham")?.utf8()?),
+        Vec::from(out.column("ham")?.str()?),
         &[None, Some("var"), None, None]
     );
 
@@ -592,9 +592,9 @@ fn test_join_floats() -> PolarsResult<()> {
         out.dtypes(),
         &[
             DataType::Float64,
-            DataType::Utf8,
+            DataType::String,
             DataType::Float64,
-            DataType::Utf8
+            DataType::String
         ]
     );
     Ok(())

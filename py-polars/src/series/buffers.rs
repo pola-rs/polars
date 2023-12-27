@@ -26,8 +26,8 @@ impl PySeries {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 (0, ca.len(), get_ptr(ca))
             })),
-            DataType::Utf8 => {
-                let ca = s.utf8().unwrap();
+            DataType::String => {
+                let ca = s.str().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
                 Ok((0, arr.len(), arr.values().as_ptr() as usize))
             },
@@ -47,7 +47,7 @@ impl PySeries {
         match self.series.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffer_from_primitive(&self.series, index),
             DataType::Boolean => get_buffer_from_primitive(&self.series, index),
-            DataType::Utf8 | DataType::List(_) | DataType::Binary => {
+            DataType::String | DataType::List(_) | DataType::Binary => {
                 get_buffer_from_nested(&self.series, index)
             },
             DataType::Array(_, _) => {
@@ -90,8 +90,8 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>
                     let ca = s.list().unwrap();
                     Box::new(ca.downcast_iter().map(|arr| arr.values().clone()))
                 },
-                DataType::Utf8 => {
-                    let ca = s.utf8().unwrap();
+                DataType::String => {
+                    let ca = s.str().unwrap();
                     Box::new(ca.downcast_iter().map(|arr| {
                         PrimitiveArray::from_data_default(arr.values().clone(), None).boxed()
                     }))
@@ -126,11 +126,11 @@ fn get_offsets(s: &Series) -> PyResult<PySeries> {
             let ca = s.list().unwrap();
             Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
         },
-        DataType::Utf8 => {
-            let ca = s.utf8().unwrap();
+        DataType::String => {
+            let ca = s.str().unwrap();
             Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
         },
-        _ => return Err(PyValueError::new_err("expected list/utf8")),
+        _ => return Err(PyValueError::new_err("expected list/string")),
     };
     let buffers = buffers
         .map(|arr| PrimitiveArray::from_data_default(arr.buffer().clone(), None).boxed())

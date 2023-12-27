@@ -60,15 +60,15 @@ where
     }
 }
 
-impl TakeChunked for Utf8Chunked {
+impl TakeChunked for StringChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         self.as_binary()
             .take_chunked_unchecked(by, sorted)
-            .to_utf8()
+            .to_string()
     }
 
     unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        self.as_binary().take_opt_chunked_unchecked(by).to_utf8()
+        self.as_binary().take_opt_chunked_unchecked(by).to_string()
     }
 }
 

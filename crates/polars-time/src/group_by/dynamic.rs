@@ -673,7 +673,7 @@ mod test {
             TimeUnit::Microseconds,
             TimeUnit::Milliseconds,
         ] {
-            let mut date = Utf8Chunked::new(
+            let mut date = StringChunked::new(
                 "dt",
                 [
                     "2020-01-01 13:45:48",
@@ -690,7 +690,7 @@ mod test {
                 false,
                 false,
                 None,
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .into_series();
             date.set_sorted_flag(IsSorted::Ascending);
@@ -720,7 +720,7 @@ mod test {
 
     #[test]
     fn test_rolling_group_by_aggs() -> PolarsResult<()> {
-        let mut date = Utf8Chunked::new(
+        let mut date = StringChunked::new(
             "dt",
             [
                 "2020-01-01 13:45:48",
@@ -737,7 +737,7 @@ mod test {
             false,
             false,
             None,
-            &Utf8Chunked::from_iter(std::iter::once("raise")),
+            &StringChunked::from_iter(std::iter::once("raise")),
         )?
         .into_series();
         date.set_sorted_flag(IsSorted::Ascending);
@@ -847,7 +847,7 @@ mod test {
         keys.push(time_key);
         let out = DataFrame::new(keys).unwrap();
         let g = out.column("groups").unwrap();
-        let g = g.utf8().unwrap();
+        let g = g.str().unwrap();
         let g = g.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(g, &["a", "a", "a", "a", "b", "b"]);
 

@@ -234,7 +234,7 @@ impl Expr {
         self.explode()
     }
 
-    /// Explode the utf8/ list column.
+    /// Explode the String/List column.
     pub fn explode(self) -> Self {
         Expr::Explode(Box::new(self))
     }
