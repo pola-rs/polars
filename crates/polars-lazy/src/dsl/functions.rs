@@ -308,45 +308,4 @@ mod test {
 
         Ok(())
     }
-
-    #[test]
-    #[cfg(feature = "horizontal_concat")]
-    fn test_horizontal_concat_lf() -> PolarsResult<()> {
-        let a = df![
-            "a1" => [1, 2, 3],
-            "a2" => ["a", "b", "c"]
-        ]?;
-
-        let b = df![
-            "b1" => [0.25, 0.5],
-        ]?;
-
-        let c = df![
-            "c1" => [1, 2, 3, 4],
-            "c2" => [5, 6, 7, 8],
-            "c3" => [9, 10, 11, 12]
-        ]?;
-
-        let out = concat_lf_horizontal(
-            &[a.lazy(), b.lazy(), c.lazy()],
-            UnionArgs {
-                parallel: false,
-                ..Default::default()
-            },
-        )?
-        .collect()?;
-
-        let expected = df![
-            "a1" => [Some(1), Some(2), Some(3), None],
-            "a2" => [Some("a"), Some("b"), Some("c"), None],
-            "b1" => [Some(0.25), Some(0.5), None, None],
-            "c1" => [Some(1), Some(2), Some(3), Some(4)],
-            "c2" => [Some(5), Some(6), Some(7), Some(8)],
-            "c3" => [Some(9), Some(10), Some(11), Some(12)],
-        ]?;
-
-        assert!(out.equals_missing(&expected));
-
-        Ok(())
-    }
 }

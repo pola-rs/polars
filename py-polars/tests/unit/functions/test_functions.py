@@ -98,6 +98,30 @@ def test_concat_horizontal(lazy: bool) -> None:
 
 
 @pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal_three_dfs(lazy: bool) -> None:
+    a = pl.DataFrame({"a1": [1, 2, 3], "a2": ["a", "b", "c"]})
+    b = pl.DataFrame({"b1": [0.25, 0.5]})
+    c = pl.DataFrame({"c1": [1, 2, 3, 4], "c2": [5, 6, 7, 8], "c3": [9, 10, 11, 12]})
+
+    if lazy:
+        out = pl.concat([a.lazy(), b.lazy(), c.lazy()], how="horizontal").collect()
+    else:
+        out = pl.concat([a, b, c], how="horizontal")
+
+    expected = pl.DataFrame(
+        {
+            "a1": [1, 2, 3, None],
+            "a2": ["a", "b", "c", None],
+            "b1": [0.25, 0.5, None, None],
+            "c1": [1, 2, 3, 4],
+            "c2": [5, 6, 7, 8],
+            "c3": [9, 10, 11, 12],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
 def test_concat_horizontal_single_df(lazy: bool) -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
 
