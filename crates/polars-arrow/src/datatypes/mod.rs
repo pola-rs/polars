@@ -157,8 +157,12 @@ pub enum ArrowDataType {
     Decimal256(usize, usize),
     /// Extension type.
     Extension(String, Box<ArrowDataType>, Option<String>),
+    /// A binary type that inlines small values
+    /// and can intern bytes.
     BinaryView,
-    Utf8View
+    /// A string type that inlines small values
+    /// and can intern strings.
+    Utf8View,
 }
 
 #[cfg(feature = "arrow_rs")]
@@ -222,7 +226,7 @@ impl From<ArrowDataType> for arrow_schema::DataType {
             ArrowDataType::Extension(_, d, _) => (*d).into(),
             ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
                 panic!("view datatypes not supported by arrow-rs")
-            }
+            },
         }
     }
 }

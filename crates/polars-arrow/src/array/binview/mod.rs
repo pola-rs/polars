@@ -1,15 +1,18 @@
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
-mod mutable;
 mod iterator;
+mod mutable;
 mod view;
 
 use std::any::Any;
+use std::marker::PhantomData;
+
 use polars_error::*;
+use view::View;
+
 use crate::array::Array;
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use std::marker::PhantomData;
 
 mod private {
     pub trait Sealed {}
@@ -55,7 +58,7 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     // Raw buffer access. (pointer, len).
     raw_buffers: Vec<(*const u8, usize)>,
     validity: Option<Bitmap>,
-    phantom: PhantomData<T>
+    phantom: PhantomData<T>,
 }
 
 impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
@@ -66,18 +69,19 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
             buffers: self.buffers.clone(),
             raw_buffers: self.raw_buffers.clone(),
             validity: self.validity.clone(),
-            phantom: Default::default()
+            phantom: Default::default(),
         }
     }
 }
 
-unsafe impl <T: ViewType + ?Sized> Send for BinaryViewArrayGeneric<T> {}
-unsafe impl <T: ViewType + ?Sized> Sync for BinaryViewArrayGeneric<T> {}
+unsafe impl<T: ViewType + ?Sized> Send for BinaryViewArrayGeneric<T> {}
+unsafe impl<T: ViewType + ?Sized> Sync for BinaryViewArrayGeneric<T> {}
 
 fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Vec<(*const T, usize)> {
-    buffers.iter().map(|buf| {
-        (buf.as_ptr(), buf.len())
-    }).collect()
+    buffers
+        .iter()
+        .map(|buf| (buf.as_ptr(), buf.len()))
+        .collect()
 }
 
 impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
@@ -89,7 +93,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         data_type: ArrowDataType,
         views: Buffer<u128>,
         buffers: Vec<Buffer<u8>>,
-        validity: Option<Bitmap>
+        validity: Option<Bitmap>,
     ) -> Self {
         let raw_buffers = buffers_into_raw(&buffers);
         Self {
@@ -98,7 +102,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             buffers,
             raw_buffers,
             validity,
-            phantom: Default::default()
+            phantom: Default::default(),
         }
     }
 
@@ -106,7 +110,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         data_type: ArrowDataType,
         views: Buffer<u128>,
         buffers: Vec<Buffer<u8>>,
-        validity: Option<Bitmap>
+        validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         if T::IS_UTF8 {
             // check utf8?
@@ -124,7 +128,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             buffers,
             raw_buffers,
             validity,
-            phantom: Default::default()
+            phantom: Default::default(),
         })
     }
 
@@ -138,9 +142,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     #[inline]
     pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         let validity = Some(Bitmap::new_zeroed(length));
-        unsafe {
-            Self::new_unchecked(data_type, Buffer::zeroed(length), vec![], validity)
-        }
+        unsafe { Self::new_unchecked(data_type, Buffer::zeroed(length), vec![], validity) }
     }
 
     /// Returns the element at index `i`
@@ -157,20 +159,34 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = self.views.get_unchecked(i);
-        let len = *v as u32;
+        let v = *self.views.get_unchecked(i);
+        let len = v as u32;
 
-        let bytes = if len < 12 {
+        // view layout:
+        // length: 4 bytes
+        // prefix: 4 bytes
+        // buffer_index: 4 bytes
+        // offset: 4 bytes
+
+        // inlined layout:
+        // length: 4 bytes
+        // data: 12 bytes
+
+        let bytes = if len <= 12 {
             let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
-            self.raw_buffers.get_unchecked()
-        }
-        todo!()
-
+            let prefix = (v >> 64) as u32;
+            let buffer_idx = (v >> 64) as u32;
+            let offset = (v >> 96) as u32;
+            let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(buffer_idx as usize);
+            let data = std::slice::from_raw_parts(data_ptr, data_len);
+            let offset = offset as usize;
+            data.get_unchecked(offset..offset + len as usize)
+        };
+        T::from_bytes_unchecked(bytes)
     }
 }
-
 
 impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     fn as_any(&self) -> &dyn Any {

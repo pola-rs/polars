@@ -327,12 +327,14 @@ impl<O: Offset> BinaryArray<O> {
     /// Creates an null [`BinaryArray`], i.e. whose `.null_count() == .len()`.
     #[inline]
     pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        unsafe { Self::new_unchecked(
-            data_type,
-            Offsets::new_zeroed(length).into(),
-            Buffer::new(),
-            Some(Bitmap::new_zeroed(length)),
-        ) }
+        unsafe {
+            Self::new_unchecked(
+                data_type,
+                Offsets::new_zeroed(length).into(),
+                Buffer::new(),
+                Some(Bitmap::new_zeroed(length)),
+            )
+        }
     }
 
     /// Returns the default [`ArrowDataType`], `DataType::Binary` or `DataType::LargeBinary`

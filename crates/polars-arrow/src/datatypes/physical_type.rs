@@ -44,7 +44,7 @@ pub enum PhysicalType {
     BinaryView,
     /// A string type that inlines small values
     /// and can intern strings.
-    Utf8View
+    Utf8View,
 }
 
 impl PhysicalType {
