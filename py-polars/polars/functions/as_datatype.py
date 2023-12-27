@@ -492,7 +492,7 @@ def concat_str(
     exprs
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
-        literals. Non-`Utf8` columns are cast to `Utf8`.
+        literals. Non-`String` columns are cast to `String`.
     *more_exprs
         Additional columns to concatenate into a single string column, specified as
         positional arguments.

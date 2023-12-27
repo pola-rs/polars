@@ -26,7 +26,7 @@ def test_col_select() -> None:
     assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
     assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
     # Dtypes
-    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
+    assert df.select(pl.col(pl.String)).columns == ["bar"]
     assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
         "ham",
         "hamburger",

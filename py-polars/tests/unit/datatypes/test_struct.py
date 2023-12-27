@@ -164,7 +164,7 @@ def test_struct_function_expansion() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
-    struct_schema = {"a": pl.UInt32, "b": pl.Utf8}
+    struct_schema = {"a": pl.UInt32, "b": pl.String}
     s = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
 
     assert isinstance(s, pl.Series)
@@ -644,7 +644,7 @@ def test_empty_struct() -> None:
     [
         pl.List,
         pl.List(pl.Null),
-        pl.List(pl.Utf8),
+        pl.List(pl.String),
         pl.Array(pl.Null, 32),
         pl.Array(pl.UInt8, 16),
         pl.Struct,
@@ -699,7 +699,7 @@ def test_struct_null_cast() -> None:
     dtype = pl.Struct(
         [
             pl.Field("a", pl.Int64),
-            pl.Field("b", pl.Utf8),
+            pl.Field("b", pl.String),
             pl.Field("c", pl.List(pl.Float64)),
         ]
     )

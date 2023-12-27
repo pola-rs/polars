@@ -65,7 +65,7 @@ def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
 
     # cast is necessary as pyarrow writes partitions as categorical type
     read_df = pl.read_parquet(path_to_write, use_pyarrow=True).with_columns(
-        pl.col("partition_col").cast(pl.Utf8)
+        pl.col("partition_col").cast(pl.String)
     )
     assert_frame_equal(df, read_df)
 

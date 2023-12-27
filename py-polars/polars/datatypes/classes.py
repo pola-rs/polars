@@ -376,8 +376,12 @@ class Boolean(DataType):
     """Boolean type."""
 
 
-class Utf8(DataType):
+class String(DataType):
     """UTF-8 encoded string type."""
+
+
+# Allow Utf8 as an alias for String
+Utf8 = String
 
 
 class Binary(DataType):
@@ -745,15 +749,17 @@ class Struct(NestedType):
         --------
         Initialize using a dictionary:
 
-        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.Utf8)})
+        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.String)})
         >>> dtype
-        Struct({'a': Int8, 'b': List(Utf8)})
+        Struct({'a': Int8, 'b': List(String)})
 
         Initialize using a list of Field objects:
 
-        >>> dtype = pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.Utf8))])
+        >>> dtype = pl.Struct(
+        ...     [pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.String))]
+        ... )
         >>> dtype
-        Struct({'a': Int8, 'b': List(Utf8)})
+        Struct({'a': Int8, 'b': List(String)})
 
         When initializing a Series, Polars can infer a struct data type from the data.
 
@@ -766,7 +772,7 @@ class Struct(NestedType):
                 {2,["z"]}
         ]
         >>> s.dtype
-        Struct({'a': Int64, 'b': List(Utf8)})
+        Struct({'a': Int64, 'b': List(String)})
         """
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]

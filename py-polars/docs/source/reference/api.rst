@@ -93,7 +93,7 @@ Examples
 
             pl.DataFrame(
                 data=["aaa", "bbb", "ccc", "ddd", "eee", "fff"],
-                columns=[("txt", pl.Utf8)],
+                columns=[("txt", pl.String)],
             ).split.by_alternate_rows()
 
             # [┌─────┐  ┌─────┐

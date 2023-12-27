@@ -162,7 +162,7 @@ The mapping of Python types to Polars data types is as follows:
 - `int` -> `Int64`
 - `float` -> `Float64`
 - `bool` -> `Boolean`
-- `str` -> `Utf8`
+- `str` -> `String`
 - `list[tp]` -> `List[tp]` (where the inner type is inferred with the same rules)
 - `dict[str, [tp]]` -> `struct`
 - `Any` -> `object` (Prevent this at all times)
@@ -172,5 +172,5 @@ Rust types map as follows:
 - `i32` or `i64` -> `Int64`
 - `f32` or `f64` -> `Float64`
 - `bool` -> `Boolean`
-- `String` or `str` -> `Utf8`
+- `String` or `str` -> `String`
 - `Vec<tp>` -> `List[tp]` (where the inner type is inferred with the same rules)

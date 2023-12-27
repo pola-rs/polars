@@ -108,7 +108,7 @@ def test_replace_enum_to_str() -> None:
 
     result = s.replace({"a": "c", "b": "d"})
 
-    expected = pl.Series(["c", "d", "c"], dtype=pl.Utf8)
+    expected = pl.Series(["c", "d", "c"], dtype=pl.String)
     assert_series_equal(result, expected)
 
 
@@ -323,7 +323,7 @@ def test_replace_mix() -> None:
         [
             pl.Series("float_to_boolean", [True, None], dtype=pl.Boolean),
             pl.Series("boolean_to_int", [1, 0], dtype=pl.Int64),
-            pl.Series("boolean_to_str", ["1", "0"], dtype=pl.Utf8),
+            pl.Series("boolean_to_str", ["1", "0"], dtype=pl.String),
         ]
     )
     assert_frame_equal(result, expected)

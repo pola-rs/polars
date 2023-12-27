@@ -309,9 +309,9 @@ def test_projection_join_names_9955() -> None:
     q = q.select(batting.columns)
 
     assert q.collect().schema == {
-        "playerID": pl.Utf8,
+        "playerID": pl.String,
         "yearID": pl.Int64,
-        "lgID": pl.Utf8,
+        "lgID": pl.String,
     }
 
 
