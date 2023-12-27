@@ -34,7 +34,6 @@ pub fn replace(
     }
 
     let old = match (s.dtype(), old.dtype()) {
-        (s_dt, old_dt) if s_dt == old_dt => old.clone(),
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(opt_rev_map, ord), DataType::Utf8) => {
             let dt = opt_rev_map
@@ -96,18 +95,18 @@ fn replace_by_multiple(
 
     let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();
 
+    if replaced.null_count() == 0 {
+        return Ok(replaced.clone());
+    }
+
     match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {
             let mask = col.bool()?;
             replaced.zip_with(mask, default)
         },
         Err(_) => {
-            if replaced.null_count() > 0 {
-                let mask = &replaced.is_not_null();
-                replaced.zip_with(mask, default)
-            } else {
-                Ok(replaced.clone())
-            }
+            let mask = &replaced.is_not_null();
+            replaced.zip_with(mask, default)
         },
     }
 }
