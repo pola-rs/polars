@@ -1122,7 +1122,7 @@ class DataFrame:
         Create a plot namespace.
 
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see `hvplot Plotting Extensions <https://hvplot.holoviz.org/user_guide/Plotting_Extensions.html>`_
+        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
         for more information and documentation.
 
         Examples
@@ -1149,6 +1149,11 @@ class DataFrame:
         ...     }
         ... )
         >>> df.plot.line(x="date", y=["stock_1", "stock_2"])  # doctest: +SKIP
+
+        For more info on what you can pass, you can use ``hvplot.help``:
+
+        >>> import hvplot  # doctest: +SKIP
+        >>> hvplot.help('scatter')  # doctest: +SKIP
         """
         try:
             import hvplot.polars  # noqa: F401

@@ -55,8 +55,8 @@ pip install 'polars[numpy,fsspec]'
 | connectorx | Support for reading from SQL databases                                                                                                |
 | xlsx2csv   | Support for reading from Excel files                                                                                                  |
 | deltalake  | Support for reading from Delta Lake Tables                                                                                            |
+| plot       | Support for plotting Dataframes                                                                                                       |
 | timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
-| plotting   | Support for plotting Dataframes                                                                                                       |
 
 ### Rust
 
