@@ -10,6 +10,7 @@ use std::marker::PhantomData;
 
 use polars_error::*;
 use view::View;
+pub use mutable::*;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
@@ -30,6 +31,7 @@ use crate::bitmap::utils::{BitmapIter, ZipValidity};
 
 pub trait ViewType: Sealed + 'static + PartialEq {
     const IS_UTF8: bool;
+    const DATA_TYPE: ArrowDataType;
 
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
 
@@ -38,6 +40,7 @@ pub trait ViewType: Sealed + 'static + PartialEq {
 
 impl ViewType for str {
     const IS_UTF8: bool = true;
+    const DATA_TYPE: ArrowDataType = ArrowDataType::Utf8View;
 
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
@@ -52,6 +55,7 @@ impl ViewType for str {
 
 impl ViewType for [u8] {
     const IS_UTF8: bool = false;
+    const DATA_TYPE: ArrowDataType = ArrowDataType::BinaryView;
 
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
