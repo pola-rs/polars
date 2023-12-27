@@ -6,23 +6,11 @@ use polars_core::prelude::*;
 
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
-#[cfg(any(
-    feature = "parquet",
-    feature = "ipc",
-    feature = "csv",
-    feature = "json"
-))]
 pub(super) trait SinkWriter {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()>;
     fn _finish(&mut self) -> PolarsResult<()>;
 }
 
-#[cfg(any(
-    feature = "parquet",
-    feature = "ipc",
-    feature = "csv",
-    feature = "json"
-))]
 pub(super) fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
     mut writer: Box<dyn SinkWriter + Send>,
@@ -69,23 +57,11 @@ pub(super) fn init_writer_thread(
 
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
-#[cfg(any(
-    feature = "parquet",
-    feature = "ipc",
-    feature = "csv",
-    feature = "json"
-))]
 pub struct FilesSink {
     pub(crate) sender: Sender<Option<DataChunk>>,
     pub(crate) io_thread_handle: Arc<Option<JoinHandle<()>>>,
 }
 
-#[cfg(any(
-    feature = "parquet",
-    feature = "ipc",
-    feature = "csv",
-    feature = "json"
-))]
 impl Sink for FilesSink {
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         // don't add empty dataframes

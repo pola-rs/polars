@@ -1,5 +1,11 @@
 #[cfg(feature = "csv")]
 mod csv;
+#[cfg(any(
+    feature = "parquet",
+    feature = "ipc",
+    feature = "csv",
+    feature = "json"
+))]
 mod file_sink;
 #[cfg(feature = "ipc")]
 mod ipc;
