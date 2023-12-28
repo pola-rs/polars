@@ -1,4 +1,3 @@
-use arrow::array::Array;
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
 
