@@ -702,6 +702,22 @@ def test_list_to_array() -> None:
     expected = pl.Series(data, dtype=pl.Array(pl.Float32, 2))
     assert_series_equal(result, expected)
 
+    # test logical type
+    df = pl.DataFrame(
+        data={"duration": [[1000, 2000], None]},
+        schema={
+            "duration": pl.List(pl.Datetime),
+        },
+    ).with_columns(pl.col("duration").list.to_array(2))
+
+    expected_df = pl.DataFrame(
+        data={"duration": [[1000, 2000], None]},
+        schema={
+            "duration": pl.Array(pl.Datetime, 2),
+        },
+    )
+    assert_frame_equal(df, expected_df)
+
 
 def test_list_to_array_wrong_lengths() -> None:
     s = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float32))

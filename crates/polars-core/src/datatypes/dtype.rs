@@ -144,9 +144,9 @@ impl DataType {
             Time => Int64,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) => UInt32,
-            List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-array")]
             Array(dt, width) => Array(Box::new(dt.to_physical()), *width),
+            List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let new_fields = fields
