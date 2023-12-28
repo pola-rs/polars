@@ -3980,8 +3980,9 @@ class Expr:
         """
         Apply a custom python function to a whole Series or sequence of Series.
 
-        The output of this custom function must be a Series. If you want to apply a
-        custom function elementwise over single values, see :func:`map_elements`.
+        The output of this custom function must be a Series (or a NumPy array, in
+        which case it will be automatically converted into a Series). If you want to
+        apply a custom function elementwise over single values, see :func:`map_elements`.
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
@@ -4034,8 +4035,15 @@ class Expr:
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
+        
+        def wrapper(*args, **kwargs):
+            result = function(*args, **kwargs)
+            if _check_for_numpy(result) and isinstance(result, np.ndarray):
+                result = pl.Series(result)
+            return result
+        
         return self._from_pyexpr(
-            self._pyexpr.map_batches(function, return_dtype, agg_list, is_elementwise)
+            self._pyexpr.map_batches(wrapper, return_dtype, agg_list, is_elementwise)
         )
 
     def map_elements(
