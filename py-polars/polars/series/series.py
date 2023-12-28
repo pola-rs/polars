@@ -358,16 +358,21 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    def _get_ptr(self) -> tuple[int, int, int]:
+    def _get_buffer_info(self) -> tuple[int, int, int]:
         """
-        Get a pointer to the start of the values buffer of a numeric Series.
+        Return pointer, offset, and length information about the underlying buffer.
 
-        This will raise an error if the `Series` contains multiple chunks.
+        Returns
+        -------
+        tuple of ints
+            Tuple of the form (pointer, offset, length)
 
-        This will return the offset, length and the pointer itself.
-
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
         """
-        return self._s.get_ptr()
+        return self._s._get_buffer_info()
 
     @property
     def dtype(self) -> DataType:

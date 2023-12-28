@@ -54,7 +54,7 @@ class PolarsColumn(Column):
     @property
     def offset(self) -> int:
         """Offset of the first element with respect to the start of the underlying buffer."""  # noqa: W505
-        offset, _length, _pointer = self._col._s.get_ptr()
+        _, offset, _ = self._col._get_buffer_info()
         return offset
 
     @property

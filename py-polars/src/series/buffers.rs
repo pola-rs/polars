@@ -3,10 +3,21 @@ use polars_rs::export::arrow::offset::OffsetsBuffer;
 
 use super::*;
 
+struct BufferInfo {
+    pointer: usize,
+    offset: usize,
+    length: usize,
+}
+impl IntoPy<PyObject> for BufferInfo {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        (self.pointer, self.offset, self.length).to_object(py)
+    }
+}
+
 #[pymethods]
 impl PySeries {
-    /// Returns `(offset, len, ptr)`
-    fn get_ptr(&self) -> PyResult<(usize, usize, usize)> {
+    /// Returns tuple with `(offset, len, ptr)`
+    fn _get_buffer_info(&self) -> PyResult<BufferInfo> {
         let s = self.series.to_physical_repr();
         let arrays = s.chunks();
         if arrays.len() != 1 {
@@ -20,21 +31,33 @@ impl PySeries {
                 // this one is quite useless as you need to know the offset
                 // into the first byte.
                 let (slice, start, len) = arr.values().as_slice();
-                Ok((start, len, slice.as_ptr() as usize))
+                Ok(BufferInfo {
+                    pointer: slice.as_ptr() as usize,
+                    offset: start,
+                    length: len,
+                })
             },
             dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                (0, ca.len(), get_ptr(ca))
+                BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
             })),
             DataType::String => {
                 let ca = s.str().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
-                Ok((0, arr.len(), arr.values().as_ptr() as usize))
+                Ok(BufferInfo {
+                    pointer: arr.values().as_ptr() as usize,
+                    offset: 0,
+                    length: arr.len(),
+                })
             },
             DataType::Binary => {
                 let ca = s.binary().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
-                Ok((0, arr.len(), arr.values().as_ptr() as usize))
+                Ok(BufferInfo {
+                    pointer: arr.values().as_ptr() as usize,
+                    offset: 0,
+                    length: arr.len(),
+                })
             },
             _ => {
                 let msg = "Cannot take pointer of nested type, try to first select a buffer";
@@ -160,7 +183,7 @@ fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<Option<PySeri
     }
 }
 
-fn get_ptr<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
+fn get_pointer<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
     let arr = ca.downcast_iter().next().unwrap();
     arr.values().as_ptr() as usize
 }
