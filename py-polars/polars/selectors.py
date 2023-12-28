@@ -204,11 +204,7 @@ def _combine_as_selector(
     *more_items: str | Expr | PolarsDataType | SelectorType,
 ) -> SelectorType:
     """Create a combined selector from cols, names, dtypes, and/or other selectors."""
-    names: list[str] = []
-    regexes = list[str]()
-    dtypes: list[PolarsDataType] = []
-    selectors: list[SelectorType] = []
-
+    names, regexes, dtypes, selectors = [], [], [], []  # type: ignore[var-annotated]
     for item in (
         *(
             items
@@ -220,7 +216,7 @@ def _combine_as_selector(
         if is_selector(item):
             selectors.append(item)
         elif is_polars_dtype(item):
-            dtypes.append(item)  # type: ignore[arg-type]
+            dtypes.append(item)
         elif isinstance(item, str):
             if item.startswith("^") and item.endswith("$"):
                 regexes.append(item)
@@ -238,7 +234,7 @@ def _combine_as_selector(
     if names:
         selected.append(by_name(*names))
     if dtypes:
-        selected.append(by_dtype(*dtypes))
+        selected.append(by_dtype(*dtypes))  # type: ignore[arg-type]
     if regexes:
         selected.append(
             matches(
