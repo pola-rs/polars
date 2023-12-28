@@ -390,6 +390,15 @@ class Series:
         The validity buffer may not exist if the column contains no null values.
         The offsets buffer only exists for Series of data type `String` and `List`.
 
+        Parameters
+        ----------
+        index
+            An index indicating the buffer to return:
+
+            - `0` -> data buffer
+            - `1` -> validity buffer
+            - `2` -> offsets buffer
+
         Returns
         -------
         Series or None
@@ -407,18 +416,25 @@ class Series:
 
     @classmethod
     def _from_buffer(
-        self, dtype: PolarsDataType, pointer: int, offset: int, length: int, base: Any
+        self, dtype: PolarsDataType, buffer_info: tuple[int, int, int], base: Any
     ) -> Self:
         """
         Construct a Series from information about its underlying buffer.
+
+        Parameters
+        ----------
+        dtype
+            The data type of the buffer.
+        buffer_info
+            Tuple containing buffer information in the form (pointer, offset, length).
+        base
+            The object owning the buffer.
 
         Returns
         -------
         Series
         """
-        return self._from_pyseries(
-            PySeries._from_buffer(dtype, pointer, offset, length, base)
-        )
+        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, base))
 
     @property
     def dtype(self) -> DataType:

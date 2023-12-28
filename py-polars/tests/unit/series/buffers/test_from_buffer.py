@@ -17,31 +17,31 @@ from polars.testing.parametric import series
     )
 )
 def test_series_from_buffer(s: pl.Series) -> None:
-    pointer, offset, length = s._get_buffer_info()
-    result = pl.Series._from_buffer(s.dtype, pointer, offset, length, base=s)
+    buffer_info = s._get_buffer_info()
+    result = pl.Series._from_buffer(s.dtype, buffer_info, base=s)
     assert_series_equal(s, result)
 
 
 def test_series_from_buffer_numeric() -> None:
     s = pl.Series([1, 2, 3], dtype=pl.UInt16)
-    pointer, offset, length = s._get_buffer_info()
-    result = pl.Series._from_buffer(s.dtype, pointer, offset, length, base=s)
+    buffer_info = s._get_buffer_info()
+    result = pl.Series._from_buffer(s.dtype, buffer_info, base=s)
     assert_series_equal(s, result)
 
 
 def test_series_from_buffer_sliced_bitmask() -> None:
     s = pl.Series([True] * 9, dtype=pl.Boolean)[5:]
-    pointer, offset, length = s._get_buffer_info()
-    result = pl.Series._from_buffer(s.dtype, pointer, offset, length, base=s)
+    buffer_info = s._get_buffer_info()
+    result = pl.Series._from_buffer(s.dtype, buffer_info, base=s)
     assert_series_equal(s, result)
 
 
 def test_series_from_buffer_unsupported() -> None:
     s = pl.Series([date(2020, 1, 1), date(2020, 2, 5)])
-    pointer, offset, length = s._get_buffer_info()
+    buffer_info = s._get_buffer_info()
 
     with pytest.raises(
         TypeError,
         match="`from_buffer` requires a physical type as input for `dtype`, got date",
     ):
-        pl.Series._from_buffer(pl.Date, pointer, offset, length, base=s)
+        pl.Series._from_buffer(pl.Date, buffer_info, base=s)

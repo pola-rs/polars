@@ -17,6 +17,16 @@ impl IntoPy<PyObject> for BufferInfo {
         (self.pointer, self.offset, self.length).to_object(py)
     }
 }
+impl<'a> FromPyObject<'a> for BufferInfo {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        let (pointer, offset, length) = ob.extract()?;
+        Ok(Self {
+            pointer,
+            offset,
+            length,
+        })
+    }
+}
 
 #[pymethods]
 impl PySeries {
@@ -200,12 +210,15 @@ impl PySeries {
     unsafe fn _from_buffer(
         py: Python,
         dtype: Wrap<DataType>,
-        pointer: usize,
-        offset: usize,
-        length: usize,
+        buffer_info: BufferInfo,
         base: &PyAny,
     ) -> PyResult<Self> {
         let dtype = dtype.0;
+        let BufferInfo {
+            pointer,
+            offset,
+            length,
+        } = buffer_info;
         let base = base.to_object(py);
 
         let arr_boxed = match dtype {
