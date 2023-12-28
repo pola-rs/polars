@@ -37,7 +37,7 @@ def test_when_then_broadcast_nulls_12665() -> None:
     [
         (pl.lit("a"), [True, False, False]),
         (pl.col("name").head(1), [True, False, False]),
-        (pl.lit(None, dtype=pl.Utf8), [None, None, None]),
+        (pl.lit(None, dtype=pl.String), [None, None, None]),
         (pl.col("null_utf8").head(1), [None, None, None]),
     ],
 )
@@ -48,7 +48,7 @@ def test_when_then_broadcast_nulls_12665() -> None:
         pl.DataFrame(
             {
                 "name": ["a", "b", "c"],
-                "null_utf8": pl.Series([None, None, None], dtype=pl.Utf8),
+                "null_utf8": pl.Series([None, None, None], dtype=pl.String),
             }
         )
     ],
