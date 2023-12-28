@@ -4,7 +4,11 @@ Test some basic methods of the dataframe consortium standard.
 Full testing is done at https://github.com/data-apis/dataframe-api-compat,
 this is just to check that the entry point works as expected.
 """
+import pytest
+
 import polars as pl
+
+pytestmark = pytest.mark.skip(reason="Bug in version parsing of dataframe-api-compat")
 
 
 def test_dataframe() -> None:
