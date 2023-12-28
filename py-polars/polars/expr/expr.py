@@ -3969,6 +3969,16 @@ class Expr:
         """
         return self.filter(predicate)
 
+    class _map_batches_wrapper:
+        def __init__(self, function: Callable[[Series], Series | Any]):
+            self.function = function
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            result = self.function(*args, **kwargs)
+            if _check_for_numpy(result) and isinstance(result, np.ndarray):
+                result = pl.Series(result)
+            return result
+
     def map_batches(
         self,
         function: Callable[[Series], Series | Any],
@@ -4036,14 +4046,13 @@ class Expr:
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
 
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            result = function(*args, **kwargs)
-            if _check_for_numpy(result) and isinstance(result, np.ndarray):
-                result = pl.Series(result)
-            return result
-
         return self._from_pyexpr(
-            self._pyexpr.map_batches(wrapper, return_dtype, agg_list, is_elementwise)
+            self._pyexpr.map_batches(
+                self._map_batches_wrapper(function),
+                return_dtype,
+                agg_list,
+                is_elementwise,
+            )
         )
 
     def map_elements(
