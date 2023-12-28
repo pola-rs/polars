@@ -77,7 +77,7 @@ where
     V::Array: ArrayFromIter<<F as UnaryFnMut<T::Physical<'a>>>::Ret>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype());
+        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow());
         return ChunkedArray::with_chunk(ca.name(), arr);
     }
 
@@ -101,7 +101,7 @@ where
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype());
+        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow());
         return Ok(ChunkedArray::with_chunk(ca.name(), arr));
     }
 
@@ -264,7 +264,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
 
         return ChunkedArray::with_chunk(lhs.name(), arr);
     }
@@ -303,7 +303,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
 
         return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
     }
@@ -619,7 +619,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
 
         return ChunkedArray::with_chunk(lhs.name(), arr);
     }
@@ -655,7 +655,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
 
         return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
     }
