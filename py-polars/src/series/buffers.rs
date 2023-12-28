@@ -21,7 +21,7 @@ impl PySeries {
         let s = self.series.to_physical_repr();
         let arrays = s.chunks();
         if arrays.len() != 1 {
-            let msg = "Only can take pointer, if the 'series' contains a single chunk";
+            let msg = "cannot get buffer info for Series consisting of multiple chunks";
             raise_err!(msg, ComputeError);
         }
         match s.dtype() {
