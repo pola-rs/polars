@@ -18,6 +18,6 @@ body:
       label: Link
       description: >
         Provide a link to the existing documentation, if applicable.
-      placeholder: ex. https://pola-rs.github.io/polars/docs/python/dev/...
+      placeholder: ex. https://docs.pola.rs/docs/python/dev/...
     validations:
       required: false
