@@ -15,3 +15,4 @@ Attributes
    Series.shape
    Series.str
    Series.flags
+   Series.plot
