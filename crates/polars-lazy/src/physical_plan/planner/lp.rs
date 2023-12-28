@@ -172,6 +172,16 @@ pub fn create_physical_plan(
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         },
+        #[cfg(feature = "horizontal_concat")]
+        HConcat {
+            inputs, options, ..
+        } => {
+            let inputs = inputs
+                .into_iter()
+                .map(|node| create_physical_plan(node, lp_arena, expr_arena))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            Ok(Box::new(executors::HConcatExec { inputs, options }))
+        },
         Slice { input, offset, len } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::SliceExec { input, offset, len }))

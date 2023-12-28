@@ -153,6 +153,7 @@ cov = ["polars-ops/cov"]
 hist = ["polars-ops/hist"]
 replace = ["polars-ops/replace"]
 find_many = ["polars-ops/find_many"]
+horizontal_concat = []
 
 bigidx = ["polars-core/bigidx"]
 

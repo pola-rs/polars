@@ -370,6 +370,24 @@ pub(crate) fn aexprs_to_schema(
         .collect()
 }
 
+/// Concatenate multiple schemas into one, disallowing duplicate field names
+pub fn merge_schemas(schemas: &[SchemaRef]) -> PolarsResult<Schema> {
+    let schema_size = schemas.iter().map(|schema| schema.len()).sum();
+    let mut merged_schema = Schema::with_capacity(schema_size);
+
+    for schema in schemas {
+        schema.iter().try_for_each(|(name, dtype)| {
+            if merged_schema.with_column(name.clone(), dtype.clone()).is_none() {
+                Ok(())
+            } else {
+                Err(polars_err!(Duplicate: "Column with name '{}' has more than one occurrence", name))
+            }
+        })?;
+    }
+
+    Ok(merged_schema)
+}
+
 pub fn combine_predicates_expr<I>(iter: I) -> Expr
 where
     I: Iterator<Item = Expr>,
