@@ -145,6 +145,20 @@ impl LogicalPlan {
                 }
                 Ok(())
             },
+            #[cfg(feature = "horizontal_concat")]
+            HConcat { inputs, .. } => {
+                let current_node = DotNode {
+                    branch,
+                    id,
+                    fmt: "HCONCAT",
+                };
+                self.write_dot(acc_str, prev_node, current_node, id_map)?;
+                for input in inputs {
+                    input.dot(acc_str, (branch, id + 1), current_node, id_map)?;
+                    branch += 1;
+                }
+                Ok(())
+            },
             Cache {
                 input,
                 id: cache_id,

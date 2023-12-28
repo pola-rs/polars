@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
-use super::utils::{build_extend_null_bits, ExtendNullBits};
 use super::Growable;
+use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, FixedSizeBinaryArray};
 use crate::bitmap::MutableBitmap;
 
 /// Concrete [`Growable`] for the [`FixedSizeBinaryArray`].
 pub struct GrowableFixedSizeBinary<'a> {
     arrays: Vec<&'a FixedSizeBinaryArray>,
-    validity: MutableBitmap,
+    validity: Option<MutableBitmap>,
     values: Vec<u8>,
-    extend_null_bits: Vec<ExtendNullBits<'a>>,
     size: usize, // just a cache
 }
 
@@ -29,17 +28,11 @@ impl<'a> GrowableFixedSizeBinary<'a> {
             use_validity = true;
         };
 
-        let extend_null_bits = arrays
-            .iter()
-            .map(|array| build_extend_null_bits(*array, use_validity))
-            .collect();
-
         let size = FixedSizeBinaryArray::get_size(arrays[0].data_type());
         Self {
             arrays,
             values: Vec::with_capacity(0),
-            validity: MutableBitmap::with_capacity(capacity),
-            extend_null_bits,
+            validity: prepare_validity(use_validity, capacity),
             size,
         }
     }
@@ -51,16 +44,16 @@ impl<'a> GrowableFixedSizeBinary<'a> {
         FixedSizeBinaryArray::new(
             self.arrays[0].data_type().clone(),
             values.into(),
-            validity.into(),
+            validity.map(|v| v.into()),
         )
     }
 }
 
 impl<'a> Growable<'a> for GrowableFixedSizeBinary<'a> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        (self.extend_null_bits[index])(&mut self.validity, start, len);
-
         let array = self.arrays[index];
+        extend_validity(&mut self.validity, array, start, len);
+
         let values = array.values();
 
         self.values
@@ -70,7 +63,9 @@ impl<'a> Growable<'a> for GrowableFixedSizeBinary<'a> {
     fn extend_validity(&mut self, additional: usize) {
         self.values
             .extend_from_slice(&vec![0; self.size * additional]);
-        self.validity.extend_constant(additional, false);
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false);
+        }
     }
 
     #[inline]
@@ -92,7 +87,7 @@ impl<'a> From<GrowableFixedSizeBinary<'a>> for FixedSizeBinaryArray {
         FixedSizeBinaryArray::new(
             val.arrays[0].data_type().clone(),
             val.values.into(),
-            val.validity.into(),
+            val.validity.map(|v| v.into()),
         )
     }
 }

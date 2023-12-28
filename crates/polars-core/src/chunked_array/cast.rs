@@ -393,10 +393,19 @@ impl ChunkCast for ListChunked {
                 }
             },
             #[cfg(feature = "dtype-array")]
-            Array(_, _) => {
-                // TODO: bubble up logical types.
-                let chunks = cast_chunks(self.chunks(), data_type, true)?;
-                unsafe { Ok(ArrayChunked::from_chunks(self.name(), chunks).into_series()) }
+            Array(child_type, width) => {
+                let physical_type = data_type.to_physical();
+                // cast to the physical type to avoid logical chunks.
+                let chunks = cast_chunks(self.chunks(), &physical_type, true)?;
+                // Safety: we just casted so the dtype matches.
+                // we must take this path to correct for physical types.
+                unsafe {
+                    Ok(Series::from_chunks_and_dtype_unchecked(
+                        self.name(),
+                        chunks,
+                        &Array(child_type.clone(), *width),
+                    ))
+                }
             },
             _ => {
                 polars_bail!(
@@ -445,10 +454,19 @@ impl ChunkCast for ArrayChunked {
                     },
                 }
             },
-            List(_) => {
-                // TODO! bubble up logical types
-                let chunks = cast_chunks(self.chunks(), data_type, true)?;
-                unsafe { Ok(ListChunked::from_chunks(self.name(), chunks).into_series()) }
+            List(child_type) => {
+                let physical_type = data_type.to_physical();
+                // cast to the physical type to avoid logical chunks.
+                let chunks = cast_chunks(self.chunks(), &physical_type, true)?;
+                // Safety: we just casted so the dtype matches.
+                // we must take this path to correct for physical types.
+                unsafe {
+                    Ok(Series::from_chunks_and_dtype_unchecked(
+                        self.name(),
+                        chunks,
+                        &List(child_type.clone()),
+                    ))
+                }
             },
             _ => polars_bail!(ComputeError: "cannot cast list type"),
         }
