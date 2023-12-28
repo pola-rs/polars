@@ -167,19 +167,19 @@ class PolarsColumn(Column):
         return buffer, dtype
 
     def _get_validity_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        buffer = self._col._get_buffer(1)
-        if buffer is None:
+        s = self._col._get_buffer(1)
+        if s is None:
             return None
 
-        buffer = PolarsBuffer(buffer, allow_copy=self._allow_copy)
+        buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
         dtype = (DtypeKind.BOOL, 1, "b", Endianness.NATIVE)
         return buffer, dtype
 
     def _get_offsets_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        buffer = self._col._get_buffer(2)
-        if buffer is None:
+        s = self._col._get_buffer(2)
+        if s is None:
             return None
 
-        buffer = PolarsBuffer(buffer, allow_copy=self._allow_copy)
+        buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
         dtype = (DtypeKind.INT, 64, "l", Endianness.NATIVE)
         return buffer, dtype
