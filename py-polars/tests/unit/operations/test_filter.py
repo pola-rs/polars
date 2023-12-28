@@ -53,7 +53,14 @@ def test_group_by_filter_all_true() -> None:
     )
     out = (
         df.group_by("name")
-        .agg([pl.col("order").filter(pl.col("type") == 1).n_unique().alias("n_unique")])
+        .agg(
+            [
+                pl.col("order")
+                .filter(pl.col("order") > 0, type=1)
+                .n_unique()
+                .alias("n_unique")
+            ]
+        )
         .select("n_unique")
     )
     assert out.to_dict(as_series=False) == {"n_unique": [1, 1]}
@@ -61,11 +68,7 @@ def test_group_by_filter_all_true() -> None:
 
 def test_filter_is_in_4572() -> None:
     df = pl.DataFrame({"id": [1, 2, 1, 2], "k": ["a"] * 2 + ["b"] * 2})
-    expected = (
-        df.group_by("id")
-        .agg(pl.col("k").filter(pl.col("k") == "a").implode())
-        .sort("id")
-    )
+    expected = df.group_by("id").agg(pl.col("k").filter(k="a").implode()).sort("id")
     result = (
         df.group_by("id")
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
