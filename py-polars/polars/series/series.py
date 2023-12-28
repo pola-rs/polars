@@ -7440,7 +7440,7 @@ class Series:
 
         KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
 
-        >>> s.plot.kde()
+        >>> s.plot.kde()  # doctest: +SKIP
 
         For more info on what you can pass, you can use ``hvplot.help``:
 
