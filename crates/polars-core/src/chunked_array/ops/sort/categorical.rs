@@ -1,5 +1,4 @@
 use super::*;
-use crate::utils::NoNull;
 
 impl CategoricalChunked {
     #[must_use]
@@ -12,7 +11,7 @@ impl CategoricalChunked {
         if self.uses_lexical_ordering() {
             let mut vals = self
                 .physical()
-                .into_no_null_iter()
+                .into_iter()
                 .zip(self.iter_str())
                 .collect_trusted::<Vec<_>>();
 
@@ -22,10 +21,10 @@ impl CategoricalChunked {
                 |a, b| a.1.cmp(&b.1),
                 options.multithreaded,
             );
-            let cats: NoNull<UInt32Chunked> =
-                vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-            let mut cats = cats.into_inner();
-            cats.rename(self.name());
+            let cats: UInt32Chunked = vals
+                .into_iter()
+                .map(|(idx, _v)| idx)
+                .collect_ca_trusted(self.name());
 
             // safety:
             // we only reordered the indexes so we are still in bounds

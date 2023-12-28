@@ -31,3 +31,9 @@ As such Polars goes to great lengths to:
 - Minimize contention in parallelism.
 - Process data in chunks.
 - Reuse memory allocations.
+
+!!! rust "Note"
+
+    The Rust examples in this guide are synchronized with the main branch of the Polars repository, rather than the latest Rust release.
+    You may not be able to copy-paste code examples and use them with the latest release.
+    We aim to solve this in the future.

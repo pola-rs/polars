@@ -6,6 +6,8 @@ use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use polars_utils::iter::EnumerateIdxTrait;
+#[cfg(any(feature = "serde-lazy", feature = "serde"))]
+use serde::{Deserialize, Serialize};
 
 use crate::datatypes::PlHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;
@@ -13,6 +15,10 @@ use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
+#[cfg_attr(
+    any(feature = "serde-lazy", feature = "serde"),
+    derive(Serialize, Deserialize)
+)]
 pub enum CategoricalOrdering {
     #[default]
     Physical,

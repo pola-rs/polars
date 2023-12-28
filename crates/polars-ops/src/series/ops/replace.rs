@@ -33,7 +33,19 @@ pub fn replace(
         return Ok(default);
     }
 
-    let old = old.strict_cast(s.dtype())?;
+    let old = match (s.dtype(), old.dtype()) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(opt_rev_map, ord), DataType::String) => {
+            let dt = opt_rev_map
+                .as_ref()
+                .filter(|rev_map| rev_map.is_enum())
+                .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), *ord))
+                .unwrap_or(DataType::Categorical(None, *ord));
+
+            old.strict_cast(&dt)?
+        },
+        _ => old.strict_cast(s.dtype())?,
+    };
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
@@ -82,6 +94,10 @@ fn replace_by_multiple(
     )?;
 
     let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();
+
+    if replaced.null_count() == 0 {
+        return Ok(replaced.clone());
+    }
 
     match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {

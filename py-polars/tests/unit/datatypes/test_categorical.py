@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import io
 import operator
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import pytest
 
@@ -766,3 +767,36 @@ def test_shift_over_13041() -> None:
         "id": [0, 0, 0, 1, 1, 1],
         "cat_col": [None, None, "a", None, None, "d"],
     }
+
+
+@pytest.mark.parametrize("context", [pl.StringCache(), contextlib.nullcontext()])
+@pytest.mark.parametrize("ordering", ["physical", "lexical"])
+def test_sort_categorical_retain_none(
+    context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
+    ordering: Literal["physical", "lexical"],
+) -> None:
+    with context:
+        df = pl.DataFrame(
+            [
+                pl.Series(
+                    "e",
+                    ["foo", None, "bar", "ham", None],
+                    dtype=pl.Categorical(ordering=ordering),
+                )
+            ]
+        )
+
+        df_sorted = df.with_columns(pl.col("e").sort())
+        assert (
+            df_sorted.get_column("e").null_count()
+            == df.get_column("e").null_count()
+            == 2
+        )
+        if ordering == "lexical":
+            assert df_sorted.get_column("e").to_list() == [
+                None,
+                None,
+                "bar",
+                "foo",
+                "ham",
+            ]
