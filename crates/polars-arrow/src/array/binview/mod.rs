@@ -98,7 +98,7 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
 unsafe impl<T: ViewType + ?Sized> Send for BinaryViewArrayGeneric<T> {}
 unsafe impl<T: ViewType + ?Sized> Sync for BinaryViewArrayGeneric<T> {}
 
-fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Vec<(*const T, usize)> {
+fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Arc<[(*const T, usize)]> {
     buffers
         .iter()
         .map(|buf| (buf.as_ptr(), buf.len()))
@@ -113,7 +113,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub unsafe fn new_unchecked(
         data_type: ArrowDataType,
         views: Buffer<u128>,
-        buffers: Vec<Buffer<u8>>,
+        buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
     ) -> Self {
         let raw_buffers = buffers_into_raw(&buffers);
@@ -127,7 +127,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         }
     }
 
-    pub fn buffers(&self) -> &[Buffer<u8>] {
+    pub fn data_buffers(&self) -> &[Buffer<u8>] {
         self.buffers.as_ref()
     }
 
@@ -138,7 +138,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub fn try_new(
         data_type: ArrowDataType,
         views: Buffer<u128>,
-        buffers: Vec<Buffer<u8>>,
+        buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         if T::IS_UTF8 {
@@ -164,14 +164,14 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Creates an empty [`BinaryViewArrayGeneric`], i.e. whose `.len` is zero.
     #[inline]
     pub fn new_empty(data_type: ArrowDataType) -> Self {
-        unsafe { Self::new_unchecked(data_type, Buffer::new(), vec![], None) }
+        unsafe { Self::new_unchecked(data_type, Buffer::new(), Arc::from([]), None) }
     }
 
     /// Returns a new null [`BinaryViewArrayGeneric`] of `length`.
     #[inline]
     pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         let validity = Some(Bitmap::new_zeroed(length));
-        unsafe { Self::new_unchecked(data_type, Buffer::zeroed(length), vec![], validity) }
+        unsafe { Self::new_unchecked(data_type, Buffer::zeroed(length), Arc::from([]), validity) }
     }
 
     /// Returns the element at index `i`

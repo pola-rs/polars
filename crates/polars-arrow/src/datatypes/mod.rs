@@ -156,6 +156,9 @@ pub enum ArrowDataType {
     /// Decimal backed by 256 bits
     Decimal256(usize, usize),
     /// Extension type.
+    /// - name
+    /// - physical type
+    /// - metadata
     Extension(String, Box<ArrowDataType>, Option<String>),
     /// A binary type that inlines small values
     /// and can intern bytes.

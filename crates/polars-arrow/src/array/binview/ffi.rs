@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;
@@ -66,6 +67,6 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             buffers.push(values);
         }
 
-        Self::try_new(data_type, views, buffers, validity)
+        Self::try_new(data_type, views, Arc::from(buffers), validity)
     }
 }

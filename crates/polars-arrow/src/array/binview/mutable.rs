@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::binview::view::View;
@@ -5,7 +6,7 @@ use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 
-const DEFAULT_BLOCK_SIZE: u32 = 8 * 1024;
+const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
@@ -13,6 +14,7 @@ pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     completed_buffers: Vec<Buffer<u8>>,
     in_progress_buffer: Vec<u8>,
     validity: Option<MutableBitmap>,
+    phantom: std::marker::PhantomData<T>
 }
 
 impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
@@ -22,12 +24,15 @@ impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
 }
 
 impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGeneric<T> {
-    fn from(value: MutableBinaryViewArray<T>) -> Self {
+    fn from(mut value: MutableBinaryViewArray<T>) -> Self {
+
+        value.completed_buffers.push(std::mem::take(&mut value.in_progress_buffer).into());
+
         unsafe {
             Self::new_unchecked(
                 T::DATA_TYPE,
                 value.views.into(),
-                vec![value.buffers.into()],
+                Arc::from(value.completed_buffers),
                 value.validity.map(|b| b.into()),
             )
         }
@@ -45,6 +50,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             completed_buffers: vec![],
             in_progress_buffer: vec![],
             validity: None,
+            phantom: Default::default()
         }
     }
 
@@ -53,8 +59,12 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.views.reserve(additional);
     }
 
+    pub fn len(&self) -> usize {
+        self.views.len()
+    }
+
     fn init_validity(&mut self) {
-        let mut validity = MutableBitmap::with_capacity(self.values.capacity());
+        let mut validity = MutableBitmap::with_capacity(self.views.capacity());
         validity.extend_constant(self.len(), true);
         validity.set(self.len() - 1, false);
         self.validity = Some(validity);
@@ -79,8 +89,8 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
                 let new_capacity = (self.in_progress_buffer.capacity() * 2)
                     .clamp(DEFAULT_BLOCK_SIZE, 16 * 1024 * 1024)
                     .max(bytes.len());
-                let mut in_progress = Vec::with_capacity(new_capacity);
-                let flushed = std::mem::replace(&mut self.in_progress_buffer, &mut in_progress);
+                let mut in_progress= Vec::with_capacity(new_capacity);
+                let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
                 if !flushed.is_empty() {
                     self.completed_buffers.push(flushed.into())
                 }
@@ -135,13 +145,21 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
-    pub fn from_iter<I, P>(iterator: I) -> Self {
+    pub fn from_iter<I, P>(iterator: I) -> Self
+        where
+            I: Iterator<Item = Option<P>>,
+            P: AsRef<T>,
+    {
         let mut mutable = Self::with_capacity(iterator.size_hint().0);
         mutable.extend(iterator);
         mutable
     }
 
-    pub fn from_values_iter<I, P>(iterator: I) -> Self {
+    pub fn from_values_iter<I, P>(iterator: I) -> Self
+        where
+            I: Iterator<Item = P>,
+            P: AsRef<T>,
+    {
         let mut mutable = Self::with_capacity(iterator.size_hint().0);
         mutable.extend_values(iterator);
         mutable
@@ -154,22 +172,10 @@ impl<T: ViewType + ?Sized, P: AsRef<T>> Extend<Option<P>> for MutableBinaryViewA
         Self::extend(self, iter.into_iter())
     }
 }
-impl<T: ViewType + ?Sized, P: AsRef<T>> Extend<P> for MutableBinaryViewArray<T> {
-    #[inline]
-    fn extend<I: IntoIterator<Item = Option<P>>>(&mut self, iter: I) {
-        Self::extend_values(self, iter.into_iter())
-    }
-}
 
-impl<T: ViewType + ?Sized, P: AsRef<T>> FromIterator<P> for MutableBinaryViewArray<T> {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = P>>(iter: I) -> Self {
-        Self::from_iter(iter.into_iter())
-    }
-}
 impl<T: ViewType + ?Sized, P: AsRef<T>> FromIterator<Option<P>> for MutableBinaryViewArray<T> {
     #[inline]
-    fn from_iter<I: IntoIterator<Item = P>>(iter: Option<I>) -> Self {
+    fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
         Self::from_iter(iter.into_iter())
     }
 }

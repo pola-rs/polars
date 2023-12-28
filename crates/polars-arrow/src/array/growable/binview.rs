@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use super::utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits};
+use super::utils::{extend_offset_values};
 use super::Growable;
 use crate::array::binview::{BinaryViewArrayGeneric, MutableBinaryViewArray, ViewType};
 use crate::array::{Array, BinaryArray};
+use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
@@ -13,10 +14,9 @@ use crate::offset::{Offset, Offsets};
 pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     arrays: Vec<&'a BinaryViewArrayGeneric<T>>,
     data_type: ArrowDataType,
-    validity: MutableBitmap::with_capacity(capacity),
+    validity: Option<MutableBitmap>,
     views: Vec<u128>,
     buffers: Vec<Buffer<u8>>,
-    extend_null_bits: Vec<ExtendNullBits<'a>>,
 }
 
 impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
@@ -32,44 +32,41 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             use_validity = true;
         };
 
-        let extend_null_bits = arrays
-            .iter()
-            .map(|array| build_extend_null_bits(*array, use_validity))
-            .collect();
-
-        let n_buffers = arrays.iter().map(|binview| binview.buffers().len()).sum::<usize>();
+        let n_buffers = arrays.iter().map(|binview| binview.data_buffers().len()).sum::<usize>();
 
         Self {
             arrays,
             data_type,
-            validity: MutableBitmap::with_capacity(capacity),
+            validity: prepare_validity(use_validity, capacity),
             views: Vec::with_capacity(capacity),
             buffers: Vec::with_capacity(n_buffers),
-            extend_null_bits,
         }
     }
 
     fn to(&mut self) -> BinaryViewArrayGeneric<T> {
-        // let mutable = std::mem::take(&mut self.mutable);
-        // let out = mutable.into();
-        // debug_assert!(out.data_type() == &self.data_type);
-        // out
-        todo!()
+        let views = std::mem::take(&mut self.views);
+        let buffers = std::mem::take(&mut self.buffers);
+        let validity = self.validity.take();
+        unsafe { BinaryViewArrayGeneric::<T>::new_unchecked(
+            self.data_type.clone(),
+            views.into(),
+            Arc::from(buffers),
+            validity.map(|v| v.into())
+        ) }
     }
 }
 
 impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        (self.extend_null_bits[index])(&mut self.validity, start, len);
-
         let array = self.arrays[index];
+        extend_validity(&mut self.validity, array, start, len);
 
         let buffer_offset: u32 = self.buffers.len().try_into().expect("unsupported");
         let buffer_offset = (buffer_offset as u128) << 64;
 
         let range = start..start + len;
-        self.buffers.extend_from_slice(&array.buffers()[range]);
-        self.views.extend(array.views()[range.clone()].iter().map(|&view| {
+        self.buffers.extend_from_slice(&array.data_buffers()[range.clone()]);
+        self.views.extend(array.views()[range].iter().map(|&view| {
             // If null the buffer index is ignored because the length is 0,
             // so we can just do this
             view + buffer_offset
@@ -78,7 +75,9 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
 
     fn extend_validity(&mut self, additional: usize) {
         self.views.extend(std::iter::repeat(0).take(additional));
-        self.validity.extend_constant(additional, false);
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false);
+        }
     }
 
     #[inline]
@@ -97,11 +96,11 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
 
 impl<'a, T: ViewType + ?Sized> From<GrowableBinaryViewArray<'a, T>> for BinaryViewArrayGeneric<T> {
     fn from(val: GrowableBinaryViewArray<'a, T>) -> Self {
-        BinaryViewArrayGeneric::<T>::new_unchecked(
+        unsafe { BinaryViewArrayGeneric::<T>::new_unchecked(
             val.data_type,
             val.views.into(),
-            val.buffers
-            val.validity.into(),
-        )
+            Arc::from(val.buffers),
+        val.validity.map(|v| v.into()),
+        ) }
     }
 }
