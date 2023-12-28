@@ -7,6 +7,7 @@ mod view;
 
 use std::any::Any;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 pub use mutable::*;
 use polars_error::*;
@@ -74,10 +75,9 @@ impl ViewType for [u8] {
 pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     data_type: ArrowDataType,
     views: Buffer<u128>,
-    // Maybe Arc<[Buffer<u8>]>?
-    buffers: Vec<Buffer<u8>>,
+    buffers: Arc<[Buffer<u8>]>,
     // Raw buffer access. (pointer, len).
-    raw_buffers: Vec<(*const u8, usize)>,
+    raw_buffers: Arc<[(*const u8, usize)]>,
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
 }
@@ -125,6 +125,14 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             validity,
             phantom: Default::default(),
         }
+    }
+
+    pub fn buffers(&self) -> &[Buffer<u8>] {
+        self.buffers.as_ref()
+    }
+
+    pub fn views(&self) -> &Buffer<u128> {
+        &self.views
     }
 
     pub fn try_new(
@@ -222,6 +230,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, BinaryViewArrayGeneric<T>> {
         NonNullValuesIter::new(self, self.validity())
     }
+
+    impl_sliced!();
+    impl_mut_validity!();
+    impl_into_array!();
 }
 
 impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
