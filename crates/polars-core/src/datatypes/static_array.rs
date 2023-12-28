@@ -27,7 +27,7 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
         self.with_validity(validity)
     }
 
-    fn full_null(_length: usize, _dtype: DataType) -> Self {
+    fn full_null(_length: usize, _dtype: ArrowDataType) -> Self {
         panic!("ObjectArray does not support full_null");
     }
 }
