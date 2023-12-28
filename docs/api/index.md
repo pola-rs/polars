@@ -11,7 +11,7 @@ It's the best place to look if you need information on a specific function.
 ## Python
 
 The Python API reference is built using Sphinx.
-It's available on [GitHub Pages](https://pola-rs.github.io/polars/py-polars/html/reference/index.html).
+It's available on [GitHub Pages](https://docs.pola.rs/py-polars/html/reference/index.html).
 
 ## Rust
 

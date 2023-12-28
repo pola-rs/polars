@@ -3989,7 +3989,7 @@ class Expr:
             If you are looking to map a function over a window function or group_by
             context, refer to :func:`map_elements` instead.
             Read more in `the book
-            <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
+            <https://docs.pola.rs/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
