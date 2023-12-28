@@ -236,13 +236,15 @@ def check_cpu_flags() -> None:
         warnings.warn(
             f"""Missing required CPU features.
 
-This version of Polars requires the following CPU features your processor appears to be missing:
+The following required CPU features were not detected:
     {", ".join(missing_features)}
-Continuing to use this version of Polars on this processor will likely result in a crash. If you believe this to be a false positive, please set the `POLARS_SKIP_CPU_CHECK` environment variable to bypass this check.
+Continuing to use this version of Polars on this processor will likely result in a crash.
+Install the `polars-lts-cpu` package instead of `polars` to run Polars with better compatibility.
 
-If you are on an Apple ARM machine (e.g. M1) this is likely due to running Python under Rosetta. It is recommended to install a native version of Python that does not run under Rosetta x86-64 emulation.
+Hint: If you are on an Apple ARM machine (e.g. M1) this is likely due to running Python under Rosetta.
+It is recommended to install a native version of Python that does not run under Rosetta x86-64 emulation.
 
-Otherwise, please try the `polars-lts-cpu` package instead of `polars`. This package is compiled with fewer CPU flags to support older / less featureful processors.
+If you believe this warning to be a false positive, you can set the `POLARS_SKIP_CPU_CHECK` environment variable to bypass this check.
 """,
             RuntimeWarning,
             stacklevel=1,
