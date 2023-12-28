@@ -1156,14 +1156,18 @@ class DataFrame:
         >>> hvplot.help("scatter")  # doctest: +SKIP
         """
         try:
-            import hvplot.polars  # noqa: F401
+            from hvplot.plotting.core import hvPlotTabularPolars
+            import hvplot
+            import holoviews
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                "hvplot is not installed, or is older than version 0.9.0.\n\n"
+                "hvplot is not installed, or is older than version 0.9.1.\n\n"
                 "Please see https://hvplot.holoviz.org/getting_started/installation.html "
                 "for installation instructions."
             ) from None
-        return self.hvplot  # type: ignore[attr-defined]
+        if not getattr(holoviews.extension, '_loaded', False):
+            hvplot.extension('bokeh')
+        return hvPlotTabularPolars(self)
 
     @property
     def shape(self) -> tuple[int, int]:

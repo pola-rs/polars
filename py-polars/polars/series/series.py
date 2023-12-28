@@ -237,6 +237,7 @@ class Series:
         "str",
         "bin",
         "struct",
+        "plot",
     }
 
     def __init__(
@@ -7419,6 +7420,44 @@ class Series:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
 
+    @property
+    def plot(self) -> Any:
+        """
+        Create a plot namespace.
+
+        Polars does not implement plotting logic itself, but instead defers to
+        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
+        for more information and documentation.
+
+        Examples
+        --------
+        Histogram:
+
+        >>> s = pl.Series([1, 4, 2])
+        >>> s.plot.hist()  # doctest: +SKIP
+
+        KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
+
+        >>> s.plot.kde()
+
+        For more info on what you can pass, you can use ``hvplot.help``:
+
+        >>> import hvplot  # doctest: +SKIP
+        >>> hvplot.help("hist")  # doctest: +SKIP
+        """
+        try:
+            from hvplot.plotting.core import hvPlotTabularPolars
+            import hvplot
+            import holoviews
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                "hvplot is not installed, or is older than version 0.9.1.\n\n"
+                "Please see https://hvplot.holoviz.org/getting_started/installation.html "
+                "for installation instructions."
+            ) from None
+        if not getattr(holoviews.extension, '_loaded', False):
+            hvplot.extension('bokeh')
+        return hvPlotTabularPolars(self)
 
 def _resolve_temporal_dtype(
     dtype: PolarsDataType | None,
