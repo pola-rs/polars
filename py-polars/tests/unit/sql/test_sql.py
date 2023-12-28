@@ -671,6 +671,49 @@ def test_sql_non_equi_joins(constraint: str) -> None:
         )
 
 
+def test_sql_stddev_variance() -> None:
+    df = pl.DataFrame(
+        {
+            "v1": [-1.0, 0.0, 1.0],
+            "v2": [5.5, 0.0, 3.0],
+            "v3": [-10, None, 10],
+            "v4": [-100, 0.0, -50.0],
+        }
+    )
+    with pl.SQLContext(df=df) as ctx:
+        # note: we support all common aliases for std/var
+        out = ctx.execute(
+            """
+            SELECT
+              STDEV(v1) AS "v1_std",
+              STDDEV(v2) AS "v2_std",
+              STDEV_SAMP(v3) AS "v3_std",
+              STDDEV_SAMP(v4) AS "v4_std",
+              VAR(v1) AS "v1_var",
+              VARIANCE(v2) AS "v2_var",
+              VARIANCE(v3) AS "v3_var",
+              VAR_SAMP(v4) AS "v4_var"
+            FROM df
+            """
+        ).collect()
+
+        assert_frame_equal(
+            out,
+            pl.DataFrame(
+                {
+                    "v1_std": [1.0],
+                    "v2_std": [2.7537852736431],
+                    "v3_std": [14.142135623731],
+                    "v4_std": [50.0],
+                    "v1_var": [1.0],
+                    "v2_var": [7.5833333333333],
+                    "v3_var": [200.0],
+                    "v4_var": [2500.0],
+                }
+            ),
+        )
+
+
 def test_sql_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
