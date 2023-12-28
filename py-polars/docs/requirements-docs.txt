@@ -1,5 +1,6 @@
 --prefer-binary
 
+hvplot
 numpy
 pandas
 pyarrow
