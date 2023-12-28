@@ -24,7 +24,7 @@ def show_versions() -> None:
     connectorx:           0.3.2
     deltalake:            0.13.0
     fsspec:               2023.10.0
-    hvplot:               0.9.0
+    hvplot:               0.9.1
     gevent:               23.9.1
     matplotlib:           3.8.2
     numpy:                1.26.2
