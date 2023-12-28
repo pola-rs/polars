@@ -104,7 +104,7 @@ html_show_sourcelink = False
 # key site root paths
 static_assets_root = "https://raw.githubusercontent.com/pola-rs/polars-static/master"
 github_root = "https://github.com/pola-rs/polars"
-web_root = "https://pola-rs.github.io"
+web_root = "https://docs.pola.rs"
 
 # Specify version for version switcher dropdown menu
 git_ref = os.environ.get("POLARS_VERSION", "main")
@@ -122,7 +122,7 @@ html_theme_options = {
     "external_links": [
         {
             "name": "User guide",
-            "url": f"{web_root}/polars/user-guide/",
+            "url": f"{web_root}/user-guide/",
         },
     ],
     "icon_links": [
@@ -147,7 +147,7 @@ html_theme_options = {
         "image_dark": f"{static_assets_root}/logos/polars-logo-dimmed-medium.png",
     },
     "switcher": {
-        "json_url": f"{web_root}/polars/docs/python/dev/_static/version_switcher.json",
+        "json_url": f"{web_root}/docs/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
     "show_version_warning_banner": False,
