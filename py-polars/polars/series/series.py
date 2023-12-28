@@ -374,6 +374,52 @@ class Series:
         """
         return self._s._get_buffer_info()
 
+    @overload
+    def _get_buffer(self, index: Literal[0]) -> Self:
+        ...
+
+    @overload
+    def _get_buffer(self, index: Literal[1, 2]) -> Self | None:
+        ...
+
+    def _get_buffer(self, index: Literal[0, 1, 2]) -> Self | None:
+        """
+        Return the underlying data, validity, or offsets buffer as a Series.
+
+        The data buffer always exists.
+        The validity buffer may not exist if the column contains no null values.
+        The offsets buffer only exists for Series of data type `String` and `List`.
+
+        Returns
+        -------
+        Series or None
+            `Series` if the specified buffer exists, `None` otherwise.
+
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
+        """
+        buffer = self._s._get_buffer(index)
+        if buffer is None:
+            return None
+        return self._from_pyseries(buffer)
+
+    @classmethod
+    def _from_buffer(
+        self, dtype: PolarsDataType, pointer: int, offset: int, length: int, base: Any
+    ) -> Self:
+        """
+        Construct a Series from information about its underlying buffer.
+
+        Returns
+        -------
+        Series
+        """
+        return self._from_pyseries(
+            PySeries._from_buffer(dtype, pointer, offset, length, base)
+        )
+
     @property
     def dtype(self) -> DataType:
         """

@@ -6,10 +6,8 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.polars import PySeries
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
-from polars.utils._wrap import wrap_s
 
 
 @given(
@@ -20,21 +18,21 @@ from polars.utils._wrap import wrap_s
 )
 def test_series_from_buffer(s: pl.Series) -> None:
     pointer, offset, length = s._get_buffer_info()
-    result = wrap_s(PySeries._from_buffer(pointer, offset, length, s.dtype, base=s))
+    result = pl.Series._from_buffer(s.dtype, pointer, offset, length, base=s)
     assert_series_equal(s, result)
 
 
 def test_series_from_buffer_numeric() -> None:
     s = pl.Series([1, 2, 3], dtype=pl.UInt16)
     pointer, offset, length = s._get_buffer_info()
-    result = wrap_s(PySeries._from_buffer(pointer, offset, length, s.dtype, base=s))
+    result = pl.Series._from_buffer(s.dtype, pointer, offset, length, base=s)
     assert_series_equal(s, result)
 
 
 def test_series_from_buffer_sliced_bitmask() -> None:
     s = pl.Series([True] * 9, dtype=pl.Boolean)[5:]
     pointer, offset, length = s._get_buffer_info()
-    result = wrap_s(PySeries._from_buffer(pointer, offset, length, s.dtype, base=s))
+    result = pl.Series._from_buffer(s.dtype, pointer, offset, length, base=s)
     assert_series_equal(s, result)
 
 
@@ -46,4 +44,4 @@ def test_series_from_buffer_unsupported() -> None:
         TypeError,
         match="`from_buffer` requires a physical type as input for `dtype`, got date",
     ):
-        wrap_s(PySeries._from_buffer(pointer, offset, length, pl.Date, base=s))
+        pl.Series._from_buffer(pl.Date, pointer, offset, length, base=s)

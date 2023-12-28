@@ -12,7 +12,6 @@ from polars.interchange.protocol import (
     Endianness,
 )
 from polars.interchange.utils import polars_dtype_to_dtype
-from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -158,7 +157,7 @@ class PolarsColumn(Column):
         }
 
     def _get_data_buffer(self) -> tuple[PolarsBuffer, Dtype]:
-        s = wrap_s(self._col._s.get_buffer(0))
+        s = self._col._get_buffer(0)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
 
         dtype = self.dtype
@@ -168,21 +167,19 @@ class PolarsColumn(Column):
         return buffer, dtype
 
     def _get_validity_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        buffer = self._col._s.get_buffer(1)
+        buffer = self._col._get_buffer(1)
         if buffer is None:
             return None
 
-        s = wrap_s(buffer)
-        buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
+        buffer = PolarsBuffer(buffer, allow_copy=self._allow_copy)
         dtype = (DtypeKind.BOOL, 1, "b", Endianness.NATIVE)
         return buffer, dtype
 
     def _get_offsets_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        buffer = self._col._s.get_buffer(2)
+        buffer = self._col._get_buffer(2)
         if buffer is None:
             return None
 
-        s = wrap_s(buffer)
-        buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
+        buffer = PolarsBuffer(buffer, allow_copy=self._allow_copy)
         dtype = (DtypeKind.INT, 64, "l", Endianness.NATIVE)
         return buffer, dtype

@@ -1,5 +1,9 @@
+use polars::export::arrow;
+use polars::export::arrow::array::Array;
+use polars::export::arrow::types::NativeType;
 use polars_core::export::arrow::array::PrimitiveArray;
 use polars_rs::export::arrow::offset::OffsetsBuffer;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 
 use super::*;
 
@@ -16,7 +20,7 @@ impl IntoPy<PyObject> for BufferInfo {
 
 #[pymethods]
 impl PySeries {
-    /// Returns tuple with `(offset, len, ptr)`
+    /// Return pointer, offset, and length information about the underlying buffer.
     fn _get_buffer_info(&self) -> PyResult<BufferInfo> {
         let s = self.series.to_physical_repr();
         let arrays = s.chunks();
@@ -66,7 +70,8 @@ impl PySeries {
         }
     }
 
-    fn get_buffer(&self, index: usize) -> PyResult<Option<Self>> {
+    /// Return the underlying data, validity, or offsets buffer as a Series.
+    fn _get_buffer(&self, index: usize) -> PyResult<Option<Self>> {
         match self.series.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffer_from_primitive(&self.series, index),
             DataType::Boolean => get_buffer_from_primitive(&self.series, index),
@@ -186,4 +191,80 @@ fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<Option<PySeri
 fn get_pointer<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
     let arr = ca.downcast_iter().next().unwrap();
     arr.values().as_ptr() as usize
+}
+
+#[pymethods]
+impl PySeries {
+    /// Construct a PySeries from information about its underlying buffer.
+    #[staticmethod]
+    unsafe fn _from_buffer(
+        py: Python,
+        dtype: Wrap<DataType>,
+        pointer: usize,
+        offset: usize,
+        length: usize,
+        base: &PyAny,
+    ) -> PyResult<Self> {
+        let dtype = dtype.0;
+        let base = base.to_object(py);
+
+        let arr_boxed = match dtype {
+            DataType::Int8 => unsafe { from_buffer_impl::<i8>(pointer, length, base) },
+            DataType::Int16 => unsafe { from_buffer_impl::<i16>(pointer, length, base) },
+            DataType::Int32 => unsafe { from_buffer_impl::<i32>(pointer, length, base) },
+            DataType::Int64 => unsafe { from_buffer_impl::<i64>(pointer, length, base) },
+            DataType::UInt8 => unsafe { from_buffer_impl::<u8>(pointer, length, base) },
+            DataType::UInt16 => unsafe { from_buffer_impl::<u16>(pointer, length, base) },
+            DataType::UInt32 => unsafe { from_buffer_impl::<u32>(pointer, length, base) },
+            DataType::UInt64 => unsafe { from_buffer_impl::<u64>(pointer, length, base) },
+            DataType::Float32 => unsafe { from_buffer_impl::<f32>(pointer, length, base) },
+            DataType::Float64 => unsafe { from_buffer_impl::<f64>(pointer, length, base) },
+            DataType::Boolean => {
+                unsafe { from_buffer_boolean_impl(pointer, offset, length, base) }?
+            },
+            dt => {
+                return Err(PyTypeError::new_err(format!(
+                    "`from_buffer` requires a physical type as input for `dtype`, got {dt}",
+                )))
+            },
+        };
+
+        let s = Series::from_arrow("", arr_boxed).unwrap().into();
+        Ok(s)
+    }
+}
+
+unsafe fn from_buffer_impl<T: NativeType>(
+    pointer: usize,
+    length: usize,
+    base: Py<PyAny>,
+) -> Box<dyn Array> {
+    let pointer = pointer as *const T;
+    let slice = unsafe { std::slice::from_raw_parts(pointer, length) };
+    let arr = unsafe { arrow::ffi::mmap::slice_and_owner(slice, base) };
+    arr.to_boxed()
+}
+unsafe fn from_buffer_boolean_impl(
+    pointer: usize,
+    offset: usize,
+    length: usize,
+    base: Py<PyAny>,
+) -> PyResult<Box<dyn Array>> {
+    let length_in_bytes = get_boolean_buffer_length_in_bytes(length, offset);
+
+    let pointer = pointer as *const u8;
+    let slice = unsafe { std::slice::from_raw_parts(pointer, length_in_bytes) };
+    let arr_result = unsafe { arrow::ffi::mmap::bitmap_and_owner(slice, offset, length, base) };
+    let arr = arr_result.map_err(PyPolarsErr::from)?;
+    Ok(arr.to_boxed())
+}
+fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
+    let n_bits = offset + length;
+    let n_bytes = n_bits / 8;
+    let rest = n_bits % 8;
+    if rest == 0 {
+        n_bytes
+    } else {
+        n_bytes + 1
+    }
 }

@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 
 
@@ -14,3 +16,12 @@ def test_get_buffer_info() -> None:
 
     for dtype in list(pl.FLOAT_DTYPES) + list(pl.INTEGER_DTYPES):
         assert pl.Series([1, 2, 3], dtype=dtype)._s._get_buffer_info()[0] > 0
+
+
+def test_get_buffer_info_chunked() -> None:
+    s1 = pl.Series([1, 2])
+    s2 = pl.Series([3, 4])
+    s = pl.concat([s1, s2], rechunk=False)
+
+    with pytest.raises(pl.ComputeError):
+        s._get_buffer_info()
