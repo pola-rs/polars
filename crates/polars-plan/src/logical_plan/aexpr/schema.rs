@@ -111,12 +111,21 @@ impl AExpr {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         float_type(&mut field);
+                        if field.dtype == DataType::Date {
+                            field.coerce(DataType::Datetime(TimeUnit::Milliseconds, None));
+                        } else {
+                            float_type(&mut field);
+                        }
                         Ok(field)
                     },
                     Mean(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        float_type(&mut field);
+                        if field.dtype == DataType::Date {
+                            field.coerce(DataType::Datetime(TimeUnit::Milliseconds, None));
+                        } else {
+                            float_type(&mut field);
+                        }
                         Ok(field)
                     },
                     Implode(expr) => {

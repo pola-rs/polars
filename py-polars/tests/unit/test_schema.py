@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, Iterator, Mapping
 
 import pytest
@@ -624,3 +624,35 @@ def test_nested_binary_literal_super_type_12227() -> None:
         ).item()
         == 0.1
     )
+
+
+def test_temporal_agg() -> None:
+    ldf = pl.LazyFrame(
+        {
+            "key": [1, 1],
+            "date": [date(2020, 1, 1), date(2020, 1, 2)],
+            "datetime": [datetime(2020, 1, 1), datetime(2020, 1, 2)],
+            "timedelta": [timedelta(1), timedelta(2)],
+            "time": [time(1), time(2)],
+        }
+    )
+
+    schema = {
+        "key": pl.Float64,
+        "date": pl.Datetime("ms", None),
+        "datetime": pl.Datetime("us", None),
+        "timedelta": pl.Duration("us"),
+        "time": pl.Time,
+    }
+
+    assert ldf.select(pl.all().mean()).schema == schema
+    assert ldf.select(pl.all().median()).schema == schema
+    assert ldf.select(pl.all().mean()).collect().schema == schema
+    assert ldf.select(pl.all().median()).collect().schema == schema
+
+    # test in group-by context
+    schema["key"] = pl.Int64
+    assert ldf.group_by("key").mean().schema == schema
+    assert ldf.group_by("key").median().schema == schema
+    assert ldf.group_by("key").mean().collect().schema == schema
+    assert ldf.group_by("key").median().collect().schema == schema
