@@ -6,6 +6,7 @@ Aggregation
 .. autosummary::
    :toctree: api/
 
+    DataFrame.count
     DataFrame.max
     DataFrame.max_horizontal
     DataFrame.mean

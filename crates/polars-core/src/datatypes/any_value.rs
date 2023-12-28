@@ -34,7 +34,7 @@ pub enum AnyValue<'a> {
     /// A binary true or false.
     Boolean(bool),
     /// A UTF8 encoded string type.
-    Utf8(&'a str),
+    String(&'a str),
     /// An unsigned 8-bit integer number.
     UInt8(u8),
     /// An unsigned 16-bit integer number.
@@ -92,7 +92,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// An UTF8 encoded string type.
-    Utf8Owned(smartstring::alias::String),
+    StringOwned(smartstring::alias::String),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number.
@@ -121,10 +121,10 @@ impl Serialize for AnyValue<'_> {
             AnyValue::Float64(v) => serializer.serialize_newtype_variant(name, 10, "Float64", v),
             AnyValue::List(v) => serializer.serialize_newtype_variant(name, 11, "List", v),
             AnyValue::Boolean(v) => serializer.serialize_newtype_variant(name, 12, "Bool", v),
-            // both utf8 variants same number
-            AnyValue::Utf8(v) => serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v),
-            AnyValue::Utf8Owned(v) => {
-                serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v.as_str())
+            // both string variants same number
+            AnyValue::String(v) => serializer.serialize_newtype_variant(name, 13, "StringOwned", v),
+            AnyValue::StringOwned(v) => {
+                serializer.serialize_newtype_variant(name, 13, "StringOwned", v.as_str())
             },
             AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
             AnyValue::BinaryOwned(v) => {
@@ -156,7 +156,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             Float64,
             List,
             Bool,
-            Utf8Owned,
+            StringOwned,
             BinaryOwned,
         }
         const VARIANTS: &[&str] = &[
@@ -173,7 +173,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             "Float64",
             "List",
             "Boolean",
-            "Utf8Owned",
+            "StringOwned",
             "BinaryOwned",
         ];
         const LAST: u8 = unsafe { std::mem::transmute::<_, u8>(AvField::BinaryOwned) };
@@ -238,7 +238,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                     b"Float64" => AvField::Float64,
                     b"List" => AvField::List,
                     b"Bool" => AvField::Bool,
-                    b"Utf8Owned" | b"Utf8" => AvField::Utf8Owned,
+                    b"StringOwned" | b"String" => AvField::StringOwned,
                     b"BinaryOwned" | b"Binary" => AvField::BinaryOwned,
                     _ => {
                         return Err(serde::de::Error::unknown_variant(
@@ -323,9 +323,9 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         let value = variant.newtype_variant()?;
                         AnyValue::List(value)
                     },
-                    (AvField::Utf8Owned, variant) => {
+                    (AvField::StringOwned, variant) => {
                         let value: String = variant.newtype_variant()?;
-                        AnyValue::Utf8Owned(value.into())
+                        AnyValue::StringOwned(value.into())
                     },
                     (AvField::BinaryOwned, variant) => {
                         let value = variant.newtype_variant()?;
@@ -363,7 +363,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(tu),
             Boolean(_) => DataType::Boolean,
-            Utf8(_) => DataType::Utf8,
+            String(_) => DataType::String,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
@@ -470,6 +470,24 @@ impl<'a> AnyValue<'a> {
             })
         }
 
+        fn cast_boolean<'a>(av: &AnyValue) -> PolarsResult<AnyValue<'a>> {
+            Ok(match av {
+                AnyValue::UInt8(v) => AnyValue::Boolean(*v != u8::default()),
+                AnyValue::UInt16(v) => AnyValue::Boolean(*v != u16::default()),
+                AnyValue::UInt32(v) => AnyValue::Boolean(*v != u32::default()),
+                AnyValue::UInt64(v) => AnyValue::Boolean(*v != u64::default()),
+                AnyValue::Int8(v) => AnyValue::Boolean(*v != i8::default()),
+                AnyValue::Int16(v) => AnyValue::Boolean(*v != i16::default()),
+                AnyValue::Int32(v) => AnyValue::Boolean(*v != i32::default()),
+                AnyValue::Int64(v) => AnyValue::Boolean(*v != i64::default()),
+                AnyValue::Float32(v) => AnyValue::Boolean(*v != f32::default()),
+                AnyValue::Float64(v) => AnyValue::Boolean(*v != f64::default()),
+                _ => {
+                    polars_bail!(ComputeError: "cannot cast any-value {:?} to boolean", av)
+                },
+            })
+        }
+
         let new_av = match self {
             _ if (self.is_boolean()
                 | self.is_signed_integer()
@@ -487,9 +505,10 @@ impl<'a> AnyValue<'a> {
                     DataType::Duration(tu) => AnyValue::Duration(self.try_extract::<i64>()?, *tu),
                     #[cfg(feature = "dtype-time")]
                     DataType::Time => AnyValue::Time(self.try_extract::<i64>()?),
-                    DataType::Utf8 => {
-                        AnyValue::Utf8Owned(format_smartstring!("{}", self.try_extract::<i64>()?))
+                    DataType::String => {
+                        AnyValue::StringOwned(format_smartstring!("{}", self.try_extract::<i64>()?))
                     },
+                    DataType::Boolean => return cast_boolean(self),
                     _ => return cast_numeric(self, dtype),
                 }
             },
@@ -588,8 +607,8 @@ impl AnyValue<'_> {
             UInt16(v) => v.hash(state),
             UInt32(v) => v.hash(state),
             UInt64(v) => v.hash(state),
-            Utf8(v) => v.hash(state),
-            Utf8Owned(v) => v.hash(state),
+            String(v) => v.hash(state),
+            StringOwned(v) => v.hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
             Float64(v) => v.to_ne_bytes().hash(state),
             Binary(v) => v.hash(state),
@@ -724,7 +743,7 @@ impl<'a> AnyValue<'a> {
     pub fn as_borrowed(&self) -> AnyValue<'_> {
         match self {
             AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
-            AnyValue::Utf8Owned(data) => AnyValue::Utf8(data),
+            AnyValue::StringOwned(data) => AnyValue::String(data),
             av => av.clone(),
         }
     }
@@ -752,8 +771,8 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-time")]
             Time(v) => Time(v),
             List(v) => List(v),
-            Utf8(v) => Utf8Owned(v.into()),
-            Utf8Owned(v) => Utf8Owned(v),
+            String(v) => StringOwned(v.into()),
+            StringOwned(v) => StringOwned(v),
             Binary(v) => BinaryOwned(v.to_vec()),
             BinaryOwned(v) => BinaryOwned(v),
             #[cfg(feature = "object")]
@@ -786,8 +805,8 @@ impl<'a> AnyValue<'a> {
     /// Get a reference to the `&str` contained within [`AnyValue`].
     pub fn get_str(&self) -> Option<&str> {
         match self {
-            AnyValue::Utf8(s) => Some(s),
-            AnyValue::Utf8Owned(s) => Some(s),
+            AnyValue::String(s) => Some(s),
+            AnyValue::StringOwned(s) => Some(s),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev, arr) => {
                 let s = if arr.is_null() {
@@ -840,10 +859,10 @@ impl AnyValue<'_> {
             (Int64(l), Int64(r)) => *l == *r,
             (Float32(l), Float32(r)) => *l == *r,
             (Float64(l), Float64(r)) => *l == *r,
-            (Utf8(l), Utf8(r)) => l == r,
-            (Utf8(l), Utf8Owned(r)) => l == r,
-            (Utf8Owned(l), Utf8(r)) => l == r,
-            (Utf8Owned(l), Utf8Owned(r)) => l == r,
+            (String(l), String(r)) => l == r,
+            (String(l), StringOwned(r)) => l == r,
+            (StringOwned(l), String(r)) => l == r,
+            (StringOwned(l), StringOwned(r)) => l == r,
             (Boolean(l), Boolean(r)) => *l == *r,
             (Binary(l), Binary(r)) => l == r,
             (BinaryOwned(l), BinaryOwned(r)) => l == r,
@@ -917,7 +936,7 @@ impl PartialOrd for AnyValue<'_> {
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Float32(l), Float32(r)) => l.partial_cmp(r),
             (Float64(l), Float64(r)) => l.partial_cmp(r),
-            (Utf8(l), Utf8(r)) => l.partial_cmp(*r),
+            (String(l), String(r)) => l.partial_cmp(*r),
             (Binary(l), Binary(r)) => l.partial_cmp(*r),
             _ => None,
         }
@@ -1068,7 +1087,7 @@ impl GetAnyValue for ArrayRef {
                     .unwrap_unchecked_release();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
-                    Some(v) => AnyValue::Utf8(v),
+                    Some(v) => AnyValue::String(v),
                 }
             },
             _ => unimplemented!(),
@@ -1158,8 +1177,8 @@ mod test {
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
                 DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
             ),
-            (ArrowDataType::LargeUtf8, DataType::Utf8),
-            (ArrowDataType::Utf8, DataType::Utf8),
+            (ArrowDataType::LargeUtf8, DataType::String),
+            (ArrowDataType::Utf8, DataType::String),
             (ArrowDataType::LargeBinary, DataType::Binary),
             (ArrowDataType::Binary, DataType::Binary),
             (

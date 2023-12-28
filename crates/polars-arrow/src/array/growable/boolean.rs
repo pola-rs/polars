@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use super::utils::{build_extend_null_bits, ExtendNullBits};
 use super::Growable;
+use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, BooleanArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
@@ -10,9 +10,8 @@ use crate::datatypes::ArrowDataType;
 pub struct GrowableBoolean<'a> {
     arrays: Vec<&'a BooleanArray>,
     data_type: ArrowDataType,
-    validity: MutableBitmap,
+    validity: Option<MutableBitmap>,
     values: MutableBitmap,
-    extend_null_bits: Vec<ExtendNullBits<'a>>,
 }
 
 impl<'a> GrowableBoolean<'a> {
@@ -28,33 +27,31 @@ impl<'a> GrowableBoolean<'a> {
             use_validity = true;
         };
 
-        let extend_null_bits = arrays
-            .iter()
-            .map(|array| build_extend_null_bits(*array, use_validity))
-            .collect();
-
         Self {
             arrays,
             data_type,
             values: MutableBitmap::with_capacity(capacity),
-            validity: MutableBitmap::with_capacity(capacity),
-            extend_null_bits,
+            validity: prepare_validity(use_validity, capacity),
         }
     }
 
     fn to(&mut self) -> BooleanArray {
-        let validity = std::mem::take(&mut self.validity);
+        let validity = self.validity.take();
         let values = std::mem::take(&mut self.values);
 
-        BooleanArray::new(self.data_type.clone(), values.into(), validity.into())
+        BooleanArray::new(
+            self.data_type.clone(),
+            values.into(),
+            validity.map(|v| v.into()),
+        )
     }
 }
 
 impl<'a> Growable<'a> for GrowableBoolean<'a> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        (self.extend_null_bits[index])(&mut self.validity, start, len);
-
         let array = self.arrays[index];
+        extend_validity(&mut self.validity, array, start, len);
+
         let values = array.values();
 
         let (slice, offset, _) = values.as_slice();
@@ -67,7 +64,9 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
 
     fn extend_validity(&mut self, additional: usize) {
         self.values.extend_constant(additional, false);
-        self.validity.extend_constant(additional, false);
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false);
+        }
     }
 
     #[inline]
@@ -86,6 +85,10 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
 
 impl<'a> From<GrowableBoolean<'a>> for BooleanArray {
     fn from(val: GrowableBoolean<'a>) -> Self {
-        BooleanArray::new(val.data_type, val.values.into(), val.validity.into())
+        BooleanArray::new(
+            val.data_type,
+            val.values.into(),
+            val.validity.map(|v| v.into()),
+        )
     }
 }

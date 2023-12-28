@@ -429,7 +429,7 @@ def test_asof_join_sorted_by_group(capsys: Any) -> None:
 
     expected = pl.DataFrame(
         [
-            pl.Series("key", ["a", "a", "a", "b", "b", "b"], dtype=pl.Utf8),
+            pl.Series("key", ["a", "a", "a", "b", "b", "b"], dtype=pl.String),
             pl.Series("asof_key", [1.0, 2.0, 3.0, 1.0, 2.0, 3.0], dtype=pl.Float64),
             pl.Series("a", [101, 102, 103, 104, 105, 106], dtype=pl.Int64),
             pl.Series("b", [201, 202, 203, 204, 205, 206], dtype=pl.Int64),

@@ -57,11 +57,11 @@ def test_sql_cast() -> None:
         "b_i16": pl.Int16,
         "b_i64": pl.Int64,
         "d_i8": pl.Int8,
-        "a_char": pl.Utf8,
-        "b_varchar": pl.Utf8,
+        "a_char": pl.String,
+        "b_varchar": pl.String,
         "c_blob": pl.Binary,
         "c_varbinary": pl.Binary,
-        "d_charvar": pl.Utf8,
+        "d_charvar": pl.String,
     }
     assert res.rows() == [
         (1.0, 1.0, 1, 1, 1, 1, "1", "1.1", b"a", b"a", "true"),
@@ -562,7 +562,7 @@ def test_sql_limit_offset() -> None:
         ),
         (
             "SELECT * FROM tbl_a LEFT ANTI JOIN tbl_b USING (a)",
-            pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8}),
+            pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.String}),
         ),
         (
             "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (b) LEFT SEMI JOIN tbl_c USING (c)",

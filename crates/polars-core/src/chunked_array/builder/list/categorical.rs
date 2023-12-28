@@ -189,11 +189,14 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         }
 
         let op = |opt_v: Option<&u32>| opt_v.map(|v| *idx_mapping.get(v).unwrap());
-        let iters = ca.physical().downcast_iter().map(|arr| arr.iter().map(op));
-
-        for iter in iters {
-            self.inner.append_iter(iter)
-        }
+        // Safety: length is correct as we do one-one mapping over ca.
+        let iter = unsafe {
+            ca.physical()
+                .downcast_iter()
+                .flat_map(|arr| arr.iter().map(op))
+                .trust_my_length(ca.len())
+        };
+        self.inner.append_iter(iter);
 
         Ok(())
     }

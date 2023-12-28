@@ -1,6 +1,6 @@
 use super::function_expr::StringFunction;
 use super::*;
-/// Specialized expressions for [`Series`] of [`DataType::Utf8`].
+/// Specialized expressions for [`Series`] of [`DataType::String`].
 pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
@@ -30,6 +30,46 @@ impl StringNameSpace {
             &[pat],
             false,
             true,
+        )
+    }
+
+    /// Uses aho-corasick to find many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to an String column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
+    ///  When this option is enabled, searching will be performed without respect to case for ASCII letters (a-z and A-Z) only.
+    #[cfg(feature = "find_many")]
+    pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ContainsMany {
+                ascii_case_insensitive,
+            }),
+            &[patterns],
+            false,
+            false,
+        )
+    }
+
+    /// Uses aho-corasick to replace many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to an String column
+    /// - `replace_with`: an expression that evaluates to an String column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
+    ///  When this option is enabled, searching will be performed without respect to case for ASCII letters (a-z and A-Z) only.
+    #[cfg(feature = "find_many")]
+    pub fn replace_many(
+        self,
+        patterns: Expr,
+        replace_with: Expr,
+        ascii_case_insensitive: bool,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ReplaceMany {
+                ascii_case_insensitive,
+            }),
+            &[patterns, replace_with],
+            false,
+            false,
         )
     }
 
@@ -106,7 +146,7 @@ impl StringNameSpace {
         let dtype = DataType::Struct(
             names
                 .iter()
-                .map(|name| Field::new(name.as_str(), DataType::Utf8))
+                .map(|name| Field::new(name.as_str(), DataType::String))
                 .collect(),
         );
 
@@ -168,7 +208,7 @@ impl StringNameSpace {
         )
     }
 
-    /// Convert a Utf8 column into a Date/Datetime/Time column.
+    /// Convert a String column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
     pub fn strptime(self, dtype: DataType, options: StrptimeOptions, ambiguous: Expr) -> Expr {
         self.0.map_many_private(
@@ -179,13 +219,13 @@ impl StringNameSpace {
         )
     }
 
-    /// Convert a Utf8 column into a Date column.
+    /// Convert a String column into a Date column.
     #[cfg(feature = "dtype-date")]
     pub fn to_date(self, options: StrptimeOptions) -> Expr {
         self.strptime(DataType::Date, options, lit("raise"))
     }
 
-    /// Convert a Utf8 column into a Datetime column.
+    /// Convert a String column into a Datetime column.
     #[cfg(feature = "dtype-datetime")]
     pub fn to_datetime(
         self,
@@ -216,13 +256,13 @@ impl StringNameSpace {
         self.strptime(DataType::Datetime(time_unit, time_zone), options, ambiguous)
     }
 
-    /// Convert a Utf8 column into a Time column.
+    /// Convert a String column into a Time column.
     #[cfg(feature = "dtype-time")]
     pub fn to_time(self, options: StrptimeOptions) -> Expr {
         self.strptime(DataType::Time, options, lit("raise"))
     }
 
-    /// Convert a Utf8 column into a Decimal column.
+    /// Convert a String column into a Decimal column.
     #[cfg(feature = "dtype-decimal")]
     pub fn to_decimal(self, infer_length: usize) -> Expr {
         self.0
@@ -250,13 +290,13 @@ impl StringNameSpace {
             })
     }
 
-    /// Split the string by a substring. The resulting dtype is `List<Utf8>`.
+    /// Split the string by a substring. The resulting dtype is `List<String>`.
     pub fn split(self, by: Expr) -> Expr {
         self.0
             .map_many_private(StringFunction::Split(false).into(), &[by], false, false)
     }
 
-    /// Split the string by a substring and keep the substring. The resulting dtype is `List<Utf8>`.
+    /// Split the string by a substring and keep the substring. The resulting dtype is `List<String>`.
     pub fn split_inclusive(self, by: Expr) -> Expr {
         self.0
             .map_many_private(StringFunction::Split(true).into(), &[by], false, false)

@@ -48,7 +48,7 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-simd = ["arrow/simd"]
+simd = ["arrow/simd", "polars-compute/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
@@ -62,7 +62,7 @@ lazy = []
 # more fast paths, slower compilation
 performant = ["arrow/performant", "reinterpret"]
 
-# extra utilities for Utf8Chunked
+# extra utilities for StringChunked
 strings = ["regex", "arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
@@ -71,8 +71,6 @@ fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
 
 # opt-in features
-# sort by multiple columns
-sort_multiple = []
 # create from row values
 # and include pivot operation
 rows = []

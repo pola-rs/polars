@@ -416,13 +416,13 @@ impl PyExpr {
         self.inner.clone().explode().into()
     }
 
-    fn gather_every(&self, n: usize) -> Self {
+    fn gather_every(&self, n: usize, offset: usize) -> Self {
         self.inner
             .clone()
             .map(
                 move |s: Series| {
                     polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
-                    Ok(Some(s.gather_every(n)))
+                    Ok(Some(s.gather_every(n, offset)))
                 },
                 GetOutput::same_type(),
             )
@@ -666,14 +666,15 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, agg_list))]
+    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<Wrap<DataType>>,
         agg_list: bool,
+        is_elementwise: bool,
     ) -> Self {
-        map_single(self, lambda, output_type, agg_list)
+        map_single(self, lambda, output_type, agg_list, is_elementwise)
     }
 
     fn dot(&self, other: Self) -> Self {

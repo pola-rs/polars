@@ -30,10 +30,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.client_payload.sha }}
-      - uses: psf/black@stable
+
+      - name: Get ruff version from requirements file
+        id: version
+        run: |
+          VERSION=$(grep -m 1 -oP 'ruff==\K(.*)' py-polars/requirements-lint.txt)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - uses: chartboost/ruff-action@v1
         with:
-          src: docs/src/python
-          version: "23.10.0"
+          src: docs/
+          version: ${{ steps.version.outputs.version }}
+          args: check --no-fix
+
+      - uses: chartboost/ruff-action@v1
+        with:
+          src: docs/
+          version: ${{ steps.version.outputs.version }}
+          args: format --diff
 
   deploy:
     runs-on: ubuntu-latest

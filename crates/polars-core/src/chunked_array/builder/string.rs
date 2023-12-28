@@ -1,24 +1,24 @@
 use super::*;
 
 #[derive(Clone)]
-pub struct Utf8ChunkedBuilder {
+pub struct StringChunkedBuilder {
     pub(crate) builder: MutableUtf8Array<i64>,
     pub capacity: usize,
     pub(crate) field: Field,
 }
 
-impl Utf8ChunkedBuilder {
-    /// Create a new UtfChunkedBuilder
+impl StringChunkedBuilder {
+    /// Create a new StringChunkedBuilder
     ///
     /// # Arguments
     ///
     /// * `capacity` - Number of string elements in the final array.
     /// * `bytes_capacity` - Number of bytes needed to store the string values.
     pub fn new(name: &str, capacity: usize, bytes_capacity: usize) -> Self {
-        Utf8ChunkedBuilder {
+        StringChunkedBuilder {
             builder: MutableUtf8Array::<i64>::with_capacities(capacity, bytes_capacity),
             capacity,
-            field: Field::new(name, DataType::Utf8),
+            field: Field::new(name, DataType::String),
         }
     }
 
@@ -39,7 +39,7 @@ impl Utf8ChunkedBuilder {
         self.builder.push(opt);
     }
 
-    pub fn finish(mut self) -> Utf8Chunked {
+    pub fn finish(mut self) -> StringChunked {
         let arr = self.builder.as_box();
 
         let mut ca = ChunkedArray {
@@ -59,19 +59,19 @@ impl Utf8ChunkedBuilder {
     }
 }
 
-pub struct Utf8ChunkedBuilderCow {
-    builder: Utf8ChunkedBuilder,
+pub struct StringChunkedBuilderCow {
+    builder: StringChunkedBuilder,
 }
 
-impl Utf8ChunkedBuilderCow {
+impl StringChunkedBuilderCow {
     pub fn new(name: &str, capacity: usize) -> Self {
-        Utf8ChunkedBuilderCow {
-            builder: Utf8ChunkedBuilder::new(name, capacity, capacity),
+        StringChunkedBuilderCow {
+            builder: StringChunkedBuilder::new(name, capacity, capacity),
         }
     }
 }
 
-impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
+impl ChunkedBuilder<Cow<'_, str>, StringType> for StringChunkedBuilderCow {
     #[inline]
     fn append_value(&mut self, val: Cow<'_, str>) {
         self.builder.append_value(val.as_ref())
@@ -82,7 +82,7 @@ impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
         self.builder.append_null()
     }
 
-    fn finish(self) -> ChunkedArray<Utf8Type> {
+    fn finish(self) -> ChunkedArray<StringType> {
         self.builder.finish()
     }
 

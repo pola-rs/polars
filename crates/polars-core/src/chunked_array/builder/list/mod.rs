@@ -112,7 +112,7 @@ pub fn get_list_builder(
 
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_) => polars_bail!(opq = list_builder, &physical_type),
+        DataType::Object(_, _) => polars_bail!(opq = list_builder, &physical_type),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
@@ -150,10 +150,10 @@ pub fn get_list_builder(
                     Box::new(builder)
                 }};
             }
-            macro_rules! get_utf8_builder {
+            macro_rules! get_string_builder {
                 () => {{
                     let builder =
-                        ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                        ListStringChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
                     Box::new(builder)
                 }};
             }
@@ -167,7 +167,7 @@ pub fn get_list_builder(
             Ok(match_dtype_to_logical_apply_macro!(
                 physical_type,
                 get_primitive_builder,
-                get_utf8_builder,
+                get_string_builder,
                 get_binary_builder,
                 get_bool_builder
             ))

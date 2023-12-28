@@ -16,21 +16,21 @@ def test_categorical_lexical_sort() -> None:
     expected = pl.DataFrame(
         {"cats": ["a", "b", "k", "z", "z"], "vals": [2, 3, 2, 3, 1]}
     )
-    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.String)), expected)
     out = df.sort(["cats", "vals"])
     expected = pl.DataFrame(
         {"cats": ["a", "b", "k", "z", "z"], "vals": [2, 3, 2, 1, 3]}
     )
-    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.String)), expected)
     out = df.sort(["vals", "cats"])
 
     expected = pl.DataFrame(
         {"cats": ["z", "a", "k", "b", "z"], "vals": [1, 2, 2, 3, 3]}
     )
-    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.String)), expected)
 
     s = pl.Series(["a", "c", "a", "b", "a"], dtype=pl.Categorical("lexical"))
-    assert s.sort().cast(pl.Utf8).to_list() == [
+    assert s.sort().cast(pl.String).to_list() == [
         "a",
         "a",
         "a",

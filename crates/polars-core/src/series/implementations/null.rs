@@ -11,7 +11,6 @@ use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
-use crate::utils::slice_offsets;
 
 impl Series {
     pub fn new_null(name: &str, len: usize) -> Series {
@@ -165,8 +164,13 @@ impl SeriesTrait for NullChunked {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        let (_, length) = slice_offsets(offset, length, self.len());
-        NullChunked::new(self.name.clone(), length).into_series()
+        let (chunks, len) = chunkops::slice(&self.chunks, offset, length, self.len());
+        NullChunked {
+            name: self.name.clone(),
+            length: len as IdxSize,
+            chunks,
+        }
+        .into_series()
     }
 
     fn is_null(&self) -> BooleanChunked {

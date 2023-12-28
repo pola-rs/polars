@@ -21,11 +21,10 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Int64,
+    String,
     Time,
-    Utf8,
-    unpack_dtypes,
 )
-from polars.dependencies import _PYARROW_AVAILABLE, _check_for_numpy
+from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
@@ -117,7 +116,7 @@ def is_str_sequence(
     elif _check_for_numpy(val) and isinstance(val, np.ndarray):
         return np.issubdtype(val.dtype, np.str_)
     elif include_series and isinstance(val, pl.Series):
-        return val.dtype == pl.Utf8
+        return val.dtype == pl.String
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
@@ -210,18 +209,6 @@ def arrlen(obj: Any) -> int | None:
         return None
 
 
-def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
-    """Check if the given dtypes can be used to create dicts with pyarrow fast path."""
-    # TODO: have our own fast-path for dict iteration in Rust
-    return (
-        _PYARROW_AVAILABLE
-        # note: 'ns' precision instantiates values as pandas types - avoid
-        and not any(
-            (getattr(tp, "time_unit", None) == "ns") for tp in unpack_dtypes(*dtypes)
-        )
-    )
-
-
 def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
     # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
@@ -289,9 +276,9 @@ def _cast_repr_strings_with_schema(
     tp: PolarsDataType | None
     if not df.is_empty():
         for tp in df.schema.values():
-            if tp != Utf8:
+            if tp != String:
                 raise TypeError(
-                    f"DataFrame should contain only Utf8 string repr data; found {tp!r}"
+                    f"DataFrame should contain only String repr data; found {tp!r}"
                 )
 
     # duration string scaling
@@ -380,7 +367,7 @@ def _cast_repr_strings_with_schema(
                             separator=".",
                         )
                     )
-                    .cast(Utf8)
+                    .cast(String)
                     .cast(tp)
                 )
             elif tp != df.schema[c]:

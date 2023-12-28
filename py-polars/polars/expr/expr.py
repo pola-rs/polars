@@ -3975,6 +3975,7 @@ class Expr:
         return_dtype: PolarsDataType | None = None,
         *,
         agg_list: bool = False,
+        is_elementwise: bool = False,
     ) -> Self:
         """
         Apply a custom python function to a whole Series or sequence of Series.
@@ -3984,8 +3985,11 @@ class Expr:
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
-        Read more in `the book
-        <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
+        .. warning::
+            If you are looking to map a function over a window function or group_by
+            context, refer to :func:`map_elements` instead.
+            Read more in `the book
+            <https://docs.pola.rs/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
@@ -3993,13 +3997,11 @@ class Expr:
             Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
+        is_elementwise
+            If set to true this can run in the streaming engine, but may yield
+            incorrect results in group-by. Ensure you know what you are doing!
         agg_list
             Aggregate list.
-
-        Notes
-        -----
-        If you are looking to map a function over a window function or group_by context,
-        refer to func:`map_elements` instead.
 
         Warnings
         --------
@@ -4033,7 +4035,7 @@ class Expr:
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(
-            self._pyexpr.map_batches(function, return_dtype, agg_list)
+            self._pyexpr.map_batches(function, return_dtype, agg_list, is_elementwise)
         )
 
     def map_elements(
@@ -4210,9 +4212,7 @@ class Expr:
 
         >>> df.with_columns(
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
-        ... ).sort(
-        ...     "key"
-        ... )  # doctest: +IGNORE_RESULT
+        ... ).sort("key")  # doctest: +IGNORE_RESULT
 
         """
         # input x: Series of type list containing the group values
@@ -4386,7 +4386,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.implode())
 
-    def gather_every(self, n: int) -> Self:
+    def gather_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -4394,6 +4394,8 @@ class Expr:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
 
         Examples
         --------
@@ -4410,8 +4412,20 @@ class Expr:
         │ 7   │
         └─────┘
 
+        >>> df.select(pl.col("foo").gather_every(3, offset=1))
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        │ 5   │
+        │ 8   │
+        └─────┘
+
         """
-        return self._from_pyexpr(self._pyexpr.gather_every(n))
+        return self._from_pyexpr(self._pyexpr.gather_every(n, offset))
 
     def head(self, n: int | Expr = 10) -> Self:
         """
@@ -9572,7 +9586,7 @@ class Expr:
         )
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int) -> Self:
+    def take_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -9583,8 +9597,10 @@ class Expr:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("gather", version="0.19.14")
     def take(

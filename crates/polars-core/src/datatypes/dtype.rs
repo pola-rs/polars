@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::ObjectRegistry;
 
 pub type TimeZone = String;
 
@@ -20,7 +22,7 @@ pub enum DataType {
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
     Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
     /// String data
-    Utf8,
+    String,
     Binary,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
@@ -40,7 +42,7 @@ pub enum DataType {
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
-    Object(&'static str),
+    Object(&'static str, Option<Arc<ObjectRegistry>>),
     Null,
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
@@ -76,7 +78,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-duration")]
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "object")]
-                (Object(lhs), Object(rhs)) => lhs == rhs,
+                (Object(lhs, _), Object(rhs, _)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
                 (Struct(lhs), Struct(rhs)) => Vec::as_ptr(lhs) == Vec::as_ptr(rhs) || lhs == rhs,
                 #[cfg(feature = "dtype-array")]
@@ -110,6 +112,17 @@ impl DataType {
         }
     }
 
+    /// Check if the whole dtype is known.
+    pub fn is_known(&self) -> bool {
+        match self {
+            DataType::List(inner) => inner.is_known(),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
+            DataType::Unknown => false,
+            _ => true,
+        }
+    }
+
     /// Get the inner data type of a nested type.
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
@@ -131,6 +144,8 @@ impl DataType {
             Time => Int64,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) => UInt32,
+            #[cfg(feature = "dtype-array")]
+            Array(dt, width) => Array(Box::new(dt.to_physical()), *width),
             List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
@@ -158,7 +173,11 @@ impl DataType {
     /// Check if datatype is a primitive type. By that we mean that
     /// it is not a container type.
     pub fn is_primitive(&self) -> bool {
-        self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
+        self.is_numeric()
+            | matches!(
+                self,
+                DataType::Boolean | DataType::String | DataType::Binary
+            )
     }
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
@@ -179,7 +198,11 @@ impl DataType {
         let is_cat = false;
 
         let phys = self.to_physical();
-        (phys.is_numeric() || matches!(phys, DataType::Binary | DataType::Utf8 | DataType::Boolean))
+        (phys.is_numeric()
+            || matches!(
+                phys,
+                DataType::Binary | DataType::String | DataType::Boolean
+            ))
             && !is_cat
     }
 
@@ -262,7 +285,7 @@ impl DataType {
                 (*precision).unwrap_or(38),
                 scale.unwrap_or(0), // and what else can we do here?
             )),
-            Utf8 => Ok(ArrowDataType::LargeUtf8),
+            String => Ok(ArrowDataType::LargeUtf8),
             Binary => Ok(ArrowDataType::LargeBinary),
             Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
@@ -282,7 +305,7 @@ impl DataType {
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_) => {
+            Object(_, _) => {
                 polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
             },
             #[cfg(feature = "dtype-categorical")]
@@ -346,7 +369,7 @@ impl Display for DataType {
                     _ => f.write_str("decimal[?]"), // shouldn't happen
                 };
             },
-            DataType::Utf8 => "str",
+            DataType::String => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
             DataType::Datetime(tu, tz) => {
@@ -362,7 +385,7 @@ impl Display for DataType {
             DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
-            DataType::Object(s) => s,
+            DataType::Object(s, _) => s,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => "cat",
             #[cfg(feature = "dtype-struct")]
@@ -436,4 +459,16 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
 pub fn create_enum_data_type(categories: Utf8Array<i64>) -> DataType {
     let rev_map = RevMapping::build_enum(categories.clone());
     DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub fn enum_or_default_categorical(
+    opt_rev_map: &Option<Arc<RevMapping>>,
+    ordering: CategoricalOrdering,
+) -> DataType {
+    opt_rev_map
+        .as_ref()
+        .filter(|rev_map| rev_map.is_enum())
+        .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), ordering))
+        .unwrap_or_else(|| DataType::Categorical(None, ordering))
 }

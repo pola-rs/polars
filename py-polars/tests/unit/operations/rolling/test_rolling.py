@@ -831,3 +831,17 @@ def test_rolling_median() -> None:
             assert_series_equal(
                 a.rolling_median(k), pl.from_pandas(a.to_pandas().rolling(k).median())
             )
+
+
+@pytest.mark.slow()
+def test_rolling_median_2() -> None:
+    np.random.seed(12)
+    n = 1000
+    df = pl.DataFrame({"x": np.random.normal(0, 1, n)})
+    # this can differ because simd sizes and non-associativity of floats.
+    assert df.select(
+        pl.col("x").rolling_median(window_size=10).sum()
+    ).item() == pytest.approx(5.139429061527812)
+    assert df.select(
+        pl.col("x").rolling_median(window_size=100).sum()
+    ).item() == pytest.approx(26.60506093611384)

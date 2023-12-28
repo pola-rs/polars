@@ -11,10 +11,11 @@ repository = { workspace = true }
 description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
-polars-core = { workspace = true }
+polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
-polars-ops = { workspace = true }
+polars-ops = { workspace = true, optional = true }
+polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 
@@ -32,9 +33,9 @@ getrandom = { version = "0.2", features = ["js"] }
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd", "polars-ops/simd"]
+simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
 avx512 = ["polars-core/avx512"]
-nightly = ["polars-core/nightly", "polars-ops/nightly", "simd", "polars-lazy?/nightly", "polars-sql/nightly"]
+nightly = ["polars-core/nightly", "polars-ops?/nightly", "simd", "polars-lazy?/nightly", "polars-sql/nightly"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy?/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy?/random", "polars-ops/random"]
@@ -53,8 +54,8 @@ serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
   "polars-time?/serde",
-  "polars-io/serde",
-  "polars-ops/serde",
+  "polars-io?/serde",
+  "polars-ops?/serde",
 ]
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
@@ -68,7 +69,7 @@ lazy = ["polars-core/lazy", "polars-lazy"]
 # commented out until UB is fixed
 # parallel = ["polars-core/parallel"]
 
-# extra utilities for Utf8Chunked
+# extra utilities for StringChunked
 strings = ["polars-core/strings", "polars-lazy?/strings", "polars-ops/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
@@ -105,9 +106,6 @@ performant = [
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
 fmt_no_tty = ["polars-core/fmt_no_tty"]
-
-# sort by multiple columns
-sort_multiple = ["polars-core/sort_multiple"]
 
 # extra operations
 approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique"]
@@ -149,7 +147,7 @@ moment = ["polars-ops/moment", "polars-lazy?/moment"]
 range = ["polars-lazy?/range"]
 true_div = ["polars-lazy?/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat", "polars-sql?/diagonal_concat"]
-horizontal_concat = ["polars-core/horizontal_concat"]
+horizontal_concat = ["polars-core/horizontal_concat", "polars-lazy?/horizontal_concat"]
 abs = ["polars-ops/abs", "polars-lazy?/abs"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by"]
 ewma = ["polars-ops/ewma", "polars-lazy?/ewma"]
@@ -189,6 +187,7 @@ streaming = ["polars-lazy?/streaming"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 list_sets = ["polars-lazy?/list_sets"]
 list_any_all = ["polars-lazy?/list_any_all"]
+array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 list_drop_nulls = ["polars-lazy?/list_drop_nulls"]
 list_sample = ["polars-lazy?/list_sample"]
 cutqcut = ["polars-lazy?/cutqcut"]
@@ -197,6 +196,7 @@ extract_groups = ["polars-lazy?/extract_groups"]
 peaks = ["polars-lazy/peaks"]
 cov = ["polars-lazy/cov"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
+find_many = ["polars-plan/find_many"]
 
 test = [
   "lazy",

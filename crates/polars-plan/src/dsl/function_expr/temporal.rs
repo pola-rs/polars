@@ -123,11 +123,11 @@ pub(super) fn datetime(
         microsecond = microsecond.new_from_index(0, max_len);
     }
     let microsecond = microsecond.u32()?;
-    let mut _ambiguous = ambiguous.cast(&DataType::Utf8)?;
+    let mut _ambiguous = ambiguous.cast(&DataType::String)?;
     if _ambiguous.len() < max_len {
         _ambiguous = _ambiguous.new_from_index(0, max_len);
     }
-    let _ambiguous = _ambiguous.utf8()?;
+    let _ambiguous = _ambiguous.str()?;
 
     let ca: Int64Chunked = year
         .into_iter()
@@ -178,7 +178,7 @@ pub(super) fn datetime(
 #[cfg(feature = "date_offset")]
 fn apply_offsets_to_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
-    offsets: &Utf8Chunked,
+    offsets: &StringChunked,
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Int64Chunked> {
@@ -209,7 +209,7 @@ fn apply_offsets_to_datetime(
 #[cfg(feature = "date_offset")]
 pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
     let ts = &s[0];
-    let offsets = &s[1].utf8().unwrap();
+    let offsets = &s[1].str().unwrap();
 
     let preserve_sortedness: bool;
     let out = match ts.dtype() {
@@ -303,7 +303,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
         Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
             result_naive.datetime().unwrap(),
             Some(tz),
-            &Utf8Chunked::from_iter(std::iter::once("raise")),
+            &StringChunked::from_iter(std::iter::once("raise")),
         )?
         .into()),
         _ => Ok(result_naive),

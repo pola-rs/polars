@@ -253,7 +253,7 @@ macro_rules! impl_dyn_series {
             fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
                 match (self.dtype(), data_type) {
                     #[cfg(feature="dtype-date")]
-                    (DataType::Date, DataType::Utf8) => Ok(self
+                    (DataType::Date, DataType::String) => Ok(self
                         .0
                         .clone()
                         .into_series()
@@ -262,7 +262,7 @@ macro_rules! impl_dyn_series {
                         .to_string("%Y-%m-%d")
                         .into_series()),
                     #[cfg(feature="dtype-time")]
-                    (DataType::Time, DataType::Utf8) => Ok(self
+                    (DataType::Time, DataType::String) => Ok(self
                         .0
                         .clone()
                         .into_series()

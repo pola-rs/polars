@@ -121,7 +121,7 @@ impl FromTrustedLenIterator<bool> for NoNull<BooleanChunked> {
         iter.collect()
     }
 }
-impl<Ptr> FromTrustedLenIterator<Ptr> for Utf8Chunked
+impl<Ptr> FromTrustedLenIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str>,
 {
@@ -131,7 +131,7 @@ where
     }
 }
 
-impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for Utf8Chunked
+impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str>,
 {

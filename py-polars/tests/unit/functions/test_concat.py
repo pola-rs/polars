@@ -25,5 +25,5 @@ def test_concat_lf_stack_overflow() -> None:
 
 def test_empty_df_concat_str_11701() -> None:
     df = pl.DataFrame({"a": []})
-    out = df.select(pl.concat_str([pl.col("a").cast(pl.Utf8), pl.lit("x")]))
-    assert_frame_equal(out, pl.DataFrame({"a": []}, schema={"a": pl.Utf8}))
+    out = df.select(pl.concat_str([pl.col("a").cast(pl.String), pl.lit("x")]))
+    assert_frame_equal(out, pl.DataFrame({"a": []}, schema={"a": pl.String}))

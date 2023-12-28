@@ -8,10 +8,11 @@ pub(crate) struct PythonScanExec {
 }
 
 impl Executor for PythonScanExec {
-    fn execute(&mut self, _state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        state.should_stop()?;
         #[cfg(debug_assertions)]
         {
-            if _state.verbose() {
+            if state.verbose() {
                 println!("run PythonScanExec")
             }
         }

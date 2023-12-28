@@ -323,37 +323,37 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
     }
 }
 
-impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
+impl ChunkCompare<&StringChunked> for StringChunked {
     type Item = BooleanChunked;
 
-    fn equal(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn equal(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().equal(&rhs.as_binary())
     }
 
-    fn equal_missing(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn equal_missing(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().equal_missing(&rhs.as_binary())
     }
 
-    fn not_equal(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn not_equal(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().not_equal(&rhs.as_binary())
     }
-    fn not_equal_missing(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn not_equal_missing(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().not_equal_missing(&rhs.as_binary())
     }
 
-    fn gt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn gt(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().gt(&rhs.as_binary())
     }
 
-    fn gt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn gt_eq(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().gt_eq(&rhs.as_binary())
     }
 
-    fn lt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn lt(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().lt(&rhs.as_binary())
     }
 
-    fn lt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn lt_eq(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().lt_eq(&rhs.as_binary())
     }
 }
@@ -828,11 +828,11 @@ impl ChunkEqualElement for BooleanChunked {
     }
 }
 
-impl ChunkEqualElement for Utf8Chunked {
+impl ChunkEqualElement for StringChunked {
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const Utf8Chunked);
+        let ca_other = &*(ca_other as *const StringChunked);
         self.get(idx_self) == ca_other.get(idx_other)
     }
 }
@@ -1054,9 +1054,9 @@ mod test {
         assert_eq!(a1.lt_eq(&a2).sum(), a2.lt_eq(&a1).sum());
         assert_eq!(a1.gt_eq(&a2).sum(), a2.gt_eq(&a1).sum());
 
-        let a1: Utf8Chunked = ["a", "b"].iter().copied().collect();
+        let a1: StringChunked = ["a", "b"].iter().copied().collect();
         let a1 = a1.slice(1, 1);
-        let a2: Utf8Chunked = ["b"].iter().copied().collect();
+        let a2: StringChunked = ["b"].iter().copied().collect();
         assert_eq!(a1.equal(&a2).sum(), a2.equal(&a1).sum());
         assert_eq!(a1.not_equal(&a2).sum(), a2.not_equal(&a1).sum());
         assert_eq!(a1.gt(&a2).sum(), a2.gt(&a1).sum());

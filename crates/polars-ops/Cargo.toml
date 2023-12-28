@@ -16,6 +16,7 @@ polars-json = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
+aho-corasick = { workspace = true, optional = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
@@ -75,6 +76,7 @@ rle = ["dtype-struct"]
 timezones = ["chrono-tz", "chrono"]
 random = ["rand", "rand_distr"]
 rank = ["rand"]
+find_many = ["aho-corasick"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -106,6 +108,7 @@ cross_join = []
 chunked_ids = ["polars-core/chunked_ids"]
 asof_join = ["polars-core/asof_join"]
 semi_anti_join = []
+array_any_all = ["dtype-array"]
 list_gather = []
 list_sets = []
 list_any_all = []

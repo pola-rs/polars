@@ -4,7 +4,7 @@ use polars_utils::arena::Arena;
 use crate::dsl::function_expr::StringFunction;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
-use crate::prelude::function_expr::FunctionExpr;
+use crate::prelude::optimizer::simplify_functions::optimize_functions;
 
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
@@ -229,28 +229,6 @@ impl OptimizationRule for SimplifyBooleanRule {
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
             },
-
-            AExpr::Function {
-                input,
-                function: FunctionExpr::Boolean(BooleanFunction::Not),
-                ..
-            } => {
-                let y = expr_arena.get(input[0]);
-
-                match y {
-                    // not(not x) => x
-                    AExpr::Function {
-                        input,
-                        function: FunctionExpr::Boolean(BooleanFunction::Not),
-                        ..
-                    } => Some(expr_arena.get(input[0]).clone()),
-                    // not(lit x) => !x
-                    AExpr::Literal(LiteralValue::Boolean(b)) => {
-                        Some(AExpr::Literal(LiteralValue::Boolean(!b)))
-                    },
-                    _ => None,
-                }
-            },
             _ => None,
         };
         Ok(out)
@@ -299,7 +277,7 @@ fn string_addition_to_linear_concat(
             return None;
         }
 
-        if type_a == DataType::Utf8 {
+        if type_a == DataType::String {
             match (left_aexpr, right_aexpr) {
                 // concat + concat
                 (
@@ -388,28 +366,6 @@ fn string_addition_to_linear_concat(
         } else {
             None
         }
-    }
-}
-
-#[cfg(all(feature = "strings", feature = "concat_str"))]
-fn is_string_concat(ae: &AExpr) -> bool {
-    matches!(ae, AExpr::Function {
-                function:FunctionExpr::StringExpr(
-                    StringFunction::ConcatHorizontal(sep),
-                ),
-                ..
-            } if sep.is_empty())
-}
-
-#[cfg(all(feature = "strings", feature = "concat_str"))]
-fn get_string_concat_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<&[Node]> {
-    match expr_arena.get(node) {
-        AExpr::Function {
-            input,
-            function: FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
-            ..
-        } if sep.is_empty() => Some(input),
-        _ => None,
     }
 }
 
@@ -516,8 +472,8 @@ impl OptimizationRule for SimplifyExprRule {
                     NotEq | NotEqValidity => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
                     GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
                     LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
-                    And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
-                    Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
+                    And | LogicalAnd => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
+                    Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
                     FloorDivide => None,
                 };
@@ -527,36 +483,12 @@ impl OptimizationRule for SimplifyExprRule {
 
                 None
             },
-            // sort().reverse() -> sort(reverse)
-            // sort_by().reverse() -> sort_by(reverse)
             AExpr::Function {
                 input,
-                function: FunctionExpr::Reverse,
+                function,
+                options,
                 ..
-            } => {
-                let input = expr_arena.get(input[0]);
-                match input {
-                    AExpr::Sort { expr, options } => {
-                        let mut options = *options;
-                        options.descending = !options.descending;
-                        Some(AExpr::Sort {
-                            expr: *expr,
-                            options,
-                        })
-                    },
-                    AExpr::SortBy {
-                        expr,
-                        by,
-                        descending,
-                    } => Some(AExpr::SortBy {
-                        expr: *expr,
-                        by: by.clone(),
-                        descending: descending.iter().map(|r| !*r).collect(),
-                    }),
-                    // TODO: add support for cum_sum and other operation that allow reversing.
-                    _ => None,
-                }
-            },
+            } => return optimize_functions(input, function, options, expr_arena),
             AExpr::Cast {
                 expr,
                 data_type,
@@ -565,36 +497,6 @@ impl OptimizationRule for SimplifyExprRule {
                 let input = expr_arena.get(*expr);
                 inline_cast(input, data_type, *strict)?
             },
-            // flatten nested concat_str calls
-            #[cfg(all(feature = "strings", feature = "concat_str"))]
-            AExpr::Function {
-                input,
-                function:
-                    ref function @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
-                options,
-            } if sep.is_empty() => {
-                if input
-                    .iter()
-                    .any(|node| is_string_concat(expr_arena.get(*node)))
-                {
-                    let mut new_inputs = Vec::with_capacity(input.len() * 2);
-
-                    for node in input {
-                        match get_string_concat_input(*node, expr_arena) {
-                            Some(inp) => new_inputs.extend_from_slice(inp),
-                            None => new_inputs.push(*node),
-                        }
-                    }
-                    Some(AExpr::Function {
-                        input: new_inputs,
-                        function: function.clone(),
-                        options: *options,
-                    })
-                } else {
-                    None
-                }
-            },
-
             _ => None,
         };
         Ok(out)
@@ -602,8 +504,11 @@ impl OptimizationRule for SimplifyExprRule {
 }
 
 fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Option<AExpr>> {
+    if !dtype.is_known() {
+        return Ok(None);
+    }
     let lv = match (input, dtype) {
-        (AExpr::Literal(lv), _) if !matches!(dtype, DataType::Unknown) => match lv {
+        (AExpr::Literal(lv), _) => match lv {
             LiteralValue::Series(s) => {
                 let s = if strict {
                     s.strict_cast(dtype)

@@ -80,7 +80,7 @@ impl ChunkExplode for ListChunked {
     }
 }
 
-impl ChunkExplode for Utf8Chunked {
+impl ChunkExplode for StringChunked {
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
         let ca = self.rechunk();
         let array: &Utf8Array<i64> = ca.downcast_iter().next().unwrap();

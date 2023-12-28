@@ -38,12 +38,12 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    String,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
-    Utf8,
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
@@ -52,6 +52,7 @@ from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
+from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
 from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
@@ -665,7 +666,7 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.dtypes
-        [Int64, Float64, Utf8]
+        [Int64, Float64, String]
 
         """
         return self._ldf.dtypes()
@@ -685,7 +686,7 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.schema
-        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': Utf8})
+        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': String})
 
         """
         return OrderedDict(self._ldf.schema())
@@ -891,7 +892,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
-        ...
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
@@ -1582,6 +1582,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
+    @overload
     def collect(
         self,
         *,
@@ -1594,8 +1595,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        background: Literal[True],
+        _eager: bool = False,
+    ) -> InProcessQuery:
+        ...
+
+    @overload
+    def collect(
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        no_optimization: bool = False,
+        streaming: bool = False,
+        background: Literal[False] = False,
         _eager: bool = False,
     ) -> DataFrame:
+        ...
+
+    def collect(
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        no_optimization: bool = False,
+        streaming: bool = False,
+        background: bool = False,
+        _eager: bool = False,
+    ) -> DataFrame | InProcessQuery:
         """
         Materialize this LazyFrame into a DataFrame.
 
@@ -1631,6 +1668,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Use :func:`explain` to see if Polars can process the query in streaming
                 mode.
+        background
+            Run the query in the background and get a handle to the query.
+            This handle can be used to fetch the result or cancel the query.
 
         Returns
         -------
@@ -1703,6 +1743,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
             _eager,
         )
+        if background:
+            return InProcessQuery(ldf.collect_concurrently())
+
         return wrap_df(ldf.collect())
 
     @overload
@@ -1824,7 +1867,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         .agg(pl.all().sum())
         ...         .collect_async()
         ...     )
-        ...
         >>> asyncio.run(main())
         shape: (3, 3)
         ┌─────┬─────┬─────┐
@@ -2421,7 +2463,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Cast all frame columns to the specified dtype:
 
-        >>> lf.cast(pl.Utf8).collect().to_dict(as_series=False)
+        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
         {'foo': ['1', '2', '3'],
          'bar': ['6.0', '7.0', '8.0'],
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
@@ -2429,7 +2471,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Use selectors to define the columns being cast:
 
         >>> import polars.selectors as cs
-        >>> lf.cast({cs.numeric(): pl.UInt32, cs.temporal(): pl.Utf8}).collect()
+        >>> lf.cast({cs.numeric(): pl.UInt32, cs.temporal(): pl.String}).collect()
         shape: (3, 3)
         ┌─────┬─────┬────────────┐
         │ foo ┆ bar ┆ ham        │
@@ -2799,7 +2841,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     lf.select(
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
         ...     ).collect()
-        ...
         shape: (3, 1)
         ┌───────────┐
         │ is_odd    │
@@ -3971,7 +4012,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     lf.drop("c").with_columns(
         ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
         ...     ).collect()
-        ...
         shape: (4, 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │
@@ -4611,7 +4651,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.with_row_count(name, offset))
 
-    def gather_every(self, n: int) -> Self:
+    def gather_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
@@ -4619,6 +4659,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
 
         Examples
         --------
@@ -4638,8 +4680,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 5   │
         │ 3   ┆ 7   │
         └─────┴─────┘
+        >>> lf.gather_every(2, offset=1).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 2   ┆ 6   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
         """
-        return self.select(F.col("*").gather_every(n))
+        return self.select(F.col("*").gather_every(n, offset))
 
     def fill_null(
         self,
@@ -4761,7 +4813,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             elif isinstance(value, time):
                 dtypes = [Time]
             elif isinstance(value, str):
-                dtypes = [Utf8, Categorical]
+                dtypes = [String, Categorical]
             else:
                 # fallback; anything not explicitly handled above
                 dtypes = [infer_dtype(F.lit(value))]
@@ -5092,7 +5144,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         columns
             Column names, expressions, or a selector defining them. The underlying
-            columns being exploded must be of List or Utf8 datatype.
+            columns being exploded must be of List or String datatype.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 
@@ -5875,6 +5927,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(result._ldf)
 
+    def count(self) -> Self:
+        """
+        Return the number of non-null elements for each column.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> lf.count().collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 3   ┆ 0   │
+        └─────┴─────┴─────┘
+        """
+        return self._from_pyldf(self._ldf.count())
+
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
         self,
@@ -6196,7 +6269,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self.shift(n, fill_value=fill_value)
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int) -> Self:
+    def take_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
@@ -6207,5 +6280,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)

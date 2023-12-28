@@ -1,4 +1,3 @@
-#[cfg(any(feature = "range", feature = "arg_where"))]
 use super::*;
 
 /// Find the indexes that would sort these series in order of appearance.

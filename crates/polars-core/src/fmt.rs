@@ -93,7 +93,7 @@ macro_rules! format_array {
             $name,
             $dtype
         )?;
-        let truncate = matches!($a.dtype(), DataType::Utf8);
+        let truncate = matches!($a.dtype(), DataType::String);
         let truncate_len = if truncate {
             std::env::var(FMT_STR_LEN)
                 .as_deref()
@@ -163,7 +163,7 @@ fn format_object_array(
     array_type: &str,
 ) -> fmt::Result {
     match object.dtype() {
-        DataType::Object(inner_type) => {
+        DataType::Object(inner_type, None) => {
             let limit = std::cmp::min(LIMIT, object.len());
             write!(
                 f,
@@ -199,7 +199,7 @@ impl Debug for ChunkedArray<BooleanType> {
     }
 }
 
-impl Debug for Utf8Chunked {
+impl Debug for StringChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         format_array!(f, self, "str", self.name(), "ChunkedArray")
     }
@@ -271,8 +271,8 @@ impl Debug for Series {
             DataType::Boolean => {
                 format_array!(f, self.bool().unwrap(), "bool", self.name(), "Series")
             },
-            DataType::Utf8 => {
-                format_array!(f, self.utf8().unwrap(), "str", self.name(), "Series")
+            DataType::String => {
+                format_array!(f, self.str().unwrap(), "str", self.name(), "Series")
             },
             DataType::UInt8 => {
                 format_array!(f, self.u8().unwrap(), "u8", self.name(), "Series")
@@ -333,7 +333,7 @@ impl Debug for Series {
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
+            DataType::Object(_, None) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map, _) => {
                 if let Some(rev_map) = rev_map {
@@ -970,8 +970,8 @@ impl Display for AnyValue<'_> {
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
-            AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{v}\"")),
-            AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{v}\"")),
+            AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
+            AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
@@ -1434,7 +1434,7 @@ ChunkedArray: 'Date' [i32]
 ]"#,
             format!("{:?}", ca)
         );
-        let ca = Utf8Chunked::new("name", &["a", "b"]);
+        let ca = StringChunked::new("name", &["a", "b"]);
         assert_eq!(
             r#"shape: (2,)
 ChunkedArray: 'name' [str]

@@ -21,9 +21,9 @@ mod list;
 pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;
+mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-mod utf8;
 
 #[cfg(feature = "object")]
 use std::any::Any;
@@ -43,8 +43,6 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -466,7 +464,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]

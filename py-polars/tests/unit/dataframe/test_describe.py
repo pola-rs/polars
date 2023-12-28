@@ -90,7 +90,7 @@ def test_df_describe_nested() -> None:
             ("max", None, None),
         ],
         schema=["describe"] + df.columns,
-        schema_overrides={"struct": pl.Utf8, "list": pl.Utf8},
+        schema_overrides={"struct": pl.String, "list": pl.String},
     )
     assert_frame_equal(result, expected)
 

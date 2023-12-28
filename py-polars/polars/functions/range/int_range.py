@@ -200,7 +200,7 @@ def int_range(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = ...,
+    step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[False] = ...,
@@ -212,7 +212,7 @@ def int_ranges(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = ...,
+    step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[True],
@@ -224,7 +224,7 @@ def int_ranges(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = ...,
+    step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
     eager: bool,
@@ -235,7 +235,7 @@ def int_ranges(
 def int_ranges(
     start: int | IntoExprColumn,
     end: int | IntoExprColumn,
-    step: int = 1,
+    step: int | IntoExprColumn = 1,
     *,
     dtype: PolarsIntegerType = Int64,
     eager: bool = False,
@@ -283,6 +283,7 @@ def int_ranges(
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
+    step = parse_as_expression(step)
     result = wrap_expr(plr.int_ranges(start, end, step, dtype))
 
     if eager:

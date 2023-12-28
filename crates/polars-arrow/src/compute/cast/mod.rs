@@ -11,7 +11,7 @@ pub use binary_to::*;
 pub use boolean_to::*;
 pub use decimal_to::*;
 pub use dictionary_to::*;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
 pub use primitive_to::*;
 pub use utf8_to::*;
 
@@ -391,32 +391,67 @@ fn cast_list_to_fixed_size_list<O: Offset>(
     size: usize,
     options: CastOptions,
 ) -> PolarsResult<FixedSizeListArray> {
-    let offsets = list.offsets().buffer().iter();
-    let expected = (0..list.len()).map(|ix| O::from_as_usize(ix * size));
+    let null_cnt = list.null_count();
+    let new_values = if null_cnt == 0 {
+        let offsets = list.offsets().buffer().iter();
+        let expected = (0..list.len()).map(|ix| O::from_as_usize(ix * size));
 
-    match offsets
-        .zip(expected)
-        .find(|(actual, expected)| *actual != expected)
-    {
-        Some(_) => polars_bail!(ComputeError:
-            "not all elements have the specified width {size}"
-        ),
-        None => {
-            let sliced_values = list.values().sliced(
-                list.offsets().first().to_usize(),
-                list.offsets().range().to_usize(),
-            );
-            let new_values = cast(sliced_values.as_ref(), inner.data_type(), options)?;
-            FixedSizeListArray::try_new(
-                ArrowDataType::FixedSizeList(Box::new(inner.clone()), size),
-                new_values,
-                list.validity().cloned(),
-            )
-            .map_err(
-                |_| polars_err!(ComputeError: "not all elements have the specified width {size}"),
-            )
-        },
-    }
+        match offsets
+            .zip(expected)
+            .find(|(actual, expected)| *actual != expected)
+        {
+            Some(_) => polars_bail!(ComputeError:
+                "not all elements have the specified width {size}"
+            ),
+            None => {
+                let sliced_values = list.values().sliced(
+                    list.offsets().first().to_usize(),
+                    list.offsets().range().to_usize(),
+                );
+                cast(sliced_values.as_ref(), inner.data_type(), options)?
+            },
+        }
+    } else {
+        let offsets = list.offsets().as_slice();
+        // Check the lengths of each list are equal to the fixed size.
+        // SAFETY: we know the index is in bound.
+        let mut expected_offset = unsafe { *offsets.get_unchecked(0) } + O::from_as_usize(size);
+        for i in 1..=list.len() {
+            // SAFETY: we know the index is in bound.
+            let current_offset = unsafe { *offsets.get_unchecked(i) };
+            if list.is_null(i - 1) {
+                expected_offset = current_offset + O::from_as_usize(size);
+            } else {
+                polars_ensure!(current_offset == expected_offset, ComputeError:
+            "not all elements have the specified width {size}");
+                expected_offset += O::from_as_usize(size);
+            }
+        }
+
+        // Build take indices for the values. This is used to fill in the null slots.
+        let mut indices =
+            MutablePrimitiveArray::<O>::with_capacity(list.values().len() + null_cnt * size);
+        for i in 0..list.len() {
+            if list.is_null(i) {
+                indices.extend_constant(size, None)
+            } else {
+                // SAFETY: we know the index is in bound.
+                let current_offset = unsafe { *offsets.get_unchecked(i) };
+                for j in 0..size {
+                    indices.push(Some(current_offset + O::from_as_usize(j)));
+                }
+            }
+        }
+        let take_values = crate::compute::take::take(list.values().as_ref(), &indices.into())?;
+
+        cast(take_values.as_ref(), inner.data_type(), options)?
+    };
+    FixedSizeListArray::try_new(
+        ArrowDataType::FixedSizeList(Box::new(inner.clone()), size),
+        new_values,
+        list.validity().cloned(),
+    )
+    .map_err(|_| polars_err!(ComputeError: "not all elements have the specified width {size}"))
 }
 
 /// Cast `array` to the provided data type and return a new [`Array`] with

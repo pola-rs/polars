@@ -13,41 +13,42 @@ extern crate pyo3_built;
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-pub mod arrow_interop;
+
+mod arrow_interop;
 #[cfg(feature = "csv")]
 mod batched_csv;
-pub mod conversion;
-pub mod dataframe;
-pub mod datatypes;
-pub mod error;
-pub mod expr;
-pub mod file;
-pub mod functions;
-pub(crate) mod gil_once_cell;
-pub mod lazyframe;
-pub mod lazygroupby;
-pub mod map;
+mod conversion;
+mod dataframe;
+mod datatypes;
+mod error;
+mod expr;
+mod file;
+mod functions;
+mod gil_once_cell;
+mod lazyframe;
+mod lazygroupby;
+mod map;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "object")]
 mod on_startup;
-pub mod prelude;
-pub(crate) mod py_modules;
-pub mod series;
+mod prelude;
+mod py_modules;
+mod series;
 #[cfg(feature = "sql")]
 mod sql;
-pub mod utils;
+mod utils;
 
 #[cfg(all(target_family = "unix", not(use_mimalloc)))]
 use jemallocator::Jemalloc;
 #[cfg(any(not(target_family = "unix"), use_mimalloc))]
 use mimalloc::MiMalloc;
-#[cfg(feature = "object")]
-pub use on_startup::__register_startup_deps;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+#[cfg(feature = "csv")]
+use crate::batched_csv::PyBatchedCsv;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
@@ -56,10 +57,12 @@ use crate::error::{
     SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
-use crate::functions::string_cache::PyStringCacheHolder;
-use crate::lazyframe::PyLazyFrame;
+use crate::functions::PyStringCacheHolder;
+use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
+#[cfg(feature = "sql")]
+use crate::sql::PySQLContext;
 
 #[global_allocator]
 #[cfg(all(target_family = "unix", not(use_mimalloc)))]
@@ -75,189 +78,173 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
+    m.add_class::<PyInProcessQuery>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "csv")]
-    m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
+    m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
-    m.add_class::<sql::PySQLContext>().unwrap();
+    m.add_class::<PySQLContext>().unwrap();
 
     // Functions - eager
-    m.add_wrapped(wrap_pyfunction!(functions::eager::concat_df))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_df))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::concat_series))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_series))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::concat_df_diagonal))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_df_diagonal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::concat_df_horizontal))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_df_horizontal))
         .unwrap();
 
     // Functions - range
-    m.add_wrapped(wrap_pyfunction!(functions::range::int_range))
+    m.add_wrapped(wrap_pyfunction!(functions::int_range))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::range::int_ranges))
+    m.add_wrapped(wrap_pyfunction!(functions::int_ranges))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::range::date_range))
+    m.add_wrapped(wrap_pyfunction!(functions::date_range))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::range::date_ranges))
+    m.add_wrapped(wrap_pyfunction!(functions::date_ranges))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::range::datetime_range))
+    m.add_wrapped(wrap_pyfunction!(functions::datetime_range))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::range::datetime_ranges))
+    m.add_wrapped(wrap_pyfunction!(functions::datetime_ranges))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::range::time_range))
+    m.add_wrapped(wrap_pyfunction!(functions::time_range))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::range::time_ranges))
+    m.add_wrapped(wrap_pyfunction!(functions::time_ranges))
         .unwrap();
 
     // Functions - aggregation
-    m.add_wrapped(wrap_pyfunction!(functions::aggregation::all_horizontal))
+    m.add_wrapped(wrap_pyfunction!(functions::all_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::aggregation::any_horizontal))
+    m.add_wrapped(wrap_pyfunction!(functions::any_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::aggregation::max_horizontal))
+    m.add_wrapped(wrap_pyfunction!(functions::max_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::aggregation::min_horizontal))
+    m.add_wrapped(wrap_pyfunction!(functions::min_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::aggregation::sum_horizontal))
+    m.add_wrapped(wrap_pyfunction!(functions::sum_horizontal))
         .unwrap();
 
     // Functions - lazy
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
+    m.add_wrapped(wrap_pyfunction!(functions::arg_sort_by))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_where))
+    m.add_wrapped(wrap_pyfunction!(functions::arg_where))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::as_struct))
+    m.add_wrapped(wrap_pyfunction!(functions::as_struct))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::coalesce))
+    m.add_wrapped(wrap_pyfunction!(functions::coalesce))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::col))
+    m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all))
+    m.add_wrapped(wrap_pyfunction!(functions::collect_all_with_callback))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all_with_callback))
+    m.add_wrapped(wrap_pyfunction!(functions::cols)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::concat_lf))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_list))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_lf))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_str))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_list))
+    m.add_wrapped(wrap_pyfunction!(functions::count)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::cov)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::cum_fold))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_str))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::count))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cov))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cum_fold))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cum_reduce))
+    m.add_wrapped(wrap_pyfunction!(functions::cum_reduce))
         .unwrap();
     #[cfg(feature = "trigonometry")]
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2))
-        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::arctan2)).unwrap();
     #[cfg(feature = "trigonometry")]
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2d))
+    m.add_wrapped(wrap_pyfunction!(functions::arctan2d))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
+    m.add_wrapped(wrap_pyfunction!(functions::datetime))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_expr))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_expr))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_lf_diagonal))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_lf_diagonal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
+    m.add_wrapped(wrap_pyfunction!(functions::concat_lf_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::duration))
+    m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::first))
+    m.add_wrapped(wrap_pyfunction!(functions::duration))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::fold))
+    m.add_wrapped(wrap_pyfunction!(functions::first)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::last)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::last))
+    m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::lit))
+    m.add_wrapped(wrap_pyfunction!(functions::rolling_cov))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::map_mul))
+    m.add_wrapped(wrap_pyfunction!(functions::reduce)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::repeat)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::spearman_rank_corr))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::pearson_corr))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_corr))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_cov))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::reduce))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::repeat))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::spearman_rank_corr))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
-        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::when)).unwrap();
 
     #[cfg(feature = "sql")]
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::sql_expr))
+    m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
         .unwrap();
 
     // Functions - I/O
     #[cfg(feature = "ipc")]
-    m.add_wrapped(wrap_pyfunction!(functions::io::read_ipc_schema))
+    m.add_wrapped(wrap_pyfunction!(functions::read_ipc_schema))
         .unwrap();
     #[cfg(feature = "parquet")]
-    m.add_wrapped(wrap_pyfunction!(functions::io::read_parquet_schema))
+    m.add_wrapped(wrap_pyfunction!(functions::read_parquet_schema))
         .unwrap();
 
     // Functions - meta
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_polars_version))
+    m.add_wrapped(wrap_pyfunction!(functions::get_polars_version))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_index_type))
+    m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::threadpool_size))
+    m.add_wrapped(wrap_pyfunction!(functions::threadpool_size))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(
-        functions::string_cache::enable_string_cache
-    ))
-    .unwrap();
-    m.add_wrapped(wrap_pyfunction!(
-        functions::string_cache::disable_string_cache
-    ))
-    .unwrap();
-    m.add_wrapped(wrap_pyfunction!(
-        functions::string_cache::using_string_cache
-    ))
-    .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::disable_string_cache))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::using_string_cache))
+        .unwrap();
 
     // Numeric formatting
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_thousands_separator))
+    m.add_wrapped(wrap_pyfunction!(functions::get_thousands_separator))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_thousands_separator))
+    m.add_wrapped(wrap_pyfunction!(functions::set_thousands_separator))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
+    m.add_wrapped(wrap_pyfunction!(functions::get_float_fmt))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_precision))
+    m.add_wrapped(wrap_pyfunction!(functions::get_float_precision))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_decimal_separator))
+    m.add_wrapped(wrap_pyfunction!(functions::get_decimal_separator))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_trim_decimal_zeros))
+    m.add_wrapped(wrap_pyfunction!(functions::get_trim_decimal_zeros))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
+    m.add_wrapped(wrap_pyfunction!(functions::set_float_fmt))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_precision))
+    m.add_wrapped(wrap_pyfunction!(functions::set_float_precision))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_decimal_separator))
+    m.add_wrapped(wrap_pyfunction!(functions::set_decimal_separator))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_trim_decimal_zeros))
+    m.add_wrapped(wrap_pyfunction!(functions::set_trim_decimal_zeros))
         .unwrap();
 
     // Functions - misc
-    m.add_wrapped(wrap_pyfunction!(functions::misc::dtype_str_repr))
+    m.add_wrapped(wrap_pyfunction!(functions::dtype_str_repr))
         .unwrap();
     #[cfg(feature = "object")]
-    m.add_wrapped(wrap_pyfunction!(__register_startup_deps))
+    m.add_wrapped(wrap_pyfunction!(on_startup::__register_startup_deps))
         .unwrap();
 
     // Functions - random
-    m.add_wrapped(wrap_pyfunction!(functions::random::set_random_seed))
+    m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
         .unwrap();
 
     // Exceptions

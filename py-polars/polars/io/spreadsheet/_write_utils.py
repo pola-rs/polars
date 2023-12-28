@@ -89,7 +89,7 @@ def _adjacent_cols(df: DataFrame, cols: Iterable[str], min_max: dict[str, Any]) 
 
 
 def _unpack_multi_column_dict(
-    d: dict[str | Sequence[str], Any] | Any
+    d: dict[str | Sequence[str], Any] | Any,
 ) -> dict[str, Any] | Any:
     """Unpack multi-col dictionary into equivalent single-col definitions."""
     if not isinstance(d, dict):
@@ -495,7 +495,7 @@ def _xl_setup_table_columns(
 
 
 def _xl_setup_table_options(
-    table_style: dict[str, Any] | str | None
+    table_style: dict[str, Any] | str | None,
 ) -> tuple[dict[str, Any] | str | None, dict[str, Any]]:
     """Setup table options, distinguishing style name from other formatting."""
     if isinstance(table_style, dict):

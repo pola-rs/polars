@@ -2,10 +2,11 @@ use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::prelude::FromDataUtf8;
 use polars_core::prelude::*;
+use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::chunkedarray::utf8::Pattern;
+use polars_time::chunkedarray::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{
+use polars_time::prelude::string::infer::{
     infer_pattern_single, DatetimeInfer, StrpTimeParser, TryFromWithUnit,
 };
 
@@ -201,6 +202,7 @@ impl ParsedBuffer for Utf8Field {
 
         // note that one branch writes without updating the length, so we must do that later.
         let n_written = if needs_escaping {
+            polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
             // Safety:
             // we just allocated enough capacity and data_len is correct.
             unsafe { escape_field(bytes, self.quote_char, self.data.spare_capacity_mut()) }
@@ -297,6 +299,7 @@ impl<'a> CategoricalField<'a> {
 
         if validate_utf8(bytes) {
             if needs_escaping {
+                polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
                 self.escape_scratch.clear();
                 self.escape_scratch.reserve(bytes.len());
                 // Safety:
@@ -529,7 +532,7 @@ pub(crate) fn init_buffers<'a>(
             let (name, dtype) = schema.get_at_index(i).unwrap();
             let mut str_capacity = 0;
             // determine the needed capacity for this column
-            if dtype == &DataType::Utf8 {
+            if dtype == &DataType::String {
                 str_capacity = str_capacities[str_index].size_hint();
                 str_index += 1;
             }
@@ -542,7 +545,7 @@ pub(crate) fn init_buffers<'a>(
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
+                &DataType::String => Buffer::Utf8(Utf8Field::new(
                     name,
                     capacity,
                     str_capacity,
@@ -663,7 +666,7 @@ impl<'a> Buffer<'a> {
                         Some(v.validity.into()),
                     )
                 };
-                Utf8Chunked::with_chunk(v.name.as_str(), arr).into_series()
+                StringChunked::with_chunk(v.name.as_str(), arr).into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {
@@ -720,7 +723,7 @@ impl<'a> Buffer<'a> {
             Buffer::UInt64(_) => DataType::UInt64,
             Buffer::Float32(_) => DataType::Float32,
             Buffer::Float64(_) => DataType::Float64,
-            Buffer::Utf8(_) => DataType::Utf8,
+            Buffer::Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
             #[cfg(feature = "dtype-date")]

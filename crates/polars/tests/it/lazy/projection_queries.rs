@@ -60,11 +60,11 @@ fn test_outer_join_with_column_2988() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.get_column_names(), &["key1", "key2", "val1", "val2"]);
     assert_eq!(
-        Vec::from(out.column("key1")?.utf8()?),
+        Vec::from(out.column("key1")?.str()?),
         &[Some("bar"), Some("baz"), Some("foo")]
     );
     assert_eq!(
-        Vec::from(out.column("key2")?.utf8()?),
+        Vec::from(out.column("key2")?.str()?),
         &[Some("bar"), Some("baz"), Some("foo")]
     );
     assert_eq!(
@@ -161,7 +161,7 @@ fn test_projection_5086() -> PolarsResult<()> {
 fn test_unnest_pushdown() -> PolarsResult<()> {
     let df = df![
         "collection" => Series::full_null("", 1, &DataType::Int32),
-        "users" => Series::full_null("", 1, &DataType::List(Box::new(DataType::Struct(vec![Field::new("email", DataType::Utf8)])))),
+        "users" => Series::full_null("", 1, &DataType::List(Box::new(DataType::Struct(vec![Field::new("email", DataType::String)])))),
     ]?;
 
     let out = df

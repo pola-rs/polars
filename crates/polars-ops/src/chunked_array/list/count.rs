@@ -6,6 +6,22 @@ use arrow::legacy::utils::CustomIterTools;
 use super::*;
 
 fn count_bits_set_by_offsets(values: &Bitmap, offset: &[i64]) -> Vec<IdxSize> {
+    // Fast path where all bits are either set or unset.
+    if values.unset_bits() == values.len() {
+        return vec![0 as IdxSize; offset.len() - 1];
+    } else if values.unset_bits() == 0 {
+        let mut start = offset[0];
+        let v = (offset[1..])
+            .iter()
+            .map(|end| {
+                let current_offset = start;
+                start = *end;
+                (end - current_offset) as IdxSize
+            })
+            .collect_trusted();
+        return v;
+    }
+
     let (bits, bitmap_offset, _) = values.as_slice();
 
     let mut running_offset = offset[0];

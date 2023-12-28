@@ -34,7 +34,7 @@ where
     }
 }
 
-impl ChunkVar for Utf8Chunked {}
+impl ChunkVar for StringChunked {}
 impl ChunkVar for ListChunked {}
 #[cfg(feature = "dtype-array")]
 impl ChunkVar for ArrayChunked {}

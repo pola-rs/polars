@@ -38,7 +38,7 @@ pub(super) fn set_sorted_flag(s: &Series, sorted: IsSorted) -> PolarsResult<Seri
 pub(super) fn replace_time_zone(s: &[Series], time_zone: Option<&str>) -> PolarsResult<Series> {
     let s1 = &s[0];
     let ca = s1.datetime().unwrap();
-    let s2 = &s[1].utf8()?;
+    let s2 = &s[1].str()?;
     Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2)?.into_series())
 }
 
@@ -73,7 +73,7 @@ pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Ser
     s.fill_null(FillNullStrategy::Forward(limit))
 }
 
-pub(super) fn sum_horizontal(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn sum_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     polars_ops::prelude::sum_horizontal(s)
 }
 
@@ -132,5 +132,6 @@ pub(super) fn hist(
 
 #[cfg(feature = "replace")]
 pub(super) fn replace(s: &[Series], return_dtype: Option<DataType>) -> PolarsResult<Series> {
-    polars_ops::series::replace(&s[0], &s[1], &s[2], &s[3], return_dtype)
+    let default = if let Some(s) = s.get(3) { s } else { &s[0] };
+    polars_ops::series::replace(&s[0], &s[1], &s[2], default, return_dtype)
 }

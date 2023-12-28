@@ -38,7 +38,7 @@ if not _DOCUMENTING:
         dt.Duration: PySeries.new_opt_i64,
         dt.Time: PySeries.new_opt_i64,
         dt.Boolean: PySeries.new_opt_bool,
-        dt.Utf8: PySeries.new_str,
+        dt.String: PySeries.new_str,
         dt.Object: PySeries.new_object,
         dt.Categorical: PySeries.new_str,
         dt.Enum: PySeries.new_str,
@@ -111,7 +111,7 @@ def _normalise_numpy_dtype(dtype: Any) -> tuple[Any, Any]:
 
 
 def numpy_values_and_dtype(
-    values: np.ndarray[Any, Any]
+    values: np.ndarray[Any, Any],
 ) -> tuple[np.ndarray[Any, Any], type]:
     """Return numpy values and their associated dtype, adjusting if required."""
     # Create new dtype object from dtype base name so architecture specific

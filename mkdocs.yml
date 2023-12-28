@@ -2,7 +2,7 @@
 
 # Project information
 site_name: Polars
-site_url: https://pola-rs.github.io/polars
+site_url: https://docs.pola.rs
 repo_url: https://github.com/pola-rs/polars
 repo_name: pola-rs/polars
 
@@ -97,6 +97,7 @@ nav:
     - releases/changelog.md
     - Upgrade guides:
       - releases/upgrade/index.md
+      - releases/upgrade/0.20.md
       - releases/upgrade/0.19.md
 
 not_in_nav: |
@@ -139,16 +140,9 @@ theme:
 extra_css:
   - _build/css/extra.css
 extra:
-  consent:
-    title: Cookie consent
-    description: >-
-      We use cookies to recognize your repeated visits and preferences, as well
-      as to measure the effectiveness of our documentation and whether users
-      find what they're searching for. With your consent, you're helping us to
-      make our documentation better.
   analytics:
-    provider: google
-    property: G-LKNVFWD3T5
+    provider: plausible
+    domain: guide.pola.rs,combined.pola.rs
 
 # Preview controls
 strict: true
@@ -177,5 +171,6 @@ plugins:
   - search:
       lang: en
   - markdown-exec
+  - material-plausible
   - macros:
       module_name: docs/_build/scripts/macro

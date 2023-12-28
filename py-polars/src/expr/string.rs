@@ -218,7 +218,7 @@ impl PyExpr {
     #[cfg(feature = "extract_jsonpath")]
     fn str_json_path_match(&self, pat: String) -> Self {
         let function = move |s: Series| {
-            let ca = s.utf8()?;
+            let ca = s.str()?;
             match ca.json_path_match(&pat) {
                 Ok(ca) => Ok(Some(ca.into_series())),
                 Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
@@ -226,7 +226,7 @@ impl PyExpr {
         };
         self.inner
             .clone()
-            .map(function, GetOutput::from_type(DataType::Utf8))
+            .map(function, GetOutput::from_type(DataType::String))
             .with_fmt("str.json_path_match")
             .into()
     }
@@ -284,5 +284,27 @@ impl PyExpr {
 
     fn str_to_decimal(&self, infer_len: usize) -> Self {
         self.inner.clone().str().to_decimal(infer_len).into()
+    }
+
+    #[cfg(feature = "find_many")]
+    fn str_contains_any(&self, patterns: PyExpr, ascii_case_insensitive: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .contains_any(patterns.inner, ascii_case_insensitive)
+            .into()
+    }
+    #[cfg(feature = "find_many")]
+    fn str_replace_many(
+        &self,
+        patterns: PyExpr,
+        replace_with: PyExpr,
+        ascii_case_insensitive: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .into()
     }
 }

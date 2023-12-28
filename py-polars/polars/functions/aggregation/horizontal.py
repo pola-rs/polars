@@ -111,7 +111,7 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.max_horizontal("a", "b"))
+    >>> df.with_columns(max=pl.max_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ max │
@@ -147,7 +147,7 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.min_horizontal("a", "b"))
+    >>> df.with_columns(min=pl.min_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ min │
@@ -183,7 +183,7 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.sum_horizontal("a", "b"))
+    >>> df.with_columns(sum=pl.sum_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ sum │

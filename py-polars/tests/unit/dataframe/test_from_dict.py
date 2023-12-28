@@ -71,7 +71,7 @@ def test_from_dict_with_scalars() -> None:
             "value": {0: "x", 1: "y", 2: "z"}.values(),
         },
         schema={
-            "value": pl.Utf8,
+            "value": pl.String,
             "other": pl.Float32,
             "misc": pl.Int32,
             "key": pl.Int8,
@@ -85,7 +85,7 @@ def test_from_dict_with_scalars() -> None:
         "key": [1, 2, 3],
     }
     assert df4.schema == {
-        "value": pl.Utf8,
+        "value": pl.String,
         "other": pl.Float32,
         "misc": pl.Int32,
         "key": pl.Int8,
@@ -106,7 +106,7 @@ def test_from_dict_with_scalars() -> None:
         assert df5.schema == {
             "x": pl.Struct([pl.Field("b", pl.Int64), pl.Field("c", pl.Int64)]),
             "y": pl.Int8,
-            "z": pl.Utf8,
+            "z": pl.String,
         }
 
     # mixed with numpy cols...
@@ -182,7 +182,7 @@ def test_from_dict_with_scalars_mixed() -> None:
             "h": pl.Date,
             "i": pl.Duration,
             "j": pl.Datetime,
-            "k": pl.Utf8,
+            "k": pl.String,
         },
     )
     dfx = df8.select(pl.exclude("idx"))

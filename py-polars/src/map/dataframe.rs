@@ -87,7 +87,7 @@ pub fn apply_lambda_unknown<'a>(
             let first_value = out.extract::<&str>().ok();
             return Ok((
                 PySeries::new(
-                    apply_lambda_with_utf8_out_type(df, py, lambda, null_count, first_value)
+                    apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)
                         .into_series(),
                 )
                 .into_py(py),
@@ -195,20 +195,20 @@ pub fn apply_lambda_with_bool_out_type<'a>(
     }
 }
 
-/// Apply a lambda with utf8 output type
-pub fn apply_lambda_with_utf8_out_type<'a>(
+/// Apply a lambda with string output type
+pub fn apply_lambda_with_string_out_type<'a>(
     df: &'a DataFrame,
     py: Python,
     lambda: &'a PyAny,
     init_null_count: usize,
     first_value: Option<&str>,
-) -> Utf8Chunked {
+) -> StringChunked {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         ChunkedArray::full_null("map", df.height())
     } else {
         let iter = apply_iter::<&str>(df, py, lambda, init_null_count, skip);
-        iterator_to_utf8(iter, init_null_count, first_value, "map", df.height())
+        iterator_to_string(iter, init_null_count, first_value, "map", df.height())
     }
 }
 

@@ -33,7 +33,9 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         }
     } else {
         match s.dtype() {
-            DataType::Utf8 => Ok(unique_counts_helper(s.utf8().unwrap().into_iter()).into_series()),
+            DataType::String => {
+                Ok(unique_counts_helper(s.str().unwrap().into_iter()).into_series())
+            },
             dt => {
                 polars_bail!(opq = unique_counts, dt)
             },

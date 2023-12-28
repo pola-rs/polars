@@ -10,7 +10,7 @@ unsafe fn idx_to_str(idx: usize, arr: &Utf8Array<i64>) -> Option<&str> {
     }
 }
 
-impl Utf8Chunked {
+impl StringChunked {
     pub fn par_iter_indexed(&self) -> impl IndexedParallelIterator<Item = Option<&str>> {
         assert_eq!(self.chunks.len(), 1);
         let arr = &*self.chunks[0];

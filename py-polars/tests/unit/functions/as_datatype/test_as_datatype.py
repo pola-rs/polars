@@ -341,7 +341,7 @@ def test_struct_from_schema_only() -> None:
     s = df.select(
         pl.struct(
             schema={
-                "str": pl.Utf8,
+                "str": pl.String,
                 "u8": pl.UInt8,
                 "i32": pl.Int32,
                 "f64": pl.Float64,
@@ -356,7 +356,7 @@ def test_struct_from_schema_only() -> None:
     # check dtypes
     assert s.dtype == pl.Struct(
         [
-            pl.Field("str", pl.Utf8),
+            pl.Field("str", pl.String),
             pl.Field("u8", pl.UInt8),
             pl.Field("i32", pl.Int32),
             pl.Field("f64", pl.Float64),
@@ -524,7 +524,7 @@ def test_concat_str_with_non_utf8_col() -> None:
         .select(pl.concat_str(["a", "b"], separator="-").fill_null(pl.col("a")))
         .collect()
     )
-    expected = pl.Series("a", ["0-x"], dtype=pl.Utf8)
+    expected = pl.Series("a", ["0-x"], dtype=pl.String)
     assert_series_equal(out.to_series(), expected)
 
 

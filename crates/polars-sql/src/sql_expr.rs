@@ -36,7 +36,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::String(_)
         | SQLDataType::Text
         | SQLDataType::Uuid
-        | SQLDataType::Varchar(_) => DataType::Utf8,
+        | SQLDataType::Varchar(_) => DataType::String,
         SQLDataType::Date => DataType::Date,
         SQLDataType::Double | SQLDataType::DoublePrecision => DataType::Float64,
         SQLDataType::Float(_) => DataType::Float32,
@@ -256,28 +256,28 @@ impl SqlExprVisitor<'_> {
             SQLBinaryOperator::Plus => left + right,
             SQLBinaryOperator::Spaceship => left.eq_missing(right),
             SQLBinaryOperator::StringConcat => {
-                left.cast(DataType::Utf8) + right.cast(DataType::Utf8)
+                left.cast(DataType::String) + right.cast(DataType::String)
             },
             SQLBinaryOperator::Xor => left.xor(right),
             // ----
             // Regular expression operators
             // ----
             SQLBinaryOperator::PGRegexMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true),
+                Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true),
                 _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true).not(),
+                Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true).not(),
                 _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexIMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
                 },
                 _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
-                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
                 _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
@@ -422,7 +422,7 @@ impl SqlExprVisitor<'_> {
             SqlValue::SingleQuotedString(s)
             | SqlValue::NationalStringLiteral(s)
             | SqlValue::HexStringLiteral(s)
-            | SqlValue::DoubleQuotedString(s) => AnyValue::Utf8Owned(s.into()),
+            | SqlValue::DoubleQuotedString(s) => AnyValue::StringOwned(s.into()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
     }
@@ -463,7 +463,7 @@ impl SqlExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
         let trim_what = match trim_what {
-            Some(Expr::Literal(LiteralValue::Utf8(val))) => Some(val),
+            Some(Expr::Literal(LiteralValue::String(val))) => Some(val),
             None => None,
             _ => return self.err(&expr),
         };

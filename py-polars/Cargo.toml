@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.18"
+version = "0.20.3-rc.1"
 edition = "2021"
 
 [lib]
@@ -140,6 +140,7 @@ list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
+array_any_all = ["polars/array_any_all", "polars/dtype-array"]
 list_drop_nulls = ["polars/list_drop_nulls"]
 list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
@@ -149,6 +150,7 @@ ffi_plugin = ["polars-plan/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
+find_many = ["polars/find_many"]
 
 dtypes = [
   "dtype-i8",
@@ -160,6 +162,7 @@ dtypes = [
 ]
 
 operations = [
+  "array_any_all",
   "is_in",
   "repeat_by",
   "trigonometry",
@@ -186,6 +189,7 @@ operations = [
   "timezones",
   "peaks",
   "hist",
+  "find_many",
 ]
 
 io = [

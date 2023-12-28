@@ -209,7 +209,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
+    fn new_str(name: &str, val: Wrap<StringChunked>, _strict: bool) -> Self {
         val.0.into_series().with_name(name).into()
     }
 
@@ -258,19 +258,30 @@ impl PySeries {
             Ok(series.into())
         } else {
             let val = vec_extract_wrapped(val);
-            let series = Series::new(name, &val);
-            match series.dtype() {
-                DataType::List(list_inner) => {
-                    let series = series
-                        .cast(&DataType::Array(
-                            Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
-                            width,
-                        ))
-                        .map_err(PyPolarsErr::from)?;
-                    Ok(series.into())
-                },
-                _ => Err(PyValueError::new_err("could not create Array from input")),
-            }
+            return if let Some(inner) = inner {
+                let series = Series::from_any_values_and_dtype(
+                    name,
+                    val.as_ref(),
+                    &DataType::Array(Box::new(inner.0), width),
+                    true,
+                )
+                .map_err(PyPolarsErr::from)?;
+                Ok(series.into())
+            } else {
+                let series = Series::new(name, &val);
+                match series.dtype() {
+                    DataType::List(list_inner) => {
+                        let series = series
+                            .cast(&DataType::Array(
+                                Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
+                                width,
+                            ))
+                            .map_err(PyPolarsErr::from)?;
+                        Ok(series.into())
+                    },
+                    _ => Err(PyValueError::new_err("could not create Array from input")),
+                }
+            };
         }
     }
 

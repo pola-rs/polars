@@ -401,7 +401,7 @@ def test_rank_string_null_11252() -> None:
 
 
 def test_unique_empty() -> None:
-    for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
+    for dt in [pl.String, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
         assert_series_equal(s.unique(), s)
 
@@ -551,6 +551,16 @@ def test_lit_dtypes() -> None:
     )
 
 
+def test_lit_empty_tu() -> None:
+    td = timedelta(1)
+    assert pl.select(pl.lit(td, dtype=pl.Duration)).item() == td
+    assert pl.select(pl.lit(td, dtype=pl.Duration)).dtypes[0].time_unit == "us"  # type: ignore[attr-defined]
+
+    t = datetime(2023, 1, 1)
+    assert pl.select(pl.lit(t, dtype=pl.Datetime)).item() == t
+    assert pl.select(pl.lit(t, dtype=pl.Datetime)).dtypes[0].time_unit == "us"  # type: ignore[attr-defined]
+
+
 def test_incompatible_lit_dtype() -> None:
     with pytest.raises(
         TypeError,
@@ -582,12 +592,12 @@ def test_lit_dtype_utc() -> None:
         (("a", "b"), ["c"]),
         ((["a", "b"],), ["c"]),
         ((pl.Int64,), ["c"]),
-        ((pl.Utf8, pl.Float32), ["a", "b"]),
-        (([pl.Utf8, pl.Float32],), ["a", "b"]),
+        ((pl.String, pl.Float32), ["a", "b"]),
+        (([pl.String, pl.Float32],), ["a", "b"]),
     ],
 )
 def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
-    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8})
+    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.String})
     assert df.select(pl.all().exclude(*input)).columns == expected
 
 
@@ -712,7 +722,7 @@ def test_tail() -> None:
         (4, pl.UInt32),
         (4.5, pl.Float32),
         (None, pl.Float64),
-        ("白鵬翔", pl.Utf8),
+        ("白鵬翔", pl.String),
         (date.today(), pl.Date),
         (datetime.now(), pl.Datetime("ns")),
         (time(23, 59, 59), pl.Time),
@@ -736,7 +746,7 @@ def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
         (4, pl.UInt32),
         (4.5, pl.Float32),
         (None, pl.Float64),
-        ("白鵬翔", pl.Utf8),
+        ("白鵬翔", pl.String),
         (date.today(), pl.Date),
         (datetime.now(), pl.Datetime("ns")),
         (time(23, 59, 59), pl.Time),
@@ -779,14 +789,14 @@ def test_repr_short_expression() -> None:
 
 
 def test_repr_long_expression() -> None:
-    expr = pl.functions.col(pl.Utf8).str.count_matches("")
+    expr = pl.functions.col(pl.String).str.count_matches("")
 
     # we cut off the last ten characters because that includes the
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
     # note the … denoting that there was truncated text
-    expected = "<Expr ['dtype_columns([Utf8]).str.coun…'] at "
+    expected = "<Expr ['dtype_columns([String]).str.co…'] at "
     assert result == expected
     assert repr(expr).endswith(">")
 
@@ -796,3 +806,12 @@ def test_repr_gather() -> None:
     assert 'col("a").gather(0)' in result
     result = repr(pl.col("a").get(0))
     assert 'col("a").get(0)' in result
+
+
+def test_replace_no_cse() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1], "b": [2]})
+        .select([(pl.col("a") * pl.col("a")).sum().replace(1, None)])
+        .explain()
+    )
+    assert "POLARS_CSER" not in plan

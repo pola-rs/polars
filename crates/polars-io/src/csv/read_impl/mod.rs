@@ -37,14 +37,14 @@ pub(crate) fn cast_columns(
     let cast_fn = |s: &Series, fld: &Field| {
         let out = match (s.dtype(), fld.data_type()) {
             #[cfg(feature = "temporal")]
-            (DataType::Utf8, DataType::Date) => s
-                .utf8()
+            (DataType::String, DataType::Date) => s
+                .str()
                 .unwrap()
                 .as_date(None, false)
                 .map(|ca| ca.into_series()),
             #[cfg(feature = "temporal")]
-            (DataType::Utf8, DataType::Datetime(tu, _)) => s
-                .utf8()
+            (DataType::String, DataType::Datetime(tu, _)) => s
+                .str()
                 .unwrap()
                 .as_datetime(
                     None,
@@ -52,7 +52,7 @@ pub(crate) fn cast_columns(
                     false,
                     false,
                     None,
-                    &Utf8Chunked::from_iter(std::iter::once("raise")),
+                    &StringChunked::from_iter(std::iter::once("raise")),
                 )
                 .map(|ca| ca.into_series()),
             (_, dt) => s.cast(dt),
@@ -515,7 +515,7 @@ impl<'a> CoreReader<'a> {
                 )
             })?;
 
-            if dtype == &DataType::Utf8 {
+            if dtype == &DataType::String {
                 new_projection.push(*i)
             }
         }
@@ -780,7 +780,7 @@ fn update_string_stats(
 ) -> PolarsResult<()> {
     // update the running str bytes statistics
     for (str_index, name) in str_columns.iter().enumerate() {
-        let ca = local_df.column(name)?.utf8()?;
+        let ca = local_df.column(name)?.str()?;
         let str_bytes_len = ca.get_values_size();
 
         let _ = str_capacities[str_index].update(str_bytes_len);

@@ -304,15 +304,19 @@ impl LogicalPlanBuilder {
 
         let paths = Arc::new([path]);
 
-        let mut magic_nr = [0u8; 2];
-        let res = file.read_exact(&mut magic_nr);
-        if raise_if_empty {
-            res.map_err(|_| polars_err!(NoData: "empty CSV"))?;
-        };
-        polars_ensure!(
+        let mut magic_nr = [0u8; 4];
+        let res_len = file.read(&mut magic_nr)?;
+        if res_len < 2 {
+            if raise_if_empty {
+                polars_bail!(NoData: "empty CSV")
+            }
+        } else {
+            polars_ensure!(
             !is_compressed(&magic_nr),
             ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
-        );
+            );
+        }
+
         file.rewind()?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 

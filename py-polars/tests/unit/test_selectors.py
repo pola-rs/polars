@@ -30,7 +30,7 @@ def df() -> pl.DataFrame:
             "JJK": pl.Date,
             "Lmn": pl.Duration,
             "opp": pl.Datetime("ms"),
-            "qqR": pl.Utf8,
+            "qqR": pl.String,
         },
     )
     return df
@@ -53,7 +53,7 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         "def": pl.Float32,
         "eee": pl.Boolean,
         "fgg": pl.Boolean,
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
 
@@ -280,7 +280,7 @@ def test_selector_miscellaneous(df: pl.DataFrame) -> None:
     assert df.select(cs.categorical()).columns == []
 
     test_schema = {
-        "abc": pl.Utf8,
+        "abc": pl.String,
         "mno": pl.Binary,
         "tuv": pl.Object,
         "xyz": pl.Categorical,
@@ -381,8 +381,8 @@ def test_selector_repr() -> None:
         cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
     )
     assert_repr_equals(
-        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(include_categorical=False),
-        "(cs.temporal() | (cs.by_dtype(dtypes=[Utf8]) & cs.string(include_categorical=False)))",
+        cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),
+        "(cs.temporal() | (cs.by_dtype(dtypes=[String]) & cs.string(include_categorical=False)))",
     )
 
 
@@ -394,7 +394,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "JJK": pl.Date,
         "Lmn": pl.Duration,
         "opp": pl.Datetime("ms"),
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
     # and
@@ -419,7 +419,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "fgg": pl.Boolean,
         "JJK": pl.Date,
         "opp": pl.Datetime("ms"),
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
 

@@ -245,6 +245,10 @@ impl SExecutionContext for ExecutionState {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn should_stop(&self) -> PolarsResult<()> {
+        ExecutionState::should_stop(self)
+    }
 }
 
 fn get_pipeline_node(

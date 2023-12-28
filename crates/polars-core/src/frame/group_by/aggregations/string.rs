@@ -4,7 +4,7 @@ pub fn _agg_helper_idx_utf8<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &'a IdxVec)) -> Option<&'a str> + Send + Sync,
 {
-    let ca: Utf8Chunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: StringChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -12,11 +12,11 @@ pub fn _agg_helper_slice_utf8<'a, F>(groups: &'a [[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<&'a str> + Send + Sync,
 {
-    let ca: Utf8Chunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: StringChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
-impl Utf8Chunked {
+impl StringChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsProxy) -> Series {
         // faster paths

@@ -32,7 +32,7 @@ pub(super) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
         .cloned()
         .unwrap_or_else(|| "value".into());
 
-    new_schema.with_column(variable_name, DataType::Utf8);
+    new_schema.with_column(variable_name, DataType::String);
 
     // We need to determine the supertype of all value columns.
     let mut st = None;
