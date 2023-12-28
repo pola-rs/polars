@@ -4036,7 +4036,7 @@ class Expr:
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
 
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             result = function(*args, **kwargs)
             if _check_for_numpy(result) and isinstance(result, np.ndarray):
                 result = pl.Series(result)
