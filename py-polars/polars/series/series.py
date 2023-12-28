@@ -57,6 +57,8 @@ from polars.dependencies import (
     _check_for_pandas,
     _check_for_pyarrow,
     dataframe_api_compat,
+    holoviews,
+    hvplot,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -7445,19 +7447,10 @@ class Series:
         >>> import hvplot  # doctest: +SKIP
         >>> hvplot.help("hist")  # doctest: +SKIP
         """
-        try:
-            import holoviews
-            import hvplot
-            from hvplot.plotting.core import hvPlotTabularPolars
-        except ModuleNotFoundError as exc:
-            raise ModuleNotFoundError(
-                "hvplot is not installed, or is older than version 0.9.1.\n\n"
-                "Please see https://hvplot.holoviz.org/getting_started/installation.html "
-                "for installation instructions."
-            ) from exc
         if not getattr(holoviews.extension, "_loaded", False):
+            # If not extension has been loaded, load 'bokeh' (the hvplot default)
             hvplot.extension("bokeh")
-        return hvPlotTabularPolars(self)
+        return hvplot.plotting.core.hvPlotTabularPolars(self)
 
 
 def _resolve_temporal_dtype(

@@ -39,7 +39,12 @@ def expr_dispatch(cls: type[T]) -> type[T]:
     expr_lookup = _expr_lookup(namespace)
 
     for name in dir(cls):
-        if not name.startswith("_"):
+        if (
+            # private
+            not name.startswith("_")
+            # `.plot` not available on Expr
+            and name != "plot"
+        ):
             attr = getattr(cls, name)
             if callable(attr):
                 attr = _undecorated(attr)
