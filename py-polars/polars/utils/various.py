@@ -392,7 +392,7 @@ class sphinx_accessor(property):  # noqa: D101
             return self.fget(  # type: ignore[misc]
                 instance if isinstance(instance, cls) else cls
             )
-        except AttributeError:
+        except (AttributeError, ImportError):
             return None  # type: ignore[return-value]
 
 
