@@ -1383,7 +1383,7 @@ impl LazyFrame {
     /// - String columns will have a mean of None.
     pub fn mean(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || dt.is_temporal(),
+            |dt| dt.is_numeric() || dt.is_temporal() || matches!(dt, DataType::Boolean),
             |name| col(name).mean(),
         )
     }
