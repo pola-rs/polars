@@ -13,6 +13,11 @@ pub fn replace(
     default: &Series,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
+    polars_ensure!(
+        old.n_unique()? == old.len(),
+        ComputeError: "`old` input for `replace` must not contain duplicates"
+    );
+
     let return_dtype = match return_dtype {
         Some(dtype) => dtype,
         None => try_get_supertype(new.dtype(), default.dtype())?,
@@ -99,7 +104,7 @@ fn replace_by_multiple(
         return Ok(replaced.clone());
     }
 
-    let out = match joined.column("__POLARS_REPLACE_MASK") {
+    match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {
             let mask = col.bool().unwrap();
             replaced.zip_with(mask, default)
@@ -108,10 +113,7 @@ fn replace_by_multiple(
             let mask = &replaced.is_not_null();
             replaced.zip_with(mask, default)
         },
-    };
-    out.map_err(|_|
-        polars_err!(ComputeError: "ambiguous input to `replace` operation: multiple replacement values specified for the same value")
-    )
+    }
 }
 
 // Build replacer dataframe
@@ -126,6 +128,5 @@ fn create_replacer(mut old: Series, mut new: Series) -> PolarsResult<DataFrame> 
         vec![old, new]
     };
     let out = DataFrame::new_no_checks(cols);
-
-    out.unique(None, UniqueKeepStrategy::Any, None)
+    Ok(out)
 }
