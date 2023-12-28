@@ -104,7 +104,7 @@ html_show_sourcelink = False
 # key site root paths
 static_assets_root = "https://raw.githubusercontent.com/pola-rs/polars-static/master"
 github_root = "https://github.com/pola-rs/polars"
-web_root = "https://pola-rs.github.io"
+web_root = "https://docs.pola.rs"
 
 # Specify version for version switcher dropdown menu
 git_ref = os.environ.get("POLARS_VERSION", "main")
