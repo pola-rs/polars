@@ -172,31 +172,31 @@ def test_array_data_type_equality() -> None:
         ([[1.0, 2.0], None, [3.0, None], [None, None]], pl.Float32),
         ([["a", "b"], None, ["c", None], [None, None]], pl.String),
         (
-                [
-                    [datetime.datetime(2021, 1, 1), datetime.datetime(2022, 1, 1, 10, 30)],
-                    None,
-                    [datetime.datetime(2023, 12, 25), None],
-                    [None, None],
-                ],
-                pl.Datetime,
+            [
+                [datetime.datetime(2021, 1, 1), datetime.datetime(2022, 1, 1, 10, 30)],
+                None,
+                [datetime.datetime(2023, 12, 25), None],
+                [None, None],
+            ],
+            pl.Datetime,
         ),
         (
-                [
-                    [datetime.date(2021, 1, 1), datetime.date(2022, 1, 15)],
-                    None,
-                    [datetime.date(2023, 12, 25), None],
-                    [None, None],
-                ],
-                pl.Date,
+            [
+                [datetime.date(2021, 1, 1), datetime.date(2022, 1, 15)],
+                None,
+                [datetime.date(2023, 12, 25), None],
+                [None, None],
+            ],
+            pl.Date,
         ),
         (
-                [
-                    [datetime.timedelta(10), datetime.timedelta(1, 22)],
-                    None,
-                    [datetime.timedelta(20), None],
-                    [None, None],
-                ],
-                pl.Duration,
+            [
+                [datetime.timedelta(10), datetime.timedelta(1, 22)],
+                None,
+                [datetime.timedelta(20), None],
+                [None, None],
+            ],
+            pl.Duration,
         ),
         ([[[1, 2], None], None, [[3], None], [None, None]], pl.List(pl.Int32)),
     ],
