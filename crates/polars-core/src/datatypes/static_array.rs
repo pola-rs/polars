@@ -26,4 +26,8 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
+
+    fn full_null(_length: usize, _dtype: DataType) -> Self {
+        panic!("ObjectArray does not support full_null");
+    }
 }

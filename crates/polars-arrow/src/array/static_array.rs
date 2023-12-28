@@ -79,9 +79,7 @@ pub trait StaticArray:
         Self::arr_from_iter_with_dtype(dtype, v)
     }
 
-    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
-        Self::new_null(dtype, length)
-    }
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self;
 }
 
 pub trait ParameterFreeDtypeStaticArray: StaticArray {
@@ -122,6 +120,10 @@ impl<T: NativeType> StaticArray for PrimitiveArray<T> {
     fn from_zeroable_vec(v: Vec<Self::ZeroableValueT<'_>>, _dtype: ArrowDataType) -> Self {
         PrimitiveArray::from_vec(v)
     }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
+    }
 }
 
 impl<T: NativeType> ParameterFreeDtypeStaticArray for PrimitiveArray<T> {
@@ -159,6 +161,10 @@ impl StaticArray for BooleanArray {
     fn from_zeroable_vec(v: Vec<Self::ValueT<'_>>, _dtype: ArrowDataType) -> Self {
         BooleanArray::from_slice(v)
     }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
+    }
 }
 
 impl ParameterFreeDtypeStaticArray for BooleanArray {
@@ -187,6 +193,10 @@ impl StaticArray for Utf8Array<i64> {
 
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
     }
 }
 
@@ -217,6 +227,10 @@ impl StaticArray for BinaryArray<i64> {
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
+    }
 }
 
 impl ParameterFreeDtypeStaticArray for BinaryArray<i64> {
@@ -246,6 +260,10 @@ impl StaticArray for ListArray<i64> {
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
+    }
 }
 
 impl StaticArray for FixedSizeListArray {
@@ -268,5 +286,9 @@ impl StaticArray for FixedSizeListArray {
 
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
     }
 }
