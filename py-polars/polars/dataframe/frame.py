@@ -1158,7 +1158,7 @@ class DataFrame:
         >>> hvplot.help("scatter")  # doctest: +SKIP
         """
         if not getattr(holoviews.extension, "_loaded", False):
-            # If not extension has been loaded, load 'bokeh' (the hvplot default)
+            # If no extension has been loaded, load 'bokeh' (the hvplot default)
             hvplot.extension("bokeh")
         return hvplot.plotting.core.hvPlotTabularPolars(self)
 
