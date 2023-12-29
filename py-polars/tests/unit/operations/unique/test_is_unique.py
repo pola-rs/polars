@@ -35,6 +35,20 @@ def test_is_unique2() -> None:
     assert_series_equal(result, pl.Series("a", [False, True, False]))
 
 
+def test_is_unique_null() -> None:
+    s = pl.Series([])
+    expected = pl.Series([], dtype=pl.Boolean)
+    assert_series_equal(s.is_unique(), expected)
+
+    s = pl.Series([None])
+    expected = pl.Series([True], dtype=pl.Boolean)
+    assert_series_equal(s.is_unique(), expected)
+
+    s = pl.Series([None, None, None])
+    expected = pl.Series([False, False, False], dtype=pl.Boolean)
+    assert_series_equal(s.is_unique(), expected)
+
+
 def test_is_unique_struct() -> None:
     assert pl.Series(
         [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
@@ -57,3 +71,17 @@ def test_is_duplicated_df() -> None:
 def test_is_duplicated_lf() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]}).select(pl.col("a").is_duplicated())
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [True, False, True]))
+
+
+def test_is_duplicated_null() -> None:
+    s = pl.Series([])
+    expected = pl.Series([], dtype=pl.Boolean)
+    assert_series_equal(s.is_duplicated(), expected)
+
+    s = pl.Series([None])
+    expected = pl.Series([False], dtype=pl.Boolean)
+    assert_series_equal(s.is_duplicated(), expected)
+
+    s = pl.Series([None, None, None])
+    expected = pl.Series([True, True, True], dtype=pl.Boolean)
+    assert_series_equal(s.is_duplicated(), expected)
