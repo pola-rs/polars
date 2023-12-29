@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from datetime import date
+
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -107,3 +111,18 @@ def test_unique_null() -> None:
 
     s2 = pl.Series([None, None])
     assert_series_equal(s2.unique(), s1)
+
+
+@pytest.mark.parametrize(
+    ("input", "output"),
+    [
+        ([], []),
+        (["a", "b", "b", "c"], ["a", "b", "c"]),
+        (["a", "b", "b", None], ["a", "b", None]),
+    ],
+)
+def test_unique_categorical(input: list[str | None], output: list[str | None]) -> None:
+    s = pl.Series(input, dtype=pl.Categorical)
+    result = s.unique(maintain_order=True)
+    expected = pl.Series(output, dtype=pl.Categorical)
+    assert_series_equal(result, expected)

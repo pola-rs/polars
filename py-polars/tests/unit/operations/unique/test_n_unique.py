@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import pytest
+
 import polars as pl
 
 
@@ -30,3 +34,15 @@ def test_n_unique_null() -> None:
     assert pl.Series([]).n_unique() == 0
     assert pl.Series([None]).n_unique() == 1
     assert pl.Series([None, None]).n_unique() == 1
+
+
+@pytest.mark.parametrize(
+    ("input", "output"),
+    [
+        ([], 0),
+        (["a", "b", "b", "c"], 3),
+        (["a", "b", "b", None], 3),
+    ],
+)
+def test_n_unique_categorical(input: list[str | None], output: int) -> None:
+    assert pl.Series(input, dtype=pl.Categorical).n_unique() == output
