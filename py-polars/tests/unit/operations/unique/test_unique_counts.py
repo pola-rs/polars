@@ -29,3 +29,17 @@ def test_unique_counts_on_dates() -> None:
         "dt_ms": [3],
         "date": [3],
     }
+
+
+def test_unique_counts_null() -> None:
+    s = pl.Series([])
+    expected = pl.Series([], dtype=pl.UInt32)
+    assert_series_equal(s.unique_counts(), expected)
+
+    s = pl.Series([None])
+    expected = pl.Series([1], dtype=pl.UInt32)
+    assert_series_equal(s.unique_counts(), expected)
+
+    s = pl.Series([None, None, None])
+    expected = pl.Series([3], dtype=pl.UInt32)
+    assert_series_equal(s.unique_counts(), expected)
