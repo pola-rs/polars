@@ -329,7 +329,7 @@ impl<'a> CategoricalField {
                 //
                 // if the `key` does exist, we can simply insert the value, because the pointer of
                 // the key will not be stored by the builder and may be short-lived
-                if self.builder.exits(key) {
+                if self.builder.exists(key) {
                     // Safety:
                     // extend lifetime, see rationale from above
                     let key = unsafe { std::mem::transmute::<&str, &'a str>(key) };

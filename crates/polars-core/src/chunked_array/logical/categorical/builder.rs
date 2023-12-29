@@ -17,7 +17,7 @@ pub struct CategoricalChunkedBuilder {
     cat_builder: UInt32Vec,
     name: String,
     ordering: CategoricalOrdering,
-    reverse_mapping: MutableUtf8Array<i64>,
+    categories: MutableUtf8Array<i64>,
     // hashmap utilized by the local builder
     local_mapping: PlHashMap<KeyWrapper, ()>,
     fast_unique: bool,
@@ -31,7 +31,7 @@ impl CategoricalChunkedBuilder {
             cat_builder: UInt32Vec::with_capacity(capacity),
             name: name.to_string(),
             ordering,
-            reverse_mapping,
+            categories: reverse_mapping,
             local_mapping: PlHashMap::with_capacity_and_hasher(
                 _HASHMAP_INIT_SIZE,
                 StringCache::get_hash_builder(),
@@ -39,8 +39,7 @@ impl CategoricalChunkedBuilder {
             fast_unique: true,
         }
     }
-}
-impl CategoricalChunkedBuilder {
+
     fn push_impl(&mut self, s: &str, h: u64) {
         let len = self.local_mapping.len() as u32;
 
@@ -49,10 +48,10 @@ impl CategoricalChunkedBuilder {
         let r = unsafe {
             self.local_mapping.raw_table_mut().find_or_find_insert_slot(
                 h,
-                |(k, _)| self.reverse_mapping.value_unchecked(k.0 as usize) == s,
+                |(k, _)| self.categories.value_unchecked(k.0 as usize) == s,
                 |(k, _): &(KeyWrapper, ())| {
                     StringCache::get_hash_builder()
-                        .hash_one(self.reverse_mapping.value_unchecked(k.0 as usize))
+                        .hash_one(self.categories.value_unchecked(k.0 as usize))
                 },
             )
         };
@@ -63,7 +62,7 @@ impl CategoricalChunkedBuilder {
                 unsafe { v.as_ref().0 .0 }
             },
             Err(e) => {
-                self.reverse_mapping.push(Some(s));
+                self.categories.push(Some(s));
                 // Safety: No mutations in hashmap since find_or_find_insert_slot call
                 unsafe {
                     self.local_mapping
@@ -84,10 +83,10 @@ impl CategoricalChunkedBuilder {
             let r = unsafe {
                 self.local_mapping.raw_table_mut().find_or_find_insert_slot(
                     h,
-                    |(k, _)| self.reverse_mapping.value_unchecked(k.0 as usize) == s,
+                    |(k, _)| self.categories.value_unchecked(k.0 as usize) == s,
                     |(k, _): &(KeyWrapper, ())| {
                         StringCache::get_hash_builder()
-                            .hash_one(self.reverse_mapping.value_unchecked(k.0 as usize))
+                            .hash_one(self.categories.value_unchecked(k.0 as usize))
                     },
                 )
             };
@@ -95,7 +94,7 @@ impl CategoricalChunkedBuilder {
             match r {
                 Ok(v) => {},
                 Err(e) => {
-                    self.reverse_mapping.push(Some(s));
+                    self.categories.push(Some(s));
                     // Safety: No mutations in hashmap since find_or_find_insert_slot call
                     unsafe {
                         self.local_mapping.raw_table_mut().insert_in_slot(
@@ -112,11 +111,11 @@ impl CategoricalChunkedBuilder {
     }
 
     /// Check if this categorical already exists
-    pub fn exits(&self, s: &str) -> bool {
+    pub fn exists(&self, s: &str) -> bool {
         let h = self.local_mapping.hasher().hash_one(s);
         let r = unsafe {
             self.local_mapping.raw_table().find(h, |(k, _)| {
-                self.reverse_mapping.value_unchecked(k.0 as usize) == s
+                self.categories.value_unchecked(k.0 as usize) == s
             })
         };
         matches!(r, Some(_))
@@ -141,9 +140,8 @@ impl CategoricalChunkedBuilder {
         let mut iter = i.into_iter();
 
         let mut hashes = if store_hashes {
-            let mut hashes =
-                Vec::with_capacity(iter.size_hint().0 / 10 + self.reverse_mapping.len());
-            for s in self.reverse_mapping.values_iter() {
+            let mut hashes = Vec::with_capacity(iter.size_hint().0 / 10 + self.categories.len());
+            for s in self.categories.values_iter() {
                 hashes.push(self.local_mapping.hasher().hash_one(s));
             }
             Some(hashes)
@@ -192,9 +190,9 @@ impl CategoricalChunkedBuilder {
         // now we have to lock the global string cache.
         // we will create a mapping from our local categoricals to global categoricals
         // and a mapping from global categoricals to our local categoricals
-        debug_assert_eq!(hashes.len(), self.reverse_mapping.len());
-        local_to_global = Vec::with_capacity(self.reverse_mapping.len());
-        let values: Utf8Array<i64> = std::mem::take(&mut self.reverse_mapping).into();
+        debug_assert_eq!(hashes.len(), self.categories.len());
+        local_to_global = Vec::with_capacity(self.categories.len());
+        let values: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
 
         // in a separate scope so that we drop the global cache as soon as we are finished
         {
@@ -265,7 +263,7 @@ impl CategoricalChunkedBuilder {
             CategoricalChunked::from_keys_and_values(
                 &self.name,
                 &self.cat_builder.into(),
-                &self.reverse_mapping.into(),
+                &self.categories.into(),
                 self.ordering,
             )
         };
