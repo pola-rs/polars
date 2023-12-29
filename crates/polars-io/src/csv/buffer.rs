@@ -253,8 +253,8 @@ impl ParsedBuffer for Utf8Field {
 }
 
 #[cfg(not(feature = "dtype-categorical"))]
-pub(crate) struct CategoricalField<'a> {
-    phantom: std::marker::PhantomData<&'a u8>,
+pub(crate) struct CategoricalField {
+    phantom: std::marker::PhantomData<&u8>,
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -262,11 +262,10 @@ pub(crate) struct CategoricalField {
     escape_scratch: Vec<u8>,
     quote_char: u8,
     builder: CategoricalChunkedBuilder,
-    owned_strings: Vec<String>,
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'a> CategoricalField {
+impl CategoricalField {
     fn new(
         name: &str,
         capacity: usize,
@@ -279,14 +278,13 @@ impl<'a> CategoricalField {
             escape_scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
             builder,
-            owned_strings: vec![],
         }
     }
 
     #[inline]
     fn parse_bytes(
         &mut self,
-        bytes: &'a [u8],
+        bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
@@ -316,40 +314,7 @@ impl<'a> CategoricalField {
                 // safety:
                 // just did utf8 check
                 let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
-
-                // now it gets a bit complicated
-                // the categorical map has keys that have a lifetime in the `&bytes`
-                // but we just wrote to a `escape_scratch`. The string values
-                // there will be cleared next iteration/call, so we cannot use the
-                // `key` naively
-                //
-                // if the `key` does not exist yet, we allocate a `String` and we store that in a
-                // `Vec` that may grow. If the `Vec` reallocates, the pointers to the `String` will
-                // still be valid.
-                //
-                // if the `key` does exist, we can simply insert the value, because the pointer of
-                // the key will not be stored by the builder and may be short-lived
-                if self.builder.exists(key) {
-                    // Safety:
-                    // extend lifetime, see rationale from above
-                    let key = unsafe { std::mem::transmute::<&str, &'a str>(key) };
-                    self.builder.append_value(key)
-                } else {
-                    let key_owned = key.to_string();
-
-                    // ptr to the string value on the heap
-                    let heap_ptr = key_owned.as_str().as_ptr();
-                    let len = key_owned.len();
-                    self.owned_strings.push(key_owned);
-                    unsafe {
-                        let str_slice = std::slice::from_raw_parts(heap_ptr, len);
-                        let key = std::str::from_utf8_unchecked(str_slice);
-                        // Safety:
-                        // extend lifetime, see rationale from above
-                        let key = std::mem::transmute::<&str, &'a str>(key);
-                        self.builder.append_value(key)
-                    }
-                }
+                self.builder.append_value(key);
             } else {
                 // safety:
                 // just did utf8 check

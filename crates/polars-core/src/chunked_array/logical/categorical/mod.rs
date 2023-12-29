@@ -116,7 +116,7 @@ impl CategoricalChunked {
         unsafe {
             Ok(CategoricalChunked::from_keys_and_values_global(
                 self.name(),
-                self.physical.into_iter(),
+                self.physical,
                 self.len(),
                 categories,
                 None,

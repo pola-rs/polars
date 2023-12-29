@@ -92,17 +92,6 @@ impl CategoricalChunkedBuilder {
         Ok(())
     }
 
-    /// Check if this categorical already exists
-    pub fn exists(&self, s: &str) -> bool {
-        let h = self.local_mapping.hasher().hash_one(s);
-        let r = unsafe {
-            self.local_mapping.raw_table().find(h, |(k, _)| {
-                self.categories.value_unchecked(k.0 as usize) == s
-            })
-        };
-        matches!(r, Some(_))
-    }
-
     #[inline]
     pub fn append_value(&mut self, s: &str) {
         self.push_impl(s, self.local_mapping.hasher().hash_one(s))
@@ -155,19 +144,22 @@ impl CategoricalChunkedBuilder {
                 },
             }
         }
-        let arr: PrimitiveArray<u32> = std::mem::take(&mut self.cat_builder).into();
+
+        let arr = std::mem::take(&mut self.cat_builder);
         let capacity = arr.len();
         let categories = std::mem::take(&mut self.categories).into();
-        unsafe {
+        let mut ca = unsafe {
             CategoricalChunked::from_keys_and_values_global(
                 &self.name,
-                arr.into_iter(),
+                arr.iter().map(|v| v.copied()),
                 capacity,
                 &categories,
                 Some(&hashes),
                 self.ordering,
             )
-        }
+        };
+        ca.set_fast_unique(self.fast_unique);
+        ca
     }
 
     pub fn drain_iter_and_finish<'a, I>(mut self, i: I) -> CategoricalChunked
