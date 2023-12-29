@@ -205,19 +205,17 @@ impl ChunkCast for StringChunked {
                             rev_map.get_categories(),
                             *ordering,
                         )?
-                        .into_series()
-                        .with_name(self.name()));
+                        .into_series());
                     }
                 }
 
-                let iter = unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
                 let mut builder =
                     CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
 
                 if let Some(rev_map) = rev_map {
                     builder.prefill_rev_map(rev_map.get_categories())?
                 }
-
+                let iter = unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
                 let ca = builder.drain_iter_and_finish(iter);
                 Ok(ca.into_series())
             },

@@ -427,7 +427,7 @@ impl CategoricalChunked {
             map.insert(cat, idx as u32);
         }
         // Find idx of every value in the map
-        let ca_idx: UInt32Chunked = values
+        let mut ca_idx: UInt32Chunked = values
             .into_iter()
             .map(|opt_s: Option<&str>| {
                 opt_s
@@ -439,6 +439,7 @@ impl CategoricalChunked {
                     .transpose()
             })
             .collect::<Result<UInt32Chunked, PolarsError>>()?;
+        ca_idx.rename(values.name());
         let rev_map = RevMapping::build_enum(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
