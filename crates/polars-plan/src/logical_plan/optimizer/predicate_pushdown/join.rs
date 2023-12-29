@@ -117,16 +117,18 @@ pub(super) fn process_join(
 
         debug_assert_aexpr_allows_predicate_pushdown(predicate, expr_arena);
 
-        if check_input_node(predicate, &schema_left, expr_arena) && !block_pushdown_left {
+        if !block_pushdown_left && check_input_node(predicate, &schema_left, expr_arena) {
             insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);
             filter_left = true;
             // If we push down to the left and all predicate columns are also
             // join columns, we also push down right for inner, left or semi join
             if all_pred_cols_in_left_on(predicate, expr_arena, &left_on) {
                 filter_right = match &options.args.how {
-                    JoinType::Inner | JoinType::Left => true,
+                    // TODO! if join_on right has a different name
+                    // we can set this to `true` IFF we rename the predicate
+                    JoinType::Inner | JoinType::Left => !block_pushdown_right,
                     #[cfg(feature = "semi_anti_join")]
-                    JoinType::Semi => true,
+                    JoinType::Semi => !block_pushdown_right,
                     _ => false,
                 }
             }
@@ -134,7 +136,7 @@ pub(super) fn process_join(
         // the right hand side should be renamed with the suffix.
         // in that case we should not push down as the user wants to filter on `x`
         // not on `x_rhs`.
-        } else if check_input_node(predicate, &schema_right, expr_arena) && !block_pushdown_right {
+        } else if !block_pushdown_right && check_input_node(predicate, &schema_right, expr_arena) {
             filter_right = true
         }
         if filter_right {
