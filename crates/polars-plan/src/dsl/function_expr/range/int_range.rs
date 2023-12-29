@@ -36,7 +36,8 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
     let value_opt = ca.get(0);
-    let value = value_opt.ok_or(polars_err!(ComputeError: "invalid null input for `int_range`"))?;
+    let value =
+        value_opt.ok_or_else(|| polars_err!(ComputeError: "invalid null input for `int_range`"))?;
     Ok(value)
 }
 
