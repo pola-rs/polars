@@ -359,8 +359,8 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn parse_lines<'a>(
-    mut bytes: &'a [u8],
+pub(super) fn parse_lines(
+    mut bytes: &[u8],
     offset: usize,
     separator: u8,
     comment_prefix: Option<&CommentPrefix>,
@@ -371,7 +371,7 @@ pub(super) fn parse_lines<'a>(
     mut truncate_ragged_lines: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
-    buffers: &mut [Buffer<'a>],
+    buffers: &mut [Buffer],
     n_lines: usize,
     // length of original schema
     schema_len: usize,

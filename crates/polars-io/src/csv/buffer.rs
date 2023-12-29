@@ -258,15 +258,15 @@ pub(crate) struct CategoricalField<'a> {
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub(crate) struct CategoricalField<'a> {
+pub(crate) struct CategoricalField {
     escape_scratch: Vec<u8>,
     quote_char: u8,
-    builder: CategoricalChunkedBuilder<'a>,
+    builder: CategoricalChunkedBuilder,
     owned_strings: Vec<String>,
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'a> CategoricalField<'a> {
+impl<'a> CategoricalField {
     fn new(
         name: &str,
         capacity: usize,
@@ -513,7 +513,7 @@ where
     }
 }
 
-pub(crate) fn init_buffers<'a>(
+pub(crate) fn init_buffers(
     projection: &[usize],
     capacity: usize,
     schema: &Schema,
@@ -522,7 +522,7 @@ pub(crate) fn init_buffers<'a>(
     quote_char: Option<u8>,
     encoding: CsvEncoding,
     ignore_errors: bool,
-) -> PolarsResult<Vec<Buffer<'a>>> {
+) -> PolarsResult<Vec<Buffer>> {
     // we keep track of the string columns we have seen so that we can increment the index
     let mut str_index = 0;
 
@@ -579,7 +579,7 @@ pub(crate) fn init_buffers<'a>(
 }
 
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum Buffer<'a> {
+pub(crate) enum Buffer {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -598,10 +598,10 @@ pub(crate) enum Buffer<'a> {
     #[cfg(feature = "dtype-date")]
     Date(DatetimeField<Int32Type>),
     #[allow(dead_code)]
-    Categorical(CategoricalField<'a>),
+    Categorical(CategoricalField),
 }
 
-impl<'a> Buffer<'a> {
+impl Buffer {
     pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
@@ -745,7 +745,7 @@ impl<'a> Buffer<'a> {
     #[inline]
     pub(crate) fn add(
         &mut self,
-        bytes: &'a [u8],
+        bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
         missing_is_null: bool,

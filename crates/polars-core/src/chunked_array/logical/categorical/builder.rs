@@ -10,44 +10,20 @@ use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
-#[derive(Eq, Copy, Clone)]
-pub struct StrHashLocal<'a> {
-    str: &'a str,
-    hash: u64,
-}
+// Wrap u32 key to avoid incorrect usage of hashmap with custom lookup
+struct KeyWrapper(u32);
 
-impl<'a> Hash for StrHashLocal<'a> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
-
-impl<'a> StrHashLocal<'a> {
-    #[inline]
-    pub(crate) fn new(s: &'a str, hash: u64) -> Self {
-        Self { str: s, hash }
-    }
-}
-
-impl<'a> PartialEq for StrHashLocal<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        // can be collisions in the hashtable even though the hashes are equal
-        // e.g. hashtable hash = hash % n_slots
-        (self.hash == other.hash) && (self.str == other.str)
-    }
-}
-
-pub struct CategoricalChunkedBuilder<'a> {
+pub struct CategoricalChunkedBuilder {
     cat_builder: UInt32Vec,
     name: String,
     ordering: CategoricalOrdering,
     reverse_mapping: MutableUtf8Array<i64>,
     // hashmap utilized by the local builder
-    local_mapping: PlHashMap<StrHashLocal<'a>, u32>,
+    local_mapping: PlHashMap<KeyWrapper, ()>,
     fast_unique: bool,
 }
 
-impl CategoricalChunkedBuilder<'_> {
+impl CategoricalChunkedBuilder {
     pub fn new(name: &str, capacity: usize, ordering: CategoricalOrdering) -> Self {
         let reverse_mapping = MutableUtf8Array::<i64>::with_capacity(capacity / 10);
 
@@ -64,42 +40,72 @@ impl CategoricalChunkedBuilder<'_> {
         }
     }
 }
-impl<'a> CategoricalChunkedBuilder<'a> {
-    fn push_impl(&mut self, s: &'a str, h: u64) {
-        let key = StrHashLocal::new(s, h);
-        let mut idx = self.local_mapping.len() as u32;
+impl CategoricalChunkedBuilder {
+    fn push_impl(&mut self, s: &str, h: u64) {
+        let len = self.local_mapping.len() as u32;
 
-        let entry = self
-            .local_mapping
-            .raw_entry_mut()
-            .from_key_hashed_nocheck(h, &key);
+        // Custom hashing / equality functions for comparing the &str to the idx
+        // Safety: index in hashmap are within bounds of categories
+        let r = unsafe {
+            self.local_mapping.raw_table_mut().find_or_find_insert_slot(
+                h,
+                |(k, _)| self.reverse_mapping.value_unchecked(k.0 as usize) == s,
+                |(k, _): &(KeyWrapper, ())| {
+                    StringCache::get_hash_builder()
+                        .hash_one(self.reverse_mapping.value_unchecked(k.0 as usize))
+                },
+            )
+        };
 
-        match entry {
-            RawEntryMut::Occupied(entry) => idx = *entry.get(),
-            RawEntryMut::Vacant(entry) => {
-                entry.insert_with_hasher(h, key, idx, |s| s.hash);
+        let idx = match r {
+            Ok(v) => {
+                // Safety: Bucket is initialized
+                unsafe { v.as_ref().0 .0 }
+            },
+            Err(e) => {
                 self.reverse_mapping.push(Some(s));
+                // Safety: No mutations in hashmap since find_or_find_insert_slot call
+                unsafe {
+                    self.local_mapping
+                        .raw_table_mut()
+                        .insert_in_slot(h, e, (KeyWrapper(len), ()))
+                };
+                len
             },
         };
         self.cat_builder.push(Some(idx));
     }
 
     // Prefill the rev_map with categories in a certain order
-    pub fn prefill_rev_map(&mut self, categories: &'a Utf8Array<i64>) -> PolarsResult<()> {
+    pub fn prefill_rev_map(&mut self, categories: &Utf8Array<i64>) -> PolarsResult<()> {
         polars_ensure!(self.local_mapping.is_empty(), ComputeError: "prefill only at the start of building a Categorical");
         for (idx, s) in categories.values_iter().enumerate_idx() {
             let h = self.local_mapping.hasher().hash_one(s);
-            let key = StrHashLocal::new(s, h);
+            let r = unsafe {
+                self.local_mapping.raw_table_mut().find_or_find_insert_slot(
+                    h,
+                    |(k, _)| self.reverse_mapping.value_unchecked(k.0 as usize) == s,
+                    |(k, _): &(KeyWrapper, ())| {
+                        StringCache::get_hash_builder()
+                            .hash_one(self.reverse_mapping.value_unchecked(k.0 as usize))
+                    },
+                )
+            };
 
-            if let RawEntryMut::Vacant(entry) = self
-                .local_mapping
-                .raw_entry_mut()
-                .from_key_hashed_nocheck(h, &key)
-            {
-                #[allow(clippy::unnecessary_cast)]
-                entry.insert_with_hasher(h, key, idx as u32, |s| s.hash);
-                self.reverse_mapping.push(Some(s));
-            }
+            match r {
+                Ok(v) => {},
+                Err(e) => {
+                    self.reverse_mapping.push(Some(s));
+                    // Safety: No mutations in hashmap since find_or_find_insert_slot call
+                    unsafe {
+                        self.local_mapping.raw_table_mut().insert_in_slot(
+                            h,
+                            e,
+                            (KeyWrapper(idx as u32), ()),
+                        )
+                    };
+                },
+            };
         }
         self.fast_unique = false;
         Ok(())
@@ -108,12 +114,16 @@ impl<'a> CategoricalChunkedBuilder<'a> {
     /// Check if this categorical already exists
     pub fn exits(&self, s: &str) -> bool {
         let h = self.local_mapping.hasher().hash_one(s);
-        let key = StrHashLocal::new(s, h);
-        self.local_mapping.contains_key(&key)
+        let r = unsafe {
+            self.local_mapping.raw_table().find(h, |(k, _)| {
+                self.reverse_mapping.value_unchecked(k.0 as usize) == s
+            })
+        };
+        matches!(r, Some(_))
     }
 
     #[inline]
-    pub fn append_value(&mut self, s: &'a str) {
+    pub fn append_value(&mut self, s: &str) {
         self.push_impl(s, self.local_mapping.hasher().hash_one(s))
     }
 
@@ -124,7 +134,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
 
     /// `store_hashes` is not needed by the local builder, only for the global builder under contention
     /// The hashes have the same order as the [`Utf8Array`] values.
-    fn build_local_map<I>(&mut self, i: I, store_hashes: bool) -> Option<Vec<u64>>
+    fn build_local_map<'a, I>(&mut self, i: I, store_hashes: bool) -> Option<Vec<u64>>
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
@@ -165,7 +175,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         hashes
     }
 
-    fn build_global_map<I>(&mut self, i: I) -> RevMapping
+    fn build_global_map<'a, I>(&mut self, i: I) -> RevMapping
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
@@ -225,7 +235,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         RevMapping::Global(global_to_local, values, id)
     }
 
-    pub fn drain_iter_and_finish<I>(mut self, i: I) -> CategoricalChunked
+    pub fn drain_iter_and_finish<'a, I>(mut self, i: I) -> CategoricalChunked
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
