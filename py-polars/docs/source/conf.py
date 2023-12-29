@@ -151,7 +151,7 @@ html_theme_options = {
         "version_match": switcher_version,
     },
     "show_version_warning_banner": False,
-    "navbar_end": ["version-switcher", "navbar-icon-links"],
+    "navbar_end": ["theme-switcher", "version-switcher", "navbar-icon-links"],
     "check_switcher": False,
 }
 
