@@ -10,6 +10,7 @@ use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
+use crate::using_string_cache;
 
 pub(crate) fn cast_chunks(
     chunks: &[ArrayRef],
@@ -213,7 +214,9 @@ impl ChunkCast for StringChunked {
                     CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
 
                 if let Some(rev_map) = rev_map {
-                    builder.prefill_categories(rev_map.get_categories())?
+                    if !using_string_cache() {
+                        builder.prefill_categories(rev_map.get_categories())?
+                    }
                 }
                 let iter = unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
                 let ca = builder.drain_iter_and_finish(iter);
