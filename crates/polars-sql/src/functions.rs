@@ -602,9 +602,9 @@ impl PolarsSqlFunctions {
             "last" => Self::Last,
             "max" => Self::Max,
             "min" => Self::Min,
-            "stddev" | "stddev_samp" => Self::StdDev,
+            "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
-            "variance" | "var_samp" => Self::Variance,
+            "var" | "variance" | "var_samp" => Self::Variance,
 
             // ----
             // Array functions

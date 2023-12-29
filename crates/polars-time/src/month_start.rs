@@ -23,9 +23,11 @@ pub(crate) fn roll_backward(
         Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
         _ => timestamp_to_datetime(t),
     };
-    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).ok_or(polars_err!(
-        ComputeError: format!("Could not construct date {}-{}-1", ts.year(), ts.month())
-    ))?;
+    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).ok_or_else(|| {
+        polars_err!(
+            ComputeError: format!("Could not construct date {}-{}-1", ts.year(), ts.month())
+        )
+    })?;
     let time = NaiveTime::from_hms_nano_opt(
         ts.hour(),
         ts.minute(),

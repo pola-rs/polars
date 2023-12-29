@@ -498,6 +498,14 @@ def test_list_unique() -> None:
     assert_series_equal(result, expected)
 
 
+def test_list_unique2() -> None:
+    s = pl.Series("a", [[2, 1], [1, 2, 2]])
+    result = s.list.unique()
+    assert len(result) == 2
+    assert sorted(result[0]) == [1, 2]
+    assert sorted(result[1]) == [1, 2]
+
+
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 

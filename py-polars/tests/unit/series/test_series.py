@@ -31,7 +31,6 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError, PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
-from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -1337,7 +1336,7 @@ def test_kurtosis() -> None:
     assert np.isclose(df.select(pl.col("a").kurtosis())["a"][0], expected)
 
 
-def test_arr_lengths() -> None:
+def test_list_lengths() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=UInt32))
     df = pl.DataFrame([s])
@@ -1346,7 +1345,7 @@ def test_arr_lengths() -> None:
     )
 
 
-def test_arr_arithmetic() -> None:
+def test_list_arithmetic() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.sum(), pl.Series("a", [3, 6]))
     assert_series_equal(s.list.mean(), pl.Series("a", [1.5, 2.0]))
@@ -1354,18 +1353,10 @@ def test_arr_arithmetic() -> None:
     assert_series_equal(s.list.min(), pl.Series("a", [1, 1]))
 
 
-def test_arr_ordering() -> None:
+def test_list_ordering() -> None:
     s = pl.Series("a", [[2, 1], [1, 3, 2]])
     assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
     assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
-
-
-def test_arr_unique() -> None:
-    s = pl.Series("a", [[2, 1], [1, 2, 2]])
-    result = s.list.unique()
-    assert len(result) == 2
-    assert sorted(result[0]) == [1, 2]
-    assert sorted(result[1]) == [1, 2]
 
 
 def test_sqrt() -> None:
@@ -1873,30 +1864,6 @@ def test_is_nan_is_not_nan() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
     assert_series_equal(s.is_nan(), pl.Series("a", [False, False, False, True]))
     assert_series_equal(s.is_not_nan(), pl.Series("a", [True, True, True, False]))
-
-
-def test_is_unique() -> None:
-    s = pl.Series("a", [1, 2, 2, 3])
-    assert_series_equal(s.is_unique(), pl.Series("a", [True, False, False, True]))
-
-    # str
-    assert pl.Series(["a", "b", "c", "a"]).is_duplicated().to_list() == [
-        True,
-        False,
-        False,
-        True,
-    ]
-    assert pl.Series(["a", "b", "c", "a"]).is_unique().to_list() == [
-        False,
-        True,
-        True,
-        False,
-    ]
-
-
-def test_is_duplicated() -> None:
-    s = pl.Series("a", [1, 2, 2, 3])
-    assert_series_equal(s.is_duplicated(), pl.Series("a", [False, True, True, False]))
 
 
 def test_dot() -> None:
@@ -2421,11 +2388,6 @@ def test_reverse() -> None:
     assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
 
 
-def test_n_unique() -> None:
-    s = pl.Series("s", [11, 11, 11, 22, 22, 33, None, None, None])
-    assert s.n_unique() == 4
-
-
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]
@@ -2504,55 +2466,6 @@ def test_get_chunks() -> None:
     chunks = pl.concat([a, b], rechunk=False).get_chunks()
     assert_series_equal(chunks[0], a)
     assert_series_equal(chunks[1], b)
-
-
-def test_ptr() -> None:
-    # not much to test on the ptr value itself.
-    s = pl.Series([1, None, 3])
-
-    ptr = s._get_ptr()[2]
-    assert isinstance(ptr, int)
-    s2 = s.append(pl.Series([1, 2]))
-
-    ptr2 = s2.rechunk()._get_ptr()[2]
-    assert ptr != ptr2
-
-    for dtype in list(polars.datatypes.FLOAT_DTYPES) + list(
-        polars.datatypes.INTEGER_DTYPES
-    ):
-        assert pl.Series([1, 2, 3], dtype=dtype)._s.get_ptr()[2] > 0
-
-
-def test_get_buffer() -> None:
-    s = pl.Series(["a", "bc", None, "éâç", ""])
-
-    data = s._s.get_buffer(0)
-    expected = pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8)
-    assert_series_equal(wrap_s(data), expected)
-
-    validity = s._s.get_buffer(1)
-    expected = pl.Series([True, True, False, True, True])
-    assert_series_equal(wrap_s(validity), expected)
-
-    offsets = s._s.get_buffer(2)
-    expected = pl.Series([0, 1, 3, 3, 9, 9], dtype=pl.Int64)
-    assert_series_equal(wrap_s(offsets), expected)
-
-
-def test_get_buffer_no_validity_or_offsets() -> None:
-    s = pl.Series([1, 2, 3])
-
-    validity = s._s.get_buffer(1)
-    assert validity is None
-
-    offsets = s._s.get_buffer(2)
-    assert offsets is None
-
-
-def test_get_buffer_invalid_index() -> None:
-    s = pl.Series([1, None, 3])
-    with pytest.raises(ValueError):
-        s._s.get_buffer(3)
 
 
 def test_null_comparisons() -> None:

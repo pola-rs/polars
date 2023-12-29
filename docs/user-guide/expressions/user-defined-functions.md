@@ -25,7 +25,7 @@ Use cases for `map_batches` are for instance passing the `Series` in an expressi
 we could use `map_batches` to pass an expression column to a neural network model.
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `map_batches`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html)
+[:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html)
 
 ```python
 df.with_columns([
@@ -90,7 +90,7 @@ That is:
 So with `map_elements` we should be able to fix our example:
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `map_elements`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html)
+[:material-api: `map_elements`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html)
 
 {{code_block('user-guide/expressions/user-defined-functions','map_elements',[])}}
 

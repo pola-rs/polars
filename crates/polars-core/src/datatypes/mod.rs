@@ -63,7 +63,7 @@ pub struct Flat;
 ///
 /// The StaticArray and dtype return must be correct.
 pub unsafe trait PolarsDataType: Send + Sync + Sized {
-    type Physical<'a>: std::fmt::Debug;
+    type Physical<'a>: std::fmt::Debug + Clone;
     type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
     type Array: for<'a> StaticArray<
         ValueT<'a> = Self::Physical<'a>,

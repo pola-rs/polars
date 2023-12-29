@@ -41,7 +41,7 @@ pub(super) fn datetime_range(
         (DataType::Datetime(_, _), None) => start.dtype().clone(),
         // overwrite time unit, keep timezone
         (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        _ => unreachable!(),
+        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
     };
 
     // overwrite time zone, if specified

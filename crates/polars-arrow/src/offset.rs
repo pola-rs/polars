@@ -128,12 +128,13 @@ impl<O: Offset> Offsets<O> {
             self.0.push(new_length);
             Ok(())
         } else {
-            let length = O::from_usize(length).ok_or(polars_err!(ComputeError: "overflow"))?;
+            let length =
+                O::from_usize(length).ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
 
             let old_length = self.last();
             let new_length = old_length
                 .checked_add(&length)
-                .ok_or(polars_err!(ComputeError: "overflow"))?;
+                .ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
             self.0.push(new_length);
             Ok(())
         }

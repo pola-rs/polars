@@ -1,4 +1,4 @@
-use polars_core::prelude::arity::binary_elementwise;
+use polars_core::prelude::arity::broadcast_binary_elementwise;
 
 use super::*;
 
@@ -68,7 +68,7 @@ pub fn strip_chars(ca: &StringChunked, pat: &StringChunked) -> StringChunked {
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.trim()))
             }
         },
-        _ => binary_elementwise(ca, pat, strip_chars_binary),
+        _ => broadcast_binary_elementwise(ca, pat, strip_chars_binary),
     }
 }
 
@@ -90,7 +90,7 @@ pub fn strip_chars_start(ca: &StringChunked, pat: &StringChunked) -> StringChunk
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start()))
             }
         },
-        _ => binary_elementwise(ca, pat, strip_chars_start_binary),
+        _ => broadcast_binary_elementwise(ca, pat, strip_chars_start_binary),
     }
 }
 
@@ -110,7 +110,7 @@ pub fn strip_chars_end(ca: &StringChunked, pat: &StringChunked) -> StringChunked
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end()))
             }
         },
-        _ => binary_elementwise(ca, pat, strip_chars_end_binary),
+        _ => broadcast_binary_elementwise(ca, pat, strip_chars_end_binary),
     }
 }
 
@@ -122,7 +122,7 @@ pub fn strip_prefix(ca: &StringChunked, prefix: &StringChunked) -> StringChunked
             },
             _ => StringChunked::full_null(ca.name(), ca.len()),
         },
-        _ => binary_elementwise(ca, prefix, strip_prefix_binary),
+        _ => broadcast_binary_elementwise(ca, prefix, strip_prefix_binary),
     }
 }
 
@@ -134,6 +134,6 @@ pub fn strip_suffix(ca: &StringChunked, suffix: &StringChunked) -> StringChunked
             },
             _ => StringChunked::full_null(ca.name(), ca.len()),
         },
-        _ => binary_elementwise(ca, suffix, strip_suffix_binary),
+        _ => broadcast_binary_elementwise(ca, suffix, strip_suffix_binary),
     }
 }

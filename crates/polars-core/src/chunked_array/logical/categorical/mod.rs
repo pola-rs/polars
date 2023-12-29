@@ -263,7 +263,9 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn can_fast_unique(&self) -> bool {
-        self.bit_settings.contains(BitSettings::ORIGINAL) && self.physical.chunks.len() == 1
+        self.bit_settings.contains(BitSettings::ORIGINAL)
+            && self.physical.chunks.len() == 1
+            && self.null_count() == 0
     }
 
     pub(crate) fn set_fast_unique(&mut self, toggle: bool) {

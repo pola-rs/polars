@@ -20,39 +20,39 @@ requirements: .venv  ## Install/refresh all project requirements
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-debug-opt
 build-debug-opt: .venv  ## Compile and install Polars with minimal optimizations turned on
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile opt-dev
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-debug-opt-subset
 build-debug-opt-subset: .venv  ## Compile and install Polars with minimal optimizations turned on and no default features
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --no-default-features --profile opt-dev
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-opt
 build-opt: .venv  ## Compile and install Polars with nearly full optimization on and debug assertions turned off, but with debug symbols on
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile debug-release
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install a faster Polars binary with full optimizations
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-native
 build-native: .venv  ## Same as build, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop -- -C target-cpu=native
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-debug-opt-native
 build-debug-opt-native: .venv  ## Same as build-debug-opt, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile opt-dev -- -C target-cpu=native
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-opt-native
 build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile debug-release -- -C target-cpu=native
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build-release-native
 build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release -- -C target-cpu=native
+	@$(MAKE) -s -C .. $@
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting

@@ -23,7 +23,7 @@
 
 <p align="center">
   <b>Documentation</b>:
-  <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python</a>
+  <a href="https://docs.pola.rs/py-polars/html/reference/index.html">Python</a>
   -
   <a href="https://docs.rs/polars/latest/polars/">Rust</a>
   -
@@ -40,7 +40,7 @@
   -
   <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
   |
-  <a href="https://pola-rs.github.io/polars/">User Guide</a>
+  <a href="https://docs.pola.rs/">User Guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
@@ -58,7 +58,7 @@ Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Ru
 - Hybrid Streaming (larger than RAM datasets)
 - Rust | Python | NodeJS | R | ...
 
-To learn more, read the [User Guide](https://pola-rs.github.io/polars/).
+To learn more, read the [User Guide](https://docs.pola.rs/).
 
 ## Python
 

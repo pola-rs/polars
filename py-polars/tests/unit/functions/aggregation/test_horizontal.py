@@ -36,6 +36,14 @@ def test_all_any_horizontally() -> None:
     )
     assert_frame_equal(result, expected)
 
+    # note: a kwargs filter will use an internal call to all_horizontal
+    dfltr = df.lazy().filter(var1=None, var3=False)
+    assert dfltr.collect().rows() == [(None, None, False)]
+
+    # confirm that we reduce the horizontal filter components
+    # (eg: explain does not contain an "all_horizontal" node)
+    assert "horizontal" not in dfltr.explain().lower()
+
 
 def test_all_any_accept_expr() -> None:
     lf = pl.LazyFrame(
