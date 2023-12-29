@@ -41,8 +41,7 @@ fn mmap_numpy_array<T: Element + NativeType>(
     name: &str,
     array: &PyArray1<T>,
 ) -> PySeries {
-    let ro_array = array.readonly();
-    let vals = ro_array.as_slice().unwrap();
+    let vals = unsafe { array.as_slice().unwrap() };
 
     let arr = unsafe { arrow::ffi::mmap::slice_and_owner(vals, array.to_object(py)) };
     Series::from_arrow(name, arr.to_boxed()).unwrap().into()
