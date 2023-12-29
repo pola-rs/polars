@@ -158,7 +158,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         std::mem::take(&mut self.hashes)
     }
 
-    fn build_global_map_contention<I>(&mut self, i: I) -> RevMapping
+    fn build_global_map<I>(&mut self, i: I) -> RevMapping
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
@@ -224,7 +224,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
     {
         // Appends all the values in a single lock of the global string cache reducing contention
         if using_string_cache() {
-            let rev_map = self.build_global_map_contention(i);
+            let rev_map = self.build_global_map(i);
             let arr: PrimitiveArray<u32> = std::mem::take(&mut self.cat_builder).into();
             // Safety: keys and values are in bounds
             let mut ca = unsafe {
