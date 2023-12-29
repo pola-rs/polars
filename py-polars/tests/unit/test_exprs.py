@@ -147,22 +147,6 @@ def test_unique_stable() -> None:
     assert_series_equal(s.unique(maintain_order=True), expected)
 
 
-def test_unique_and_drop_stability() -> None:
-    # see: 2898
-    # the original cause was that we wrote:
-    # expr_a = a.unique()
-    # expr_a.filter(a.unique().is_not_null())
-    # meaning that the a.unique was executed twice, which is an unstable algorithm
-    df = pl.DataFrame({"a": [1, None, 1, None]})
-    assert df.select(pl.col("a").unique().drop_nulls()).to_series()[0] == 1
-
-
-def test_unique_counts() -> None:
-    s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
-    expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
-    assert_series_equal(s.unique_counts(), expected)
-
-
 def test_entropy() -> None:
     df = pl.DataFrame(
         {
@@ -421,12 +405,6 @@ def test_rank_so_4109() -> None:
 def test_rank_string_null_11252() -> None:
     rank = pl.Series([None, "", "z", None, "a"]).rank()
     assert rank.to_list() == [None, 1.0, 3.0, None, 2.0]
-
-
-def test_unique_empty() -> None:
-    for dt in [pl.String, pl.Boolean, pl.Int32, pl.UInt32]:
-        s = pl.Series([], dtype=dt)
-        assert_series_equal(s.unique(), s)
 
 
 def test_search_sorted() -> None:
