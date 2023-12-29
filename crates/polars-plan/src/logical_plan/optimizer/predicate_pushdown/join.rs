@@ -126,9 +126,11 @@ pub(super) fn process_join(
                 filter_right = match &options.args.how {
                     // TODO! if join_on right has a different name
                     // we can set this to `true` IFF we rename the predicate
-                    JoinType::Inner | JoinType::Left => !block_pushdown_right,
+                    JoinType::Inner | JoinType::Left => {
+                        check_input_node(predicate, &schema_right, expr_arena)
+                    },
                     #[cfg(feature = "semi_anti_join")]
-                    JoinType::Semi => !block_pushdown_right,
+                    JoinType::Semi => check_input_node(predicate, &schema_right, expr_arena),
                     _ => false,
                 }
             }
