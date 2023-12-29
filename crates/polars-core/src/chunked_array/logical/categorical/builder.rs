@@ -142,12 +142,15 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         };
 
         for opt_s in &mut iter {
+            let base_len = self.local_mapping.len();
             match opt_s {
                 Some(s) => {
                     let hash = self.local_mapping.hasher().hash_one(s);
                     self.push_impl(s, hash);
                     if let Some(ref mut hashes) = hashes {
-                        hashes.push(hash);
+                        if base_len != self.local_mapping.len() {
+                            hashes.push(hash);
+                        }
                     }
                 },
                 None => self.append_null(),
