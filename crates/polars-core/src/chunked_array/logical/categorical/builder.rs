@@ -44,8 +44,6 @@ pub struct CategoricalChunkedBuilder<'a> {
     reverse_mapping: MutableUtf8Array<i64>,
     // hashmap utilized by the local builder
     local_mapping: PlHashMap<StrHashLocal<'a>, u32>,
-    // stored hashes from local builder
-    hashes: Vec<u64>,
     fast_unique: bool,
 }
 
@@ -62,14 +60,12 @@ impl CategoricalChunkedBuilder<'_> {
                 _HASHMAP_INIT_SIZE,
                 StringCache::get_hash_builder(),
             ),
-            hashes: vec![],
             fast_unique: true,
         }
     }
 }
 impl<'a> CategoricalChunkedBuilder<'a> {
-    fn push_impl(&mut self, s: &'a str, store_hashes: bool) {
-        let h = self.local_mapping.hasher().hash_one(s);
+    fn push_impl(&mut self, s: &'a str, h: u64) {
         let key = StrHashLocal::new(s, h);
         let mut idx = self.local_mapping.len() as u32;
 
@@ -81,9 +77,6 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         match entry {
             RawEntryMut::Occupied(entry) => idx = *entry.get(),
             RawEntryMut::Vacant(entry) => {
-                if store_hashes {
-                    self.hashes.push(h)
-                }
                 entry.insert_with_hasher(h, key, idx, |s| s.hash);
                 self.reverse_mapping.push(Some(s));
             },
@@ -121,7 +114,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
 
     #[inline]
     pub fn append_value(&mut self, s: &'a str) {
-        self.push_impl(s, false)
+        self.push_impl(s, self.local_mapping.hasher().hash_one(s))
     }
 
     #[inline]
@@ -131,21 +124,32 @@ impl<'a> CategoricalChunkedBuilder<'a> {
 
     /// `store_hashes` is not needed by the local builder, only for the global builder under contention
     /// The hashes have the same order as the [`Utf8Array`] values.
-    fn build_local_map<I>(&mut self, i: I, store_hashes: bool) -> Vec<u64>
+    fn build_local_map<I>(&mut self, i: I, store_hashes: bool) -> Option<Vec<u64>>
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
         let mut iter = i.into_iter();
-        if store_hashes {
-            self.hashes = Vec::with_capacity(iter.size_hint().0 / 10 + self.reverse_mapping.len());
+
+        let mut hashes = if store_hashes {
+            let mut hashes =
+                Vec::with_capacity(iter.size_hint().0 / 10 + self.reverse_mapping.len());
             for s in self.reverse_mapping.values_iter() {
-                self.hashes.push(self.local_mapping.hasher().hash_one(s));
+                hashes.push(self.local_mapping.hasher().hash_one(s));
             }
-        }
+            Some(hashes)
+        } else {
+            None
+        };
 
         for opt_s in &mut iter {
             match opt_s {
-                Some(s) => self.push_impl(s, store_hashes),
+                Some(s) => {
+                    let hash = self.local_mapping.hasher().hash_one(s);
+                    self.push_impl(s, hash);
+                    if let Some(ref mut hashes) = hashes {
+                        hashes.push(hash);
+                    }
+                },
                 None => self.append_null(),
             }
         }
@@ -155,7 +159,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         };
         // drop the hashmap
         std::mem::take(&mut self.local_mapping);
-        std::mem::take(&mut self.hashes)
+        hashes
     }
 
     fn build_global_map<I>(&mut self, i: I) -> RevMapping
@@ -165,7 +169,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         // first build the values: [`Utf8Array`]
         // we can use a local hashmap for that
         // `hashes.len()` is equal to to the number of unique values.
-        let hashes = self.build_local_map(i, true);
+        let hashes = self.build_local_map(i, true).unwrap();
 
         // locally we don't need a hashmap because we all categories are 1 integer apart
         // so the index is local, and the values is global
