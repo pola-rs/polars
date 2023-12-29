@@ -96,3 +96,14 @@ def test_sorted_unique_dates() -> None:
         .sort("dt")
         .unique()
     ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
+
+
+def test_unique_null() -> None:
+    s0 = pl.Series([])
+    assert_series_equal(s0.unique(), s0)
+
+    s1 = pl.Series([None])
+    assert_series_equal(s1.unique(), s1)
+
+    s2 = pl.Series([None, None])
+    assert_series_equal(s2.unique(), s1)

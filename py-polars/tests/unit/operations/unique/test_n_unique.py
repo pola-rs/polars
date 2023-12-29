@@ -24,3 +24,9 @@ def test_n_unique_subsets() -> None:
         df.n_unique(subset=[(pl.col("a") // 2), (pl.col("c") | (pl.col("b") >= 2))])
         == 3
     )
+
+
+def test_n_unique_null() -> None:
+    assert pl.Series([]).n_unique() == 0
+    assert pl.Series([None]).n_unique() == 1
+    assert pl.Series([None, None]).n_unique() == 1
