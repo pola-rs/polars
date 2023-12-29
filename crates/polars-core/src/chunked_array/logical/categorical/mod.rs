@@ -119,6 +119,7 @@ impl CategoricalChunked {
                 self.physical.into_iter(),
                 self.len(),
                 categories,
+                None,
                 self.get_ordering(),
             ))
         }
