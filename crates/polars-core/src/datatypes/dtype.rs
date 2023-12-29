@@ -460,15 +460,3 @@ pub fn create_enum_data_type(categories: Utf8Array<i64>) -> DataType {
     let rev_map = RevMapping::build_enum(categories.clone());
     DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
 }
-
-#[cfg(feature = "dtype-categorical")]
-pub fn enum_or_default_categorical(
-    opt_rev_map: &Option<Arc<RevMapping>>,
-    ordering: CategoricalOrdering,
-) -> DataType {
-    opt_rev_map
-        .as_ref()
-        .filter(|rev_map| rev_map.is_enum())
-        .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), ordering))
-        .unwrap_or_else(|| DataType::Categorical(None, ordering))
-}
