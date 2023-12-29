@@ -457,3 +457,12 @@ def test_hconcat_predicate() -> None:
 
     result = query.collect(predicate_pushdown=True)
     assert_frame_equal(result, expected)
+
+
+def test_predicate_pd_join_13300() -> None:
+    lf = pl.LazyFrame({"col3": range(10, 14), "new_col": range(11, 15)})
+    lf_other = pl.LazyFrame({"col4": [0, 11, 2, 13]})
+
+    lf = lf.join(lf_other, left_on="new_col", right_on="col4", how="left")
+    lf = lf.filter(pl.col("new_col") < 12)
+    assert lf.collect().to_dict(as_series=False) == {"col3": [10], "new_col": [11]}
