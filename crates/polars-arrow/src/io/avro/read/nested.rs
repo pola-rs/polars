@@ -41,7 +41,7 @@ impl<O: Offset> DynMutableListArray<O> {
         let offset = self.offsets.last().to_usize();
         let length = total_length
             .checked_sub(offset)
-            .ok_or(polars_err!(ComputeError: "overflow"))?;
+            .ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
 
         self.offsets.try_push(length)?;
         if let Some(validity) = &mut self.validity {
