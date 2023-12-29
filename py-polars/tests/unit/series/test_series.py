@@ -1337,7 +1337,7 @@ def test_kurtosis() -> None:
     assert np.isclose(df.select(pl.col("a").kurtosis())["a"][0], expected)
 
 
-def test_arr_lengths() -> None:
+def test_list_lengths() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=UInt32))
     df = pl.DataFrame([s])
@@ -1346,7 +1346,7 @@ def test_arr_lengths() -> None:
     )
 
 
-def test_arr_arithmetic() -> None:
+def test_list_arithmetic() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.sum(), pl.Series("a", [3, 6]))
     assert_series_equal(s.list.mean(), pl.Series("a", [1.5, 2.0]))
@@ -1354,18 +1354,10 @@ def test_arr_arithmetic() -> None:
     assert_series_equal(s.list.min(), pl.Series("a", [1, 1]))
 
 
-def test_arr_ordering() -> None:
+def test_list_ordering() -> None:
     s = pl.Series("a", [[2, 1], [1, 3, 2]])
     assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
     assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
-
-
-def test_arr_unique() -> None:
-    s = pl.Series("a", [[2, 1], [1, 2, 2]])
-    result = s.list.unique()
-    assert len(result) == 2
-    assert sorted(result[0]) == [1, 2]
-    assert sorted(result[1]) == [1, 2]
 
 
 def test_sqrt() -> None:
@@ -1873,30 +1865,6 @@ def test_is_nan_is_not_nan() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
     assert_series_equal(s.is_nan(), pl.Series("a", [False, False, False, True]))
     assert_series_equal(s.is_not_nan(), pl.Series("a", [True, True, True, False]))
-
-
-def test_is_unique() -> None:
-    s = pl.Series("a", [1, 2, 2, 3])
-    assert_series_equal(s.is_unique(), pl.Series("a", [True, False, False, True]))
-
-    # str
-    assert pl.Series(["a", "b", "c", "a"]).is_duplicated().to_list() == [
-        True,
-        False,
-        False,
-        True,
-    ]
-    assert pl.Series(["a", "b", "c", "a"]).is_unique().to_list() == [
-        False,
-        True,
-        True,
-        False,
-    ]
-
-
-def test_is_duplicated() -> None:
-    s = pl.Series("a", [1, 2, 2, 3])
-    assert_series_equal(s.is_duplicated(), pl.Series("a", [False, True, True, False]))
 
 
 def test_dot() -> None:
@@ -2419,11 +2387,6 @@ def test_reverse() -> None:
 
     s = pl.Series("values", ["a", "b", None, "y", "x"])
     assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
-
-
-def test_n_unique() -> None:
-    s = pl.Series("s", [11, 11, 11, 22, 22, 33, None, None, None])
-    assert s.n_unique() == 4
 
 
 def test_clip() -> None:

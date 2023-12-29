@@ -93,13 +93,6 @@ def test_cast_inner() -> None:
     )
 
 
-def test_list_unique() -> None:
-    s = pl.Series("a", [[1, 2], [3], [1, 2], [4, 5], [2], [2]])
-    assert s.unique(maintain_order=True).to_list() == [[1, 2], [3], [4, 5], [2]]
-    assert s.arg_unique().to_list() == [0, 1, 3, 4]
-    assert s.n_unique() == 4
-
-
 def test_list_empty_group_by_result_3521() -> None:
     # Create a left relation where the join column contains a null value
     left = pl.DataFrame().with_columns(

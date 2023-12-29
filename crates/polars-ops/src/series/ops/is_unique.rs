@@ -72,6 +72,11 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
                 df.is_unique()
             };
         },
+        Null => match s.len() {
+            0 => BooleanChunked::new(s.name(), [] as [bool; 0]),
+            1 => BooleanChunked::new(s.name(), [!invert]),
+            len => BooleanChunked::full(s.name(), invert, len),
+        },
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
