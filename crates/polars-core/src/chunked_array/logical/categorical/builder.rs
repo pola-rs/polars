@@ -1,8 +1,6 @@
-use std::hash::{Hash, Hasher};
-
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
-use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::hash_map::Entry;
 use polars_utils::iter::EnumerateIdxTrait;
 
 use crate::datatypes::PlHashMap;
@@ -25,13 +23,11 @@ pub struct CategoricalChunkedBuilder {
 
 impl CategoricalChunkedBuilder {
     pub fn new(name: &str, capacity: usize, ordering: CategoricalOrdering) -> Self {
-        let reverse_mapping = MutableUtf8Array::<i64>::with_capacity(capacity / 10);
-
         Self {
             cat_builder: UInt32Vec::with_capacity(capacity),
             name: name.to_string(),
             ordering,
-            categories: reverse_mapping,
+            categories: MutableUtf8Array::<i64>::with_capacity(capacity / 10),
             local_mapping: PlHashMap::with_capacity_and_hasher(
                 _HASHMAP_INIT_SIZE,
                 StringCache::get_hash_builder(),
@@ -76,35 +72,20 @@ impl CategoricalChunkedBuilder {
     }
 
     // Prefill the rev_map with categories in a certain order
-    pub fn prefill_rev_map(&mut self, categories: &Utf8Array<i64>) -> PolarsResult<()> {
+    pub fn prefill_categories(&mut self, categories: &Utf8Array<i64>) -> PolarsResult<()> {
         polars_ensure!(self.local_mapping.is_empty(), ComputeError: "prefill only at the start of building a Categorical");
         for (idx, s) in categories.values_iter().enumerate_idx() {
             let h = self.local_mapping.hasher().hash_one(s);
-            let r = unsafe {
-                self.local_mapping.raw_table_mut().find_or_find_insert_slot(
-                    h,
-                    |(k, _)| self.categories.value_unchecked(k.0 as usize) == s,
-                    |(k, _): &(KeyWrapper, ())| {
-                        StringCache::get_hash_builder()
-                            .hash_one(self.categories.value_unchecked(k.0 as usize))
-                    },
-                )
-            };
 
-            match r {
-                Ok(v) => {},
-                Err(e) => {
-                    self.categories.push(Some(s));
-                    // Safety: No mutations in hashmap since find_or_find_insert_slot call
-                    unsafe {
-                        self.local_mapping.raw_table_mut().insert_in_slot(
-                            h,
-                            e,
-                            (KeyWrapper(idx as u32), ()),
-                        )
-                    };
+            self.local_mapping.raw_table_mut().insert(
+                h,
+                (KeyWrapper(idx as u32), ()),
+                |(k, _): &(KeyWrapper, ())| {
+                    StringCache::get_hash_builder()
+                        .hash_one(unsafe { self.categories.value_unchecked(k.0 as usize) })
                 },
-            };
+            );
+            self.categories.push(Some(s));
         }
         self.fast_unique = false;
         Ok(())

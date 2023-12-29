@@ -213,7 +213,7 @@ impl ChunkCast for StringChunked {
                     CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
 
                 if let Some(rev_map) = rev_map {
-                    builder.prefill_rev_map(rev_map.get_categories())?
+                    builder.prefill_categories(rev_map.get_categories())?
                 }
                 let iter = unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
                 let ca = builder.drain_iter_and_finish(iter);
