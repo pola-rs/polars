@@ -358,16 +358,83 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    def _get_ptr(self) -> tuple[int, int, int]:
+    def _get_buffer_info(self) -> tuple[int, int, int]:
         """
-        Get a pointer to the start of the values buffer of a numeric Series.
+        Return pointer, offset, and length information about the underlying buffer.
 
-        This will raise an error if the `Series` contains multiple chunks.
+        Returns
+        -------
+        tuple of ints
+            Tuple of the form (pointer, offset, length)
 
-        This will return the offset, length and the pointer itself.
-
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
         """
-        return self._s.get_ptr()
+        return self._s._get_buffer_info()
+
+    @overload
+    def _get_buffer(self, index: Literal[0]) -> Self:
+        ...
+
+    @overload
+    def _get_buffer(self, index: Literal[1, 2]) -> Self | None:
+        ...
+
+    def _get_buffer(self, index: Literal[0, 1, 2]) -> Self | None:
+        """
+        Return the underlying data, validity, or offsets buffer as a Series.
+
+        The data buffer always exists.
+        The validity buffer may not exist if the column contains no null values.
+        The offsets buffer only exists for Series of data type `String` and `List`.
+
+        Parameters
+        ----------
+        index
+            An index indicating the buffer to return:
+
+            - `0` -> data buffer
+            - `1` -> validity buffer
+            - `2` -> offsets buffer
+
+        Returns
+        -------
+        Series or None
+            `Series` if the specified buffer exists, `None` otherwise.
+
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
+        """
+        buffer = self._s._get_buffer(index)
+        if buffer is None:
+            return None
+        return self._from_pyseries(buffer)
+
+    @classmethod
+    def _from_buffer(
+        self, dtype: PolarsDataType, buffer_info: tuple[int, int, int], base: Any
+    ) -> Self:
+        """
+        Construct a Series from information about its underlying buffer.
+
+        Parameters
+        ----------
+        dtype
+            The data type of the buffer.
+        buffer_info
+            Tuple containing buffer information in the form (pointer, offset, length).
+        base
+            The object owning the buffer.
+
+        Returns
+        -------
+        Series
+        """
+        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, base))
 
     @property
     def dtype(self) -> DataType:
