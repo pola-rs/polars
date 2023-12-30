@@ -109,7 +109,7 @@ pub(super) unsafe fn call_plugin(
         } else {
             let msg = retrieve_error_msg(lib);
             let msg = msg.to_string_lossy();
-            check_panic(msg.as_ref());
+            check_panic(msg.as_ref())?;
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }
     } else {
@@ -156,7 +156,7 @@ pub(super) unsafe fn plugin_field(
         } else {
             let msg = retrieve_error_msg(lib);
             let msg = msg.to_string_lossy();
-            check_panic(msg.as_ref());
+            check_panic(msg.as_ref())?;
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }
     } else {
@@ -164,9 +164,7 @@ pub(super) unsafe fn plugin_field(
     }
 }
 
-fn check_panic(msg: &str) {
-    if msg == "PANIC" {
-        eprintln!("The plugin panicked which is unrecoverable. Polars will abort");
-        abort()
-    }
+fn check_panic(msg: &str) -> PolarsResult<()> {
+    polars_ensure!(msg != "PANIC", ComputeError: "the plugin panicked");
+    Ok(())
 }
