@@ -206,3 +206,11 @@ def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     s = s.cast(pl.Array(inner_type, 2))
     assert s.dtype == pl.Array(inner_type, width=2)
     assert s.to_list() == data
+
+
+def test_array_repeat() -> None:
+    dtype = pl.Array(pl.UInt8, width=1)
+    s = pl.repeat([42], n=3, dtype=dtype, eager=True)
+    expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
+    assert s.dtype == dtype
+    assert_series_equal(s, expected)
