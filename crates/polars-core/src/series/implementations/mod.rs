@@ -21,11 +21,10 @@ mod list;
 pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;
+mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-mod utf8;
 
-#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor, Deref};
@@ -427,7 +426,6 @@ macro_rules! impl_dyn_series {
                 self.0.checked_div(rhs)
             }
 
-            #[cfg(feature = "object")]
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }
@@ -464,7 +462,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]

@@ -5,6 +5,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # ensure the object constructor is known by polars
     # we set this once on import
 
+    # This must be done before importing the Polars Rust bindings.
+    import polars._cpu_check
+
+    polars._cpu_check.check_cpu_flags()
+
     # we also set other function pointers needed
     # on the rust side. This function is highly
     # unsafe and should only be called once.
@@ -53,6 +58,7 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    String,
     Struct,
     Time,
     UInt8,
@@ -185,7 +191,7 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
-from polars.lazyframe import LazyFrame
+from polars.lazyframe import InProcessQuery, LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import (
@@ -228,6 +234,7 @@ __all__ = [
     "Expr",
     "LazyFrame",
     "Series",
+    "InProcessQuery",
     # polars.datatypes
     "Array",
     "Binary",
@@ -249,6 +256,7 @@ __all__ = [
     "List",
     "Null",
     "Object",
+    "String",
     "Struct",
     "Time",
     "UInt16",

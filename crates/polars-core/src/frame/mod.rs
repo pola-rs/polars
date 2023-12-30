@@ -490,7 +490,7 @@ impl DataFrame {
     /// let df: DataFrame = df!("Thing" => &["Observable universe", "Human stupidity"],
     ///                         "Diameter (m)" => &[8.8e26, f64::INFINITY])?;
     ///
-    /// let f1: Field = Field::new("Thing", DataType::Utf8);
+    /// let f1: Field = Field::new("Thing", DataType::String);
     /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
     /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
@@ -614,7 +614,7 @@ impl DataFrame {
     /// let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
     ///                                "Fraction" => &[0.965, 0.035])?;
     ///
-    /// assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
+    /// assert_eq!(venus_air.dtypes(), &[DataType::String, DataType::Float64]);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn dtypes(&self) -> Vec<DataType> {
@@ -638,7 +638,7 @@ impl DataFrame {
     /// let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
     ///                            "Fraction" => &[0.708, 0.292])?;
     ///
-    /// let f1: Field = Field::new("Surface type", DataType::Utf8);
+    /// let f1: Field = Field::new("Surface type", DataType::String);
     /// let f2: Field = Field::new("Fraction", DataType::Float64);
     ///
     /// assert_eq!(earth.fields(), &[f1, f2]);
@@ -1651,8 +1651,8 @@ impl DataFrame {
             return self.clone().filter_vertical(mask);
         }
         let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => {
-                let ca = s.utf8().unwrap();
+            DataType::String => {
+                let ca = s.str().unwrap();
                 if ca.get_values_size() / 24 <= ca.len() {
                     s.filter(mask)
                 } else {
@@ -1684,8 +1684,8 @@ impl DataFrame {
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let new_col = POOL.install(|| {
             self.try_apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => {
-                    let ca = s.utf8().unwrap();
+                DataType::String => {
+                    let ca = s.str().unwrap();
                     if ca.get_values_size() / 24 <= ca.len() {
                         s.take(indices)
                     } else {
@@ -1709,7 +1709,7 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| {
                 self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::Utf8 => s.take_unchecked_threaded(idx, true),
+                    DataType::String => s.take_unchecked_threaded(idx, true),
                     _ => s.take_unchecked(idx),
                 })
             })
@@ -1727,7 +1727,7 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| {
                 self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::Utf8 => s.take_slice_unchecked_threaded(idx, true),
+                    DataType::String => s.take_slice_unchecked_threaded(idx, true),
                     _ => s.take_slice_unchecked(idx),
                 })
             })
@@ -2006,7 +2006,7 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// fn str_to_len(str_val: &Series) -> Series {
-    ///     str_val.utf8()
+    ///     str_val.str()
     ///         .unwrap()
     ///         .into_iter()
     ///         .map(|opt_name: Option<&str>| {
@@ -2128,8 +2128,8 @@ impl DataFrame {
     /// let idx = vec![0, 1, 4];
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.utf8()?
-    ///     .set_at_idx_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
+    ///     s.str()?
+    ///     .scatter_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
     /// # Ok::<(), PolarsError>(())
     /// ```
@@ -2194,7 +2194,7 @@ impl DataFrame {
     /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.utf8()?
+    ///     s.str()?
     ///     .set(&mask, Some("not_within_bounds"))
     /// });
     /// # Ok::<(), PolarsError>(())
@@ -2837,7 +2837,7 @@ impl DataFrame {
     #[doc(hidden)]
     pub unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = self.apply_columns(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
             _ => s._take_opt_chunked_unchecked(idx),
         });
 
@@ -2849,7 +2849,7 @@ impl DataFrame {
     /// Doesn't perform any bound checks
     pub unsafe fn _take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, sorted, true),
+            DataType::String => s._take_chunked_unchecked_threaded(idx, sorted, true),
             _ => s._take_chunked_unchecked(idx, sorted),
         });
 
@@ -2861,7 +2861,7 @@ impl DataFrame {
     /// Doesn't perform any bound checks
     pub unsafe fn _take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
             _ => s._take_opt_chunked_unchecked(idx),
         });
 
@@ -3116,7 +3116,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_filter_broadcast_on_utf8_col() {
+    fn test_filter_broadcast_on_string_col() {
         let col_name = "some_col";
         let v = vec!["test".to_string()];
         let s0 = Series::new(col_name, v);

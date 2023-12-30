@@ -69,7 +69,7 @@ lazy = ["polars-core/lazy", "polars-lazy"]
 # commented out until UB is fixed
 # parallel = ["polars-core/parallel"]
 
-# extra utilities for Utf8Chunked
+# extra utilities for StringChunked
 strings = ["polars-core/strings", "polars-lazy?/strings", "polars-ops/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
@@ -147,7 +147,7 @@ moment = ["polars-ops/moment", "polars-lazy?/moment"]
 range = ["polars-lazy?/range"]
 true_div = ["polars-lazy?/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat", "polars-sql?/diagonal_concat"]
-horizontal_concat = ["polars-core/horizontal_concat"]
+horizontal_concat = ["polars-core/horizontal_concat", "polars-lazy?/horizontal_concat"]
 abs = ["polars-ops/abs", "polars-lazy?/abs"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by"]
 ewma = ["polars-ops/ewma", "polars-lazy?/ewma"]
@@ -187,6 +187,7 @@ streaming = ["polars-lazy?/streaming"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 list_sets = ["polars-lazy?/list_sets"]
 list_any_all = ["polars-lazy?/list_any_all"]
+array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 list_drop_nulls = ["polars-lazy?/list_drop_nulls"]
 list_sample = ["polars-lazy?/list_sample"]
 cutqcut = ["polars-lazy?/cutqcut"]

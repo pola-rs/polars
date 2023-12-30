@@ -428,7 +428,7 @@ def test_list_gather() -> None:
 
 def test_list_eval_all_null() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_columns(
-        pl.col("bar").cast(pl.List(pl.Utf8))
+        pl.col("bar").cast(pl.List(pl.String))
     )
 
     assert df.select(pl.col("bar").list.eval(pl.element())).to_dict(
@@ -496,6 +496,14 @@ def test_list_unique() -> None:
     result = s.list.unique(maintain_order=True)
     expected = pl.Series([[1, 2, 3], [3, 2, 1]])
     assert_series_equal(result, expected)
+
+
+def test_list_unique2() -> None:
+    s = pl.Series("a", [[2, 1], [1, 2, 2]])
+    result = s.list.unique()
+    assert len(result) == 2
+    assert sorted(result[0]) == [1, 2]
+    assert sorted(result[1]) == [1, 2]
 
 
 def test_list_to_struct() -> None:
@@ -701,6 +709,22 @@ def test_list_to_array() -> None:
 
     expected = pl.Series(data, dtype=pl.Array(pl.Float32, 2))
     assert_series_equal(result, expected)
+
+    # test logical type
+    df = pl.DataFrame(
+        data={"duration": [[1000, 2000], None]},
+        schema={
+            "duration": pl.List(pl.Datetime),
+        },
+    ).with_columns(pl.col("duration").list.to_array(2))
+
+    expected_df = pl.DataFrame(
+        data={"duration": [[1000, 2000], None]},
+        schema={
+            "duration": pl.Array(pl.Datetime, 2),
+        },
+    )
+    assert_frame_equal(df, expected_df)
 
 
 def test_list_to_array_wrong_lengths() -> None:

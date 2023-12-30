@@ -45,6 +45,7 @@ from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
 )
+from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
@@ -52,6 +53,7 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
+    issue_deprecation_warning,
 )
 from polars.utils.meta import threadpool_size
 from polars.utils.various import (
@@ -933,7 +935,7 @@ class Expr:
             else:
                 raise TypeError(
                     "invalid input for `exclude`"
-                    f"\n\nExpected one or more `str`, `DataType`, or selector; found {type(item).__name__!r} instead."
+                    f"\n\nExpected one or more `str` or `DataType`; found {item!r} instead."
                 )
 
         if exclude_cols and exclude_dtypes:
@@ -3892,9 +3894,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rle_id())
 
-    def filter(self, predicate: Expr) -> Self:
+    def filter(
+        self,
+        *predicates: IntoExprColumn | Iterable[IntoExprColumn],
+        **constraints: Any,
+    ) -> Self:
         """
-        Filter a single column.
+        Filter the expression based on one or more predicate expressions.
 
         The original order of the remaining elements is preserved.
 
@@ -3903,8 +3909,12 @@ class Expr:
 
         Parameters
         ----------
-        predicate
-            Boolean expression.
+        predicates
+            Expression(s) that evaluates to a boolean Series.
+        constraints
+            Column filters; use `name = value` to filter columns by the supplied value.
+            Each constraint will behave the same as `pl.col(name).eq(value)`, and
+            will be implicitly joined with the other filter conditions using `&`.
 
         Examples
         --------
@@ -3928,8 +3938,52 @@ class Expr:
         │ g2        ┆ 0   ┆ 3   │
         └───────────┴─────┴─────┘
 
+        Filter expressions can also take constraints as keyword arguments.
+
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "key": ["a", "a", "a", "a", "b", "b", "b", "b", "b"],
+        ...         "n": [1, 2, 2, 3, 1, 3, 3, 2, 3],
+        ...     },
+        ... )
+        >>> df.group_by("key").agg(
+        ...     n_1=pl.col("n").filter(n=1).sum(),
+        ...     n_2=pl.col("n").filter(n=2).sum(),
+        ...     n_3=pl.col("n").filter(n=3).sum(),
+        ... ).sort(by="key")
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ key ┆ n_1 ┆ n_2 ┆ n_3 │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 4   ┆ 3   │
+        │ b   ┆ 1   ┆ 2   ┆ 9   │
+        └─────┴─────┴─────┴─────┘
+
         """
-        return self._from_pyexpr(self._pyexpr.filter(predicate._pyexpr))
+        all_predicates: list[pl.Expr] = []
+        for p in predicates:
+            all_predicates.extend(wrap_expr(x) for x in parse_as_list_of_expressions(p))
+
+        if "predicate" in constraints:
+            if isinstance(constraints["predicate"], pl.Expr):
+                all_predicates.append(constraints.pop("predicate"))
+                issue_deprecation_warning(
+                    "`filter` no longer takes a 'predicate' parameter.\n"
+                    "To silence this warning you should omit the keyword and pass "
+                    "as a positional argument instead.",
+                    version="0.19.17",
+                )
+        all_predicates.extend(
+            F.col(name).eq_missing(value) for name, value in constraints.items()
+        )
+        if not all_predicates:
+            raise ValueError("No predicates or constraints provided to `filter`.")
+
+        combined_predicate = F.all_horizontal(*all_predicates)
+        return self._from_pyexpr(self._pyexpr.filter(combined_predicate._pyexpr))
 
     def where(self, predicate: Expr) -> Self:
         """
@@ -3975,6 +4029,7 @@ class Expr:
         return_dtype: PolarsDataType | None = None,
         *,
         agg_list: bool = False,
+        is_elementwise: bool = False,
     ) -> Self:
         """
         Apply a custom python function to a whole Series or sequence of Series.
@@ -3988,7 +4043,7 @@ class Expr:
             If you are looking to map a function over a window function or group_by
             context, refer to :func:`map_elements` instead.
             Read more in `the book
-            <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
+            <https://docs.pola.rs/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
@@ -3996,6 +4051,9 @@ class Expr:
             Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
+        is_elementwise
+            If set to true this can run in the streaming engine, but may yield
+            incorrect results in group-by. Ensure you know what you are doing!
         agg_list
             Aggregate list.
 
@@ -4031,7 +4089,7 @@ class Expr:
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(
-            self._pyexpr.map_batches(function, return_dtype, agg_list)
+            self._pyexpr.map_batches(function, return_dtype, agg_list, is_elementwise)
         )
 
     def map_elements(
@@ -4208,9 +4266,7 @@ class Expr:
 
         >>> df.with_columns(
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
-        ... ).sort(
-        ...     "key"
-        ... )  # doctest: +IGNORE_RESULT
+        ... ).sort("key")  # doctest: +IGNORE_RESULT
 
         """
         # input x: Series of type list containing the group values
@@ -4384,7 +4440,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.implode())
 
-    def gather_every(self, n: int) -> Self:
+    def gather_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -4392,6 +4448,8 @@ class Expr:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
 
         Examples
         --------
@@ -4408,8 +4466,20 @@ class Expr:
         │ 7   │
         └─────┘
 
+        >>> df.select(pl.col("foo").gather_every(3, offset=1))
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        │ 5   │
+        │ 8   │
+        └─────┘
+
         """
-        return self._from_pyexpr(self._pyexpr.gather_every(n))
+        return self._from_pyexpr(self._pyexpr.gather_every(n, offset))
 
     def head(self, n: int | Expr = 10) -> Self:
         """
@@ -9570,7 +9640,7 @@ class Expr:
         )
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int) -> Self:
+    def take_every(self, n: int, offset: int = 0) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -9581,8 +9651,10 @@ class Expr:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("gather", version="0.19.14")
     def take(

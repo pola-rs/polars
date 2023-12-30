@@ -61,6 +61,8 @@
 //! +-----+--------+-------+--------+
 //! ```
 //!
+pub(crate) mod infer;
+
 use std::convert::TryFrom;
 use std::io::Write;
 use std::ops::Deref;
@@ -70,7 +72,6 @@ use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
-use polars_json::json::infer;
 use polars_json::json::write::FallibleStreamingIterator;
 use simd_json::BorrowedValue;
 
@@ -248,20 +249,13 @@ where
                 } else {
                     // infer
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
-                        // struct types may have missing fields so find supertype
-                        values
-                            .iter()
-                            .take(self.infer_schema_len.unwrap_or(usize::MAX))
-                            .map(|value| infer(value).map(|dt| DataType::from(&dt)))
-                            .reduce(|l, r| {
-                                let l = l?;
-                                let r = r?;
-                                try_get_supertype(&l, &r)
-                            })
-                            .unwrap()?
-                            .to_arrow()
+                        infer::json_values_to_supertype(
+                            values,
+                            self.infer_schema_len.unwrap_or(usize::MAX),
+                        )?
+                        .to_arrow()
                     } else {
-                        infer(&json_value)?
+                        polars_json::json::infer(&json_value)?
                     };
 
                     if let Some(overwrite) = self.schema_overwrite {

@@ -6,8 +6,6 @@ mod iterator;
 mod slice_iterator;
 mod zip_validity;
 
-use std::convert::TryInto;
-
 pub(crate) use chunk_iterator::merge_reversed;
 pub use chunk_iterator::{BitChunk, BitChunkIterExact, BitChunks, BitChunksExact};
 pub use chunks_exact_mut::BitChunksExactMut;
@@ -88,56 +86,63 @@ pub fn bytes_for(bits: usize) -> usize {
 /// # Panics
 /// This function panics iff `(offset + len).saturating_add(7) / 8 >= slice.len()`
 /// because it corresponds to the situation where `len` is beyond bounds.
-pub fn count_zeros(slice: &[u8], offset: usize, len: usize) -> usize {
+pub fn count_zeros(mut slice: &[u8], mut offset: usize, len: usize) -> usize {
     if len == 0 {
         return 0;
-    };
-
-    let mut slice = &slice[offset / 8..(offset + len).saturating_add(7) / 8];
-    let offset = offset % 8;
-
-    if (offset + len) / 8 == 0 {
-        // all within a single byte
-        let byte = (slice[0] >> offset) << (8 - len);
-        return len - byte.count_ones() as usize;
     }
 
-    // slice: [a1,a2,a3,a4], [a5,a6,a7,a8]
-    // offset: 3
-    // len: 4
-    // [__,__,__,a4], [a5,a6,a7,__]
-    let mut set_count = 0;
+    // Reduce the slice only to relevant bytes.
+    let first_byte_idx = offset / 8;
+    let last_byte_idx = (offset + len - 1) / 8;
+    slice = &slice[first_byte_idx..=last_byte_idx];
+    offset %= 8;
+
+    // Fast path for single u64.
+    if slice.len() <= 8 {
+        let mut tmp = [0u8; 8];
+        tmp[..slice.len()].copy_from_slice(slice);
+        let word = u64::from_ne_bytes(tmp) >> offset;
+        let masked = word << (64 - len);
+        return len - masked.count_ones() as usize;
+    }
+
+    let mut len_uncounted = len;
+    let mut num_ones = 0;
+
+    // Handle first partial byte.
     if offset != 0 {
-        // count all ignoring the first `offset` bits
-        // i.e. [__,__,__,a4]
-        set_count += (slice[0] >> offset).count_ones() as usize;
-        slice = &slice[1..];
-    }
-    if (offset + len) % 8 != 0 {
-        let end_offset = (offset + len) % 8; // i.e. 3 + 4 = 7
-        let last_index = slice.len() - 1;
-        // count all ignoring the last `offset` bits
-        // i.e. [a5,a6,a7,__]
-        set_count += (slice[last_index] << (8 - end_offset)).count_ones() as usize;
-        slice = &slice[..last_index];
+        let partial_byte;
+        (partial_byte, slice) = slice.split_first().unwrap();
+        num_ones += (partial_byte >> offset).count_ones() as usize;
+        len_uncounted -= 8 - offset;
     }
 
-    // finally, count any and all bytes in the middle in groups of 8
-    let mut chunks = slice.chunks_exact(8);
-    set_count += chunks
-        .by_ref()
-        .map(|chunk| {
-            let a = u64::from_ne_bytes(chunk.try_into().unwrap());
-            a.count_ones() as usize
-        })
-        .sum::<usize>();
+    // Handle last partial byte.
+    let final_partial_len = len_uncounted % 8;
+    if final_partial_len != 0 {
+        let partial_byte;
+        (partial_byte, slice) = slice.split_last().unwrap();
+        let masked = partial_byte << (8 - final_partial_len);
+        num_ones += masked.count_ones() as usize;
+    }
 
-    // and any bytes that do not fit in the group
-    set_count += chunks
-        .remainder()
+    // SAFETY: transmuting u8 to u64 is fine.
+    let (start, mid, end) = unsafe { slice.align_to::<u64>() };
+
+    // Handle unaligned ends.
+    let mut tmp = [0u8; 8];
+    tmp[..start.len()].copy_from_slice(start);
+    num_ones += u64::from_ne_bytes(tmp).count_ones() as usize;
+    tmp = [0u8; 8];
+    tmp[..end.len()].copy_from_slice(end);
+    num_ones += u64::from_ne_bytes(tmp).count_ones() as usize;
+
+    // Handle the bulk.
+    num_ones += mid
         .iter()
-        .map(|byte| byte.count_ones() as usize)
+        .copied()
+        .map(|w| w.count_ones() as usize)
         .sum::<usize>();
 
-    len - set_count
+    len - num_ones
 }

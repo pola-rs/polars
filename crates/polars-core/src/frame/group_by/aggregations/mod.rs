@@ -1,7 +1,7 @@
 mod agg_list;
 mod boolean;
 mod dispatch;
-mod utf8;
+mod string;
 
 use std::cmp::Ordering;
 
@@ -35,7 +35,7 @@ use crate::series::IsSorted;
 use crate::utils::NoNull;
 use crate::{apply_method_physical_integer, POOL};
 
-fn idx2usize(idx: &[IdxSize]) -> impl Iterator<Item = usize> + ExactSizeIterator + '_ {
+fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
 

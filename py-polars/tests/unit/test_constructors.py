@@ -101,11 +101,11 @@ def test_init_dict() -> None:
     assert df.schema == {"a": pl.Null, "b": pl.Null}
 
     for df in (
-        pl.DataFrame({}, schema={"a": pl.Date, "b": pl.Utf8}),
-        pl.DataFrame({"a": [], "b": []}, schema={"a": pl.Date, "b": pl.Utf8}),
+        pl.DataFrame({}, schema={"a": pl.Date, "b": pl.String}),
+        pl.DataFrame({"a": [], "b": []}, schema={"a": pl.Date, "b": pl.String}),
     ):
         assert df.shape == (0, 2)
-        assert df.schema == {"a": pl.Date, "b": pl.Utf8}
+        assert df.schema == {"a": pl.Date, "b": pl.String}
 
     # List of empty list
     df = pl.DataFrame({"a": [[]], "b": [[]]})
@@ -227,7 +227,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             df = DF(data=trades)  # type: ignore[operator]
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
-                "ticker": pl.Utf8,
+                "ticker": pl.String,
                 "price": pl.Decimal(scale=1),
                 "size": pl.Int64,
             }
@@ -240,7 +240,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             )
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
-                "ticker": pl.Utf8,
+                "ticker": pl.String,
                 "price": pl.Decimal(scale=1),
                 "size": pl.Int32,
             }
@@ -362,7 +362,7 @@ def test_init_structured_objects_nested() -> None:
             "x": pl.Int64,
             "y": pl.Struct(
                 [
-                    pl.Field("a", pl.Utf8),
+                    pl.Field("a", pl.String),
                     pl.Field("b", pl.Int64),
                     pl.Field(
                         "c",
@@ -370,7 +370,7 @@ def test_init_structured_objects_nested() -> None:
                             [
                                 pl.Field("d", pl.Datetime("us")),
                                 pl.Field("e", pl.Float64),
-                                pl.Field("f", pl.Utf8),
+                                pl.Field("f", pl.String),
                             ]
                         ),
                     ),
@@ -395,7 +395,7 @@ def test_init_structured_objects_nested() -> None:
             "x": pl.Int16,
             "y": pl.Struct(
                 [
-                    pl.Field("a", pl.Utf8),
+                    pl.Field("a", pl.String),
                     pl.Field("b", pl.Int32),
                     pl.Field(
                         name="c",
@@ -403,7 +403,7 @@ def test_init_structured_objects_nested() -> None:
                             [
                                 pl.Field("d", pl.Datetime("ms")),
                                 pl.Field("e", pl.Float32),
-                                pl.Field("f", pl.Utf8),
+                                pl.Field("f", pl.String),
                             ]
                         ),
                     ),
@@ -429,11 +429,11 @@ def test_init_structured_objects_nested() -> None:
             # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
             assert df.schema == {
                 "x": pl.Int16,
-                "a": pl.Utf8,
+                "a": pl.String,
                 "b": pl.Int32,
                 "d": pl.Datetime("ms"),
                 "e": pl.Float32,
-                "f": pl.Utf8,
+                "f": pl.String,
             }
             assert df.row(0) == (
                 100,
@@ -517,7 +517,7 @@ def test_init_ndarray() -> None:
         orient="row",
     )
     assert df.rows() == [(True, 2, "a"), (None, None, None)]
-    assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.Utf8}
+    assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.String}
 
     # 2D array - default to column orientation
     df = pl.DataFrame(np.array([[1, 2], [3, 4]], dtype=np.int64))
@@ -1055,13 +1055,13 @@ def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
 
 def test_upcast_primitive_and_strings() -> None:
     assert pl.Series([1, 1.0, 1]).dtype == pl.Float64
-    assert pl.Series([1, 1, "1.0"]).dtype == pl.Utf8
-    assert pl.Series([1, 1.0, "1.0"]).dtype == pl.Utf8
+    assert pl.Series([1, 1, "1.0"]).dtype == pl.String
+    assert pl.Series([1, 1.0, "1.0"]).dtype == pl.String
     assert pl.Series([True, 1]).dtype == pl.Int64
     assert pl.Series([True, 1.0]).dtype == pl.Float64
     assert pl.Series([True, 1], dtype=pl.Boolean).dtype == pl.Boolean
     assert pl.Series([False, 1.0], dtype=pl.Boolean).dtype == pl.Boolean
-    assert pl.Series([False, "1.0"]).dtype == pl.Utf8
+    assert pl.Series([False, "1.0"]).dtype == pl.String
     assert pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}).dtypes == [
         pl.Float64,
         pl.Float64,
@@ -1100,10 +1100,10 @@ def test_from_rows_dtype() -> None:
     # 5182
     df = pl.DataFrame(
         data=[(None, None)] * 50 + [("1.23", None)],
-        schema=[("foo", pl.Utf8), ("bar", pl.Utf8)],
+        schema=[("foo", pl.String), ("bar", pl.String)],
         orient="row",
     )
-    assert df.dtypes == [pl.Utf8, pl.Utf8]
+    assert df.dtypes == [pl.String, pl.String]
     assert df.null_count().row(0) == (50, 51)
 
     type1 = [{"c1": 206, "c2": "type1", "c3": {"x1": "abcd", "x2": "jkl;"}}]
@@ -1155,7 +1155,7 @@ def test_from_dicts_schema() -> None:
 
     # provide data that resolves to an empty frame (ref: scalar
     # expansion shortcut), with schema/override hints
-    schema = {"colx": pl.Utf8, "coly": pl.Int32}
+    schema = {"colx": pl.String, "coly": pl.Int32}
 
     for param in ("schema", "schema_overrides"):
         df = pl.DataFrame({"colx": [], "coly": 0}, **{param: schema})  # type: ignore[arg-type]
@@ -1219,7 +1219,7 @@ def test_nested_read_dict_4143_2() -> None:
 
     assert result.dtypes == [
         pl.Int64,
-        pl.List(pl.Struct({"some_text_here": pl.Utf8, "list_": pl.List(pl.Int64)})),
+        pl.List(pl.Struct({"some_text_here": pl.String, "list_": pl.List(pl.Int64)})),
     ]
     expected = {
         "id": [1, 2],
@@ -1249,7 +1249,7 @@ def test_from_records_nullable_structs() -> None:
             "items",
             pl.List(
                 pl.Struct(
-                    [pl.Field("item_id", pl.UInt32), pl.Field("description", pl.Utf8)]
+                    [pl.Field("item_id", pl.UInt32), pl.Field("description", pl.String)]
                 )
             ),
         ),
@@ -1311,7 +1311,7 @@ def test_nested_schema_construction() -> None:
                         pl.List(
                             pl.Struct(
                                 [
-                                    pl.Field("name", pl.Utf8),
+                                    pl.Field("name", pl.String),
                                     pl.Field(
                                         "sub_nodes",
                                         pl.List(
@@ -1363,7 +1363,10 @@ def test_nested_schema_construction2() -> None:
                         "nodes",
                         pl.List(
                             pl.Struct(
-                                [pl.Field("name", pl.Utf8), pl.Field("time", pl.UInt32)]
+                                [
+                                    pl.Field("name", pl.String),
+                                    pl.Field("time", pl.UInt32),
+                                ]
                             )
                         ),
                     )
@@ -1390,7 +1393,7 @@ def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)
     assert (
-        pyseries.get_chunks()[0]._get_ptr()[2]
+        pyseries.get_chunks()[0]._get_buffer_info()[0]
         == original_array.chunks[0].buffers()[1].address
     )
 

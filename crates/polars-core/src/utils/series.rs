@@ -45,7 +45,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     let failures = input.filter_threaded(&failure_mask, false)?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
-        (DataType::Utf8, DataType::Date | DataType::Datetime(_, _)) => {
+        (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {
             "\n\nYou might want to try:\n\
             - setting `strict=False` to set values that cannot be converted to `null`\n\
             - using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string"

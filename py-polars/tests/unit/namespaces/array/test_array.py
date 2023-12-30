@@ -1,7 +1,9 @@
 import numpy as np
+import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars import ComputeError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_arr_min_max() -> None:
@@ -53,3 +55,22 @@ def test_arr_unique() -> None:
 def test_array_to_numpy() -> None:
     s = pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))
     assert (s.to_numpy() == np.array([[1, 2], [3, 4], [5, 6]])).all()
+
+
+def test_array_any_all() -> None:
+    s = pl.Series(
+        [[True, True], [False, True], [False, False], [None, None], None],
+        dtype=pl.Array(pl.Boolean, 2),
+    )
+
+    expected_any = pl.Series([True, True, False, False, None])
+    assert_series_equal(s.arr.any(), expected_any)
+
+    expected_all = pl.Series([True, False, False, True, None])
+    assert_series_equal(s.arr.all(), expected_all)
+
+    s = pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))
+    with pytest.raises(ComputeError, match="expected boolean elements in array"):
+        s.arr.any()
+    with pytest.raises(ComputeError, match="expected boolean elements in array"):
+        s.arr.all()

@@ -46,7 +46,7 @@ class ExprStringNameSpace:
         cache: bool = True,
     ) -> Expr:
         """
-        Convert a Utf8 column into a Date column.
+        Convert a String column into a Date column.
 
         Parameters
         ----------
@@ -96,7 +96,7 @@ class ExprStringNameSpace:
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
-        Convert a Utf8 column into a Datetime column.
+        Convert a String column into a Datetime column.
 
         Parameters
         ----------
@@ -174,7 +174,7 @@ class ExprStringNameSpace:
         cache: bool = True,
     ) -> Expr:
         """
-        Convert a Utf8 column into a Time column.
+        Convert a String column into a Time column.
 
         Parameters
         ----------
@@ -216,7 +216,7 @@ class ExprStringNameSpace:
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
-        Convert a Utf8 column into a Date/Datetime/Time column.
+        Convert a String column into a Date/Datetime/Time column.
 
         Parameters
         ----------
@@ -326,7 +326,7 @@ class ExprStringNameSpace:
         inference_length: int = 100,
     ) -> Expr:
         """
-        Convert a Utf8 column into a Decimal column.
+        Convert a String column into a Decimal column.
 
         This method infers the needed parameters `precision` and `scale`.
 
@@ -469,7 +469,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -951,7 +951,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1, 123, 999999, None]})
-        >>> df.with_columns(zfill=pl.col("a").cast(pl.Utf8).str.zfill(4))
+        >>> df.with_columns(zfill=pl.col("a").cast(pl.String).str.zfill(4))
         shape: (4, 2)
         ┌────────┬────────┐
         │ a      ┆ zfill  │
@@ -1215,7 +1215,7 @@ class ExprStringNameSpace:
         Extract the first match of JSON string with the provided JSONPath expression.
 
         Throws errors if invalid JSON strings are encountered.
-        All return values will be cast to :class:`Utf8` regardless of the original
+        All return values will be cast to :class:`String` regardless of the original
         value.
 
         Documentation on JSONPath standard can be found
@@ -1229,7 +1229,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`. Contains null values if original
+            Expression of data type :class:`String`. Contains null values if original
             value is null or the json_path returns nothing.
 
         Examples
@@ -1288,7 +1288,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -1365,7 +1365,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`. Contains null values if original
+            Expression of data type :class:`String`. Contains null values if original
             value is null or the regex captures nothing.
 
         Examples
@@ -1460,7 +1460,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type `List(Utf8)`.
+            Expression of data type `List(String)`.
 
         Examples
         --------
@@ -1522,7 +1522,7 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`Struct` with fields of data type
-            :class:`Utf8`.
+            :class:`String`.
 
         Examples
         --------
@@ -1682,7 +1682,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         """
         by = parse_as_expression(by, str_as_lit=True)
@@ -1711,7 +1711,7 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`Struct` with fields of data type
-            :class:`Utf8`.
+            :class:`String`.
 
         Examples
         --------
@@ -1780,7 +1780,7 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`Struct` with fields of data type
-            :class:`Utf8`.
+            :class:`String`.
 
         Examples
         --------
@@ -1967,7 +1967,7 @@ class ExprStringNameSpace:
 
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """
-        Create subslices of the string values of a Utf8 Series.
+        Create subslices of the string values of a String Series.
 
         Parameters
         ----------
@@ -1980,7 +1980,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -2027,7 +2027,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -2052,7 +2052,7 @@ class ExprStringNameSpace:
 
     def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
         """
-        Convert an Utf8 column into an Int64 column with base radix.
+        Convert an String column into an Int64 column with base radix.
 
         Parameters
         ----------

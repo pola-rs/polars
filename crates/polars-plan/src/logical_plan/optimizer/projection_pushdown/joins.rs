@@ -258,6 +258,8 @@ pub(super) fn process_join(
             .unwrap();
             already_added_local_to_local_projected.insert(local_name);
         }
+        // In outer joins both columns remain. So `add_local=true` also for the right table
+        let add_local = matches!(options.args.how, JoinType::Outer { coalesce: false });
         for e in &right_on {
             add_keys_to_accumulated_state(
                 *e,
@@ -265,7 +267,7 @@ pub(super) fn process_join(
                 &mut local_projection,
                 &mut names_right,
                 expr_arena,
-                false,
+                add_local,
             );
         }
 

@@ -262,7 +262,7 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         Easily select all columns that match a certain data type by passing that
         datatype.
 
-        >>> df.select(pl.col(pl.Utf8))
+        >>> df.select(pl.col(pl.String))
         shape: (2, 1)
         ┌─────┐
         │ bar │

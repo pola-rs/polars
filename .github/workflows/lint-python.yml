@@ -11,31 +11,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-python:
+  ruff:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: py-polars
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Get ruff version from requirements file
+        id: version
+        run: |
+          VERSION=$(grep -m 1 -oP 'ruff==\K(.*)' py-polars/requirements-lint.txt)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - uses: chartboost/ruff-action@v1
         with:
-          python-version: '3.12'
+          src: py-polars/
+          version: ${{ steps.version.outputs.version }}
+          args: check --no-fix
 
-      - name: Install Python dependencies
-        run: pip install -r requirements-lint.txt
-
-      - name: Run ruff linter
-        run: ruff check --no-fix .
-
-      - name: Run ruff formatter
-        run: ruff format --diff .
-
-      - name: Run blackdoc
-        run: blackdoc --diff .
+      - uses: chartboost/ruff-action@v1
+        with:
+          src: py-polars/
+          version: ${{ steps.version.outputs.version }}
+          args: format --diff
 
   mypy:
     runs-on: ubuntu-latest

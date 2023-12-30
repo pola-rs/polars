@@ -171,10 +171,10 @@ where
     }
 }
 
-impl ChunkUnique<Utf8Type> for Utf8Chunked {
+impl ChunkUnique<StringType> for StringChunked {
     fn unique(&self) -> PolarsResult<Self> {
         let out = self.as_binary().unique()?;
-        Ok(unsafe { out.to_utf8() })
+        Ok(unsafe { out.to_string() })
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
@@ -299,7 +299,7 @@ mod test {
             vec![Some(true), Some(false)]
         );
 
-        let ca = Utf8Chunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);
+        let ca = StringChunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);
         assert_eq!(
             Vec::from(&ca.unique().unwrap().sort(false)),
             &[None, Some("a"), Some("b")]

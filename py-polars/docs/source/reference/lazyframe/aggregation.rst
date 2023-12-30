@@ -6,6 +6,7 @@ Aggregation
 .. autosummary::
    :toctree: api/
 
+    LazyFrame.count
     LazyFrame.max
     LazyFrame.mean
     LazyFrame.median

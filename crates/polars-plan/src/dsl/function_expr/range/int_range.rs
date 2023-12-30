@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_core::series::{IsSorted, Series};
 use polars_core::with_match_physical_integer_polars_type;
 
-use super::utils::{ensure_range_bounds_contain_exactly_one_value, ranges_impl_broadcast};
+use super::utils::{ensure_range_bounds_contain_exactly_one_value, numeric_ranges_impl_broadcast};
 
 const CAPACITY_FACTOR: usize = 5;
 
@@ -36,7 +36,8 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
     let value_opt = ca.get(0);
-    let value = value_opt.ok_or(polars_err!(ComputeError: "invalid null input for `int_range`"))?;
+    let value =
+        value_opt.ok_or_else(|| polars_err!(ComputeError: "invalid null input for `int_range`"))?;
     Ok(value)
 }
 
@@ -70,15 +71,18 @@ where
     Ok(ca.into_series())
 }
 
-pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
+pub(super) fn int_ranges(s: &[Series]) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
+    let step = &s[2];
 
     let start = start.cast(&DataType::Int64)?;
     let end = end.cast(&DataType::Int64)?;
+    let step = step.cast(&DataType::Int64)?;
 
     let start = start.i64()?;
     let end = end.i64()?;
+    let step = step.i64()?;
 
     let len = std::cmp::max(start.len(), end.len());
     let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
@@ -88,18 +92,19 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
         DataType::Int64,
     );
 
-    let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
-        match step {
-            1 => builder.append_iter_values(start..end),
-            2.. => builder.append_iter_values((start..end).step_by(step as usize)),
-            _ => builder.append_iter_values(
-                (end..start)
-                    .step_by(step.unsigned_abs() as usize)
-                    .map(|x| start - (x - end)),
-            ),
+    let range_impl =
+        |start, end, step: i64, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
+            match step {
+                1 => builder.append_iter_values(start..end),
+                2.. => builder.append_iter_values((start..end).step_by(step as usize)),
+                _ => builder.append_iter_values(
+                    (end..start)
+                        .step_by(step.unsigned_abs() as usize)
+                        .map(|x| start - (x - end)),
+                ),
+            };
+            Ok(())
         };
-        Ok(())
-    };
 
-    ranges_impl_broadcast(start, end, range_impl, &mut builder)
+    numeric_ranges_impl_broadcast(start, end, step, range_impl, &mut builder)
 }

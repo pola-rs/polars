@@ -186,7 +186,7 @@ class MockResultSet:
                 connect_using="connectorx",
                 expected_dtypes={
                     "id": pl.UInt8,
-                    "name": pl.Utf8,
+                    "name": pl.String,
                     "value": pl.Float64,
                     "date": pl.Date,
                 },
@@ -205,9 +205,9 @@ class MockResultSet:
                 connect_using="adbc",
                 expected_dtypes={
                     "id": pl.UInt8,
-                    "name": pl.Utf8,
+                    "name": pl.String,
                     "value": pl.Float64,
-                    "date": pl.Utf8,
+                    "date": pl.String,
                 },
                 expected_dates=["2020-01-01", "2021-12-31"],
                 schema_overrides={"id": pl.UInt8},
@@ -224,7 +224,7 @@ class MockResultSet:
                 connect_using=lambda path: sqlite3.connect(path, detect_types=True),
                 expected_dtypes={
                     "id": pl.UInt8,
-                    "name": pl.Utf8,
+                    "name": pl.String,
                     "value": pl.Float32,
                     "date": pl.Date,
                 },
@@ -239,7 +239,7 @@ class MockResultSet:
                 connect_using=lambda path: sqlite3.connect(path, detect_types=True),
                 expected_dtypes={
                     "id": pl.Int32,
-                    "name": pl.Utf8,
+                    "name": pl.String,
                     "value": pl.Float32,
                     "date": pl.Date,
                 },
@@ -258,7 +258,7 @@ class MockResultSet:
                 ).connect(),
                 expected_dtypes={
                     "id": pl.Int64,
-                    "name": pl.Utf8,
+                    "name": pl.String,
                     "value": pl.Float64,
                     "date": pl.Date,
                 },
@@ -272,9 +272,9 @@ class MockResultSet:
                 connect_using=adbc_sqlite_connect,
                 expected_dtypes={
                     "id": pl.Int64,
-                    "name": pl.Utf8,
+                    "name": pl.String,
                     "value": pl.Float64,
-                    "date": pl.Utf8,
+                    "date": pl.String,
                 },
                 expected_dates=["2020-01-01", "2021-12-31"],
             ),
@@ -290,9 +290,9 @@ class MockResultSet:
                 connect_using=adbc_sqlite_connect,
                 expected_dtypes={
                     "id": pl.Int64,
-                    "name": pl.Utf8,
+                    "name": pl.String,
                     "value": pl.Float64,
-                    "date": pl.Utf8,
+                    "date": pl.String,
                 },
                 expected_dates=["2020-01-01", "2021-12-31"],
                 batch_size=1,

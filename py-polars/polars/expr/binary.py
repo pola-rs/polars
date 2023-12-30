@@ -195,7 +195,7 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8` with values encoded using provided
+            Expression of data type :class:`String` with values encoded using provided
             encoding.
 
         Examples

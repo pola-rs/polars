@@ -1,4 +1,3 @@
-use polars_core;
 use polars_core::StringCacheHolder;
 use pyo3::prelude::*;
 

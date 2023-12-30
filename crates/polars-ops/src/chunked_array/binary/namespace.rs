@@ -6,7 +6,7 @@ use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 use memchr::memmem::find;
-use polars_core::prelude::arity::binary_elementwise_values;
+use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 
 use super::*;
 
@@ -25,7 +25,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Some(lit) => ca.contains(lit),
                 None => BooleanChunked::full_null(ca.name(), ca.len()),
             },
-            _ => binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some()),
+            _ => broadcast_binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some()),
         }
     }
 
@@ -54,7 +54,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Some(s) => self.starts_with(s),
                 None => BooleanChunked::full_null(ca.name(), ca.len()),
             },
-            _ => binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
+            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
         }
     }
 
@@ -65,7 +65,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Some(s) => self.ends_with(s),
                 None => BooleanChunked::full_null(ca.name(), ca.len()),
             },
-            _ => binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub)),
+            _ => broadcast_binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub)),
         }
     }
 
@@ -92,7 +92,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let ca = self.as_binary();
         unsafe {
             ca.apply_values(|s| hex::encode(s).into_bytes().into())
-                .cast_unchecked(&DataType::Utf8)
+                .cast_unchecked(&DataType::String)
                 .unwrap()
         }
     }
@@ -122,7 +122,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let ca = self.as_binary();
         unsafe {
             ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
-                .cast_unchecked(&DataType::Utf8)
+                .cast_unchecked(&DataType::String)
                 .unwrap()
         }
     }

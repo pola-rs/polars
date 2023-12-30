@@ -242,8 +242,8 @@ fn pivot_impl(
                     }
                 };
 
-                let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
-                let mut headers = headers.utf8().unwrap().clone();
+                let headers = column_agg.unique_stable()?.cast(&DataType::String)?;
+                let mut headers = headers.str().unwrap().clone();
                 if values.len() > 1 {
                     headers = headers.apply_values(|v| Cow::from(format!("{value_col_name}{sep}{column_column_name}{sep}{v}")))
                 }

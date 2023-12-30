@@ -61,7 +61,7 @@ impl StructFunction {
                 ),
             }),
             #[cfg(feature = "json")]
-            JsonEncode => mapper.with_dtype(DataType::Utf8),
+            JsonEncode => mapper.with_dtype(DataType::String),
         }
     }
 }
@@ -129,5 +129,5 @@ pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
         .iter()
         .map(|arr| polars_json::json::write::serialize_to_utf8(arr.as_ref()));
 
-    Ok(Utf8Chunked::from_chunk_iter(ca.name(), iter).into_series())
+    Ok(StringChunked::from_chunk_iter(ca.name(), iter).into_series())
 }

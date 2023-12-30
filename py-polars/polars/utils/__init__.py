@@ -19,7 +19,7 @@ from polars.utils.convert import (
 )
 from polars.utils.meta import get_index_type, threadpool_size
 from polars.utils.show_versions import show_versions
-from polars.utils.various import NoDefault, _polars_warn, no_default
+from polars.utils.various import NoDefault, _polars_warn, is_column, no_default
 
 __all__ = [
     "NoDefault",
@@ -27,6 +27,7 @@ __all__ = [
     "build_info",
     "show_versions",
     "get_index_type",
+    "is_column",
     "threadpool_size",
     # Required for Rust bindings
     "_date_to_pl_date",

@@ -87,7 +87,7 @@ pub trait ChunkAnyValue {
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
 }
 
-/// Explode/ flatten a List or Utf8 Series
+/// Explode/flatten a List or String Series
 pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)
@@ -143,11 +143,11 @@ pub trait ChunkSet<'a, A, B> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let ca = UInt32Chunked::new("a", &[1, 2, 3]);
-    /// let new = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
+    /// let new = ca.scatter_single(vec![0, 1], Some(10)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
     /// ```
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         opt_value: Option<A>,
@@ -162,11 +162,11 @@ pub trait ChunkSet<'a, A, B> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let ca = Int32Chunked::new("a", &[1, 2, 3]);
-    /// let new = ca.set_at_idx_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
+    /// let new = ca.scatter_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
     /// ```
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -511,8 +511,8 @@ impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
-    fn new_from_index(&self, index: usize, length: usize) -> Utf8Chunked {
+impl ChunkExpandAtIndex<StringType> for StringChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> StringChunked {
         let mut out = impl_chunk_expand!(self, length, index);
         out.set_sorted_flag(IsSorted::Ascending);
         out
@@ -533,7 +533,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                ca.to_logical(self.inner_dtype());
+                unsafe { ca.to_logical(self.inner_dtype()) };
                 ca
             },
             None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
@@ -548,7 +548,7 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);
-                ca.to_physical(self.inner_dtype());
+                unsafe { ca.to_logical(self.inner_dtype()) };
                 ca
             },
             None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0),

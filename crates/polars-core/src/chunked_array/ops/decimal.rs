@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
-impl Utf8Chunked {
-    /// Convert an [`Utf8Chunked`] to a [`Series`] of [`DataType::Decimal`].
+impl StringChunked {
+    /// Convert an [`StringChunked`] to a [`Series`] of [`DataType::Decimal`].
     /// The parameters needed for the decimal type are inferred.
     ///
     /// If the decimal `precision` and `scale` are already known, consider

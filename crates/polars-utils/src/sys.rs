@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
-use sysinfo::{System, SystemExt};
+use sysinfo::System;
 
 /// Startup system is expensive, so we do it once
 pub struct MemInfo {

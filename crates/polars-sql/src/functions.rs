@@ -602,9 +602,9 @@ impl PolarsSqlFunctions {
             "last" => Self::Last,
             "max" => Self::Max,
             "min" => Self::Min,
-            "stddev" | "stddev_samp" => Self::StdDev,
+            "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
-            "variance" | "var_samp" => Self::Variance,
+            "var" | "variance" | "var_samp" => Self::Variance,
 
             // ----
             // Array functions
@@ -725,7 +725,7 @@ impl SqlFunctionVisitor<'_> {
                 3 => self.try_visit_ternary(|e, pat, flags| {
                     Ok(e.str().contains(
                         match (pat, flags) {
-                            (Expr::Literal(LiteralValue::Utf8(s)), Expr::Literal(LiteralValue::Utf8(f))) => {
+                            (Expr::Literal(LiteralValue::String(s)), Expr::Literal(LiteralValue::String(f))) => {
                                 if f.is_empty() { polars_bail!(InvalidOperation: "Invalid/empty 'flags' for RegexpLike: {}", function.args[2]); };
                                 lit(format!("(?{}){}", f, s))
                             },

@@ -6,6 +6,8 @@ use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use polars_utils::iter::EnumerateIdxTrait;
+#[cfg(any(feature = "serde-lazy", feature = "serde"))]
+use serde::{Deserialize, Serialize};
 
 use crate::datatypes::PlHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;
@@ -13,6 +15,10 @@ use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
+#[cfg_attr(
+    any(feature = "serde-lazy", feature = "serde"),
+    derive(Serialize, Deserialize)
+)]
 pub enum CategoricalOrdering {
     #[default]
     Physical,
@@ -568,8 +574,8 @@ impl CategoricalChunked {
 
     /// Create a [`CategoricalChunked`] from a fixed list of categories and a List of strings.
     /// This will error if a string is not in the fixed list of categories
-    pub fn from_utf8_to_enum(
-        values: &Utf8Chunked,
+    pub fn from_string_to_enum(
+        values: &StringChunked,
         categories: &Utf8Array<i64>,
         ordering: CategoricalOrdering,
     ) -> PolarsResult<CategoricalChunked> {
@@ -623,7 +629,7 @@ mod test {
             Some("foo"),
             Some("bar"),
         ];
-        let ca = Utf8Chunked::new("a", slice);
+        let ca = StringChunked::new("a", slice);
         let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
@@ -642,11 +648,11 @@ mod test {
         // Check that we don't panic if we append two categorical arrays
         // build under the same string cache
         // https://github.com/pola-rs/polars/issues/1115
-        let ca1 =
-            Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None, Default::default()))?;
+        let ca1 = StringChunked::new("a", slice)
+            .cast(&DataType::Categorical(None, Default::default()))?;
         let mut ca1 = ca1.categorical().unwrap().clone();
-        let ca2 =
-            Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None, Default::default()))?;
+        let ca2 = StringChunked::new("a", slice)
+            .cast(&DataType::Categorical(None, Default::default()))?;
         let ca2 = ca2.categorical().unwrap();
         ca1.append(ca2).unwrap();
 

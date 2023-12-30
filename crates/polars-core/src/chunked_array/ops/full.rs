@@ -44,9 +44,9 @@ impl ChunkFullNull for BooleanChunked {
     }
 }
 
-impl<'a> ChunkFull<&'a str> for Utf8Chunked {
+impl<'a> ChunkFull<&'a str> for StringChunked {
     fn full(name: &str, value: &'a str, length: usize) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, length, length * value.len());
+        let mut builder = StringChunkedBuilder::new(name, length, length * value.len());
 
         for _ in 0..length {
             builder.append_value(value);
@@ -57,9 +57,9 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
-impl ChunkFullNull for Utf8Chunked {
+impl ChunkFullNull for StringChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = Utf8Array::new_null(DataType::Utf8.to_arrow(), length);
+        let arr = Utf8Array::new_null(DataType::String.to_arrow(), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -124,7 +124,7 @@ impl ArrayChunked {
 impl ChunkFull<&Series> for ArrayChunked {
     fn full(name: &str, value: &Series, length: usize) -> ArrayChunked {
         if !value.dtype().is_numeric() {
-            todo!("FixedSizeList only supports numeric data types");
+            todo!("Array only supports numeric data types");
         };
         let width = value.len();
         let values = value.tile(length);

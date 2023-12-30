@@ -82,6 +82,7 @@ impl Executor for GroupByDynamicExec {
 
     #[cfg(feature = "dynamic_group_by")]
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        state.should_stop()?;
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

@@ -22,12 +22,12 @@ pub fn int_range(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
 }
 
 /// Generate a range of integers for each row of the input columns.
-pub fn int_ranges(start: Expr, end: Expr, step: i64) -> Expr {
-    let input = vec![start, end];
+pub fn int_ranges(start: Expr, end: Expr, step: Expr) -> Expr {
+    let input = vec![start, end, step];
 
     Expr::Function {
         input,
-        function: FunctionExpr::Range(RangeFunction::IntRanges { step }),
+        function: FunctionExpr::Range(RangeFunction::IntRanges),
         options: FunctionOptions {
             allow_rename: true,
             ..Default::default()

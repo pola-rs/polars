@@ -47,7 +47,7 @@ def test_lazy() -> None:
     [
         ({}, "0 cols, {}"),
         ({"a": [1]}, '1 col, {"a": Int64}'),
-        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": Utf8}'),
+        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": String}'),
         ({"a": [1], "b": ["B"], "c": [0.0]}, '3 cols, {"a": Int64 … "c": Float64}'),
     ],
 )
@@ -111,6 +111,8 @@ def test_gather_every() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
     assert_frame_equal(expected_df, ldf.gather_every(2).collect())
+    expected_df = pl.DataFrame({"a": [2, 4], "b": ["x", "z"]})
+    assert_frame_equal(expected_df, ldf.gather_every(2, offset=1).collect())
 
 
 def test_agg() -> None:
@@ -265,17 +267,6 @@ def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]
     assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.UInt32))
-
-
-def test_is_unique() -> None:
-    df = pl.DataFrame({"a": [4, 1, 4]})
-    result = df.select(pl.col("a").is_unique())["a"]
-    assert_series_equal(result, pl.Series("a", [False, True, False]))
-
-
-def test_is_duplicated() -> None:
-    ldf = pl.LazyFrame({"a": [4, 1, 4]}).select(pl.col("a").is_duplicated())
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [True, False, True]))
 
 
 def test_arg_sort() -> None:
@@ -588,11 +579,11 @@ def test_cast_frame() -> None:
 
     # cast via col:dtype map
     assert lf.cast(
-        dtypes={"b": pl.Float32, "c": pl.Utf8, "d": pl.Datetime("ms")}
+        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")}
     ).schema == {
         "a": pl.Float64,
         "b": pl.Float32,
-        "c": pl.Utf8,
+        "c": pl.String,
         "d": pl.Datetime("ms"),
     }
 
@@ -601,10 +592,10 @@ def test_cast_frame() -> None:
         {
             cs.float(): pl.UInt8,
             cs.integer(): pl.Int32,
-            cs.temporal(): pl.Utf8,
+            cs.temporal(): pl.String,
         }
     )
-    assert lfc.schema == {"a": pl.UInt8, "b": pl.Int32, "c": pl.Boolean, "d": pl.Utf8}
+    assert lfc.schema == {"a": pl.UInt8, "b": pl.Int32, "c": pl.Boolean, "d": pl.String}
     assert lfc.collect().rows() == [
         (1, 4, True, "2020-01-02"),
         (2, 5, False, "2021-03-04"),
@@ -612,7 +603,7 @@ def test_cast_frame() -> None:
     ]
 
     # cast all fields to a single type
-    result = lf.cast(pl.Utf8)
+    result = lf.cast(pl.String)
     expected = pl.LazyFrame(
         {
             "a": ["1.0", "2.5", "3.0"],
@@ -1048,21 +1039,6 @@ def test_null_count() -> None:
     assert lf.null_count().collect().rows() == [(1, 2)]
 
 
-def test_unique() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert_frame_equal(ldf.unique(maintain_order=True).collect(), expected)
-
-    result = ldf.unique(subset="b", maintain_order=True).collect()
-    expected = pl.DataFrame({"a": [1], "b": [3]})
-    assert_frame_equal(result, expected)
-
-    s0 = pl.Series("a", [1, 2, None, 2])
-    # test if the null is included
-    assert s0.unique().to_list() == [None, 1, 2]
-
-
 def test_lazy_concat(df: pl.DataFrame) -> None:
     shape = df.shape
     shape = (shape[0] * 2, shape[1])
@@ -1167,7 +1143,7 @@ def test_lazy_schema() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
+    assert ldf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
 
     ldf = pl.LazyFrame(
         {
@@ -1176,7 +1152,7 @@ def test_lazy_schema() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
+    assert ldf.dtypes == [pl.Int64, pl.Float64, pl.String]
 
     ldfe = ldf.clear()
     assert ldfe.schema == ldf.schema
@@ -1364,8 +1340,8 @@ def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
 def test_from_epoch_str() -> None:
     ldf = pl.LazyFrame(
         [
-            pl.Series("timestamp_ms", [1147880044 * 1_000]).cast(pl.Utf8),
-            pl.Series("timestamp_us", [1147880044 * 1_000_000]).cast(pl.Utf8),
+            pl.Series("timestamp_ms", [1147880044 * 1_000]).cast(pl.String),
+            pl.Series("timestamp_us", [1147880044 * 1_000_000]).cast(pl.String),
         ]
     )
 
@@ -1498,7 +1474,7 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     ],
 )
 def test_lazy_comparison_operators(
-    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]]
+    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]],
 ) -> None:
     # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(

@@ -145,7 +145,7 @@ def test_sliced_null_explode() -> None:
     assert s.slice(2, 4).list.explode().to_list() == [True, False, None, True]
 
 
-def test_utf8_explode() -> None:
+def test_string_explode() -> None:
     assert pl.Series(["foobar", None]).str.explode().to_list() == [
         "f",
         "o",
@@ -270,7 +270,7 @@ def test_explode_binary() -> None:
 
 
 def test_explode_null_list() -> None:
-    assert pl.Series([["a"], None], dtype=pl.List(pl.Utf8))[
+    assert pl.Series([["a"], None], dtype=pl.List(pl.String))[
         1:2
     ].list.min().to_list() == [None]
 
@@ -320,7 +320,7 @@ def test_explode_array() -> None:
         assert_frame_equal(out, expected)
 
 
-def test_utf8_list_agg_explode() -> None:
+def test_string_list_agg_explode() -> None:
     df = pl.DataFrame({"a": [[None], ["b"]]})
 
     df = df.select(

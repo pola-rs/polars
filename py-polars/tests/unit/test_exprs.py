@@ -96,6 +96,30 @@ def test_filter_where() -> None:
     assert_frame_equal(result_where, expected)
     assert_frame_equal(result_filter, expected)
 
+    # apply filter constraints using kwargs
+    df = pl.DataFrame(
+        {
+            "key": ["a", "a", "a", "a", "a", "a", "b", "b", "b", "b", "b", "b"],
+            "n": [1, 4, 4, 2, 2, 3, 1, 3, 0, 2, 3, 4],
+        },
+        schema_overrides={"n": pl.UInt8},
+    )
+    res = (
+        df.group_by("key")
+        .agg(
+            n_0=pl.col("n").filter(n=0),
+            n_1=pl.col("n").filter(n=1),
+            n_2=pl.col("n").filter(n=2),
+            n_3=pl.col("n").filter(n=3),
+            n_4=pl.col("n").filter(n=4),
+        )
+        .sort(by="key")
+    )
+    assert res.rows() == [
+        ("a", [], [1], [2, 2], [3], [4, 4]),
+        ("b", [0], [1], [2], [3, 3], [4]),
+    ]
+
 
 def test_count_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
@@ -121,22 +145,6 @@ def test_unique_stable() -> None:
     s = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
     expected = pl.Series("a", [1, 2, 3])
     assert_series_equal(s.unique(maintain_order=True), expected)
-
-
-def test_unique_and_drop_stability() -> None:
-    # see: 2898
-    # the original cause was that we wrote:
-    # expr_a = a.unique()
-    # expr_a.filter(a.unique().is_not_null())
-    # meaning that the a.unique was executed twice, which is an unstable algorithm
-    df = pl.DataFrame({"a": [1, None, 1, None]})
-    assert df.select(pl.col("a").unique().drop_nulls()).to_series()[0] == 1
-
-
-def test_unique_counts() -> None:
-    s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
-    expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
-    assert_series_equal(s.unique_counts(), expected)
 
 
 def test_entropy() -> None:
@@ -302,30 +310,14 @@ def test_power_by_expression() -> None:
     )
 
     for pow_col in ("pow_expr", "pow_op"):
-        assert out[pow_col].to_list() == [
-            1.0,
-            None,
-            None,
-            256.0,
-            None,
-            46656.0,
-        ]
-
-    assert out["pow_op_left"].to_list() == [
-        2.0,
-        4.0,
-        None,
-        16.0,
-        None,
-        64.0,
-    ]
+        assert out[pow_col].to_list() == [1.0, None, None, 256.0, None, 46656.0]
+    assert out["pow_op_left"].to_list() == [2.0, 4.0, None, 16.0, None, 64.0]
 
 
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
 
     assert df.select(pl.repeat(None, 3).append(pl.col("a"))).n_chunks() == 2
-
     assert df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()).n_chunks() == 1
 
     out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")]))
@@ -337,17 +329,32 @@ def test_expression_appends() -> None:
 def test_arr_contains() -> None:
     df_groups = pl.DataFrame(
         {
-            "str_list": [
+            "animals": [
                 ["cat", "mouse", "dog"],
-                ["dog", "mouse", "cat"],
-                ["dog", "mouse", "aardvark"],
+                ["dog", "hedgehog", "mouse", "cat"],
+                ["peacock", "mouse", "aardvark"],
             ],
         }
     )
+    # string array contains
     assert df_groups.lazy().filter(
-        pl.col("str_list").list.contains("cat")
+        pl.col("animals").list.contains("mouse"),
     ).collect().to_dict(as_series=False) == {
-        "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
+        "animals": [
+            ["cat", "mouse", "dog"],
+            ["dog", "hedgehog", "mouse", "cat"],
+            ["peacock", "mouse", "aardvark"],
+        ]
+    }
+    # string array contains and *not* contains
+    assert df_groups.filter(
+        pl.col("animals").list.contains("mouse"),
+        ~pl.col("animals").list.contains("hedgehog"),
+    ).to_dict(as_series=False) == {
+        "animals": [
+            ["cat", "mouse", "dog"],
+            ["peacock", "mouse", "aardvark"],
+        ],
     }
 
 
@@ -398,12 +405,6 @@ def test_rank_so_4109() -> None:
 def test_rank_string_null_11252() -> None:
     rank = pl.Series([None, "", "z", None, "a"]).rank()
     assert rank.to_list() == [None, 1.0, 3.0, None, 2.0]
-
-
-def test_unique_empty() -> None:
-    for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
-        s = pl.Series([], dtype=dt)
-        assert_series_equal(s.unique(), s)
 
 
 def test_search_sorted() -> None:
@@ -592,12 +593,12 @@ def test_lit_dtype_utc() -> None:
         (("a", "b"), ["c"]),
         ((["a", "b"],), ["c"]),
         ((pl.Int64,), ["c"]),
-        ((pl.Utf8, pl.Float32), ["a", "b"]),
-        (([pl.Utf8, pl.Float32],), ["a", "b"]),
+        ((pl.String, pl.Float32), ["a", "b"]),
+        (([pl.String, pl.Float32],), ["a", "b"]),
     ],
 )
 def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
-    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8})
+    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.String})
     assert df.select(pl.all().exclude(*input)).columns == expected
 
 
@@ -722,7 +723,7 @@ def test_tail() -> None:
         (4, pl.UInt32),
         (4.5, pl.Float32),
         (None, pl.Float64),
-        ("白鵬翔", pl.Utf8),
+        ("白鵬翔", pl.String),
         (date.today(), pl.Date),
         (datetime.now(), pl.Datetime("ns")),
         (time(23, 59, 59), pl.Time),
@@ -746,7 +747,7 @@ def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
         (4, pl.UInt32),
         (4.5, pl.Float32),
         (None, pl.Float64),
-        ("白鵬翔", pl.Utf8),
+        ("白鵬翔", pl.String),
         (date.today(), pl.Date),
         (datetime.now(), pl.Datetime("ns")),
         (time(23, 59, 59), pl.Time),
@@ -789,14 +790,14 @@ def test_repr_short_expression() -> None:
 
 
 def test_repr_long_expression() -> None:
-    expr = pl.functions.col(pl.Utf8).str.count_matches("")
+    expr = pl.functions.col(pl.String).str.count_matches("")
 
     # we cut off the last ten characters because that includes the
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
     # note the … denoting that there was truncated text
-    expected = "<Expr ['dtype_columns([Utf8]).str.coun…'] at "
+    expected = "<Expr ['dtype_columns([String]).str.co…'] at "
     assert result == expected
     assert repr(expr).endswith(">")
 
@@ -806,3 +807,12 @@ def test_repr_gather() -> None:
     assert 'col("a").gather(0)' in result
     result = repr(pl.col("a").get(0))
     assert 'col("a").get(0)' in result
+
+
+def test_replace_no_cse() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1], "b": [2]})
+        .select([(pl.col("a") * pl.col("a")).sum().replace(1, None)])
+        .explain()
+    )
+    assert "POLARS_CSER" not in plan

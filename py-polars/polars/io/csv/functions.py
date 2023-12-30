@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence, TextIO
 
 import polars._reexport as pl
-from polars.datatypes import N_INFER_DEFAULT, Utf8
+from polars.datatypes import N_INFER_DEFAULT, String
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
@@ -107,12 +107,12 @@ def read_csv(
         Before using this option, try to increase the number of lines used for schema
         inference with e.g `infer_schema_length=10000` or override automatic dtype
         inference for specific columns with the `dtypes` option or use
-        `infer_schema_length=0` to read all columns as `pl.Utf8` to check which
+        `infer_schema_length=0` to read all columns as `pl.String` to check which
         values might cause an issue.
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.Utf8`.
+        the column remains of data type `pl.String`.
         If `use_pyarrow=True`, dates will always be parsed.
     n_threads
         Number of threads to use in csv parsing.
@@ -122,7 +122,7 @@ def read_csv(
         If schema is inferred wrongly (e.g. as `pl.Int64` instead of `pl.Float64`),
         try to increase the number of lines used to infer the schema or override
         inferred dtype for those columns with `dtypes`.
-        If set to 0, all columns will be read as `pl.Utf8`.
+        If set to 0, all columns will be read as `pl.String`.
         If set to `None`, a full table scan will be done (slow).
     batch_size
         Number of lines to read into the buffer at once.
@@ -279,7 +279,7 @@ def read_csv(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -484,17 +484,17 @@ def read_csv_batched(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema_length=0` to read all columns as
-        `pl.Utf8` to check which values might cause an issue.
+        `pl.String` to check which values might cause an issue.
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.Utf8`.
+        the column remains of data type `pl.String`.
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
     infer_schema_length
         Maximum number of lines to read to infer schema.
-        If set to 0, all columns will be read as `pl.Utf8`.
+        If set to 0, all columns will be read as `pl.String`.
         If set to `None`, a full table scan will be done (slow).
     batch_size
         Number of lines to read into the buffer at once.
@@ -550,7 +550,6 @@ def read_csv_batched(
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
     ...     print(df)
-    ...
 
     Read big CSV file in batches and write a CSV file for each "group" of interest.
 
@@ -571,7 +570,6 @@ def read_csv_batched(
     ...         seen_groups.add(group)
     ...
     ...     batches = reader.next_batches(100)
-    ...
 
     """
     projection, columns = handle_projection_columns(columns)
@@ -592,7 +590,7 @@ def read_csv_batched(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -780,7 +778,7 @@ def scan_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema_length=0` to read all columns as
-        `pl.Utf8` to check which values might cause an issue.
+        `pl.String` to check which values might cause an issue.
     cache
         Cache the result after reading.
     with_column_names
@@ -788,7 +786,7 @@ def scan_csv(
         this function will receive (and should return) a list of column names.
     infer_schema_length
         Maximum number of lines to read to infer schema.
-        If set to 0, all columns will be read as `pl.Utf8`.
+        If set to 0, all columns will be read as `pl.String`.
         If set to `None`, a full table scan will be done (slow).
     n_rows
         Stop reading from CSV file after reading `n_rows`.
@@ -809,7 +807,7 @@ def scan_csv(
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats
         can be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.Utf8`.
+        the column remains of data type `pl.String`.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -876,7 +874,7 @@ def scan_csv(
     >>> pl.scan_csv(
     ...     path,
     ...     new_columns=["idx", "txt"],
-    ...     dtypes=[pl.UInt16, pl.Utf8],
+    ...     dtypes=[pl.UInt16, pl.String],
     ... ).collect()
     shape: (4, 2)
     ┌─────┬──────┐

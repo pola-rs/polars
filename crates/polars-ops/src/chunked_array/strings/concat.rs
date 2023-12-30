@@ -2,15 +2,15 @@ use arrow::array::{Utf8Array, ValueSize};
 use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
-// Vertically concatenate all strings in a Utf8Chunked.
-pub fn str_concat(ca: &Utf8Chunked, delimiter: &str, ignore_nulls: bool) -> Utf8Chunked {
+// Vertically concatenate all strings in a StringChunked.
+pub fn str_concat(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> StringChunked {
     if ca.is_empty() {
-        return Utf8Chunked::new(ca.name(), &[""]);
+        return StringChunked::new(ca.name(), &[""]);
     }
 
     // Propagate null value.
     if !ignore_nulls && ca.null_count() != 0 {
-        return Utf8Chunked::full_null(ca.name(), 1);
+        return StringChunked::full_null(ca.name(), 1);
     }
 
     if ca.len() == 1 {
@@ -35,7 +35,7 @@ pub fn str_concat(ca: &Utf8Chunked, delimiter: &str, ignore_nulls: bool) -> Utf8
     let buf = buf.into_bytes();
     let offsets = vec![0, buf.len() as i64];
     let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
-    Utf8Chunked::with_chunk(ca.name(), arr)
+    StringChunked::with_chunk(ca.name(), arr)
 }
 
 enum ColumnIter<I, T> {
@@ -46,9 +46,9 @@ enum ColumnIter<I, T> {
 /// Horizontally concatenate all strings.
 ///
 /// Each array should have length 1 or a length equal to the maximum length.
-pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf8Chunked> {
+pub fn hor_str_concat(cas: &[&StringChunked], delimiter: &str) -> PolarsResult<StringChunked> {
     if cas.is_empty() {
-        return Ok(Utf8Chunked::full_null("", 0));
+        return Ok(StringChunked::full_null("", 0));
     }
     if cas.len() == 1 {
         return Ok(cas[0].clone());
@@ -79,7 +79,7 @@ pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf
         })
         .sum();
     let capacity = tot_strings_bytes + (cas.len() - 1) * delimiter.len() * len;
-    let mut builder = Utf8ChunkedBuilder::new(cas[0].name(), len, capacity);
+    let mut builder = StringChunkedBuilder::new(cas[0].name(), len, capacity);
 
     // Broadcast if appropriate.
     let mut cols: Vec<_> = cas
@@ -131,8 +131,8 @@ mod test {
     #[test]
     fn test_str_concat() {
         let ca = Int32Chunked::new("foo", &[Some(1), None, Some(3)]);
-        let ca_str = ca.cast(&DataType::Utf8).unwrap();
-        let out = str_concat(ca_str.utf8().unwrap(), "-", true);
+        let ca_str = ca.cast(&DataType::String).unwrap();
+        let out = str_concat(ca_str.str().unwrap(), "-", true);
 
         let out = out.get(0);
         assert_eq!(out, Some("1-3"));
@@ -140,13 +140,13 @@ mod test {
 
     #[test]
     fn test_hor_str_concat() {
-        let a = Utf8Chunked::new("a", &["foo", "bar"]);
-        let b = Utf8Chunked::new("b", &["spam", "ham"]);
+        let a = StringChunked::new("a", &["foo", "bar"]);
+        let b = StringChunked::new("b", &["spam", "ham"]);
 
         let out = hor_str_concat(&[&a, &b], "_").unwrap();
         assert_eq!(Vec::from(&out), &[Some("foo_spam"), Some("bar_ham")]);
 
-        let c = Utf8Chunked::new("b", &["literal"]);
+        let c = StringChunked::new("b", &["literal"]);
         let out = hor_str_concat(&[&a, &b, &c], "_").unwrap();
         assert_eq!(
             Vec::from(&out),

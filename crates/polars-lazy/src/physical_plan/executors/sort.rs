@@ -12,6 +12,7 @@ impl SortExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
+        state.should_stop()?;
         df.as_single_chunk_par();
 
         let by_columns = self

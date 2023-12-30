@@ -363,6 +363,7 @@ impl PartitionGroupByExec {
 
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        state.should_stop()?;
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

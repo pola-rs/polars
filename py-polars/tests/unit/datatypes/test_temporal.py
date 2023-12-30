@@ -938,7 +938,7 @@ def test_asof_join() -> None:
     ).set_sorted("dates")
     assert trades.schema == {
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
+        "ticker": pl.String,
         "bid": pl.Float64,
     }
     out = trades.join_asof(quotes, on="dates", strategy="backward")
@@ -947,8 +947,8 @@ def test_asof_join() -> None:
         "bid": pl.Float64,
         "bid_right": pl.Float64,
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
-        "ticker_right": pl.Utf8,
+        "ticker": pl.String,
+        "ticker_right": pl.String,
     }
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int)).to_list() == [
@@ -1252,27 +1252,6 @@ def test_datetime_instance_selection() -> None:
     assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
 
 
-def test_unique_counts_on_dates() -> None:
-    assert pl.DataFrame(
-        {
-            "dt_ns": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 3, 1), "1mo", eager=True
-            ),
-        }
-    ).with_columns(
-        [
-            pl.col("dt_ns").dt.cast_time_unit("us").alias("dt_us"),
-            pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
-            pl.col("dt_ns").cast(pl.Date).alias("date"),
-        ]
-    ).select(pl.all().unique_counts().sum()).to_dict(as_series=False) == {
-        "dt_ns": [3],
-        "dt_us": [3],
-        "dt_ms": [3],
-        "date": [3],
-    }
-
-
 def test_rolling_by_ordering() -> None:
     # we must check that the keys still match the time labels after the rolling window
     # with a `by` argument.
@@ -1361,16 +1340,6 @@ def test_rolling_by_() -> None:
         ],
         "count": [1, 2, 3, 3, 3, 1, 2, 3, 3, 3, 1, 2, 3, 3, 3],
     }
-
-
-def test_sorted_unique() -> None:
-    assert (
-        pl.DataFrame(
-            [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
-        )
-        .sort("dt")
-        .unique()
-    ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
 def test_date_to_time_cast_5111() -> None:
@@ -1556,7 +1525,11 @@ def test_strptime_with_tz() -> None:
     ],
 )
 def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
-    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(time_unit, time_zone))
+    ts = (
+        pl.Series([None])
+        .cast(pl.String)
+        .str.strptime(pl.Datetime(time_unit, time_zone))
+    )
     assert ts.dtype == pl.Datetime(time_unit, time_zone)
 
 
@@ -2245,7 +2218,7 @@ def test_truncate_propagate_null() -> None:
     ) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
     assert df.select(
         pl.col("date").dt.truncate(
-            every=pl.lit(None, dtype=pl.Utf8),
+            every=pl.lit(None, dtype=pl.String),
         )
     ).to_dict(as_series=False) == {"date": [None, None, None]}
 

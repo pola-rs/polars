@@ -39,11 +39,11 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    String,
     Time,
     UInt32,
     UInt64,
     Unknown,
-    Utf8,
     dtype_to_ctype,
     is_polars_dtype,
     maybe_cast,
@@ -358,16 +358,83 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    def _get_ptr(self) -> tuple[int, int, int]:
+    def _get_buffer_info(self) -> tuple[int, int, int]:
         """
-        Get a pointer to the start of the values buffer of a numeric Series.
+        Return pointer, offset, and length information about the underlying buffer.
 
-        This will raise an error if the `Series` contains multiple chunks.
+        Returns
+        -------
+        tuple of ints
+            Tuple of the form (pointer, offset, length)
 
-        This will return the offset, length and the pointer itself.
-
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
         """
-        return self._s.get_ptr()
+        return self._s._get_buffer_info()
+
+    @overload
+    def _get_buffer(self, index: Literal[0]) -> Self:
+        ...
+
+    @overload
+    def _get_buffer(self, index: Literal[1, 2]) -> Self | None:
+        ...
+
+    def _get_buffer(self, index: Literal[0, 1, 2]) -> Self | None:
+        """
+        Return the underlying data, validity, or offsets buffer as a Series.
+
+        The data buffer always exists.
+        The validity buffer may not exist if the column contains no null values.
+        The offsets buffer only exists for Series of data type `String` and `List`.
+
+        Parameters
+        ----------
+        index
+            An index indicating the buffer to return:
+
+            - `0` -> data buffer
+            - `1` -> validity buffer
+            - `2` -> offsets buffer
+
+        Returns
+        -------
+        Series or None
+            `Series` if the specified buffer exists, `None` otherwise.
+
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
+        """
+        buffer = self._s._get_buffer(index)
+        if buffer is None:
+            return None
+        return self._from_pyseries(buffer)
+
+    @classmethod
+    def _from_buffer(
+        self, dtype: PolarsDataType, buffer_info: tuple[int, int, int], base: Any
+    ) -> Self:
+        """
+        Construct a Series from information about its underlying buffer.
+
+        Parameters
+        ----------
+        dtype
+            The data type of the buffer.
+        buffer_info
+            Tuple containing buffer information in the form (pointer, offset, length).
+        base
+            The object owning the buffer.
+
+        Returns
+        -------
+        Series
+        """
+        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, base))
 
     @property
     def dtype(self) -> DataType:
@@ -1149,7 +1216,7 @@ class Series:
         Ensures that `np.asarray(pl.Series(..))` works as expected, see
         https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
         """
-        if not dtype and self.dtype == Utf8 and not self.null_count():
+        if not dtype and self.dtype == String and not self.null_count():
             dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
@@ -1326,6 +1393,18 @@ class Series:
             1.414214
         ]
 
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.sqrt()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.0
+            1.414214
+            1.732051
+        ]
+
         """
 
     def cbrt(self) -> Series:
@@ -1340,6 +1419,18 @@ class Series:
         [
             1.0
             1.259921
+        ]
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.cbrt()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.0
+            1.259921
+            1.44225
         ]
 
         """
@@ -1437,16 +1528,72 @@ class Series:
         return self._s.all(ignore_nulls=ignore_nulls)
 
     def log(self, base: float = math.e) -> Series:
-        """Compute the logarithm to a given base."""
+        """
+        Compute the logarithm to a given base.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.log()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            0.0
+            0.693147
+            1.098612
+        ]
+        """
 
     def log1p(self) -> Series:
-        """Compute the natural logarithm of the input array plus one, element-wise."""
+        """
+        Compute the natural logarithm of the input array plus one, element-wise.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.log1p()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            0.693147
+            1.098612
+            1.386294
+        ]
+        """
 
     def log10(self) -> Series:
-        """Compute the base 10 logarithm of the input array, element-wise."""
+        """
+        Compute the base 10 logarithm of the input array, element-wise.
+
+        Examples
+        --------
+        >>> s = pl.Series([10, 100, 1000])
+        >>> s.log10()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.0
+            2.0
+            3.0
+        ]
+        """
 
     def exp(self) -> Series:
-        """Compute the exponential, element-wise."""
+        """
+        Compute the exponential, element-wise.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.exp()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            2.718282
+            7.389056
+            20.085537
+        ]
+        """
 
     def drop_nulls(self) -> Series:
         """
@@ -1631,7 +1778,7 @@ class Series:
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
-        elif self.dtype == Utf8:
+        elif self.dtype == String:
             stats_dtype = Int64
             stats = {
                 "count": self.count(),
@@ -1641,7 +1788,7 @@ class Series:
         elif self.dtype.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
-            stats_dtype = Utf8
+            stats_dtype = String
             stats = {
                 "count": str(self.count()),
                 "null_count": str(self.null_count()),
@@ -1654,7 +1801,7 @@ class Series:
 
         return pl.DataFrame(
             {"statistic": stats.keys(), "value": stats.values()},
-            schema={"statistic": Utf8, "value": stats_dtype},
+            schema={"statistic": String, "value": stats_dtype},
         )
 
     def sum(self) -> int | float:
@@ -3031,7 +3178,7 @@ class Series:
         """
         return self.head(n)
 
-    def gather_every(self, n: int) -> Series:
+    def gather_every(self, n: int, offset: int = 0) -> Series:
         """
         Take every nth value in the Series and return as new Series.
 
@@ -3039,6 +3186,8 @@ class Series:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Start the row count at this offset.
 
         Examples
         --------
@@ -3049,6 +3198,13 @@ class Series:
         [
             1
             3
+        ]
+        >>> s.gather_every(2, offset=1)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            2
+            4
         ]
 
         """
@@ -3323,7 +3479,15 @@ class Series:
         """
 
     def null_count(self) -> int:
-        """Count the null values in this Series."""
+        """
+        Count the null values in this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, None, None])
+        >>> s.null_count()
+        2
+        """
         return self._s.null_count()
 
     def has_validity(self) -> bool:
@@ -3365,6 +3529,16 @@ class Series:
         ----------
         descending
             Check if the Series is sorted in descending order
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 3, 2])
+        >>> s.is_sorted()
+        False
+
+        >>> s = pl.Series([3, 2, 1])
+        >>> s.is_sorted(descending=True)
+        True
 
         """
         return self._s.is_sorted(descending)
@@ -5899,6 +6073,18 @@ class Series:
         Compute absolute values.
 
         Same as `abs(series)`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, -2, -3])
+        >>> s.abs()
+        shape: (3,)
+        Series: '' [i64]
+        [
+            1
+            2
+            3
+        ]
         """
 
     def rank(
@@ -6102,6 +6288,12 @@ class Series:
 
         .. math::
             G_1 = \frac{k_3}{k_2^{3/2}} = \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 2, 4, 5])
+        >>> s.skew()
+        0.34776706224699483
 
         """
         return self._s.skew(bias)
@@ -7028,13 +7220,13 @@ class Series:
         """
         return self.dtype == Boolean
 
-    @deprecate_function("Use `Series.dtype == pl.Utf8` instead.", version="0.19.14")
+    @deprecate_function("Use `Series.dtype == pl.String` instead.", version="0.19.14")
     def is_utf8(self) -> bool:
         """
-        Check if this Series datatype is a Utf8.
+        Check if this Series datatype is a String.
 
         .. deprecated:: 0.19.14
-            Use `Series.dtype == pl.Utf8` instead.
+            Use `Series.dtype == pl.String` instead.
 
         Examples
         --------
@@ -7043,10 +7235,10 @@ class Series:
         True
 
         """
-        return self.dtype == Utf8
+        return self.dtype == String
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int) -> Series:
+    def take_every(self, n: int, offset: int = 0) -> Series:
         """
         Take every nth value in the Series and return as new Series.
 
@@ -7057,8 +7249,10 @@ class Series:
         ----------
         n
             Gather every *n*-th row.
+        offset
+            Starting index.
         """
-        return self.gather_every(n)
+        return self.gather_every(n, offset)
 
     @deprecate_renamed_function("gather", version="0.19.14")
     def take(

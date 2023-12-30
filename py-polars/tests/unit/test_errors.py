@@ -47,7 +47,8 @@ def test_error_on_reducing_map() -> None:
         df.select(
             pl.col("x")
             .map_batches(
-                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
+                is_elementwise=True,
             )
             .over("group")
         )
@@ -97,7 +98,9 @@ def test_not_found_error() -> None:
 
 
 def test_string_numeric_comp_err() -> None:
-    with pytest.raises(pl.ComputeError, match="cannot compare utf-8 with numeric data"):
+    with pytest.raises(
+        pl.ComputeError, match="cannot compare string with numeric data"
+    ):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
 
@@ -246,7 +249,7 @@ def test_window_expression_different_group_length() -> None:
         assert "output: 'shape:" in msg
 
 
-def test_lazy_concat_err() -> None:
+def test_invalid_concat_type_err() -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2],
@@ -259,11 +262,6 @@ def test_lazy_concat_err() -> None:
         match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
-    with pytest.raises(
-        ValueError,
-        match="LazyFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'align'}, got 'horizontal'",
-    ):
-        pl.concat([df.lazy(), df.lazy()], how="horizontal").collect()
 
 
 @pytest.mark.parametrize("how", ["horizontal", "diagonal"])

@@ -160,7 +160,7 @@ impl Series {
     pub fn clear(&self) -> Series {
         // Only the inner of objects know their type, so use this hack.
         #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_)) {
+        if matches!(self.dtype(), DataType::Object(_, _)) {
             return if self.is_empty() {
                 self.clone()
             } else {
@@ -297,12 +297,12 @@ impl Series {
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         // Best leave as is.
-        if matches!(dtype, DataType::Unknown) {
+        if !dtype.is_known() || (dtype.is_primitive() && dtype == self.dtype()) {
             return Ok(self.clone());
         }
         let ret = self.0.cast(dtype);
         let len = self.len();
-        if ret.is_err() && self.null_count() == len {
+        if self.null_count() == len {
             return Ok(Series::full_null(self.name(), len, dtype));
         }
         ret
@@ -569,8 +569,10 @@ impl Series {
     }
 
     /// Traverse and collect every nth element in a new array.
-    pub fn gather_every(&self, n: usize) -> Series {
-        let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
+    pub fn gather_every(&self, n: usize, offset: usize) -> Series {
+        let idx = ((offset as IdxSize)..self.len() as IdxSize)
+            .step_by(n)
+            .collect_ca("");
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
     }
@@ -645,20 +647,8 @@ impl Series {
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let null_count = self.null_count();
-        let len = self.len();
-
-        match self.dtype() {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {},
-            _ => {
-                if null_count == len {
-                    return Ok(Series::full_null(self.name(), len, dtype));
-                }
-            },
-        }
-        let s = self.0.cast(dtype)?;
-        if null_count != s.null_count() {
+        let s = self.cast(dtype)?;
+        if self.null_count() != s.null_count() {
             handle_casting_failures(self, &s)?;
         }
         Ok(s)
@@ -756,7 +746,7 @@ impl Series {
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         let out = match self.0.get(index)? {
-            AnyValue::Utf8(s) => Cow::Borrowed(s),
+            AnyValue::String(s) => Cow::Borrowed(s),
             AnyValue::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev, arr) => {

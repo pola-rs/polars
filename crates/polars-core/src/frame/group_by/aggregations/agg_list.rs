@@ -175,13 +175,13 @@ impl AggList for BooleanChunked {
     }
 }
 
-impl AggList for Utf8Chunked {
+impl AggList for StringChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // TODO: dispatch via binary
         match groups {
             GroupsProxy::Idx(groups) => {
                 let mut builder =
-                    ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
+                    ListStringChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
                     let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
@@ -190,7 +190,7 @@ impl AggList for Utf8Chunked {
             },
             GroupsProxy::Slice { groups, .. } => {
                 let mut builder =
-                    ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
+                    ListStringChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for [first, len] in groups {
                     let ca = self.slice(*first as i64, *len as usize);
                     builder.append(&ca)
@@ -268,7 +268,7 @@ fn agg_list_by_slicing<
     if can_fast_explode {
         listarr.set_fast_explode()
     }
-    listarr.to_logical(dtype);
+    unsafe { listarr.to_logical(dtype) };
     listarr.into_series()
 }
 

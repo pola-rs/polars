@@ -4,7 +4,7 @@ This user guide is an introduction to the [Polars DataFrame library](https://git
 Its goal is to introduce you to Polars by going through examples and comparing it to other solutions.
 Some design choices are introduced here. The guide will also introduce you to optimal usage of Polars.
 
-The Polars user guide is intended to live alongside the API documentation ([Python](https://pola-rs.github.io/polars/py-polars/html/reference/index.html) / [Rust](https://docs.rs/polars/latest/polars/)), which offers detailed descriptions of specific objects and functions.
+The Polars user guide is intended to live alongside the API documentation ([Python](https://docs.pola.rs/py-polars/html/reference/index.html) / [Rust](https://docs.rs/polars/latest/polars/)), which offers detailed descriptions of specific objects and functions.
 
 Even though Polars is completely written in [Rust](https://www.rust-lang.org/) (no runtime overhead!) and uses [Arrow](https://arrow.apache.org/) -- the [native arrow2 Rust implementation](https://github.com/jorgecarleitao/arrow2) -- as its foundation, the examples presented in this guide will be mostly using its higher-level language bindings.
 Higher-level bindings only serve as a thin wrapper for functionality implemented in the core library.
@@ -31,3 +31,9 @@ As such Polars goes to great lengths to:
 - Minimize contention in parallelism.
 - Process data in chunks.
 - Reuse memory allocations.
+
+!!! rust "Note"
+
+    The Rust examples in this guide are synchronized with the main branch of the Polars repository, rather than the latest Rust release.
+    You may not be able to copy-paste code examples and use them with the latest release.
+    We aim to solve this in the future.

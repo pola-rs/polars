@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         IntoExpr,
         PolarsDataType,
         RollingInterpolationMethod,
+        SelectorType,
     )
 
 
@@ -632,7 +633,6 @@ def map_batches(
     --------
     >>> def test_func(a, b, c):
     ...     return a + b + c
-    ...
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2, 3, 4],
@@ -1196,21 +1196,28 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
 
 
 def exclude(
-    columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
-    *more_columns: str | PolarsDataType,
+    columns: (
+        str
+        | PolarsDataType
+        | SelectorType
+        | Expr
+        | Collection[str | PolarsDataType | SelectorType | Expr]
+    ),
+    *more_columns: str | PolarsDataType | SelectorType | Expr,
 ) -> Expr:
     """
-    Represent all columns except for the given columns.
+    Select all columns except those matching the given columns, datatypes, or selectors.
 
-    Syntactic sugar for `pl.all().exclude(columns)`.
+    .. versionchanged:: 0.20.3
+        This function is now a simple redirect to the `cs.exclude()` selector.
 
     Parameters
     ----------
     columns
-        The name or datatype of the column(s) to exclude. Accepts regular expression
-        input. Regular expressions should start with `^` and end with `$`.
+        One or more columns (col or name), datatypes, columns, or selectors representing
+        the columns to exclude.
     *more_columns
-        Additional names or datatypes of columns to exclude, specified as positional
+        Additional columns, datatypes, or selectors to exclude, specified as positional
         arguments.
 
     Examples
@@ -1224,7 +1231,7 @@ def exclude(
     ...         "cc": [None, 2.5, 1.5],
     ...     }
     ... )
-    >>> df.select(pl.exclude("ba"))
+    >>> df.select(pl.exclude("ba", "xx"))
     shape: (3, 2)
     ┌─────┬──────┐
     │ aa  ┆ cc   │
@@ -1252,7 +1259,22 @@ def exclude(
 
     Exclude by dtype(s), e.g. removing all columns of type Int64 or Float64:
 
-    >>> df.select(pl.exclude([pl.Int64, pl.Float64]))
+    >>> df.select(pl.exclude(pl.Int64, pl.Float64))
+    shape: (3, 1)
+    ┌──────┐
+    │ ba   │
+    │ ---  │
+    │ str  │
+    ╞══════╡
+    │ a    │
+    │ b    │
+    │ null │
+    └──────┘
+
+    Exclude column using a compound selector:
+
+    >>> import polars.selectors as cs
+    >>> df.select(pl.exclude(cs.first() | cs.last()))
     shape: (3, 1)
     ┌──────┐
     │ ba   │
@@ -1265,7 +1287,9 @@ def exclude(
     └──────┘
 
     """
-    return F.col("*").exclude(columns, *more_columns)
+    from polars.selectors import exclude
+
+    return exclude(columns, *more_columns)
 
 
 def groups(column: str) -> Expr:
@@ -1601,7 +1625,7 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     --------
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select(pl.min_horizontal(foo, bar))
+    >>> pl.select(min=pl.min_horizontal(foo, bar))
     shape: (3, 1)
     ┌─────┐
     │ min │

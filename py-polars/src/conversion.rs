@@ -124,10 +124,10 @@ impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
+impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
-        let mut builder = Utf8ChunkedBuilder::new("", len, len * 25);
+        let mut builder = StringChunkedBuilder::new("", len, len * 25);
 
         for res in obj.iter()? {
             let item = res?;
@@ -225,8 +225,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Float64(v) => v.into_py(py),
             AnyValue::Null => py.None(),
             AnyValue::Boolean(v) => v.into_py(py),
-            AnyValue::Utf8(v) => v.into_py(py),
-            AnyValue::Utf8Owned(v) => v.into_py(py),
+            AnyValue::String(v) => v.into_py(py),
+            AnyValue::StringOwned(v) => v.into_py(py),
             AnyValue::Categorical(idx, rev, arr) => {
                 let s = if arr.is_null() {
                     rev.get(idx)
@@ -346,8 +346,8 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Boolean")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Utf8 => {
-                let class = pl.getattr(intern!(py, "Utf8")).unwrap();
+            DataType::String => {
+                let class = pl.getattr(intern!(py, "String")).unwrap();
                 class.call0().unwrap().into()
             },
             DataType::Binary => {
@@ -381,7 +381,7 @@ impl ToPyObject for Wrap<DataType> {
                 duration_class.call1((tu.to_ascii(),)).unwrap().into()
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 let class = pl.getattr(intern!(py, "Object")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -389,7 +389,7 @@ impl ToPyObject for Wrap<DataType> {
                 if let Some(rev_map) = rev_map {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
                         let class = pl.getattr(intern!(py, "Enum")).unwrap();
-                        let ca = Utf8Chunked::from_iter(categories);
+                        let ca = StringChunked::from_iter(categories);
                         return class.call1((Wrap(&ca).to_object(py),)).unwrap().into();
                     }
                 }
@@ -452,7 +452,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
-                    "Utf8" => DataType::Utf8,
+                    "String" => DataType::String,
                     "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
                     "Categorical" => DataType::Categorical(None, Default::default()),
@@ -469,7 +469,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME),
+                    "Object" => DataType::Object(OBJECT_NAME, None),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Struct" => DataType::Struct(vec![]),
@@ -490,7 +490,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
-            "Utf8" => DataType::Utf8,
+            "String" => DataType::String,
             "Binary" => DataType::Binary,
             "Boolean" => DataType::Boolean,
             "Categorical" => {
@@ -500,7 +500,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
-                let categories = categories.extract::<Wrap<Utf8Chunked>>()?.0;
+                let categories = categories.extract::<Wrap<StringChunked>>()?.0;
                 let arr = categories.rechunk().into_series().to_arrow(0);
                 let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                 create_enum_data_type(arr.clone())
@@ -586,7 +586,7 @@ impl ToPyObject for Wrap<TimeUnit> {
     }
 }
 
-impl ToPyObject for Wrap<&Utf8Chunked> {
+impl ToPyObject for Wrap<&StringChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = self.0.into_iter();
         PyList::new(py, iter).into_py(py)
@@ -798,7 +798,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
 
         fn get_str(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {
             let value = ob.extract::<&str>().unwrap();
-            Ok(AnyValue::Utf8(value).into())
+            Ok(AnyValue::String(value).into())
         }
 
         fn get_struct(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {

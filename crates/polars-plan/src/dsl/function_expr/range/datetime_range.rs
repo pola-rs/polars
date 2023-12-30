@@ -5,7 +5,7 @@ use polars_core::series::Series;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
 use super::utils::{
-    ensure_range_bounds_contain_exactly_one_value, ranges_impl_broadcast,
+    ensure_range_bounds_contain_exactly_one_value, temporal_ranges_impl_broadcast,
     temporal_series_to_i64_scalar,
 };
 use crate::dsl::function_expr::FieldsMapper;
@@ -41,7 +41,7 @@ pub(super) fn datetime_range(
         (DataType::Datetime(_, _), None) => start.dtype().clone(),
         // overwrite time unit, keep timezone
         (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        _ => unreachable!(),
+        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
     };
 
     // overwrite time zone, if specified
@@ -66,14 +66,14 @@ pub(super) fn datetime_range(
             polars_ops::prelude::replace_time_zone(
                 start.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series(),
             polars_ops::prelude::replace_time_zone(
                 end.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series(),
@@ -152,7 +152,7 @@ pub(super) fn datetime_ranges(
             polars_ops::prelude::replace_time_zone(
                 start.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series()
@@ -161,7 +161,7 @@ pub(super) fn datetime_ranges(
             polars_ops::prelude::replace_time_zone(
                 end.datetime().unwrap(),
                 Some(&tz),
-                &Utf8Chunked::from_iter(std::iter::once("raise")),
+                &StringChunked::from_iter(std::iter::once("raise")),
             )?
             .cast(&dtype)?
             .into_series()
@@ -202,7 +202,7 @@ pub(super) fn datetime_ranges(
                 Ok(())
             };
 
-            ranges_impl_broadcast(start, end, range_impl, &mut builder)?
+            temporal_ranges_impl_broadcast(start, end, range_impl, &mut builder)?
         },
         _ => unimplemented!(),
     };

@@ -45,7 +45,7 @@ impl Series {
         };
 
         let mut ca = ListChunked::with_chunk(self.name(), arr);
-        ca.to_logical(inner_type.clone());
+        unsafe { ca.to_logical(inner_type.clone()) };
         ca.set_fast_explode();
         Ok(ca)
     }

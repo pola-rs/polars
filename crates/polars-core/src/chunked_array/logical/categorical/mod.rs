@@ -263,7 +263,9 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn can_fast_unique(&self) -> bool {
-        self.bit_settings.contains(BitSettings::ORIGINAL) && self.physical.chunks.len() == 1
+        self.bit_settings.contains(BitSettings::ORIGINAL)
+            && self.physical.chunks.len() == 1
+            && self.null_count() == 0
     }
 
     pub(crate) fn set_fast_unique(&mut self, toggle: bool) {
@@ -312,11 +314,11 @@ impl LogicalType for CategoricalChunked {
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         match dtype {
-            DataType::Utf8 => {
+            DataType::String => {
                 let mapping = &**self.get_rev_map();
 
                 let mut builder =
-                    Utf8ChunkedBuilder::new(self.physical.name(), self.len(), self.len() * 5);
+                    StringChunkedBuilder::new(self.physical.name(), self.len(), self.len() * 5);
 
                 let f = |idx: u32| mapping.get(idx);
 
@@ -416,7 +418,7 @@ mod test {
             Some("foo"),
             Some("bar"),
         ];
-        let ca = Utf8Chunked::new("a", slice);
+        let ca = StringChunked::new("a", slice);
         let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
@@ -486,8 +488,8 @@ mod test {
         match aggregated.get(0)? {
             AnyValue::List(s) => {
                 assert!(matches!(s.dtype(), DataType::Categorical(_, _)));
-                let str_s = s.cast(&DataType::Utf8).unwrap();
-                assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
+                let str_s = s.cast(&DataType::String).unwrap();
+                assert_eq!(str_s.get(0)?, AnyValue::String("a"));
                 assert_eq!(s.len(), 1);
             },
             _ => panic!(),

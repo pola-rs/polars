@@ -50,12 +50,12 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    String,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
-    Utf8,
     is_polars_dtype,
 )
 from polars.type_aliases import PolarsDataType
@@ -94,7 +94,7 @@ strategy_u32 = integers(min_value=0, max_value=(2**32) - 1)
 strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
 
 strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
-strategy_utf8 = text(
+strategy_string = text(
     alphabet=characters(max_codepoint=1000, exclude_categories=["Cs", "Cc"]),
     max_size=8,
 )
@@ -273,7 +273,7 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Duration("ms"): strategy_duration,
         Duration: strategy_duration,
         Categorical: strategy_categorical,
-        Utf8: strategy_utf8,
+        String: strategy_string,
         Binary: strategy_binary,
     }
 )
@@ -295,7 +295,7 @@ def _get_strategy_dtypes(
     Parameters
     ----------
     base_type
-        If True, return the base types for each dtype (eg:`List(Utf8)` → `List`).
+        If True, return the base types for each dtype (eg:`List(String)` → `List`).
     excluding
         A dtype or sequence of dtypes to omit from the results.
 
@@ -359,7 +359,7 @@ def create_list_strategy(
     Create a strategy that generates lists of lists of specific strings:
 
     >>> lst = create_list_strategy(
-    ...     inner_dtype=pl.List(pl.Utf8),
+    ...     inner_dtype=pl.List(pl.String),
     ...     select_from=["xx", "yy", "zz"],
     ... )
     >>> lst.example()  # doctest: +SKIP
@@ -374,7 +374,6 @@ def create_list_strategy(
     ... def uint8_pairs(draw, uints=create_list_strategy(pl.UInt8, size=2)):
     ...     pairs = list(zip(draw(uints), draw(uints)))
     ...     return [sorted(ints) for ints in pairs]
-    ...
     >>> uint8_pairs().example()  # doctest: +SKIP
     [(12, 22), (15, 131)]
     >>> uint8_pairs().example()  # doctest: +SKIP

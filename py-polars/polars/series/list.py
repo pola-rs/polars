@@ -32,55 +32,61 @@ class ListNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def all(self) -> Expr:
+    def all(self) -> Series:
         """
         Evaluate whether all boolean values in a list are true.
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        >>> s = pl.Series(
+        ...     [[True, True], [False, True], [False, False], [None], [], None],
+        ...     dtype=pl.List(pl.Boolean),
         ... )
-        >>> df.select(pl.col("a").list.all())
-        shape: (6, 1)
-        ┌───────┐
-        │ a     │
-        │ ---   │
-        │ bool  │
-        ╞═══════╡
-        │ true  │
-        │ false │
-        │ false │
-        │ true  │
-        │ true  │
-        │ null  │
-        └───────┘
+        >>> s.list.all()
+        shape: (6,)
+        Series: '' [bool]
+        [
+            true
+            false
+            false
+            true
+            true
+            null
+        ]
 
         """
 
-    def any(self) -> Expr:
+    def any(self) -> Series:
         """
         Evaluate whether any boolean value in a list is true.
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        >>> s = pl.Series(
+        ...     [[True, True], [False, True], [False, False], [None], [], None],
+        ...     dtype=pl.List(pl.Boolean),
         ... )
-        >>> df.select(pl.col("a").list.any())
-        shape: (6, 1)
-        ┌───────┐
-        │ a     │
-        │ ---   │
-        │ bool  │
-        ╞═══════╡
-        │ true  │
-        │ true  │
-        │ false │
-        │ false │
-        │ false │
-        │ null  │
-        └───────┘
+        >>> s.list.any()
+        shape: (6,)
+        Series: '' [bool]
+        [
+            true
+            true
+            false
+            false
+            false
+            null
+        ]
 
         """
 
@@ -279,7 +285,7 @@ class ListNameSpace:
         """
         Join all string items in a sublist and place a separator between them.
 
-        This errors if inner type of list `!= Utf8`.
+        This errors if inner type of list `!= String`.
 
         Parameters
         ----------
@@ -289,7 +295,7 @@ class ListNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Utf8`.
+            Series of data type :class:`String`.
 
         Examples
         --------

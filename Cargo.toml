@@ -32,7 +32,7 @@ atoi = "2"
 avro-schema = { version = "0.3" }
 base64 = "0.21.2"
 bitflags = "2"
-bytemuck = { version = "1", features = ["derive", "extern_crate_alloc"] }
+bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.8.1"
 ciborium = "0.2"
@@ -81,9 +81,8 @@ xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
 
 polars = { version = "0.35.4", path = "crates/polars", default-features = false }
-polars-algo = { version = "0.35.4", path = "crates/polars-algo", default-features = false }
-polars-core = { version = "0.35.4", path = "crates/polars-core", default-features = false }
 polars-compute = { version = "0.35.4", path = "crates/polars-compute", default-features = false }
+polars-core = { version = "0.35.4", path = "crates/polars-core", default-features = false }
 polars-error = { version = "0.35.4", path = "crates/polars-error", default-features = false }
 polars-ffi = { version = "0.35.4", path = "crates/polars-ffi", default-features = false }
 polars-io = { version = "0.35.4", path = "crates/polars-io", default-features = false }

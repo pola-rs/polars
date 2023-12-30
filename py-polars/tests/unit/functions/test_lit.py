@@ -72,3 +72,18 @@ def test_list_datetime_11571() -> None:
     sec_np_us = np.timedelta64(1_000_000, "us")
     assert pl.select(pl.lit(sec_np_ns))[0, 0] == timedelta(seconds=1)
     assert pl.select(pl.lit(sec_np_us))[0, 0] == timedelta(seconds=1)
+
+
+@pytest.mark.parametrize(
+    ("input", "dtype"),
+    [
+        pytest.param(-(2**31), pl.Int32, id="i32 min"),
+        pytest.param(-(2**31) - 1, pl.Int64, id="below i32 min"),
+        pytest.param(2**31 - 1, pl.Int32, id="i32 max"),
+        pytest.param(2**31, pl.Int64, id="above i32 max"),
+        pytest.param(2**63 - 1, pl.Int64, id="i64 max"),
+        pytest.param(2**63, pl.UInt64, id="above i64 max"),
+    ],
+)
+def test_lit_int_return_type(input: int, dtype: pl.PolarsDataType) -> None:
+    assert pl.select(pl.lit(input)).to_series().dtype == dtype

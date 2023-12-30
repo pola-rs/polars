@@ -1,7 +1,10 @@
+mod exitable;
+
 use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
+pub use exitable::PyInProcessQuery;
 #[cfg(feature = "csv")]
 use polars::io::csv::SerializeOptions;
 use polars::io::RowCount;
@@ -1069,6 +1072,11 @@ impl PyLazyFrame {
 
     fn width(&self) -> PyResult<usize> {
         Ok(self.get_schema()?.len())
+    }
+
+    fn count(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.count().into()
     }
 
     #[cfg(feature = "merge_sorted")]

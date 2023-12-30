@@ -9,7 +9,7 @@ use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
 
 #[inline]
-fn slice(
+pub(crate) fn slice(
     chunks: &[ArrayRef],
     offset: i64,
     slice_length: usize,
@@ -95,7 +95,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn rechunk(&self) -> Self {
         match self.dtype() {
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 panic!("implementation error")
             },
             _ => {
@@ -132,7 +132,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         match length {
             0 => match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_) => exec(),
+                DataType::Object(_, _) => exec(),
                 _ => self.clear(),
             },
             _ => exec(),

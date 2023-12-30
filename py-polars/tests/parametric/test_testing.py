@@ -78,7 +78,7 @@ def test_strategy_shape(
     )
 )
 def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
-    assert lf.schema == {"a": pl.UInt8, "b": pl.UInt8, "c": pl.Boolean, "d": pl.Utf8}
+    assert lf.schema == {"a": pl.UInt8, "b": pl.UInt8, "c": pl.Boolean, "d": pl.String}
     assert lf.columns == ["a", "b", "c", "d"]
     df = lf.collect()
 
@@ -215,7 +215,7 @@ def test_infinities(
             column(
                 name="colz",
                 strategy=create_list_strategy(
-                    inner_dtype=pl.List(pl.Utf8),
+                    inner_dtype=pl.List(pl.String),
                     select_from=["aa", "bb", "cc"],
                     min_size=1,
                 ),
@@ -227,7 +227,7 @@ def test_list_strategy(df: pl.DataFrame) -> None:
     assert df.schema == {
         "colx": pl.List(pl.UInt8),
         "coly": pl.List(pl.Datetime("ms")),
-        "colz": pl.List(pl.List(pl.Utf8)),
+        "colz": pl.List(pl.List(pl.String)),
     }
     uint8_max = (2**8) - 1
 

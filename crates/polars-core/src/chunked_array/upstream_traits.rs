@@ -17,6 +17,8 @@ use crate::chunked_array::builder::{
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::{AnonymousOwnedFixedSizeListBuilder, FixedSizeListBuilder};
 #[cfg(feature = "object")]
+use crate::chunked_array::object::builder::get_object_type;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::flatten::flatten_par;
@@ -80,9 +82,9 @@ impl FromIterator<bool> for NoNull<BooleanChunked> {
     }
 }
 
-// FromIterator for Utf8Chunked variants.
+// FromIterator for StringChunked variants.
 
-impl<Ptr> FromIterator<Option<Ptr>> for Utf8Chunked
+impl<Ptr> FromIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str>,
 {
@@ -100,7 +102,7 @@ impl PolarsAsRef<str> for &str {}
 impl PolarsAsRef<str> for &&str {}
 impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
 
-impl<Ptr> FromIterator<Ptr> for Utf8Chunked
+impl<Ptr> FromIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str>,
 {
@@ -208,7 +210,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                 } else {
                     match first_s.dtype() {
                         #[cfg(feature = "object")]
-                        DataType::Object(_) => {
+                        DataType::Object(_, _) => {
                             let mut builder =
                                 first_s.get_list_builder("collected", capacity * 5, capacity);
                             for _ in 0..init_null_count {
@@ -326,7 +328,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             len,
         });
         let mut out = ChunkedArray {
-            field: Arc::new(Field::new("", DataType::Object(T::type_name()))),
+            field: Arc::new(Field::new("", get_object_type::<T>())),
             chunks: vec![arr],
             phantom: PhantomData,
             bit_settings: Default::default(),
@@ -506,7 +508,7 @@ impl FromParallelIterator<Option<bool>> for BooleanChunked {
     }
 }
 
-impl<Ptr> FromParallelIterator<Ptr> for Utf8Chunked
+impl<Ptr> FromParallelIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str> + Send + Sync,
 {
@@ -524,7 +526,7 @@ where
     }
 }
 
-impl<Ptr> FromParallelIterator<Option<Ptr>> for Utf8Chunked
+impl<Ptr> FromParallelIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str> + Send + Sync,
 {
@@ -595,14 +597,14 @@ where
 }
 
 /// From trait
-impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
-    fn from(ca: &'a Utf8Chunked) -> Self {
+impl<'a> From<&'a StringChunked> for Vec<Option<&'a str>> {
+    fn from(ca: &'a StringChunked) -> Self {
         ca.into_iter().collect()
     }
 }
 
-impl From<Utf8Chunked> for Vec<Option<String>> {
-    fn from(ca: Utf8Chunked) -> Self {
+impl From<StringChunked> for Vec<Option<String>> {
+    fn from(ca: StringChunked) -> Self {
         ca.into_iter()
             .map(|opt| opt.map(|s| s.to_string()))
             .collect()
@@ -660,7 +662,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
 
         match &dtype {
             #[cfg(feature = "object")]
-            Some(DataType::Object(_)) => {
+            Some(DataType::Object(_, _)) => {
                 let s = vectors
                     .iter()
                     .flatten()

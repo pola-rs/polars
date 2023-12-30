@@ -1,4 +1,4 @@
-use polars_core::prelude::arity::binary_elementwise;
+use polars_core::prelude::arity::broadcast_binary_elementwise;
 
 use super::*;
 
@@ -52,7 +52,7 @@ fn strip_suffix_binary<'a>(s: Option<&'a str>, suffix: Option<&str>) -> Option<&
     Some(s?.strip_suffix(suffix?).unwrap_or(s?))
 }
 
-pub fn strip_chars(ca: &Utf8Chunked, pat: &Utf8Chunked) -> Utf8Chunked {
+pub fn strip_chars(ca: &StringChunked, pat: &StringChunked) -> StringChunked {
     match pat.len() {
         1 => {
             if let Some(pat) = pat.get(0) {
@@ -68,11 +68,11 @@ pub fn strip_chars(ca: &Utf8Chunked, pat: &Utf8Chunked) -> Utf8Chunked {
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.trim()))
             }
         },
-        _ => binary_elementwise(ca, pat, strip_chars_binary),
+        _ => broadcast_binary_elementwise(ca, pat, strip_chars_binary),
     }
 }
 
-pub fn strip_chars_start(ca: &Utf8Chunked, pat: &Utf8Chunked) -> Utf8Chunked {
+pub fn strip_chars_start(ca: &StringChunked, pat: &StringChunked) -> StringChunked {
     match pat.len() {
         1 => {
             if let Some(pat) = pat.get(0) {
@@ -90,11 +90,11 @@ pub fn strip_chars_start(ca: &Utf8Chunked, pat: &Utf8Chunked) -> Utf8Chunked {
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start()))
             }
         },
-        _ => binary_elementwise(ca, pat, strip_chars_start_binary),
+        _ => broadcast_binary_elementwise(ca, pat, strip_chars_start_binary),
     }
 }
 
-pub fn strip_chars_end(ca: &Utf8Chunked, pat: &Utf8Chunked) -> Utf8Chunked {
+pub fn strip_chars_end(ca: &StringChunked, pat: &StringChunked) -> StringChunked {
     match pat.len() {
         1 => {
             if let Some(pat) = pat.get(0) {
@@ -110,30 +110,30 @@ pub fn strip_chars_end(ca: &Utf8Chunked, pat: &Utf8Chunked) -> Utf8Chunked {
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end()))
             }
         },
-        _ => binary_elementwise(ca, pat, strip_chars_end_binary),
+        _ => broadcast_binary_elementwise(ca, pat, strip_chars_end_binary),
     }
 }
 
-pub fn strip_prefix(ca: &Utf8Chunked, prefix: &Utf8Chunked) -> Utf8Chunked {
+pub fn strip_prefix(ca: &StringChunked, prefix: &StringChunked) -> StringChunked {
     match prefix.len() {
         1 => match prefix.get(0) {
             Some(prefix) => {
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_prefix(prefix).unwrap_or(s)))
             },
-            _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            _ => StringChunked::full_null(ca.name(), ca.len()),
         },
-        _ => binary_elementwise(ca, prefix, strip_prefix_binary),
+        _ => broadcast_binary_elementwise(ca, prefix, strip_prefix_binary),
     }
 }
 
-pub fn strip_suffix(ca: &Utf8Chunked, suffix: &Utf8Chunked) -> Utf8Chunked {
+pub fn strip_suffix(ca: &StringChunked, suffix: &StringChunked) -> StringChunked {
     match suffix.len() {
         1 => match suffix.get(0) {
             Some(suffix) => {
                 ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_suffix(suffix).unwrap_or(s)))
             },
-            _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            _ => StringChunked::full_null(ca.name(), ca.len()),
         },
-        _ => binary_elementwise(ca, suffix, strip_suffix_binary),
+        _ => broadcast_binary_elementwise(ca, suffix, strip_suffix_binary),
     }
 }

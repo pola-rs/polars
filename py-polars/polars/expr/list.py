@@ -574,7 +574,7 @@ class ExprListNameSpace:
         """
         Join all string items in a sublist and place a separator between them.
 
-        This errors if inner type of list `!= Utf8`.
+        This errors if inner type of list `!= String`.
 
         Parameters
         ----------
@@ -584,7 +584,7 @@ class ExprListNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------

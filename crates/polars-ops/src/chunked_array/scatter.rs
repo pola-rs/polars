@@ -6,7 +6,7 @@ use polars_core::utils::arrow::types::NativeType;
 use polars_utils::index::check_bounds;
 
 pub trait ChunkedSet<T: Copy> {
-    fn set_at_idx2<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
+    fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<T>>;
 }
@@ -40,7 +40,7 @@ impl PolarsOpsNumericType for Int64Type {}
 impl PolarsOpsNumericType for Float32Type {}
 impl PolarsOpsNumericType for Float64Type {}
 
-unsafe fn set_at_idx_impl<V, T: NativeType>(
+unsafe fn scatter_impl<V, T: NativeType>(
     new_values_slice: &mut [T],
     set_values: V,
     arr: &mut PrimitiveArray<T>,
@@ -92,7 +92,7 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for ChunkedArray<T>
 where
     ChunkedArray<T>: IntoSeries,
 {
-    fn set_at_idx2<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
+    fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<T::Native>>,
     {
@@ -115,13 +115,13 @@ where
                 let current_values = unsafe { &mut *std::slice::from_raw_parts_mut(ptr, len) };
                 // Safety:
                 // we checked bounds
-                unsafe { set_at_idx_impl(current_values, values, arr, idx, len) };
+                unsafe { scatter_impl(current_values, values, arr, idx, len) };
             },
             None => {
                 let mut new_values = arr.values().as_slice().to_vec();
                 // Safety:
                 // we checked bounds
-                unsafe { set_at_idx_impl(&mut new_values, values, arr, idx, len) };
+                unsafe { scatter_impl(&mut new_values, values, arr, idx, len) };
                 arr.set_values(new_values.into());
             },
         };
@@ -129,15 +129,16 @@ where
     }
 }
 
-impl<'a> ChunkedSet<&'a str> for &'a Utf8Chunked {
-    fn set_at_idx2<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
+impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
+    fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<&'a str>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
         check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder =
+            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
         for (current_idx, current_value) in idx.iter().zip(values) {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
@@ -159,7 +160,7 @@ impl<'a> ChunkedSet<&'a str> for &'a Utf8Chunked {
     }
 }
 impl ChunkedSet<bool> for &BooleanChunked {
-    fn set_at_idx2<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
+    fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<bool>>,
     {

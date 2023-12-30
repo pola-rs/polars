@@ -11,7 +11,7 @@ impl CategoricalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use CategoricalFunction::*;
         match self {
-            GetCategories => mapper.with_dtype(DataType::Utf8),
+            GetCategories => mapper.with_dtype(DataType::String),
         }
     }
 }

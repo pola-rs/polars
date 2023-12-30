@@ -63,9 +63,7 @@ fn format_naive(
 }
 
 impl DatetimeChunked {
-    pub fn as_datetime_iter(
-        &self,
-    ) -> impl Iterator<Item = Option<NaiveDateTime>> + TrustedLen + '_ {
+    pub fn as_datetime_iter(&self) -> impl TrustedLen<Item = Option<NaiveDateTime>> + '_ {
         let func = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -93,9 +91,9 @@ impl DatetimeChunked {
         }
     }
 
-    /// Convert from Datetime into Utf8 with the given format.
+    /// Convert from Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn to_string(&self, format: &str) -> PolarsResult<Utf8Chunked> {
+    pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
         #[cfg(feature = "timezones")]
         use chrono::Utc;
         let conversion_f = match self.time_unit() {
@@ -125,7 +123,7 @@ impl DatetimeChunked {
         };
         let fmted = fmted; // discard mut
 
-        let mut ca: Utf8Chunked = match self.time_zone() {
+        let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(time_zone) => self.apply_kernel_cast(&|arr| {
                 format_tz(
@@ -142,11 +140,11 @@ impl DatetimeChunked {
         Ok(ca)
     }
 
-    /// Convert from Datetime into Utf8 with the given format.
+    /// Convert from Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.
-    pub fn strftime(&self, format: &str) -> PolarsResult<Utf8Chunked> {
+    pub fn strftime(&self, format: &str) -> PolarsResult<StringChunked> {
         self.to_string(format)
     }
 
