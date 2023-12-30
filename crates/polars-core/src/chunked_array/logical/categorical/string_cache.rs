@@ -236,6 +236,21 @@ impl StringCache {
         let mut lock = self.lock_map();
         *lock = Default::default();
     }
+
+    pub(crate) fn apply<F, T>(&self, fun: F) -> (u32, T)
+    where
+        F: FnOnce(&mut RwLockWriteGuard<SCacheInner>) -> T,
+    {
+        let cache = &mut crate::STRING_CACHE.lock_map();
+
+        let result = fun(cache);
+
+        if cache.len() > u32::MAX as usize {
+            panic!("not more than {} categories supported", u32::MAX)
+        };
+
+        (cache.uuid, result)
+    }
 }
 
 pub(crate) static STRING_CACHE: Lazy<StringCache> = Lazy::new(Default::default);

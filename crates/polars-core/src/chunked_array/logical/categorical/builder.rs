@@ -118,13 +118,14 @@ impl CategoricalChunkedBuilder {
         }
     }
 
-    // Fast path which only hashes the strings once
-    fn drain_iter_global_finish<'a, I>(&mut self, i: I) -> CategoricalChunked
+    /// Fast path for global categorical which preserves hashes and saves an allocation by
+    /// altering the keys in place
+    fn drain_iter_global_and_finish<'a, I>(&mut self, i: I) -> CategoricalChunked
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
         let iter = i.into_iter();
-        // Initialize hashes
+        // Save hashes for later when inserting into the global hashmap
         let mut hashes = Vec::with_capacity(iter.size_hint().0 / 10 + self.categories.len());
         for s in self.categories.values_iter() {
             hashes.push(self.local_mapping.hasher().hash_one(s));
@@ -145,21 +146,49 @@ impl CategoricalChunkedBuilder {
             }
         }
 
-        let arr = std::mem::take(&mut self.cat_builder);
-        let capacity = arr.len();
-        let categories = std::mem::take(&mut self.categories).into();
-        let mut ca = unsafe {
-            CategoricalChunked::from_keys_and_values_global(
-                &self.name,
-                arr.iter().map(|v| v.copied()),
-                capacity,
-                &categories,
-                Some(&hashes),
+        let categories: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
+
+        // Vec<u32> where the index is local and the value is the global index
+        let mut local_to_global: Vec<u32> = Vec::with_capacity(categories.len());
+        let (id, local_to_global) = crate::STRING_CACHE.apply(|cache| {
+            for (s, h) in categories.values_iter().zip(hashes) {
+                // Safety: we allocated enough
+                unsafe { local_to_global.push_unchecked(cache.insert_from_hash(h, s)) }
+            }
+            local_to_global
+        });
+
+        // Change local indices inplace to their global counterparts
+        let update_cats = || {
+            if !local_to_global.is_empty() {
+                // when all categorical are null, `local_to_global` is empty and all cats physical values are 0.
+                self.cat_builder.apply_values(|cats| {
+                    for cat in cats {
+                        debug_assert!((*cat as usize) < local_to_global.len());
+                        *cat = *unsafe { local_to_global.get_unchecked(*cat as usize) };
+                    }
+                })
+            }
+        };
+
+        let mut global_to_local = PlHashMap::with_capacity(local_to_global.len());
+        POOL.join(
+            || fill_global_to_local(&local_to_global, &mut global_to_local),
+            update_cats,
+        );
+
+        let indices = std::mem::take(&mut self.cat_builder).into();
+        let indices = UInt32Chunked::with_chunk(&self.name, indices);
+
+        // Safety: indices are in bounds of new rev_map
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                indices,
+                Arc::new(RevMapping::Global(global_to_local, categories, id)),
                 self.ordering,
             )
-        };
-        ca.set_fast_unique(self.fast_unique);
-        ca
+        }
+        .with_fast_unique(self.fast_unique)
     }
 
     pub fn drain_iter_and_finish<'a, I>(mut self, i: I) -> CategoricalChunked
@@ -167,7 +196,7 @@ impl CategoricalChunkedBuilder {
         I: IntoIterator<Item = Option<&'a str>>,
     {
         if using_string_cache() {
-            self.drain_iter_global_finish(i)
+            self.drain_iter_global_and_finish(i)
         } else {
             self.drain_iter(i);
             self.finish()
@@ -176,16 +205,15 @@ impl CategoricalChunkedBuilder {
 
     pub fn finish(self) -> CategoricalChunked {
         // Safety: keys and values are in bounds
-        let mut ca = unsafe {
+        unsafe {
             CategoricalChunked::from_keys_and_values(
                 &self.name,
                 &self.cat_builder.into(),
                 &self.categories.into(),
                 self.ordering,
             )
-        };
-        ca.set_fast_unique(self.fast_unique);
-        ca
+        }
+        .with_fast_unique(self.fast_unique)
     }
 }
 
@@ -218,10 +246,7 @@ impl CategoricalChunked {
 
     /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
     /// probe the global string cache.
-    ///
-    /// # Safety
-    ///
-    /// This does not do any bound checks
+    /// # Safety: This does not do any bound checks
     pub unsafe fn from_global_indices_unchecked(
         cats: UInt32Chunked,
         ordering: CategoricalOrdering,
@@ -254,43 +279,20 @@ impl CategoricalChunked {
         keys: impl IntoIterator<Item = Option<u32>> + Send,
         capacity: usize,
         values: &Utf8Array<i64>,
-        hashes: Option<&Vec<u64>>,
         ordering: CategoricalOrdering,
     ) -> Self {
-        // locally we don't need a hashmap because we all categories are 1 integer apart
-        // so the index is local, and the values is global
+        // Vec<u32> where the index is local and the value is the global index
         let mut local_to_global: Vec<u32> = Vec::with_capacity(values.len());
-        let id;
-
-        // now we have to lock the global string cache.
-        // we will create a mapping from our local categoricals to global categoricals
-        // and a mapping from global categoricals to our local categoricals
-
-        // in a separate scope so that we drop the global cache as soon as we are finished
-        {
-            let cache = &mut crate::STRING_CACHE.lock_map();
-            id = cache.uuid;
-
-            if let Some(hashes) = hashes {
-                for (s, h) in values.values_iter().zip(hashes) {
-                    // Safety: we allocaled enough
-                    unsafe { local_to_global.push_unchecked(cache.insert_from_hash(*h, s)) }
-                }
-            } else {
-                for s in values.values_iter() {
-                    // Safety: we allocated enough
-                    unsafe { local_to_global.push_unchecked(cache.insert(s)) }
-                }
+        let (id, local_to_global) = crate::STRING_CACHE.apply(|cache| {
+            // locally we don't need a hashmap because we all categories are 1 integer apart
+            // so the index is local, and the values is global
+            for s in values.values_iter() {
+                // Safety: we allocated enough
+                unsafe { local_to_global.push_unchecked(cache.insert(s)) }
             }
+            local_to_global
+        });
 
-            if cache.len() > u32::MAX as usize {
-                panic!("not more than {} categories supported", u32::MAX)
-            };
-        }
-
-        // we now know the exact size
-        // no reallocs
-        let mut global_to_local = PlHashMap::with_capacity(local_to_global.len());
         let compute_cats = || {
             let mut result = UInt32Vec::with_capacity(capacity);
 
@@ -303,6 +305,7 @@ impl CategoricalChunked {
             result
         };
 
+        let mut global_to_local = PlHashMap::with_capacity(local_to_global.len());
         let (_, cats) = POOL.join(
             || fill_global_to_local(&local_to_global, &mut global_to_local),
             compute_cats,
@@ -345,7 +348,6 @@ impl CategoricalChunked {
                 keys.into_iter().map(|c| c.copied()),
                 keys.len(),
                 values,
-                None,
                 ordering,
             )
         }
@@ -367,7 +369,7 @@ impl CategoricalChunked {
             map.insert(cat, idx as u32);
         }
         // Find idx of every value in the map
-        let mut ca_idx: UInt32Chunked = values
+        let mut keys: UInt32Chunked = values
             .into_iter()
             .map(|opt_s: Option<&str>| {
                 opt_s
@@ -379,11 +381,11 @@ impl CategoricalChunked {
                     .transpose()
             })
             .collect::<Result<UInt32Chunked, PolarsError>>()?;
-        ca_idx.rename(values.name());
+        keys.rename(values.name());
         let rev_map = RevMapping::build_enum(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
-                ca_idx,
+                keys,
                 Arc::new(rev_map),
                 ordering,
             ))

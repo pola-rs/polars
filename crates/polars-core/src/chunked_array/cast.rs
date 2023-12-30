@@ -10,6 +10,7 @@ use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
+#[cfg(feature = "dtype-categorical")]
 use crate::using_string_cache;
 
 pub(crate) fn cast_chunks(

@@ -116,10 +116,9 @@ impl CategoricalChunked {
         unsafe {
             Ok(CategoricalChunked::from_keys_and_values_global(
                 self.name(),
-                self.physical,
+                self.physical(),
                 self.len(),
                 categories,
-                None,
                 self.get_ordering(),
             ))
         }
@@ -259,6 +258,11 @@ impl CategoricalChunked {
         } else {
             self.bit_settings.remove(BitSettings::ORIGINAL);
         }
+    }
+
+    pub(crate) fn with_fast_unique(mut self, toggle: bool) -> Self {
+        self.set_fast_unique(toggle);
+        self
     }
 
     /// Get a reference to the mapping of categorical types to the string values.
