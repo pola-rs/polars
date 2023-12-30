@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from decimal import Decimal as D
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, overload
 
@@ -10,6 +11,7 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     Array,
     Boolean,
+    Decimal,
     Float64,
     List,
     Utf8,
@@ -40,8 +42,11 @@ def _one_or_zero_by_dtype(value: int, dtype: PolarsDataType) -> Any:
         return bool(value)
     elif dtype == Utf8:
         return str(value)
-    elif isinstance(dtype, List) or (isinstance(dtype, Array) and dtype.width == 1):
-        return [_one_or_zero_by_dtype(value, dtype.inner)]
+    elif isinstance(dtype, Decimal):
+        return D(value)
+    elif isinstance(dtype, (List, Array)):
+        arr_width = getattr(dtype, "width", 1)
+        return [_one_or_zero_by_dtype(value, dtype.inner)] * arr_width
     return None
 
 
@@ -219,7 +224,7 @@ def ones(
 
     """
     if (one := _one_or_zero_by_dtype(1, dtype)) is None:
-        raise TypeError(f"invalid dtype for `ones`; found {dtype})")
+        raise TypeError(f"invalid dtype for `ones`; found {dtype}")
 
     return repeat(one, n=n, dtype=dtype, eager=eager).alias("ones")
 
@@ -298,6 +303,6 @@ def zeros(
 
     """
     if (zero := _one_or_zero_by_dtype(0, dtype)) is None:
-        raise TypeError(f"invalid dtype for `zeros`; found {dtype})")
+        raise TypeError(f"invalid dtype for `zeros`; found {dtype}")
 
     return repeat(zero, n=n, dtype=dtype, eager=eager).alias("zeros")
