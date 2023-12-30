@@ -353,7 +353,7 @@ def add_ham(df: pd.DataFrame) -> pd.DataFrame:
 (df
  .pipe(add_foo)
  .pipe(add_bar)
- .pipe(add_ham())
+ .pipe(add_ham)
  )
 ```
 
