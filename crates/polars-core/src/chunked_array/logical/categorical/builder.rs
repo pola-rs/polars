@@ -246,7 +246,9 @@ impl CategoricalChunked {
 
     /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
     /// probe the global string cache.
-    /// # Safety: This does not do any bound checks
+    ///
+    /// # Safety
+    /// This does not do any bound checks
     pub unsafe fn from_global_indices_unchecked(
         cats: UInt32Chunked,
         ordering: CategoricalOrdering,
