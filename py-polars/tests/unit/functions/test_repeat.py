@@ -88,13 +88,14 @@ def test_repeat_n_negative() -> None:
 @pytest.mark.parametrize(
     ("n", "value", "dtype"),
     [
-        (2, 1, pl.UInt8),
-        (0, 1, pl.Int32),
+        (2, 1, pl.UInt32),
+        (0, 1, pl.Int16),
         (3, 1, pl.Float32),
         (1, "1", pl.Utf8),
         (2, ["1"], pl.List(pl.Utf8)),
         (4, True, pl.Boolean),
         (2, [True], pl.List(pl.Boolean)),
+        (2, [1], pl.Array(pl.Int16, width=1)),
         (1, [1], pl.List(pl.UInt32)),
     ],
 )
@@ -122,6 +123,7 @@ def test_ones(
         (2, ["0"], pl.List(pl.Utf8)),
         (4, False, pl.Boolean),
         (2, [False], pl.List(pl.Boolean)),
+        (3, [0], pl.Array(pl.UInt32, width=1)),
         (1, [0], pl.List(pl.UInt32)),
     ],
 )

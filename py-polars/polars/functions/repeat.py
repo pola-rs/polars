@@ -7,6 +7,7 @@ from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
+    Array,
     Boolean,
     Float64,
     List,
@@ -137,6 +138,7 @@ _ones_zeros = {
 for dtype in INTEGER_DTYPES | FLOAT_DTYPES:
     _ones_zeros[dtype] = (0, 1)
     _ones_zeros[List(dtype)] = ([0], [1])
+    _ones_zeros[Array(dtype, width=1)] = ([0], [1])
 
 
 @overload
@@ -212,14 +214,11 @@ def ones(
     ]
 
     """
-    value: Any
-    if (one_zero := _ones_zeros.get(dtype)) is not None:
-        value = one_zero[1]
-    else:
-        raise TypeError(
-            f"invalid dtype for `ones`, consider using `repeat` instead; found {dtype})"
-        )
-    return repeat(value, n=n, dtype=dtype, eager=eager).alias("ones")
+    if (one_zero := _ones_zeros.get(dtype)) is None:
+        raise TypeError(f"invalid dtype for `ones`; found {dtype})")
+
+    one: Any = one_zero[1]
+    return repeat(one, n=n, dtype=dtype, eager=eager).alias("ones")
 
 
 @overload
@@ -295,11 +294,8 @@ def zeros(
     ]
 
     """
-    value: Any
-    if (one_zero := _ones_zeros.get(dtype)) is not None:
-        value = one_zero[0]
-    else:
-        raise TypeError(
-            f"invalid dtype for `zeros`, consider using `repeat` instead; found {dtype})"
-        )
-    return repeat(value, n=n, dtype=dtype, eager=eager).alias("zeros")
+    if (one_zero := _ones_zeros.get(dtype)) is None:
+        raise TypeError(f"invalid dtype for `zeros`; found {dtype})")
+
+    zero: Any = one_zero[0]
+    return repeat(zero, n=n, dtype=dtype, eager=eager).alias("zeros")
