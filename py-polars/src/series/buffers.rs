@@ -1,8 +1,9 @@
 use polars::export::arrow;
-use polars::export::arrow::array::Array;
+use polars::export::arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
+use polars::export::arrow::bitmap::Bitmap;
+use polars::export::arrow::buffer::Buffer;
+use polars::export::arrow::offset::OffsetsBuffer;
 use polars::export::arrow::types::NativeType;
-use polars_core::export::arrow::array::PrimitiveArray;
-use polars_rs::export::arrow::offset::OffsetsBuffer;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 
 use super::*;
@@ -51,7 +52,7 @@ impl PySeries {
                     length: len,
                 })
             },
-            dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
             })),
@@ -211,7 +212,7 @@ impl PySeries {
         py: Python,
         dtype: Wrap<DataType>,
         buffer_info: BufferInfo,
-        base: &PyAny,
+        owner: &PyAny,
     ) -> PyResult<Self> {
         let dtype = dtype.0;
         let BufferInfo {
@@ -219,21 +220,16 @@ impl PySeries {
             offset,
             length,
         } = buffer_info;
-        let base = base.to_object(py);
+        let owner = owner.to_object(py);
 
         let arr_boxed = match dtype {
-            DataType::Int8 => unsafe { from_buffer_impl::<i8>(pointer, length, base) },
-            DataType::Int16 => unsafe { from_buffer_impl::<i16>(pointer, length, base) },
-            DataType::Int32 => unsafe { from_buffer_impl::<i32>(pointer, length, base) },
-            DataType::Int64 => unsafe { from_buffer_impl::<i64>(pointer, length, base) },
-            DataType::UInt8 => unsafe { from_buffer_impl::<u8>(pointer, length, base) },
-            DataType::UInt16 => unsafe { from_buffer_impl::<u16>(pointer, length, base) },
-            DataType::UInt32 => unsafe { from_buffer_impl::<u32>(pointer, length, base) },
-            DataType::UInt64 => unsafe { from_buffer_impl::<u64>(pointer, length, base) },
-            DataType::Float32 => unsafe { from_buffer_impl::<f32>(pointer, length, base) },
-            DataType::Float64 => unsafe { from_buffer_impl::<f64>(pointer, length, base) },
+            dt if dt.is_numeric() => {
+                with_match_physical_numeric_type!(dt, |$T|  unsafe {
+                    from_buffer_impl::<$T>(pointer, length, owner)
+                })
+            },
             DataType::Boolean => {
-                unsafe { from_buffer_boolean_impl(pointer, offset, length, base) }?
+                unsafe { from_buffer_boolean_impl(pointer, offset, length, owner) }?
             },
             dt => {
                 return Err(PyTypeError::new_err(format!(
@@ -250,24 +246,24 @@ impl PySeries {
 unsafe fn from_buffer_impl<T: NativeType>(
     pointer: usize,
     length: usize,
-    base: Py<PyAny>,
+    owner: Py<PyAny>,
 ) -> Box<dyn Array> {
     let pointer = pointer as *const T;
     let slice = unsafe { std::slice::from_raw_parts(pointer, length) };
-    let arr = unsafe { arrow::ffi::mmap::slice_and_owner(slice, base) };
+    let arr = unsafe { arrow::ffi::mmap::slice_and_owner(slice, owner) };
     arr.to_boxed()
 }
 unsafe fn from_buffer_boolean_impl(
     pointer: usize,
     offset: usize,
     length: usize,
-    base: Py<PyAny>,
+    owner: Py<PyAny>,
 ) -> PyResult<Box<dyn Array>> {
     let length_in_bytes = get_boolean_buffer_length_in_bytes(length, offset);
 
     let pointer = pointer as *const u8;
     let slice = unsafe { std::slice::from_raw_parts(pointer, length_in_bytes) };
-    let arr_result = unsafe { arrow::ffi::mmap::bitmap_and_owner(slice, offset, length, base) };
+    let arr_result = unsafe { arrow::ffi::mmap::bitmap_and_owner(slice, offset, length, owner) };
     let arr = arr_result.map_err(PyPolarsErr::from)?;
     Ok(arr.to_boxed())
 }
@@ -280,4 +276,124 @@ fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
     } else {
         n_bytes + 1
     }
+}
+
+#[pymethods]
+impl PySeries {
+    /// Construct a PySeries from information about its underlying buffers.
+    #[staticmethod]
+    unsafe fn _from_buffers(
+        dtype: Wrap<DataType>,
+        data: PySeries,
+        validity: Option<PySeries>,
+        offsets: Option<PySeries>,
+    ) -> PyResult<Self> {
+        let dtype = dtype.0;
+        let data = data.series;
+
+        if validity.is_none() && offsets.is_none() {
+            let s = data.strict_cast(&dtype).map_err(PyPolarsErr::from)?;
+            return Ok(s.into());
+        }
+
+        let validity = match validity {
+            Some(s) => {
+                let dtype = s.series.dtype();
+                if !dtype.is_bool() {
+                    return Err(PyTypeError::new_err(format!(
+                        "validity buffer must have data type Boolean, got {:?}",
+                        dtype
+                    )));
+                }
+                Some(series_to_bitmap(s.series).unwrap())
+            },
+            None => None,
+        };
+
+        let s = match dtype.to_physical() {
+            dt if dt.is_numeric() => {
+                with_match_physical_numeric_polars_type!(dt, |$T| {
+                    let data = series_to_buffer::<$T>(data);
+                    from_buffers_num_impl::<<$T as PolarsNumericType>::Native>(data, validity)?
+                })
+            },
+            DataType::Boolean => {
+                let data = series_to_bitmap(data)?;
+                from_buffers_bool_impl(data, validity)?
+            },
+            DataType::String => {
+                let offsets = match offsets {
+                    Some(s) => {
+                        let dtype = s.series.dtype();
+                        if !matches!(dtype, DataType::Int64) {
+                            return Err(PyTypeError::new_err(format!(
+                                "offsets buffer must have data type Int64, got {:?}",
+                                dtype
+                            )));
+                        }
+                        series_to_offsets(s.series)
+                    },
+                    None => return Err(PyTypeError::new_err(
+                        "`from_buffers` cannot create a String column without an offsets buffer",
+                    )),
+                };
+                let data = series_to_buffer::<UInt8Type>(data);
+                from_buffers_string_impl(data, validity, offsets)?
+            },
+            dt => {
+                return Err(PyTypeError::new_err(format!(
+                    "`from_buffers` not implemented for `dtype` {dt}",
+                )))
+            },
+        };
+
+        let out = s.strict_cast(&dtype).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+}
+
+fn series_to_buffer<T>(s: Series) -> Buffer<T::Native>
+where
+    T: PolarsNumericType,
+{
+    let ca: &ChunkedArray<T> = s.as_ref().as_ref();
+    let arr = ca.downcast_iter().next().unwrap();
+    arr.values().clone()
+}
+fn series_to_bitmap(s: Series) -> PyResult<Bitmap> {
+    let ca_result = s.bool();
+    let ca = ca_result.map_err(PyPolarsErr::from)?;
+    let arr = ca.downcast_iter().next().unwrap();
+    let bitmap = arr.values().clone();
+    Ok(bitmap)
+}
+fn series_to_offsets(s: Series) -> OffsetsBuffer<i64> {
+    let buffer = series_to_buffer::<Int64Type>(s);
+    unsafe { OffsetsBuffer::new_unchecked(buffer) }
+}
+
+fn from_buffers_num_impl<T: NativeType>(
+    data: Buffer<T>,
+    validity: Option<Bitmap>,
+) -> PyResult<Series> {
+    let arr = PrimitiveArray::new(T::PRIMITIVE.into(), data, validity);
+    let s_result = Series::from_arrow("", arr.to_boxed());
+    let s = s_result.map_err(PyPolarsErr::from)?;
+    Ok(s)
+}
+fn from_buffers_bool_impl(data: Bitmap, validity: Option<Bitmap>) -> PyResult<Series> {
+    let arr = BooleanArray::new(ArrowDataType::Boolean, data, validity);
+    let s_result = Series::from_arrow("", arr.to_boxed());
+    let s = s_result.map_err(PyPolarsErr::from)?;
+    Ok(s)
+}
+fn from_buffers_string_impl(
+    data: Buffer<u8>,
+    validity: Option<Bitmap>,
+    offsets: OffsetsBuffer<i64>,
+) -> PyResult<Series> {
+    let arr = Utf8Array::new(ArrowDataType::LargeUtf8, offsets, data, validity);
+    let s_result = Series::from_arrow("", arr.to_boxed());
+    let s = s_result.map_err(PyPolarsErr::from)?;
+    Ok(s)
 }
