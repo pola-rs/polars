@@ -52,6 +52,7 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.dependencies import (
+    _HVPLOT_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
@@ -7514,6 +7515,10 @@ class Series:
         >>> import hvplot  # doctest: +SKIP
         >>> hvplot.help("hist")  # doctest: +SKIP
         """
+        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
+            "0.9.1"
+        ):
+            raise ModuleUpgradeRequired("hvplot>=0.9.1 is required for `.plot`")
         if not getattr(holoviews.extension, "_loaded", False):
             # If no extension has been loaded, load 'bokeh' (the hvplot default)
             hvplot.extension("bokeh")

@@ -48,6 +48,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import (
+    _HVPLOT_AVAILABLE,
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
@@ -1157,6 +1158,10 @@ class DataFrame:
         >>> import hvplot  # doctest: +SKIP
         >>> hvplot.help("scatter")  # doctest: +SKIP
         """
+        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
+            "0.9.1"
+        ):
+            raise ModuleUpgradeRequired("hvplot>=0.9.1 is required for `.plot`")
         if not getattr(holoviews.extension, "_loaded", False):
             # If no extension has been loaded, load 'bokeh' (the hvplot default)
             hvplot.extension("bokeh")
