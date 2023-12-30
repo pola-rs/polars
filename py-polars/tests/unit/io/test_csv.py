@@ -591,6 +591,16 @@ def test_csv_multi_char_comment() -> None:
     expected = pl.DataFrame({"A": ["#a"], "B": ["b"]})
     assert_frame_equal(df, expected)
 
+    # check comment interaction with headers/skip_rows
+    for skip_rows, b in (
+        (1, io.BytesIO(b"<filemeta>\n#!skip\n#!skip\nCol1\tCol2\n")),
+        (0, io.BytesIO(b"\n#!skip\n#!skip\nCol1\tCol2")),
+        (0, io.BytesIO(b"#!skip\nCol1\tCol2\n#!skip\n")),
+        (0, io.BytesIO(b"#!skip\nCol1\tCol2")),
+    ):
+        df = pl.read_csv(b, separator="\t", comment_prefix="#!", skip_rows=skip_rows)
+        assert_frame_equal(df, pl.DataFrame(schema=["Col1", "Col2"]).cast(pl.Utf8))
+
 
 def test_csv_quote_char() -> None:
     expected = pl.DataFrame(
