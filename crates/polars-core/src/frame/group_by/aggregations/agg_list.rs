@@ -268,7 +268,7 @@ fn agg_list_by_slicing<
     if can_fast_explode {
         listarr.set_fast_explode()
     }
-    listarr.to_logical(dtype);
+    unsafe { listarr.to_logical(dtype) };
     listarr.into_series()
 }
 
