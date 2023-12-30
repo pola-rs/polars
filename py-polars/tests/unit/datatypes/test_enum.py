@@ -1,4 +1,5 @@
 import operator
+from textwrap import dedent
 from typing import Callable
 
 import pytest
@@ -28,6 +29,14 @@ def test_enum_from_schema_argument() -> None:
         {"col1": ["a", "b", "c"]}, schema={"col1": pl.Enum(["a", "b", "c"])}
     )
     assert df.get_column("col1").dtype == pl.Enum
+    assert dedent(
+        """
+        │ col1 │
+        │ ---  │
+        │ enum │
+        ╞══════╡
+        """
+    ) in str(df)
 
 
 def test_equality_of_two_separately_constructed_enums() -> None:

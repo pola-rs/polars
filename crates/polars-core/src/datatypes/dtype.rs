@@ -387,7 +387,17 @@ impl Display for DataType {
             #[cfg(feature = "object")]
             DataType::Object(s, _) => s,
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => "cat",
+            DataType::Categorical(rev_map, _) => {
+                if let Some(rev_map) = rev_map {
+                    if rev_map.is_enum() {
+                        "enum"
+                    } else {
+                        "cat"
+                    }
+                } else {
+                    "cat"
+                }
+            },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
