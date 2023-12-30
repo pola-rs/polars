@@ -2609,7 +2609,8 @@ def test_selection_regex_and_multicol() -> None:
             "b": [5, 6, 7, 8],
             "c": [9, 10, 11, 12],
             "foo": [13, 14, 15, 16],
-        }
+        },
+        schema_overrides={"foo": pl.UInt8},
     )
 
     # Selection only
@@ -2646,22 +2647,14 @@ def test_selection_regex_and_multicol() -> None:
     # Multi * Multi
     result = test_df.select(pl.col(["a", "b", "c"]) * pl.col(["a", "b", "c"]))
     expected = {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
-    assert result.to_dict(as_series=False) == expected
 
-    assert test_df.select(pl.exclude("foo") * pl.exclude("foo")).to_dict(
-        as_series=False
-    ) == {
-        "a": [1, 4, 9, 16],
-        "b": [25, 36, 49, 64],
-        "c": [81, 100, 121, 144],
-    }
-    assert test_df.select(pl.col("^\\w$") * pl.col("^\\w$")).to_dict(
-        as_series=False
-    ) == {
-        "a": [1, 4, 9, 16],
-        "b": [25, 36, 49, 64],
-        "c": [81, 100, 121, 144],
-    }
+    assert result.to_dict(as_series=False) == expected
+    for multi_op in (
+        pl.col("^\\w$") * pl.col("^\\w$"),
+        pl.exclude("foo") * pl.exclude("foo"),
+        pl.exclude(cs.last()) * pl.exclude(cs.by_dtype(pl.UInt8)),
+    ):
+        assert test_df.select(multi_op).to_dict(as_series=False) == expected
 
     # kwargs
     with pl.Config() as cfg:
