@@ -165,6 +165,6 @@ pub(super) unsafe fn plugin_field(
 }
 
 fn check_panic(msg: &str) -> PolarsResult<()> {
-    polars_ensure!(msg != "PANIC", ComputeError: "the plugin panicked");
+    polars_ensure!(msg != "PANIC", ComputeError: "the plugin panicked\n\nThe message is suppressed. Set POLARS_VERBOSE=1 to send the panic message to stderr.");
     Ok(())
 }
