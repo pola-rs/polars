@@ -1,5 +1,4 @@
 use std::ffi::CStr;
-use std::process::abort;
 use std::sync::RwLock;
 
 use arrow::ffi::{import_field_from_c, ArrowSchema};
