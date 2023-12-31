@@ -442,10 +442,6 @@ pub(crate) fn insert_streaming_nodes(
                         .all(|dt| allowed_dtype(dt, string_cache))
                 };
 
-                let can_valid_agg = valid_agg();
-                let can_valid_key = valid_key();
-                let can_valid_types = valid_types();
-
                 if can_stream && valid_agg() && valid_key() && valid_types() {
                     state.streamable = true;
                     state.operators_sinks.push(PipelineNode::Sink(root));
