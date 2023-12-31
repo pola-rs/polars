@@ -538,16 +538,30 @@ class Enum(DataType):
 
     categories: list[str]
 
-    def __init__(self, categories: list[str]):
+    def __init__(self, categories: Iterable[str]):
         """
         A fixed set categorical encoding of a set of strings.
 
         Parameters
         ----------
         categories
-            Categories in the dataset.
+            Valid categories in the dataset.
 
         """
+        from polars.utils.various import ordered_unique
+
+        categories = list(categories)
+        unique_categories, dupes = ordered_unique(categories, return_duplicates=True)
+        if (n_dupes := len(dupes)) > 0:
+            dupe = dupes.most_common(1)[0][0]  # type: ignore[union-attr]
+            plural = "s" if n_dupes > 1 else ""
+            raise ValueError(
+                f"Enum categories must be unique; found {n_dupes} duplicate{plural}, eg: {dupe!r}"
+            )
+        for cat in unique_categories:
+            if not isinstance(cat, str):
+                raise TypeError(f"Enum categories must be strings; found {cat!r}")
+
         self.categories = categories
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]

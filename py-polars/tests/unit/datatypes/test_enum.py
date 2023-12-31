@@ -1,6 +1,7 @@
 import operator
+from datetime import date
 from textwrap import dedent
-from typing import Callable
+from typing import Any, Callable
 
 import pytest
 
@@ -303,3 +304,17 @@ def test_different_enum_comparison_order() -> None:
             match="can only compare categoricals of the same type",
         ):
             df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+
+
+@pytest.mark.parametrize(
+    "categories",
+    [[None], [date.today()], [-10, 10], ["x", "y", None]],
+)
+def test_valid_enum_category_types(categories: Any) -> None:
+    with pytest.raises(TypeError, match="Enum categories"):
+        pl.Enum(categories)
+
+
+def test_enum_categories_unique() -> None:
+    with pytest.raises(ValueError, match="must be unique; found 2 duplicates"):
+        pl.Enum(["a", "a", "b", "b", "b", "c"])
