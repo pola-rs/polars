@@ -42,7 +42,9 @@ def expr_dispatch(cls: type[T]) -> type[T]:
         if (
             # private
             not name.startswith("_")
-            # `.plot` not available on Expr
+            # Avoid error when building docs
+            # https://github.com/pola-rs/polars/pull/13238#discussion_r1438787093
+            # TODO: is there a better way to do this?
             and name != "plot"
         ):
             attr = getattr(cls, name)
