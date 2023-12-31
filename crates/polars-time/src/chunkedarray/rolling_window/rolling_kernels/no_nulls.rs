@@ -8,6 +8,7 @@ use super::*;
 pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
+    min_periods: usize,
     params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
@@ -32,7 +33,7 @@ where
             result.map(|(start, len)| {
                 let end = start + len;
 
-                if start == end {
+                if len < ((min_periods as u32).into()) {
                     None
                 } else {
                     // safety:
@@ -52,6 +53,7 @@ pub(crate) fn rolling_min<T>(
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
+    min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     _params: DynArgs,
@@ -64,7 +66,7 @@ where
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
-    rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter, None)
+    rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter, min_periods, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -73,6 +75,7 @@ pub(crate) fn rolling_max<T>(
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
+    min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     _params: DynArgs,
@@ -85,7 +88,7 @@ where
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
-    rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter, None)
+    rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter, min_periods, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -94,6 +97,7 @@ pub(crate) fn rolling_sum<T>(
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
+    min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     _params: DynArgs,
@@ -106,7 +110,7 @@ where
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
-    rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter, None)
+    rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter, min_periods, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -115,6 +119,7 @@ pub(crate) fn rolling_mean<T>(
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
+    min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     _params: DynArgs,
@@ -127,7 +132,12 @@ where
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
-    rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter, None)
+    rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(
+        values,
+        offset_iter,
+        min_periods,
+        None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -136,6 +146,7 @@ pub(crate) fn rolling_var<T>(
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
+    min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     params: DynArgs,
@@ -148,7 +159,12 @@ where
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
-    rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
+    rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(
+        values,
+        offset_iter,
+        min_periods,
+        params,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -157,6 +173,7 @@ pub(crate) fn rolling_quantile<T>(
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
+    min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     params: DynArgs,
@@ -169,5 +186,10 @@ where
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
-    rolling_apply_agg_window::<no_nulls::QuantileWindow<_>, _, _>(values, offset_iter, params)
+    rolling_apply_agg_window::<no_nulls::QuantileWindow<_>, _, _>(
+        values,
+        offset_iter,
+        min_periods,
+        params,
+    )
 }

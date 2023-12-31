@@ -5343,7 +5343,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
 
@@ -5399,7 +5402,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
 
@@ -5455,7 +5461,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
 
@@ -5511,7 +5520,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
 
@@ -5568,7 +5580,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         ddof
@@ -5628,7 +5643,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         ddof
@@ -5688,7 +5706,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window.
 
@@ -5733,7 +5754,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
 
@@ -5798,7 +5822,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
 
@@ -7006,7 +7033,10 @@ class Series:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
 
