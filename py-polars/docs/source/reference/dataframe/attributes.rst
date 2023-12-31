@@ -10,6 +10,7 @@ Attributes
     DataFrame.dtypes
     DataFrame.flags
     DataFrame.height
+    DataFrame.plot
     DataFrame.schema
     DataFrame.shape
     DataFrame.width
