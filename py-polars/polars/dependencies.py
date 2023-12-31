@@ -12,6 +12,7 @@ _DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _GEVENT_AVAILABLE = True
+_HVPLOT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
@@ -158,6 +159,7 @@ if TYPE_CHECKING:
     import deltalake
     import fsspec
     import gevent
+    import hvplot
     import hypothesis
     import numpy
     import pandas
@@ -183,6 +185,7 @@ else:
     )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    hvplot, _HVPLOT_AVAILABLE = _lazy_import("hvplot")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
@@ -243,6 +246,7 @@ __all__ = [
     "deltalake",
     "fsspec",
     "gevent",
+    "hvplot",
     "numpy",
     "pandas",
     "pydantic",
@@ -260,6 +264,7 @@ __all__ = [
     "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
     "_GEVENT_AVAILABLE",
+    "_HVPLOT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",

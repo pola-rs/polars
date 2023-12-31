@@ -354,3 +354,17 @@ def test_projection_count_11841() -> None:
     pl.LazyFrame({"x": 1}).select(records=pl.count()).select(
         pl.lit(1).alias("x"), pl.all()
     ).collect()
+
+
+def test_schema_outer_join_projection_pd_13287() -> None:
+    lf = pl.LazyFrame({"a": [1, 1], "b": [2, 3]})
+    lf2 = pl.LazyFrame({"a": [1, 1], "c": [2, 3]})
+
+    assert lf.join(
+        lf2,
+        how="outer",
+        left_on="a",
+        right_on="c",
+    ).with_columns(
+        pl.col("a").fill_null(pl.col("c")),
+    ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}

@@ -120,6 +120,13 @@ def is_str_sequence(
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
+def is_column(obj: Any) -> bool:
+    """Indicate if the given object is a basic/unaliased column."""
+    from polars.expr import Expr
+
+    return isinstance(obj, Expr) and obj.meta.is_column()
+
+
 def _warn_null_comparison(obj: Any) -> None:
     if obj is None:
         warnings.warn(
@@ -392,7 +399,7 @@ class sphinx_accessor(property):  # noqa: D101
             return self.fget(  # type: ignore[misc]
                 instance if isinstance(instance, cls) else cls
             )
-        except AttributeError:
+        except (AttributeError, ImportError):
             return None  # type: ignore[return-value]
 
 

@@ -1973,39 +1973,6 @@ def test_backward_fill() -> None:
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
-def test_is_duplicated() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
-    assert_series_equal(df.is_duplicated(), pl.Series("", [False, True, True]))
-
-
-def test_is_unique() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
-
-    assert_series_equal(df.is_unique(), pl.Series("", [True, False, False]))
-    assert df.unique(maintain_order=True).rows() == [(1, 6), (2, 7)]
-    assert df.n_unique() == 2
-
-
-def test_n_unique_subsets() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 1, 2, 3, 4, 5],
-            "b": [0.5, 0.5, 1.0, 2.0, 3.0, 3.0],
-            "c": [True, True, True, False, True, True],
-        }
-    )
-    # omitting 'subset' counts unique rows
-    assert df.n_unique() == 5
-
-    # providing it counts unique col/expr subsets
-    assert df.n_unique(subset=["b", "c"]) == 4
-    assert df.n_unique(subset=pl.col("c")) == 2
-    assert (
-        df.n_unique(subset=[(pl.col("a") // 2), (pl.col("c") | (pl.col("b") >= 2))])
-        == 3
-    )
-
-
 def test_shrink_to_fit() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
@@ -2642,7 +2609,8 @@ def test_selection_regex_and_multicol() -> None:
             "b": [5, 6, 7, 8],
             "c": [9, 10, 11, 12],
             "foo": [13, 14, 15, 16],
-        }
+        },
+        schema_overrides={"foo": pl.UInt8},
     )
 
     # Selection only
@@ -2679,22 +2647,14 @@ def test_selection_regex_and_multicol() -> None:
     # Multi * Multi
     result = test_df.select(pl.col(["a", "b", "c"]) * pl.col(["a", "b", "c"]))
     expected = {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
-    assert result.to_dict(as_series=False) == expected
 
-    assert test_df.select(pl.exclude("foo") * pl.exclude("foo")).to_dict(
-        as_series=False
-    ) == {
-        "a": [1, 4, 9, 16],
-        "b": [25, 36, 49, 64],
-        "c": [81, 100, 121, 144],
-    }
-    assert test_df.select(pl.col("^\\w$") * pl.col("^\\w$")).to_dict(
-        as_series=False
-    ) == {
-        "a": [1, 4, 9, 16],
-        "b": [25, 36, 49, 64],
-        "c": [81, 100, 121, 144],
-    }
+    assert result.to_dict(as_series=False) == expected
+    for multi_op in (
+        pl.col("^\\w$") * pl.col("^\\w$"),
+        pl.exclude("foo") * pl.exclude("foo"),
+        pl.exclude(cs.last()) * pl.exclude(cs.by_dtype(pl.UInt8)),
+    ):
+        assert test_df.select(multi_op).to_dict(as_series=False) == expected
 
     # kwargs
     with pl.Config() as cfg:

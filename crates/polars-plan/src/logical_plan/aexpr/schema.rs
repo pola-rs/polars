@@ -248,7 +248,7 @@ fn get_arithmetic_field(
     let mut left_field = left_ae.to_field(schema, ctxt, arena)?;
 
     let super_type = match op {
-        Operator::Minus => {
+        Operator::Minus if left_field.dtype.is_temporal() => {
             let right_type = right_ae.get_type(schema, ctxt, arena)?;
             match (&left_field.dtype, right_type) {
                 // T - T != T if T is a datetime / date

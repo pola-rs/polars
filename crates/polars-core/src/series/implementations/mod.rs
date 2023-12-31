@@ -25,7 +25,6 @@ mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
 
-#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor, Deref};
@@ -427,7 +426,6 @@ macro_rules! impl_dyn_series {
                 self.0.checked_div(rhs)
             }
 
-            #[cfg(feature = "object")]
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }

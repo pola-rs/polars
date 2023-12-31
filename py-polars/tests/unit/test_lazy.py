@@ -269,17 +269,6 @@ def test_arg_unique() -> None:
     assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.UInt32))
 
 
-def test_is_unique() -> None:
-    df = pl.DataFrame({"a": [4, 1, 4]})
-    result = df.select(pl.col("a").is_unique())["a"]
-    assert_series_equal(result, pl.Series("a", [False, True, False]))
-
-
-def test_is_duplicated() -> None:
-    ldf = pl.LazyFrame({"a": [4, 1, 4]}).select(pl.col("a").is_duplicated())
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [True, False, True]))
-
-
 def test_arg_sort() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 3]}).select(pl.col("a").arg_sort())
     assert ldf.collect()["a"].to_list() == [1, 2, 0]
@@ -1048,21 +1037,6 @@ def test_pearson_corr() -> None:
 def test_null_count() -> None:
     lf = pl.LazyFrame({"a": [1, 2, None, 2], "b": [None, 3, None, 3]})
     assert lf.null_count().collect().rows() == [(1, 2)]
-
-
-def test_unique() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert_frame_equal(ldf.unique(maintain_order=True).collect(), expected)
-
-    result = ldf.unique(subset="b", maintain_order=True).collect()
-    expected = pl.DataFrame({"a": [1], "b": [3]})
-    assert_frame_equal(result, expected)
-
-    s0 = pl.Series("a", [1, 2, None, 2])
-    # test if the null is included
-    assert s0.unique().to_list() == [None, 1, 2]
 
 
 def test_lazy_concat(df: pl.DataFrame) -> None:

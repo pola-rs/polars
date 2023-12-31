@@ -291,7 +291,7 @@ impl PhysicalExpr for TernaryExpr {
                 let out = LargeListArray::new(data_type, offsets, values.clone(), None);
 
                 let mut out = ListChunked::with_chunk(truthy.name(), out);
-                out.to_logical(inner_type.clone());
+                unsafe { out.to_logical(inner_type.clone()) };
 
                 if ac_target.series().list().unwrap()._can_fast_explode() {
                     out.set_fast_explode();

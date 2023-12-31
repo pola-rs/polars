@@ -656,3 +656,12 @@ def test_temporal_agg() -> None:
     assert ldf.group_by("key").median().schema == schema
     assert ldf.group_by("key").mean().collect().schema == schema
     assert ldf.group_by("key").median().collect().schema == schema
+
+
+def test_literal_subtract_schema_13284() -> None:
+    assert (
+        pl.LazyFrame({"a": [23, 30]}, schema={"a": pl.UInt8})
+        .with_columns(pl.col("a") - pl.lit(1))
+        .group_by(by="a")
+        .count()
+    ).schema == OrderedDict([("a", pl.UInt8), ("count", pl.UInt32)])

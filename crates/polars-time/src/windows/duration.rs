@@ -584,16 +584,25 @@ impl Duration {
         }
 
         // ...and translate that to how many days we need to subtract.
-        let mut _is_leap_year = is_leap_year(year as i32) as usize;
+        let mut _is_leap_year = is_leap_year(year as i32);
         let mut remainder_days = (original_dt_local.day() - 1) as i64;
+        while remainder_months > 12 {
+            let prev_year_is_leap_year = is_leap_year((year - 1) as i32);
+            let add_extra_day =
+                (_is_leap_year && month > 2) || (prev_year_is_leap_year && month <= 2);
+            remainder_days += 365 + add_extra_day as i64;
+            remainder_months -= 12;
+            year -= 1;
+            _is_leap_year = prev_year_is_leap_year;
+        }
         while remainder_months > 0 {
             month -= 1;
             if month == 0 {
                 year -= 1;
-                _is_leap_year = is_leap_year(year as i32) as usize;
+                _is_leap_year = is_leap_year(year as i32);
                 month = 12;
             }
-            remainder_days += DAYS_PER_MONTH[_is_leap_year][(month - 1) as usize];
+            remainder_days += DAYS_PER_MONTH[_is_leap_year as usize][(month - 1) as usize];
             remainder_months -= 1;
         }
 

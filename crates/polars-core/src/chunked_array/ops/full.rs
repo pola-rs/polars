@@ -124,7 +124,7 @@ impl ArrayChunked {
 impl ChunkFull<&Series> for ArrayChunked {
     fn full(name: &str, value: &Series, length: usize) -> ArrayChunked {
         if !value.dtype().is_numeric() {
-            todo!("FixedSizeList only supports numeric data types");
+            todo!("Array only supports numeric data types");
         };
         let width = value.len();
         let values = value.tile(length);

@@ -46,6 +46,10 @@ impl PyExpr {
         self.inner.clone().meta().has_multiple_outputs()
     }
 
+    fn meta_is_column(&self) -> bool {
+        self.inner.clone().meta().is_column()
+    }
+
     fn meta_is_regex_projection(&self) -> bool {
         self.inner.clone().meta().is_regex_projection()
     }

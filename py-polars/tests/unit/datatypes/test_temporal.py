@@ -1252,27 +1252,6 @@ def test_datetime_instance_selection() -> None:
     assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
 
 
-def test_unique_counts_on_dates() -> None:
-    assert pl.DataFrame(
-        {
-            "dt_ns": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 3, 1), "1mo", eager=True
-            ),
-        }
-    ).with_columns(
-        [
-            pl.col("dt_ns").dt.cast_time_unit("us").alias("dt_us"),
-            pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
-            pl.col("dt_ns").cast(pl.Date).alias("date"),
-        ]
-    ).select(pl.all().unique_counts().sum()).to_dict(as_series=False) == {
-        "dt_ns": [3],
-        "dt_us": [3],
-        "dt_ms": [3],
-        "date": [3],
-    }
-
-
 def test_rolling_by_ordering() -> None:
     # we must check that the keys still match the time labels after the rolling window
     # with a `by` argument.
@@ -1361,16 +1340,6 @@ def test_rolling_by_() -> None:
         ],
         "count": [1, 2, 3, 3, 3, 1, 2, 3, 3, 3, 1, 2, 3, 3, 3],
     }
-
-
-def test_sorted_unique() -> None:
-    assert (
-        pl.DataFrame(
-            [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
-        )
-        .sort("dt")
-        .unique()
-    ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
 def test_date_to_time_cast_5111() -> None:

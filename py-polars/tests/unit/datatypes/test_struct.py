@@ -496,7 +496,7 @@ def test_struct_arr_eval() -> None:
     }
 
 
-def test_arr_unique() -> None:
+def test_list_of_struct_unique() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
@@ -724,15 +724,6 @@ def test_nested_struct_in_lists_cast() -> None:
     }
 
 
-def test_is_unique_struct() -> None:
-    assert pl.Series(
-        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
-    ).is_unique().to_list() == [False, True, False]
-    assert pl.Series(
-        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
-    ).is_duplicated().to_list() == [True, False, True]
-
-
 def test_struct_concat_self_no_rechunk() -> None:
     df = pl.DataFrame([{"A": {"a": 1}}])
     out = pl.concat([df, df], rechunk=False)
@@ -761,17 +752,6 @@ def test_struct_applies_as_map() -> None:
     ).to_dict(as_series=False) == {
         "x": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
     }
-
-
-def test_struct_unique_df() -> None:
-    df = pl.DataFrame(
-        {
-            "numerical": [1, 2, 1],
-            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
-        }
-    )
-
-    df.select("numerical", "struct").unique().sort("numerical")
 
 
 def test_struct_is_in() -> None:
