@@ -394,6 +394,8 @@ pub fn create_physical_plan(
                 &mut Default::default(),
             )?;
 
+            println!("{:?}", &input_schema);
+
             let _slice = options.slice;
             #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.dynamic {
@@ -555,6 +557,9 @@ pub fn create_physical_plan(
         MapFunction {
             input, function, ..
         } => {
+            println!("function: {:?}", function);
+            // println!("lp_arena: {:?}", lp_arena);
+            // println!("expr_arena: {:?}", expr_arena);
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::UdfExec { input, function }))
         },

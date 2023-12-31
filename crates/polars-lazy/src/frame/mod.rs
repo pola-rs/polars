@@ -1395,7 +1395,7 @@ impl LazyFrame {
     /// - String columns will sum to None.
     pub fn median(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || dt.is_bool(),
+            |dt| dt.is_numeric() || dt.is_temporal() || matches!(dt, DataType::Boolean),
             |name| col(name).median(),
         )
     }

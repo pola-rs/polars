@@ -16,6 +16,8 @@ use crate::operators::{ArrowDataType, IdxSize};
 pub struct MeanAgg<K: NumericNative> {
     sum: Option<K>,
     count: IdxSize,
+    #[cfg(feature = "dtype-date")]
+    as_date: bool,
 }
 
 impl<K: NumericNative> MeanAgg<K> {
@@ -23,6 +25,17 @@ impl<K: NumericNative> MeanAgg<K> {
         MeanAgg {
             sum: None,
             count: 0,
+            #[cfg(feature = "dtype-date")]
+            as_date: false,
+        }
+    }
+
+    #[cfg(feature = "dtype-date")]
+    pub(crate) fn new_date() -> Self {
+        MeanAgg {
+            sum: None,
+            count: 0,
+            as_date: true,
         }
     }
 }
@@ -124,9 +137,15 @@ where
                     PrimitiveType::Float32 => AnyValue::Float32(
                         val.to_f32().unwrap_unchecked_release() / self.count as f32,
                     ),
-                    PrimitiveType::Float64 => AnyValue::Float64(
-                        val.to_f64().unwrap_unchecked_release() / self.count as f64,
-                    ),
+                    PrimitiveType::Float64 => {
+                        let arr = val.to_f64().unwrap_unchecked_release();
+                        #[cfg(feature = "dtype-date")]
+                        if self.as_date {
+                            let MS_IN_DAY:f64 = 86_400_000.0;
+                            arr = arr * MS_IN_DAY;
+                        }
+                        AnyValue::Float64(arr / self.count as f64)
+                    },
                     _ => todo!(),
                 }
             }
