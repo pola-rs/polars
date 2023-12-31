@@ -444,9 +444,8 @@ class Series:
     def _from_buffers(
         self,
         dtype: PolarsDataType,
-        data: Series,
+        data: Series | Sequence[Series],
         validity: Series | None = None,
-        offsets: Series | None = None,
     ) -> Self:
         """
         Construct a Series from information about its underlying buffers.
@@ -456,23 +455,25 @@ class Series:
         dtype
             The data type of the resulting Series.
         data
-            Data buffer. Must be a Series of the physical data type of `dtype`.
+            Buffers describing the data. For most data types, this is a single Series of
+            the physical data type of `dtype`. Some data types require multiple buffers:
+
+            - `String`: A data buffer of type `UInt8` and an offsets buffer
+                        of type `Int64`.
         validity
             Validity buffer. If specified, must be a Series of data type `Boolean`.
-        offsets
-            Offsets buffer. If specified, must be a Series of data type `Int64`.
 
         Returns
         -------
         Series
         """
+        if isinstance(data, Series):
+            data = [data._s]
+        else:
+            data = [s._s for s in data]
         if validity is not None:
             validity = validity._s
-        if offsets is not None:
-            offsets = offsets._s
-        return self._from_pyseries(
-            PySeries._from_buffers(dtype, data._s, validity, offsets)
-        )
+        return self._from_pyseries(PySeries._from_buffers(dtype, data, validity))
 
     @property
     def dtype(self) -> DataType:

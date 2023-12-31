@@ -284,16 +284,24 @@ impl PySeries {
     #[staticmethod]
     unsafe fn _from_buffers(
         dtype: Wrap<DataType>,
-        data: PySeries,
+        data: Vec<PySeries>,
         validity: Option<PySeries>,
-        offsets: Option<PySeries>,
     ) -> PyResult<Self> {
         let dtype = dtype.0;
-        let data = data.series;
+        let data = data.to_series();
 
-        if validity.is_none() && offsets.is_none() {
-            let s = data.strict_cast(&dtype).map_err(PyPolarsErr::from)?;
-            return Ok(s.into());
+        match data.len() {
+            0 => {
+                return Err(PyTypeError::new_err(
+                    "`data` input to `from_buffers` must contain at least one buffer",
+                ));
+            },
+            1 if validity.is_none() => {
+                let data = data.into_iter().next().unwrap();
+                let s = data.strict_cast(&dtype).map_err(PyPolarsErr::from)?;
+                return Ok(s.into());
+            },
+            _ => (),
         }
 
         let validity = match validity {
@@ -312,26 +320,30 @@ impl PySeries {
 
         let s = match dtype.to_physical() {
             dt if dt.is_numeric() => {
+                let data = data.into_iter().next().unwrap();
                 with_match_physical_numeric_polars_type!(dt, |$T| {
-                    let data = series_to_buffer::<$T>(data);
-                    from_buffers_num_impl::<<$T as PolarsNumericType>::Native>(data, validity)?
+                    let data_buffer = series_to_buffer::<$T>(data);
+                    from_buffers_num_impl::<<$T as PolarsNumericType>::Native>(data_buffer, validity)?
                 })
             },
             DataType::Boolean => {
-                let data = series_to_bitmap(data)?;
-                from_buffers_bool_impl(data, validity)?
+                let data = data.into_iter().next().unwrap();
+                let data_buffer = series_to_bitmap(data)?;
+                from_buffers_bool_impl(data_buffer, validity)?
             },
             DataType::String => {
-                let offsets = match offsets {
+                let mut data_iter = data.into_iter();
+                let data = data_iter.next().unwrap();
+                let offsets = match data_iter.next() {
                     Some(s) => {
-                        let dtype = s.series.dtype();
+                        let dtype = s.dtype();
                         if !matches!(dtype, DataType::Int64) {
                             return Err(PyTypeError::new_err(format!(
                                 "offsets buffer must have data type Int64, got {:?}",
                                 dtype
                             )));
                         }
-                        series_to_offsets(s.series)
+                        series_to_offsets(s)
                     },
                     None => return Err(PyTypeError::new_err(
                         "`from_buffers` cannot create a String column without an offsets buffer",

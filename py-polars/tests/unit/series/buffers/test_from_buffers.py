@@ -107,9 +107,7 @@ def test_series_from_buffers_string() -> None:
     validity = pl.Series([True, True, False, True])
     offsets = pl.Series([0, 1, 3, 3, 9], dtype=pl.Int64)
 
-    result = pl.Series._from_buffers(
-        dtype, data=data, validity=validity, offsets=offsets
-    )
+    result = pl.Series._from_buffers(dtype, data=[data, offsets], validity=validity)
 
     expected = pl.Series(["a", "bc", None, "éâç"], dtype=dtype)
     assert_series_equal(result, expected)
@@ -157,7 +155,7 @@ def test_series_from_buffers_unsupported_offsets() -> None:
         TypeError,
         match="offsets buffer must have data type Int64, got Int8",
     ):
-        pl.Series._from_buffers(pl.Utf8, data=data, offsets=offsets)
+        pl.Series._from_buffers(pl.Utf8, data=[data, offsets])
 
 
 def test_series_from_buffers_offsets_do_not_match_data() -> None:
@@ -168,4 +166,12 @@ def test_series_from_buffers_offsets_do_not_match_data() -> None:
         pl.PolarsPanicError,
         match="offsets must not exceed the values length",
     ):
-        pl.Series._from_buffers(pl.Utf8, data=data, offsets=offsets)
+        pl.Series._from_buffers(pl.Utf8, data=[data, offsets])
+
+
+def test_series_from_buffers_no_buffers() -> None:
+    with pytest.raises(
+        TypeError,
+        match="`data` input to `from_buffers` must contain at least one buffer",
+    ):
+        pl.Series._from_buffers(pl.Int32, data=[])
