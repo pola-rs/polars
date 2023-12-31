@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -152,6 +152,18 @@ def test_streaming_group_by_types() -> None:
             pl.Date,
             pl.Datetime("us"),
         ),
+        (
+            [time(hour=1), time(hour=2), time(hour=1)],
+            [time(hour=1, minute=30), time(hour=1)],
+            pl.Time,
+            pl.Time,
+        ),
+        (
+            [timedelta(hours=1), timedelta(hours=2), timedelta(hours=1)],
+            [timedelta(hours=1, minutes=30), timedelta(hours=1)],
+            pl.Duration("us"),
+            pl.Duration("us"),
+        ),
     ],
 )
 def test_streaming_group_by_mean(
@@ -174,6 +186,67 @@ def test_streaming_group_by_mean(
     )
     assert_frame_equal(
         df.group_by("key", maintain_order=True).mean().collect(streaming=True), expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("input", "output", "input_dtype", "output_dtype"),
+    [
+        ([1, 2, 1], [1.5, 1], pl.UInt8, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.UInt16, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.UInt32, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.UInt64, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int8, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int16, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int32, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int64, pl.Float64),
+        (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 1)],
+            [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 1)],
+            pl.Date,
+            pl.Datetime("ms"),
+        ),
+        (
+            [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 1)],
+            [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 1)],
+            pl.Date,
+            pl.Datetime("us"),
+        ),
+        (
+            [time(hour=1), time(hour=2), time(hour=1)],
+            [time(hour=1, minute=30), time(hour=1)],
+            pl.Time,
+            pl.Time,
+        ),
+        (
+            [timedelta(hours=1), timedelta(hours=2), timedelta(hours=1)],
+            [timedelta(hours=1, minutes=30), timedelta(hours=1)],
+            pl.Duration("us"),
+            pl.Duration("us"),
+        ),
+    ],
+)
+def test_streaming_group_by_median(
+    input: list[Any],
+    output: list[Any],
+    input_dtype: PolarsDataType,
+    output_dtype: PolarsDataType,
+) -> None:
+    df = pl.LazyFrame(
+        {
+            "key": [1, 1, 2],
+            "a": pl.Series(input, dtype=input_dtype),
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2],
+            "a": pl.Series(output, dtype=output_dtype),
+        }
+    )
+    assert_frame_equal(
+        df.group_by("key", maintain_order=True).median().collect(streaming=True),
+        expected,
     )
 
 
