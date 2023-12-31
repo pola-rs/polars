@@ -5,10 +5,19 @@ import os
 import re
 import sys
 import warnings
+from collections import Counter
 from collections.abc import MappingView, Sized
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generator,
+    Iterable,
+    Literal,
+    Sequence,
+    TypeVar,
+)
 
 import polars as pl
 from polars import functions as F
@@ -236,11 +245,25 @@ def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
     return tuple(int(re.sub(r"\D", "", str(v))) for v in version)
 
 
-def ordered_unique(values: Sequence[Any]) -> list[Any]:
+def ordered_unique(
+    values: Iterable[Any], *, return_duplicates: bool = False
+) -> list[Any] | tuple[list[Any], dict[Any, int]]:
     """Return unique list of sequence values, maintaining their order of appearance."""
     seen: set[Any] = set()
     add_ = seen.add
-    return [v for v in values if not (v in seen or add_(v))]
+    if not return_duplicates:
+        return [v for v in values if not (v in seen or add_(v))]
+    else:
+        count: dict[Any, int] = Counter()
+        unique = []
+        for v in values:
+            count[v] += 1
+            if v not in seen:
+                unique.append(v)
+                seen.add(v)
+
+        dupes = Counter({k: v for k, v in count.items() if v > 1})
+        return unique, dupes
 
 
 def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
