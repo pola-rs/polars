@@ -58,7 +58,6 @@ from polars.dependencies import (
     _check_for_pandas,
     _check_for_pyarrow,
     dataframe_api_compat,
-    holoviews,
     hvplot,
 )
 from polars.dependencies import numpy as np
