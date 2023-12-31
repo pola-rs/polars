@@ -16,8 +16,6 @@ use polars_utils::IdxSize;
 use crate::executors::sinks::group_by::aggregates::count::CountAgg;
 use crate::executors::sinks::group_by::aggregates::first::FirstAgg;
 use crate::executors::sinks::group_by::aggregates::last::LastAgg;
-#[cfg(feature = "dtype-date")]
-use crate::executors::sinks::group_by::aggregates::mean::Conversion;
 use crate::executors::sinks::group_by::aggregates::mean::MeanAgg;
 use crate::executors::sinks::group_by::aggregates::min_max::{new_max, new_min};
 use crate::executors::sinks::group_by::aggregates::null::NullAgg;
