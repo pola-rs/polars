@@ -330,8 +330,8 @@ In pandas an integer column with missing values is cast to be a float column wit
 
 See the [missing data](../expressions/null.md) section for more details.
 
-
 ## Pipe littering
+
 A common usage in pandas is utilizing `pipe` to apply some function to a `DataFrame`. Copying this coding style to Polars
 is unidiomatic and leads to suboptimal query plans.
 
@@ -406,7 +406,7 @@ def get_bar(input_column: str, schema: OrderedDict) -> pl.Expr:
 def get_ham(input_column: str) -> pl.Expr:
     return pl.col(input_column).some_computation().alias("ham")
 
-# Use pipe (just onece) to get hold of the schema of the LazyFrame.
+# Use pipe (just once) to get hold of the schema of the LazyFrame.
 lf.pipe(lambda lf.with_columns(
     get_ham("col_a"),
     get_bar("col_b", lf.schema),
@@ -414,5 +414,5 @@ lf.pipe(lambda lf.with_columns(
 )
 ```
 
-Another benefit of writing functions that return expressions, is that these functions are composable as expressions can 
+Another benefit of writing functions that return expressions, is that these functions are composable as expressions can
 be chained and partially applied, leading to much more flexibility in the design.
