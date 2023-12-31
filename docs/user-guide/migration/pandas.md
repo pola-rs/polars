@@ -72,7 +72,7 @@ As there is no index in Polars there is no `.loc` or `iloc` method in Polars - a
 there is also no `SettingWithCopyWarning` in Polars.
 
 However, the best way to select data in Polars is to use the expression API. For
-example, if you want to select a column in pandas you can do one of the following:
+example, if you want to select a column in pandas, you can do one of the following:
 
 ```python
 df['a']
@@ -201,7 +201,8 @@ In pandas you filter the dataframe by passing Boolean expressions to the `query`
 df.query("m2_living > 2500 and price < 300000")
 ```
 
-or by directly evaluating a mask
+or by directly evaluating a mask:
+
 ```python
 df[(df["m2_living"] > 2500) & (df["price"] < 300000)]
 ```
@@ -331,8 +332,8 @@ See the [missing data](../expressions/null.md) section for more details.
 
 
 ## Pipe littering
-A common usage in pandas is utilizing `pipe` to do apply some function to a `DataFrame`. Copying this coding style to Polars,
-is unidiomatic and leads to very suboptimal query plans. 
+A common usage in pandas is utilizing `pipe` to apply some function to a `DataFrame`. Copying this coding style to Polars
+is unidiomatic and leads to suboptimal query plans.
 
 The snippet below shows a common pattern in pandas.
 
@@ -405,10 +406,13 @@ def get_bar(input_column: str, schema: OrderedDict) -> pl.Expr:
 def get_ham(input_column: str) -> pl.Expr:
     return pl.col(input_column).some_computation().alias("ham")
 
-# Use pipe to get hold of the schema of the LazyFrame.
+# Use pipe (just onece) to get hold of the schema of the LazyFrame.
 lf.pipe(lambda lf.with_columns(
-    get_ham("col_a", lf.schema),
+    get_ham("col_a"),
     get_bar("col_b", lf.schema),
-    get_foo("col_c"),
+    get_foo("col_c", lf.schema),
 )
 ```
+
+Another benefit of writing functions that return expressions, is that these functions are composable as expressions can 
+be chained and partially applied, leading to much more flexibility in the design.
