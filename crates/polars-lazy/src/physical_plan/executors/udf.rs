@@ -15,7 +15,6 @@ impl Executor for UdfExec {
             }
         }
         let df = self.input.execute(state)?;
-        println!("df: {:?}", df);
 
         let profile_name = if state.has_node_timer() {
             Cow::Owned(format!("{}", self.function))

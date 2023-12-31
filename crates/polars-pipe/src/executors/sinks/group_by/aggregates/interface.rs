@@ -53,7 +53,6 @@ pub(crate) enum AggregateFunction {
     SumU64(SumAgg<u64>),
     SumI32(SumAgg<i32>),
     SumI64(SumAgg<i64>),
-    #[cfg(feature = "dtype-date")]
     MeanDate(MeanAgg<i64>),
     MeanF32(MeanAgg<f32>),
     MeanF64(MeanAgg<f64>),
@@ -82,7 +81,6 @@ impl AggregateFunction {
             SumU64(_) => SumU64(SumAgg::new()),
             SumI32(_) => SumI32(SumAgg::new()),
             SumI64(_) => SumI64(SumAgg::new()),
-            #[cfg(feature = "dtype-date")]
             MeanDate(_) => MeanDate(MeanAgg::new_date()),
             MeanF32(_) => MeanF32(MeanAgg::new()),
             MeanF64(_) => MeanF64(MeanAgg::new()),

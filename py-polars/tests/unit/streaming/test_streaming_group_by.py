@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -124,6 +127,54 @@ def test_streaming_group_by_types() -> None:
             .select(pl.all().exclude("person_id"))
             .collect(streaming=True)
         )
+
+
+@pytest.mark.parametrize(
+    ("input", "output", "input_dtype", "output_dtype"),
+    [
+        ([1, 2, 1], [1.5, 1], pl.UInt8, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.UInt16, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.UInt32, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.UInt64, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int8, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int16, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int32, pl.Float64),
+        ([1, 2, 1], [1.5, 1], pl.Int64, pl.Float64),
+        (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 1)],
+            [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 1)],
+            pl.Date,
+            pl.Datetime("ms"),
+        ),
+        (
+            [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 1)],
+            [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 1)],
+            pl.Date,
+            pl.Datetime("us"),
+        ),
+    ],
+)
+def test_streaming_group_by_mean(
+    input: list[Any],
+    output: list[Any],
+    input_dtype: PolarsDataType,
+    output_dtype: PolarsDataType,
+) -> None:
+    df = pl.LazyFrame(
+        {
+            "key": [1, 1, 2],
+            "a": pl.Series(input, dtype=input_dtype),
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2],
+            "a": pl.Series(output, dtype=output_dtype),
+        }
+    )
+    assert_frame_equal(
+        df.group_by("key", maintain_order=True).mean().collect(streaming=True), expected
+    )
 
 
 def test_streaming_group_by_min_max() -> None:
