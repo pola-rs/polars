@@ -89,7 +89,6 @@ module = [
   "ezodf.*",
   "fsspec.*",
   "gevent",
-  "holoviews.*",
   "hvplot.*",
   "matplotlib.*",
   "moto.server",
