@@ -126,7 +126,7 @@ def test_pickle_udf_expression() -> None:
     expected = pl.DataFrame({"a": [2, 4, 6]})
     assert_frame_equal(result, expected)
 
-    e = pl.col("a").map_batches(times2, return_dtype=pl.Utf8)
+    e = pl.col("a").map_batches(times2, return_dtype=pl.String)
     b = pickle.dumps(e)
     e = pickle.loads(b)
 
@@ -187,5 +187,19 @@ def test_serde_categorical_series_10586() -> None:
 
 
 def test_serde_keep_dtype_empty_list() -> None:
-    s = pl.Series([{"a": None}], dtype=pl.Struct([pl.Field("a", pl.List(pl.Utf8))]))
+    s = pl.Series([{"a": None}], dtype=pl.Struct([pl.Field("a", pl.List(pl.String))]))
     assert s.dtype == pickle.loads(pickle.dumps(s)).dtype
+
+
+def test_serde_array_dtype() -> None:
+    s = pl.Series(
+        [[1, 2, 3], [None, None, None], [1, None, 3]],
+        dtype=pl.Array(pl.Int32(), width=3),
+    )
+    assert_series_equal(pickle.loads(pickle.dumps(s)), s)
+
+    nested_s = pl.Series(
+        [[[1, 2, 3], [4, None]], None, [[None, None, 2]]],
+        dtype=pl.List(pl.Array(pl.Int32(), width=3)),
+    )
+    assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)

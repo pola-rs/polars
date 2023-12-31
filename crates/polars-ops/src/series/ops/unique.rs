@@ -36,6 +36,14 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
             DataType::String => {
                 Ok(unique_counts_helper(s.str().unwrap().into_iter()).into_series())
             },
+            DataType::Null => {
+                let ca = if s.is_empty() {
+                    IdxCa::new(s.name(), [] as [IdxSize; 0])
+                } else {
+                    IdxCa::new(s.name(), [s.len() as IdxSize])
+                };
+                Ok(ca.into_series())
+            },
             dt => {
                 polars_bail!(opq = unique_counts, dt)
             },

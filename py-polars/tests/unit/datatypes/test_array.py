@@ -1,3 +1,4 @@
+import datetime
 from typing import Any
 
 import pytest
@@ -58,7 +59,7 @@ def test_array_construction() -> None:
         {"row_id": "a", "data": [1, 2, 3]},
         {"row_id": "b", "data": [2, 3, 4]},
     ]
-    schema = {"row_id": pl.Utf8(), "data": pl.Array(inner=pl.Int64, width=3)}
+    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, width=3)}
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
@@ -159,7 +160,7 @@ def test_array_data_type_equality() -> None:
     assert pl.Array(pl.Int64, 2) == pl.Array
     assert pl.Array(pl.Int64, 2) == pl.Array(pl.Int64, 2)
     assert pl.Array(pl.Int64, 2) != pl.Array(pl.Int64, 3)
-    assert pl.Array(pl.Int64, 2) != pl.Array(pl.Utf8, 2)
+    assert pl.Array(pl.Int64, 2) != pl.Array(pl.String, 2)
     assert pl.Array(pl.Int64, 2) != pl.List(pl.Int64)
 
 
@@ -169,11 +170,47 @@ def test_array_data_type_equality() -> None:
         ([[1, 2], None, [3, None], [None, None]], pl.Int64),
         ([[True, False], None, [True, None], [None, None]], pl.Boolean),
         ([[1.0, 2.0], None, [3.0, None], [None, None]], pl.Float32),
-        ([["a", "b"], None, ["c", None], [None, None]], pl.Utf8),
+        ([["a", "b"], None, ["c", None], [None, None]], pl.String),
+        (
+            [
+                [datetime.datetime(2021, 1, 1), datetime.datetime(2022, 1, 1, 10, 30)],
+                None,
+                [datetime.datetime(2023, 12, 25), None],
+                [None, None],
+            ],
+            pl.Datetime,
+        ),
+        (
+            [
+                [datetime.date(2021, 1, 1), datetime.date(2022, 1, 15)],
+                None,
+                [datetime.date(2023, 12, 25), None],
+                [None, None],
+            ],
+            pl.Date,
+        ),
+        (
+            [
+                [datetime.timedelta(10), datetime.timedelta(1, 22)],
+                None,
+                [datetime.timedelta(20), None],
+                [None, None],
+            ],
+            pl.Duration,
+        ),
         ([[[1, 2], None], None, [[3], None], [None, None]], pl.List(pl.Int32)),
     ],
 )
 def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     s = pl.Series(data, dtype=pl.List(inner_type))
     s = s.cast(pl.Array(inner_type, 2))
+    assert s.dtype == pl.Array(inner_type, width=2)
     assert s.to_list() == data
+
+
+def test_array_repeat() -> None:
+    dtype = pl.Array(pl.UInt8, width=1)
+    s = pl.repeat([42], n=3, dtype=dtype, eager=True)
+    expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
+    assert s.dtype == dtype
+    assert_series_equal(s, expected)

@@ -16,5 +16,6 @@ sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.2
 sphinx-design==0.5.0
 sphinx-favicon==1.0.1
+sphinx-toolbox==3.5.0
 
 livereload==2.6.3

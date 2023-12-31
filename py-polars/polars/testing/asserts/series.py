@@ -9,8 +9,8 @@ from polars.datatypes import (
     Decimal,
     Float64,
     List,
+    String,
     Struct,
-    Utf8,
     unpack_dtypes,
 )
 from polars.exceptions import ComputeError
@@ -126,9 +126,9 @@ def _assert_series_values_equal(
     # Handle categoricals
     if categorical_as_str:
         if left.dtype == Categorical:
-            left = left.cast(Utf8)
+            left = left.cast(String)
         if right.dtype == Categorical:
-            right = right.cast(Utf8)
+            right = right.cast(String)
 
     # Handle decimals
     # TODO: Delete this branch when Decimal equality is implemented

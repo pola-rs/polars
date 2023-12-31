@@ -28,7 +28,7 @@ NE = Endianness.NATIVE
         (pl.Float32, (DtypeKind.FLOAT, 32, "f", NE)),
         (pl.Float64, (DtypeKind.FLOAT, 64, "g", NE)),
         (pl.Boolean, (DtypeKind.BOOL, 1, "b", NE)),
-        (pl.Utf8, (DtypeKind.STRING, 8, "U", NE)),
+        (pl.String, (DtypeKind.STRING, 8, "U", NE)),
         (pl.Date, (DtypeKind.DATETIME, 32, "tdD", NE)),
         (pl.Time, (DtypeKind.DATETIME, 64, "ttu", NE)),
         (pl.Categorical, (DtypeKind.CATEGORICAL, 32, "I", NE)),

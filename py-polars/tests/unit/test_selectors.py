@@ -4,7 +4,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.selectors import expand_selector
+from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 
 
@@ -30,7 +30,7 @@ def df() -> pl.DataFrame:
             "JJK": pl.Date,
             "Lmn": pl.Duration,
             "opp": pl.Datetime("ms"),
-            "qqR": pl.Utf8,
+            "qqR": pl.String,
         },
     )
     return df
@@ -40,6 +40,7 @@ def test_selector_all(df: pl.DataFrame) -> None:
     assert df.schema == df.select(cs.all()).schema
     assert {} == df.select(~cs.all()).schema
     assert df.schema == df.select(~(~cs.all())).schema
+    assert df.select(cs.all() & pl.col("abc")).schema == {"abc": pl.UInt16}
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
@@ -53,15 +54,19 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         "def": pl.Float32,
         "eee": pl.Boolean,
         "fgg": pl.Boolean,
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
 
 def test_selector_by_name(df: pl.DataFrame) -> None:
-    assert df.select(cs.by_name("abc", "cde")).columns == [
-        "abc",
-        "cde",
-    ]
+    for selector in (
+        cs.by_name("abc", "cde"),
+        cs.by_name("abc") | pl.col("cde"),
+    ):
+        assert df.select(selector).columns == [
+            "abc",
+            "cde",
+        ]
     assert df.select(~cs.by_name("abc", "cde", "ghi", "Lmn", "opp", "eee")).columns == [
         "bbb",
         "def",
@@ -280,7 +285,7 @@ def test_selector_miscellaneous(df: pl.DataFrame) -> None:
     assert df.select(cs.categorical()).columns == []
 
     test_schema = {
-        "abc": pl.Utf8,
+        "abc": pl.String,
         "mno": pl.Binary,
         "tuv": pl.Object,
         "xyz": pl.Categorical,
@@ -381,8 +386,8 @@ def test_selector_repr() -> None:
         cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
     )
     assert_repr_equals(
-        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(include_categorical=False),
-        "(cs.temporal() | (cs.by_dtype(dtypes=[Utf8]) & cs.string(include_categorical=False)))",
+        cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),
+        "(cs.temporal() | (cs.by_dtype(dtypes=[String]) & cs.string(include_categorical=False)))",
     )
 
 
@@ -394,7 +399,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "JJK": pl.Date,
         "Lmn": pl.Duration,
         "opp": pl.Datetime("ms"),
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
     # and
@@ -409,6 +414,12 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "Lmn": pl.Duration,
     }
 
+    # equivalent (though more verbose) to the above, using `exclude`
+    assert df.select(cs.exclude(~cs.temporal() | cs.matches("opp|JJK"))).schema == {
+        "ghi": pl.Time,
+        "Lmn": pl.Duration,
+    }
+
     # COMPLEMENT SET
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
         "abc": pl.UInt16,
@@ -419,7 +430,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "fgg": pl.Boolean,
         "JJK": pl.Date,
         "opp": pl.Datetime("ms"),
-        "qqR": pl.Utf8,
+        "qqR": pl.String,
     }
 
 
@@ -497,6 +508,13 @@ def test_regex_expansion_exclude_10002() -> None:
         ).to_dict(as_series=False)
         == expected
     )
+
+
+def test_is_selector() -> None:
+    assert is_selector(cs.numeric())
+    assert is_selector(cs.by_dtype(pl.UInt32) | pl.col("xyz"))
+    assert not is_selector(pl.col("cde"))
+    assert not is_selector(None)
 
 
 def test_selector_or() -> None:

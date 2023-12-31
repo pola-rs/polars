@@ -36,11 +36,11 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    String,
     Struct,
     Time,
     UInt32,
     Unknown,
-    Utf8,
     dtype_to_py_type,
     is_polars_dtype,
     numpy_char_code_to_dtype,
@@ -1091,7 +1091,7 @@ def _sequence_of_sequence_to_pydf(
         unpack_nested = False
         for col, tp in local_schema_override.items():
             if tp in (Categorical, Enum):
-                local_schema_override[col] = Utf8
+                local_schema_override[col] = String
             elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
                 unpack_nested = contains_nested(
                     getattr(first_element, col, None).__class__, is_namedtuple
@@ -1283,7 +1283,7 @@ def _establish_dataclass_or_model_schema(
 
     for col, tp in overrides.items():
         if tp in (Categorical, Enum):
-            overrides[col] = Utf8
+            overrides[col] = String
         elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
             unpack_nested = contains_nested(
                 getattr(first_element, col, None),

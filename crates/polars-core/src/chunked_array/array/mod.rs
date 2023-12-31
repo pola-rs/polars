@@ -20,10 +20,13 @@ impl ArrayChunked {
         }
     }
 
-    pub fn to_physical(&mut self, inner_dtype: DataType) {
+    /// # Safety
+    /// The caller must ensure that the logical type given fits the physical type of the array.
+    pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
+        let width = self.width();
         let fld = Arc::make_mut(&mut self.field);
-        fld.coerce(DataType::List(Box::new(inner_dtype)))
+        fld.coerce(DataType::Array(Box::new(inner_dtype), width))
     }
 
     /// Get the inner values as `Series`

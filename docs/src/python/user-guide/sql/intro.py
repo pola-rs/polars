@@ -65,8 +65,8 @@ sales_data = pd.DataFrame(
 
 # --8<-- [start:execute_multiple_sources]
 # Input data:
-# products_masterdata.csv with schema {'product_id': Int64, 'product_name': Utf8}
-# products_categories.json with schema {'product_id': Int64, 'category': Utf8}
+# products_masterdata.csv with schema {'product_id': Int64, 'product_name': String}
+# products_categories.json with schema {'product_id': Int64, 'category': String}
 # sales_data is a Pandas DataFrame with schema {'product_id': Int64, 'sales': Int64}
 
 ctx = pl.SQLContext(

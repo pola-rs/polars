@@ -85,11 +85,7 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
     out = (
         pl.DataFrame({"col_to_group_by": [2], "flt": [1672740910.967138], "col3": [1]})
         .group_by("col_to_group_by")
-        .agg(
-            (pl.col("flt").filter(pl.col("col3") == 0).diff() * 1000)
-            .diff()
-            .alias("calc")
-        )
+        .agg((pl.col("flt").filter(col3=0).diff() * 1000).diff().alias("calc"))
     )
 
     assert out.schema == {"col_to_group_by": pl.Int64, "calc": pl.List(pl.Float64)}

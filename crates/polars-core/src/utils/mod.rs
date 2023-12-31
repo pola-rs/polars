@@ -691,6 +691,8 @@ where
     }
 }
 
+/// # Panics
+/// This will panic if `a.len() != b.len() || b.len() != c.len()` and array is chunked.
 #[allow(clippy::type_complexity)]
 pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
@@ -706,10 +708,16 @@ where
     B: PolarsDataType,
     C: PolarsDataType,
 {
-    debug_assert_eq!(a.len(), b.len());
-    debug_assert_eq!(b.len(), c.len());
+    if a.chunks.len() == 1 && b.chunks.len() == 1 && c.chunks.len() == 1 {
+        return (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c));
+    }
+
+    assert!(
+        a.len() == b.len() && b.len() == c.len(),
+        "expected arrays of the same length"
+    );
+
     match (a.chunks.len(), b.chunks.len(), c.chunks.len()) {
-        (1, 1, 1) => (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c)),
         (_, 1, 1) => (
             Cow::Borrowed(a),
             Cow::Owned(b.match_chunks(a.chunk_id())),

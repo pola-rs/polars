@@ -72,7 +72,7 @@ As there is no index in Polars there is no `.loc` or `iloc` method in Polars - a
 there is also no `SettingWithCopyWarning` in Polars.
 
 However, the best way to select data in Polars is to use the expression API. For
-example, if you want to select a column in pandas you can do one of the following:
+example, if you want to select a column in pandas, you can do one of the following:
 
 ```python
 df['a']
@@ -198,7 +198,13 @@ We want to filter the dataframe `df` with housing data based on some criteria.
 In pandas you filter the dataframe by passing Boolean expressions to the `query` method:
 
 ```python
-df.query('m2_living > 2500 and price < 300000')
+df.query("m2_living > 2500 and price < 300000")
+```
+
+or by directly evaluating a mask:
+
+```python
+df[(df["m2_living"] > 2500) & (df["price"] < 300000)]
 ```
 
 while in Polars you call the `filter` method:
@@ -323,3 +329,90 @@ For float columns Polars permits the use of `NaN` values. These `NaN` values are
 In pandas an integer column with missing values is cast to be a float column with `NaN` values for the missing values (unless using optional nullable integer dtypes). In Polars any missing values in an integer column are simply `null` values and the column remains an integer column.
 
 See the [missing data](../expressions/null.md) section for more details.
+
+## Pipe littering
+
+A common usage in pandas is utilizing `pipe` to apply some function to a `DataFrame`. Copying this coding style to Polars
+is unidiomatic and leads to suboptimal query plans.
+
+The snippet below shows a common pattern in pandas.
+
+```python
+def add_foo(df: pd.DataFrame) -> pd.DataFrame:
+    df["foo"] = ...
+    return df
+
+def add_bar(df: pd.DataFrame) -> pd.DataFrame:
+    df["bar"] = ...
+    return df
+
+
+def add_ham(df: pd.DataFrame) -> pd.DataFrame:
+    df["ham"] = ...
+    return df
+
+(df
+ .pipe(add_foo)
+ .pipe(add_bar)
+ .pipe(add_ham)
+ )
+```
+
+If we do this in polars, we would create 3 `with_column` contexts, that forces Polars to run the 3 pipes sequentially,
+utilizing zero parallelism.
+
+The way to get similar abstractions in polars is creating functions that create expressions.
+The snippet below creates 3 expressions that run on a single context and thus are allowed to run in parallel.
+
+```python
+def get_foo(input_column: str) -> pl.Expr:
+    return pl.col(input_column).some_computation().alias("foo")
+
+def get_bar(input_column: str) -> pl.Expr:
+    return pl.col(input_column).some_computation().alias("bar")
+
+def get_ham(input_column: str) -> pl.Expr:
+    return pl.col(input_column).some_computation().alias("ham")
+
+# This single context will run all 3 expressions in parallel
+df.with_columns(
+    get_ham("col_a"),
+    get_bar("col_b"),
+    get_foo("col_c"),
+)
+```
+
+If you need the schema in the functions that generate the expressions, you an utilize a single `pipe`:
+
+```python
+from collections import OrderedDict
+
+def get_foo(input_column: str, schema: OrderedDict) -> pl.Expr:
+    if "some_col" in schema:
+        # branch_a
+        ...
+    else:
+        # branch b
+        ...
+
+def get_bar(input_column: str, schema: OrderedDict) -> pl.Expr:
+    if "some_col" in schema:
+        # branch_a
+        ...
+    else:
+        # branch b
+        ...
+
+def get_ham(input_column: str) -> pl.Expr:
+    return pl.col(input_column).some_computation().alias("ham")
+
+# Use pipe (just once) to get hold of the schema of the LazyFrame.
+lf.pipe(lambda lf.with_columns(
+    get_ham("col_a"),
+    get_bar("col_b", lf.schema),
+    get_foo("col_c", lf.schema),
+)
+```
+
+Another benefit of writing functions that return expressions, is that these functions are composable as expressions can
+be chained and partially applied, leading to much more flexibility in the design.

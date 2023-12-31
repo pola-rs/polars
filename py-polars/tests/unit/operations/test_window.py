@@ -330,7 +330,7 @@ def test_window_function_implode_contention_8536() -> None:
             "policy": ["a", "b", "c", "c", "d", "d", "d", "d", "e", "e"],
             "memo": ["LE", "RM", "", "", "", "LE", "", "", "", "RM"],
         },
-        schema={"policy": pl.Utf8, "memo": pl.Utf8},
+        schema={"policy": pl.String, "memo": pl.String},
     )
 
     assert df.select(

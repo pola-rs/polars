@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 from datetime import timezone
+from functools import reduce
+from operator import or_
 from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
 
 from polars import functions as F
@@ -20,12 +22,13 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Object,
+    String,
     Time,
-    Utf8,
     is_polars_dtype,
 )
 from polars.expr import Expr
 from polars.utils.deprecation import deprecate_nonkeyword_arguments
+from polars.utils.various import is_column
 
 if TYPE_CHECKING:
     import sys
@@ -190,6 +193,62 @@ def _expand_selector_dicts(
     return expanded
 
 
+def _combine_as_selector(
+    items: (
+        str
+        | Expr
+        | PolarsDataType
+        | SelectorType
+        | Collection[str | Expr | PolarsDataType | SelectorType]
+    ),
+    *more_items: str | Expr | PolarsDataType | SelectorType,
+) -> SelectorType:
+    """Create a combined selector from cols, names, dtypes, and/or other selectors."""
+    names, regexes, dtypes, selectors = [], [], [], []  # type: ignore[var-annotated]
+    for item in (
+        *(
+            items
+            if isinstance(items, Collection) and not isinstance(items, str)
+            else [items]
+        ),
+        *more_items,
+    ):
+        if is_selector(item):
+            selectors.append(item)
+        elif is_polars_dtype(item):
+            dtypes.append(item)
+        elif isinstance(item, str):
+            if item.startswith("^") and item.endswith("$"):
+                regexes.append(item)
+            else:
+                names.append(item)
+        elif is_column(item):
+            names.append(item.meta.output_name())  # type: ignore[union-attr]
+        else:
+            raise TypeError(
+                "invalid input for `exclude`"
+                f"\n\nExpected one or more `str`, `DataType` or selector; found {item!r} instead."
+            )
+
+    selected = []
+    if names:
+        selected.append(by_name(*names))
+    if dtypes:
+        selected.append(by_dtype(*dtypes))  # type: ignore[arg-type]
+    if regexes:
+        selected.append(
+            matches(
+                regexes[0]
+                if len(regexes) > 1
+                else "|".join(f"({rx})" for rx in regexes)
+            )
+        )
+    if selectors:
+        selected.extend(selectors)
+
+    return reduce(or_, selected)
+
+
 class _selector_proxy_(Expr):
     """Base column selector expression/proxy."""
 
@@ -243,6 +302,8 @@ class _selector_proxy_(Expr):
                 return f"cs.{selector_name}({str_params})"
 
     def __sub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+        if is_column(other):
+            other = by_name(other.meta.output_name())
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_sub(other),
@@ -253,6 +314,8 @@ class _selector_proxy_(Expr):
             return self.as_expr().__sub__(other)
 
     def __and__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+        if is_column(other):
+            other = by_name(other.meta.output_name())
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_and(other),
@@ -263,6 +326,8 @@ class _selector_proxy_(Expr):
             return self.as_expr().__and__(other)
 
     def __or__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+        if is_column(other):
+            other = by_name(other.meta.output_name())
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_add(other),
@@ -274,6 +339,8 @@ class _selector_proxy_(Expr):
 
     def __rand__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         # order of operation doesn't matter
+        if is_column(other):
+            other = by_name(other.meta.output_name())
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__and__(other)
         else:
@@ -281,6 +348,8 @@ class _selector_proxy_(Expr):
 
     def __ror__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         # order of operation doesn't matter
+        if is_column(other):
+            other = by_name(other.meta.output_name())
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__or__(other)
         else:
@@ -296,10 +365,10 @@ class _selector_proxy_(Expr):
         return Expr._from_pyexpr(self._pyexpr)
 
 
-def _re_string(string: str | Collection[str]) -> str:
+def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        rx = f"{re.escape(string)}"
+        rx = f"{re.escape(string)}" if escape else string
     else:
         strings: list[str] = []
         for st in string:
@@ -307,7 +376,7 @@ def _re_string(string: str | Collection[str]) -> str:
                 strings.extend(st)
             else:
                 strings.append(st)
-        rx = "|".join(re.escape(x) for x in strings)
+        rx = "|".join((re.escape(x) if escape else x) for x in strings)
     return f"({rx})"
 
 
@@ -334,7 +403,7 @@ def all() -> SelectorType:
 
     Select all columns, casting them to string:
 
-    >>> df.select(cs.all().cast(pl.Utf8))
+    >>> df.select(cs.all().cast(pl.String))
     shape: (2, 2)
     ┌────────────┬─────────┐
     │ dt         ┆ value   │
@@ -1186,6 +1255,74 @@ def ends_with(*suffix: str) -> SelectorType:
     )
 
 
+def exclude(
+    columns: (
+        str
+        | PolarsDataType
+        | SelectorType
+        | Expr
+        | Collection[str | PolarsDataType | SelectorType | Expr]
+    ),
+    *more_columns: str | PolarsDataType | SelectorType | Expr,
+) -> Expr:
+    """
+    Select all columns except those matching the given columns, datatypes, or selectors.
+
+    Parameters
+    ----------
+    columns
+        One or more columns (col or name), datatypes, columns, or selectors representing
+        the columns to exclude.
+    *more_columns
+        Additional columns, datatypes, or selectors to exclude, specified as positional
+        arguments.
+
+    Notes
+    -----
+    If excluding a single selector it is simpler to write as `~selector` instead.
+
+    Examples
+    --------
+    Exclude by column name(s):
+
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "aa": [1, 2, 3],
+    ...         "ba": ["a", "b", None],
+    ...         "cc": [None, 2.5, 1.5],
+    ...     }
+    ... )
+    >>> df.select(cs.exclude("ba", "xx"))
+    shape: (3, 2)
+    ┌─────┬──────┐
+    │ aa  ┆ cc   │
+    │ --- ┆ ---  │
+    │ i64 ┆ f64  │
+    ╞═════╪══════╡
+    │ 1   ┆ null │
+    │ 2   ┆ 2.5  │
+    │ 3   ┆ 1.5  │
+    └─────┴──────┘
+
+    Exclude using a column name, a selector, and a dtype:
+
+    >>> df.select(cs.exclude("aa", cs.string(), pl.UInt32))
+    shape: (3, 1)
+    ┌──────┐
+    │ cc   │
+    │ ---  │
+    │ f64  │
+    ╞══════╡
+    │ null │
+    │ 2.5  │
+    │ 1.5  │
+    └──────┘
+
+    """
+    return ~_combine_as_selector(columns, *more_columns)
+
+
 def first() -> SelectorType:
     """
     Select the first column in the current scope.
@@ -1796,7 +1933,7 @@ def starts_with(*prefix: str) -> SelectorType:
 @deprecate_nonkeyword_arguments(version="0.19.3")
 def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     """
-    Select all Utf8 (and, optionally, Categorical) string columns .
+    Select all String (and, optionally, Categorical) string columns .
 
     See Also
     --------
@@ -1848,7 +1985,7 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     └─────┴─────┴─────┴──────┘
 
     """
-    string_dtypes: list[PolarsDataType] = [Utf8]
+    string_dtypes: list[PolarsDataType] = [String]
     if include_categorical:
         string_dtypes.append(Categorical)
 

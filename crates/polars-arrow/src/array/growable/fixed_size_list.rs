@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use super::utils::{build_extend_null_bits, ExtendNullBits};
 use super::{make_growable, Growable};
+use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, FixedSizeListArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
@@ -9,9 +9,8 @@ use crate::datatypes::ArrowDataType;
 /// Concrete [`Growable`] for the [`FixedSizeListArray`].
 pub struct GrowableFixedSizeList<'a> {
     arrays: Vec<&'a FixedSizeListArray>,
-    validity: MutableBitmap,
+    validity: Option<MutableBitmap>,
     values: Box<dyn Growable<'a> + 'a>,
-    extend_null_bits: Vec<ExtendNullBits<'a>>,
     size: usize,
 }
 
@@ -40,11 +39,6 @@ impl<'a> GrowableFixedSizeList<'a> {
             unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
         };
 
-        let extend_null_bits = arrays
-            .iter()
-            .map(|array| build_extend_null_bits(*array, use_validity))
-            .collect();
-
         let inner = arrays
             .iter()
             .map(|array| array.values().as_ref())
@@ -54,8 +48,7 @@ impl<'a> GrowableFixedSizeList<'a> {
         Self {
             arrays,
             values,
-            validity: MutableBitmap::with_capacity(capacity),
-            extend_null_bits,
+            validity: prepare_validity(use_validity, capacity),
             size,
         }
     }
@@ -64,20 +57,28 @@ impl<'a> GrowableFixedSizeList<'a> {
         let validity = std::mem::take(&mut self.validity);
         let values = self.values.as_box();
 
-        FixedSizeListArray::new(self.arrays[0].data_type().clone(), values, validity.into())
+        FixedSizeListArray::new(
+            self.arrays[0].data_type().clone(),
+            values,
+            validity.map(|v| v.into()),
+        )
     }
 }
 
 impl<'a> Growable<'a> for GrowableFixedSizeList<'a> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        (self.extend_null_bits[index])(&mut self.validity, start, len);
+        let array = self.arrays[index];
+        extend_validity(&mut self.validity, array, start, len);
+
         self.values
             .extend(index, start * self.size, len * self.size);
     }
 
     fn extend_validity(&mut self, additional: usize) {
         self.values.extend_validity(additional * self.size);
-        self.validity.extend_constant(additional, false);
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false);
+        }
     }
 
     #[inline]
@@ -102,7 +103,7 @@ impl<'a> From<GrowableFixedSizeList<'a>> for FixedSizeListArray {
         Self::new(
             val.arrays[0].data_type().clone(),
             values,
-            val.validity.into(),
+            val.validity.map(|v| v.into()),
         )
     }
 }

@@ -164,7 +164,7 @@ def test_struct_function_expansion() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
-    struct_schema = {"a": pl.UInt32, "b": pl.Utf8}
+    struct_schema = {"a": pl.UInt32, "b": pl.String}
     s = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
 
     assert isinstance(s, pl.Series)
@@ -496,7 +496,7 @@ def test_struct_arr_eval() -> None:
     }
 
 
-def test_arr_unique() -> None:
+def test_list_of_struct_unique() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
@@ -644,7 +644,7 @@ def test_empty_struct() -> None:
     [
         pl.List,
         pl.List(pl.Null),
-        pl.List(pl.Utf8),
+        pl.List(pl.String),
         pl.Array(pl.Null, 32),
         pl.Array(pl.UInt8, 16),
         pl.Struct,
@@ -699,7 +699,7 @@ def test_struct_null_cast() -> None:
     dtype = pl.Struct(
         [
             pl.Field("a", pl.Int64),
-            pl.Field("b", pl.Utf8),
+            pl.Field("b", pl.String),
             pl.Field("c", pl.List(pl.Float64)),
         ]
     )
@@ -722,15 +722,6 @@ def test_nested_struct_in_lists_cast() -> None:
     ).to_dict(as_series=False) == {
         "node_groups": [[{"nodes": [{"id": 1, "is_started": True}]}], [{"nodes": []}]]
     }
-
-
-def test_is_unique_struct() -> None:
-    assert pl.Series(
-        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
-    ).is_unique().to_list() == [False, True, False]
-    assert pl.Series(
-        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
-    ).is_duplicated().to_list() == [True, False, True]
 
 
 def test_struct_concat_self_no_rechunk() -> None:
@@ -761,17 +752,6 @@ def test_struct_applies_as_map() -> None:
     ).to_dict(as_series=False) == {
         "x": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
     }
-
-
-def test_struct_unique_df() -> None:
-    df = pl.DataFrame(
-        {
-            "numerical": [1, 2, 1],
-            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
-        }
-    )
-
-    df.select("numerical", "struct").unique().sort("numerical")
 
 
 def test_struct_is_in() -> None:

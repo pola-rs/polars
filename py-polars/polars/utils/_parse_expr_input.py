@@ -11,7 +11,7 @@ from polars.utils.deprecation import issue_deprecation_warning
 if TYPE_CHECKING:
     from polars import Expr
     from polars.polars import PyExpr
-    from polars.type_aliases import IntoExpr
+    from polars.type_aliases import IntoExpr, PolarsDataType
 
 
 def parse_as_list_of_expressions(
@@ -82,6 +82,7 @@ def parse_as_expression(
     str_as_lit: bool = False,
     list_as_lit: bool = True,
     structify: bool = False,
+    dtype: PolarsDataType | None = None,
 ) -> PyExpr:
     """
     Parse a single input into an expression.
@@ -98,6 +99,9 @@ def parse_as_expression(
         lists are parsed as `Series` literals.
     structify
         Convert multi-column expressions to a single struct expression.
+    dtype
+        If the input is expected to resolve to a literal with a known dtype, pass
+        this to the `lit` constructor.
 
     Returns
     -------
@@ -109,10 +113,10 @@ def parse_as_expression(
         expr = F.col(input)
         structify = False
     elif isinstance(input, list) and not list_as_lit:
-        expr = F.lit(pl.Series(input))
+        expr = F.lit(pl.Series(input), dtype=dtype)
         structify = False
     else:
-        expr = F.lit(input)
+        expr = F.lit(input, dtype=dtype)
         structify = False
 
     if structify:

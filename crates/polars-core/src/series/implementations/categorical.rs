@@ -110,7 +110,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         let list = self.0.physical().agg_list(groups);
         let mut list = list.list().unwrap().clone();
-        list.to_logical(self.dtype().clone());
+        unsafe { list.to_logical(self.dtype().clone()) };
         list.into_series()
     }
 

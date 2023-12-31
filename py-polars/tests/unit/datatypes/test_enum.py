@@ -1,4 +1,5 @@
 import operator
+from textwrap import dedent
 from typing import Callable
 
 import pytest
@@ -28,6 +29,14 @@ def test_enum_from_schema_argument() -> None:
         {"col1": ["a", "b", "c"]}, schema={"col1": pl.Enum(["a", "b", "c"])}
     )
     assert df.get_column("col1").dtype == pl.Enum
+    assert dedent(
+        """
+        │ col1 │
+        │ ---  │
+        │ enum │
+        ╞══════╡
+        """
+    ) in str(df)
 
 
 def test_equality_of_two_separately_constructed_enums() -> None:
@@ -178,7 +187,7 @@ def test_equality_enum(
     s2 = pl.Series([None, "c", "b", "c"], dtype=dtype)
 
     assert_series_equal(op(s, s2), expected)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected)
 
 
 @pytest.mark.parametrize(
@@ -215,10 +224,10 @@ def test_equality_missing_enum_scalar() -> None:
     expected = pl.Series("cmp", [False, False, False, True], dtype=pl.Boolean)
     assert_series_equal(out, expected)
 
-    out_utf8 = df.select(pl.col("a").eq_missing(pl.lit("c")).alias("cmp")).get_column(
+    out_str = df.select(pl.col("a").eq_missing(pl.lit("c")).alias("cmp")).get_column(
         "cmp"
     )
-    assert_series_equal(out_utf8, expected)
+    assert_series_equal(out_str, expected)
 
     out = df.select(
         pl.col("a").ne_missing(pl.lit("c", dtype=dtype)).alias("cmp")
@@ -226,10 +235,10 @@ def test_equality_missing_enum_scalar() -> None:
     expected = pl.Series("cmp", [True, True, True, False], dtype=pl.Boolean)
     assert_series_equal(out, expected)
 
-    out_utf8 = df.select(pl.col("a").ne_missing(pl.lit("c")).alias("cmp")).get_column(
+    out_str = df.select(pl.col("a").ne_missing(pl.lit("c")).alias("cmp")).get_column(
         "cmp"
     )
-    assert_series_equal(out_utf8, expected)
+    assert_series_equal(out_str, expected)
 
 
 def test_equality_missing_enum_none_scalar() -> None:

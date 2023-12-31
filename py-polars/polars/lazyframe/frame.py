@@ -38,12 +38,12 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    String,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
-    Utf8,
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
@@ -666,7 +666,7 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.dtypes
-        [Int64, Float64, Utf8]
+        [Int64, Float64, String]
 
         """
         return self._ldf.dtypes()
@@ -686,7 +686,7 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.schema
-        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': Utf8})
+        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': String})
 
         """
         return OrderedDict(self._ldf.schema())
@@ -2463,7 +2463,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Cast all frame columns to the specified dtype:
 
-        >>> lf.cast(pl.Utf8).collect().to_dict(as_series=False)
+        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
         {'foo': ['1', '2', '3'],
          'bar': ['6.0', '7.0', '8.0'],
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
@@ -2471,7 +2471,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Use selectors to define the columns being cast:
 
         >>> import polars.selectors as cs
-        >>> lf.cast({cs.numeric(): pl.UInt32, cs.temporal(): pl.Utf8}).collect()
+        >>> lf.cast({cs.numeric(): pl.UInt32, cs.temporal(): pl.String}).collect()
         shape: (3, 3)
         ┌─────┬─────┬────────────┐
         │ foo ┆ bar ┆ ham        │
@@ -2592,7 +2592,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicates
             Expression that evaluates to a boolean Series.
         constraints
-            Column filters. Use name=value to filter column name by the supplied value.
+            Column filters; use `name = value` to filter columns by the supplied value.
+            Each constraint will behave the same as `pl.col(name).eq(value)`, and
+            will be implicitly joined with the other filter conditions using `&`.
 
         Examples
         --------
@@ -2724,7 +2726,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
-            F.col(name).eq(value) for name, value in constraints.items()
+            F.col(name).eq_missing(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
             raise ValueError("No predicates or constraints provided to `filter`.")
@@ -4813,7 +4815,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             elif isinstance(value, time):
                 dtypes = [Time]
             elif isinstance(value, str):
-                dtypes = [Utf8, Categorical]
+                dtypes = [String, Categorical]
             else:
                 # fallback; anything not explicitly handled above
                 dtypes = [infer_dtype(F.lit(value))]
@@ -5144,7 +5146,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         columns
             Column names, expressions, or a selector defining them. The underlying
-            columns being exploded must be of List or Utf8 datatype.
+            columns being exploded must be of List or String datatype.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 

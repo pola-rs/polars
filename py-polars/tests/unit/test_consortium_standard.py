@@ -4,6 +4,7 @@ Test some basic methods of the dataframe consortium standard.
 Full testing is done at https://github.com/data-apis/dataframe-api-compat,
 this is just to check that the entry point works as expected.
 """
+
 import polars as pl
 
 

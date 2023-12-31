@@ -198,7 +198,7 @@ def test_row_count_schema_parquet(parquet_file_path: Path) -> None:
         pl.scan_parquet(str(parquet_file_path), row_count_name="id")
         .select(["id", "b"])
         .collect()
-    ).dtypes == [pl.UInt32, pl.Utf8]
+    ).dtypes == [pl.UInt32, pl.String]
 
 
 @pytest.mark.write_disk()

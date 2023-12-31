@@ -157,15 +157,11 @@ where
     &input[read..]
 }
 
+/// Remove whitespace from the start of buffer.
 /// Makes sure that the bytes stream starts with
 ///     'field_1,field_2'
 /// and not with
 ///     '\nfield_1,field_1'
-pub(crate) fn skip_header(input: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
-    skip_this_line(input, quote, eol_char)
-}
-
-/// Remove whitespace from the start of buffer.
 #[inline]
 pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
     skip_condition(input, is_whitespace)
@@ -338,7 +334,7 @@ fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
 }
 
 #[inline]
-fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
+pub(crate) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, eol_char),
         None => bytes.iter().position(|x| *x == eol_char),

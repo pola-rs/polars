@@ -129,7 +129,7 @@ TEST_CASES = [
     # ---------------------------------------------
     # string expr: case/cast ops
     # ---------------------------------------------
-    ("b", "lambda x: str(x).title()", 'pl.col("b").cast(pl.Utf8).str.to_titlecase()'),
+    ("b", "lambda x: str(x).title()", 'pl.col("b").cast(pl.String).str.to_titlecase()'),
     (
         "b",
         'lambda x: x.lower() + ":" + x.upper() + ":" + x.title()',
@@ -294,7 +294,7 @@ def test_parse_apply_raw_functions() -> None:
     assert_frame_equal(*result_frames)
 
     # test primitive python casts
-    for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
+    for py_cast, pl_dtype in ((str, pl.String), (int, pl.Int64), (float, pl.Float64)):
         with pytest.warns(
             PolarsInefficientMapWarning,
             match=rf'(?s)with this one instead.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
@@ -351,7 +351,7 @@ def test_parse_apply_miscellaneous() -> None:
         (
             [1, 2, 3],
             lambda x: str(x),
-            "s.cast(pl.Utf8)",
+            "s.cast(pl.String)",
         ),
         (
             [-20, -12, -5, 0, 5, 12, 20],

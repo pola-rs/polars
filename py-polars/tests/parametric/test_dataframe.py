@@ -41,7 +41,7 @@ def test_dtype_integer_cols(df: pl.DataFrame) -> None:
         min_size=1,
         min_cols=1,
         null_probability=0.25,
-        excluded_dtypes=[pl.Utf8, pl.List],
+        excluded_dtypes=[pl.String, pl.List],
     )
 )
 @example(df=pl.DataFrame(schema=["x", "y", "z"]))

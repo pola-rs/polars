@@ -39,11 +39,11 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    String,
     Time,
     UInt32,
     UInt64,
     Unknown,
-    Utf8,
     dtype_to_ctype,
     is_polars_dtype,
     maybe_cast,
@@ -52,11 +52,13 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.dependencies import (
+    _HVPLOT_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
     dataframe_api_compat,
+    hvplot,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -237,6 +239,7 @@ class Series:
         "str",
         "bin",
         "struct",
+        "plot",
     }
 
     def __init__(
@@ -358,16 +361,83 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    def _get_ptr(self) -> tuple[int, int, int]:
+    def _get_buffer_info(self) -> tuple[int, int, int]:
         """
-        Get a pointer to the start of the values buffer of a numeric Series.
+        Return pointer, offset, and length information about the underlying buffer.
 
-        This will raise an error if the `Series` contains multiple chunks.
+        Returns
+        -------
+        tuple of ints
+            Tuple of the form (pointer, offset, length)
 
-        This will return the offset, length and the pointer itself.
-
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
         """
-        return self._s.get_ptr()
+        return self._s._get_buffer_info()
+
+    @overload
+    def _get_buffer(self, index: Literal[0]) -> Self:
+        ...
+
+    @overload
+    def _get_buffer(self, index: Literal[1, 2]) -> Self | None:
+        ...
+
+    def _get_buffer(self, index: Literal[0, 1, 2]) -> Self | None:
+        """
+        Return the underlying data, validity, or offsets buffer as a Series.
+
+        The data buffer always exists.
+        The validity buffer may not exist if the column contains no null values.
+        The offsets buffer only exists for Series of data type `String` and `List`.
+
+        Parameters
+        ----------
+        index
+            An index indicating the buffer to return:
+
+            - `0` -> data buffer
+            - `1` -> validity buffer
+            - `2` -> offsets buffer
+
+        Returns
+        -------
+        Series or None
+            `Series` if the specified buffer exists, `None` otherwise.
+
+        Raises
+        ------
+        ComputeError
+            If the `Series` contains multiple chunks.
+        """
+        buffer = self._s._get_buffer(index)
+        if buffer is None:
+            return None
+        return self._from_pyseries(buffer)
+
+    @classmethod
+    def _from_buffer(
+        self, dtype: PolarsDataType, buffer_info: tuple[int, int, int], base: Any
+    ) -> Self:
+        """
+        Construct a Series from information about its underlying buffer.
+
+        Parameters
+        ----------
+        dtype
+            The data type of the buffer.
+        buffer_info
+            Tuple containing buffer information in the form (pointer, offset, length).
+        base
+            The object owning the buffer.
+
+        Returns
+        -------
+        Series
+        """
+        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, base))
 
     @property
     def dtype(self) -> DataType:
@@ -1149,7 +1219,7 @@ class Series:
         Ensures that `np.asarray(pl.Series(..))` works as expected, see
         https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
         """
-        if not dtype and self.dtype == Utf8 and not self.null_count():
+        if not dtype and self.dtype == String and not self.null_count():
             dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
@@ -1711,7 +1781,7 @@ class Series:
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
-        elif self.dtype == Utf8:
+        elif self.dtype == String:
             stats_dtype = Int64
             stats = {
                 "count": self.count(),
@@ -1721,7 +1791,7 @@ class Series:
         elif self.dtype.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
-            stats_dtype = Utf8
+            stats_dtype = String
             stats = {
                 "count": str(self.count()),
                 "null_count": str(self.null_count()),
@@ -1734,7 +1804,7 @@ class Series:
 
         return pl.DataFrame(
             {"statistic": stats.keys(), "value": stats.values()},
-            schema={"statistic": Utf8, "value": stats_dtype},
+            schema={"statistic": String, "value": stats_dtype},
         )
 
     def sum(self) -> int | float:
@@ -7153,13 +7223,13 @@ class Series:
         """
         return self.dtype == Boolean
 
-    @deprecate_function("Use `Series.dtype == pl.Utf8` instead.", version="0.19.14")
+    @deprecate_function("Use `Series.dtype == pl.String` instead.", version="0.19.14")
     def is_utf8(self) -> bool:
         """
-        Check if this Series datatype is a Utf8.
+        Check if this Series datatype is a String.
 
         .. deprecated:: 0.19.14
-            Use `Series.dtype == pl.Utf8` instead.
+            Use `Series.dtype == pl.String` instead.
 
         Examples
         --------
@@ -7168,7 +7238,7 @@ class Series:
         True
 
         """
-        return self.dtype == Utf8
+        return self.dtype == String
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
     def take_every(self, n: int, offset: int = 0) -> Series:
@@ -7418,6 +7488,38 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    def plot(self) -> Any:
+        """
+        Create a plot namespace.
+
+        Polars does not implement plotting logic itself, but instead defers to
+        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
+        for more information and documentation.
+
+        Examples
+        --------
+        Histogram:
+
+        >>> s = pl.Series([1, 4, 2])
+        >>> s.plot.hist()  # doctest: +SKIP
+
+        KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
+
+        >>> s.plot.kde()  # doctest: +SKIP
+
+        For more info on what you can pass, you can use ``hvplot.help``:
+
+        >>> import hvplot  # doctest: +SKIP
+        >>> hvplot.help("hist")  # doctest: +SKIP
+        """
+        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
+            "0.9.1"
+        ):
+            raise ModuleUpgradeRequired("hvplot>=0.9.1 is required for `.plot`")
+        hvplot.post_patch()
+        return hvplot.plotting.core.hvPlotTabularPolars(self)
 
 
 def _resolve_temporal_dtype(

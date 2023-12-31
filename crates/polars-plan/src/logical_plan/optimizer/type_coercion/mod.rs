@@ -220,11 +220,7 @@ fn modify_supertype(
             #[cfg(feature = "dtype-categorical")]
             (Categorical(opt_rev_map, ordering), String, _, AExpr::Literal(_))
             | (String, Categorical(opt_rev_map, ordering), AExpr::Literal(_), _) => {
-                st = opt_rev_map
-                    .as_ref()
-                    .filter(|rev_map| rev_map.is_enum())
-                    .map(|rev_map| Categorical(Some(rev_map.clone()), *ordering))
-                    .unwrap_or_else(|| Categorical(None, *ordering))
+                st = enum_or_default_categorical(opt_rev_map, *ordering);
             },
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.

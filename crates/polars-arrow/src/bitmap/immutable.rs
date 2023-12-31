@@ -172,23 +172,34 @@ impl Bitmap {
     /// The caller must ensure that `self.offset + offset + length <= self.len()`
     #[inline]
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        // first guard a no-op slice so that we don't do a bitcount
-        // if there isn't any data sliced
-        if !(offset == 0 && length == self.length) {
-            // count the smallest chunk
-            if length < self.length / 2 {
-                // count the null values in the slice
-                self.unset_bits = count_zeros(&self.bytes, self.offset + offset, length);
-            } else {
-                // subtract the null count of the chunks we slice off
-                let start_end = self.offset + offset + length;
-                let head_count = count_zeros(&self.bytes, self.offset, offset);
-                let tail_count = count_zeros(&self.bytes, start_end, self.length - length - offset);
-                self.unset_bits -= head_count + tail_count;
-            }
+        // Fast path: no-op slice.
+        if offset == 0 && length == self.length {
+            return;
+        }
+
+        // Fast path: we have no nulls or are full-null.
+        if self.unset_bits == 0 || self.unset_bits == self.length {
             self.offset += offset;
             self.length = length;
+            self.unset_bits = if self.unset_bits > 0 { length } else { 0 };
+            return;
         }
+
+        // If we keep the majority of the slice it's faster to count the parts
+        // we didn't keep rather than counting directly.
+        if length > self.length / 2 {
+            // Subtract the null count of the chunks we slice off.
+            let start_end = self.offset + offset + length;
+            let head_count = count_zeros(&self.bytes, self.offset, offset);
+            let tail_count = count_zeros(&self.bytes, start_end, self.length - length - offset);
+            self.unset_bits -= head_count + tail_count;
+        } else {
+            // Count the null values in the slice.
+            self.unset_bits = count_zeros(&self.bytes, self.offset + offset, length);
+        }
+
+        self.offset += offset;
+        self.length = length;
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.

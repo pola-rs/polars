@@ -21,8 +21,8 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Int64,
+    String,
     Time,
-    Utf8,
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
@@ -116,8 +116,15 @@ def is_str_sequence(
     elif _check_for_numpy(val) and isinstance(val, np.ndarray):
         return np.issubdtype(val.dtype, np.str_)
     elif include_series and isinstance(val, pl.Series):
-        return val.dtype == pl.Utf8
+        return val.dtype == pl.String
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
+
+
+def is_column(obj: Any) -> bool:
+    """Indicate if the given object is a basic/unaliased column."""
+    from polars.expr import Expr
+
+    return isinstance(obj, Expr) and obj.meta.is_column()
 
 
 def _warn_null_comparison(obj: Any) -> None:
@@ -276,9 +283,9 @@ def _cast_repr_strings_with_schema(
     tp: PolarsDataType | None
     if not df.is_empty():
         for tp in df.schema.values():
-            if tp != Utf8:
+            if tp != String:
                 raise TypeError(
-                    f"DataFrame should contain only Utf8 string repr data; found {tp!r}"
+                    f"DataFrame should contain only String repr data; found {tp!r}"
                 )
 
     # duration string scaling
@@ -367,7 +374,7 @@ def _cast_repr_strings_with_schema(
                             separator=".",
                         )
                     )
-                    .cast(Utf8)
+                    .cast(String)
                     .cast(tp)
                 )
             elif tp != df.schema[c]:
@@ -392,7 +399,7 @@ class sphinx_accessor(property):  # noqa: D101
             return self.fget(  # type: ignore[misc]
                 instance if isinstance(instance, cls) else cls
             )
-        except AttributeError:
+        except (AttributeError, ImportError):
             return None  # type: ignore[return-value]
 
 

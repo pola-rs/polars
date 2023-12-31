@@ -1,9 +1,10 @@
 use polars_error::PolarsResult;
 
-use crate::array::{new_null_array, Array, ArrayRef, ListArray, NullArray, StructArray};
+use crate::array::{new_null_array, Array, ArrayRef, ListArray, NullArray};
 use crate::bitmap::MutableBitmap;
 use crate::compute::concatenate;
 use crate::datatypes::ArrowDataType;
+use crate::legacy::array::is_nested_null;
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use crate::legacy::prelude::*;
 use crate::offset::Offsets;
@@ -160,46 +161,5 @@ impl<'a> AnonymousBuilder<'a> {
             values,
             self.validity.map(|validity| validity.into()),
         ))
-    }
-}
-
-fn is_nested_null(data_type: &ArrowDataType) -> bool {
-    match data_type {
-        ArrowDataType::Null => true,
-        ArrowDataType::LargeList(field) => is_nested_null(field.data_type()),
-        ArrowDataType::Struct(fields) => {
-            fields.iter().all(|field| is_nested_null(field.data_type()))
-        },
-        _ => false,
-    }
-}
-
-/// Cast null arrays to inner type and ensure that all offsets remain correct
-pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn Array> {
-    match dtype {
-        ArrowDataType::LargeList(field) => {
-            let array = array.as_any().downcast_ref::<LargeListArray>().unwrap();
-            let inner = array.values();
-            let new_values = convert_inner_type(inner.as_ref(), field.data_type());
-            let dtype = LargeListArray::default_datatype(new_values.data_type().clone());
-            LargeListArray::new(
-                dtype,
-                array.offsets().clone(),
-                new_values,
-                array.validity().cloned(),
-            )
-            .boxed()
-        },
-        ArrowDataType::Struct(fields) => {
-            let array = array.as_any().downcast_ref::<StructArray>().unwrap();
-            let inner = array.values();
-            let new_values = inner
-                .iter()
-                .zip(fields)
-                .map(|(arr, field)| convert_inner_type(arr.as_ref(), field.data_type()))
-                .collect::<Vec<_>>();
-            StructArray::new(dtype.clone(), new_values, array.validity().cloned()).boxed()
-        },
-        _ => new_null_array(dtype.clone(), array.len()),
     }
 }

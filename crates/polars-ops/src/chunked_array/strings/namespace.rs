@@ -102,8 +102,8 @@ pub trait StringNameSpaceImpl: AsString {
         strict: bool,
     ) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
-        match pat.len() {
-            1 => match pat.get(0) {
+        match (ca.len(), pat.len()) {
+            (_, 1) => match pat.get(0) {
                 Some(pat) => {
                     if literal {
                         ca.contains_literal(pat)
@@ -113,25 +113,32 @@ pub trait StringNameSpaceImpl: AsString {
                 },
                 None => Ok(BooleanChunked::full_null(ca.name(), ca.len())),
             },
+            (1, _) if ca.null_count() == 1 => Ok(BooleanChunked::full_null(
+                ca.name(),
+                ca.len().max(pat.len()),
+            )),
             _ => {
                 if literal {
-                    Ok(binary_elementwise_values(ca, pat, |src, pat| {
+                    Ok(broadcast_binary_elementwise_values(ca, pat, |src, pat| {
                         src.contains(pat)
                     }))
                 } else if strict {
                     // A sqrt(n) regex cache is not too small, not too large.
                     let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-                    try_binary_elementwise(ca, pat, |opt_src, opt_pat| match (opt_src, opt_pat) {
-                        (Some(src), Some(pat)) => {
-                            let reg = reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
-                            Ok(Some(reg.is_match(src)))
-                        },
-                        _ => Ok(None),
+                    broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
+                        match (opt_src, opt_pat) {
+                            (Some(src), Some(pat)) => {
+                                let reg =
+                                    reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
+                                Ok(Some(reg.is_match(src)))
+                            },
+                            _ => Ok(None),
+                        }
                     })
                 } else {
                     // A sqrt(n) regex cache is not too small, not too large.
                     let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-                    Ok(binary_elementwise(
+                    Ok(broadcast_binary_elementwise(
                         ca,
                         pat,
                         infer_re_match(|src, pat| {
@@ -495,7 +502,7 @@ pub trait StringNameSpaceImpl: AsString {
             }
         };
 
-        let out: UInt32Chunked = try_binary_elementwise(ca, pat, op)?;
+        let out: UInt32Chunked = broadcast_try_binary_elementwise(ca, pat, op)?;
 
         Ok(out.with_name(ca.name()))
     }

@@ -154,6 +154,18 @@ impl SeriesTrait for NullChunked {
         self.len()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        let ca = NullChunked::new(self.name.clone(), self.n_unique().unwrap());
+        Ok(ca.into_series())
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        let n = if self.is_empty() { 0 } else { 1 };
+        Ok(n)
+    }
+
     fn new_from_index(&self, _index: usize, length: usize) -> Series {
         NullChunked::new(self.name.clone(), length).into_series()
     }

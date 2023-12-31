@@ -2,7 +2,7 @@
 
 Polars is entirely based on Arrow data types and backed by Arrow memory arrays. This makes data processing
 cache-efficient and well-supported for Inter Process Communication. Most data types follow the exact implementation
-from Arrow, with the exception of `Utf8` (this is actually `LargeUtf8`), `Categorical`, and `Object` (support is limited). The data types are:
+from Arrow, with the exception of `String` (this is actually `LargeUtf8`), `Categorical`, and `Object` (support is limited). The data types are:
 
 | Group    | Type          | Details                                                                                                                              |
 | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -23,7 +23,7 @@ from Arrow, with the exception of `Utf8` (this is actually `LargeUtf8`), `Catego
 |          | `Duration`    | A timedelta type, internally represented as microseconds. Created when subtracting `Date/Datetime`.                                  |
 |          | `Time`        | Time representation, internally represented as nanoseconds since midnight.                                                           |
 | Other    | `Boolean`     | Boolean type effectively bit packed.                                                                                                 |
-|          | `Utf8`        | String data (this is actually Arrow `LargeUtf8` internally).                                                                         |
+|          | `String`      | String data (this is actually Arrow `LargeUtf8` internally).                                                                         |
 |          | `Binary`      | Store data as bytes.                                                                                                                 |
 |          | `Object`      | A limited supported data type that can be any value.                                                                                 |
 |          | `Categorical` | A categorical encoding of a set of strings.                                                                                          |

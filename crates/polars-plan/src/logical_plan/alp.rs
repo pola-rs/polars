@@ -98,6 +98,12 @@ pub enum ALogicalPlan {
         inputs: Vec<Node>,
         options: UnionOptions,
     },
+    #[cfg(feature = "horizontal_concat")]
+    HConcat {
+        inputs: Vec<Node>,
+        schema: SchemaRef,
+        options: HConcatOptions,
+    },
     ExtContext {
         input: Node,
         contexts: Vec<Node>,
@@ -151,6 +157,8 @@ impl ALogicalPlan {
             Distinct { .. } => "distinct",
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
+            #[cfg(feature = "horizontal_concat")]
+            HConcat { .. } => "hconcat",
             ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
                 SinkType::Memory => "sink (memory)",
@@ -168,6 +176,8 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
+            #[cfg(feature = "horizontal_concat")]
+            HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
             Scan {
@@ -220,6 +230,14 @@ impl ALogicalPlan {
             },
             Union { options, .. } => Union {
                 inputs,
+                options: *options,
+            },
+            #[cfg(feature = "horizontal_concat")]
+            HConcat {
+                schema, options, ..
+            } => HConcat {
+                inputs,
+                schema: schema.clone(),
                 options: *options,
             },
             Slice { offset, len, .. } => Slice {
@@ -380,6 +398,8 @@ impl ALogicalPlan {
             },
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
+            #[cfg(feature = "horizontal_concat")]
+            HConcat { .. } => {},
             ExtContext { .. } | Sink { .. } => {},
         }
     }
@@ -401,6 +421,13 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         let input = match self {
             Union { inputs, .. } => {
+                for node in inputs {
+                    container.push_node(*node);
+                }
+                return;
+            },
+            #[cfg(feature = "horizontal_concat")]
+            HConcat { inputs, .. } => {
                 for node in inputs {
                     container.push_node(*node);
                 }

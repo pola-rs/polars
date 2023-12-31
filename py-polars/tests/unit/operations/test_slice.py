@@ -121,3 +121,22 @@ def test_hstack_slice_pushdown() -> None:
     plan = out.explain()
 
     assert not plan.startswith("SLICE")
+
+
+def test_hconcat_slice_pushdown() -> None:
+    num_dfs = 3
+    lfs = [
+        pl.LazyFrame({f"column_{i}": list(range(i, i + 10))}) for i in range(num_dfs)
+    ]
+
+    out = pl.concat(lfs, how="horizontal").slice(2, 3)
+    plan = out.explain()
+
+    assert not plan.startswith("SLICE")
+
+    expected = pl.DataFrame(
+        {f"column_{i}": list(range(i + 2, i + 5)) for i in range(num_dfs)}
+    )
+
+    df_out = out.collect()
+    assert_frame_equal(df_out, expected)
