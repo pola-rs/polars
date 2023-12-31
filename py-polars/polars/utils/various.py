@@ -248,7 +248,17 @@ def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
 def ordered_unique(
     values: Iterable[Any], *, return_duplicates: bool = False
 ) -> list[Any] | tuple[list[Any], dict[Any, int]]:
-    """Return unique list of sequence values, maintaining their order of appearance."""
+    """
+    Return unique list of sequence values, maintaining their order of appearance.
+
+    Parameters
+    ----------
+    values
+        Sequence of values to be made unique.
+    return_duplicates
+        If True, also return a dictionary of duplicate values and their counts.
+
+    """
     seen: set[Any] = set()
     add_ = seen.add
     if not return_duplicates:
