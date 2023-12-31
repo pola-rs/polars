@@ -7519,9 +7519,7 @@ class Series:
             "0.9.1"
         ):
             raise ModuleUpgradeRequired("hvplot>=0.9.1 is required for `.plot`")
-        if not getattr(holoviews.extension, "_loaded", False):
-            # If no extension has been loaded, load 'bokeh' (the hvplot default)
-            hvplot.extension("bokeh")
+        hvplot.post_patch()
         return hvplot.plotting.core.hvPlotTabularPolars(self)
 
 
