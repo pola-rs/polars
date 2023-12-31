@@ -38,7 +38,9 @@ pub fn convert_to_unsigned_index(s: &Series, target_len: usize) -> PolarsResult<
     let dtype = s.dtype();
     polars_ensure!(dtype.is_integer(), InvalidOperation: "expected integers as index");
     if dtype.is_unsigned_integer() {
+        let nulls_before_cast = s.null_count();
         let out = s.cast(&IDX_DTYPE).unwrap();
+        polars_ensure!(out.null_count() == nulls_before_cast, OutOfBounds: "some integers did not fit polars' index size");
         return Ok(out.idx().unwrap().clone());
     }
     match dtype {

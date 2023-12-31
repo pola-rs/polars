@@ -4,6 +4,7 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+use polars_ops::prelude::convert_to_unsigned_index;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -23,14 +24,8 @@ impl TakeExpr {
         series: Series,
     ) -> PolarsResult<Series> {
         let idx = self.idx.evaluate(df, state)?;
-        let nulls_before_cast = idx.null_count();
-        let idx = idx.cast(&IDX_DTYPE)?;
-        if idx.null_count() != nulls_before_cast {
-            self.oob_err()?;
-        }
-        let idx_ca = idx.idx()?;
-
-        series.take(idx_ca)
+        let idx = convert_to_unsigned_index(&idx, series.len())?;
+        series.take(&idx)
     }
 
     fn oob_err(&self) -> PolarsResult<()> {
