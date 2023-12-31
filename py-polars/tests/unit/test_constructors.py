@@ -711,6 +711,28 @@ def test_init_arrow() -> None:
         pl.DataFrame(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}), schema=["c", "d", "e"])
 
 
+def test_init_from_frame() -> None:
+    df1 = pl.DataFrame({"id": [0, 1], "misc": ["a", "b"], "val": [-10, 10]})
+    assert_frame_equal(df1, pl.DataFrame(df1))
+
+    df2 = pl.DataFrame(df1, schema=["a", "b", "c"])
+    assert_frame_equal(df2, pl.DataFrame(df2))
+
+    df3 = pl.DataFrame(df1, schema=["a", "b", "c"], schema_overrides={"val": pl.Int8})
+    assert_frame_equal(df3, pl.DataFrame(df3))
+
+    assert df1.schema == {"id": pl.Int64, "misc": pl.String, "val": pl.Int64}
+    assert df2.schema == {"a": pl.Int64, "b": pl.String, "c": pl.Int64}
+    assert df3.schema == {"a": pl.Int64, "b": pl.String, "c": pl.Int8}
+    assert df1.rows() == df2.rows() == df3.rows()
+
+    s1 = pl.Series("s", df3)
+    s2 = pl.Series(df3)
+
+    assert s1.name == "s"
+    assert s2.name == ""
+
+
 def test_init_series() -> None:
     # List of Series
     df = pl.DataFrame([pl.Series("a", [1, 2, 3]), pl.Series("b", [4, 5, 6])])
@@ -730,9 +752,9 @@ def test_init_series() -> None:
 
     # List of unnamed Series
     df = pl.DataFrame([pl.Series([1, 2, 3]), pl.Series([4, 5, 6])])
-    expected = pl.DataFrame(
-        [pl.Series("column_0", [1, 2, 3]), pl.Series("column_1", [4, 5, 6])]
-    )
+    col0 = pl.Series("column_0", [1, 2, 3])
+    col1 = pl.Series("column_1", [4, 5, 6])
+    expected = pl.DataFrame([col0, col1])
     assert_frame_equal(df, expected)
 
     df = pl.DataFrame([pl.Series([0.0]), pl.Series([1.0])])
@@ -763,8 +785,16 @@ def test_init_series() -> None:
     s2 = pl.Series([[[2, 2]]], dtype=pl.List(pl.List(pl.UInt8)))
     assert s2.dtype == pl.List(pl.List(pl.UInt8))
 
-    s3 = pl.Series(dtype=pl.List(pl.List(pl.UInt8)))
-    assert s3.dtype == pl.List(pl.List(pl.UInt8))
+    nested_dtype = pl.List(pl.List(pl.UInt8))
+    s3 = pl.Series("x", dtype=nested_dtype)
+    s4 = pl.Series(s3)
+    for s in (s3, s4):
+        assert s.dtype == nested_dtype
+        assert s.to_list() == []
+        assert s.name == "x"
+
+    s5 = pl.Series("", df, dtype=pl.Int8)
+    assert_series_equal(s5, pl.Series("", [1, 2, 3], dtype=pl.Int8))
 
 
 def test_init_seq_of_seq() -> None:

@@ -164,9 +164,17 @@ def nt_unpack(obj: Any) -> Any:
 ################################
 
 
-def series_to_pyseries(name: str, values: Series) -> PySeries:
+def series_to_pyseries(
+    name: str,
+    values: Series,
+    *,
+    dtype: PolarsDataType | None = None,
+    strict: bool = True,
+) -> PySeries:
     """Construct a new PySeries from a Polars Series."""
     py_s = values._s.clone()
+    if dtype is not None and dtype != py_s.dtype():
+        py_s = py_s.cast(dtype, strict=strict)
     py_s.rename(name)
     return py_s
 
@@ -1603,6 +1611,9 @@ def series_to_pydf(
     schema_overrides: SchemaDict | None = None,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a Polars Series."""
+    if schema is None and schema_overrides is None:
+        return PyDataFrame([data._s])
+
     data_series = [data._s]
     series_name = [s.name() for s in data_series]
     column_names, schema_overrides = _unpack_schema(
@@ -1615,6 +1626,29 @@ def series_to_pydf(
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
+
+
+def frame_to_pydf(
+    data: DataFrame,
+    schema: SchemaDefinition | None = None,
+    schema_overrides: SchemaDict | None = None,
+) -> PyDataFrame:
+    """Construct a PyDataFrame from an existing Polars DataFrame."""
+    if schema is None and schema_overrides is None:
+        return data._df.clone()
+
+    data_series = {c.name: c._s for c in data}
+    column_names, schema_overrides = _unpack_schema(
+        schema or data.columns, schema_overrides=schema_overrides
+    )
+    if schema_overrides:
+        existing_schema = data.schema
+        for name, new_dtype in schema_overrides.items():
+            if new_dtype != existing_schema[name]:
+                data_series[name] = data_series[name].cast(new_dtype, strict=True)
+
+    series_cols = _handle_columns_arg(list(data_series.values()), columns=column_names)
+    return PyDataFrame(series_cols)
 
 
 def iterable_to_pydf(
