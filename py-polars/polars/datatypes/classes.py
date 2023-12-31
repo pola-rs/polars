@@ -554,8 +554,9 @@ class Enum(DataType):
         unique_categories, dupes = ordered_unique(categories, return_duplicates=True)
         if (n_dupes := len(dupes)) > 0:
             dupe = dupes.most_common(1)[0][0]  # type: ignore[union-attr]
+            plural = "s" if n_dupes > 1 else ""
             raise ValueError(
-                f"Enum categories must be unique; found {n_dupes} duplicates, eg: {dupe!r}"
+                f"Enum categories must be unique; found {n_dupes} duplicate{plural}, eg: {dupe!r}"
             )
         for cat in unique_categories:
             if not isinstance(cat, str):
