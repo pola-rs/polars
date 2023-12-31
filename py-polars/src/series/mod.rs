@@ -11,7 +11,7 @@ use std::io::Cursor;
 
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
