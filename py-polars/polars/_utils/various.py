@@ -8,7 +8,15 @@ import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generator,
+    Iterable,
+    Literal,
+    Sequence,
+    TypeVar,
+)
 
 import polars as pl
 from polars import functions as F

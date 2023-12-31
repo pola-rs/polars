@@ -6,9 +6,8 @@ from datetime import date
 from textwrap import dedent
 from typing import Any, Callable
 
-import pytest
-
 import polars as pl
+import pytest
 from polars import StringCache
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -441,6 +440,16 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
         pl.ComputeError, match="conversion from `u64` to `u32` failed in column"
     ):
         series.cast(enum_dtype)
+
+
+def test_enum_repr() -> None:
+    e1 = pl.Enum([f"c{i}" for i in range(6)])
+    e2 = pl.Enum([f"c{i}" for i in range(12)])
+    e3 = pl.Enum([f"c{i}" for i in range(24)])
+
+    assert repr(e1) == "Enum(categories=['c0','c1','c2','c3','c4','c5'])"
+    assert repr(e2) == "Enum(categories=['c0','c1','c2' … 'c9','c10','c11'])"
+    assert repr(e3) == "Enum(categories=['c0','c1','c2' … 'c21','c22','c23'])"
 
 
 def test_enum_creating_col_expr() -> None:
