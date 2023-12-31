@@ -288,7 +288,7 @@ impl PySeries {
         validity: Option<PySeries>,
     ) -> PyResult<Self> {
         let dtype = dtype.0;
-        let data = data.to_series();
+        let mut data = data.to_series();
 
         match data.len() {
             0 => {
@@ -297,8 +297,8 @@ impl PySeries {
                 ));
             },
             1 if validity.is_none() => {
-                let data = data.into_iter().next().unwrap();
-                let s = data.strict_cast(&dtype).map_err(PyPolarsErr::from)?;
+                let values = data.pop().unwrap();
+                let s = values.strict_cast(&dtype).map_err(PyPolarsErr::from)?;
                 return Ok(s.into());
             },
             _ => (),
@@ -320,20 +320,20 @@ impl PySeries {
 
         let s = match dtype.to_physical() {
             dt if dt.is_numeric() => {
-                let data = data.into_iter().next().unwrap();
+                let values = data.into_iter().next().unwrap();
                 with_match_physical_numeric_polars_type!(dt, |$T| {
-                    let data_buffer = series_to_buffer::<$T>(data);
-                    from_buffers_num_impl::<<$T as PolarsNumericType>::Native>(data_buffer, validity)?
+                    let values_buffer = series_to_buffer::<$T>(values);
+                    from_buffers_num_impl::<<$T as PolarsNumericType>::Native>(values_buffer, validity)?
                 })
             },
             DataType::Boolean => {
-                let data = data.into_iter().next().unwrap();
-                let data_buffer = series_to_bitmap(data)?;
-                from_buffers_bool_impl(data_buffer, validity)?
+                let values = data.into_iter().next().unwrap();
+                let values_buffer = series_to_bitmap(values)?;
+                from_buffers_bool_impl(values_buffer, validity)?
             },
             DataType::String => {
                 let mut data_iter = data.into_iter();
-                let data = data_iter.next().unwrap();
+                let values = data_iter.next().unwrap();
                 let offsets = match data_iter.next() {
                     Some(s) => {
                         let dtype = s.dtype();
@@ -349,8 +349,8 @@ impl PySeries {
                         "`from_buffers` cannot create a String column without an offsets buffer",
                     )),
                 };
-                let data = series_to_buffer::<UInt8Type>(data);
-                from_buffers_string_impl(data, validity, offsets)?
+                let values = series_to_buffer::<UInt8Type>(values);
+                from_buffers_string_impl(values, validity, offsets)?
             },
             dt => {
                 return Err(PyTypeError::new_err(format!(
