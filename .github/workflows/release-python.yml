@@ -77,7 +77,7 @@ jobs:
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
-          name: sdist
+          name: sdist-${{ matrix.package }}
           path: dist/*.tar.gz
 
   build-wheels:
@@ -174,7 +174,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheel-${{ matrix.package }}-${{ matrix.os }}-${{ matrix.architecture }}
           path: dist/*.whl
 
   publish-to-pypi:
@@ -187,17 +187,11 @@ jobs:
       id-token: write
 
     steps:
-      - name: Download sdist
+      - name: Download sdists and wheels
         uses: actions/download-artifact@v4
         with:
-          name: sdist
           path: dist
-
-      - name: Download wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: wheels
-          path: dist
+          merge-multiple: true
 
       - name: Publish to PyPI
         if: inputs.dry-run == false
@@ -216,7 +210,7 @@ jobs:
       - name: Download sdist
         uses: actions/download-artifact@v4
         with:
-          name: sdist
+          name: sdist-polars
           path: dist
 
       - name: Get version from Cargo.toml
