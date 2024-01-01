@@ -48,7 +48,7 @@ indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
 atoi_simd = "0.15.5"
 fast-float = { version = "0.2" }
-memchr = "2.6"
+memchr = "2.7"
 multiversion = "0.7"
 ndarray = { version = "0.15", default-features = false }
 num-traits = "0.2"
