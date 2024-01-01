@@ -75,7 +75,7 @@ jobs:
           python -c 'import polars'
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -172,7 +172,7 @@ jobs:
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist/*.whl
