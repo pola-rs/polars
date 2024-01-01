@@ -192,13 +192,14 @@ _FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
         "function_name": [{"strptime"}],
     },
 ]
-_UNARY_OPNAME_POSSIBILITIES: list[list[AbstractSet[str]]] = [[set(OpNames.UNARY)], []]
 # In addition to `lambda x: func(x)`, also support cases when a unary operation
 # has been applied to `x`, like `lambda x: func(-x)` or `lambda x: func(~x)`.
 _FUNCTION_KINDS = [
-    {**kind, "argument_1_unary_opname": unary}
+    # Dict entry 1 has incompatible type "str": "object";
+    # expected "str": "list[AbstractSet[str]]"
+    {**kind, "argument_1_unary_opname": unary}  # type: ignore[dict-item]
     for kind in _FUNCTION_KINDS
-    for unary in _UNARY_OPNAME_POSSIBILITIES
+    for unary in [[set(OpNames.UNARY)], []]
 ]
 
 
