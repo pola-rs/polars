@@ -515,14 +515,14 @@ class InstructionTranslator:
             e1 = self._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
                 if op not in OpNames.UNARY_VALUES:
-                    if not e1.startswith("pl.col("):
-                        # support use of consts as numpy/builtin params, eg:
-                        # "np.sin(3) + np.cos(x)", or "len('const_string') + len(x)"
-                        pfx = "np." if op in _NUMPY_FUNCTIONS else ""
-                        return f"{pfx}{op}({e1})"
+                    if e1.startswith("pl.col("):
+                        call = "" if op.endswith(")") else "()"
+                        return f"{e1}.{op}{call}"
 
-                    call = "" if op.endswith(")") else "()"
-                    return f"{e1}.{op}{call}"
+                    # support use of consts as numpy/builtin params, eg:
+                    # "np.sin(3) + np.cos(x)", or "len('const_string') + len(x)"
+                    pfx = "np." if op in _NUMPY_FUNCTIONS else ""
+                    return f"{pfx}{op}({e1})"
                 return f"{op}{e1}"
             else:
                 e2 = self._expr(value.right_operand, col, param_name, depth + 1)
