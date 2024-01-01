@@ -8,13 +8,13 @@ use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
-    DataType as SQLDataType, Expr as SqlExpr, Function as SQLFunction, Ident, JoinConstraint,
-    OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator, Value as SqlValue,
+    DataType as SQLDataType, Expr as SQLExpr, Function as SQLFunction, Ident, JoinConstraint,
+    OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
-use crate::functions::SqlFunctionVisitor;
+use crate::functions::SQLFunctionVisitor;
 use crate::SQLContext;
 
 pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
@@ -66,74 +66,87 @@ pub enum SubqueryRestriction {
 }
 
 /// Recursively walks a SQL Expr to create a polars Expr
-pub(crate) struct SqlExprVisitor<'a> {
+pub(crate) struct SQLExprVisitor<'a> {
     ctx: &'a mut SQLContext,
 }
 
-impl SqlExprVisitor<'_> {
-    fn visit_expr(&mut self, expr: &SqlExpr) -> PolarsResult<Expr> {
+impl SQLExprVisitor<'_> {
+    fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         match expr {
-            SqlExpr::AllOp {
+            SQLExpr::AllOp {
                 left,
                 compare_op,
                 right,
             } => self.visit_all(left, compare_op, right),
-            SqlExpr::AnyOp {
+            SQLExpr::AnyOp {
                 left,
                 compare_op,
                 right,
             } => self.visit_any(left, compare_op, right),
-            SqlExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
-            SqlExpr::Between {
+            SQLExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
+            SQLExpr::Between {
                 expr,
                 negated,
                 low,
                 high,
             } => self.visit_between(expr, *negated, low, high),
-            SqlExpr::BinaryOp { left, op, right } => self.visit_binary_op(left, op, right),
-            SqlExpr::Cast {
+            SQLExpr::BinaryOp { left, op, right } => self.visit_binary_op(left, op, right),
+            SQLExpr::Cast {
                 expr,
                 data_type,
                 format,
             } => self.visit_cast(expr, data_type, format),
-            SqlExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
-            SqlExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
-            SqlExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
-            SqlExpr::Function(function) => self.visit_function(function),
-            SqlExpr::Identifier(ident) => self.visit_identifier(ident),
-            SqlExpr::InList {
+            SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
+            SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
+            SQLExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
+            SQLExpr::Function(function) => self.visit_function(function),
+            SQLExpr::Identifier(ident) => self.visit_identifier(ident),
+            SQLExpr::InList {
                 expr,
                 list,
                 negated,
             } => self.visit_in_list(expr, list, *negated),
-            SqlExpr::InSubquery {
+            SQLExpr::InSubquery {
                 expr,
                 subquery,
                 negated,
             } => self.visit_in_subquery(expr, subquery, *negated),
-            SqlExpr::Subquery(_) => polars_bail!(InvalidOperation: "Unexpected SQL Subquery"),
-            SqlExpr::IsDistinctFrom(e1, e2) => {
+            SQLExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
-            SqlExpr::IsNotDistinctFrom(e1, e2) => {
+            SQLExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
+            SQLExpr::IsNotDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
             },
-            SqlExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
-            SqlExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
-            SqlExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
-            SqlExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
-            SqlExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
-            SqlExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
-            SqlExpr::Nested(expr) => self.visit_expr(expr),
-            SqlExpr::Trim {
+            SQLExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
+            SQLExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
+            SQLExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
+            SQLExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
+            SQLExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
+            // note: parses both RLIKE and REGEXP
+            SQLExpr::RLike {
+                negated,
+                expr,
+                pattern,
+                regexp: _,
+            } => {
+                let matches = self
+                    .visit_expr(expr)?
+                    .str()
+                    .contains(self.visit_expr(pattern)?, true);
+                Ok(if *negated { matches.not() } else { matches })
+            },
+            SQLExpr::Nested(expr) => self.visit_expr(expr),
+            SQLExpr::Subquery(_) => polars_bail!(InvalidOperation: "Unexpected SQL Subquery"),
+            SQLExpr::Trim {
                 expr,
                 trim_where,
                 trim_what,
                 trim_characters,
             } => self.visit_trim(expr, trim_where, trim_what, trim_characters),
-            SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
-            SqlExpr::Value(value) => self.visit_literal(value),
-            e @ SqlExpr::Case { .. } => self.visit_when_then(e),
+            SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
+            SQLExpr::Value(value) => self.visit_literal(value),
+            e @ SQLExpr::Case { .. } => self.visit_when_then(e),
             other => {
                 polars_bail!(InvalidOperation: "SQL expression {:?} is not yet supported", other)
             },
@@ -211,7 +224,7 @@ impl SqlExprVisitor<'_> {
         }
     }
 
-    fn visit_unary_op(&mut self, op: &UnaryOperator, expr: &SqlExpr) -> PolarsResult<Expr> {
+    fn visit_unary_op(&mut self, op: &UnaryOperator, expr: &SQLExpr) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         Ok(match op {
             UnaryOperator::Plus => lit(0) + expr,
@@ -233,9 +246,9 @@ impl SqlExprVisitor<'_> {
     /// e.g. column + 1 or column1 / column2
     fn visit_binary_op(
         &mut self,
-        left: &SqlExpr,
+        left: &SQLExpr,
         op: &BinaryOperator,
-        right: &SqlExpr,
+        right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
@@ -290,9 +303,9 @@ impl SqlExprVisitor<'_> {
     ///
     /// e.g. SUM(column) or COUNT(*)
     ///
-    /// See [SqlFunctionVisitor] for more details
+    /// See [SQLFunctionVisitor] for more details
     fn visit_function(&mut self, function: &SQLFunction) -> PolarsResult<Expr> {
-        let mut visitor = SqlFunctionVisitor {
+        let mut visitor = SQLFunctionVisitor {
             func: function,
             ctx: self.ctx,
         };
@@ -304,9 +317,9 @@ impl SqlExprVisitor<'_> {
     /// e.g. `a > ALL(y)`
     fn visit_all(
         &mut self,
-        left: &SqlExpr,
+        left: &SQLExpr,
         compare_op: &BinaryOperator,
-        right: &SqlExpr,
+        right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
@@ -327,9 +340,9 @@ impl SqlExprVisitor<'_> {
     /// e.g. `a != ANY(y)`
     fn visit_any(
         &mut self,
-        left: &SqlExpr,
+        left: &SQLExpr,
         compare_op: &BinaryOperator,
-        right: &SqlExpr,
+        right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
@@ -350,7 +363,7 @@ impl SqlExprVisitor<'_> {
     /// e.g. `CAST(column AS INT)` or `column::INT`
     fn visit_cast(
         &mut self,
-        expr: &SqlExpr,
+        expr: &SQLExpr,
         data_type: &SQLDataType,
         format: &Option<CastFormat>,
     ) -> PolarsResult<Expr> {
@@ -367,15 +380,15 @@ impl SqlExprVisitor<'_> {
     ///
     /// e.g. 1, 'foo', 1.0, NULL
     ///
-    /// See [SqlValue] and [LiteralValue] for more details
-    fn visit_literal(&self, value: &SqlValue) -> PolarsResult<Expr> {
+    /// See [SQLValue] and [LiteralValue] for more details
+    fn visit_literal(&self, value: &SQLValue) -> PolarsResult<Expr> {
         Ok(match value {
-            SqlValue::Boolean(b) => lit(*b),
-            SqlValue::DoubleQuotedString(s) => lit(s.clone()),
-            SqlValue::HexStringLiteral(s) => lit(s.clone()),
-            SqlValue::NationalStringLiteral(s) => lit(s.clone()),
-            SqlValue::Null => Expr::Literal(LiteralValue::Null),
-            SqlValue::Number(s, _) => {
+            SQLValue::Boolean(b) => lit(*b),
+            SQLValue::DoubleQuotedString(s) => lit(s.clone()),
+            SQLValue::HexStringLiteral(s) => lit(s.clone()),
+            SQLValue::NationalStringLiteral(s) => lit(s.clone()),
+            SQLValue::Null => Expr::Literal(LiteralValue::Null),
+            SQLValue::Number(s, _) => {
                 // Check for existence of decimal separator dot
                 if s.contains('.') {
                     s.parse::<f64>().map(lit).map_err(|_| ())
@@ -384,7 +397,7 @@ impl SqlExprVisitor<'_> {
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
             },
-            SqlValue::SingleQuotedString(s) => lit(s.clone()),
+            SQLValue::SingleQuotedString(s) => lit(s.clone()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
     }
@@ -392,13 +405,13 @@ impl SqlExprVisitor<'_> {
     /// Visit a SQL literal (like [visit_literal]), but return AnyValue instead of Expr
     fn visit_anyvalue(
         &self,
-        value: &SqlValue,
+        value: &SQLValue,
         op: Option<&UnaryOperator>,
     ) -> PolarsResult<AnyValue> {
         Ok(match value {
-            SqlValue::Boolean(b) => AnyValue::Boolean(*b),
-            SqlValue::Null => AnyValue::Null,
-            SqlValue::Number(s, _) => {
+            SQLValue::Boolean(b) => AnyValue::Boolean(*b),
+            SQLValue::Null => AnyValue::Null,
+            SQLValue::Number(s, _) => {
                 let negate = match op {
                     Some(UnaryOperator::Minus) => true,
                     // no op should be taken as plus.
@@ -419,10 +432,10 @@ impl SqlExprVisitor<'_> {
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {s:?}"))?
             },
-            SqlValue::SingleQuotedString(s)
-            | SqlValue::NationalStringLiteral(s)
-            | SqlValue::HexStringLiteral(s)
-            | SqlValue::DoubleQuotedString(s) => AnyValue::StringOwned(s.into()),
+            SQLValue::SingleQuotedString(s)
+            | SQLValue::NationalStringLiteral(s)
+            | SQLValue::HexStringLiteral(s)
+            | SQLValue::DoubleQuotedString(s) => AnyValue::StringOwned(s.into()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
     }
@@ -431,10 +444,10 @@ impl SqlExprVisitor<'_> {
     /// See [sqlparser::ast::Expr::Between] for more details
     fn visit_between(
         &mut self,
-        expr: &SqlExpr,
+        expr: &SQLExpr,
         negated: bool,
-        low: &SqlExpr,
-        high: &SqlExpr,
+        low: &SQLExpr,
+        high: &SQLExpr,
     ) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         let low = self.visit_expr(low)?;
@@ -451,10 +464,10 @@ impl SqlExprVisitor<'_> {
     /// See [sqlparser::ast::Expr::Trim] for more details
     fn visit_trim(
         &mut self,
-        expr: &SqlExpr,
+        expr: &SQLExpr,
         trim_where: &Option<TrimWhereField>,
-        trim_what: &Option<Box<SqlExpr>>,
-        trim_characters: &Option<Vec<SqlExpr>>,
+        trim_what: &Option<Box<SQLExpr>>,
+        trim_characters: &Option<Vec<SQLExpr>>,
     ) -> PolarsResult<Expr> {
         if trim_characters.is_some() {
             // TODO: allow compact snowflake/bigquery syntax?
@@ -511,20 +524,20 @@ impl SqlExprVisitor<'_> {
     /// Visit a SQL `IN` expression
     fn visit_in_list(
         &mut self,
-        expr: &SqlExpr,
-        list: &[SqlExpr],
+        expr: &SQLExpr,
+        list: &[SQLExpr],
         negated: bool,
     ) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         let list = list
             .iter()
             .map(|e| {
-                if let SqlExpr::Value(v) = e {
+                if let SQLExpr::Value(v) = e {
                     let av = self.visit_anyvalue(v, None)?;
                     Ok(av)
-                } else if let SqlExpr::UnaryOp {op, expr} = e {
+                } else if let SQLExpr::UnaryOp {op, expr} = e {
                     match expr.as_ref() {
-                        SqlExpr::Value(v) => {
+                        SQLExpr::Value(v) => {
                             let av = self.visit_anyvalue(v, Some(op))?;
                             Ok(av)
                         },
@@ -546,7 +559,7 @@ impl SqlExprVisitor<'_> {
 
     fn visit_in_subquery(
         &mut self,
-        expr: &SqlExpr,
+        expr: &SQLExpr,
         subquery: &Subquery,
         negated: bool,
     ) -> PolarsResult<Expr> {
@@ -574,8 +587,8 @@ impl SqlExprVisitor<'_> {
         Ok((expr, descending))
     }
 
-    fn visit_when_then(&mut self, expr: &SqlExpr) -> PolarsResult<Expr> {
-        if let SqlExpr::Case {
+    fn visit_when_then(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        if let SQLExpr::Case {
             operand,
             conditions,
             results,
@@ -663,8 +676,8 @@ impl SqlExprVisitor<'_> {
     }
 }
 
-pub(crate) fn parse_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Expr> {
-    let mut visitor = SqlExprVisitor { ctx };
+pub(crate) fn parse_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Expr> {
+    let mut visitor = SQLExprVisitor { ctx };
     visitor.visit_expr(expr)
 }
 
@@ -692,14 +705,14 @@ pub(super) fn process_join_constraint(
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let JoinConstraint::On(SqlExpr::BinaryOp { left, op, right }) = constraint {
+    if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
         if op != &BinaryOperator::Eq {
             polars_bail!(InvalidOperation:
                 "SQL interface (currently) only supports basic equi-join \
                  constraints; found '{:?}' op in\n{:?}", op, constraint)
         }
         match (left.as_ref(), right.as_ref()) {
-            (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
+            (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
                 if left.len() == 2 && right.len() == 2 {
                     let (tbl_a, col_a) = (&left[0].value, &left[1].value);
                     let (tbl_b, col_b) = (&right[0].value, &right[1].value);
@@ -711,7 +724,7 @@ pub(super) fn process_join_constraint(
                     }
                 }
             },
-            (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
+            (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
                 return Ok((vec![col(&left.value)], vec![col(&right.value)]))
             },
             _ => {},

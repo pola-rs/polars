@@ -18,6 +18,27 @@ def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
 
+def test_sql_case_when() -> None:
+    lf = pl.LazyFrame(
+        {
+            "v1": [None, 2, None, 4],
+            "v2": [101, 202, 303, 404],
+        }
+    )
+    with pl.SQLContext(test_data=lf, eager_execution=True) as ctx:
+        out = ctx.execute(
+            """
+            SELECT *, CASE WHEN COALESCE(v1, v2) % 2 != 0 THEN 'odd' ELSE 'even' END as "v3"
+            FROM test_data
+            """
+        )
+    assert out.to_dict(as_series=False) == {
+        "v1": [None, 2, None, 4],
+        "v2": [101, 202, 303, 404],
+        "v3": ["odd", "even", "odd", "even"],
+    }
+
+
 def test_sql_cast() -> None:
     df = pl.DataFrame(
         {
@@ -756,6 +777,20 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         ("!~*", "(T|S)$", "seafood"),
         ("!~*", "^.E", "fruit"),
         ("!~*", "[aeiOU]", None),
+        ("RLIKE", "^veg", "vegetables"),
+        ("RLIKE", "^VEG", None),
+        ("RLIKE", "(?i)^VEG", "vegetables"),
+        ("NOT RLIKE", "(t|s)$", "seafood"),
+        ("NOT RLIKE", "(?i)(T|S)$", "seafood"),
+        ("NOT RLIKE", "(?i)^.E", "fruit"),
+        ("NOT RLIKE", "(?i)[aeiOU]", None),
+        ("REGEXP", "^veg", "vegetables"),
+        ("REGEXP", "^VEG", None),
+        ("REGEXP", "(?i)^VEG", "vegetables"),
+        ("NOT REGEXP", "(t|s)$", "seafood"),
+        ("NOT REGEXP", "(?i)(T|S)$", "seafood"),
+        ("NOT REGEXP", "(?i)^.E", "fruit"),
+        ("NOT REGEXP", "(?i)[aeiOU]", None),
     ],
 )
 def test_sql_regex_operators(
@@ -771,6 +806,30 @@ def test_sql_regex_operators(
             """
         )
         assert out.rows() == ([(expected,)] if expected else [])
+
+
+@pytest.mark.parametrize(
+    ("regex_op", "expected"),
+    [
+        ("RLIKE", [0, 3]),
+        ("REGEXP", [0, 3]),
+        ("NOT RLIKE", [1, 2, 4]),
+        ("NOT REGEXP", [1, 2, 4]),
+    ],
+)
+def test_sql_regex_expr_match(regex_op: str, expected: list[int]) -> None:
+    # note: the REGEXP and RLIKE operators can also use another
+    # column/expression as the source of the match pattern
+    df = pl.DataFrame(
+        {
+            "idx": [0, 1, 2, 3, 4],
+            "str": ["ABC", "abc", "000", "A0C", "a0c"],
+            "pat": ["^A", "^A", "^A", r"[AB]\d.*$", ".*xxx$"],
+        }
+    )
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        out = ctx.execute(f"SELECT idx, str FROM df WHERE str {regex_op} pat")
+        assert out.to_series().to_list() == expected
 
 
 def test_sql_regex_operators_error() -> None:

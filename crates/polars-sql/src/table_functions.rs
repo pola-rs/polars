@@ -103,10 +103,10 @@ impl PolarsTableFunctions {
 
     #[allow(dead_code)]
     fn get_file_path_from_arg(&self, arg: &FunctionArg) -> PolarsResult<String> {
-        use sqlparser::ast::{Expr as SqlExpr, Value as SqlValue};
+        use sqlparser::ast::{Expr as SQLExpr, Value as SQLValue};
         match arg {
-            FunctionArg::Unnamed(FunctionArgExpr::Expr(SqlExpr::Value(
-                SqlValue::SingleQuotedString(s),
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(
+                SQLValue::SingleQuotedString(s),
             ))) => Ok(s.to_string()),
             _ => polars_bail!(
                 ComputeError:

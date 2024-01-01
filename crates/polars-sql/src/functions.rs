@@ -5,20 +5,20 @@ use polars_plan::logical_plan::LiteralValue;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{lit, StrptimeOptions};
 use sqlparser::ast::{
-    Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
+    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SQLValue,
     WindowSpec, WindowType,
 };
 
 use crate::sql_expr::parse_sql_expr;
 use crate::SQLContext;
 
-pub(crate) struct SqlFunctionVisitor<'a> {
+pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
     pub(crate) ctx: &'a mut SQLContext,
 }
 
 /// SQL functions that are supported by Polars
-pub(crate) enum PolarsSqlFunctions {
+pub(crate) enum PolarsSQLFunctions {
     // ----
     // Math functions
     // ----
@@ -451,7 +451,7 @@ pub(crate) enum PolarsSqlFunctions {
     Udf(String),
 }
 
-impl PolarsSqlFunctions {
+impl PolarsSQLFunctions {
     pub(crate) fn keywords() -> &'static [&'static str] {
         &[
             "abs",
@@ -525,7 +525,7 @@ impl PolarsSqlFunctions {
     }
 }
 
-impl PolarsSqlFunctions {
+impl PolarsSQLFunctions {
     fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
         let function_name = function.name.0[0].value.to_lowercase();
         Ok(match function_name.as_str() {
@@ -632,12 +632,12 @@ impl PolarsSqlFunctions {
     }
 }
 
-impl SqlFunctionVisitor<'_> {
+impl SQLFunctionVisitor<'_> {
     pub(crate) fn visit_function(&mut self) -> PolarsResult<Expr> {
         let function = self.func;
-        let function_name = PolarsSqlFunctions::try_from_sql(function, self.ctx)?;
+        let function_name = PolarsSQLFunctions::try_from_sql(function, self.ctx)?;
 
-        use PolarsSqlFunctions::*;
+        use PolarsSQLFunctions::*;
 
         match function_name {
             // ----
@@ -908,14 +908,14 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_binary<Arg: FromSqlExpr>(
+    fn visit_binary<Arg: FromSQLExpr>(
         &mut self,
         f: impl Fn(Expr, Arg) -> Expr,
     ) -> PolarsResult<Expr> {
         self.try_visit_binary(|e, a| Ok(f(e, a)))
     }
 
-    fn try_visit_binary<Arg: FromSqlExpr>(
+    fn try_visit_binary<Arg: FromSQLExpr>(
         &mut self,
         f: impl Fn(Expr, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
@@ -952,14 +952,14 @@ impl SqlFunctionVisitor<'_> {
         f(&expr_args)
     }
 
-    // fn visit_ternary<Arg: FromSqlExpr>(
+    // fn visit_ternary<Arg: FromSQLExpr>(
     //     &self,
     //     f: impl Fn(Expr, Arg, Arg) -> Expr,
     // ) -> PolarsResult<Expr> {
     //     self.try_visit_ternary(|e, a1, a2| Ok(f(e, a1, a2)))
     // }
 
-    fn try_visit_ternary<Arg: FromSqlExpr>(
+    fn try_visit_ternary<Arg: FromSQLExpr>(
         &mut self,
         f: impl Fn(Expr, Arg, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
@@ -1066,20 +1066,20 @@ fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
         .collect()
 }
 
-pub(crate) trait FromSqlExpr {
-    fn from_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
+pub(crate) trait FromSQLExpr {
+    fn from_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
-impl FromSqlExpr for f64 {
-    fn from_sql_expr(expr: &SqlExpr, _ctx: &mut SQLContext) -> PolarsResult<Self>
+impl FromSQLExpr for f64 {
+    fn from_sql_expr(expr: &SQLExpr, _ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
         match expr {
-            SqlExpr::Value(v) => match v {
-                SqlValue::Number(s, _) => s
+            SQLExpr::Value(v) => match v {
+                SQLValue::Number(s, _) => s
                     .parse()
                     .map_err(|_| polars_err!(ComputeError: "can't parse literal {:?}", s)),
                 _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
@@ -1089,14 +1089,14 @@ impl FromSqlExpr for f64 {
     }
 }
 
-impl FromSqlExpr for String {
-    fn from_sql_expr(expr: &SqlExpr, _: &mut SQLContext) -> PolarsResult<Self>
+impl FromSQLExpr for String {
+    fn from_sql_expr(expr: &SQLExpr, _: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
         match expr {
-            SqlExpr::Value(v) => match v {
-                SqlValue::SingleQuotedString(s) => Ok(s.clone()),
+            SQLExpr::Value(v) => match v {
+                SQLValue::SingleQuotedString(s) => Ok(s.clone()),
                 _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
             },
             _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),
@@ -1104,14 +1104,14 @@ impl FromSqlExpr for String {
     }
 }
 
-impl FromSqlExpr for StrptimeOptions {
-    fn from_sql_expr(expr: &SqlExpr, _: &mut SQLContext) -> PolarsResult<Self>
+impl FromSQLExpr for StrptimeOptions {
+    fn from_sql_expr(expr: &SQLExpr, _: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
         match expr {
-            SqlExpr::Value(v) => match v {
-                SqlValue::SingleQuotedString(s) => Ok(StrptimeOptions {
+            SQLExpr::Value(v) => match v {
+                SQLValue::SingleQuotedString(s) => Ok(StrptimeOptions {
                     format: Some(s.clone()),
                     ..StrptimeOptions::default()
                 }),
@@ -1122,8 +1122,8 @@ impl FromSqlExpr for StrptimeOptions {
     }
 }
 
-impl FromSqlExpr for Expr {
-    fn from_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
+impl FromSQLExpr for Expr {
+    fn from_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
