@@ -33,7 +33,10 @@ where
             result.map(|(start, len)| {
                 let end = start + len;
 
-                if len < ((min_periods as u32).into()) {
+                // On the Python side, if `min_periods` wasn't specified, it is set to
+                // `1`. In that case, this condition is the same as checking
+                // `if start == end`.
+                if len < (min_periods as IdxSize) {
                     None
                 } else {
                     // safety:
