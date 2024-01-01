@@ -47,7 +47,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -75,9 +75,9 @@ jobs:
           python -c 'import polars'
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: sdist
+          name: sdist-${{ matrix.package }}
           path: dist/*.tar.gz
 
   build-wheels:
@@ -108,7 +108,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -172,9 +172,9 @@ jobs:
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheel-${{ matrix.package }}-${{ matrix.os }}-${{ matrix.architecture }}
           path: dist/*.whl
 
   publish-to-pypi:
@@ -187,17 +187,11 @@ jobs:
       id-token: write
 
     steps:
-      - name: Download sdist
-        uses: actions/download-artifact@v3
+      - name: Download sdists and wheels
+        uses: actions/download-artifact@v4
         with:
-          name: sdist
           path: dist
-
-      - name: Download wheels
-        uses: actions/download-artifact@v3
-        with:
-          name: wheels
-          path: dist
+          merge-multiple: true
 
       - name: Publish to PyPI
         if: inputs.dry-run == false
@@ -214,9 +208,9 @@ jobs:
           ref: ${{ inputs.sha }}
 
       - name: Download sdist
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: sdist
+          name: sdist-polars
           path: dist
 
       - name: Get version from Cargo.toml

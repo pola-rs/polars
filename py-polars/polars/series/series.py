@@ -119,6 +119,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, DataType, Expr
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
+        BufferInfo,
         ClosedInterval,
         ComparisonOperator,
         FillNullStrategy,
@@ -361,7 +362,7 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    def _get_buffer_info(self) -> tuple[int, int, int]:
+    def _get_buffer_info(self) -> BufferInfo:
         """
         Return pointer, offset, and length information about the underlying buffer.
 
@@ -419,7 +420,7 @@ class Series:
 
     @classmethod
     def _from_buffer(
-        self, dtype: PolarsDataType, buffer_info: tuple[int, int, int], base: Any
+        self, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
     ) -> Self:
         """
         Construct a Series from information about its underlying buffer.
@@ -429,15 +430,50 @@ class Series:
         dtype
             The data type of the buffer.
         buffer_info
-            Tuple containing buffer information in the form (pointer, offset, length).
-        base
+            Tuple containing buffer information in the form `(pointer, offset, length)`.
+        owner
             The object owning the buffer.
 
         Returns
         -------
         Series
         """
-        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, base))
+        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
+
+    @classmethod
+    def _from_buffers(
+        self,
+        dtype: PolarsDataType,
+        data: Series | Sequence[Series],
+        validity: Series | None = None,
+    ) -> Self:
+        """
+        Construct a Series from information about its underlying buffers.
+
+        Parameters
+        ----------
+        dtype
+            The data type of the resulting Series.
+        data
+            Buffers describing the data. For most data types, this is a single Series of
+            the physical data type of `dtype`. Some data types require multiple buffers:
+
+            - `String`: A data buffer of type `UInt8` and an offsets buffer
+                        of type `Int64`.
+        validity
+            Validity buffer. If specified, must be a Series of data type `Boolean`.
+
+        Returns
+        -------
+        Series
+        """
+        if isinstance(data, Series):
+            data = [data._s]
+        else:
+            data = [s._s for s in data]
+        if validity is not None:
+            validity = validity._s
+        return self._from_pyseries(PySeries._from_buffers(dtype, data, validity))
 
     @property
     def dtype(self) -> DataType:

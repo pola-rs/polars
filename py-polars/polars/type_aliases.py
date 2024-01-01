@@ -208,6 +208,8 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
 
+BufferInfo: TypeAlias = Tuple[int, int, int]
+
 
 # minimal protocol definitions that can reasonably represent
 # an executable connection, cursor, or equivalent object
