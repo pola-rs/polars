@@ -435,8 +435,8 @@ mod test {
 
             // Use 2 builders to check if the global string cache
             // does not interfere with the index mapping
-            let mut builder1 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
-            let mut builder2 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
+            let builder1 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
+            let builder2 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
             let s = builder1
                 .drain_iter_and_finish(vec![None, Some("hello"), Some("vietnam")])
                 .into_series();
