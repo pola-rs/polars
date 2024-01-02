@@ -18,8 +18,7 @@ These functions have an important distinction in how they operate and consequent
 A `map_batches` passes the `Series` backed by the `expression` as is.
 
 `map_batches` follows the same rules in both the `select` and the `group_by` context, this will
-mean that the `Series` represents a column in a `DataFrame`. Note that in the `group_by` context, that column is not yet
-aggregated!
+mean that the `Series` represents a column in a `DataFrame`. To be clear, **using a `group_by` or `over` with `map_batches` will return results as though there was no group at all.**
 
 Use cases for `map_batches` are for instance passing the `Series` in an expression to a third party library. Below we show how
 we could use `map_batches` to pass an expression column to a neural network model.
