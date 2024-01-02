@@ -96,7 +96,6 @@ impl LogicalPlan {
                 }
                 write!(f, "\n{:indent$}END {}", "", name)
             },
-            #[cfg(feature = "horizontal_concat")]
             HConcat { inputs, .. } => {
                 let sub_sub_indent = sub_indent + 2;
                 write!(f, "{:indent$}HCONCAT", "")?;

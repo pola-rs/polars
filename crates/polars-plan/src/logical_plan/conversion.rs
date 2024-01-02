@@ -199,7 +199,6 @@ pub fn to_alp(
                 .collect::<PolarsResult<_>>()?;
             ALogicalPlan::Union { inputs, options }
         },
-        #[cfg(feature = "horizontal_concat")]
         LogicalPlan::HConcat {
             inputs,
             schema,
@@ -647,7 +646,6 @@ impl ALogicalPlan {
                     .collect();
                 LogicalPlan::Union { inputs, options }
             },
-            #[cfg(feature = "horizontal_concat")]
             ALogicalPlan::HConcat {
                 inputs,
                 schema,

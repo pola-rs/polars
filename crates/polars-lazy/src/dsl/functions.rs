@@ -169,7 +169,6 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
     concat(lfs_with_all_columns, args)
 }
 
-#[cfg(feature = "horizontal_concat")]
 /// Concat [LazyFrame]s horizontally.
 pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     inputs: L,

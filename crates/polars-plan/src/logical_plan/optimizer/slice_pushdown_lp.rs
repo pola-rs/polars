@@ -350,7 +350,6 @@ impl SlicePushDown {
                     self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
             }
-            #[cfg(feature = "horizontal_concat")]
             (HConcat {inputs, schema, options}, _) => {
                 // Slice can always be pushed down for horizontal concatenation
                 let lp = HConcat {inputs, schema, options};
