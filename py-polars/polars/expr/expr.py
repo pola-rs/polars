@@ -4024,13 +4024,18 @@ class Expr:
         return self.filter(predicate)
 
     class _map_batches_wrapper:
-        def __init__(self, function: Callable[[Series], Series | Any]):
+        def __init__(
+            self,
+            function: Callable[[Series], Series | Any],
+            return_dtype: PolarsDataType | None,
+        ):
             self.function = function
+            self.return_dtype = return_dtype
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             result = self.function(*args, **kwargs)
             if _check_for_numpy(result) and isinstance(result, np.ndarray):
-                result = pl.Series(result)
+                result = pl.Series(result, dtype=self.return_dtype)
             return result
 
     def map_batches(
@@ -4102,7 +4107,7 @@ class Expr:
 
         return self._from_pyexpr(
             self._pyexpr.map_batches(
-                self._map_batches_wrapper(function),
+                self._map_batches_wrapper(function, return_dtype),
                 return_dtype,
                 agg_list,
                 is_elementwise,
