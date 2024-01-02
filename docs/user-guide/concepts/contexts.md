@@ -21,11 +21,11 @@ The examples below are performed on the following `DataFrame`:
 
 There are two selection contexts: `select` and `with_columns`.
 
-The `select` context applies expressions over columns. A `select` may produce new columns that are aggregations, combinations of expressions, or literals. 
+The `select` context applies expressions over columns. A `select` may produce new columns that are aggregations, combinations of expressions, or literals.
 
-The expressions in a `select` context must produce `Series` that are all the same length or have a length of 1. Literals are treated as length-1 `Series`. 
+The expressions in a `select` context must produce `Series` that are all the same length or have a length of 1. Literals are treated as length-1 `Series`.
 
-When some expressions produce length-1 `Series` and some do not, the length-1 `Series` will be broadcast to match the length of the remaining `Series`. Note that broadcasting can also occur within expressions: for instance, in `pl.col.value() / pl.col.value.sum()`, each element of the `value` column is divided by the column's sum.  
+When some expressions produce length-1 `Series` and some do not, the length-1 `Series` will be broadcast to match the length of the remaining `Series`. Note that broadcasting can also occur within expressions: for instance, in `pl.col.value() / pl.col.value.sum()`, each element of the `value` column is divided by the column's sum.
 
 {{code_block('user-guide/concepts/contexts','select',['select'])}}
 
