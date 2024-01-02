@@ -70,6 +70,19 @@ def test_describe_categorical_lexical_ordering() -> None:
     assert out["is_ordered"] is False
 
 
+def test_describe_categorical_enum() -> None:
+    s = pl.Series(["b", "a", "a", "c", None, "b"], dtype=pl.Enum(["a", "b", "c"]))
+    col = PolarsColumn(s)
+
+    out = col.describe_categorical
+
+    assert out["is_ordered"] is True
+    assert out["is_dictionary"] is True
+
+    expected_categories = pl.Series(["a", "b", "c"])
+    assert_series_equal(out["categories"]._col, expected_categories)
+
+
 def test_describe_categorical_other_dtype() -> None:
     s = pl.Series(["a", "b", "a"], dtype=pl.String)
     col = PolarsColumn(s)
