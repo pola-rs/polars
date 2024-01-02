@@ -108,7 +108,7 @@ class GroupBy:
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if isinstance(self.by, (str, pl.Expr)) and not self.more_by:
+        if group_names.shape[1] == 1:
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
