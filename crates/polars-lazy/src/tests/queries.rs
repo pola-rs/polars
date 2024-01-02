@@ -186,7 +186,10 @@ fn test_shift_and_fill_non_numeric() -> PolarsResult<()> {
     .collect()?;
 
     let out = out.column("bool")?;
-    assert_eq!(Vec::from(out.bool()?), &[Some(true), Some(true), Some(false)]);
+    assert_eq!(
+        Vec::from(out.bool()?),
+        &[Some(true), Some(true), Some(false)]
+    );
     Ok(())
 }
 
