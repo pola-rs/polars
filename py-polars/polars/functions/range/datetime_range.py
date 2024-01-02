@@ -127,7 +127,9 @@ def datetime_range(
     Using Polars duration string to specify the interval:
 
     >>> from datetime import datetime
-    >>> pl.datetime_range(datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True)
+    >>> pl.datetime_range(
+    ...     datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
+    ... ).alias("datetime")
     shape: (3,)
     Series: 'datetime' [datetime[μs]]
     [
@@ -145,7 +147,7 @@ def datetime_range(
     ...     timedelta(days=1, hours=12),
     ...     time_unit="ms",
     ...     eager=True,
-    ... )
+    ... ).alias("datetime")
     shape: (7,)
     Series: 'datetime' [datetime[ms]]
     [
@@ -166,7 +168,7 @@ def datetime_range(
     ...     "1mo",
     ...     time_zone="America/New_York",
     ...     eager=True,
-    ... )
+    ... ).alias("datetime")
     shape: (3,)
     Series: 'datetime' [datetime[μs, America/New_York]]
     [
