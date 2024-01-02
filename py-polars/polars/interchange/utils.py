@@ -8,6 +8,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Enum,
     Float32,
     Float64,
     Int8,
@@ -48,6 +49,7 @@ dtype_map: dict[DataTypeClass, Dtype] = {
     Datetime: (DtypeKind.DATETIME, 64, "tsu:", NE),
     Duration: (DtypeKind.DATETIME, 64, "tDu", NE),
     Categorical: (DtypeKind.CATEGORICAL, 32, "I", NE),
+    Enum: (DtypeKind.CATEGORICAL, 32, "I", NE),
 }
 
 

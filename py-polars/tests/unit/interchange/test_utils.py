@@ -32,6 +32,7 @@ NE = Endianness.NATIVE
         (pl.Date, (DtypeKind.DATETIME, 32, "tdD", NE)),
         (pl.Time, (DtypeKind.DATETIME, 64, "ttu", NE)),
         (pl.Categorical, (DtypeKind.CATEGORICAL, 32, "I", NE)),
+        (pl.Enum, (DtypeKind.CATEGORICAL, 32, "I", NE)),
         (pl.Duration, (DtypeKind.DATETIME, 64, "tDu", NE)),
         (pl.Duration(time_unit="ns"), (DtypeKind.DATETIME, 64, "tDn", NE)),
         (pl.Datetime, (DtypeKind.DATETIME, 64, "tsu:", NE)),
