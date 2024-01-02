@@ -141,7 +141,7 @@ _PYTHON_METHODS_MAP = {
     "upper": "str.to_uppercase",
 }
 
-FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
+_FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
     # lambda x: module.func(CONSTANT)
     {
         "argument_1_opname": [{"LOAD_CONST"}],
@@ -191,6 +191,15 @@ FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
         "attribute_name": [{"datetime"}],
         "function_name": [{"strptime"}],
     },
+]
+# In addition to `lambda x: func(x)`, also support cases when a unary operation
+# has been applied to `x`, like `lambda x: func(-x)` or `lambda x: func(~x)`.
+_FUNCTION_KINDS = [
+    # Dict entry 1 has incompatible type "str": "object";
+    # expected "str": "list[AbstractSet[str]]"
+    {**kind, "argument_1_unary_opname": unary}  # type: ignore[dict-item]
+    for kind in _FUNCTION_KINDS
+    for unary in [[set(OpNames.UNARY)], []]
 ]
 
 
@@ -518,6 +527,9 @@ class InstructionTranslator:
                     if e1.startswith("pl.col("):
                         call = "" if op.endswith(")") else "()"
                         return f"{e1}.{op}{call}"
+                    if e1[0] in OpNames.UNARY_VALUES and e1[1:].startswith("pl.col("):
+                        call = "" if op.endswith(")") else "()"
+                        return f"({e1}).{op}{call}"
 
                     # support use of consts as numpy/builtin params, eg:
                     # "np.sin(3) + np.cos(x)", or "len('const_string') + len(x)"
@@ -722,12 +734,13 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
-        for function_kind in FUNCTION_KINDS:
+        for function_kind in _FUNCTION_KINDS:
             opnames: list[AbstractSet[str]] = [
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
                 *function_kind["module_opname"],
                 *function_kind["attribute_opname"],
                 *function_kind["argument_1_opname"],
+                *function_kind["argument_1_unary_opname"],
                 *function_kind["argument_2_opname"],
                 OpNames.CALL,
             ]
@@ -766,7 +779,15 @@ class RewrittenInstructions:
                 )
                 # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
                 operand = inst3._replace(offset=inst1.offset)
-                updated_instructions.extend((operand, synthetic_call))
+                updated_instructions.extend(
+                    (
+                        operand,
+                        matching_instructions[3 + attribute_count],
+                        synthetic_call,
+                    )
+                    if function_kind["argument_1_unary_opname"]
+                    else (operand, synthetic_call)
+                )
                 return len(matching_instructions)
 
         return 0
