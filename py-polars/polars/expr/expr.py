@@ -3838,7 +3838,7 @@ class Expr:
 
     def rle(self) -> Self:
         """
-        Get the lengths of runs of identical values.
+        Get the lengths and values of runs of identical values.
 
         Returns
         -------
@@ -3862,17 +3862,23 @@ class Expr:
         │ 1       ┆ 1      │
         │ 2       ┆ 3      │
         └─────────┴────────┘
+
+        See Also
+        --------
+        rle_id
+
         """
         return self._from_pyexpr(self._pyexpr.rle())
 
     def rle_id(self) -> Self:
         """
-        Map values to run IDs.
+        Get a distinct integer ID for each run of identical values.
 
-        Similar to RLE, but it maps each value to an ID corresponding to the run into
-        which it falls. This is especially useful when you want to define groups by
-        runs of identical values rather than the values themselves.
+        The ID increases by one each time the value of a column (or a set of columns,
+        if using :func:`pl.struct`) changes.
 
+        This is especially useful when you want to define a new group for every time a
+        column's value changes, rather than for every distinct value of that column.
 
         Examples
         --------
@@ -3891,6 +3897,11 @@ class Expr:
         │ 1   ┆ y    ┆ 2   ┆ 3    │
         │ 1   ┆ y    ┆ 2   ┆ 3    │
         └─────┴──────┴─────┴──────┘
+
+        See Also
+        --------
+        rle
+
         """
         return self._from_pyexpr(self._pyexpr.rle_id())
 
