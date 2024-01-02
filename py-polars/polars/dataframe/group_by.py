@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
-import polars._reexport as pl
 from polars import functions as F
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import deprecate_renamed_function
