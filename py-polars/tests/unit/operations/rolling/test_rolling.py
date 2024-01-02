@@ -845,3 +845,55 @@ def test_rolling_median_2() -> None:
     assert df.select(
         pl.col("x").rolling_median(window_size=100).sum()
     ).item() == pytest.approx(26.60506093611384)
+
+
+@pytest.mark.parametrize(
+    ("dates", "closed", "expected"),
+    [
+        (
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "right",
+            [None, 3, 5],
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "left",
+            [None, None, 3],
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "both",
+            [None, 3, 6],
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "none",
+            [None, None, None],
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 4)],
+            "right",
+            [None, 3, None],
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 3), date(2020, 1, 4)],
+            "right",
+            [None, None, 5],
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 3), date(2020, 1, 5)],
+            "right",
+            [None, None, None],
+        ),
+    ],
+)
+def test_rolling_min_periods(
+    dates: list[date], closed: ClosedInterval, expected: list[int]
+) -> None:
+    df = pl.DataFrame({"date": dates, "value": [1, 2, 3]}).sort("date")
+    result = df.select(
+        pl.col("value").rolling_sum(
+            window_size="2d", by="date", min_periods=2, closed=closed
+        )
+    )["value"]
+    assert_series_equal(result, pl.Series("value", expected, pl.Int64))
