@@ -10,8 +10,6 @@ use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
-#[cfg(feature = "dtype-categorical")]
-use crate::using_string_cache;
 
 pub(crate) fn cast_chunks(
     chunks: &[ArrayRef],
@@ -199,29 +197,29 @@ impl ChunkCast for StringChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, ordering) => {
-                if let Some(rev_map) = rev_map {
-                    if rev_map.is_enum() {
-                        return Ok(CategoricalChunked::from_string_to_enum(
-                            self,
-                            rev_map.get_categories(),
-                            *ordering,
-                        )?
-                        .into_series());
-                    }
-                }
-
-                let mut builder =
-                    CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
-
-                if let Some(rev_map) = rev_map {
-                    if !using_string_cache() {
-                        builder.prefill_categories(rev_map.get_categories())?
-                    }
-                }
-                let iter = unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
-                let ca = builder.drain_iter_and_finish(iter);
-                Ok(ca.into_series())
+            DataType::Categorical(rev_map, ordering) => match rev_map {
+                None => {
+                    // Safety: length is correct
+                    let iter =
+                        unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
+                    let builder =
+                        CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
+                    let ca = builder.drain_iter_and_finish(iter);
+                    Ok(ca.into_series())
+                },
+                Some(rev_map) => {
+                    polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
+                    CategoricalChunked::from_string_to_enum(
+                        self,
+                        rev_map.get_categories(),
+                        *ordering,
+                    )
+                    .map(|ca| {
+                        let mut s = ca.into_series();
+                        s.rename(self.name());
+                        s
+                    })
+                },
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),

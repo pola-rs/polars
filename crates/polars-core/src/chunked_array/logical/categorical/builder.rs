@@ -72,26 +72,6 @@ impl CategoricalChunkedBuilder {
         self.cat_builder.push(Some(idx));
     }
 
-    // Prefill the rev_map with categories in a certain order
-    pub fn prefill_categories(&mut self, categories: &Utf8Array<i64>) -> PolarsResult<()> {
-        polars_ensure!(self.local_mapping.is_empty(), ComputeError: "prefill only at the start of building a Categorical");
-        for (idx, s) in categories.values_iter().enumerate_idx() {
-            let h = self.local_mapping.hasher().hash_one(s);
-
-            self.local_mapping.raw_table_mut().insert(
-                h,
-                (KeyWrapper(idx as u32), ()),
-                |(k, _): &(KeyWrapper, ())| {
-                    StringCache::get_hash_builder()
-                        .hash_one(unsafe { self.categories.value_unchecked(k.0 as usize) })
-                },
-            );
-            self.categories.push(Some(s));
-        }
-        self.fast_unique = false;
-        Ok(())
-    }
-
     #[inline]
     pub fn append_value(&mut self, s: &str) {
         self.push_impl(s, self.local_mapping.hasher().hash_one(s))
@@ -464,7 +444,9 @@ mod test {
             assert_eq!(s.str_value(1).unwrap(), "hello");
             assert_eq!(s.str_value(2).unwrap(), "vietnam");
 
-            let s = builder2.drain_iter_and_finish.into_series();
+            let s = builder2
+                .drain_iter_and_finish(vec![Some("hello"), None, Some("world")])
+                .into_series();
             assert_eq!(s.str_value(0).unwrap(), "hello");
             assert_eq!(s.str_value(1).unwrap(), "null");
             assert_eq!(s.str_value(2).unwrap(), "world");
