@@ -16,6 +16,10 @@ def test_enum_creation() -> None:
     assert s.len() == 3
     assert s.dtype == pl.Enum(categories=["a", "b"])
 
+    # from iterator
+    e = pl.Enum(f"x{i}" for i in range(5))
+    assert e.categories == ["x0", "x1", "x2", "x3", "x4"]
+
 
 def test_enum_non_existent() -> None:
     with pytest.raises(
