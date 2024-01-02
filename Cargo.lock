@@ -2956,6 +2956,7 @@ dependencies = [
 name = "polars-sql"
 version = "0.36.2"
 dependencies = [
+ "hex",
  "polars-arrow",
  "polars-core",
  "polars-error",

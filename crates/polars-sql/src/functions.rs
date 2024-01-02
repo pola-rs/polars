@@ -28,6 +28,90 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ABS(column_1) from df;
     /// ```
     Abs,
+    /// SQL 'ceil' function
+    /// Returns the nearest integer closest from zero.
+    /// ```sql
+    /// SELECT CEIL(column_1) from df;
+    /// ```
+    Ceil,
+    /// SQL 'exp' function
+    /// Computes the exponential of the given value.
+    /// ```sql
+    /// SELECT EXP(column_1) from df;
+    /// ```
+    Exp,
+    /// SQL 'floor' function
+    /// Returns the nearest integer away from zero.
+    ///   0.5 will be rounded
+    /// ```sql
+    /// SELECT FLOOR(column_1) from df;
+    /// ```
+    Floor,
+    /// SQL 'pi' function
+    /// Returns a (very good) approximation of 𝜋
+    /// ```sql
+    /// SELECT PI() from df;
+    /// ```
+    Pi,
+    /// SQL 'ln' function
+    /// Computes the natural logarithm of the given value
+    /// ```sql
+    /// SELECT LN(column_1) from df;
+    /// ```
+    Ln,
+    /// SQL 'log2' function
+    /// Computes the logarithm of the given value in base 2
+    /// ```sql
+    /// SELECT LOG2(column_1) from df;
+    /// ```
+    Log2,
+    /// SQL 'log10' function
+    /// Computes the logarithm of the given value in base 10
+    /// ```sql
+    /// SELECT LOG10(column_1) from df;
+    /// ```
+    Log10,
+    /// SQL 'log' function
+    /// Computes the `base` logarithm of the given value
+    /// ```sql
+    /// SELECT LOG(column_1, 10) from df;
+    /// ```
+    Log,
+    /// SQL 'log1p' function
+    /// Computes the natural logarithm of the “given value plus one”
+    /// ```sql
+    /// SELECT LOG1P(column_1) from df;
+    /// ```
+    Log1p,
+    /// SQL 'pow' function
+    /// Returns the value to the power of `exponent`
+    /// ```sql
+    /// SELECT POW(column_1, 2) from df;
+    /// ```
+    Pow,
+    /// SQL 'sqrt' function
+    /// Returns the square root (√) of a number
+    /// ```sql
+    /// SELECT SQRT(column_1) from df;
+    /// ```
+    Sqrt,
+    /// SQL 'cbrt' function
+    /// Returns the cube root (∛) of a number
+    /// ```sql
+    /// SELECT CBRT(column_1) from df;
+    /// ```
+    Cbrt,
+    /// SQL 'round' function
+    /// Round a number to `x` decimals (default: 0) away from zero.
+    ///   .5 is rounded away from zero.
+    /// ```sql
+    /// SELECT ROUND(column_1, 3) from df;
+    /// ```
+    Round,
+
+    // ----
+    // Trig functions
+    // ----
     /// SQL 'cos' function
     /// Compute the cosine sine of the input column (in radians)
     /// ```sql
@@ -124,91 +208,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ATAN2D(column_1) from df;
     /// ```
     Atan2D,
-    /// SQL 'ceil' function
-    /// Returns the nearest integer closest from zero.
-    /// ```sql
-    /// SELECT CEIL(column_1) from df;
-    /// ```
-    Ceil,
-    /// SQL 'exp' function
-    /// Computes the exponential of the given value.
-    /// ```sql
-    /// SELECT EXP(column_1) from df;
-    /// ```
-    Exp,
-    /// SQL 'floor' function
-    /// Returns the nearest integer away from zero.
-    ///   0.5 will be rounded
-    /// ```sql
-    /// SELECT FLOOR(column_1) from df;
-    /// ```
-    Floor,
-    /// SQL 'pi' function
-    /// Returns a (very good) approximation of 𝜋
-    /// ```sql
-    /// SELECT PI() from df;
-    /// ```
-    Pi,
-    /// SQL 'ln' function
-    /// Computes the natural logarithm of the given value
-    /// ```sql
-    /// SELECT LN(column_1) from df;
-    /// ```
-    Ln,
-    /// SQL 'log2' function
-    /// Computes the logarithm of the given value in base 2
-    /// ```sql
-    /// SELECT LOG2(column_1) from df;
-    /// ```
-    Log2,
-    /// SQL 'log10' function
-    /// Computes the logarithm of the given value in base 10
-    /// ```sql
-    /// SELECT LOG10(column_1) from df;
-    /// ```
-    Log10,
-    /// SQL 'log' function
-    /// Computes the `base` logarithm of the given value
-    /// ```sql
-    /// SELECT LOG(column_1, 10) from df;
-    /// ```
-    Log,
-    /// SQL 'log1p' function
-    /// Computes the natural logarithm of the “given value plus one”
-    /// ```sql
-    /// SELECT LOG1P(column_1) from df;
-    /// ```
-    Log1p,
-    /// SQL 'pow' function
-    /// Returns the value to the power of `exponent`
-    /// ```sql
-    /// SELECT POW(column_1, 2) from df;
-    /// ```
-    Pow,
-    /// SQL 'sqrt' function
-    /// Returns the square root (√) of a number
-    /// ```sql
-    /// SELECT SQRT(column_1) from df;
-    /// ```
-    Sqrt,
-    /// SQL 'cbrt' function
-    /// Returns the cube root (∛) of a number
-    /// ```sql
-    /// SELECT CBRT(column_1) from df;
-    /// ```
-    Cbrt,
-    /// SQL 'round' function
-    /// Round a number to `x` decimals (default: 0) away from zero.
-    ///   .5 is rounded away from zero.
-    /// ```sql
-    /// SELECT ROUND(column_1, 3) from df;
-    /// ```
-    Round,
     /// SQL 'degrees' function
     /// Convert between radians and degrees
     /// ```sql
     /// SELECT DEGREES(column_1) from df;
     /// ```
+    ///
+    ///
     Degrees,
     /// SQL 'RADIANS' function
     /// Convert between degrees and radians
@@ -230,6 +236,11 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // String functions
     // ----
+    /// SQL 'bit_length' function (bytes)
+    /// ```sql
+    /// SELECT BIT_LENGTH(column_1) from df;
+    /// ```
+    BitLength,
     /// SQL 'ends_with' function
     /// Returns True if the value ends with the second argument.
     /// ```sql
@@ -533,6 +544,23 @@ impl PolarsSQLFunctions {
             // Math functions
             // ----
             "abs" => Self::Abs,
+            "cbrt" => Self::Cbrt,
+            "ceil" | "ceiling" => Self::Ceil,
+            "exp" => Self::Exp,
+            "floor" => Self::Floor,
+            "ln" => Self::Ln,
+            "log" => Self::Log,
+            "log10" => Self::Log10,
+            "log1p" => Self::Log1p,
+            "log2" => Self::Log2,
+            "pi" => Self::Pi,
+            "pow" | "power" => Self::Pow,
+            "round" => Self::Round,
+            "sqrt" => Self::Sqrt,
+
+            // ----
+            // Trig functions
+            // ----
             "cos" => Self::Cos,
             "cot" => Self::Cot,
             "sin" => Self::Sin,
@@ -551,25 +579,12 @@ impl PolarsSQLFunctions {
             "atan2d" => Self::Atan2D,
             "degrees" => Self::Degrees,
             "radians" => Self::Radians,
-            "ceil" | "ceiling" => Self::Ceil,
-            "exp" => Self::Exp,
-            "floor" => Self::Floor,
-            "pi" => Self::Pi,
-            "ln" => Self::Ln,
-            "log" => Self::Log,
-            "log10" => Self::Log10,
-            "log1p" => Self::Log1p,
-            "log2" => Self::Log2,
-            "pow" | "power" => Self::Pow,
-            "sqrt" => Self::Sqrt,
-            "cbrt" => Self::Cbrt,
-            "round" => Self::Round,
 
             // ----
             // Comparison functions
             // ----
-            "nullif" => Self::NullIf,
             "coalesce" => Self::Coalesce,
+            "nullif" => Self::NullIf,
 
             // ----
             // Date functions
@@ -579,10 +594,11 @@ impl PolarsSQLFunctions {
             // ----
             // String functions
             // ----
+            "bit_length" => Self::BitLength,
             "ends_with" => Self::EndsWith,
             #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
-            "length" => Self::Length,
+            "length" | "char_length" | "character_length" => Self::Length,
             "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
@@ -698,6 +714,7 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // String functions
             // ----
+            BitLength => self.visit_unary(|e| e.str().len_bytes() * lit(8)),
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),

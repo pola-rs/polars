@@ -47,32 +47,32 @@ class SQLContext(Generic[FrameType]):
     @overload
     def __init__(
         self: SQLContext[LazyFrame],
-        frames: Mapping[str, DataFrame | LazyFrame] | None = ...,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
         *,
         register_globals: bool | int = ...,
         eager_execution: Literal[False] = False,
-        **named_frames: DataFrame | LazyFrame,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         ...
 
     @overload
     def __init__(
         self: SQLContext[DataFrame],
-        frames: Mapping[str, DataFrame | LazyFrame] | None = ...,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
         *,
         register_globals: bool | int = ...,
         eager_execution: Literal[True],
-        **named_frames: DataFrame | LazyFrame,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         ...
 
     def __init__(
         self,
-        frames: Mapping[str, DataFrame | LazyFrame] | None = None,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
         *,
         register_globals: bool | int = False,
         eager_execution: bool = False,
-        **named_frames: DataFrame | LazyFrame,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         """
         Initialise a new `SQLContext`.
@@ -274,7 +274,7 @@ class SQLContext(Generic[FrameType]):
         res = wrap_ldf(self._ctxt.execute(query))
         return res.collect() if (eager or self._eager_execution) else res
 
-    def register(self, name: str, frame: DataFrame | LazyFrame) -> Self:
+    def register(self, name: str, frame: DataFrame | LazyFrame | None) -> Self:
         """
         Register a single frame as a table, using the given name.
 
@@ -306,7 +306,9 @@ class SQLContext(Generic[FrameType]):
         └───────┘
 
         """
-        if isinstance(frame, DataFrame):
+        if frame is None:
+            frame = LazyFrame()
+        elif isinstance(frame, DataFrame):
             frame = frame.lazy()
         self._ctxt.register(name, frame._ldf)
         return self
@@ -362,8 +364,8 @@ class SQLContext(Generic[FrameType]):
 
     def register_many(
         self,
-        frames: Mapping[str, DataFrame | LazyFrame] | None = None,
-        **named_frames: DataFrame | LazyFrame,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> Self:
         """
         Register multiple eager/lazy frames as tables, using the associated names.

@@ -134,7 +134,7 @@ extract_jsonpath = [
   "polars-lazy?/extract_jsonpath",
 ]
 string_encoding = ["polars-ops/string_encoding", "polars-lazy?/string_encoding", "polars-core/strings"]
-binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding"]
+binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
 group_by_list = ["polars-core/group_by_list", "polars-ops/group_by_list"]
 lazy_regex = ["polars-lazy?/regex"]
 cum_agg = ["polars-ops/cum_agg", "polars-lazy?/cum_agg"]
