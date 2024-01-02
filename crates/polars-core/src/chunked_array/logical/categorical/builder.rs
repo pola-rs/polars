@@ -27,7 +27,7 @@ impl CategoricalChunkedBuilder {
             cat_builder: UInt32Vec::with_capacity(capacity),
             name: name.to_string(),
             ordering,
-            categories: MutableUtf8Array::<i64>::with_capacity(capacity / 10),
+            categories: MutableUtf8Array::<i64>::with_capacity(_HASHMAP_INIT_SIZE),
             local_mapping: PlHashMap::with_capacity_and_hasher(
                 capacity / 10,
                 StringCache::get_hash_builder(),
@@ -80,6 +80,7 @@ impl CategoricalChunkedBuilder {
         self.cat_builder.push(None)
     }
 
+    #[inline]
     pub fn append(&mut self, opt_s: Option<&str>) {
         match opt_s {
             None => self.append_null(),
@@ -104,7 +105,7 @@ impl CategoricalChunkedBuilder {
     {
         let iter = i.into_iter();
         // Save hashes for later when inserting into the global hashmap
-        let mut hashes = Vec::with_capacity(iter.size_hint().0 / 10 + self.categories.len());
+        let mut hashes = Vec::with_capacity(_HASHMAP_INIT_SIZE);
         for s in self.categories.values_iter() {
             hashes.push(self.local_mapping.hasher().hash_one(s));
         }
@@ -126,7 +127,8 @@ impl CategoricalChunkedBuilder {
 
         let categories: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
 
-        // Vec<u32> where the index is local and the value is the global index
+        // we will create a mapping from our local categoricals to global categoricals
+        // and a mapping from global categoricals to our local categoricals
         let mut local_to_global: Vec<u32> = Vec::with_capacity(categories.len());
         let (id, local_to_global) = crate::STRING_CACHE.apply(|cache| {
             for (s, h) in categories.values_iter().zip(hashes) {
