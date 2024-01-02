@@ -336,7 +336,7 @@ class Series:
             )
 
         elif isinstance(values, pl.DataFrame):
-            to_struct = len(values.columns) > 1
+            to_struct = values.width > 1
             name = (
                 values.columns[0] if (original_name is None and not to_struct) else name
             )
