@@ -538,7 +538,7 @@ class Enum(DataType):
 
     categories: list[str]
 
-    def __init__(self, categories: list[str] | Iterator[str]):
+    def __init__(self, categories: Iterable[str]):
         """
         A fixed set categorical encoding of a set of strings.
 
@@ -548,7 +548,7 @@ class Enum(DataType):
             Valid categories in the dataset.
 
         """
-        if isinstance(categories, Iterator):
+        if not isinstance(categories, list):
             categories = list(categories)
 
         seen: set[str] = set()
