@@ -1,4 +1,4 @@
-use num_traits::Signed;
+use num_traits::{Signed, Zero};
 use polars_core::error::{polars_bail, polars_ensure, PolarsResult};
 use polars_core::prelude::{ChunkedArray, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE};
 use polars_utils::index::ToIdx;
@@ -57,7 +57,7 @@ where
         // process chunks to autovec but still have early return
         for chunk in values.chunks(1024) {
             for v in chunk.iter() {
-                all_positive &= v.is_positive()
+                all_positive &= v.is_positive() | v.is_zero()
             }
             if !all_positive {
                 return all_positive;
