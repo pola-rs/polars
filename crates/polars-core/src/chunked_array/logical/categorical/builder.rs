@@ -19,7 +19,6 @@ pub struct CategoricalChunkedBuilder {
     categories: MutableUtf8Array<i64>,
     // hashmap utilized by the local builder
     local_mapping: PlHashMap<KeyWrapper, ()>,
-    fast_unique: bool,
 }
 
 impl CategoricalChunkedBuilder {
@@ -33,7 +32,6 @@ impl CategoricalChunkedBuilder {
                 capacity / 10,
                 StringCache::get_hash_builder(),
             ),
-            fast_unique: true,
         }
     }
 
@@ -168,7 +166,7 @@ impl CategoricalChunkedBuilder {
                 self.ordering,
             )
         }
-        .with_fast_unique(self.fast_unique)
+        .with_fast_unique(true)
     }
 
     pub fn drain_iter_and_finish<'a, I>(mut self, i: I) -> CategoricalChunked
@@ -193,7 +191,7 @@ impl CategoricalChunkedBuilder {
                 self.ordering,
             )
         }
-        .with_fast_unique(self.fast_unique)
+        .with_fast_unique(true)
     }
 }
 
