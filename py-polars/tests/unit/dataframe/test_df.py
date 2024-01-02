@@ -396,7 +396,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # Out of bounds error.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.OutOfBoundsError):
         df.sort("fruits").select(
             pl.col("B").reverse().gather([1, 2]).implode().over("fruits"),
             "fruits",

@@ -29,7 +29,7 @@ impl TakeExpr {
     }
 
     fn oob_err(&self) -> PolarsResult<()> {
-        polars_bail!(expr = self.expr, ComputeError: "index out of bounds");
+        polars_bail!(expr = self.expr, OutOfBounds: "index out of bounds");
     }
 }
 
@@ -55,6 +55,9 @@ impl PhysicalExpr for TakeExpr {
         let idx = match idx.state {
             AggState::AggregatedScalar(s) => {
                 let idx = s.cast(&IDX_DTYPE)?;
+                if s.null_count() != idx.null_count() {
+                    polars_warn!("negative indexing not yet supported in group-by context")
+                }
                 let idx = idx.idx().unwrap();
 
                 // The indexes are AggregatedScalar, meaning they are a single values pointing into
@@ -119,6 +122,9 @@ impl PhysicalExpr for TakeExpr {
             },
             AggState::Literal(s) => {
                 let idx = s.cast(&IDX_DTYPE)?;
+                if s.null_count() != idx.null_count() {
+                    polars_warn!("negative indexing not yet supported in group-by context")
+                }
                 let idx = idx.idx().unwrap();
 
                 return if idx.len() == 1 {
