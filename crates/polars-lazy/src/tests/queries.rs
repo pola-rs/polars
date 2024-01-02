@@ -177,6 +177,20 @@ fn test_shift_and_fill() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_shift_and_fill_non_numeric() -> PolarsResult<()> {
+    let out = df![
+        "bool" => [true, false, true],
+    ]?
+    .lazy()
+    .select([col("bool").shift_and_fill(1, true)])
+    .collect()?;
+
+    let out = out.column("bool")?;
+    assert_eq!(Vec::from(out.bool()?), &[Some(true), Some(true), Some(false)]);
+    Ok(())
+}
+
+#[test]
 fn test_lazy_ternary_and_predicates() {
     let df = get_df();
     // test if this runs. This failed because is_not_null changes the schema name, so we

@@ -463,7 +463,7 @@ impl LazyFrame {
     /// with the result of the `fill_value` expression.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+    pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.select(vec![col("*").shift_and_fill(n.into(), fill_value.into())])
     }
 
