@@ -104,8 +104,8 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
     let type_ = serialize_type(field.data_type());
     let children = serialize_children(field.data_type(), ipc_field);
 
-    let dictionary =
-        if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = field.data_type() {
+    let dictionary = match field.data_type() {
+        ArrowDataType::Dictionary(index_type, inner, is_ordered) => {
             if let ArrowDataType::Extension(name, _, metadata) = inner.as_ref() {
                 write_extension(name, metadata, &mut kv_vec);
             }
@@ -116,9 +116,22 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
                     .expect("All Dictionary types have `dict_id`"),
                 *is_ordered,
             ))
-        } else {
-            None
-        };
+        },
+        ArrowDataType::Extension(s, inner, _) if s == "POLARS_ENUM_TYPE" => {
+            if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = &**inner {
+                Some(serialize_dictionary(
+                    index_type,
+                    ipc_field
+                        .dictionary_id
+                        .expect("All Dictionary types have `dict_id`"),
+                    *is_ordered,
+                ))
+            } else {
+                None
+            }
+        },
+        _ => None,
+    };
 
     write_metadata(&field.metadata, &mut kv_vec);
 

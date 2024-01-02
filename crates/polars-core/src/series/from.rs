@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 
 use arrow::compute::cast::utf8_to_large_utf8;
+use arrow::datatypes::IntegerType;
 use arrow::legacy::compute::cast::cast;
 #[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
@@ -259,75 +260,16 @@ impl Series {
                 panic!("activate dtype-categorical to convert dictionary arrays")
             },
             #[cfg(feature = "dtype-categorical")]
+            ArrowDataType::Extension(s, dt, _) if s == "POLARS_ENUM_TYPE" => {
+                let ArrowDataType::Dictionary(key_type, value_type, _) = &**dt else {
+                    polars_bail!(ComputeError: "Incorrect datatype for Polars Enum");
+                };
+
+                map_arrow_dictionary_to_cat_series(name, chunks, &key_type, &**value_type, true)
+            },
+            #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
-                use arrow::datatypes::IntegerType;
-                // don't spuriously call this; triggers a read on mmapped data
-                let arr = if chunks.len() > 1 {
-                    concatenate_owned_unchecked(&chunks)?
-                } else {
-                    chunks[0].clone()
-                };
-
-                if !matches!(
-                    value_type.as_ref(),
-                    ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Null
-                ) {
-                    polars_bail!(
-                        ComputeError: "only string-like values are supported in dictionaries"
-                    );
-                }
-
-                macro_rules! unpack_keys_values {
-                    ($dt:ty) => {{
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32).unwrap();
-                        let values = arr.values();
-                        let values = cast(&**values, &ArrowDataType::LargeUtf8)?;
-                        (keys, values)
-                    }};
-                }
-
-                let (keys, values) = match key_type {
-                    IntegerType::Int8 => {
-                        unpack_keys_values!(i8)
-                    },
-                    IntegerType::UInt8 => {
-                        unpack_keys_values!(u8)
-                    },
-                    IntegerType::Int16 => {
-                        unpack_keys_values!(i16)
-                    },
-                    IntegerType::UInt16 => {
-                        unpack_keys_values!(u16)
-                    },
-                    IntegerType::Int32 => {
-                        unpack_keys_values!(i32)
-                    },
-                    IntegerType::UInt32 => {
-                        unpack_keys_values!(u32)
-                    },
-                    IntegerType::Int64 => {
-                        unpack_keys_values!(i64)
-                    },
-                    _ => polars_bail!(
-                        ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
-                    ),
-                };
-                let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
-                let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-
-                // Safety
-                // the invariants of an Arrow Dictionary guarantee the keys are in bounds
-                Ok(
-                    CategoricalChunked::from_keys_and_values(
-                        name,
-                        keys,
-                        values,
-                        Default::default(),
-                    )
-                    .into_series(),
-                )
+                map_arrow_dictionary_to_cat_series(name, chunks, key_type, &**value_type, false)
             },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
@@ -469,6 +411,88 @@ impl Series {
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
+}
+
+fn map_arrow_dictionary_to_cat_series(
+    name: &str,
+    chunks: Vec<ArrayRef>,
+    key_type: &IntegerType,
+    value_type: &ArrowDataType,
+    is_enum: bool,
+) -> PolarsResult<Series> {
+    // don't spuriously call this; triggers a read on mmapped data
+    let arr = if chunks.len() > 1 {
+        concatenate_owned_unchecked(&chunks)?
+    } else {
+        chunks[0].clone()
+    };
+
+    if !matches!(
+        value_type,
+        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Null
+    ) {
+        polars_bail!(
+            ComputeError: "only string-like values are supported in dictionaries"
+        );
+    }
+
+    macro_rules! unpack_keys_values {
+        ($dt:ty) => {{
+            let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
+            let keys = arr.keys();
+            let keys = cast(keys, &ArrowDataType::UInt32).unwrap();
+            let values = arr.values();
+            let values = cast(&**values, &ArrowDataType::LargeUtf8)?;
+            (keys, values)
+        }};
+    }
+
+    let (keys, values) = match key_type {
+        IntegerType::Int8 => {
+            unpack_keys_values!(i8)
+        },
+        IntegerType::UInt8 => {
+            unpack_keys_values!(u8)
+        },
+        IntegerType::Int16 => {
+            unpack_keys_values!(i16)
+        },
+        IntegerType::UInt16 => {
+            unpack_keys_values!(u16)
+        },
+        IntegerType::Int32 => {
+            unpack_keys_values!(i32)
+        },
+        IntegerType::UInt32 => {
+            unpack_keys_values!(u32)
+        },
+        IntegerType::Int64 => {
+            unpack_keys_values!(i64)
+        },
+        _ => polars_bail!(
+            ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
+        ),
+    };
+    let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
+    let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+
+    // Safety
+    // the invariants of an Arrow Dictionary guarantee the keys are in bounds
+    let mut ca = unsafe {
+        if is_enum {
+            CategoricalChunked::from_chunks_original(
+                name,
+                keys.clone(),
+                RevMapping::build_enum(values.clone()),
+                Default::default(),
+            )
+        } else {
+            CategoricalChunked::from_keys_and_values(name, keys, values, Default::default())
+        }
+    };
+
+    ca.set_fast_unique(false);
+    Ok(ca.into_series())
 }
 
 fn map_arrays_to_series(name: &str, chunks: Vec<ArrayRef>) -> PolarsResult<Series> {

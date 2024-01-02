@@ -243,8 +243,24 @@ fn get_data_type(
                 .index_type()?
                 .ok_or_else(|| polars_err!(oos = "indexType is mandatory in Dictionary."))?;
             let index_type = deserialize_integer(int)?;
-            let (inner, mut ipc_field) = get_data_type(field, extension, false)?;
+            let (inner, mut ipc_field) = get_data_type(field, None, false)?;
             ipc_field.dictionary_id = Some(dictionary.id()?);
+            if let Some(ex) = extension {
+                if ex.0 == "POLARS_ENUM_TYPE" {
+                    return Ok((
+                        ArrowDataType::Extension(
+                            ex.0,
+                            Box::new(ArrowDataType::Dictionary(
+                                index_type,
+                                Box::new(inner),
+                                dictionary.is_ordered()?,
+                            )),
+                            ex.1,
+                        ),
+                        ipc_field,
+                    ));
+                }
+            }
             return Ok((
                 ArrowDataType::Dictionary(index_type, Box::new(inner), dictionary.is_ordered()?),
                 ipc_field,

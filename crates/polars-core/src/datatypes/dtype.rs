@@ -309,11 +309,24 @@ impl DataType {
                 polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
             },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => Ok(ArrowDataType::Dictionary(
-                IntegerType::UInt32,
-                Box::new(ArrowDataType::LargeUtf8),
-                false,
-            )),
+            Categorical(opt_rev_map, _) => {
+                let dt = ArrowDataType::Dictionary(
+                    IntegerType::UInt32,
+                    Box::new(ArrowDataType::LargeUtf8),
+                    false,
+                );
+
+                if let Some(rev_map) = opt_rev_map {
+                    if rev_map.is_enum() {
+                        return Ok(ArrowDataType::Extension(
+                            "POLARS_ENUM_TYPE".to_string(),
+                            Box::new(dt),
+                            None,
+                        ));
+                    }
+                }
+                Ok(dt)
+            },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
