@@ -395,7 +395,7 @@ def test_list_gather() -> None:
     # use another list to make sure negative indices are respected
     gatherer = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
     assert s.list.gather(gatherer).to_list() == [[3, 2], [5, 5], [8, 7]]
-    with pytest.raises(pl.ComputeError, match=r"gather indices are out of bounds"):
+    with pytest.raises(pl.OutOfBoundsError, match=r"gather indices are out of bounds"):
         s.list.gather([1, 2])
     s = pl.Series(
         [["A", "B", "C"], ["A"], ["B"], ["1", "2"], ["e"]],
@@ -417,7 +417,7 @@ def test_list_gather() -> None:
     ]
     s = pl.Series([[42, 1, 2], [5, 6, 7]])
 
-    with pytest.raises(pl.ComputeError, match=r"gather indices are out of bounds"):
+    with pytest.raises(pl.OutOfBoundsError, match=r"gather indices are out of bounds"):
         s.list.gather([[0, 1, 2, 3], [0, 1, 2, 3]])
 
     assert s.list.gather([0, 1, 2, 3], null_on_oob=True).to_list() == [
@@ -669,7 +669,7 @@ def test_list_gather_oob_10079() -> None:
             "b": [["2"], ["3"], [None], ["3", "Hi"]],
         }
     )
-    with pytest.raises(pl.ComputeError, match="gather indices are out of bounds"):
+    with pytest.raises(pl.OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("a").gather(999))
 
 

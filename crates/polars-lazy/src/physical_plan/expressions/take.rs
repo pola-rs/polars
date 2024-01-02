@@ -4,6 +4,7 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+use polars_ops::prelude::convert_to_unsigned_index;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -23,18 +24,12 @@ impl TakeExpr {
         series: Series,
     ) -> PolarsResult<Series> {
         let idx = self.idx.evaluate(df, state)?;
-        let nulls_before_cast = idx.null_count();
-        let idx = idx.cast(&IDX_DTYPE)?;
-        if idx.null_count() != nulls_before_cast {
-            self.oob_err()?;
-        }
-        let idx_ca = idx.idx()?;
-
-        series.take(idx_ca)
+        let idx = convert_to_unsigned_index(&idx, series.len())?;
+        series.take(&idx)
     }
 
     fn oob_err(&self) -> PolarsResult<()> {
-        polars_bail!(expr = self.expr, ComputeError: "index out of bounds");
+        polars_bail!(expr = self.expr, OutOfBounds: "index out of bounds");
     }
 }
 
@@ -60,6 +55,9 @@ impl PhysicalExpr for TakeExpr {
         let idx = match idx.state {
             AggState::AggregatedScalar(s) => {
                 let idx = s.cast(&IDX_DTYPE)?;
+                if s.null_count() != idx.null_count() {
+                    polars_warn!("negative indexing not yet supported in group-by context")
+                }
                 let idx = idx.idx().unwrap();
 
                 // The indexes are AggregatedScalar, meaning they are a single values pointing into
@@ -124,6 +122,9 @@ impl PhysicalExpr for TakeExpr {
             },
             AggState::Literal(s) => {
                 let idx = s.cast(&IDX_DTYPE)?;
+                if s.null_count() != idx.null_count() {
+                    polars_warn!("negative indexing not yet supported in group-by context")
+                }
                 let idx = idx.idx().unwrap();
 
                 return if idx.len() == 1 {
