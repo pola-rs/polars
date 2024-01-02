@@ -7,7 +7,7 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, GroupByExpr, JoinOperator,
+    Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinOperator,
     ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
     SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
     WildcardAdditionalOptions,
@@ -391,7 +391,7 @@ impl SQLContext {
         if let GroupByExpr::Expressions(group_by_exprs) = &select_stmt.group_by {
             group_by_keys = group_by_exprs.iter()
                 .map(|e| match e {
-                    SqlExpr::Value(SQLValue::Number(idx, _)) => {
+                    SQLExpr::Value(SQLValue::Number(idx, _)) => {
                         let idx = match idx.parse::<usize>() {
                             Ok(0) | Err(_) => Err(polars_err!(
                                 ComputeError:
@@ -402,7 +402,7 @@ impl SQLContext {
                         }?;
                         Ok(projections[idx].clone())
                     },
-                    SqlExpr::Value(_) => Err(polars_err!(
+                    SQLExpr::Value(_) => Err(polars_err!(
                         ComputeError:
                         "group_by error: a positive number or an expression expected",
                     )),
@@ -713,16 +713,16 @@ impl SQLContext {
     fn process_limit_offset(
         &self,
         lf: LazyFrame,
-        limit: &Option<SqlExpr>,
+        limit: &Option<SQLExpr>,
         offset: &Option<Offset>,
     ) -> PolarsResult<LazyFrame> {
         match (offset, limit) {
             (
                 Some(Offset {
-                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    value: SQLExpr::Value(SQLValue::Number(offset, _)),
                     ..
                 }),
-                Some(SqlExpr::Value(SQLValue::Number(limit, _))),
+                Some(SQLExpr::Value(SQLValue::Number(limit, _))),
             ) => Ok(lf.slice(
                 offset
                     .parse()
@@ -733,7 +733,7 @@ impl SQLContext {
             )),
             (
                 Some(Offset {
-                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    value: SQLExpr::Value(SQLValue::Number(offset, _)),
                     ..
                 }),
                 None,
@@ -743,7 +743,7 @@ impl SQLContext {
                     .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
                 IdxSize::MAX,
             )),
-            (None, Some(SqlExpr::Value(SQLValue::Number(limit, _)))) => Ok(lf.limit(
+            (None, Some(SQLExpr::Value(SQLValue::Number(limit, _)))) => Ok(lf.limit(
                 limit
                     .parse()
                     .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
