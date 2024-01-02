@@ -2342,36 +2342,48 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
 
 
 def test_truncate_use_earliest() -> None:
-    ser = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).dt.offset_by("15m")
+    ser = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .dt.offset_by("15m")
+    )
     df = ser.to_frame()
     df = df.with_columns(
         use_earliest=pl.col("datetime").dt.dst_offset() == pl.duration(hours=1)
     )
     result = df.select(pl.col("datetime").dt.truncate("30m"))
-    expected = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).to_frame()
+    expected = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .to_frame()
+    )
     assert_frame_equal(result, expected)
 
 
 def test_truncate_ambiguous() -> None:
-    ser = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).dt.offset_by("15m")
+    ser = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .dt.offset_by("15m")
+    )
     result = ser.dt.truncate("30m")
     expected = (
         pl.Series(
@@ -2393,13 +2405,17 @@ def test_truncate_ambiguous() -> None:
 
 
 def test_round_ambiguous() -> None:
-    t = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).dt.offset_by("15m")
+    t = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .dt.offset_by("15m")
+    )
     result = t.dt.round("30m")
     expected = (
         pl.Series(
