@@ -316,5 +316,5 @@ def test_valid_enum_category_types(categories: Any) -> None:
 
 
 def test_enum_categories_unique() -> None:
-    with pytest.raises(ValueError, match="must be unique; found 2 duplicates"):
+    with pytest.raises(ValueError, match="must be unique; found duplicate 'a'"):
         pl.Enum(["a", "a", "b", "b", "b", "c"])
