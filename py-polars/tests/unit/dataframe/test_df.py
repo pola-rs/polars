@@ -3402,6 +3402,13 @@ def test_iter_columns() -> None:
     assert_series_equal(next(iter_columns), pl.Series("b", [4, 5, 6]))
 
 
+def test_iter_group_by() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2], "b": range(4)})
+    assert [k for k, _ in df.group_by(["a"], maintain_order=True)] == [
+        k for k, _ in df.group_by("a", maintain_order=True)
+    ]
+
+
 def test_group_by_named() -> None:
     df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
     df.group_by(z=pl.col("a") * 2).agg(pl.col("b").min())
