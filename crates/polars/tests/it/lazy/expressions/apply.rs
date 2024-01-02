@@ -12,7 +12,7 @@ fn test_int_range_agg() -> PolarsResult<()> {
         .with_columns([int_range(lit(0i32), count(), 1, DataType::Int64).over([col("x")])])
         .collect()?;
     assert_eq!(
-        Vec::from_iter(out.column("int")?.i64()?.into_no_null_iter()),
+        Vec::from_iter(out.column("literal")?.i64()?.into_no_null_iter()),
         &[0, 1, 0, 1, 0, 1]
     );
 

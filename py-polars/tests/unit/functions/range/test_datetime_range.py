@@ -316,7 +316,7 @@ def test_datetime_ranges_schema(
         .lazy()
     )
     result = df.with_columns(
-        pl.datetime_ranges(
+        datetime_range=pl.datetime_ranges(
             pl.col("start"),
             pl.col("end"),
             time_zone=input_time_zone,
@@ -421,7 +421,7 @@ def test_datetime_range_schema_upcasts_to_datetime(
 ) -> None:
     df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
     result = df.with_columns(
-        pl.datetime_ranges(
+        datetime_range=pl.datetime_ranges(
             pl.col("start"),
             pl.col("end"),
             interval=interval,
@@ -462,7 +462,7 @@ def test_datetime_range_schema_upcasts_to_datetime(
         time_unit=input_time_unit,
         time_zone=input_time_zone,
         eager=True,
-    )
+    ).alias("datetime")
     assert_series_equal(
         result_single, expected["datetime_range"].explode().rename("datetime")
     )
@@ -474,9 +474,8 @@ def test_datetime_ranges_no_alias_schema_9037() -> None:
     ).lazy()
     result = df.with_columns(pl.datetime_ranges(pl.col("start"), pl.col("end")))
     expected_schema = {
-        "start": pl.Datetime(time_unit="us", time_zone=None),
+        "start": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
         "end": pl.Datetime(time_unit="us", time_zone=None),
-        "datetime_range": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
     }
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
@@ -505,7 +504,7 @@ def test_datetime_range_end_of_month_5441(
     start = date(2020, 1, 31)
     stop = date(2020, 3, 31)
     result = pl.datetime_range(start, stop, interval="1mo", closed=closed, eager=True)
-    expected = pl.Series("datetime", expected_values)
+    expected = pl.Series("literal", expected_values)
     assert_series_equal(result, expected)
 
 

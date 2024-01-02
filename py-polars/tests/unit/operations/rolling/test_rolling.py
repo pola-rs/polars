@@ -815,10 +815,9 @@ def test_index_expr_with_literal() -> None:
 def test_index_expr_output_name_12244() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
 
-    # pl.int_range's output name is: `int`.
     out = df.rolling(pl.int_range(0, pl.count()), period="2i").agg("A")
     assert out.to_dict(as_series=False) == {
-        "int": [0, 1, 2],
+        "literal": [0, 1, 2],
         "A": [[1], [1, 2], [2, 3]],
     }
 

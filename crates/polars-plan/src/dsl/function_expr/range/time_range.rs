@@ -16,6 +16,7 @@ pub(super) fn time_range(
 ) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
+    let name = start.name();
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
@@ -25,7 +26,7 @@ pub(super) fn time_range(
     let end = temporal_series_to_i64_scalar(&end.cast(&dtype)?)
         .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
 
-    let out = time_range_impl("time", start, end, interval, closed)?;
+    let out = time_range_impl(name, start, end, interval, closed)?;
     Ok(out.cast(&dtype).unwrap().into_series())
 }
 
@@ -47,7 +48,7 @@ pub(super) fn time_ranges(
 
     let len = std::cmp::max(start.len(), end.len());
     let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-        "time_range",
+        start.name(),
         len,
         len * CAPACITY_FACTOR,
         DataType::Int64,
