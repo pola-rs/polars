@@ -324,7 +324,7 @@ class GroupBy:
         # expressions isn't enforced on the lazy side. It should either be better
         # documented that expressions in the group_by won't be seen by the agg
         # function or a with_columns can invisibly be inserted before handing off
-        # to the next step to materialize those expressions. In the absense of
+        # to the next step to materialize those expressions. In the absence of
         # direction on this issue, I'll just disallow named_more_by in map_groups
         # but it is inconsistent with lazy which has no such checks.
         if len(self.named_more_by) > 0:
