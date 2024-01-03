@@ -4071,9 +4071,7 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
-        ... )
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
         >>> df.rename({"foo": "apple"})
         shape: (3, 3)
         ┌───────┬─────┬─────┐
@@ -4499,9 +4497,7 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
-        ... )
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
         >>> df.get_column_index("ham")
         2
 
@@ -5278,9 +5274,10 @@ class DataFrame:
 
     def group_by(
         self,
-        by: IntoExpr | Iterable[IntoExpr],
+        by: IntoExpr | Iterable[IntoExpr] = None,
         *more_by: IntoExpr,
         maintain_order: bool = False,
+        **named_more_by: IntoExpr,
     ) -> GroupBy:
         """
         Start a group by operation.
@@ -5292,6 +5289,8 @@ class DataFrame:
             column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
+        **named_more_by
+            Additional named columns to group by, specified as named parameters.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
@@ -5413,7 +5412,9 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return GroupBy(self, by, *more_by, maintain_order=maintain_order)
+        return GroupBy(
+            self, by, *more_by, **named_more_by, maintain_order=maintain_order
+        )
 
     def rolling(
         self,
@@ -10430,9 +10431,7 @@ class DataFrame:
         Update `df` values including null values in `new_df`, using an outer join
         strategy that defines explicit join columns in each frame:
 
-        >>> df.update(
-        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
-        ... )
+        >>> df.update(new_df, left_on="A", right_on="C", how="outer", include_nulls=True)
         shape: (5, 2)
         ┌─────┬──────┐
         │ A   ┆ B    │

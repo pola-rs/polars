@@ -1707,9 +1707,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Collect in streaming mode
 
-        >>> lf.group_by("a").agg(pl.all().sum()).collect(
-        ...     streaming=True
-        ... )  # doctest: +SKIP
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(streaming=True)  # doctest: +SKIP
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -2822,9 +2820,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Use keyword arguments to easily name your expression inputs.
 
-        >>> lf.select(
-        ...     threshold=pl.when(pl.col("foo") > 2).then(10).otherwise(0)
-        ... ).collect()
+        >>> lf.select(threshold=pl.when(pl.col("foo") > 2).then(10).otherwise(0)).collect()
         shape: (3, 1)
         ┌───────────┐
         │ threshold │
@@ -2898,6 +2894,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool = False,
+        **named_more_by: IntoExpr,
     ) -> LazyGroupBy:
         """
         Start a group by operation.
@@ -2909,6 +2906,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
+        **named_more_by
+            Additional named columns to group by, specified as named parameters.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
@@ -2987,7 +2986,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        exprs = parse_as_list_of_expressions(by, *more_by)
+        exprs = parse_as_list_of_expressions(by, *more_by, **named_more_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
@@ -4090,9 +4089,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
         >>> lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-        >>> lf.with_context(lf_other).select(
-        ...     pl.col("b") + pl.col("c").first()
-        ... ).collect()
+        >>> lf.with_context(lf_other).select(pl.col("b") + pl.col("c").first()).collect()
         shape: (3, 1)
         ┌──────┐
         │ b    │
@@ -4106,15 +4103,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Fill nulls with the median from another DataFrame:
 
-        >>> train_lf = pl.LazyFrame(
-        ...     {"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]}
-        ... )
+        >>> train_lf = pl.LazyFrame({"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]})
         >>> test_lf = pl.LazyFrame(
         ...     {"feature_0": [-1.0, None, 1], "feature_1": [-1.0, 0, 1]}
         ... )
-        >>> test_lf.with_context(
-        ...     train_lf.select(pl.all().name.suffix("_train"))
-        ... ).select(
+        >>> test_lf.with_context(train_lf.select(pl.all().name.suffix("_train"))).select(
         ...     pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
         ... ).collect()
         shape: (3, 1)
