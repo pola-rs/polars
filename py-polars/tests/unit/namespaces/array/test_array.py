@@ -74,3 +74,31 @@ def test_array_any_all() -> None:
         s.arr.any()
     with pytest.raises(ComputeError, match="expected boolean elements in array"):
         s.arr.all()
+
+
+def test_array_sort() -> None:
+    s = pl.Series([[2, None, 1], [1, 3, 2]], dtype=pl.Array(pl.UInt32, 3))
+
+    desc = s.arr.sort(descending=True)
+    expected = pl.Series([[None, 2, 1], [3, 2, 1]], dtype=pl.Array(pl.UInt32, 3))
+    assert_series_equal(desc, expected)
+
+    asc = s.arr.sort(descending=False)
+    expected = pl.Series([[None, 1, 2], [1, 2, 3]], dtype=pl.Array(pl.UInt32, 3))
+    assert_series_equal(asc, expected)
+
+
+def test_array_reverse() -> None:
+    s = pl.Series([[2, None, 1], [1, None, 2]], dtype=pl.Array(pl.UInt32, 3))
+
+    s = s.arr.reverse()
+    expected = pl.Series([[1, None, 2], [2, None, 1]], dtype=pl.Array(pl.UInt32, 3))
+    assert_series_equal(s, expected)
+
+
+def test_array_arg_min_max() -> None:
+    s = pl.Series("a", [[1, 2, 4], [3, 2, 1]], dtype=pl.Array(pl.UInt32, 3))
+    expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
+    assert_series_equal(s.arr.arg_min(), expected)
+    expected = pl.Series("a", [2, 0], dtype=pl.UInt32)
+    assert_series_equal(s.arr.arg_max(), expected)

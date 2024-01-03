@@ -65,7 +65,7 @@ impl ArrayChunked {
         )
     }
 
-    pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> PolarsResult<ListChunked>
+    pub fn try_apply_amortized_to_list<'a, F>(&'a self, mut f: F) -> PolarsResult<ListChunked>
     where
         F: FnMut(UnstableSeries<'a>) -> PolarsResult<Series>,
     {
@@ -100,5 +100,46 @@ impl ArrayChunked {
             ca.set_fast_explode();
         }
         Ok(ca)
+    }
+
+    /// Apply a closure `F` to each array.
+    /// SAFETY:
+    /// Return series of `F` must has the same dtype and number of elements as input.
+    #[must_use]
+    pub unsafe fn apply_amortized_same_type<'a, F>(&'a self, mut f: F) -> Self
+    where
+        F: FnMut(UnstableSeries<'a>) -> Series,
+    {
+        if self.is_empty() {
+            return self.clone();
+        }
+        self.amortized_iter()
+            .map(|opt_v| {
+                opt_v.map(|v| {
+                    let out = f(v);
+                    to_arr(&out)
+                })
+            })
+            .collect_ca_with_dtype(self.name(), self.dtype().clone())
+    }
+
+    /// Apply a closure `F` elementwise.
+    #[must_use]
+    pub fn apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> ChunkedArray<V>
+    where
+        V: PolarsDataType,
+        F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
+        V::Array: ArrayFromIter<Option<K>>,
+    {
+        self.amortized_iter().map(f).collect_ca(self.name())
+    }
+}
+
+fn to_arr(s: &Series) -> ArrayRef {
+    if s.chunks().len() > 1 {
+        let s = s.rechunk();
+        s.chunks()[0].clone()
+    } else {
+        s.chunks()[0].clone()
     }
 }

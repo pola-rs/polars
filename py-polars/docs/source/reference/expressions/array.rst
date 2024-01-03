@@ -16,3 +16,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.unique
     Expr.arr.all
     Expr.arr.any
+    Expr.arr.sort
+    Expr.arr.reverse
+    Expr.arr.arg_min
+    Expr.arr.arg_max
