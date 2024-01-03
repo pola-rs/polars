@@ -35,6 +35,7 @@ class GroupBy:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool,
+        **named_more_by: IntoExpr,
     ):
         """
         Utility class for performing a group by operation over the given DataFrame.
@@ -50,6 +51,8 @@ class GroupBy:
             as column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
+        **named_more_by
+            Additional named columns to group by, specified as named parameters.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
@@ -58,6 +61,7 @@ class GroupBy:
         self.df = df
         self.by = by
         self.more_by = more_by
+        self.named_more_by = named_more_by
         self.maintain_order = maintain_order
 
     def __iter__(self) -> Self:
@@ -97,7 +101,12 @@ class GroupBy:
         groups_df = (
             self.df.lazy()
             .with_row_count(name=temp_col)
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(
+                self.by,
+                *self.more_by,
+                **self.named_more_by,
+                maintain_order=self.maintain_order,
+            )
             .agg(F.col(temp_col))
             .collect(no_optimization=True)
         )
@@ -237,7 +246,12 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(
+                self.by,
+                *self.more_by,
+                **self.named_more_by,
+                maintain_order=self.maintain_order,
+            )
             .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
@@ -306,6 +320,17 @@ class GroupBy:
         """
         by: list[str]
 
+        # I don't think any of these checks are necessary as the rule prohibiting
+        # expressions isn't enforced on the lazy side. It should either be better
+        # documented that expressions in the group_by won't be seen by the agg
+        # function or a with_columns can invisibly be inserted before handing off
+        # to the next step to materialize those expressions. In the absense of
+        # direction on this issue, I'll just disallow named_more_by in map_groups
+        # but it is inconsistent with lazy which has no such checks.
+        if len(self.named_more_by) > 0:
+            raise TypeError(
+                "cannot call `map_groups` when grouping with named expressions"
+            )
         if isinstance(self.by, str):
             by = [self.by]
         elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
@@ -370,7 +395,12 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(
+                self.by,
+                *self.more_by,
+                *self.named_more_by,
+                maintain_order=self.maintain_order,
+            )
             .head(n)
             .collect(no_optimization=True)
         )
@@ -423,7 +453,12 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(
+                self.by,
+                *self.more_by,
+                **self.named_more_by,
+                maintain_order=self.maintain_order,
+            )
             .tail(n)
             .collect(no_optimization=True)
         )
