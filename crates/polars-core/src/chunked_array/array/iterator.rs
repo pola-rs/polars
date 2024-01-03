@@ -103,7 +103,7 @@ impl ArrayChunked {
     }
 
     /// Apply a closure `F` to each array.
-    /// SAFETY:
+    /// # Safety
     /// Return series of `F` must has the same dtype and number of elements as input.
     #[must_use]
     pub unsafe fn apply_amortized_same_type<'a, F>(&'a self, mut f: F) -> Self
