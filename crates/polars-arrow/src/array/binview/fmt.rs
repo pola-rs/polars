@@ -1,10 +1,9 @@
-use std::fmt::{Debug, Display, Formatter, Result, Write};
+use std::fmt::{Debug, Formatter, Result, Write};
 
 use super::super::fmt::write_vec;
 use super::BinaryViewArrayGeneric;
 use crate::array::binview::ViewType;
 use crate::array::Array;
-use crate::offset::Offset;
 
 pub fn write_value<'a, T: ViewType + ?Sized, W: Write>(
     array: &'a BinaryViewArrayGeneric<T>,

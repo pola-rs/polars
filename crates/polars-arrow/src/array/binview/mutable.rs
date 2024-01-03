@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use polars_utils::slice::GetSaferUnchecked;
 
-use crate::array::binview::view::View;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;

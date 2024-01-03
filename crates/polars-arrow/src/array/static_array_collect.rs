@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::array::static_array::{ParameterFreeDtypeStaticArray, StaticArray};
 use crate::array::{
-    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryArray,
+    Array, BinaryArray, BooleanArray, FixedSizeListArray, MutableBinaryArray,
     MutableBinaryValuesArray, PrimitiveArray, Utf8Array,
 };
 use crate::bitmap::Bitmap;

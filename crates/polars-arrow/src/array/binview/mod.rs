@@ -6,12 +6,12 @@ mod mutable;
 mod view;
 
 use std::any::Any;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 pub use mutable::*;
 use polars_error::*;
-use view::View;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
@@ -19,7 +19,7 @@ use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
 mod private {
-    pub trait Sealed {}
+    pub trait Sealed: Send + Sync {}
 
     impl Sealed for str {}
     impl Sealed for [u8] {}
@@ -36,15 +36,19 @@ pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 pub trait ViewType: Sealed + 'static + PartialEq {
     const IS_UTF8: bool;
     const DATA_TYPE: ArrowDataType;
+    type Owned: Debug + Clone + Sync + Send + AsRef<Self>;
 
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
 
     fn to_bytes(&self) -> &[u8];
+
+    fn to_owned(&self) -> Self::Owned;
 }
 
 impl ViewType for str {
     const IS_UTF8: bool = true;
     const DATA_TYPE: ArrowDataType = ArrowDataType::Utf8View;
+    type Owned = String;
 
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
@@ -55,11 +59,16 @@ impl ViewType for str {
     fn to_bytes(&self) -> &[u8] {
         self.as_bytes()
     }
+
+    fn to_owned(&self) -> Self::Owned {
+        self.to_string()
+    }
 }
 
 impl ViewType for [u8] {
     const IS_UTF8: bool = false;
     const DATA_TYPE: ArrowDataType = ArrowDataType::BinaryView;
+    type Owned = Vec<u8>;
 
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
@@ -69,6 +78,10 @@ impl ViewType for [u8] {
     #[inline(always)]
     fn to_bytes(&self) -> &[u8] {
         self
+    }
+
+    fn to_owned(&self) -> Self::Owned {
+        self.to_vec()
     }
 }
 

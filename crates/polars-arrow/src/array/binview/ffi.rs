@@ -6,7 +6,6 @@ use crate::array::binview::ViewType;
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
 use crate::ffi;
-use crate::offset::{Offset, OffsetsBuffer};
 
 unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
     fn buffers(&self) -> Vec<Option<*const u8>> {

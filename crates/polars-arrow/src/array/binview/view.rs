@@ -24,9 +24,9 @@ impl From<u128> for View {
 impl From<View> for u128 {
     #[inline]
     fn from(value: View) -> Self {
-        (value.length as u128
+        value.length as u128
             | ((value.prefix as u128) << 32)
             | ((value.buffer_idx as u128) << 64)
-            | ((value.offset as u128) << 96))
+            | ((value.offset as u128) << 96)
     }
 }

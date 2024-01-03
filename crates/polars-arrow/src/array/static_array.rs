@@ -3,7 +3,7 @@ use bytemuck::Zeroable;
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BooleanArray, FixedSizeListArray,
-    ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter,
+    PrimitiveArray, Utf8Array, Utf8ValuesIter,
 };
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;

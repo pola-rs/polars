@@ -569,6 +569,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::Float64 => ArrowDataType::Float64,
             PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
             PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
+            PrimitiveType::UInt128 => unimplemented!()
         }
     }
 }

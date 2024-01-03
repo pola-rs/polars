@@ -2,7 +2,6 @@ use super::BinaryViewArrayGeneric;
 use crate::array::binview::ViewType;
 use crate::array::{ArrayAccessor, ArrayValuesIter};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-use crate::offset::Offset;
 
 unsafe impl<'a, T: ViewType + ?Sized> ArrayAccessor<'a> for BinaryViewArrayGeneric<T> {
     type Item = &'a T;
