@@ -15,7 +15,17 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
             false,
         );
         match map {
-            RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
+            RevMapping::Enum(arr, _) => {
+                let dtype =
+                    ArrowDataType::Extension("POLARS_ENUM_TYPE".to_string(), Box::new(dtype), None);
+                // Safety:
+                // the keys are in bounds
+                unsafe {
+                    DictionaryArray::try_new_unchecked(dtype, keys.clone(), Box::new(arr.clone()))
+                        .unwrap()
+                }
+            },
+            RevMapping::Local(arr, _) => {
                 // Safety:
                 // the keys are in bounds
                 unsafe {

@@ -357,6 +357,19 @@ impl DictionaryTracker {
                     array.values()
                 })
             },
+            ArrowDataType::Extension(_, dt, _) => {
+                if let ArrowDataType::Dictionary(key_type, _, _) = &**dt {
+                    match_integer_type!(key_type, |$T| {
+                        let array = array
+                            .as_any()
+                            .downcast_ref::<DictionaryArray<$T>>()
+                            .unwrap();
+                        array.values()
+                    })
+                } else {
+                    unreachable!();
+                }
+            },
             _ => unreachable!(),
         };
 

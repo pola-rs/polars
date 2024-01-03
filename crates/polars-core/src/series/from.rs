@@ -531,6 +531,17 @@ unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataTy
             DataType::String,
         ),
         #[allow(unused_variables)]
+        dt @ ArrowDataType::Extension(name, datatype, _) if name == "POLARS_ENUM_TYPE" => {
+            feature_gated!("dtype-categorical", {
+                let s = unsafe {
+                    let dt = dt.clone();
+                    Series::_try_from_arrow_unchecked("", arrays, &dt)
+                }
+                .unwrap();
+                (s.chunks().clone(), s.dtype().clone())
+            })
+        },
+        #[allow(unused_variables)]
         dt @ ArrowDataType::Dictionary(_, _, _) => {
             feature_gated!("dtype-categorical", {
                 let s = unsafe {
