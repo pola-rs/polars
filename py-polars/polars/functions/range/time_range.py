@@ -124,7 +124,7 @@ def time_range(
     ...     start=time(14, 0),
     ...     interval=timedelta(hours=3, minutes=15),
     ...     eager=True,
-    ... )
+    ... ).alias("time")
     shape: (4,)
     Series: 'time' [time]
     [
@@ -263,7 +263,7 @@ def time_ranges(
     ...         "end": time(11, 0),
     ...     }
     ... )
-    >>> df.with_columns(pl.time_ranges("start", "end"))
+    >>> df.with_columns(time_range=pl.time_ranges("start", "end"))
     shape: (2, 3)
     ┌──────────┬──────────┬────────────────────────────────┐
     │ start    ┆ end      ┆ time_range                     │

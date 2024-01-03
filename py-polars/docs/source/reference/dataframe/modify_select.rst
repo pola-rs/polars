@@ -67,9 +67,9 @@ Manipulation/selection
     DataFrame.sort
     DataFrame.tail
     DataFrame.take_every
-    DataFrame.top_k
     DataFrame.to_dummies
     DataFrame.to_series
+    DataFrame.top_k
     DataFrame.transpose
     DataFrame.unique
     DataFrame.unnest

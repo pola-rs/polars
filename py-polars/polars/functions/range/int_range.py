@@ -93,7 +93,7 @@ def arange(
 
     Examples
     --------
-    >>> pl.arange(0, 3, eager=True)
+    >>> pl.arange(0, 3, eager=True).alias("int")
     shape: (3,)
     Series: 'int' [i64]
     [
@@ -177,7 +177,7 @@ def int_range(
 
     Examples
     --------
-    >>> pl.int_range(0, 3, eager=True)
+    >>> pl.int_range(0, 3, eager=True).alias("int")
     shape: (3,)
     Series: 'int' [i64]
     [
@@ -269,7 +269,7 @@ def int_ranges(
     Examples
     --------
     >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2]})
-    >>> df.with_columns(pl.int_ranges("start", "end"))
+    >>> df.with_columns(int_range=pl.int_ranges("start", "end"))
     shape: (2, 3)
     ┌───────┬─────┬────────────┐
     │ start ┆ end ┆ int_range  │

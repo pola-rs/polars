@@ -617,8 +617,8 @@ fn to_datetime(
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
-    let datetime_strings = &s[0].str().unwrap();
-    let ambiguous = &s[1].str().unwrap();
+    let datetime_strings = &s[0].str()?;
+    let ambiguous = &s[1].str()?;
     let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
         Some(format) => TZ_AWARE_RE.is_match(format),

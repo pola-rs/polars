@@ -85,6 +85,7 @@ from polars.utils._construction import (
     _post_apply_columns,
     arrow_to_pydf,
     dict_to_pydf,
+    frame_to_pydf,
     iterable_to_pydf,
     numpy_to_idxs,
     numpy_to_pydf,
@@ -383,6 +384,7 @@ class DataFrame:
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
+
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides
@@ -414,6 +416,11 @@ class DataFrame:
                 schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
+            )
+
+        elif isinstance(data, pl.DataFrame):
+            self._df = frame_to_pydf(
+                data, schema=schema, schema_overrides=schema_overrides
             )
         else:
             raise TypeError(
@@ -1145,7 +1152,7 @@ class DataFrame:
         >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 3)],
+        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)],
         ...         "stock_1": [1, 4, 6],
         ...         "stock_2": [1, 5, 2],
         ...     }

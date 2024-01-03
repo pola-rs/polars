@@ -736,7 +736,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
     };
     polars_ensure!(
         out.null_count() == idx_null_count || null_on_oob,
-        ComputeError: "gather indices are out of bounds"
+        OutOfBounds: "gather indices are out of bounds"
     );
     Ok(out)
 }

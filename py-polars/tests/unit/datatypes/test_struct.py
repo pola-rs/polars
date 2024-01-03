@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
@@ -165,11 +165,15 @@ def test_struct_function_expansion() -> None:
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
     struct_schema = {"a": pl.UInt32, "b": pl.String}
-    s = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
+    dfs = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))
+    s = dfs["a"]
 
     assert isinstance(s, pl.Series)
     assert s.struct.fields == ["a", "b"]
     assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
+
+    assert_series_equal(s, pl.Series(dfs.select("a")))
+    assert_frame_equal(dfs, pl.DataFrame(dfs))
 
 
 def test_nested_struct() -> None:
@@ -187,11 +191,11 @@ def test_nested_struct() -> None:
 
 
 def test_struct_to_pandas() -> None:
-    df = pd.DataFrame([{"a": {"b": {"c": 2}}}])
-    pl_df = pl.from_pandas(df)
+    pdf = pd.DataFrame([{"a": {"b": {"c": 2}}}])
+    df = pl.from_pandas(pdf)
 
-    assert isinstance(pl_df.dtypes[0], pl.datatypes.Struct)
-    assert pl_df.to_pandas().equals(df)
+    assert isinstance(df.dtypes[0], pl.datatypes.Struct)
+    assert df.to_pandas().equals(pdf)
 
 
 def test_struct_logical_types_to_pandas() -> None:

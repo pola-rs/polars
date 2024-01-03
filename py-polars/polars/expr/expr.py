@@ -25,7 +25,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    UInt32,
+    Int64,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -2405,7 +2405,7 @@ class Expr:
         if isinstance(indices, list) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
-            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
+            indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
             indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.gather(indices_lit))

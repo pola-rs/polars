@@ -108,12 +108,16 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1),
-        ...     datetime(2001, 1, 2),
-        ...     timedelta(minutes=225),
-        ...     eager=True,
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1),
+        ...         datetime(2001, 1, 2),
+        ...         timedelta(minutes=225),
+        ...         eager=True,
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df
         shape: (7, 1)
         ┌─────────────────────┐
@@ -149,9 +153,13 @@ class ExprDateTimeNameSpace:
         >>> truncate_str.equals(truncate_td)
         True
 
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df.select(
         ...     "datetime", pl.col("datetime").dt.truncate("30m").alias("truncate")
         ... )
@@ -270,12 +278,16 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1),
-        ...     datetime(2001, 1, 2),
-        ...     timedelta(minutes=225),
-        ...     eager=True,
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1),
+        ...         datetime(2001, 1, 2),
+        ...         timedelta(minutes=225),
+        ...         eager=True,
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(pl.col("datetime").dt.round("1h").alias("round"))
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
@@ -292,9 +304,13 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 22:30:00 ┆ 2001-01-01 23:00:00 │
         └─────────────────────┴─────────────────────┘
 
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(pl.col("datetime").dt.round("30m").alias("round"))
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
@@ -1123,9 +1139,11 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import date
-        >>> df = pl.date_range(
-        ...     date(2001, 1, 1), date(2001, 1, 3), eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.date_range(date(2001, 1, 1), date(2001, 1, 3), eager=True)
+        ...     .alias("date")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(
         ...     pl.col("date").dt.epoch().alias("epoch_ns"),
         ...     pl.col("date").dt.epoch(time_unit="s").alias("epoch_s"),
@@ -1165,9 +1183,11 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import date
-        >>> df = pl.date_range(
-        ...     date(2001, 1, 1), date(2001, 1, 3), eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.date_range(date(2001, 1, 1), date(2001, 1, 3), eager=True)
+        ...     .alias("date")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(
         ...     pl.col("date").dt.timestamp().alias("timestamp_ns"),
         ...     pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
