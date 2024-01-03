@@ -134,70 +134,81 @@ def read_excel(
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        that have a `read()` method, such as a file handler (e.g. via the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
     sheet_id
         Sheet number(s) to convert (set `0` to load all sheets as DataFrames) and
-        return a `{sheetname:frame,}` dict. (Defaults to `1` if neither this nor
+        return a `{sheetname: DataFrame}` dict. (Defaults to `1` if neither this nor
         `sheet_name` are specified). Can also take a sequence of sheet numbers.
     sheet_name
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
-        than one is given then a `{sheetname:frame,}` dict is returned.
+        than one is given then a `{sheetname: DataFrame}` dict is returned.
     engine
         Library used to parse the spreadsheet file; defaults to "xlsx2csv" if not set.
 
-        * "xlsx2csv": the fastest engine; converts the data to an in-memory CSV before
-          using the native polars `read_csv` method to parse the result. You can
-          pass `xlsx2csv_options` and `read_csv_options` to refine the conversion.
-        * "openpyxl": this engine is significantly slower than `xlsx2csv` but supports
+        * `"xlsx2csv" <https://github.com/dilshod/xlsx2csv>`_: the fastest engine;
+          converts the data to an in-memory CSV before using the native polars
+          :func:`read_csv` method to parse the result. You can pass `xlsx2csv_options`
+          and `read_csv_options` to refine the conversion.
+        * `"openpyxl" <https://openpyxl.readthedocs.io>`_: this engine is significantly
+          slower than `xlsx2csv <https://github.com/dilshod/xlsx2csv>`_ but supports
           additional automatic type inference; potentially useful if you are otherwise
-          unable to parse your sheet with the (default) `xlsx2csv` engine in
-          conjunction with the `schema_overrides` parameter.
-        * "pyxlsb": this engine is used for Excel Binary Workbooks (`.xlsb` files).
-          Note that you have to use `schema_overrides` to correctly load date/datetime
-          columns (or these will be read as floats representing offset Julian values).
+          unable to parse your sheet with the (default) `xlsx2csv
+          <https://github.com/dilshod/xlsx2csv>`_ engine in conjunction with the
+          `schema_overrides` parameter.
+        * `"pyxlsb" <https://github.com/willtrnr/pyxlsb>`_: this engine is used for
+          Excel Binary Workbooks (`.xlsb` files). Note that you have to use
+          `schema_overrides` to correctly load date/datetime columns (or these will be
+          read as floats representing offset Julian values).
 
     xlsx2csv_options
-        Extra options passed to `xlsx2csv.Xlsx2csv()`,
+        Extra options passed to `xlsx2csv.Xlsx2csv()
+        <https://github.com/dilshod/xlsx2csv/blob/master/xlsx2csv.py#L154>`_,
         e.g. `{"skip_empty_lines": True}`
     read_csv_options
         Extra options passed to :func:`read_csv` for parsing the CSV file returned by
-        `xlsx2csv.Xlsx2csv().convert()`
+        `xlsx2csv.Xlsx2csv().convert()
+        <https://github.com/dilshod/xlsx2csv/blob/master/xlsx2csv.py#L243>`_
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
         "infer_schema_length": None}``
     schema_overrides
         Support type specification or override of one or more columns.
     raise_if_empty
-        When there is no data in the sheet,`NoDataError` is raised. If this parameter
-        is set to False, an empty DataFrame (with no columns) is returned instead.
+        When there is no data in the sheet, :class:`NoDataError` is raised. If this
+        parameter is set to False, an empty :class:`DataFrame` (with no columns) is
+        returned instead.
 
     Notes
     -----
-    When using the default `xlsx2csv` engine the target Excel sheet is first converted
-    to CSV using `xlsx2csv.Xlsx2csv(source).convert()` and then parsed with Polars'
-    :func:`read_csv` function. You can pass additional options to `read_csv_options`
-    to influence this part of the parsing pipeline.
+    When using the default `xlsx2csv <https://github.com/dilshod/xlsx2csv>`_ engine,
+    the target Excel sheet is first converted to CSV using
+    `xlsx2csv.Xlsx2csv().convert()
+    <https://github.com/dilshod/xlsx2csv/blob/master/xlsx2csv.py#L243>`_ and then
+    parsed with Polars' :func:`read_csv` function. You can pass additional options to
+    `read_csv_options` to influence this part of the parsing pipeline.
 
     Returns
     -------
     DataFrame
         If reading a single sheet.
     dict
-        If reading multiple sheets, a "{sheetname: DataFrame, ...}" dict is returned.
+        If reading multiple sheets, a `{sheet_name: DataFrame}` dict is returned.
 
     Examples
     --------
-    Read the "data" worksheet from an Excel file into a DataFrame.
+    Read the "data" worksheet from an Excel file into a `DataFrame`.
 
     >>> pl.read_excel(
     ...     source="test.xlsx",
     ...     sheet_name="data",
     ... )  # doctest: +SKIP
 
-    Read table data from sheet 3 in an Excel workbook as a DataFrame while skipping
+    Read table data from sheet 3 in an Excel workbook as a `DataFrame` while skipping
     empty lines in the sheet. As sheet 3 does not have a header row and the default
-    engine is `xlsx2csv` you can pass the necessary additional settings for this
-    to the "read_csv_options" parameter; these will be passed to :func:`read_csv`.
+    engine is `xlsx2csv <https://github.com/dilshod/xlsx2csv>`_, you can pass the
+    necessary additional settings for this to the `read_csv_options` parameter; these
+    will be passed to :func:`read_csv`.
 
     >>> pl.read_excel(
     ...     source="test.xlsx",
@@ -219,10 +230,12 @@ def read_excel(
     ...     schema_overrides={"dt": pl.Date},
     ... )  # doctest: +SKIP
 
-    The `openpyxl` package can also be used to parse Excel data; it has slightly
-    better default type detection, but is slower than `xlsx2csv`. If you have a sheet
-    that is better read using this package you can set the engine as "openpyxl" (if you
-    use this engine then neither `xlsx2csv_options` nor `read_csv_options` can be set).
+    The `openpyxl <https://openpyxl.readthedocs.io>`_ package can also be used to parse
+    Excel data; it has slightly better default type detection, but is slower than
+    `xlsx2csv <https://github.com/dilshod/xlsx2csv>`_. If you have a sheet
+    that is better read using this package you can set the engine as `"openpyxl"
+    <https://openpyxl.readthedocs.io>`_ (if you use this engine then neither
+    `xlsx2csv_options` nor `read_csv_options` can be set).
 
     >>> pl.read_excel(
     ...     source="test.xlsx",
@@ -340,29 +353,30 @@ def read_ods(
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        that have a `read()` method, such as a file handler (e.g. via the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
     sheet_id
         Sheet number(s) to convert, starting from 1 (set `0` to load *all* worksheets
-        as DataFrames) and return a `{sheetname:frame,}` dict. (Defaults to `1` if
+        as DataFrames) and return a `{sheetname: DataFrame}` dict. (Defaults to `1` if
         neither this nor `sheet_name` are specified). Can also take a sequence of sheet
         numbers.
     sheet_name
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If
-        more than one is given then a `{sheetname:frame,}` dict is returned.
+        more than one is given then a `{sheetname: DataFrame}` dict is returned.
     schema_overrides
         Support type specification or override of one or more columns.
     raise_if_empty
-        When there is no data in the sheet,`NoDataError` is raised. If this parameter
+        When there is no data in the sheet, `NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
 
     Returns
     -------
-    DataFrame, or a `{sheetname: DataFrame, ...}` dict if reading multiple sheets.
+    A `DataFrame`, or a `{sheetname: DataFrame}` dict if reading multiple sheets.
 
     Examples
     --------
-    Read the "data" worksheet from an OpenOffice spreadsheet file into a DataFrame.
+    Read the "data" worksheet from an OpenOffice spreadsheet file into a `DataFrame`.
 
     >>> pl.read_ods(
     ...     source="test.ods",

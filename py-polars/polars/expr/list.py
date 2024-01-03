@@ -37,7 +37,7 @@ class ExprListNameSpace:
 
     def all(self) -> Expr:
         """
-        Evaluate whether all boolean values in a list are true.
+        Evaluate whether all :class:`Boolean` values in a list are true.
 
         Examples
         --------
@@ -64,7 +64,7 @@ class ExprListNameSpace:
 
     def any(self) -> Expr:
         """
-        Evaluate whether any boolean value in a list is true.
+        Evaluate whether any :class:`Boolean` value in a list is true.
 
         Examples
         --------
@@ -459,7 +459,7 @@ class ExprListNameSpace:
         Take sublists by multiple indices.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype `List`.
+        column of dtype :class:`List`.
 
         Parameters
         ----------
@@ -970,7 +970,7 @@ class ExprListNameSpace:
         upper_bound: int = 0,
     ) -> Expr:
         """
-        Convert the Series of type `List` to a Series of type `Struct`.
+        Convert the Series of type :class:`List` to a Series of type :class:`Struct`.
 
         Parameters
         ----------
@@ -986,19 +986,19 @@ class ExprListNameSpace:
             Otherwise, to dynamically assign field names, a custom function can be
             used; if neither are set, fields will be `field_0, field_1 .. field_n`.
         upper_bound
-            A polars `LazyFrame` needs to know the schema at all times, so the
+            A polars :class:`LazyFrame` needs to know the schema at all times, so the
             caller must provide an upper bound of the number of struct fields that
             will be created; if set incorrectly, subsequent operations may fail.
             (For example, an `all().sum()` expression will look in the current
             schema to determine which columns to select).
 
-            When operating on a `DataFrame`, the schema does not need to be
+            When operating on a :class:`DataFrame`, the schema does not need to be
             tracked or pre-determined, as the result will be eagerly evaluated,
             so you can leave this parameter unset.
 
         Notes
         -----
-        For performance reasons, the length of the first non-null sublist is used
+        For performance reasons, the length of the first non-`null` sublist is used
         to determine the number of output fields. If the sublists can be of different
         lengths then `n_field_strategy="max_width"` must be used to obtain the expected
         result.
@@ -1277,7 +1277,7 @@ class ExprListNameSpace:
         Take sublists by multiple indices.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype `List`.
+        column of dtype :class:`List`.
 
         .. deprecated:: 0.19.14
             This method has been renamed to :func:`gather`.

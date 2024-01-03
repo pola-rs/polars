@@ -401,8 +401,8 @@ class StringNameSpace:
         ignore_nulls
             Ignore null values (default).
 
-            If set to ``False``, null values will be propagated.
-            if the column contains any null values, the output is ``None``.
+            If set to ``False``, `null` values will be propagated.
+            if the column contains any `null` values, the output is ``None``.
 
         Returns
         -------
@@ -441,7 +441,7 @@ class StringNameSpace:
             Treat `pattern` as a literal string, not as a regular expression.
         strict
             Raise an error if the underlying pattern is not a valid regex,
-            otherwise mask out with a null value.
+            otherwise mask out with a `null` value.
 
         Notes
         -----
@@ -559,7 +559,7 @@ class StringNameSpace:
             The encoding to use.
         strict
             Raise an error if the underlying value cannot be decoded,
-            otherwise mask out with a null value.
+            otherwise mask out with a `null` value.
 
         """
 
@@ -631,8 +631,8 @@ class StringNameSpace:
         """
         Extract the first match of json string with provided JSONPath expression.
 
-        Throw errors if encounter invalid json strings.
-        All return value will be casted to String regardless of the original value.
+        Throw errors if encounter invalid json strings. All return value will be cast
+        to :class:`String` regardless of the original value.
 
         Documentation on JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
@@ -645,8 +645,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`String`. Contains null values if the original
-            value is null or the json_path returns nothing.
+            Series of data type :class:`String`. Contains `null` values if the original
+            value is `null` or the `json_path` returns nothing.
 
         Examples
         --------
@@ -683,8 +683,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`String`. Contains null values if the original
-            value is null or regex captures nothing.
+            Series of data type :class:`String`. Contains `null` values if the original
+            value is `null` or `regex` captures nothing.
 
         Notes
         -----
@@ -874,8 +874,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`. Returns null if the original
-            value is null.
+            Series of data type :class:`UInt32`. Returns `null` if the original
+            value is `null`.
 
         Examples
         --------
@@ -928,7 +928,7 @@ class StringNameSpace:
 
         Results in a struct of `n+1` fields.
 
-        If it cannot make `n` splits, the remaining field elements will be null.
+        If it cannot make `n` splits, the remaining field elements will be `null`.
 
         Parameters
         ----------
@@ -1534,7 +1534,7 @@ class StringNameSpace:
 
     def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
         """
-        Convert an String column into an Int64 column with base radix.
+        Convert a :class:`String` column to an :class:`Int64` column with `base` radix.
 
         Parameters
         ----------
@@ -1542,8 +1542,8 @@ class StringNameSpace:
             Positive integer which is the base of the string we are parsing.
             Default: 10.
         strict
-            Bool, Default=True will raise any ParseError or overflow as ComputeError.
-            False silently convert to Null.
+            If `True` (the default), will raise any :class:`ParseError` or overflow as
+            :class:`ComputeError`. If `False`, silently converts to `null`.
 
         Returns
         -------
@@ -1590,8 +1590,8 @@ class StringNameSpace:
         base
             Positive integer which is the base of the string we are parsing.
         strict
-            Bool, Default=True will raise any ParseError or overflow as ComputeError.
-            False silently convert to Null.
+            If `True` (the default), will raise any :class:`ParseError` or overflow as
+            :class:`ComputeError`. If `False`, silently converts to `null`.
 
         """
 
@@ -1664,8 +1664,8 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`. Returns null if the original
-            value is null.
+            Series of data type :class:`UInt32`. Returns `null` if the original
+            value is `null`.
 
         """
 
@@ -1750,7 +1750,7 @@ class StringNameSpace:
         self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
-        Use the aho-corasick algorithm to find matches.
+        Use the Aho-Corasick algorithm to find matches.
 
         This version determines if any of the patterns find a match.
 
@@ -1759,7 +1759,7 @@ class StringNameSpace:
         patterns
             String patterns to search.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
@@ -1793,7 +1793,7 @@ class StringNameSpace:
         ascii_case_insensitive: bool = False,
     ) -> Series:
         """
-        Use the aho-corasick algorithm to replace many matches.
+        Use the Aho-Corasick algorithm to replace many matches.
 
         Parameters
         ----------
@@ -1803,7 +1803,7 @@ class StringNameSpace:
             Strings to replace where a pattern was a match.
             This can be broadcasted. So it supports many:one and many:many.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 

@@ -867,7 +867,7 @@ def warn_on_inefficient_map(
     function
         The function passed to `map`.
     columns
-        The column names of the original object; in the case of an `Expr` this
+        The column names of the original object; in the case of an :class:`Expr` this
         will be a list of length 1 containing the expression's root name.
     map_target
         The target of the `map` call. One of `"expr"`, `"frame"`,

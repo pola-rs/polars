@@ -31,14 +31,16 @@ def read_ipc(
     rechunk: bool = True,
 ) -> DataFrame:
     """
-    Read into a DataFrame from Arrow IPC (Feather v2) file.
+    Read into a :class:`DataFrame` from an Arrow IPC (Feather v2) file.
 
     Parameters
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
+        that have a `read()` method, such as a file handler (e.g. via the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_). If `fsspec
+        https://filesystem-spec.readthedocs.io>`_ is installed, it will be used to open
         remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -47,16 +49,18 @@ def read_ipc(
         Stop reading from IPC file after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
-        Use pyarrow or the native Rust reader.
+        Use :mod:`pyarrow` or the native Rust reader.
     memory_map
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
     storage_options
-        Extra options that make sense for `fsspec.open()` or a particular storage
-        connection, e.g. host, port, username, password, etc.
+        Extra options that make sense for `fsspec.open()
+        <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_ for a
+        particular storage connection.
+        e.g. host, port, username, password, etc.
     row_count_name
-        If not None, this will insert a row count column with give name into the
+        If not `None`, this will insert a row count column with give name into the
         DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
@@ -122,14 +126,16 @@ def read_ipc_stream(
     rechunk: bool = True,
 ) -> DataFrame:
     """
-    Read into a DataFrame from Arrow IPC record batch stream.
+    Read into a :class:`DataFrame` from an Arrow IPC record batch stream.
 
     Parameters
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
+        that have a `read()` method, such as a file handler (e.g. via the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_). If `fsspec
+        https://filesystem-spec.readthedocs.io>`_ is installed, it will be used to open
         remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -138,12 +144,14 @@ def read_ipc_stream(
         Stop reading from IPC stream after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
-        Use pyarrow or the native Rust reader.
+        Use :mod:`pyarrow` or the native Rust reader.
     storage_options
-        Extra options that make sense for `fsspec.open()` or a particular storage
-        connection, e.g. host, port, username, password, etc.
+        Extra options that make sense for `fsspec.open()
+        <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_ for a
+        particular storage connection.
+        e.g. host, port, username, password, etc.
     row_count_name
-        If not None, this will insert a row count column with give name into the
+        If not `None`, this will insert a row count column with give name into the
         DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
@@ -194,8 +202,9 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        that have a `read()` method, such as a file handler (e.g. via the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
 
     Returns
     -------
@@ -242,7 +251,8 @@ def scan_ipc(
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
     storage_options
-        Extra options that make sense for `fsspec.open()` or a
+        Extra options that make sense for `fsspec.open()
+        <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_ for a
         particular storage connection.
         e.g. host, port, username, password, etc.
     memory_map

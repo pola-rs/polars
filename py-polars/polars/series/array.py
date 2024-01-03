@@ -128,7 +128,7 @@ class ArrayNameSpace:
 
     def any(self) -> Series:
         """
-        Evaluate whether any boolean value is true for every subarray.
+        Evaluate whether any :class:`Boolean` value is true for every subarray.
 
         Returns
         -------
@@ -156,7 +156,7 @@ class ArrayNameSpace:
 
     def all(self) -> Series:
         """
-        Evaluate whether all boolean values are true for every subarray.
+        Evaluate whether all :class:`Boolean` values are true for every subarray.
 
         Returns
         -------

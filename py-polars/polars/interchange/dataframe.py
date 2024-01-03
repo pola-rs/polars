@@ -181,7 +181,7 @@ class PolarsDataFrame(InterchangeDataFrame):
         When the columns in the dataframe are chunked unevenly, or when `n_chunks` is
         higher than the number of chunks in the dataframe, a slice must be performed
         that is not on the chunk boundary. This will trigger some compute for columns
-        that contain null values and boolean columns.
+        that contain null values and :class:`Boolean` columns.
 
         """
         total_n_chunks = self.num_chunks()

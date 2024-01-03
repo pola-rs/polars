@@ -315,7 +315,7 @@ def align_frames(
         the columns returned from the newly aligned frames.
     descending
         Sort the alignment column values in descending order; can be a single
-        boolean or a list of booleans associated with each column in `on`.
+        :class:`Boolean` or a list of booleans associated with each column in `on`.
     how
         By default the row alignment values are determined using a full outer join
         strategy across all frames; if you know that the first frame contains all

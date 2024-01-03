@@ -162,31 +162,34 @@ ArrayLike = Union[
 @expr_dispatch
 class Series:
     """
-    A Series represents a single column in a polars DataFrame.
+    A one-dimensional column of data. Each column of a :class:`DataFrame` is a `Series`.
 
     Parameters
     ----------
     name : str, default None
-        Name of the Series. Will be used as a column name when used in a DataFrame.
-        When not specified, name is set to an empty string.
+        Name of the `Series`. Will be used as a column name when used in a
+        :class:`DataFrame`. When not specified, name is set to an empty string.
     values : ArrayLike, default None
-        One-dimensional data in various forms. Supported are: Sequence, Series,
-        pyarrow Array, and numpy ndarray.
+        One-dimensional data in various forms. Supported are: `Sequence`, `Series`,
+        `pyarrow.Array
+        <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html>`_, and
+        `numpy.ndarray
+        <https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html>`_.
     dtype : DataType, default None
-        Polars dtype of the Series data. If not specified, the dtype is inferred.
+        Polars dtype of the `Series` data. If not specified, the dtype is inferred.
     strict
         Throw error on numeric overflow.
     nan_to_null
-        In case a numpy array is used to create this Series, indicate how to deal
-        with np.nan values. (This parameter is a no-op on non-numpy data).
-    dtype_if_empty=dtype_if_empty : DataType, default None
-        If no dtype is specified and values contains None, an empty list, or a
-        list with only None values, set the Polars dtype of the Series data.
-        If not specified, Float32 is used in those cases.
+        In case a NumPy array is used to create this `Series`, indicate how to deal
+        with np.nan values. (This parameter is a no-op on non-NumPy data).
+    dtype_if_empty : DataType, default None
+        If no dtype is specified and values contains `None`, an empty list, or a
+        list with only `None` values, set the Polars dtype of the `Series` data.
+        If not specified, :class:`Float32` is used.
 
     Examples
     --------
-    Constructing a Series by specifying name and values positionally:
+    Constructing a `Series` by specifying name and values positionally:
 
     >>> s = pl.Series("a", [1, 2, 3])
     >>> s
@@ -198,12 +201,12 @@ class Series:
             3
     ]
 
-    Notice that the dtype is automatically inferred as a polars Int64:
+    Notice that the dtype is automatically inferred as a polars :class:`Int64`:
 
     >>> s.dtype
     Int64
 
-    Constructing a Series with a specific dtype:
+    Constructing a `Series` with a specific dtype:
 
     >>> s2 = pl.Series("a", [1, 2, 3], dtype=pl.Float32)
     >>> s2
@@ -215,7 +218,7 @@ class Series:
         3.0
     ]
 
-    It is possible to construct a Series with values as the first positional argument.
+    It is possible to construct a `Series` with values as the first positional argument.
     This syntax considered an anti-pattern, but it can be useful in certain
     scenarios. You must specify any other arguments through keywords.
 
@@ -374,7 +377,7 @@ class Series:
         *,
         nan_to_null: bool = True,
     ) -> Self:
-        """Construct a Series from a pandas Series or DatetimeIndex."""
+        """Construct a :class:`Series` from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
@@ -386,12 +389,12 @@ class Series:
         Returns
         -------
         tuple of ints
-            Tuple of the form (pointer, offset, length)
+            Tuple of the form `(pointer, offset, length)`.
 
         Raises
         ------
         ComputeError
-            If the `Series` contains multiple chunks.
+            If the :class:`Series` contains multiple chunks.
         """
         return self._s._get_buffer_info()
 
@@ -405,11 +408,12 @@ class Series:
 
     def _get_buffer(self, index: Literal[0, 1, 2]) -> Self | None:
         """
-        Return the underlying data, validity, or offsets buffer as a Series.
+        Return the underlying data, validity, or offsets buffer as a :class:`Series`.
 
         The data buffer always exists.
         The validity buffer may not exist if the column contains no null values.
-        The offsets buffer only exists for Series of data type `String` and `List`.
+        The offsets buffer only exists for :class:`Series` of data type :class:`String`
+        and :class:`List`.
 
         Parameters
         ----------
@@ -423,12 +427,12 @@ class Series:
         Returns
         -------
         Series or None
-            `Series` if the specified buffer exists, `None` otherwise.
+            :class:`Series` if the specified buffer exists, `None` otherwise.
 
         Raises
         ------
         ComputeError
-            If the `Series` contains multiple chunks.
+            If the :class:`Series` contains multiple chunks.
         """
         buffer = self._s._get_buffer(index)
         if buffer is None:
@@ -440,7 +444,7 @@ class Series:
         self, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
     ) -> Self:
         """
-        Construct a Series from information about its underlying buffer.
+        Construct a :class:`Series` from information about its underlying buffer.
 
         Parameters
         ----------
@@ -465,20 +469,21 @@ class Series:
         validity: Series | None = None,
     ) -> Self:
         """
-        Construct a Series from information about its underlying buffers.
+        Construct a :class:`Series` from information about its underlying buffers.
 
         Parameters
         ----------
         dtype
-            The data type of the resulting Series.
+            The data type of the resulting :class:`Series`.
         data
-            Buffers describing the data. For most data types, this is a single Series of
-            the physical data type of `dtype`. Some data types require multiple buffers:
+            Buffers describing the data. For most data types, this is a single
+            :class:`Series` of the physical data type of `dtype`. Some data types
+            require multiple buffers:
 
-            - `String`: A data buffer of type `UInt8` and an offsets buffer
-                        of type `Int64`.
+            - `String`: A data buffer of type :class:`UInt8` and an offsets buffer
+                        of type :class:`Int64`.
         validity
-            Validity buffer. If specified, must be a Series of data type `Boolean`.
+            Validity buffer. If specified, must be a :class:`Boolean` :class:`Series`.
 
         Returns
         -------
@@ -495,7 +500,7 @@ class Series:
     @property
     def dtype(self) -> DataType:
         """
-        Get the data type of this Series.
+        Get the data type of this :class:`Series`.
 
         Examples
         --------
@@ -509,7 +514,7 @@ class Series:
     @property
     def flags(self) -> dict[str, bool]:
         """
-        Get flags that are set on the Series.
+        Get flags that are set on the :class:`Series`.
 
         Returns
         -------
@@ -528,7 +533,7 @@ class Series:
     @property
     def inner_dtype(self) -> DataType | None:
         """
-        Get the inner dtype in of a List typed Series.
+        Get the inner dtype in of a :class:`List`-typed :class:`Series`.
 
         .. deprecated:: 0.19.14
             Use `Series.dtype.inner` instead.
@@ -549,12 +554,12 @@ class Series:
 
     @property
     def name(self) -> str:
-        """Get the name of this Series."""
+        """Get the name of this :class:`Series`."""
         return self._s.name()
 
     @property
     def shape(self) -> tuple[int]:
-        """Shape of this Series."""
+        """Shape of this :class:`Series`."""
         return (self._s.len(),)
 
     def __bool__(self) -> NoReturn:
@@ -1121,11 +1126,12 @@ class Series:
                 yield from self.slice(offset, buffer_size).to_list()
 
     def _pos_idxs(self, size: int) -> Series:
-        # Unsigned or signed Series (ordered from fastest to slowest).
-        #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
-        #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
-        #     or pl.UInt64 (polars_u64_idx).
-        #   - Signed Series indexes are converted pl.UInt32 (polars) or
+        # Unsigned or signed :class:`Series` (ordered from fastest to slowest).
+        #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) :class:`Series`
+        #     indexes.
+        #   - Other unsigned :class:`Series` indexes are converted to pl.UInt32
+        #     (polars) or pl.UInt64 (polars_u64_idx).
+        #   - Signed :class:`Series` indexes are converted pl.UInt32 (polars) or
         #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
         #     to absolute indexes.
 
@@ -1376,7 +1382,7 @@ class Series:
     @deprecate_renamed_parameter("row", "index", version="0.19.3")
     def item(self, index: int | None = None) -> Any:
         """
-        Return the Series as a scalar, or return the element at the given index.
+        Return the :class:`Series` as a scalar, or the element at `index`.
 
         If no index is provided, this is equivalent to `s[0]`, with a check
         that the shape is (1,). With an index, this is equivalent to `s[index]`.
@@ -1403,18 +1409,21 @@ class Series:
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
-        Return an estimation of the total (heap) allocated size of the Series.
+        Return an estimation of the total (heap) allocated size of the :class:`Series`.
 
         Estimated size is given in the specified unit (bytes by default).
 
         This estimation is the sum of the size of its buffers, validity, including
         nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
         size of 2 arrays is not the sum of the sizes computed from this function. In
-        particular, [`StructArray`]'s size is an upper bound.
+        particular, `StructArray
+        <https://arrow.apache.org/docs/python/generated/pyarrow.StructArray.html>`_'s
+        size is an upper bound.
 
         When an array is sliced, its allocated size remains constant because the buffer
-        unchanged. However, this function will yield a smaller number. This is because
-        this function returns the visible size of the buffer, not its total capacity.
+        is unchanged. However, this function will yield a smaller number. This is
+        because this function returns the visible size of the buffer, not its total
+        capacity.
 
         FFI buffers are included in this estimation.
 
@@ -1439,7 +1448,7 @@ class Series:
         """
         Compute the square root of the elements.
 
-        Syntactic sugar for
+        Syntactic sugar for:
 
         >>> pl.Series([1, 2]) ** 0.5
         shape: (2,)
@@ -1509,11 +1518,11 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
+            Ignore `null` values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
-            the output is `None`.
+            If set to `False`, `Kleene logic`_ is used to deal with `null` values:
+            if the column contains any `null` values and no `True` values,
+            the output is `null`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1585,7 +1594,7 @@ class Series:
 
     def log(self, base: float = math.e) -> Series:
         """
-        Compute the logarithm to a given base.
+        Compute the logarithm to a given `base`.
 
         Examples
         --------
@@ -1619,7 +1628,7 @@ class Series:
 
     def log10(self) -> Series:
         """
-        Compute the base 10 logarithm of the input array, element-wise.
+        Compute the base 10 logarithm, element-wise.
 
         Examples
         --------
@@ -1682,7 +1691,7 @@ class Series:
 
     def drop_nans(self) -> Series:
         """
-        Drop all floating point NaN values.
+        Drop all floating-point NaN values.
 
         The original order of the remaining elements is preserved.
 
@@ -1711,12 +1720,13 @@ class Series:
 
     def to_frame(self, name: str | None = None) -> DataFrame:
         """
-        Cast this Series to a DataFrame.
+        Cast this :class:`Series` to a :class:`DataFrame`.
 
         Parameters
         ----------
         name
-            optionally name/rename the Series column in the new DataFrame.
+            optionally name/rename the :class:`Series` column in the new
+            :class:`DataFrame`.
 
         Examples
         --------
@@ -1754,16 +1764,17 @@ class Series:
         self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
-        Quick summary statistics of a Series.
+        Quick summary statistics of a :class:`Series`.
 
-        Series with mixed datatypes will return summary statistics for the datatype of
-        the first value.
+        :class:`Series` with mixed datatypes will return summary statistics for the
+        datatype of the first value.
 
         Parameters
         ----------
         percentiles
             One or more percentiles to include in the summary statistics (if the
-            Series has a numeric dtype). All values must be in the range `[0, 1]`.
+            :class:`Series` has a numeric dtype). All values must be in the range
+            `[0, 1]`.
 
         Notes
         -----
@@ -1772,7 +1783,7 @@ class Series:
         Returns
         -------
         DataFrame
-            Mapping with summary statistics of a Series.
+            Summary statistics of the :class:`Series`.
 
         Examples
         --------
@@ -1862,12 +1873,12 @@ class Series:
 
     def sum(self) -> int | float:
         """
-        Reduce this Series to the sum value.
+        Take the sum of the values in this :class:`Series`.
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        Dtypes in {:class:`Int8`, :class:`UInt8`, :class:`Int16`, :class:`UInt16`} are
+        cast to :class:`Int64` before summing to prevent overflow issues.
 
         Examples
         --------
@@ -1880,7 +1891,7 @@ class Series:
 
     def mean(self) -> int | float | None:
         """
-        Reduce this Series to the mean value.
+        Take the mean of the values in this :class:`Series`.
 
         Examples
         --------
@@ -1892,7 +1903,7 @@ class Series:
         return self._s.mean()
 
     def product(self) -> int | float:
-        """Reduce this Series to the product value."""
+        """Take the product of the values in this :class:`Series`."""
         return self._s.product()
 
     def pow(self, exponent: int | float | None | Series) -> Series:
@@ -1928,7 +1939,7 @@ class Series:
 
     def min(self) -> PythonLiteral | None:
         """
-        Get the minimal value in this Series.
+        Get the minimum value of the elements in this :class:`Series`.
 
         Examples
         --------
@@ -1941,7 +1952,7 @@ class Series:
 
     def max(self) -> PythonLiteral | None:
         """
-        Get the maximum value in this Series.
+        Get the maximum value of the elements in this :class:`Series`.
 
         Examples
         --------
@@ -1954,34 +1965,38 @@ class Series:
 
     def nan_max(self) -> int | float | date | datetime | timedelta | str:
         """
-        Get maximum value, but propagate/poison encountered NaN values.
+        Get the maximum value, but propagate/poison encountered `NaN` values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
-        whereas polars defaults to ignoring them.
+        This differs from `numpy.nanmax
+        <https://numpy.org/doc/stable/reference/generated/numpy.nanmax.html>`_
+        as numpy defaults to propagating NaN values, whereas polars defaults to
+        ignoring them.
 
         """
         return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
-        Get minimum value, but propagate/poison encountered NaN values.
+        Get the minimum value, but propagate/poison encountered `NaN` values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
-        whereas polars defaults to ignoring them.
+        This differs from `numpy.nanmin
+        <https://numpy.org/doc/stable/reference/generated/numpy.nanmin.html>`_
+        as numpy defaults to propagating NaN values, whereas polars defaults to
+        ignoring them.
 
         """
         return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
     def std(self, ddof: int = 1) -> float | None:
         """
-        Get the standard deviation of this Series.
+        Get the standard deviation of the elements in this :class:`Series`.
 
         Parameters
         ----------
         ddof
             “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
             where N represents the number of elements.
-            By default ddof is 1.
+            By default `ddof` is 1.
 
         Examples
         --------
@@ -1996,14 +2011,14 @@ class Series:
 
     def var(self, ddof: int = 1) -> float | None:
         """
-        Get variance of this Series.
+        Get variance of the elements in this :class:`Series`.
 
         Parameters
         ----------
         ddof
             “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
             where N represents the number of elements.
-            By default ddof is 1.
+            By default `ddof` is 1.
 
         Examples
         --------
@@ -2018,7 +2033,7 @@ class Series:
 
     def median(self) -> float | None:
         """
-        Get the median of this Series.
+        Get the median of the elements in this :class:`Series`.
 
         Examples
         --------
@@ -2033,7 +2048,7 @@ class Series:
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> float | None:
         """
-        Get the quantile value of this Series.
+        Get the specified `quantile` of the elements in this :class:`Series`.
 
         Parameters
         ----------
@@ -2164,19 +2179,20 @@ class Series:
             in. This will change the data type of the output from a
             :class:`Categorical` to a :class:`Struct`.
         as_series
-            If set to `False`, return a DataFrame containing the original values,
-            the breakpoints, and the categories.
+            If set to `False`, return a :class:`DataFrame` containing the original
+            values, the breakpoints, and the categories.
 
             .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
-                setting `include_breaks=True`, unnesting the resulting struct Series,
-                and adding the result to the original Series.
+                setting `include_breaks=True`, unnesting the resulting :class:`Struct`
+                :class:`Series`, and adding the result to the original :class:`Series`.
 
         Returns
         -------
         Series
             Series of data type :class:`Categorical` if `include_breaks` is set to
-            `False` (default), otherwise a Series of data type :class:`Struct`.
+            `False` (default), otherwise a :class:`Series` of data type
+            :class:`Struct`.
 
         See Also
         --------
@@ -2198,7 +2214,7 @@ class Series:
                 "c"
         ]
 
-        Create a DataFrame with the breakpoint and category for each value.
+        Create a :class:`DataFrame` with the breakpoint and category for each value.
 
         >>> cut = s.cut([-1, 1], include_breaks=True).alias("cut")
         >>> s.to_frame().with_columns(cut).unnest("cut")
@@ -2334,8 +2350,8 @@ class Series:
         Parameters
         ----------
         quantiles
-            Either a list of quantile probabilities between 0 and 1 or a positive
-            integer determining the number of bins with uniform probability.
+            Either a list of quantiles between 0 and 1 or a positive integer
+            determining the number of bins.
         labels
             Names of the categories. The number of labels must be equal to the number
             of cut points plus one.
@@ -2364,13 +2380,13 @@ class Series:
                 This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         as_series
-            If set to `False`, return a DataFrame containing the original values,
-            the breakpoints, and the categories.
+            If set to `False`, return a :class:`DataFrame` containing the original
+            values, the breakpoints, and the categories.
 
             .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
-                setting `include_breaks=True`, unnesting the resulting struct Series,
-                and adding the result to the original Series.
+                setting `include_breaks=True`, unnesting the resulting :class:`Struct`
+                :class:`Series`, and adding the result to the original :class:`Series`.
 
         Returns
         -------
@@ -2569,14 +2585,14 @@ class Series:
         ----------
         bins
             Discretizations to make.
-            If None given, we determine the boundaries based on the data.
+            If `None`, determine the boundaries based on the data.
         bin_count
-            If no bins provided, this will be used to determine
+            If no bins are provided, this will be used to determine
             the distance of the bins
         include_breakpoint
-            Include a column that indicates the upper breakpoint.
+            Whether to include a column that indicates the upper breakpoint.
         include_category
-            Include a column that shows the intervals as categories.
+            Whether to include a column that shows the intervals as categories.
 
         Returns
         -------
@@ -2641,7 +2657,7 @@ class Series:
         Returns
         -------
         DataFrame
-            Mapping of unique values to their count.
+            Mapping of unique values to their counts.
 
         Examples
         --------
@@ -2680,6 +2696,9 @@ class Series:
         """
         Return a count of the unique values in the order of appearance.
 
+        This method differs from `value_counts` in that it does not return the
+        values, only the counts, and might be faster.
+
         Examples
         --------
         >>> s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
@@ -2705,7 +2724,7 @@ class Series:
         base
             Given base, defaults to `e`
         normalize
-            Normalize pk if it doesn't sum to 1.
+            Normalize `pk` if it doesn't sum to 1.
 
         Examples
         --------
@@ -2728,18 +2747,18 @@ class Series:
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Series:
         """
-        Run an expression over a sliding window that increases `1` slot every iteration.
+        Run an expression over a sliding window that slides one element at a time.
 
         Parameters
         ----------
         expr
-            Expression to evaluate
+            The expression to evaluate.
         min_periods
-            Number of valid values there should be in the window before the expression
-            is evaluated. valid values = `length - null_count`
+            The number of non-`null` values there should be in the window before
+            the expression is evaluated.
         parallel
-            Run in parallel. Don't do this in a group by or another operation that
-            already has much parallelization.
+            Whether to run in parallel. Don't do this in a group by or another
+            operation that already has substantial parallelization.
 
         Warnings
         --------
@@ -2767,7 +2786,7 @@ class Series:
 
     def alias(self, name: str) -> Series:
         """
-        Rename the series.
+        Rename this :class:`Series`.
 
         Parameters
         ----------
@@ -2793,7 +2812,7 @@ class Series:
 
     def rename(self, name: str) -> Series:
         """
-        Rename this Series.
+        Rename this :class:`Series`.
 
         Alias for :func:`Series.alias`.
 
@@ -2826,12 +2845,12 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("a", [4, 5, 6])
 
-        Concatenate Series with rechunk = True
+        Concatenate :class:`Series` with `rechunk=True`:
 
         >>> pl.concat([s, s2]).chunk_lengths()
         [6]
 
-        Concatenate Series with rechunk = False
+        Concatenate :class:`Series` with `rechunk=False`:
 
         >>> pl.concat([s, s2], rechunk=False).chunk_lengths()
         [3, 3]
@@ -2841,7 +2860,7 @@ class Series:
 
     def n_chunks(self) -> int:
         """
-        Get the number of chunks that this Series contains.
+        Get the number of chunks that this :class:`Series` contains.
 
         Examples
         --------
@@ -2850,12 +2869,12 @@ class Series:
         1
         >>> s2 = pl.Series("a", [4, 5, 6])
 
-        Concatenate Series with rechunk = True
+        Concatenate :class:`Series` with `rechunk=True`:
 
         >>> pl.concat([s, s2]).n_chunks()
         1
 
-        Concatenate Series with rechunk = False
+        Concatenate :class:`Series` with `rechunk=False`:
 
         >>> pl.concat([s, s2], rechunk=False).n_chunks()
         2
@@ -2870,7 +2889,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
 
         Examples
         --------
@@ -2893,7 +2912,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
 
         Examples
         --------
@@ -2916,12 +2935,12 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        Dtypes in {:class:`Int8`, :class:`UInt8`, :class:`Int16`, :class:`UInt16`} are
+        cast to `Int64` before summing to prevent overflow issues.
 
         Examples
         --------
@@ -2944,12 +2963,12 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        Dtypes in {:class:`Int8`, :class:`UInt8`, :class:`Int16`, :class:`UInt16`} are
+        cast to :class:`Int64` before summing to prevent overflow issues.
 
         Examples
         --------
@@ -2967,7 +2986,7 @@ class Series:
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
-        Get a slice of this Series.
+        Get a slice of this :class:`Series`.
 
         Parameters
         ----------
@@ -2993,19 +3012,19 @@ class Series:
 
     def append(self, other: Series) -> Self:
         """
-        Append a Series to this one.
+        Append a :class:`Series` to this one.
 
-        The resulting series will consist of multiple chunks.
+        The resulting :class:`Series` will consist of multiple chunks.
 
         Parameters
         ----------
         other
-            Series to append.
+            :class:`Series` to append.
 
         Warnings
         --------
-        This method modifies the series in-place. The series is returned for
-        convenience only.
+        This method modifies the :class:`Series` in-place. The :class:`Series` is
+        returned for convenience only.
 
         See Also
         --------
@@ -3043,33 +3062,34 @@ class Series:
 
     def extend(self, other: Series) -> Self:
         """
-        Extend the memory backed by this Series with the values from another.
+        Extend the memory backed by `self` with the values from `other`.
 
-        Different from `append`, which adds the chunks from `other` to the chunks of
-        this series, `extend` appends the data from `other` to the underlying memory
-        locations and thus may cause a reallocation (which is expensive).
+        Different from :func:`append`, which adds the chunks from `other` to the chunks
+        of this :class:`Series`, `extend` appends the data from `other` to the
+        underlying memory locations and thus may cause a reallocation (which is
+        expensive).
 
         If this does `not` cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer `extend` over `append` when you want to do a query after a single
+        Prefer `extend` over :func:`append` when you want to do a query after a single
         append. For instance, during online operations where you add `n` rows
         and rerun a query.
 
-        Prefer `append` over `extend` when you want to append many times
-        before doing a query. For instance, when you read in multiple files and want
-        to store them in a single `Series`. In the latter case, finish the sequence
-        of `append` operations with a `rechunk`.
+        Prefer :func:`append` over `extend` when you want to append many times before
+        doing a query. For instance, when you read in multiple files and want to store
+        them in a single :class:`Series`. In the latter case, finish the sequence
+        of :func:`append` operations with a :func:`rechunk`.
 
         Parameters
         ----------
         other
-            Series to extend the series with.
+            :class:`Series` to extend `self` with.
 
         Warnings
         --------
-        This method modifies the series in-place. The series is returned for
-        convenience only.
+        This method modifies the :class:`Series` in-place. The :class:`Series` is
+        returned for convenience only.
 
         See Also
         --------
@@ -3107,14 +3127,14 @@ class Series:
 
     def filter(self, predicate: Series | list[bool]) -> Self:
         """
-        Filter elements by a boolean mask.
+        Filter elements by a :class:`Boolean` mask.
 
         The original order of the remaining elements is preserved.
 
         Parameters
         ----------
         predicate
-            Boolean mask.
+            :class:`Boolean` mask.
 
         Examples
         --------
@@ -3236,12 +3256,12 @@ class Series:
 
     def gather_every(self, n: int, offset: int = 0) -> Series:
         """
-        Take every nth value in the Series and return as new Series.
+        Return every `n`th value in the :class:`Series` as a new :class:`Series`.
 
         Parameters
         ----------
         n
-            Gather every *n*-th row.
+            Gather every `n`th row.
         offset
             Start the row count at this offset.
 
@@ -3267,7 +3287,7 @@ class Series:
 
     def sort(self, *, descending: bool = False, in_place: bool = False) -> Self:
         """
-        Sort this Series.
+        Sort this :class:`Series`.
 
         Parameters
         ----------
@@ -3369,14 +3389,14 @@ class Series:
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
-        Get the index values that would sort this Series.
+        Get the index values that would sort this :class:`Series`.
 
         Parameters
         ----------
         descending
             Sort in descending order.
         nulls_last
-            Place null values last instead of first.
+            Place `null` values last instead of first.
 
         Examples
         --------
@@ -3396,7 +3416,7 @@ class Series:
 
     def arg_unique(self) -> Series:
         """
-        Get unique index as Series.
+        Get unique index as :class:`Series`.
 
         Returns
         -------
@@ -3477,9 +3497,9 @@ class Series:
         element
             Expression or scalar value.
         side : {'any', 'left', 'right'}
-            If 'any', the index of the first suitable location found is given.
-            If 'left', the index of the leftmost suitable location found is given.
-            If 'right', return the rightmost suitable location found is given.
+            If `"any"`, the index of the first suitable location found is given.
+            If `"left"`, the index of the leftmost suitable location found is given.
+            If `"right"`, return the rightmost suitable location found is given.
 
         """
         if isinstance(element, (int, float)):
@@ -3489,7 +3509,7 @@ class Series:
 
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
-        Get unique elements in series.
+        Get the unique elements of this :class:`Series`.
 
         Parameters
         ----------
@@ -3536,7 +3556,7 @@ class Series:
 
     def null_count(self) -> int:
         """
-        Count the null values in this Series.
+        Count the `null` values in this :class:`Series`.
 
         Examples
         --------
@@ -3548,25 +3568,25 @@ class Series:
 
     def has_validity(self) -> bool:
         """
-        Return True if the Series has a validity bitmask.
+        Return `True` if the :class:`Series` has a validity bitmask.
 
         If there is no mask, it means that there are no `null` values.
 
         Notes
         -----
-        While the *absence* of a validity bitmask guarantees that a Series does not
-        have `null` values, the converse is not true, eg: the *presence* of a
-        bitmask does not mean that there are null values, as every value of the
+        While the *absence* of a validity bitmask guarantees that a :class:`Series`
+        does not have `null` values, the converse is not true, e.g. the *presence* of a
+        bitmask does not mean that there are `null` values, as every value of the
         bitmask could be `false`.
 
-        To confirm that a column has `null` values use :func:`null_count`.
+        To confirm that a column has `null` values, use :func:`null_count`.
 
         """
         return self._s.has_validity()
 
     def is_empty(self) -> bool:
         """
-        Check if the Series is empty.
+        Check if the :class:`Series` is empty.
 
         Examples
         --------
@@ -3579,12 +3599,12 @@ class Series:
 
     def is_sorted(self, *, descending: bool = False) -> bool:
         """
-        Check if the Series is sorted.
+        Check if the :class:`Series` is sorted.
 
         Parameters
         ----------
         descending
-            Check if the Series is sorted in descending order
+            Check if the :class:`Series` is sorted in descending order
 
         Examples
         --------
@@ -3601,7 +3621,7 @@ class Series:
 
     def not_(self) -> Series:
         """
-        Negate a boolean Series.
+        Negate a :class:`Boolean` :class:`Series`.
 
         Returns
         -------
@@ -3624,7 +3644,7 @@ class Series:
 
     def is_null(self) -> Series:
         """
-        Returns a boolean Series indicating which values are null.
+        Returns a :class:`Boolean` :class:`Series` of which values are null.
 
         Returns
         -------
@@ -3648,7 +3668,7 @@ class Series:
 
     def is_not_null(self) -> Series:
         """
-        Returns a boolean Series indicating which values are not null.
+        Returns a :class:`Boolean` :class:`Series` of which values are not null.
 
         Returns
         -------
@@ -3672,7 +3692,7 @@ class Series:
 
     def is_finite(self) -> Series:
         """
-        Returns a boolean Series indicating which values are finite.
+        Returns a :class:`Boolean` :class:`Series` of which values are finite.
 
         Returns
         -------
@@ -3696,7 +3716,7 @@ class Series:
 
     def is_infinite(self) -> Series:
         """
-        Returns a boolean Series indicating which values are infinite.
+        Returns a :class:`Boolean` :class:`Series` of which values are infinite.
 
         Returns
         -------
@@ -3720,7 +3740,7 @@ class Series:
 
     def is_nan(self) -> Series:
         """
-        Returns a boolean Series indicating which values are not NaN.
+        Returns a :class:`Boolean` :class:`Series` of which values are not `NaN`.
 
         Returns
         -------
@@ -3745,7 +3765,7 @@ class Series:
 
     def is_not_nan(self) -> Series:
         """
-        Returns a boolean Series indicating which values are not NaN.
+        Returns a :class:`Boolean` :class:`Series` of which values are not `NaN`.
 
         Returns
         -------
@@ -3770,7 +3790,7 @@ class Series:
 
     def is_in(self, other: Series | Collection[Any]) -> Series:
         """
-        Check if elements of this Series are in the other Series.
+        Check if elements of this :class:`Series` are in the other :class:`Series`.
 
         Returns
         -------
@@ -3821,7 +3841,7 @@ class Series:
 
     def arg_true(self) -> Series:
         """
-        Get index values where Boolean Series evaluate True.
+        Get index values where a :class:`Boolean` :class:`Series` is `True`.
 
         Returns
         -------
@@ -3867,7 +3887,7 @@ class Series:
 
     def is_first_distinct(self) -> Series:
         """
-        Return a boolean mask indicating the first occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the first occurrence of each distinct value.
 
         Returns
         -------
@@ -3892,7 +3912,7 @@ class Series:
 
     def is_last_distinct(self) -> Series:
         """
-        Return a boolean mask indicating the last occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the last occurrence of each distinct value.
 
         Returns
         -------
@@ -3941,14 +3961,14 @@ class Series:
 
     def explode(self) -> Series:
         """
-        Explode a list Series.
+        Explode a list :class:`Series`.
 
         This means that every item is expanded to a new row.
 
         Returns
         -------
         Series
-            Series with the data type of the list elements.
+            :class:`Series` with the data type of the list elements.
 
         See Also
         --------
@@ -3961,17 +3981,17 @@ class Series:
         self, other: Series, *, null_equal: bool = True, strict: bool = False
     ) -> bool:
         """
-        Check whether the Series is equal to another Series.
+        Check whether the :class:`Series` is equal to another :class:`Series`.
 
         Parameters
         ----------
         other
-            Series to compare with.
+            :class:`Series` to compare with.
         null_equal
-            Consider null values as equal.
+            Consider `null` values as equal.
         strict
-            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
-            `pl.Int64` will return `False`.
+            Don't allow different numerical dtypes, e.g. comparing :class:`UInt32` with
+            :class:`Int64` will return `False`.
 
         See Also
         --------
@@ -4033,15 +4053,16 @@ class Series:
 
     def to_physical(self) -> Series:
         """
-        Cast to physical representation of the logical dtype.
+        Cast to the physical representation of this :class:`Series`' dtype.
 
-        - :func:`polars.datatypes.Date` -> :func:`polars.datatypes.Int32`
-        - :func:`polars.datatypes.Datetime` -> :func:`polars.datatypes.Int64`
-        - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
-        - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
-        - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
+        - :class:`Date` -> :class:`Int32`
+        - :class:`Datetime` -> :class:`Int64`
+        - :class:`Time` -> :class:`Int64`
+        - :class:`Duration` -> :class:`Int64`
+        - :class:`Categorical` -> :class:`UInt32`
         - `List(inner)` -> `List(physical of inner)`
-        - Other data types will be left unchanged.
+
+        Other data types will be left unchanged.
 
         Examples
         --------
@@ -4065,12 +4086,13 @@ class Series:
 
     def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
         """
-        Convert this Series to a Python List. This operation clones data.
+        Convert this :class:`Series` to a Python List. This operation clones data.
 
         Parameters
         ----------
         use_pyarrow
-            Use pyarrow for the conversion.
+            Use `pyarrow <https://arrow.apache.org/docs/python/index.html>`_ for the
+            conversion.
 
         Examples
         --------
@@ -4094,12 +4116,12 @@ class Series:
 
     def rechunk(self, *, in_place: bool = False) -> Self:
         """
-        Create a single chunk of memory for this Series.
+        Create a single chunk of memory for this :class:`Series`.
 
         Parameters
         ----------
         in_place
-            In place or not.
+            Whether to rechunk in-place.
 
         """
         opt_s = self._s.rechunk(in_place)
@@ -4107,7 +4129,7 @@ class Series:
 
     def reverse(self) -> Series:
         """
-        Return Series in reverse order.
+        Return this :class:`Series` in reverse order.
 
         Examples
         --------
@@ -4130,7 +4152,7 @@ class Series:
         closed: ClosedInterval = "both",
     ) -> Series:
         """
-        Get a boolean mask of the values that fall between the given start/end values.
+        Determine which values are between `lower_bound` and `upper_bound`.
 
         Parameters
         ----------
@@ -4142,6 +4164,12 @@ class Series:
             (including strings) are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
+
+        Returns
+        -------
+        Series
+            A :class:`Boolean` :class:`Series` of which values are between `lower_bound`
+            and `upper_bound`.
 
         Examples
         --------
@@ -4207,34 +4235,34 @@ class Series:
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert this Series to numpy.
+        Convert this :class:`Series` to a :class:`numpy.ndarray`.
 
         This operation may clone data but is completely safe. Note that:
 
-        - data which is purely numeric AND without null values is not cloned;
-        - floating point `nan` values can be zero-copied;
-        - booleans can't be zero-copied.
+        - data which is purely numeric AND without `null` values is not cloned;
+        - floating point `NaN` values can be zero-copied;
+        - :class:`Boolean` :class:`Series` can't be zero-copied.
 
         To ensure that no data is cloned, set `zero_copy_only=True`.
 
         Parameters
         ----------
         *args
-            args will be sent to pyarrow.Array.to_numpy.
+            args will be passed to `pyarrow.Array.to_numpy
+            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
         zero_copy_only
-            If True, an exception will be raised if the conversion to a numpy
+            If `True`, an exception will be raised if the conversion to a NumPy
             array would require copying the underlying data (e.g. in presence
             of nulls, or for non-primitive types).
         writable
-            For numpy arrays created with zero copy (view on the Arrow data),
+            For NumPy arrays created with zero copy (view on the Arrow data),
             the resulting array is not writable (Arrow data is immutable).
-            By setting this to True, a copy of the array is made to ensure
+            By setting this to `True`, a copy of the array is made to ensure
             it is writable.
         use_pyarrow
-            Use `pyarrow.Array.to_numpy
+            Whether to use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            for the conversion to numpy.
+            for the conversion to NumPy.
 
         Examples
         --------
@@ -4307,7 +4335,7 @@ class Series:
 
     def _view(self, *, ignore_nulls: bool = False) -> SeriesView:
         """
-        Get a view into this Series data with a numpy array.
+        Get a view into this :class:`Series` data with a :class:`np.ndarray`.
 
         This operation doesn't clone data, but does not include missing values.
 
@@ -4318,8 +4346,8 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            If True then nulls are converted to 0.
-            If False then an Exception is raised if nulls are present.
+            If `True`, `null` values are converted to 0.
+            If `False`, an exception is raised if `null` values are present.
 
         Examples
         --------
@@ -4343,7 +4371,8 @@ class Series:
         """
         Get the underlying Arrow Array.
 
-        If the Series contains only a single chunk this operation is zero copy.
+        If the :class:`Series` contains only a single chunk, this operation is
+        zero-copy.
 
         Examples
         --------
@@ -4364,7 +4393,7 @@ class Series:
         self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
     ) -> pd.Series[Any]:
         """
-        Convert this Series to a pandas Series.
+        Convert this :class:`Series` to a :class:`pandas.Series`.
 
         This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
         This operation clones data, unless `use_pyarrow_extension_array=True`.
@@ -4372,13 +4401,12 @@ class Series:
         Parameters
         ----------
         use_pyarrow_extension_array
-            Further operations on this Pandas series, might trigger conversion to numpy.
-            Use PyArrow backed-extension array instead of numpy array for pandas
-            Series. This allows zero copy operations and preservation of nulls
-            values.
-            Further operations on this pandas Series, might trigger conversion
-            to NumPy arrays if that operation is not supported by pyarrow compute
-            functions.
+            If `True`, uses a PyArrow-backed extension array instead of a `NumPy array
+            <https://numpy.org/doc/stable/reference/generated/numpy.array.html>`_ as
+            the underlying representation of the pandas Series. This allows zero-copy
+            operations and preservation of `null` values. Further operations on this
+            pandas Series might still trigger conversion to NumPy arrays if that
+            operation is not supported by pandas's :mod:`pyarrow` compute functions.
         kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
@@ -4438,12 +4466,12 @@ class Series:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert Series to instantiatable string representation.
+        Convert this :class:`Series` to an instantiatable string representation.
 
         Parameters
         ----------
         n
-            Only use first n elements.
+            Only use the first `n` elements.
 
         See Also
         --------
@@ -4473,7 +4501,7 @@ class Series:
 
     def count(self) -> int:
         """
-        Return the number of non-null elements in the column.
+        Return the number of non-`null` elements.
 
         See Also
         --------
@@ -4489,9 +4517,7 @@ class Series:
 
     def len(self) -> int:
         """
-        Return the number of elements in the Series.
-
-        Null values count towards the total.
+        Return the number of elements, including `null` values.
 
         See Also
         --------
@@ -4507,19 +4533,19 @@ class Series:
 
     def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
         """
-        Set masked values.
+        Set values based on a :class:`Boolean` mask.
 
         Parameters
         ----------
         filter
-            Boolean mask.
+            :class:`Boolean` mask.
         value
             Value with which to replace the masked values.
 
         Notes
         -----
         Use of this function is frequently an anti-pattern, as it can
-        block optimisation (predicate pushdown, etc). Consider using
+        block optimisation (predicate pushdown, etc.). Consider using
         `pl.when(predicate).then(value).otherwise(self)` instead.
 
         Examples
@@ -4589,7 +4615,7 @@ class Series:
         Notes
         -----
         Use of this function is frequently an anti-pattern, as it can
-        block optimization (predicate pushdown, etc). Consider using
+        block optimization (predicate pushdown, etc.). Consider using
         `pl.when(predicate).then(value).otherwise(self)` instead.
 
         Examples
@@ -4640,14 +4666,16 @@ class Series:
 
     def clear(self, n: int = 0) -> Series:
         """
-        Create an empty copy of the current Series, with zero to 'n' elements.
+        Create an all-`null` :class:`Series` of length `n`.
 
-        The copy has an identical name/dtype, but no data.
+        The :class:`Series` has the same name and dtype as `self`, but all-`null` data.
+
+        `n` can be greater than the current number of rows in `self`.
 
         Parameters
         ----------
         n
-            Number of (empty) elements to return in the cleared frame.
+            Size of the empty :class:`Series`.
 
         See Also
         --------
@@ -4682,14 +4710,14 @@ class Series:
 
     def clone(self) -> Self:
         """
-        Create a copy of this Series.
+        Create a copy of this :class:`Series`.
 
         This is a cheap operation that does not copy data.
 
         See Also
         --------
-        clear : Create an empty copy of the current Series, with identical
-            schema but no data.
+        clear : Create an empty copy of this :class:`Series`, with identical
+                name and dtype but no data.
 
         Examples
         --------
@@ -4708,12 +4736,12 @@ class Series:
 
     def fill_nan(self, value: int | float | Expr | None) -> Series:
         """
-        Fill floating point NaN value with a fill value.
+        Fill floating-point `NaN` values with a specific fill value.
 
         Parameters
         ----------
         value
-            Value used to fill NaN values.
+            Value used to fill `NaN` values.
 
         Examples
         --------
@@ -4737,17 +4765,17 @@ class Series:
         limit: int | None = None,
     ) -> Series:
         """
-        Fill null values using the specified value or strategy.
+        Fill `null` values using the specified `value` or `strategy`.
 
         Parameters
         ----------
         value
-            Value used to fill null values.
+            Value used to fill `null` values.
         strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
-            Strategy used to fill null values.
+            Strategy used to fill `null` values.
         limit
-            Number of consecutive null values to fill when using the 'forward' or
-            'backward' strategy.
+            Number of consecutive `null` values to fill when using the `"forward"` or
+            `"backward"` strategy.
 
         Examples
         --------
@@ -4786,7 +4814,7 @@ class Series:
         """
         Rounds down to the nearest integer value.
 
-        Only works on floating point Series.
+        Only works on floating-point :class:`Series`.
 
         Examples
         --------
@@ -4806,7 +4834,7 @@ class Series:
         """
         Rounds up to the nearest integer value.
 
-        Only works on floating point Series.
+        Only works on floating-point :class:`Series`.
 
         Examples
         --------
@@ -4870,7 +4898,7 @@ class Series:
 
     def dot(self, other: Series | ArrayLike) -> float | None:
         """
-        Compute the dot/inner product between two Series.
+        Compute the dot/inner product between two :class:`Series`.
 
         Examples
         --------
@@ -4882,7 +4910,7 @@ class Series:
         Parameters
         ----------
         other
-            Series (or array) to compute dot product with.
+            Series (or array) to compute the dot product with.
 
         """
         if not isinstance(other, Series):
@@ -4894,9 +4922,7 @@ class Series:
 
     def mode(self) -> Series:
         """
-        Compute the most occurring value(s).
-
-        Can return multiple Values.
+        Compute the most commonly occurring value(s). Can return multiple values.
 
         Examples
         --------
@@ -4912,15 +4938,14 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Compute the element-wise indication of the sign.
+        Compute an element-wise indication of the sign.
 
-        The returned values can be -1, 0, or 1:
+        The returned values can be -1, 0, 1, or `null`:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
-
-        (null values are preserved as-is).
+        * -1 if the element is negative.
+        *  0 if the element is 0.
+        *  1 if the element is positive.
+        *  `null` if the element is `null`.
 
         Examples
         --------
@@ -5195,8 +5220,8 @@ class Series:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
-        If the function returns a different datatype, the return_dtype arg should
-        be set, otherwise the method will fail.
+        If the function returns a different datatype, the `return_dtype` argument
+        should be set, otherwise the method will fail.
 
         Implementing logic using a Python function is almost always *significantly*
         slower and more memory intensive than implementing the same logic using
@@ -5215,11 +5240,10 @@ class Series:
         function
             Custom function or lambda.
         return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be
-            used.
+            Output datatype; if `None`, defaults to `self.dtype`.
         skip_nulls
-            Nulls will be skipped and not passed to the python function.
-            This is faster because python can be skipped and because we call
+            If `True`, `null` elements will be skipped and not passed to the Python
+            function. This is faster because Python can be skipped and because we call
             more specialized functions.
 
         Warnings
@@ -5270,10 +5294,10 @@ class Series:
         Parameters
         ----------
         n
-            Number of indices to shift forward. If a negative value is passed, values
-            are shifted in the opposite direction instead.
+            Number of indices to shift forward. If negative, values are shifted
+            backward instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
+            Fill the resulting `null` values with this value. Accepts expression input.
             Non-expression inputs are parsed as literals.
 
         Notes
@@ -5296,7 +5320,7 @@ class Series:
                 3
         ]
 
-        Pass a negative value to shift in the opposite direction instead.
+        Pass a negative value to shift backward instead.
 
         >>> s.shift(-2)
         shape: (4,)
@@ -5308,7 +5332,7 @@ class Series:
                 null
         ]
 
-        Specify `fill_value` to fill the resulting null values.
+        Specify `fill_value` to fill the resulting `null` values.
 
         >>> s.shift(-2, fill_value=100)
         shape: (4,)
@@ -5324,15 +5348,15 @@ class Series:
 
     def zip_with(self, mask: Series, other: Series) -> Self:
         """
-        Take values from self or other based on the given mask.
+        Take values from `self` or `other` based on the given mask.
 
-        Where mask evaluates true, take values from self. Where mask evaluates false,
-        take values from other.
+        Where `mask` is `true`, take values from self. Where mask is `false`,
+        take values from `other`.
 
         Parameters
         ----------
         mask
-            Boolean Series.
+            :class:`Boolean` :class:`Series`.
         other
             Series of same type.
 
@@ -5378,11 +5402,11 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Apply a rolling min (moving min) over the values in this array.
+        Apply a rolling (moving) minimum over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their min.
+        `weight` vector. The resulting values will be aggregated to their minimum.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5395,13 +5419,12 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -5437,11 +5460,11 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Apply a rolling max (moving max) over the values in this array.
+        Apply a rolling (moving) maximum over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their max.
+        `weight` vector. The resulting values will be aggregated to their maximum.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5454,13 +5477,12 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -5496,7 +5518,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Apply a rolling mean (moving mean) over the values in this array.
+        Apply a rolling (moving) mean over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5513,13 +5535,12 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -5555,7 +5576,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Apply a rolling sum (moving sum) over the values in this array.
+        Apply a rolling (moving) sum over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5572,13 +5593,12 @@ class Series:
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -5615,7 +5635,7 @@ class Series:
         ddof: int = 1,
     ) -> Series:
         """
-        Compute a rolling std dev.
+        Apply a rolling (moving) standard deviation over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5632,13 +5652,12 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
@@ -5695,13 +5714,12 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
@@ -5750,7 +5768,7 @@ class Series:
         Parameters
         ----------
         function
-            Custom aggregation function.
+            A custom aggregation function.
         window_size
             Size of the window. The window at a given row will include the row
             itself and the `window_size - 1` elements before it.
@@ -5758,17 +5776,12 @@ class Series:
             A list of weights with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window.
-
-        Warnings
-        --------
-
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -5798,6 +5811,13 @@ class Series:
         """
         Compute a rolling median.
 
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their median.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
@@ -5806,16 +5826,12 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
-
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -5874,13 +5890,12 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -5939,7 +5954,7 @@ class Series:
         window_size
             Integer size of the rolling window.
         bias
-            If False, the calculations are corrected for statistical bias.
+            If `False`, the calculations are corrected for statistical bias.
 
         Examples
         --------
@@ -5970,21 +5985,21 @@ class Series:
         seed: int | None = None,
     ) -> Series:
         """
-        Sample from this Series.
+        Sample from this :class:`Series`.
 
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
-            `fraction` is None.
+            The number of items to return. Cannot be used with `fraction`.
+            Defaults to 1 if `fraction` is None.
         fraction
-            Fraction of items to return. Cannot be used with `n`.
+            The fraction of items to return. Cannot be used with `n`.
         with_replacement
-            Allow values to be sampled more than once.
+            Whether to allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Whether to shuffle the order of sampled data points.
         seed
-            Seed for the random number generator. If set to None (default), a
+            Seed for the random number generator. If set to `None` (the default), a
             random seed is generated for each sample operation.
 
         Examples
@@ -6002,7 +6017,7 @@ class Series:
 
     def peak_max(self) -> Self:
         """
-        Get a boolean mask of the local maximum peaks.
+        Get a :class:`Boolean` mask of the local maximum peaks.
 
         Examples
         --------
@@ -6022,7 +6037,7 @@ class Series:
 
     def peak_min(self) -> Self:
         """
-        Get a boolean mask of the local minimum peaks.
+        Get a :class:`Boolean` mask of the local minimum peaks.
 
         Examples
         --------
@@ -6042,7 +6057,7 @@ class Series:
 
     def n_unique(self) -> int:
         """
-        Count the number of unique values in this Series.
+        Count the number of unique values in this :class:`Series`.
 
         Examples
         --------
@@ -6055,10 +6070,10 @@ class Series:
 
     def shrink_to_fit(self, *, in_place: bool = False) -> Series:
         """
-        Shrink Series memory usage.
+        Shrink the memory usage of this :class:`Series`.
 
         Shrinks the underlying array capacity to exactly fit the actual data.
-        (Note that this function does not change the Series data type).
+        (Note that this function does not change the :class:`Series`' data type).
 
         """
         if in_place:
@@ -6077,9 +6092,9 @@ class Series:
         seed_3: int | None = None,
     ) -> Series:
         """
-        Hash the Series.
+        Hash the :class:`Series`.
 
-        The hash value is of type `UInt64`.
+        The hash value is of type :class:`UInt64`.
 
         Parameters
         ----------
@@ -6116,19 +6131,19 @@ class Series:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
-        This operation is only allowed for 64bit integers. For lower bits integers,
-        you can safely use that cast operation.
+        This operation is only allowed for 64-bit integers. For smaller integer dtypes,
+        you can safely use the :func:`cast` operation.
 
         Parameters
         ----------
         signed
-            If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
-
+            If True, reinterpret as :class:`Int64`. Otherwise, reinterpret as
+            :class:`UInt64`.
         """
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
         """
-        Fill null values using interpolation.
+        Fill `null` values using interpolation.
 
         Parameters
         ----------
@@ -6184,22 +6199,22 @@ class Series:
         ----------
         method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}
             The method used to assign ranks to tied elements.
-            The following methods are available (default is 'average'):
+            The following methods are available (default is `"average"`):
 
-            - 'average' : The average of the ranks that would have been assigned to
+            - `"average"` : The average of the ranks that would have been assigned to
               all the tied values is assigned to each value.
-            - 'min' : The minimum of the ranks that would have been assigned to all
+            - `"min"` : The minimum of the ranks that would have been assigned to all
               the tied values is assigned to each value. (This is also referred to
               as "competition" ranking.)
-            - 'max' : The maximum of the ranks that would have been assigned to all
+            - `"max"` : The maximum of the ranks that would have been assigned to all
               the tied values is assigned to each value.
-            - 'dense' : Like 'min', but the rank of the next highest element is
+            - `"dense"` : Like `"min"`, but the rank of the next highest element is
               assigned the rank immediately after those assigned to the tied
               elements.
-            - 'ordinal' : All values are given a distinct rank, corresponding to
-              the order that the values occur in the Series.
-            - 'random' : Like 'ordinal', but the rank for ties is not dependent
-              on the order that the values occur in the Series.
+            - `"ordinal"` : All values are given a distinct rank, corresponding to
+              the order that the values occur in the :class:`Series`.
+            - `"random"` : Like `"ordinal"`, but the rank for ties is not dependent
+              on the order that the values occur in the :class:`Series`.
         descending
             Rank in descending order.
         seed
@@ -6207,7 +6222,7 @@ class Series:
 
         Examples
         --------
-        The 'average' method:
+        The `"average"` method:
 
         >>> s = pl.Series("a", [3, 6, 1, 1, 6])
         >>> s.rank()
@@ -6221,7 +6236,7 @@ class Series:
             4.5
         ]
 
-        The 'ordinal' method:
+        The `"ordinal"` method:
 
         >>> s = pl.Series("a", [3, 6, 1, 1, 6])
         >>> s.rank("ordinal")
@@ -6244,9 +6259,9 @@ class Series:
         Parameters
         ----------
         n
-            Number of slots to shift.
+            The number of items to shift by when calculating the difference.
         null_behavior : {'ignore', 'drop'}
-            How to handle null values.
+            How to handle `null` values.
 
         Examples
         --------
@@ -6289,14 +6304,14 @@ class Series:
         Computes percentage change between values.
 
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least `n` period(s) before the current element.
+        non-`null` element at least `n` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
         Parameters
         ----------
         n
-            periods to shift for forming percent change.
+            The number of items to shift by when calculating the percent change.
 
         Examples
         --------
@@ -6341,16 +6356,19 @@ class Series:
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
         that there is more weight in the right tail of the distribution. The
-        function `skewtest` can be used to determine if the skewness value
-        is close enough to zero, statistically speaking.
+        function `scipy.stats.skewtest
+        <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.skewtest.html>`_
+        can be used to determine if the skewness value is close enough to zero,
+        statistically speaking.
 
-
-        See scipy.stats for more information.
+        See `scipy.stats.skew
+        <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.skew.html>`_
+        for more information.
 
         Parameters
         ----------
         bias : bool, optional
-            If False, the calculations are corrected for statistical bias.
+            If `False`, the calculations are corrected for statistical bias.
 
         Notes
         -----
@@ -6365,7 +6383,7 @@ class Series:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean.  If `bias` is `False`, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -6388,18 +6406,20 @@ class Series:
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
         the result to give 0.0 for a normal distribution.
-        If bias is False then the kurtosis is calculated using k statistics to
+        If bias is `False` then the kurtosis is calculated using k statistics to
         eliminate bias coming from biased moment estimators
 
-        See scipy.stats for more information
+        See `scipy.stats.kurtosis
+        <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kurtosis.html>`_
+        for more information.
 
         Parameters
         ----------
         fisher : bool, optional
-            If True, Fisher's definition is used (normal ==> 0.0). If False,
-            Pearson's definition is used (normal ==> 3.0).
+            If `True`, Fisher's definition is used (normal → 0.0). If `False`,
+            Pearson's definition is used (normal → 3.0).
         bias : bool, optional
-            If False, the calculations are corrected for statistical bias.
+            If `False`, the calculations are corrected for statistical bias.
 
         """
         return self._s.kurtosis(fisher, bias)
@@ -6463,11 +6483,11 @@ class Series:
 
     def lower_bound(self) -> Self:
         """
-        Return the lower bound of this Series' dtype as a unit Series.
+        Return the lower bound of this :class:`Series`' dtype as a unit :class:`Series`.
 
         See Also
         --------
-        upper_bound : return the upper bound of the given Series' dtype.
+        upper_bound : return the upper bound of the given :class:`Series`' dtype.
 
         Examples
         --------
@@ -6491,11 +6511,11 @@ class Series:
 
     def upper_bound(self) -> Self:
         """
-        Return the upper bound of this Series' dtype as a unit Series.
+        Return the upper bound of this :class:`Series`' dtype as a unit :class:`Series`.
 
         See Also
         --------
-        lower_bound : return the lower bound of the given Series' dtype.
+        lower_bound : return the lower bound of the given :class:`Series`' dtype.
 
         Examples
         --------
@@ -6533,7 +6553,7 @@ class Series:
         old
             Value or sequence of values to replace.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+            `replace(new=pl.Series(mapping.keys()), old=pl.Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.
@@ -6542,7 +6562,7 @@ class Series:
             Defaults to keeping the original value.
             Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
-            The data type of the resulting Series. If set to `None` (default),
+            The data type of the resulting :class:`Series`. If set to `None` (default),
             the data type is determined automatically based on the other inputs.
 
         See Also
@@ -6596,7 +6616,7 @@ class Series:
         ]
 
 
-        The default can be another Series.
+        The default can be another :class:`Series`.
 
         >>> default = pl.Series([2.5, 5.0, 7.5, 10.0])
         >>> s.replace(2, 100, default=default)
@@ -6610,8 +6630,8 @@ class Series:
         ]
 
         Replacing by values of a different data type sets the return type based on
-        a combination of the `new` data type and either the original data type or the
-        default data type if it was set.
+        a combination of the `new` data type and either the `old` data type or the
+        `default` data type if it was set.
 
         >>> s = pl.Series(["x", "y", "z"])
         >>> mapping = {"x": 1, "y": 2, "z": 3}
@@ -6646,25 +6666,25 @@ class Series:
 
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
-        Reshape this Series to a flat Series or a Series of Lists.
+        Reshape to a flat :class:`Series` or a :class:`Series` of :class:`List`s.
 
         Parameters
         ----------
         dimensions
-            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
-            dimension is inferred.
+            Tuple of the dimension sizes. If a `-1` is used in any of the dimensions,
+            that dimension's size is inferred.
 
         Returns
         -------
         Series
-            If a single dimension is given, results in a Series of the original
+            If a single dimension is given, results in a :class:`Series` of the original
             data type.
-            If a multiple dimensions are given, results in a Series of data type
-            :class:`List` with shape (rows, cols).
+            If a multiple dimensions are given, results in a :class:`Series` of data
+            type :class:`List` with shape `(rows, cols)`.
 
         See Also
         --------
-        Series.list.explode : Explode a list column.
+        Series.list.explode : Explode a :class:`List` column.
 
         Examples
         --------
@@ -6682,12 +6702,12 @@ class Series:
 
     def shuffle(self, seed: int | None = None) -> Series:
         """
-        Shuffle the contents of this Series.
+        Shuffle the contents of this :class:`Series`.
 
         Parameters
         ----------
         seed
-            Seed for the random number generator. If set to None (default), a
+            Seed for the random number generator. If set to `None` (default), a
             random seed is generated each time the shuffle is called.
 
         Examples
@@ -6753,7 +6773,7 @@ class Series:
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is null).
+            (otherwise the result is `null`).
         ignore_nulls
             Ignore missing values when calculating weights.
 
@@ -6839,7 +6859,7 @@ class Series:
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is null).
+            (otherwise the result is `null`).
         ignore_nulls
             Ignore missing values when calculating weights.
 
@@ -6925,7 +6945,7 @@ class Series:
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is null).
+            (otherwise the result is `null`).
         ignore_nulls
             Ignore missing values when calculating weights.
 
@@ -6960,13 +6980,13 @@ class Series:
 
     def extend_constant(self, value: PythonLiteral | None, n: int) -> Series:
         """
-        Extremely fast method for extending the Series with 'n' copies of a value.
+        Extremely fast method to extend a :class:`Series` with `n` copies of a value.
 
         Parameters
         ----------
         value
             A constant literal value (not an expression) with which to extend
-            the Series; can pass None to extend with nulls.
+            the :class:`Series`; can pass `None` to extend with `null`s.
         n
             The number of additional values that will be added.
 
@@ -6988,18 +7008,18 @@ class Series:
 
     def set_sorted(self, *, descending: bool = False) -> Self:
         """
-        Flags the Series as 'sorted'.
+        Flags the :class:`Series` as sorted.
 
         Enables downstream code to user fast paths for sorted arrays.
 
         Parameters
         ----------
         descending
-            If the `Series` order is descending.
+            If the :class:`Series` order is descending.
 
         Warnings
         --------
-        This can lead to incorrect results if this `Series` is not sorted!!
+        This can lead to incorrect results if this :class:`Series` is not sorted!!
         Use with care!
 
         Examples
@@ -7012,23 +7032,23 @@ class Series:
         return self._from_pyseries(self._s.set_sorted_flag(descending))
 
     def new_from_index(self, index: int, length: int) -> Self:
-        """Create a new Series filled with values from the given index."""
+        """Create a new :class:`Series` filled with values from the given index."""
         return self._from_pyseries(self._s.new_from_index(index, length))
 
     def shrink_dtype(self) -> Series:
         """
         Shrink numeric columns to the minimal required datatype.
 
-        Shrink to the dtype needed to fit the extrema of this [`Series`].
+        Shrink to the dtype needed to fit the extrema of this :class:`Series`.
         This can be used to reduce memory pressure.
         """
 
     def get_chunks(self) -> list[Series]:
-        """Get the chunks of this Series as a list of Series."""
+        """Get the chunks of this :class:`Series` as a list of :class:`Series`."""
         return self._s.get_chunks()
 
     def implode(self) -> Self:
-        """Aggregate values into a list."""
+        """Aggregate values into a :class:`List`."""
 
     @deprecate_renamed_function("map_elements", version="0.19.0")
     def apply(
@@ -7039,7 +7059,7 @@ class Series:
         skip_nulls: bool = True,
     ) -> Self:
         """
-        Apply a custom/user-defined function (UDF) over elements in this Series.
+        Apply a custom/user-defined function (UDF) over this :class:`Series`' elements.
 
         .. deprecated:: 0.19.0
             This method has been renamed to :func:`Series.map_elements`.
@@ -7049,11 +7069,11 @@ class Series:
         function
             Custom function or lambda.
         return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be
-            used.
+            Output datatype. If `None` is given, the same datatype as this
+            :class:`Series` will be used.
         skip_nulls
-            Nulls will be skipped and not passed to the python function.
-            This is faster because python can be skipped and because we call
+            If `True`, `null` elements will be skipped and not passed to the Python
+            function. This is faster because Python can be skipped and because we call
             more specialized functions.
 
         """
@@ -7078,27 +7098,26 @@ class Series:
         Parameters
         ----------
         function
-            Aggregation function
+            A custom aggregation function.
         window_size
             The length of the window.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window.
 
         """
 
     @deprecate_renamed_function("is_first_distinct", version="0.19.3")
     def is_first(self) -> Series:
         """
-        Return a boolean mask indicating the first occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the first occurrence of each distinct value.
 
         .. deprecated:: 0.19.3
             This method has been renamed to :func:`Series.is_first_distinct`.
@@ -7106,14 +7125,14 @@ class Series:
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            :class:`Series` of data type :class:`Boolean`.
 
         """
 
     @deprecate_renamed_function("is_last_distinct", version="0.19.3")
     def is_last(self) -> Series:
         """
-        Return a boolean mask indicating the last occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the last occurrence of each distinct value.
 
         .. deprecated:: 0.19.3
             This method has been renamed to :func:`Series.is_last_distinct`.
@@ -7121,7 +7140,7 @@ class Series:
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            :class:`Series` of data type :class:`Boolean`.
 
         """
 
@@ -7168,7 +7187,7 @@ class Series:
         n: int = 1,
     ) -> Series:
         """
-        Shift values by the given number of places and fill the resulting null values.
+        Shift values by `n` places, filling the resulting `null`s with `fill_value`.
 
         .. deprecated:: 0.19.12
             Use :func:`shift` instead.
@@ -7176,7 +7195,7 @@ class Series:
         Parameters
         ----------
         fill_value
-            Fill None values with the result of this expression.
+            Fill `null` values with the result of this expression.
         n
             Number of places to shift (may be negative).
 
@@ -7185,7 +7204,7 @@ class Series:
     @deprecate_function("Use `Series.dtype.is_float()` instead.", version="0.19.13")
     def is_float(self) -> bool:
         """
-        Check if this Series has floating point numbers.
+        Check if this :class:`Series` has floating-point numbers.
 
         .. deprecated:: 0.19.13
             Use `Series.dtype.is_float()` instead.
@@ -7244,7 +7263,7 @@ class Series:
     @deprecate_function("Use `Series.dtype.is_numeric()` instead.", version="0.19.13")
     def is_numeric(self) -> bool:
         """
-        Check if this Series datatype is numeric.
+        Check if this :class:`Series`' datatype is numeric.
 
         .. deprecated:: 0.19.13
             Use `Series.dtype.is_numeric()` instead.
@@ -7261,7 +7280,7 @@ class Series:
     @deprecate_function("Use `Series.dtype.is_temporal()` instead.", version="0.19.13")
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
-        Check if this Series datatype is temporal.
+        Check if this :class:`Series`' datatype is temporal.
 
         .. deprecated:: 0.19.13
             Use `Series.dtype.is_temporal()` instead.
@@ -7292,7 +7311,7 @@ class Series:
     @deprecate_function("Use `Series.dtype == pl.Boolean` instead.", version="0.19.14")
     def is_boolean(self) -> bool:
         """
-        Check if this Series is a Boolean.
+        Check if this :class:`Series`' datatype is :class:`Boolean`.
 
         .. deprecated:: 0.19.14
             Use `Series.dtype == pl.Boolean` instead.
@@ -7309,7 +7328,7 @@ class Series:
     @deprecate_function("Use `Series.dtype == pl.String` instead.", version="0.19.14")
     def is_utf8(self) -> bool:
         """
-        Check if this Series datatype is a String.
+        Check if this :class:`Series`' datatype is :class:`String`.
 
         .. deprecated:: 0.19.14
             Use `Series.dtype == pl.String` instead.
@@ -7326,7 +7345,7 @@ class Series:
     @deprecate_renamed_function("gather_every", version="0.19.14")
     def take_every(self, n: int, offset: int = 0) -> Series:
         """
-        Take every nth value in the Series and return as new Series.
+        Return every `n`th value in the :class:`Series` as a new :class:`Series`.
 
         .. deprecated:: 0.19.14
             This method has been renamed to :meth:`gather_every`.
@@ -7334,7 +7353,7 @@ class Series:
         Parameters
         ----------
         n
-            Gather every *n*-th row.
+            Gather every `n`-th row.
         offset
             Starting index.
         """
@@ -7406,7 +7425,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
 
         """
         return self.cum_sum(reverse=reverse)
@@ -7422,7 +7441,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
         """
         return self.cum_max(reverse=reverse)
 
@@ -7437,7 +7456,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
         """
         return self.cum_min(reverse=reverse)
 
@@ -7452,7 +7471,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            Whether to accumulate from the top (if `False`) or bottom (if `True`).
         """
         return self.cum_prod(reverse=reverse)
 
@@ -7472,8 +7491,8 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            If True then nulls are converted to 0.
-            If False then an Exception is raised if nulls are present.
+            If `True`, `null` values are converted to 0.
+            If `False`, an exception is raised if `null` values are present.
 
         """
         return self._view(ignore_nulls=ignore_nulls)
@@ -7508,7 +7527,7 @@ class Series:
             Value to use when the remapping dict does not contain the lookup value.
             Use `pl.first()`, to keep the original value.
         return_dtype
-            Set return dtype to override automatic return dtype determination.
+            Set `return_dtype` to override automatic return dtype determination.
         """
         return self.replace(mapping, default=default, return_dtype=return_dtype)
 
@@ -7530,7 +7549,7 @@ class Series:
             Consider null values as equal.
         strict
             Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
-            `pl.Int64` will return `False`.
+            :class:`Int64` will return `False`.
         """
         return self.equals(other, null_equal=null_equal, strict=strict)
 

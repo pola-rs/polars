@@ -44,7 +44,7 @@ class StructNameSpace:
 
     def field(self, name: str) -> Series:
         """
-        Retrieve one of the fields of this `Struct` as a new Series.
+        Retrieve one of the fields of this :class:`Struct` as a new :class:`Series`.
 
         Parameters
         ----------

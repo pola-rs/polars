@@ -358,10 +358,10 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def activate_decimals(cls, active: bool | None = True) -> type[Config]:
         """
-        Activate `Decimal` data types.
+        Activate :class:`Decimal` data types.
 
-        This is a temporary setting that will be removed once the `Decimal` type
-        stabilizes (`Decimal` is currently considered to be in beta testing).
+        This is a temporary setting that will be removed once the :class:`Decimal` type
+        stabilizes (:class:`Decimal` is currently considered to be in beta testing).
 
         """
         if not active:

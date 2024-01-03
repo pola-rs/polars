@@ -200,45 +200,47 @@ if TYPE_CHECKING:
 
 class DataFrame:
     """
-    Two-dimensional data structure representing data as a table with rows and columns.
+    A two-dimensional data structure representing data as a table with rows and columns.
 
     Parameters
     ----------
-    data : dict, Sequence, ndarray, Series, or pandas.DataFrame
-        Two-dimensional data in various forms; dict input must contain Sequences,
-        Generators, or a `range`. Sequence may contain Series or other Sequences.
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+    data : dict, Sequence, Series, :class:`numpy.ndarray`, or :class:`pandas.DataFrame`.
+
+        Two-dimensional data in various forms. dict input must contain sequences,
+        generators, or a `range`. Sequences may contain Series or other sequences.
+    schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of `{name: type}` pairs; if `type` is `None`, it will be
+          auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+        * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
-        any dtypes inferred from the schema param will be overridden.
+        any dtypes inferred from the `schema` parameter will be overridden.
         underlying data, the names given here will overwrite them.
 
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
         a *partial* schema can be declared to prevent specific fields from being loaded.
     orient : {'col', 'row'}, default None
-        Whether to interpret two-dimensional data as columns or as rows. If None,
+        Whether to interpret two-dimensional data as columns or as rows. If `None`,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length : int, default None
-        Maximum number of rows to read for schema inference; only applies if the input
-        data is a sequence or generator of rows; other input is read as-is.
+        The maximum number of rows to read for schema inference; only applies if the
+        input data is a sequence or generator of rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
-        data np.nan values to null instead. This is a no-op for all other input data.
+        data np.nan values to `null` instead. This is a no-op for all other input data.
 
     Examples
     --------
-    Constructing a DataFrame from a dictionary:
+    Constructing a `DataFrame` from a dictionary:
 
     >>> data = {"a": [1, 2], "b": [3, 4]}
     >>> df = pl.DataFrame(data)
@@ -253,13 +255,13 @@ class DataFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Notice that the dtypes are automatically inferred as polars Int64:
+    Notice that the dtypes are automatically inferred as :class:`Int64`:
 
     >>> df.dtypes
     [Int64, Int64]
 
-    To specify a more detailed/specific frame schema you can supply the `schema`
-    parameter with a dictionary of (name,dtype) pairs...
+    To specify a more detailed/specific `DataFrame` schema you can supply the
+    `schema` parameter with a dictionary of `(name, dtype) `pairs...
 
     >>> data = {"col1": [0, 2], "col2": [3, 7]}
     >>> df2 = pl.DataFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
@@ -274,7 +276,7 @@ class DataFrame:
     │ 2.0  ┆ 7    │
     └──────┴──────┘
 
-    ...a sequence of (name,dtype) pairs...
+    ...a sequence of `(name, dtype)` pairs...
 
     >>> data = {"col1": [1, 2], "col2": [3, 4]}
     >>> df3 = pl.DataFrame(data, schema=[("col1", pl.Float32), ("col2", pl.Int64)])
@@ -289,7 +291,7 @@ class DataFrame:
     │ 2.0  ┆ 4    │
     └──────┴──────┘
 
-    ...or a list of typed Series.
+    ...or a list of typed :class:`Series`.
 
     >>> data = [
     ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
@@ -307,7 +309,7 @@ class DataFrame:
     │ 2.0  ┆ 4    │
     └──────┴──────┘
 
-    Constructing a DataFrame from a numpy ndarray, specifying column names:
+    Constructing a `DataFrame` from a :class:`numpy.ndarray`, specifying column names:
 
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
@@ -323,7 +325,7 @@ class DataFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Constructing a DataFrame from a list of lists, row orientation inferred:
+    Constructing a `DataFrame` from a list of lists, row orientation inferred:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> df6 = pl.DataFrame(data, schema=["a", "b", "c"])
@@ -340,9 +342,9 @@ class DataFrame:
 
     Notes
     -----
-    Some methods internally convert the DataFrame into a LazyFrame before collecting
-    the results back into a DataFrame. This can lead to unexpected behavior when using
-    a subclassed DataFrame. For example,
+    Some methods internally convert the `DataFrame` into a :class:`LazyFrame`
+    before collecting the results back into a `DataFrame`. This can lead to
+    unexpected behavior when using a subclassed `DataFrame`. For example:
 
     >>> class MyDataFrame(pl.DataFrame):
     ...     pass
@@ -462,26 +464,27 @@ class DataFrame:
         schema_overrides: SchemaDict | None = None,
     ) -> Self:
         """
-        Construct a DataFrame from a dictionary of sequences.
+        Construct a :class:`DataFrame` from a dictionary of sequences.
 
         Parameters
         ----------
         data : dict of sequences
-          Two-dimensional data represented as a dictionary. dict must contain
-          Sequences.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
+          Two-dimensional data represented as a dictionary of sequences.
+        schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}`
+            dict. The DataFrame schema may be declared in several ways:
 
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a dict of `{name: type}` pairs; if `type` is `None`, it will be
+              auto-inferred.
             * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+            * As a list of `(name, type)` pairs; this is equivalent to the dictionary
+              form.
 
             If you supply a list of column names that does not match the names in the
             underlying data, the names given here will overwrite them. The number
             of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
           Support type specification or override of one or more columns; note that
-          any dtypes inferred from the columns param will be overridden.
+          any dtypes inferred from the `schema` parameter will be overridden.
 
         """
         return cls._from_pydf(
@@ -499,27 +502,29 @@ class DataFrame:
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
         """
-        Construct a DataFrame from a sequence of sequences.
+        Construct a :class:`DataFrame` from a sequence of sequences.
 
         Parameters
         ----------
         data : Sequence of sequences
             Two-dimensional data represented as a sequence of sequences.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
+        schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}`
+            dict. The DataFrame schema may be declared in several ways:
 
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a dict of `{name: type}` pairs; if `type` is `None`, it will be
+              auto-inferred.
             * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+            * As a list of `(name, type)` pairs; this is equivalent to the dictionary
+              form.
 
             If you supply a list of column names that does not match the names in the
             underlying data, the names given here will overwrite them. The number
             of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
+            any dtypes inferred from the `schema` parameter will be overridden.
         orient : {'col', 'row'}, default None
-            Whether to interpret two-dimensional data as columns or as rows. If None,
+            Whether to interpret two-dimensional data as columns or as rows. If `None`,
             the orientation is inferred by matching the columns and data dimensions. If
             this does not yield conclusive results, column orientation is used.
         infer_schema_length
@@ -546,25 +551,27 @@ class DataFrame:
         orient: Orientation | None = None,
     ) -> Self:
         """
-        Construct a DataFrame from a numpy ndarray.
+        Construct a :class:`DataFrame` from a :class:`numpy.ndarray`.
 
         Parameters
         ----------
-        data : numpy ndarray
-            Two-dimensional data represented as a numpy ndarray.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
+        data : :class:`numpy.ndarray`
+            Two-dimensional data represented as a class:`numpy.ndarray`.
+        schema : Sequence of str, `(str, DataType)` pairs, or a `{str: DataType}` dict
+            The :class:`DataFrame` schema may be declared in several ways:
 
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a dict of `{name: type}` pairs; if `type` is `None`, it will be
+              auto-inferred.
             * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+            * As a list of `(name, type)` pairs; this is equivalent to the dictionary
+              form.
 
             If you supply a list of column names that does not match the names in the
             underlying data, the names given here will overwrite them. The number
             of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
+            any dtypes inferred from the `schema` parameter will be overridden.
         orient : {'col', 'row'}, default None
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
@@ -587,30 +594,32 @@ class DataFrame:
         rechunk: bool = True,
     ) -> Self:
         """
-        Construct a DataFrame from an Arrow table.
+        Construct a DataFrame from an Arrow Table or Array.
 
-        This operation will be zero copy for the most part. Types that are not
+        This operation will be zero-copy for the most part. Types that are not
         supported by Polars may be cast to the closest supported type.
 
         Parameters
         ----------
-        data : arrow table, array, or sequence of sequences
+        data : :class:`pyarrow.Table, :class:`pyarrow.Array`, or sequence of sequences
             Data representing an Arrow Table or Array.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
+        schema : Sequence of str, `(str, DataType)` pairs, or a `{str: DataType}` dict
+            The :class:`DataFrame` schema may be declared in several ways:
 
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a dict of `{name: type}` pairs; if `type` is `None`, it will be
+              auto-inferred.
             * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+            * As a list of `(name, type)` pairs; this is equivalent to the dictionary
+              form.
 
             If you supply a list of column names that does not match the names in the
             underlying data, the names given here will overwrite them. The number
             of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
+            any dtypes inferred from the `schema` parameter will be overridden.
         rechunk : bool, default True
-            Make sure that all data is in contiguous memory.
+            Whether to make sure that all data is contiguous in memory.
 
         """
         return cls._from_pydf(
@@ -634,29 +643,31 @@ class DataFrame:
         include_index: bool = False,
     ) -> Self:
         """
-        Construct a Polars DataFrame from a pandas DataFrame.
+        Construct a polars :class:`DataFrame` from a :class:`pandas.DataFrame`.
 
         Parameters
         ----------
         data : pandas DataFrame
             Two-dimensional data represented as a pandas DataFrame.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
+        schema : Sequence of str, `(str, DataType)` pairs, or a `{str: DataType}` dict
+            The :class:`DataFrame` schema may be declared in several ways:
 
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a dict of `{name: type}` pairs; if `type` is `None`, it will be
+              auto-inferred.
             * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+            * As a list of `(name, type)` pairs; this is equivalent to the dictionary
+              form.
 
             If you supply a list of column names that does not match the names in the
             underlying data, the names given here will overwrite them. The number
             of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
+            any dtypes inferred from the `schema` parameter will be overridden.
         rechunk : bool, default True
-            Make sure that all data is in contiguous memory.
+            Whether to make sure that all data is contiguous in memory.
         nan_to_null : bool, default True
-            If the data contains NaN values they will be converted to null/None.
+            If the data contains `NaN` values they will be converted to `null`/`None`.
         include_index : bool, default False
             Load any non-default pandas indexes as columns.
 
@@ -906,7 +917,8 @@ class DataFrame:
         source
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
+            via builtin `open` function) or `BytesIO
+            <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
         columns
             Columns.
         n_rows
@@ -943,7 +955,8 @@ class DataFrame:
         source
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
+            via builtin `open` function) or `BytesIO
+            <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a
             list of column names.
@@ -1023,7 +1036,8 @@ class DataFrame:
         source
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
+            via builtin `open` function) or `BytesIO
+            <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a
             list of column names.
@@ -1174,7 +1188,7 @@ class DataFrame:
     @property
     def shape(self) -> tuple[int, int]:
         """
-        Get the shape of the DataFrame.
+        Get the shape of the :class:`DataFrame`.
 
         Examples
         --------
@@ -1188,7 +1202,7 @@ class DataFrame:
     @property
     def height(self) -> int:
         """
-        Get the height of the DataFrame.
+        Get the height of the :class:`DataFrame`.
 
         Examples
         --------
@@ -1202,7 +1216,7 @@ class DataFrame:
     @property
     def width(self) -> int:
         """
-        Get the width of the DataFrame.
+        Get the width of the :class:`DataFrame`.
 
         Examples
         --------
@@ -1251,13 +1265,14 @@ class DataFrame:
     @columns.setter
     def columns(self, names: Sequence[str]) -> None:
         """
-        Change the column names of the `DataFrame`.
+        Change the column names of the :class:`DataFrame`.
 
         Parameters
         ----------
         names
-            A list with new names for the `DataFrame`.
-            The length of the list should be equal to the width of the `DataFrame`.
+            A list with new names for the :class:`DataFrame`.
+            The length of the list should be equal to the width of the
+            :class:`DataFrame`.
 
         """
         self._df.set_column_names(names)
@@ -1265,13 +1280,14 @@ class DataFrame:
     @property
     def dtypes(self) -> list[DataType]:
         """
-        Get the datatypes of the columns of this DataFrame.
+        Get the data types of the columns of this :class:`DataFrame`.
 
-        The datatypes can also be found in column headers when printing the DataFrame.
+        The data types can also be found in column headers when printing the
+        :class:`DataFrame`.
 
         See Also
         --------
-        schema : Returns a {colname:dtype} mapping.
+        schema : Returns a `{colname: dtype}` mapping.
 
         Examples
         --------
@@ -1302,7 +1318,7 @@ class DataFrame:
     @property
     def flags(self) -> dict[str, dict[str, bool]]:
         """
-        Get flags that are set on the columns of this DataFrame.
+        Get flags that are set on the columns of this :class:`DataFrame`.
 
         Returns
         -------
@@ -1314,7 +1330,7 @@ class DataFrame:
     @property
     def schema(self) -> OrderedDict[str, DataType]:
         """
-        Get a dict[column name, DataType].
+        Get a dict mapping column names to data types.
 
         Examples
         --------
@@ -1354,7 +1370,7 @@ class DataFrame:
         Parameters
         ----------
         nan_as_null
-            Overwrite null values in the data with `NaN`.
+            Overwrite `null` values in the data with `NaN`.
 
             .. warning::
                 This functionality has not been implemented and the parameter will be
@@ -1371,8 +1387,8 @@ class DataFrame:
 
         Examples
         --------
-        Convert a Polars DataFrame to a generic dataframe object and access some
-        properties.
+        Convert a Polars :class:`DataFrame` to a generic dataframe object and access
+        some properties.
 
         >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
         >>> dfi = df.__dataframe__()
@@ -1407,7 +1423,7 @@ class DataFrame:
         )
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
-        """Compare a DataFrame with another object."""
+        """Compare a :class:`DataFrame` with another object."""
         if isinstance(other, DataFrame):
             return self._compare_to_other_df(other, op)
         else:
@@ -1418,7 +1434,7 @@ class DataFrame:
         other: DataFrame,
         op: ComparisonOperator,
     ) -> DataFrame:
-        """Compare a DataFrame with another DataFrame."""
+        """Compare a :class:`DataFrame` with another DataFrame."""
         if self.columns != other.columns:
             raise ValueError("DataFrame columns do not match")
         if self.shape != other.shape:
@@ -1450,7 +1466,7 @@ class DataFrame:
         other: Any,
         op: ComparisonOperator,
     ) -> DataFrame:
-        """Compare a DataFrame with a non-DataFrame object."""
+        """Compare a :class:`DataFrame` with a non-DataFrame object."""
         _warn_null_comparison(other)
         if op == "eq":
             return self.select(F.all() == other)
@@ -1893,7 +1909,7 @@ class DataFrame:
 
     def item(self, row: int | None = None, column: int | str | None = None) -> Any:
         """
-        Return the DataFrame as a scalar, or return the element at the given row/column.
+        Return the :class:`DataFrame` as a scalar, or the element at `row`/`column`.
 
         Parameters
         ----------
@@ -1908,8 +1924,9 @@ class DataFrame:
 
         Notes
         -----
-        If row/col not provided, this is equivalent to `df[0,0]`, with a check that
-        the shape is (1,1). With row/col, this is equivalent to `df[row,col]`.
+        If `row`/`column` not provided, this is equivalent to `df[0,0]`, with a check
+        that the shape is (1,1). With `row`/`column`, this is equivalent to
+        `df[row, column]`.
 
         Examples
         --------
@@ -1945,11 +1962,11 @@ class DataFrame:
 
     def to_arrow(self) -> pa.Table:
         """
-        Collect the underlying arrow arrays in an Arrow Table.
+        Collect the underlying Arrow arrays in a :class:`pyarrow.Table`.
 
-        This operation is mostly zero copy.
+        This operation is mostly zero-copy.
 
-        Data types that do copy:
+        Data types that require a copy:
             - CategoricalType
 
         Examples
@@ -1993,13 +2010,13 @@ class DataFrame:
         as_series: bool = True,  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
-        Convert DataFrame to a dictionary mapping column name to values.
+        Convert :class:`DataFrame` to a dictionary mapping column name to values.
 
         Parameters
         ----------
         as_series
-            True -> Values are Series
-            False -> Values are List[Any]
+            `True` -> Values are :class:`Series`
+            `False` -> Values are Python lists
 
         Examples
         --------
@@ -2109,7 +2126,7 @@ class DataFrame:
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert DataFrame to a 2D NumPy array.
+        Convert this :class:`DataFrame` to a 2D :class:`numpy.ndarray`.
 
         This operation clones data.
 
@@ -2117,25 +2134,24 @@ class DataFrame:
         ----------
         structured
             Optionally return a structured array, with field names and
-            dtypes that correspond to the DataFrame schema.
+            dtypes that correspond to the :class:`DataFrame` schema.
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
             However, the C-like order might be more appropriate to use for downstream
             applications to prevent cloning data, e.g. when reshaping into a
             one-dimensional array. Note that this option only takes effect if
-            `structured` is set to `False` and the DataFrame dtypes allow for a
+            `structured` is set to `False` and the :class:`DataFrame` dtypes allow for a
             global dtype for all columns.
         use_pyarrow
-            Use `pyarrow.Array.to_numpy
+            Whether to use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            function for the conversion to numpy if necessary.
+            for the conversion to NumPy if necessary.
 
         Notes
         -----
-        If you're attempting to convert String or Decimal to an array, you'll need to
-        install `pyarrow`.
+        If you're attempting to convert :class:`String` or :class:`Decimal` columns to a
+        NumPy array, you'll need to install :mod:`pyarrow`.
 
         Examples
         --------
@@ -2148,7 +2164,7 @@ class DataFrame:
         ...     schema_overrides={"foo": pl.UInt8, "bar": pl.Float32},
         ... )
 
-        Export to a standard 2D numpy array.
+        Export to a standard 2D NumPy array.
 
         >>> df.to_numpy()
         array([[1, 6.5, 'a'],
@@ -2206,7 +2222,7 @@ class DataFrame:
         **kwargs: Any,
     ) -> pd.DataFrame:
         """
-        Cast to a pandas DataFrame.
+        Convert this :class:`DataFrame` to a :class:`pandas.DataFrame`.
 
         This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
         This operation clones data, unless `use_pyarrow_extension_array=True`.
@@ -2214,11 +2230,12 @@ class DataFrame:
         Parameters
         ----------
         use_pyarrow_extension_array
-            Use PyArrow backed-extension arrays instead of numpy arrays for each column
-            of the pandas DataFrame; this allows zero copy operations and preservation
-            of null values. Subsequent operations on the resulting pandas DataFrame may
-            trigger conversion to NumPy arrays if that operation is not supported by
-            pyarrow compute functions.
+            If `True`, uses PyArrow-backed extension arrays instead of
+            :class:`numpy.ndarray`s as the underlying representation of each column of
+            the pandas DataFrame. This allows zero-copy operations and preservation of
+            `null` values. Further operations on the resulting pandas DataFrame might
+            still trigger conversion to NumPy arrays if that operation is not supported
+            by pandas's :mod:`pyarrow` compute functions.
         **kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
@@ -2305,12 +2322,12 @@ class DataFrame:
 
     def to_series(self, index: int = 0) -> Series:
         """
-        Select column as Series at index location.
+        Get the column at index `index` as a :class:`Series`.
 
         Parameters
         ----------
         index
-            Location of selection.
+            The integer index of the column to retrieve as a :class:`Series`.
 
         See Also
         --------
@@ -2346,12 +2363,12 @@ class DataFrame:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert DataFrame to instantiatable string representation.
+        Convert this :class:`DataFrame` to an instantiatable string representation.
 
         Parameters
         ----------
         n
-            Only use first n rows.
+            Only use the first `n` rows.
 
         See Also
         --------
@@ -2438,9 +2455,9 @@ class DataFrame:
             File path or writeable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         pretty
-            Pretty serialize json.
+            Whether to pretty-serialize JSON.
         row_oriented
-            Write to row oriented json. This is slower, but more common.
+            Whether to write to row-oriented JSON. This is slower, but more common.
 
         See Also
         --------
@@ -2487,7 +2504,7 @@ class DataFrame:
 
     def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
         r"""
-        Serialize to newline delimited JSON representation.
+        Serialize to newline-delimited JSON representation.
 
         Parameters
         ----------
@@ -2584,7 +2601,7 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = None,
     ) -> str | None:
         """
-        Write to comma-separated values (CSV) file.
+        Write to a comma-separated values (CSV) file.
 
         Parameters
         ----------
@@ -2618,8 +2635,8 @@ class DataFrame:
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
         float_precision
-            Number of decimal places to write, applied to both `Float32` and
-            `Float64` datatypes.
+            Number of decimal places to write, applied to both :class:`Float32` and
+            :class:`Float64` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
@@ -2696,7 +2713,7 @@ class DataFrame:
         name: str = "",
     ) -> None:
         """
-        Write to Apache Avro file.
+        Write to an Apache Avro file.
 
         Parameters
         ----------
@@ -2771,28 +2788,35 @@ class DataFrame:
         Parameters
         ----------
         workbook : Workbook
-            String name or path of the workbook to create, BytesIO object to write
-            into, or an open `xlsxwriter.Workbook` object that has not been closed.
-            If None, writes to a `dataframe.xlsx` workbook in the working directory.
+            String name or path of the workbook to create, `BytesIO
+            <https://docs.python.org/3/library/io.html#io.BytesIO>`_ object to write
+            into, or an open `xlsxwriter.Workbook
+            <https://xlsxwriter.readthedocs.io/workbook.html>`_ object that has not
+            been closed. If None, writes to a `"dataframe.xlsx"` workbook in the
+            working directory.
         worksheet : str
-            Name of target worksheet; if None, writes to "Sheet1" when creating a new
-            workbook (note that writing to an existing workbook requires a valid
-            existing -or new- worksheet name).
+            Name of target worksheet; if `None`, writes to `"Sheet1"` when creating a
+            new workbook (note that writing to an existing workbook requires a valid
+            existing or new worksheet name).
         position : {str, tuple}
-            Table position in Excel notation (eg: "A1"), or a (row,col) integer tuple.
+            Table position in Excel notation (e.g. `"A1"`), or a `(row, col)` integer
+            tuple.
         table_style : {str, dict}
-            A named Excel table style, such as "Table Style Medium 4", or a dictionary
-            of `{"key":value,}` options containing one or more of the following keys:
-            "style", "first_column", "last_column", "banded_columns, "banded_rows".
+            A named Excel table style, such as `"Table Style Medium 4"`, or a dictionary
+            of `{"key": value}` options containing one or more of the following keys:
+            `"style"`, `"first_column"`, `"last_column"`, `"banded_columns"`,
+            `"banded_rows"`.
         table_name : str
             Name of the output table object in the worksheet; can then be referred to
-            in the sheet by formulae/charts, or by subsequent `xlsxwriter` operations.
+            in the sheet by formulae/charts, or by subsequent `xlsxwriter
+            <https://xlsxwriter.readthedocs.io>`_ operations.
         column_formats : dict
-            A `{colname(s):str,}` or `{selector:str,}` dictionary for applying an
+            A `{colname(s): str}` or `{selector: str}` dictionary for applying an
             Excel format string to the given columns. Formats defined here (such as
-            "dd/mm/yyyy", "0.00%", etc) will override any defined in `dtype_formats`.
+            `"dd/mm/yyyy"`, `"0.00%"`, etc) will override any defined in
+            `dtype_formats`.
         dtype_formats : dict
-            A `{dtype:str,}` dictionary that sets the default Excel format for the
+            A `{dtype: str}` dictionary that sets the default Excel format for the
             given dtype. (This can be overridden on a per-column basis by the
             `column_formats` param). It is also valid to use dtype groups such as
             `pl.FLOAT_DTYPES` as the dtype/format key, to simplify setting uniform
@@ -2801,73 +2825,79 @@ class DataFrame:
             A dictionary of colname (or selector) keys to a format str, dict, or list
             that defines conditional formatting options for the specified columns.
 
-            * If supplying a string typename, should be one of the valid `xlsxwriter`
-              types such as "3_color_scale", "data_bar", etc.
-            * If supplying a dictionary you can make use of any/all `xlsxwriter`
-              supported options, including icon sets, formulae, etc.
+            * If supplying a string typename, should be one of the valid `xlsxwriter
+              <https://xlsxwriter.readthedocs.io>`_ types such as `"3_color_scale"`,
+              `"data_bar"`, etc.
+            * If supplying a dictionary you can make use of any/all `xlsxwriter
+              <https://xlsxwriter.readthedocs.io>`_ supported options, including icon
+              sets, formulae, etc.
             * Supplying multiple columns as a tuple/key will apply a single format
               across all columns - this is effective in creating a heatmap, as the
               min/max values will be determined across the entire range, not per-column.
             * Finally, you can also supply a list made up from the above options
               in order to apply *more* than one conditional format to the same range.
         header_format : dict
-            A `{key:value,}` dictionary of `xlsxwriter` format options to apply
-            to the table header row, such as `{"bold":True, "font_color":"#702963"}`.
+            A `{key: value}` dictionary of `xlsxwriter
+            <https://xlsxwriter.readthedocs.io>`_ format options to apply to the table
+            header row, such as `{"bold": True, "font_color": "#702963"}`.
         column_totals : {bool, list, dict}
             Add a column-total row to the exported table.
 
-            * If True, all numeric columns will have an associated total using "sum".
+            * If True, all numeric columns will have an associated total using `"sum"`.
             * If passing a string, it must be one of the valid total function names
               and all numeric columns will have an associated total using that function.
             * If passing a list of colnames, only those given will have a total.
-            * For more control, pass a `{colname:funcname,}` dict.
+            * For more control, pass a `{colname: funcname}` dict.
 
-            Valid total function names are "average", "count_nums", "count", "max",
-            "min", "std_dev", "sum", and "var".
+            Valid total function names are `"average"`, `"count_nums"`, `"count"`,
+            `"max"`, `"min"`, `"std_dev"`, `"sum"`, and `"var"`.
         column_widths : {dict, int}
-            A `{colname:int,}` or `{selector:int,}` dict or a single integer that
+            A `{colname: int}` or `{selector: int}` dict or a single integer that
             sets (or overrides if autofitting) table column widths, in integer pixel
             units. If given as an integer the same value is used for all table columns.
         row_totals : {dict, bool}
             Add a row-total column to the right-hand side of the exported table.
 
-            * If True, a column called "total" will be added at the end of the table
-              that applies a "sum" function row-wise across all numeric columns.
+            * If True, a column called `"total"` will be added at the end of the table
+              that applies a `"sum"` function row-wise across all numeric columns.
             * If passing a list/sequence of column names, only the matching columns
               will participate in the sum.
-            * Can also pass a `{colname:columns,}` dictionary to create one or
+            * Can also pass a `{colname: column}` dictionary to create one or
               more total columns with distinct names, referencing different columns.
         row_heights : {dict, int}
-            An int or `{row_index:int,}` dictionary that sets the height of the given
+            An int or `{row_index: int}` dictionary that sets the height of the given
             rows (if providing a dictionary) or all rows (if providing an integer) that
             intersect with the table body (including any header and total row) in
             integer pixel units. Note that `row_index` starts at zero and will be
             the header row (unless `include_header` is False).
         sparklines : dict
-            A `{colname:list,}` or `{colname:dict,}` dictionary defining one or more
+            A `{colname: list}` or `{colname: dict}` dictionary defining one or more
             sparklines to be written into a new column in the table.
 
             * If passing a list of colnames (used as the source of the sparkline data)
-              the default sparkline settings are used (eg: line chart with no markers).
-            * For more control an `xlsxwriter`-compliant options dict can be supplied,
-              in which case three additional polars-specific keys are available:
-              "columns", "insert_before", and "insert_after". These allow you to define
-              the source columns and position the sparkline(s) with respect to other
-              table columns. If no position directive is given, sparklines are added to
-              the end of the table (eg: to the far right) in the order they are given.
+              the default sparkline settings are used (e.g. line charts lack markers).
+            * For more control an `xlsxwriter
+              <https://xlsxwriter.readthedocs.io>`_-compliant options dict can be
+              supplied, in which case three additional polars-specific keys are
+              available: `"columns"`, `"insert_before"`, and `"insert_after"`. These
+              allow you to define the source columns and position the sparkline(s) with
+              respect to other table columns. If no position directive is given,
+              sparklines are added to the end of the table (e.g. to the far right) in
+              the order they are given.
         formulas : dict
-            A `{colname:formula,}` or `{colname:dict,}` dictionary defining one or
+            A `{colname: formula}` or `{colname: dict}` dictionary defining one or
             more formulas to be written into a new column in the table. Note that you
             are strongly advised to use structured references in your formulae wherever
             possible to make it simple to reference columns by name.
 
-            * If providing a string formula (such as "=[@colx]*[@coly]") the column will
-              be added to the end of the table (eg: to the far right), after any default
-              sparklines and before any row_totals.
+            * If providing a string formula (such as `"=[@colx]*[@coly]"`), the column
+              will be added to the end of the table (e.g. to the far right), after any
+              default sparklines and before any row_totals.
             * For the most control supply an options dictionary with the following keys:
-              "formula" (mandatory), one of "insert_before" or "insert_after", and
-              optionally "return_dtype". The latter is used to appropriately format the
-              output of the formula and allow it to participate in row/column totals.
+              `"formula"` (mandatory), one of `"insert_before"` or `"insert_after"`,
+              and optionally `"return_dtype"`. The latter is used to appropriately
+              format the output of the formula and allow it to participate in
+              row/column totals.
         float_precision : int
             Default number of decimals displayed for floating point columns (note that
             this is purely a formatting directive; the actual values are not rounded).
@@ -2888,19 +2918,20 @@ class DataFrame:
 
             * If (row, col) is supplied, panes are split at the top-left corner of the
               specified cell, which are 0-indexed. Thus, to freeze only the top row,
-              supply (1, 0).
+              supply `(1, 0)`.
             * Alternatively, cell notation can be used to supply the cell. For example,
-              "A2" indicates the split occurs at the top-left of cell A2, which is the
-              equivalent of (1, 0).
-            * If (row, col, top_row, top_col) are supplied, the panes are split based on
+              `"A2"` indicates the split occurs at the top-left of cell A2, which is the
+              equivalent of `(1, 0)`.
+            * If `(row, col, top_row, top_col)` are supplied, the panes are split based on
               the `row` and `col`, and the scrolling region is inititalized to begin at
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
-              scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
-              Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
+              scrolling region begin at row 10, column D (5th col), supply `(1, 0, 9, 4)`.
+              Using cell notation for `(row, col)`, supplying `("A2", 9, 4)` is equivalent.
 
         Notes
         -----
-        * A list of compatible `xlsxwriter` format property names can be found here:
+        * A list of compatible `xlsxwriter
+          <https://xlsxwriter.readthedocs.io>` format property names can be found here:
           https://xlsxwriter.readthedocs.io/format.html#format-methods-and-format-properties
 
         * Conditional formatting dictionaries should provide xlsxwriter-compatible
@@ -2909,24 +2940,25 @@ class DataFrame:
           see: https://xlsxwriter.readthedocs.io/working_with_conditional_formats.html
 
         * Similarly, sparkline option dictionaries should contain xlsxwriter-compatible
-          key/values, as well as a mandatory polars "columns" key that defines the
+          key/values, as well as a mandatory polars `"columns"` key that defines the
           sparkline source data; these source columns should all be adjacent. Two other
           polars-specific keys are available to help define where the sparkline appears
-          in the table: "insert_after", and "insert_before". The value associated with
+          in the table: `"insert_after"`, and `"insert_before"`. The value associated with
           these keys should be the name of a column in the exported table.
           https://xlsxwriter.readthedocs.io/working_with_sparklines.html
 
-        * Formula dictionaries *must* contain a key called "formula", and then optional
-          "insert_after", "insert_before", and/or "return_dtype" keys. These additional
-          keys allow the column to be injected into the table at a specific location,
-          and/or to define the return type of the formula (eg: "Int64", "Float64", etc).
-          Formulas that refer to table columns should use Excel's structured references
-          syntax to ensure the formula is applied correctly and is table-relative.
+        * Formula dictionaries *must* contain a key called `"formula"`, and then
+          optional `"insert_after"`, `"insert_before"`, and/or `"return_dtype"` keys.
+          These additional keys allow the column to be injected into the table at a
+          specific location, and/or to define the return type of the formula (e.g.
+          :class:`Int64`, :class:`Float64`, etc). Formulas that refer to table columns
+          should use Excel's structured references syntax to ensure the formula is
+          applied correctly and is table-relative.
           https://support.microsoft.com/en-us/office/using-structured-references-with-excel-tables-f5ed2452-2337-4f71-bed3-c8ae6d2b276e
 
         Examples
         --------
-        Instantiate a basic DataFrame:
+        Instantiate a basic `DataFrame`:
 
         >>> from random import uniform
         >>> from datetime import date
@@ -2939,8 +2971,8 @@ class DataFrame:
         ...     }
         ... )
 
-        Export to "dataframe.xlsx" (the default workbook name, if not specified) in the
-        working directory, add column totals ("sum" by default) on all numeric columns,
+        Export to `"dataframe.xlsx"` (the default workbook name, if not specified) in the
+        working directory, add column totals (`"sum"` by default) on all numeric columns,
         then autofit:
 
         >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +SKIP
@@ -3121,7 +3153,7 @@ class DataFrame:
             formulas=formulas,
         )
 
-        # normalise cell refs (eg: "B3" => (2,1)) and establish table start/finish,
+        # normalise cell refs (e.g. "B3" => (2,1)) and establish table start/finish,
         # accounting for potential presence/absence of headers and a totals row.
         table_start = (
             xl_cell_to_rowcol(position) if isinstance(position, str) else position
@@ -3265,7 +3297,7 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
     ) -> BytesIO | None:
         """
-        Write to Arrow IPC binary stream or Feather file.
+        Write to an Arrow IPC binary stream or Feather file.
 
         See "File or Random Access format" in https://arrow.apache.org/docs/python/ipc.html.
 
@@ -3273,9 +3305,10 @@ class DataFrame:
         ----------
         file
             Path or writeable file-like object to which the IPC data will be
-            written. If set to `None`, the output is returned as a BytesIO object.
+            written. If set to `None`, the output is returned as a `BytesIO
+            <https://docs.python.org/3/library/io.html#io.BytesIO>`_ object.
         compression : {'uncompressed', 'lz4', 'zstd'}
-            Compression method. Defaults to "uncompressed".
+            Compression method. Defaults to `"uncompressed"`.
 
         Examples
         --------
@@ -3326,7 +3359,7 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
     ) -> BytesIO | None:
         """
-        Write to Arrow IPC record batch stream.
+        Write to an Arrow IPC record batch stream.
 
         See "Streaming format" in https://arrow.apache.org/docs/python/ipc.html.
 
@@ -3336,7 +3369,7 @@ class DataFrame:
             Path or writeable file-like object to which the IPC record batch data will
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
-            Compression method. Defaults to "uncompressed".
+            Compression method. Defaults to `"uncompressed"`.
 
         Examples
         --------
@@ -3378,39 +3411,41 @@ class DataFrame:
         pyarrow_options: dict[str, Any] | None = None,
     ) -> None:
         """
-        Write to Apache Parquet file.
+        Write to an Apache Parquet file.
 
         Parameters
         ----------
         file
             File path or writeable file-like object to which the result will be written.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
-            Choose "zstd" for good compression performance.
-            Choose "lz4" for fast compression/decompression.
-            Choose "snappy" for more backwards compatibility guarantees
+            Choose `"zstd"` for good compression performance.
+            Choose `"lz4"` for fast compression/decompression.
+            Choose `"snappy"` for more backwards compatibility guarantees
             when you deal with older parquet readers.
         compression_level
             The level of compression to use. Higher compression means smaller files on
             disk.
 
-            - "gzip" : min-level: 0, max-level: 10.
-            - "brotli" : min-level: 0, max-level: 11.
-            - "zstd" : min-level: 1, max-level: 22.
+            - `"gzip"` : min-level: 0, max-level: 10.
+            - `"brotli" `: min-level: 0, max-level: 11.
+            - `"zstd"` : min-level: 1, max-level: 22.
 
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups in number of rows. Defaults to 512^2 rows.
+            Size of the row groups in number of rows. Defaults to `512^2` rows.
         data_page_size
-            Size of the data page in bytes. Defaults to 1024^2 bytes.
+            Size of the data page in bytes. Defaults to `1024^2` bytes.
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
         pyarrow_options
-            Arguments passed to `pyarrow.parquet.write_table`.
+            Arguments passed to `pyarrow.parquet.write_table
+            <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_table.html>`_.
 
             If you pass `partition_cols` here, the dataset will be written
-            using `pyarrow.parquet.write_to_dataset`.
+            using `pyarrow.parquet.write_to_dataset
+            <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_to_dataset.html>`_.
             The `partition_cols` parameter leads to write the dataset to a directory.
             Similar to Spark's partitioned datasets.
 
@@ -3428,10 +3463,10 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.parquet"
         >>> df.write_parquet(path)
 
-        We can use pyarrow with use_pyarrow_write_to_dataset=True
+        We can use pyarrow with `use_pyarrow_write_to_dataset=True`
         to write partitioned datasets. The following example will
-        write the first row to ../watermark=1/*.parquet and the
-        other rows to ../watermark=2/*.parquet.
+        write the first row to `../watermark=1/*.parquet` and the
+        other rows to `../watermark=2/*.parquet`.
 
         >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
         >>> path: pathlib.Path = dirpath / "partitioned_object"
@@ -3509,7 +3544,7 @@ class DataFrame:
         engine: DbWriteEngine = "sqlalchemy",
     ) -> int:
         """
-        Write a polars frame to a database.
+        Write to a database.
 
         Parameters
         ----------
@@ -3535,7 +3570,7 @@ class DataFrame:
         -------
         int
             The number of rows affected, if the driver provides this information.
-            Otherwise, returns -1.
+            Otherwise, returns `-1`.
 
         """
         from polars.io.database import _open_adbc_connection
@@ -3694,23 +3729,25 @@ class DataFrame:
         delta_merge_options: dict[str, Any] | None = None,
     ) -> deltalake.table.TableMerger | None:
         """
-        Write DataFrame as delta table.
+        Write to a Delta Lake table.
 
         Parameters
         ----------
         target
-            URI of a table or a DeltaTable object.
+            URI of a table or a `DeltaTable
+            <https://delta-io.github.io/delta-rs/python/api_reference.html#module-deltalake.table>`_
+            object.
         mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
             How to handle existing data.
 
-            - If 'error', throw an error if the table already exists (default).
-            - If 'append', will add new data.
-            - If 'overwrite', will replace table with new data.
-            - If 'ignore', will not write anything if table already exists.
-            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
-              with the existing data.
+            - If `"error"`, throw an error if the table already exists (default).
+            - If `"append"`, will add new data.
+            - If `"overwrite"`, will replace table with new data.
+            - If `"ignore"`, will not write anything if table already exists.
+            - If `"merge"`, return a `TableMerger` object to merge data from the
+              :class:`DataFrame` with the existing data.
         overwrite_schema
-            If True, allows updating the schema of the table.
+            If `True`, allows updating the schema of the table.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -3719,30 +3756,30 @@ class DataFrame:
             - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
             - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
         delta_write_options
-            Additional keyword arguments while writing a Delta lake Table.
+            Additional keyword arguments while writing a Delta Lake table.
             See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
         delta_merge_options
-            Keyword arguments which are required to `MERGE` a Delta lake Table.
+            Keyword arguments which are required to `MERGE` a Delta Lake table.
             See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
 
         Raises
         ------
         TypeError
-            If the DataFrame contains unsupported data types.
+            If the :class:`DataFrame` contains unsupported data types.
         ArrowInvalidError
-            If the DataFrame contains data types that could not be cast to their
-            primitive type.
+            If the :class:`DataFrame` contains data types that could not be cast to
+            their primitive type.
         TableNotFoundError
-            If the delta table doesn't exist and MERGE action is triggered
+            If the Delta Lake table doesn't exist and a MERGE action is triggered
 
         Notes
         -----
         The Polars data types :class:`Null`, :class:`Categorical` and :class:`Time`
         are not supported by the delta protocol specification and will raise a
-        TypeError.
+        `TypeError`.
 
-        Polars columns are always nullable. To write data to a delta table with
-        non-nullable columns, a custom pyarrow schema has to be passed to the
+        Polars columns are always nullable. To write data to a Delta Lake table with
+        non-nullable columns, a custom :mod:`pyarrow` schema has to be passed to the
         `delta_write_options`. See the last example below.
 
         Examples
@@ -3774,7 +3811,8 @@ class DataFrame:
         ...     existing_table_path, mode="overwrite", overwrite_schema=True
         ... )  # doctest: +SKIP
 
-        Write a DataFrame as a Delta Lake table to a cloud object store like S3.
+        Write a :class:`DataFrame` as a Delta Lake table to a cloud object store like
+        S3.
 
         >>> table_path = "s3://bucket/prefix/to/delta-table/"
         >>> df.write_delta(
@@ -3786,7 +3824,7 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
-        Write DataFrame as a Delta Lake table with non-nullable columns.
+        Write a :class:`DataFrame` as a Delta Lake table with non-nullable columns.
 
         >>> import pyarrow as pa
         >>> existing_table_path = "/path/to/delta-table/"
@@ -3797,7 +3835,7 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
-        Merge the DataFrame with an existing Delta Lake table.
+        Merge the :class:`DataFrame` with an existing Delta Lake table.
         For all `TableMerger` methods, check the deltalake docs
         `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
 
@@ -3875,18 +3913,21 @@ class DataFrame:
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
-        Return an estimation of the total (heap) allocated size of the `DataFrame`.
+        Estimate the total (heap) allocated size of the :class:`DataFrame`.
 
         Estimated size is given in the specified unit (bytes by default).
 
         This estimation is the sum of the size of its buffers, validity, including
         nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
         size of 2 arrays is not the sum of the sizes computed from this function. In
-        particular, [`StructArray`]'s size is an upper bound.
+        particular, `StructArray
+        <https://arrow.apache.org/docs/python/generated/pyarrow.StructArray.html>`_'s
+        size is an upper bound.
 
         When an array is sliced, its allocated size remains constant because the buffer
-        unchanged. However, this function will yield a smaller number. This is because
-        this function returns the visible size of the buffer, not its total capacity.
+        is unchanged. However, this function will yield a smaller number. This is
+        because this function returns the visible size of the buffer, not its total
+        capacity.
 
         FFI buffers are included in this estimation.
 
@@ -3922,14 +3963,14 @@ class DataFrame:
         column_names: str | Iterable[str] | None = None,
     ) -> Self:
         """
-        Transpose a DataFrame over the diagonal.
+        Transpose a :class:`DataFrame` over the diagonal.
 
         Parameters
         ----------
         include_header
-            If set, the column names will be added as first column.
+            If `True`, the column names will be added as first column.
         header_name
-            If `include_header` is set, this determines the name of the column that will
+            If `include_header=True`, this determines the name of the column that will
             be inserted.
         column_names
             Optional iterable yielding strings or a string naming an existing column.
@@ -4035,7 +4076,7 @@ class DataFrame:
 
     def reverse(self) -> DataFrame:
         """
-        Reverse the DataFrame.
+        Reverse the :class:`DataFrame`.
 
         Examples
         --------
@@ -4067,7 +4108,7 @@ class DataFrame:
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key-value pairs that map from old name to new name.
 
         Examples
         --------
@@ -4091,16 +4132,16 @@ class DataFrame:
 
     def insert_column(self, index: int, column: Series) -> Self:
         """
-        Insert a Series at a certain column index.
+        Insert a :class:`Series` at a specific `index`.
 
-        This operation is in place.
+        This operation is in-place.
 
         Parameters
         ----------
         index
-            Index at which to insert the new `Series` column.
+            The index at which to insert the new :class:`Series` column.
         column
-            `Series` to insert.
+            The :class:`Series` to insert.
 
         Examples
         --------
@@ -4157,14 +4198,14 @@ class DataFrame:
         **constraints: Any,
     ) -> DataFrame:
         """
-        Filter the rows in the DataFrame based on one or more predicate expressions.
+        Filter the rows in the :class:`DataFrame` based on one or more expressions.
 
         The original order of the remaining rows is preserved.
 
         Parameters
         ----------
         predicates
-            Expression(s) that evaluates to a boolean Series.
+            Expression(s) that evaluates to a :class:`Boolean` :class:`Series`.
         constraints
             Column filters; use `name = value` to filter columns by the supplied value.
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
@@ -4274,10 +4315,10 @@ class DataFrame:
         return_as_string: bool = False,
     ) -> str | None:
         """
-        Return a dense preview of the DataFrame.
+        Return a dense preview of the :class:`DataFrame`.
 
-        The formatting shows one line per column so that wide dataframes display
-        cleanly. Each line shows the column name, the data type, and the first
+        The formatting shows one line per column so that wide :class:`DataFrame`s
+        display cleanly. Each line shows the column name, the data type, and the first
         few values.
 
         Parameters
@@ -4288,7 +4329,7 @@ class DataFrame:
             Maximum length of the displayed column names; values that exceed this
             value are truncated with a trailing ellipsis.
         return_as_string
-            If True, return the preview as a string instead of printing to stdout.
+            If `True`, return the preview as a string instead of printing to stdout.
 
         See Also
         --------
@@ -4361,7 +4402,7 @@ class DataFrame:
         self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> Self:
         """
-        Summary statistics for a DataFrame.
+        Summary statistics for a :class:`DataFrame`.
 
         Parameters
         ----------
@@ -4495,7 +4536,7 @@ class DataFrame:
         Parameters
         ----------
         name
-            Name of the column to find.
+            The name of the column to find.
 
         Examples
         --------
@@ -4510,16 +4551,16 @@ class DataFrame:
 
     def replace_column(self, index: int, column: Series) -> Self:
         """
-        Replace a column at an index location.
+        Replace a column at a specific `index`.
 
-        This operation is in place.
+        This operation is in-place.
 
         Parameters
         ----------
         index
-            Column index.
+            The column index.
         column
-            Series that will replace the column.
+            The :class:`Series` that will replace the column.
 
         Examples
         --------
@@ -4556,7 +4597,7 @@ class DataFrame:
         nulls_last: bool = False,
     ) -> DataFrame:
         """
-        Sort the dataframe by the given columns.
+        Sort the :class:`DataFrame` by the given columns.
 
         Parameters
         ----------
@@ -4566,10 +4607,10 @@ class DataFrame:
         *more_by
             Additional columns to sort by, specified as positional arguments.
         descending
-            Sort in descending order. When sorting by multiple columns, can be specified
-            per column by passing a sequence of booleans.
+            Whether to sort in descending order. When sorting by multiple columns, can
+            be specified per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Whether to place `null` values last.
 
         Examples
         --------
@@ -4655,7 +4696,7 @@ class DataFrame:
         """
         Return the `k` largest elements.
 
-        If 'descending=True` the smallest elements will be given.
+        If `descending=True`, the `k` smallest elements will be returned instead.
 
         Parameters
         ----------
@@ -4665,13 +4706,13 @@ class DataFrame:
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Whether to return the `k` smallest elements instead of the `k` largest.
+            Can be specified per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Whether to place `null` values last.
         maintain_order
             Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be
+            Note that if `True`, streaming is not possible and performance might be
             worse since this requires a stable search.
 
         See Also
@@ -4687,7 +4728,7 @@ class DataFrame:
         ...     }
         ... )
 
-        Get the rows which contain the 4 largest values in column b.
+        Get the rows which contain the 4 largest values in column `b`.
 
         >>> df.top_k(4, by="b")
         shape: (4, 2)
@@ -4702,7 +4743,8 @@ class DataFrame:
         │ b   ┆ 1   │
         └─────┴─────┘
 
-        Get the rows which contain the 4 largest values when sorting on column b and a.
+        Get the rows which contain the 4 largest values when sorting on column `b` and
+        `a`.
 
         >>> df.top_k(4, by=["b", "a"])
         shape: (4, 2)
@@ -4747,7 +4789,7 @@ class DataFrame:
         """
         Return the `k` smallest elements.
 
-        If 'descending=True` the largest elements will be given.
+        If `descending=True`, the `k` largest elements will be returned instead.
 
         Parameters
         ----------
@@ -4757,13 +4799,13 @@ class DataFrame:
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Whether to return the `k` largest elements instead of the `k` smallest.
+            Can be specified per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Whether to place `null` values last.
         maintain_order
             Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be
+            Note that if `True`, streaming is not possible and performance might be
             worse since this requires a stable search.
 
         See Also
@@ -4829,14 +4871,14 @@ class DataFrame:
 
     def equals(self, other: DataFrame, *, null_equal: bool = True) -> bool:
         """
-        Check whether the DataFrame is equal to another DataFrame.
+        Check whether `self` is equal to `other`.
 
         Parameters
         ----------
         other
-            DataFrame to compare with.
+            The :class:`DataFrame` to compare with.
         null_equal
-            Consider null values as equal.
+            Whether to consider `null` values as equal.
 
         See Also
         --------
@@ -4875,14 +4917,14 @@ class DataFrame:
     )
     def replace(self, column: str, new_column: Series) -> Self:
         """
-        Replace a column by a new Series.
+        Replace a column by a new :class:`Series`.
 
         Parameters
         ----------
         column
-            Column to replace.
+            The name of the column to be replaced.
         new_column
-            New column to insert.
+            The new column to insert.
 
         Examples
         --------
@@ -4905,7 +4947,7 @@ class DataFrame:
 
     def slice(self, offset: int, length: int | None = None) -> Self:
         """
-        Get a slice of this DataFrame.
+        Get a contiguous set of rows from this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -5070,14 +5112,14 @@ class DataFrame:
         subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> DataFrame:
         """
-        Drop all rows that contain null values.
+        Drop all rows that contain `null` values.
 
         The original order of the remaining rows is preserved.
 
         Parameters
         ----------
         subset
-            Column name(s) for which null values are considered.
+            Column name(s) for which `null` values are considered.
             If set to `None` (default), use all columns.
 
         Examples
@@ -5091,7 +5133,7 @@ class DataFrame:
         ... )
 
         The default behavior of this method is to drop rows where any single
-        value of the row is null.
+        value of the row is `null`.
 
         >>> df.drop_nulls()
         shape: (1, 3)
@@ -5105,7 +5147,7 @@ class DataFrame:
 
         This behaviour can be constrained to consider only a subset of columns, as
         defined by name or with a selector. For example, dropping rows if there is
-        a null in any of the integer columns:
+        a `null` in any of the integer columns:
 
         >>> import polars.selectors as cs
         >>> df.drop_nulls(subset=cs.integer())
@@ -5119,7 +5161,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ null │
         └─────┴─────┴──────┘
 
-        Below are some additional examples that show how to drop null
+        Below are some additional examples that show how to drop `null`
         values based on other conditions.
 
         >>> df = pl.DataFrame(
@@ -5142,7 +5184,7 @@ class DataFrame:
         │ null ┆ 1    ┆ 1    │
         └──────┴──────┴──────┘
 
-        Drop a row only if all values are null:
+        Drop a row only if all values are `null`:
 
         >>> df.filter(~pl.all_horizontal(pl.all().is_null()))
         shape: (3, 3)
@@ -5156,7 +5198,7 @@ class DataFrame:
         │ null ┆ 1   ┆ 1    │
         └──────┴─────┴──────┘
 
-        Drop a column if all values are null:
+        Drop a column if all values are `null`:
 
         >>> df[[s.name for s in df if not (s.null_count() == df.height)]]
         shape: (4, 2)
@@ -5187,7 +5229,7 @@ class DataFrame:
         ----------
         function
             Callable; will receive the frame as the first parameter,
-            followed by any given args/kwargs.
+            followed by any given `args`/`kwargs`.
         *args
             Arguments to pass to the UDF.
         **kwargs
@@ -5195,7 +5237,7 @@ class DataFrame:
 
         Notes
         -----
-        It is recommended to use LazyFrame when piping operations, in order
+        It is recommended to use :class:`LazyFrame` when piping operations, in order
         to fully take advantage of query optimization and parallelization.
         See :meth:`df.lazy() <polars.DataFrame.lazy>`.
 
@@ -5426,9 +5468,9 @@ class DataFrame:
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups based on a time, :class:`Int32`, or :class:`Int64` column.
 
-        Different from a `group_by_dynamic` the windows are now determined by the
+        Different from a `group_by_dynamic`, the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
         :func:`DataFrame.group_by_dynamic`.
 
@@ -5479,17 +5521,18 @@ class DataFrame:
         ----------
         index_column
             Column used to group based on the time window.
-            Often of type Date/Datetime.
+            Often of type :class:`Date`/:class:`Datetime`.
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a rolling operation on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+            In case of a rolling group by on indices, dtype needs to be one of
+            {:class:`Int32`, :class:`Int64`}. Note that :class:`Int32` gets
+            temporarily cast to :class:`Int64`, so if performance matters use an
+            :class:`Int64` column.
         period
             length of the window - must be non-negative
         offset
-            offset of the window. Default is -period
+            offset of the window. Default is `-period`
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
         by
@@ -5499,7 +5542,7 @@ class DataFrame:
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
             data within the by groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
+            Doing so incorrectly will lead to incorrect output.
 
         Returns
         -------
@@ -5579,10 +5622,10 @@ class DataFrame:
         check_sorted: bool = True,
     ) -> DynamicGroupBy:
         """
-        Group based on a time value (or index value of type Int32, Int64).
+        Group based on a time value (or index of type :class:`Int32` or :class:`Int64`).
 
-        Time windows are calculated and rows are assigned to windows. Different from a
-        normal group by is that a row can be member of multiple groups.
+        Time windows are calculated and rows are assigned to windows. Unlike for a
+        normal group by, a row can be member of multiple groups.
         By default, the windows look like:
 
         - [start, start + period)
@@ -5600,37 +5643,37 @@ class DataFrame:
         Parameters
         ----------
         index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
+            The column used to group based on the time window.
+            Often of type :class:`Date`/:class:`Datetime`.
+            This column must be sorted in ascending order.
 
-            In case of a dynamic group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+            In the case of a rolling group by on indices, dtype needs to be one of
+            {:class:`Int32`, :class:`Int64`}. Note that :class:`Int32` gets
+            temporarily cast to :class:`Int64`, so if performance matters use an
+            :class:`Int64` column.
         every
-            interval of the window
+            The interval of the window.
         period
-            length of the window, if None it will equal 'every'
+            The length of the window; if `None`, it will equal 'every'.
         offset
-            offset of the window, only takes effect if `start_by` is `'window'`.
-            Defaults to negative `every`.
+            The offset of the window; only takes effect if `start_by` is `'window'`.
+            Defaults to `-every`.
         truncate
-            truncate the time value to the window lower bound
+            Whether to truncate the time value to the window lower bound.
 
             .. deprecated:: 0.19.4
                 Use `label` instead.
         include_boundaries
-            Add the lower and upper bound of the window to the "_lower_boundary" and
-            "_upper_boundary" columns. This will impact performance because it's harder to
-            parallelize
+            Whether to add the lower and upper bound of the window to the
+            "_lower_boundary" and "_upper_boundary" columns. This will impact
+            performance because it's harder to parallelize
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Which sides of the temporal interval are closed (inclusive).
         label : {'left', 'right', 'datapoint'}
-            Define which label to use for the window:
+            Which label to use for the window:
 
-            - 'left': lower boundary of the window
-            - 'right': upper boundary of the window
+            - 'left': the lower boundary of the window
+            - 'right': the upper boundary of the window
             - 'datapoint': the first value of the index column in the given window.
               If you don't need the label to be at one of the boundaries, choose this
               option for maximum performance
@@ -5654,7 +5697,7 @@ class DataFrame:
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
             data within the by groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
+            Doing so incorrectly will lead to incorrect output.
 
         Returns
         -------
@@ -5907,7 +5950,7 @@ class DataFrame:
         maintain_order: bool = False,
     ) -> Self:
         """
-        Upsample a DataFrame at a regular frequency.
+        Upsample a :class:`DataFrame` at a regular frequency.
 
         The `every` and `offset` arguments are created with
         the following string language:
@@ -5929,7 +5972,6 @@ class DataFrame:
 
         - "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
@@ -5937,26 +5979,26 @@ class DataFrame:
         Parameters
         ----------
         time_column
-            time column will be used to determine a date_range.
+            `time_column` will be used to determine a date range.
             Note that this column has to be sorted for the output to make sense.
         every
-            interval will start 'every' duration
+            The interval will start `every` duration
         offset
-            change the start of the date_range by this offset.
+            Change the start of the date range by this offset.
         by
-            First group by these columns and then upsample for every group
+            First group by these columns and then upsample for every group.
         maintain_order
             Keep the ordering predictable. This is slower.
 
         Returns
         -------
         DataFrame
-            Result will be sorted by `time_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            The result will be sorted by `time_column` (but note that if `by` columns
+            are passed, it will only be sorted within each `by` group).
 
         Examples
         --------
-        Upsample a DataFrame by a certain interval.
+        Upsample a :class:`DataFrame` by a certain interval.
 
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
@@ -6028,48 +6070,49 @@ class DataFrame:
         This is similar to a left-join except that we match on nearest key rather than
         equal keys.
 
-        Both DataFrames must be sorted by the asof_join key.
+        Both :class:`DataFrame`s must be sorted by the asof_join key.
 
-        For each row in the left DataFrame:
+        For each row in the left :class:`DataFrame`:
 
-          - A "backward" search selects the last row in the right DataFrame whose
-            'on' key is less than or equal to the left's key.
+          - A `"backward"` search selects the last row in the right :class:`DataFrame`
+            whose 'on' key is less than or equal to the left's key.
 
-          - A "forward" search selects the first row in the right DataFrame whose
-            'on' key is greater than or equal to the left's key.
+          - A `"forward"` search selects the first row in the right :class:`DataFrame`
+            whose 'on' key is greater than or equal to the left's key.
 
-          - A "nearest" search selects the last row in the right DataFrame whose value
-            is nearest to the left's key. String keys are not currently supported for a
-            nearest search.
+          - A `"nearest"` search selects the last row in the right :class:`DataFrame`
+            whose value is nearest to the left's key. String keys are not currently
+            supported for a nearest search.
 
         The default is "backward".
 
         Parameters
         ----------
         other
-            Lazy DataFrame to join with.
+            :class:`DataFrame` to join with.
         left_on
-            Join column of the left DataFrame.
+            Join column of the left :class:`DataFrame`.
         right_on
-            Join column of the right DataFrame.
+            Join column of the right :class:`DataFrame`.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Join column of both :class:`DataFrame`. If set, `left_on` and `right_on`
+            should be `None`.
         by
-            join on these columns before doing asof join
+            Join on these columns before doing the asof join.
         by_left
-            join on these columns before doing asof join
+            Join on these columns before doing the asof join.
         by_right
-            join on these columns before doing asof join
+            Join on these columns before doing the asof join. If set, `by_left` and
+            `by_right` should be `None`.
         strategy : {'backward', 'forward', 'nearest'}
-            Join strategy.
+            The join strategy.
         suffix
-            Suffix to append to columns with a duplicate name.
+            A suffix to append to columns with a duplicate name.
         tolerance
             Numeric tolerance. By setting this the join will only be done if the near
             keys are within this distance. If an asof join is done on columns of dtype
-            "Date", "Datetime", "Duration" or "Time", use either a datetime.timedelta
-            object or the following string language:
+            :class:`Date`, :class:`Datetime`, :class:`Duration` or :class:`Time`, use
+            either a `datetime.timedelta` object or the following string language:
 
                 - 1ns   (1 nanosecond)
                 - 1us   (1 microsecond)
@@ -6093,11 +6136,11 @@ class DataFrame:
                 "calendar year".
 
         allow_parallel
-            Allow the physical plan to optionally evaluate the computation of both
-            DataFrames up to the join in parallel.
+            Whether to allow the physical plan to optionally evaluate the computation of
+            both :class:`DataFrame`s up to the join in parallel.
         force_parallel
-            Force the physical plan to evaluate the computation of both DataFrames up to
-            the join in parallel.
+            Whether to force the physical plan to evaluate the computation of both
+            :class:`DataFrame`s up to the join in parallel.
 
         Examples
         --------
@@ -6196,54 +6239,53 @@ class DataFrame:
         Parameters
         ----------
         other
-            DataFrame to join with.
+            The :class:`DataFrame` to join with.
         on
-            Name(s) of the join columns in both DataFrames.
+            Name(s) of the join columns in both :class:`DataFrame`s.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
             Join strategy.
 
             * *inner*
-                Returns rows that have matching values in both tables
+                Returns rows that have matching values in both :class:`DataFrame`s.
             * *left*
-                Returns all rows from the left table, and the matched rows from the
-                right table
+                Returns all rows from the left :class:`DataFrame`, and the matched rows
+                from the right :class:`DataFrame`.
             * *outer*
-                 Returns all rows when there is a match in either left or right table
+                 Returns all rows when there is a match in either the left or the right
+                 :class:`DataFrame`.
             * *outer_coalesce*
-                 Same as 'outer', but coalesces the key columns
+                 Same as 'outer', but coalesces the key columns.
             * *cross*
-                 Returns the cartisian product of rows from both tables
+                 Returns the Cartesian product of rows from both :class:`DataFrame`s.
             * *semi*
-                 Filter rows that have a match in the right table.
+                 Filter rows that have a match in the right :class:`DataFrame`.
             * *anti*
-                 Filter rows that not have a match in the right table.
+                 Filter rows that not have a match in the right :class:`DataFrame`.
 
             .. note::
-                A left join preserves the row order of the left DataFrame.
+                A left join preserves the row order of the left :class:`DataFrame`.
         left_on
             Name(s) of the left join column(s).
         right_on
             Name(s) of the right join column(s).
         suffix
-            Suffix to append to columns with a duplicate name.
+            A suffix to append to columns with a duplicate name.
         validate: {'m:m', 'm:1', '1:m', '1:1'}
-            Checks if join is of specified type.
+            Checks whether the join is of the specified type.
 
-                * *many_to_many*
-                    “m:m”: default, does not result in checks
-                * *one_to_one*
-                    “1:1”: check if join keys are unique in both left and right datasets
-                * *one_to_many*
-                    “1:m”: check if join keys are unique in left dataset
-                * *many_to_one*
-                    “m:1”: check if join keys are unique in right dataset
+                * many-to-many (`m:m`): the default; does not result in any checks.
+                * one-to-one (`1:1`): check if the join keys are unique in both the left
+                  and right :class:`DataFrame`s.
+                * one-to-many (`1:m`): check if the join keys are unique in the left
+                  :class:`DataFrame`.
+                * many-to-one (`m:1`): check if the join keys are unique in the right
+                  :class:`DataFrame`.
 
             .. note::
-
                 - This is currently not supported the streaming engine.
                 - This is only supported when joined by single columns.
         join_nulls
-            Join on null values. By default null values will never produce matches.
+            Join on `null` values. By default, `null` values will never produce matches.
 
         Returns
         -------
@@ -6358,7 +6400,7 @@ class DataFrame:
         inference_size: int = 256,
     ) -> DataFrame:
         """
-        Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
+        Apply a custom/user-defined function (UDF) over the :class:`DataFrame`'s rows.
 
         .. warning::
             This method is much slower than the native expressions API.
@@ -6396,8 +6438,10 @@ class DataFrame:
           expression-level `apply` syntax instead.
 
         * If your function is expensive and you don't want it to be called more than
-          once for a given input, consider applying an `@lru_cache` decorator to it.
-          If your data is suitable you may achieve *significant* speedups.
+          once for a given input, consider applying an `@lru_cache
+          <https://docs.python.org/3/library/functools.html#functools.lru_cache>`_
+          decorator to it. If your data is suitable you may achieve *significant*
+          speedups.
 
         Examples
         --------
@@ -6457,14 +6501,16 @@ class DataFrame:
         self, columns: list[Series] | DataFrame, *, in_place: bool = False
     ) -> Self:
         """
-        Return a new DataFrame grown horizontally by stacking multiple Series to it.
+        Concatenate `columns` horizontally to this :class:`DataFrame`.
+
+        `columns` may be a list of :class:`Series` or another :class:`DataFrame`.
 
         Parameters
         ----------
         columns
-            Series to stack.
+            The :class:`DataFrame` or list of :class:`Series` to stack.
         in_place
-            Modify in place.
+            Whether to modify in-place.
 
         Examples
         --------
@@ -6499,14 +6545,16 @@ class DataFrame:
 
     def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
-        Grow this DataFrame vertically by stacking a DataFrame to it.
+        Concatenate `other` vertically to this :class:`DataFrame`.
+
+        `other` must be a :class:`DataFrame`.
 
         Parameters
         ----------
         other
-            DataFrame to stack.
+            The :class:`DataFrame` to stack.
         in_place
-            Modify in place.
+            Whether to modify in-place.
 
         See Also
         --------
@@ -6558,23 +6606,23 @@ class DataFrame:
 
     def extend(self, other: DataFrame) -> Self:
         """
-        Extend the memory backed by this `DataFrame` with the values from `other`.
+        Extend the memory backed by `self` with the values from `other`.
 
-        Different from `vstack` which adds the chunks from `other` to the chunks of
-        this `DataFrame`, `extend` appends the data from `other` to the underlying
-        memory locations and thus may cause a reallocation.
+        Different from :func:`vstack` which adds the chunks from `other` to the chunks
+        of this :class:`DataFrame`, `extend` appends the data from `other` to the
+        underlying memory locations and thus may cause a reallocation.
 
         If this does not cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer `extend` over `vstack` when you want to do a query after a single
+        Prefer `extend` over :func:`vstack` when you want to do a query after a single
         append. For instance, during online operations where you add `n` rows and rerun
         a query.
 
-        Prefer `vstack` over `extend` when you want to append many times before
+        Prefer :func:`vstack` over `extend` when you want to append many times before
         doing a query. For instance, when you read in multiple files and want to store
-        them in a single `DataFrame`. In the latter case, finish the sequence of
-        `vstack` operations with a `rechunk`.
+        them in a single :class:`DataFrame`. In the latter case, finish the sequence of
+        :func:`vstack` operations with a :func:`rechunk`.
 
         Parameters
         ----------
@@ -6583,8 +6631,8 @@ class DataFrame:
 
         Warnings
         --------
-        This method modifies the dataframe in-place. The dataframe is returned for
-        convenience only.
+        This method modifies the :class:`DataFrame` in-place. The :class:`DataFrame` is
+        returned for convenience only.
 
         See Also
         --------
@@ -6625,15 +6673,15 @@ class DataFrame:
         *more_columns: ColumnNameOrSelector,
     ) -> DataFrame:
         """
-        Remove columns from the dataframe.
+        Remove columns from the :class:`DataFrame`.
 
         Parameters
         ----------
         columns
-            Names of the columns that should be removed from the dataframe, or
-            a selector that determines the columns to drop.
+            Names of the columns that should be removed from the :class:`DataFrame`, or
+            a selector that determines the columns to remove.
         *more_columns
-            Additional columns to drop, specified as positional arguments.
+            Additional columns to remove, specified as positional arguments.
 
         Examples
         --------
@@ -6746,7 +6794,7 @@ class DataFrame:
         strict: bool = True,
     ) -> DataFrame:
         """
-        Cast DataFrame column(s) to the specified dtype(s).
+        Cast :class:`DataFrame` column(s) to the specified dtype(s).
 
         Parameters
         ----------
@@ -6768,7 +6816,7 @@ class DataFrame:
         ...     }
         ... )
 
-        Cast specific frame columns to the specified dtypes:
+        Cast specific :class:`DataFrame` columns to the specified dtypes:
 
         >>> df.cast({"foo": pl.Float32, "bar": pl.UInt8})
         shape: (3, 3)
@@ -6782,7 +6830,7 @@ class DataFrame:
         │ 3.0 ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
 
-        Cast all frame columns to the specified dtype:
+        Cast all :class:`DataFrame` columns to the specified dtype:
 
         >>> df.cast(pl.String).to_dict(as_series=False)
         {'foo': ['1', '2', '3'],
@@ -6809,10 +6857,11 @@ class DataFrame:
 
     def clear(self, n: int = 0) -> Self:
         """
-        Create an empty (n=0) or `n`-row null-filled (n>0) copy of the DataFrame.
+        Create an all-`null` :class:`DataFrame` of length `n`.
 
-        Returns a `n`-row null-filled DataFrame with an identical schema.
-        `n` can be greater than the current number of rows in the DataFrame.
+        The :class:`DataFrame` has the same schema as `self`, but no data.
+
+        `n` can be greater than the current number of rows in `self`.
 
         Parameters
         ----------
@@ -6867,13 +6916,13 @@ class DataFrame:
 
     def clone(self) -> Self:
         """
-        Create a copy of this DataFrame.
+        Create a copy of this :class:`DataFrame`.
 
         This is a cheap operation that does not copy data.
 
         See Also
         --------
-        clear : Create an empty copy of the current DataFrame, with identical
+        clear : Create an empty copy of the current :class:`DataFrame`, with identical
             schema but no data.
 
         Examples
@@ -6903,7 +6952,7 @@ class DataFrame:
 
     def get_columns(self) -> list[Series]:
         """
-        Get the DataFrame as a List of Series.
+        Get the :class:`DataFrame` as a Python list of :class:`Series`.
 
         Examples
         --------
@@ -6998,24 +7047,24 @@ class DataFrame:
         matches_supertype: bool = True,
     ) -> DataFrame:
         """
-        Fill null values using the specified value or strategy.
+        Fill `null` values using the specified `value` or `strategy`.
 
         Parameters
         ----------
         value
-            Value used to fill null values.
+            Value used to fill `null` values.
         strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
-            Strategy used to fill null values.
+            Strategy used to fill `null` values.
         limit
-            Number of consecutive null values to fill when using the 'forward' or
-            'backward' strategy.
+            Number of consecutive `null` values to fill when using the `"forward"` or
+            `"backward"` strategy.
         matches_supertype
             Fill all matching supertype of the fill `value`.
 
         Returns
         -------
         DataFrame
-            DataFrame with None values replaced by the filling strategy.
+            DataFrame with `null` values filled.
 
         See Also
         --------
@@ -7089,21 +7138,21 @@ class DataFrame:
 
     def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
         """
-        Fill floating point NaN values by an Expression evaluation.
+        Fill floating point `NaN` values with the specified `value`.
 
         Parameters
         ----------
         value
-            Value with which to replace NaN values.
+            Value with which to replace `NaN` values.
 
         Returns
         -------
         DataFrame
-            DataFrame with NaN values replaced by the given value.
+            DataFrame with `NaN` values replaced by the given value.
 
         Warnings
         --------
-        Note that floating point NaNs (Not a Number) are not missing values!
+        Note that floating point `NaNs` (Not a Number) are not missing values!
         To replace missing values, use :func:`fill_null`.
 
         See Also
@@ -7140,13 +7189,13 @@ class DataFrame:
         *more_columns: str | Expr,
     ) -> DataFrame:
         """
-        Explode the dataframe to long format by exploding the given columns.
+        Convert the :class:`DataFrame` to long format by exploding the given columns.
 
         Parameters
         ----------
         columns
             Column names, expressions, or a selector defining them. The underlying
-            columns being exploded must be of List or String datatype.
+            columns being exploded must be of :class:`List` or :class:`String` datatype.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 
@@ -7214,8 +7263,8 @@ class DataFrame:
         Parameters
         ----------
         values
-            Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well.
+            Column values to aggregate. Can be multiple columns if the `columns`
+            argument contains multiple columns as well.
         index
             One or multiple keys to group by.
         columns
@@ -7224,9 +7273,9 @@ class DataFrame:
         aggregate_function
             Choose from:
 
-            - None: no aggregation takes place, will raise error if multiple values are in group.
+            - `None`: no aggregation takes place; will raise error if multiple values are in group.
             - A predefined aggregate function string, one of
-              {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
+              {`'first'`, `'sum'`, `'max'`, `'min'`, `'mean'`, `'median'`, `'last'`, `'count'`}
             - An expression to do the aggregation.
 
         maintain_order
@@ -7394,22 +7443,23 @@ class DataFrame:
 
         Optionally leaves identifiers set.
 
-        This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
-        two non-identifier columns, 'variable' and 'value'.
+        This function is useful to massage a :class:`DataFrame` into a format where one
+        or more columns are identifier variables (`id_vars`) while all other columns,
+        considered measured variables (`value_vars`), are "unpivoted" to the row axis
+        leaving just two non-identifier columns for the identifier and value variables,
+        named `variable_name` and `value_name` respectively.
 
         Parameters
         ----------
         id_vars
             Column(s) or selector(s) to use as identifier variables.
         value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
+            Column(s) or selector(s) to use as measured variables; if `value_vars`
+            is empty, all columns that are not in `id_vars` will be used.
         variable_name
-            Name to give to the `variable` column. Defaults to "variable"
+            Name to give to the identifier variables column; defaults to `"variable"`.
         value_name
-            Name to give to the `value` column. Defaults to "value"
+            Name to give to the measured variables column; defaults to `"value"`.
 
         Examples
         --------
@@ -7618,7 +7668,7 @@ class DataFrame:
         as_dict: bool = False,
     ) -> list[Self] | dict[Any, Self]:
         """
-        Group by the given columns and return the groups as separate dataframes.
+        Group by the given columns and return each group as its own :class:`DataFrame`.
 
         Parameters
         ----------
@@ -7630,7 +7680,7 @@ class DataFrame:
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default partition by operation.
         include_key
-            Include the columns used to partition the DataFrame in the output.
+            Include the columns used to partition the :class:`DataFrame` in the output.
         as_dict
             Return a dictionary instead of a list. The dictionary keys are the distinct
             group values that identify that group.
@@ -7844,7 +7894,7 @@ class DataFrame:
 
     def is_duplicated(self) -> Series:
         """
-        Get a mask of all duplicated rows in this DataFrame.
+        Get a mask of all duplicated rows in this :class:`DataFrame`.
 
         Examples
         --------
@@ -7881,7 +7931,7 @@ class DataFrame:
 
     def is_unique(self) -> Series:
         """
-        Get a mask of all unique rows in this DataFrame.
+        Get a mask of all unique rows in this :class:`DataFrame`.
 
         Examples
         --------
@@ -7918,10 +7968,10 @@ class DataFrame:
 
     def lazy(self) -> LazyFrame:
         """
-        Start a lazy query from this point. This returns a `LazyFrame` object.
+        Start a lazy query from this point. This returns a :class:`LazyFrame` object.
 
-        Operations on a `LazyFrame` are not executed until this is requested by either
-        calling:
+        Operations on a :class:`LazyFrame` are not executed until this is requested by
+        either calling:
 
         * :meth:`.fetch() <polars.LazyFrame.fetch>`
             (run on a small number of rows)
@@ -7960,7 +8010,7 @@ class DataFrame:
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
     ) -> DataFrame:
         """
-        Select columns from this DataFrame.
+        Select columns from this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -8063,7 +8113,7 @@ class DataFrame:
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
     ) -> DataFrame:
         """
-        Select columns from this LazyFrame.
+        Select columns from this :class:`DataFrame`.
 
         This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
@@ -8078,6 +8128,11 @@ class DataFrame:
             Additional columns to select, specified as keyword arguments.
             The columns will be renamed to the keyword used.
 
+        Returns
+        -------
+        DataFrame
+            A new :class:`DataFrame` with the columns selected.
+
         See Also
         --------
         select
@@ -8091,7 +8146,7 @@ class DataFrame:
         **named_exprs: IntoExpr,
     ) -> DataFrame:
         """
-        Add columns to this DataFrame.
+        Add columns to this :class:`DataFrame`.
 
         Added columns will replace existing columns with the same name.
 
@@ -8108,12 +8163,12 @@ class DataFrame:
         Returns
         -------
         DataFrame
-            A new DataFrame with the columns added.
+            A new :class:`DataFrame` with the columns added.
 
         Notes
         -----
-        Creating a new DataFrame using this method does not create a new copy of
-        existing data.
+        Creating a new :class:`DataFrame` using this method does not create a new copy
+        of existing data.
 
         Examples
         --------
@@ -8240,7 +8295,7 @@ class DataFrame:
         **named_exprs: IntoExpr,
     ) -> DataFrame:
         """
-        Add columns to this DataFrame.
+        Add columns to this :class:`DataFrame`.
 
         Added columns will replace existing columns with the same name.
 
@@ -8259,8 +8314,8 @@ class DataFrame:
 
         Returns
         -------
-        LazyFrame
-            A new LazyFrame with the columns added.
+        DataFrame
+            A new :class:`DataFrame` with the columns added.
 
         See Also
         --------
@@ -8279,7 +8334,7 @@ class DataFrame:
 
     def n_chunks(self, strategy: str = "first") -> int | list[int]:
         """
-        Get number of chunks used by the ChunkedArrays of this DataFrame.
+        Get the number of chunks used by the ChunkedArrays of this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -8327,7 +8382,7 @@ class DataFrame:
 
     def max(self, axis: int | None = None) -> Self | Series:
         """
-        Aggregate the columns of this DataFrame to their maximum value.
+        Get the maximum value of the elements in each column of this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -8416,7 +8471,7 @@ class DataFrame:
 
     def min(self, axis: int | None = None) -> Self | Series:
         """
-        Aggregate the columns of this DataFrame to their minimum value.
+        Get the minimum value of the elements in each column of this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -8525,7 +8580,7 @@ class DataFrame:
         null_strategy: NullStrategy = "ignore",
     ) -> Self | Series:
         """
-        Aggregate the columns of this DataFrame to their sum value.
+        Get the sum of the elements in each column of this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -8652,7 +8707,7 @@ class DataFrame:
         null_strategy: NullStrategy = "ignore",
     ) -> Self | Series:
         """
-        Aggregate the columns of this DataFrame to their mean value.
+        Get the mean of the elements in each column of this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -8748,14 +8803,14 @@ class DataFrame:
 
     def std(self, ddof: int = 1) -> Self:
         """
-        Aggregate the columns of this DataFrame to their standard deviation value.
+        Get the standard deviation of each column of this :class:`DataFrame`.
 
         Parameters
         ----------
         ddof
             “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
             where N represents the number of elements.
-            By default ddof is 1.
+            By default `ddof` is 1.
 
         Examples
         --------
@@ -8790,14 +8845,14 @@ class DataFrame:
 
     def var(self, ddof: int = 1) -> Self:
         """
-        Aggregate the columns of this DataFrame to their variance value.
+        Get the variance of the elements in each column of this :class:`DataFrame`.
 
         Parameters
         ----------
         ddof
             “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
             where N represents the number of elements.
-            By default ddof is 1.
+            By default `ddof` is 1.
 
         Examples
         --------
@@ -8832,7 +8887,7 @@ class DataFrame:
 
     def median(self) -> Self:
         """
-        Aggregate the columns of this DataFrame to their median value.
+        Get the median of the elements in each column of this :class:`DataFrame`.
 
         Examples
         --------
@@ -8858,7 +8913,7 @@ class DataFrame:
 
     def product(self) -> DataFrame:
         """
-        Aggregate the columns of this DataFrame to their product values.
+        Get the product of the elements in each column of this :class:`DataFrame`.
 
         Examples
         --------
@@ -8894,7 +8949,7 @@ class DataFrame:
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> Self:
         """
-        Aggregate the columns of this DataFrame to their quantile value.
+        Get the specified `quantile` of each column of this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -9012,7 +9067,7 @@ class DataFrame:
         maintain_order: bool = False,
     ) -> DataFrame:
         """
-        Drop duplicate rows from this dataframe.
+        Drop duplicate rows from this :class:`DataFrame`.
 
         Parameters
         ----------
@@ -9025,23 +9080,23 @@ class DataFrame:
             * 'any': Does not give any guarantee of which row is kept.
                      This allows more optimizations.
             * 'none': Don't keep duplicate rows.
-            * 'first': Keep first unique row.
-            * 'last': Keep last unique row.
+            * 'first': Keep the first unique row.
+            * 'last': Keep the last unique row.
         maintain_order
-            Keep the same order as the original DataFrame. This is more expensive to
-            compute.
+            Keep the same order as the original :class:`DataFrame`. This is more
+            expensive to compute.
             Settings this to `True` blocks the possibility
             to run on the streaming engine.
 
         Returns
         -------
         DataFrame
-            DataFrame with unique rows.
+            A :class:`DataFrame` of the unique rows.
 
         Warnings
         --------
-        This method will fail if there is a column of type `List` in the DataFrame or
-        subset.
+        This method will fail if there is a column of type :class:`List` in the
+        :class:`DataFrame` or subset.
 
         Examples
         --------
@@ -9103,8 +9158,8 @@ class DataFrame:
 
         Notes
         -----
-        This method operates at the `DataFrame` level; to operate on subsets at the
-        expression level you can make use of struct-packing instead, for example:
+        This method operates at the :class:`DataFrame` level; to operate on subsets at
+        the expression level you can make use of struct-packing instead, for example:
 
         >>> expr_unique_subset = pl.struct(["a", "b"]).n_unique()
 
@@ -9131,7 +9186,7 @@ class DataFrame:
         >>> df.n_unique()
         5
 
-        Simple columns subset.
+        Simple column subset.
 
         >>> df.n_unique(subset=["b", "c"])
         4
@@ -9189,7 +9244,7 @@ class DataFrame:
 
     def rechunk(self) -> Self:
         """
-        Rechunk the data in this DataFrame to a contiguous allocation.
+        Rechunk the data in this :class:`DataFrame` to a contiguous allocation.
 
         This will make sure all subsequent operations have optimal and predictable
         performance.
@@ -9198,7 +9253,7 @@ class DataFrame:
 
     def null_count(self) -> Self:
         """
-        Create a new DataFrame that shows the null counts per column.
+        Create a new :class:`DataFrame` that shows the null counts per column.
 
         Examples
         --------
@@ -9232,23 +9287,23 @@ class DataFrame:
         seed: int | None = None,
     ) -> Self:
         """
-        Sample from this DataFrame.
+        Sample from this :class:`DataFrame`.
 
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
-            `fraction` is None.
+            The number of items to return. Cannot be used with `fraction`.
+            Defaults to 1 if `fraction` is `None`.
         fraction
-            Fraction of items to return. Cannot be used with `n`.
+            The fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            If set to True, the order of the sampled rows will be shuffled. If
-            set to False (default), the order of the returned rows will be
+            If set to `True`, the order of the sampled rows will be shuffled. If
+            set to `False` (the default), the order of the returned rows will be
             neither stable nor fully random.
         seed
-            Seed for the random number generator. If set to None (default), a
+            Seed for the random number generator. If set to `None` (the default), a
             random seed is generated for each sample operation.
 
         Examples
@@ -9296,18 +9351,18 @@ class DataFrame:
 
     def fold(self, operation: Callable[[Series, Series], Series]) -> Series:
         """
-        Apply a horizontal reduction on a DataFrame.
+        Apply a horizontal reduction on a :class:`DataFrame`.
 
         This can be used to effectively determine aggregations on a row level, and can
-        be applied to any DataType that can be supercasted (casted to a similar parent
+        be applied to any data type that can be supercasted (casted to a similar parent
         type).
 
         An example of the supercast rules when applying an arithmetic operation on two
-        DataTypes are for instance:
+        data type are for instance:
 
-        - Int8 + String = String
-        - Float32 + Int64 = Float32
-        - Float32 + Float64 = Float64
+        - :class:`Int8` + :class:`String` = :class:`String`
+        - :class:`Float32` + :class:`Int64` = :class:`Float32`
+        - :class:`Float32` + :class:`Float64` = :class:`Float64`
 
         Examples
         --------
@@ -9359,7 +9414,7 @@ class DataFrame:
             null
         ]
 
-        A horizontal boolean or, similar to a row-wise .any():
+        A horizontal :class:`Boolean` or, similar to a row-wise :func:`any()`:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -9421,17 +9476,17 @@ class DataFrame:
         Parameters
         ----------
         index
-            Row index.
+            The row index.
         by_predicate
             Select the row according to a given expression/predicate.
         named
-            Return a dictionary instead of a tuple. The dictionary is a mapping of
-            column name to row value. This is more expensive than returning a regular
-            tuple, but allows for accessing values by column name.
+            Whether to return a dictionary instead of a tuple. The dictionary is a
+            mapping of column name to row value. This is more expensive than returning a
+            regular tuple, but allows for accessing values by column name.
 
         Returns
         -------
-        tuple (default) or dictionary of row values
+        A tuple (default) or dictionary of row values.
 
         Notes
         -----
@@ -9444,14 +9499,16 @@ class DataFrame:
 
         Warnings
         --------
-        You should NEVER use this method to iterate over a DataFrame; if you require
-        row-iteration you should strongly prefer use of `iter_rows()` instead.
+        You should NEVER use this method to iterate over a :class:`DataFrame`; if you
+        require row-iteration you should strongly prefer use of `iter_rows()` instead.
 
         See Also
         --------
-        iter_rows : Row iterator over frame data (does not materialise all rows).
-        rows : Materialise all frame data as a list of rows (potentially expensive).
-        item: Return dataframe element as a scalar.
+        iter_rows : Row iterator over :class:`DataFrame` data (does not materialise all
+                    rows).
+        rows : Materialise all :class:`DataFrame` data as a list of rows (potentially
+               expensive).
+        item: Return a :class:`DataFrame` element as a scalar.
 
         Examples
         --------
@@ -9531,7 +9588,7 @@ class DataFrame:
         self, *, named: bool = False
     ) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
         """
-        Returns all data in the DataFrame as a list of rows of python-native values.
+        Returns the :class:`DataFrame`'s data as a list of rows of Python-native values.
 
         Parameters
         ----------
@@ -9560,8 +9617,9 @@ class DataFrame:
 
         See Also
         --------
-        iter_rows : Row iterator over frame data (does not materialise all rows).
-        rows_by_key : Materialises frame data as a key-indexed dictionary.
+        iter_rows : Row iterator over :class:`DataFrame` data (does not materialise all
+                    rows).
+        rows_by_key : Materialises :class:`DataFrame` data as a key-indexed dictionary.
 
         Examples
         --------
@@ -9597,7 +9655,7 @@ class DataFrame:
         unique: bool = False,
     ) -> dict[Any, Iterable[Any]]:
         """
-        Returns DataFrame data as a keyed dictionary of python-native values.
+        Returns :class:`DataFrame` data as a keyed dictionary of python-native values.
 
         Note that this method should not be used in place of native operations, due to
         the high cost of materialising all frame data out into a dictionary; it should
@@ -9716,7 +9774,7 @@ class DataFrame:
         # returning a list of rows for each key, so append into a defaultdict.
         rows: dict[Any, Any] = {} if unique else defaultdict(list)
 
-        # return named values (key -> dict | list of dicts), eg:
+        # return named values (key -> dict | list of dicts), e.g.:
         # "{(key,): [{col:val, col:val, ...}],
         #   (key,): [{col:val, col:val, ...}],}"
         if named:
@@ -9733,7 +9791,7 @@ class DataFrame:
                     else:
                         rows[k].append(d)
 
-        # return values (key -> tuple | list of tuples), eg:
+        # return values (key -> tuple | list of tuples), e.g.:
         # "{(key,): [(val, val, ...)],
         #   (key,): [(val, val, ...)], ...}"
         elif unique:
@@ -9767,7 +9825,7 @@ class DataFrame:
         self, *, named: bool = False, buffer_size: int = 512
     ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
         """
-        Returns an iterator over the DataFrame of rows of python-native values.
+        Returns an iterator over the :class:`DataFrame` of rows of Python-native values.
 
         Parameters
         ----------
@@ -9841,7 +9899,7 @@ class DataFrame:
 
     def iter_columns(self) -> Iterator[Series]:
         """
-        Returns an iterator over the DataFrame's columns.
+        Returns an iterator over the :class:`DataFrame`'s columns.
 
         Notes
         -----
@@ -9850,7 +9908,7 @@ class DataFrame:
 
         Returns
         -------
-        Iterator of Series.
+        Iterator of :class:`Series`.
 
         Examples
         --------
@@ -9863,7 +9921,7 @@ class DataFrame:
         >>> [s.name for s in df.iter_columns()]
         ['a', 'b']
 
-        If you're using this to modify a dataframe's columns, e.g.
+        If you're using this to modify a :class:`DataFrame`'s columns, e.g.
 
         >>> # Do NOT do this
         >>> pl.DataFrame(column * 2 for column in df.iter_columns())
@@ -9897,12 +9955,12 @@ class DataFrame:
 
     def iter_slices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
         r"""
-        Returns a non-copying iterator of slices over the underlying DataFrame.
+        Returns a non-copying iterator of slices over the underlying :class:`DataFrame`.
 
         Parameters
         ----------
         n_rows
-            Determines the number of rows contained in each DataFrame slice.
+            Determines the number of rows contained in each :class:`DataFrame` slice.
 
         Examples
         --------
@@ -9920,8 +9978,9 @@ class DataFrame:
         DataFrame:[0]:10000
         DataFrame:[1]:7500
 
-        Using `iter_slices` is an efficient way to chunk-iterate over DataFrames and
-        any supported frame export/conversion types; for example, as RecordBatches:
+        Using `iter_slices` is an efficient way to chunk-iterate over
+        :class:`DataFrame`s and any supported frame export/conversion types;
+        for example, as RecordBatches:
 
         >>> for frame in df.iter_slices(n_rows=15_000):
         ...     record_batch = frame.to_arrow().to_batches()[0]
@@ -9946,7 +10005,7 @@ class DataFrame:
 
     def shrink_to_fit(self, *, in_place: bool = False) -> Self:
         """
-        Shrink DataFrame memory usage.
+        Shrink :class:`DataFrame` memory usage.
 
         Shrinks to fit the exact capacity needed to hold the data.
 
@@ -9961,12 +10020,12 @@ class DataFrame:
 
     def gather_every(self, n: int, offset: int = 0) -> DataFrame:
         """
-        Take every nth row in the DataFrame and return as a new DataFrame.
+        Return every `n`th value in the :class:`DataFrame` as a new :class:`DataFrame`.
 
         Parameters
         ----------
         n
-            Gather every *n*-th row.
+            Gather every `n`th row.
         offset
             Starting index.
 
@@ -10008,7 +10067,7 @@ class DataFrame:
         """
         Hash and combine the rows in this DataFrame.
 
-        The hash value is of type `UInt64`.
+        The hash value is of type :class:`UInt64`.
 
         Parameters
         ----------
@@ -10083,7 +10142,7 @@ class DataFrame:
 
     def is_empty(self) -> bool:
         """
-        Check if the dataframe is empty.
+        Check if the :class:`DataFrame` is empty.
 
         Examples
         --------
@@ -10098,7 +10157,7 @@ class DataFrame:
 
     def to_struct(self, name: str = "") -> Series:
         """
-        Convert a `DataFrame` to a `Series` of type `Struct`.
+        Convert a :class:`DataFrame` to a `Series` of type :class:`Struct`.
 
         Parameters
         ----------
@@ -10133,15 +10192,15 @@ class DataFrame:
         *more_columns: ColumnNameOrSelector,
     ) -> Self:
         """
-        Decompose struct columns into separate columns for each of their fields.
+        Convert :class:`Struct` columns into separate columns for each of their fields.
 
-        The new columns will be inserted into the dataframe at the location of the
-        struct column.
+        The new columns will be inserted into the :class:`DataFrame` at the location of
+        the :class:`Struct` column.
 
         Parameters
         ----------
         columns
-            Name of the struct column(s) that should be unnested.
+            Name of the :class:`Struct` column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
 
@@ -10218,18 +10277,18 @@ class DataFrame:
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """
-        Take two sorted DataFrames and merge them by the sorted key.
+        Take two sorted :class:`DataFrame`s and merge them by the sorted key.
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames are sorted
         by that key otherwise the output will not make sense.
 
-        The schemas of both DataFrames must be equal.
+        The schemas of both :class:`DataFrame`s must be equal.
 
         Parameters
         ----------
         other
-            Other DataFrame that must be merged
+            Other :class:`DataFrame` that must be merged
         key
             Key that is sorted.
 
@@ -10317,20 +10376,20 @@ class DataFrame:
         include_nulls: bool = False,
     ) -> DataFrame:
         """
-        Update the values in this `DataFrame` with the values in `other`.
+        Update `null` values in `self` with non-`null` values in `other`.
 
         .. warning::
             This functionality is experimental and may change without it being
             considered a breaking change.
 
-        By default, null values in the right frame are ignored. Use
-        `include_nulls=False` to overwrite values in this frame with
-        null values in the other frame.
+        By default, `null` values in the right frame are ignored. Use
+        `include_nulls=False` to overwrite values in this :class:`DataFrame` with
+        `null` values in the other :class:`DataFrame`.
 
         Parameters
         ----------
         other
-            DataFrame that will be used to update the values
+            :class:`DataFrame` that will be used to update the values.
         on
             Column names that will be joined on.
             If none given the row count is used.
@@ -10341,12 +10400,12 @@ class DataFrame:
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
         left_on
-           Join column(s) of the left DataFrame.
+           Join column(s) of the left :class:`DataFrame`.
         right_on
-           Join column(s) of the right DataFrame.
+           Join column(s) of the right :class:`DataFrame`.
         include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
+            If `True`, `null` values from the right dataframe will be used to update the
+            left :class:`DataFrame`.
 
         Notes
         -----
@@ -10380,7 +10439,7 @@ class DataFrame:
         ...     }
         ... )
 
-        Update `df` values with the non-null values in `new_df`, by row index:
+        Update `df` values with the non-`null` values in `new_df`, by row index:
 
         >>> df.update(new_df)
         shape: (4, 2)
@@ -10395,7 +10454,7 @@ class DataFrame:
         │ 4   ┆ 700 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, by row index,
+        Update `df` values with the non-`null` values in `new_df`, by row index,
         but only keeping those rows that are common to both frames:
 
         >>> df.update(new_df, how="inner")
@@ -10410,7 +10469,7 @@ class DataFrame:
         │ 3   ┆ -99 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, using an outer join
+        Update `df` values with the non-`null` values in `new_df`, using an outer join
         strategy that defines explicit join columns in each frame:
 
         >>> df.update(new_df, left_on=["A"], right_on=["C"], how="outer")
@@ -10462,7 +10521,7 @@ class DataFrame:
 
     def count(self) -> DataFrame:
         """
-        Return the number of non-null elements for each column.
+        Return the number of non-`null` elements for each column.
 
         Examples
         --------
@@ -10531,7 +10590,7 @@ class DataFrame:
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups based on a time, :class:`Int32`, or :class:`Int64` column.
 
         .. deprecated:: 0.19.0
             This method has been renamed to :func:`DataFrame.rolling`.

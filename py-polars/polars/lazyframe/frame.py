@@ -139,19 +139,20 @@ class LazyFrame:
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
         Two-dimensional data in various forms; dict input must contain Sequences,
         Generators, or a `range`. Sequence may contain Series or other Sequences.
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+    schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+          auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+        * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
-        any dtypes inferred from the schema param will be overridden.
+        any dtypes inferred from the `schema` parameter will be overridden.
         underlying data, the names given here will overwrite them.
 
         The number of entries in the schema should match the underlying data
@@ -1132,6 +1133,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Print the value that this node in the computation graph evaluates to and passes
         on the value.
 
+        Parameters
+        ----------
+        fmt
+            The string to print, which must contain a `"{}"` that will be replaced by
+            the value of the expression.
+
         Examples
         --------
         >>> lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
@@ -1947,7 +1954,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
             Size of the row groups in number of rows.
-            If None (default), the chunks of the `DataFrame` are
+            If None (default), the chunks of the :class:`DataFrame` are
             used. Writing in smaller chunks may reduce memory pressure and improve
             writing speeds.
         data_pagesize_limit
@@ -2126,8 +2133,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
         float_precision
-            Number of decimal places to write, applied to both `Float32` and
-            `Float64` datatypes.
+            Number of decimal places to write, applied to both :class:`Float32` and
+            :class:`Float64` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
@@ -2590,7 +2597,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         predicates
-            Expression that evaluates to a boolean Series.
+            Expression that evaluates to a :class:`Boolean` :class:`Series`.
         constraints
             Column filters; use `name = value` to filter columns by the supplied value.
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
@@ -2706,7 +2713,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
                 )
 
-        # identify deprecated usage of 'predicate' parameter
+        # identify deprecated usage of `predicate` parameter
         if "predicate" in constraints:
             is_mask = False
             if isinstance(p := constraints["predicate"], pl.Expr) or (
@@ -5189,7 +5196,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Drop duplicate rows from this DataFrame.
+        Drop duplicate rows from this :class:`LazyFrame`.
 
         Parameters
         ----------
@@ -5213,12 +5220,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Returns
         -------
         LazyFrame
-            LazyFrame with unique rows.
+            :class:`LazyFrame` with unique rows.
 
         Warnings
         --------
-        This method will fail if there is a column of type `List` in the DataFrame or
-        subset.
+        This method will fail if there is a column of type :class:`List` in the
+        :class:`DataFrame` or subset.
 
         Examples
         --------
@@ -5477,8 +5484,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Warnings
         --------
-        The `schema` of a `LazyFrame` must always be correct. It is up to the caller
-        of this function to ensure that this invariant is upheld.
+        The `schema` of a :class:`LazyFrame` must always be correct. It is up to the
+        caller of this function to ensure that this invariant is upheld.
 
         It is important that the optimization flags are correct. If the custom function
         for instance does an aggregation of a column, `predicate_pushdown` should not
@@ -5716,7 +5723,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         include_nulls: bool = False,
     ) -> Self:
         """
-        Update the values in this `LazyFrame` with the non-null values in `other`.
+        Update `null` values in `self` with non-`null` values in `other`.
 
         .. warning::
             This functionality is experimental and may change without it being
@@ -5775,7 +5782,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
 
-        Update `df` values with the non-null values in `new_df`, by row index:
+        Update `df` values with the non-`null` values in `new_df`, by row index:
 
         >>> lf.update(new_lf).collect()
         shape: (4, 2)
@@ -5790,7 +5797,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 700 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, by row index,
+        Update `df` values with the non-`null` values in `new_df`, by row index,
         but only keeping those rows that are common to both frames:
 
         >>> lf.update(new_lf, how="inner").collect()
@@ -5805,7 +5812,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ -99 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, using an outer join
+        Update `df` values with the non-`null` values in `new_df`, using an outer join
         strategy that defines explicit join columns in each frame:
 
         >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="outer").collect()
@@ -5931,7 +5938,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def count(self) -> Self:
         """
-        Return the number of non-null elements for each column.
+        Return the number of non-`null` elements for each column.
 
         Examples
         --------

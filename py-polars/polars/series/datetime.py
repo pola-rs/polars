@@ -916,7 +916,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` Series.
+            Unit of time for the :class:`Datetime` Series.
 
         Examples
         --------
@@ -944,7 +944,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` Series.
+            Unit of time for the :class:`Datetime` Series.
 
         Examples
         --------
@@ -986,7 +986,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time_zone
-            Time zone for the `Datetime` Series.
+            Time zone for the :class:`Datetime` Series.
 
         Examples
         --------
@@ -1031,7 +1031,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time_zone
-            Time zone for the `Datetime` Series. Pass `None` to unset time zone.
+            Time zone for the :class:`Datetime` Series. Pass `None` to unset time zone.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 

@@ -21,7 +21,7 @@ class BinaryNameSpace:
 
     def contains(self, literal: IntoExpr) -> Series:
         """
-        Check if binaries in Series contain a binary substring.
+        Check if binaries in this :class:`Series` contain a binary substring.
 
         Parameters
         ----------

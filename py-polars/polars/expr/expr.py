@@ -286,12 +286,12 @@ class Expr:
     @classmethod
     def from_json(cls, value: str) -> Self:
         """
-        Read an expression from a JSON encoded string to construct an Expression.
+        Read an expression from a JSON encoded string.
 
         Parameters
         ----------
         value
-            JSON encoded string value
+            A JSON-encoded string.
 
         """
         expr = cls.__new__(cls)
@@ -300,21 +300,20 @@ class Expr:
 
     def to_physical(self) -> Self:
         """
-        Cast to physical representation of the logical dtype.
+        Cast to the physical representation of this expression's dtype.
 
-        - :func:`polars.datatypes.Date` -> :func:`polars.datatypes.Int32`
-        - :func:`polars.datatypes.Datetime` -> :func:`polars.datatypes.Int64`
-        - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
-        - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
-        - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
+        - :class:`Date` -> :class:`Int32`
+        - :class:`Datetime` -> :class:`Int64`
+        - :class:`Time` -> :class:`Int64`
+        - :class:`Duration` -> :class:`Int64`
+        - :class:`Categorical` -> :class:`UInt32`
         - `List(inner)` -> `List(physical of inner)`
 
         Other data types will be left unchanged.
 
         Examples
         --------
-        Replicating the pandas
-        `pd.factorize
+        Replicating the `pandas.factorize
         <https://pandas.pydata.org/docs/reference/api/pandas.factorize.html>`_
         function.
 
@@ -345,18 +344,18 @@ class Expr:
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> Self:
         """
-        Return whether any of the values in the column are `True`.
+        Return whether any of the values in the expression are `True`.
 
-        Only works on columns of data type :class:`Boolean`.
+        Only works on expressions of data type :class:`Boolean`.
 
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
+            Ignore `null` values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
-            the output is null.
+            If set to `False`, `Kleene logic`_ is used to deal with `null` values:
+            if the column contains any `null` values and no `True` values,
+            the output is `null`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -462,15 +461,15 @@ class Expr:
 
     def arg_true(self) -> Self:
         """
-        Return indices where expression evaluates `True`.
+        Return indices where this expression evaluates to `True`.
 
         .. warning::
-            Modifies number of rows returned, so will fail in combination with other
-            expressions. Use as only expression in `select` / `with_columns`.
+            Modifies the number of rows returned, so will fail in combination with
+            other expressions. Use as the only expression in `select` / `with_columns`.
 
         See Also
         --------
-        Series.arg_true : Return indices where Series is True
+        Series.arg_true : Return indices where a :class:`Series` is `True`
         polars.arg_where
 
         Examples
@@ -537,7 +536,7 @@ class Expr:
 
     def log10(self) -> Self:
         """
-        Compute the base 10 logarithm of the input array, element-wise.
+        Compute the base 10 logarithm, element-wise.
 
         Examples
         --------
@@ -889,7 +888,8 @@ class Expr:
         │ 3   ┆ 1.5  │
         └─────┴──────┘
 
-        Exclude by regex, e.g. removing all columns whose names end with the letter "a":
+        Exclude by regex, e.g. removing all columns whose names end with the letter
+        `"a"`:
 
         >>> df.select(pl.all().exclude("^.*a$"))
         shape: (3, 1)
@@ -903,7 +903,8 @@ class Expr:
         │ 1.5  │
         └──────┘
 
-        Exclude by dtype(s), e.g. removing all columns of type Int64 or Float64:
+        Exclude by dtype(s), e.g. removing all columns of type :class:`Int64` or
+        :class:`Float64`:
 
         >>> df.select(pl.all().exclude([pl.Int64, pl.Float64]))
         shape: (3, 1)
@@ -1001,7 +1002,7 @@ class Expr:
     @deprecate_renamed_function("not_", version="0.19.2")
     def is_not(self) -> Self:
         """
-        Negate a boolean expression.
+        Negate a :class:`Boolean` expression.
 
         .. deprecated:: 0.19.2
             This method has been renamed to :func:`Expr.not_`.
@@ -1011,7 +1012,7 @@ class Expr:
 
     def not_(self) -> Self:
         """
-        Negate a boolean expression.
+        Negate a :class:`Boolean` expression.
 
         Examples
         --------
@@ -1049,7 +1050,7 @@ class Expr:
 
     def is_null(self) -> Self:
         """
-        Returns a boolean Series indicating which values are null.
+        Returns a :class:`Boolean` :class:`Series` of which values are `null`.
 
         Examples
         --------
@@ -1078,7 +1079,7 @@ class Expr:
 
     def is_not_null(self) -> Self:
         """
-        Returns a boolean Series indicating which values are not null.
+        Returns a :class:`Boolean` :class:`Series` of values are not `null`.
 
         Examples
         --------
@@ -1109,7 +1110,7 @@ class Expr:
 
     def is_finite(self) -> Self:
         """
-        Returns a boolean Series indicating which values are finite.
+        Returns a :class:`Boolean` :class:`Series` of which values are finite.
 
         Returns
         -------
@@ -1140,7 +1141,7 @@ class Expr:
 
     def is_infinite(self) -> Self:
         """
-        Returns a boolean Series indicating which values are infinite.
+        Returns a :class:`Boolean` :class:`Series` of which values are infinite.
 
         Returns
         -------
@@ -1171,12 +1172,12 @@ class Expr:
 
     def is_nan(self) -> Self:
         """
-        Returns a boolean Series indicating which values are NaN.
+        Returns a :class:`Boolean` :class:`Series` indicating which values are `NaN`.
 
         Notes
         -----
         Floating point `NaN` (Not A Number) should not be confused
-        with missing data represented as `Null/None`.
+        with missing data represented as `null`/`None`.
 
         Examples
         --------
@@ -1205,12 +1206,12 @@ class Expr:
 
     def is_not_nan(self) -> Self:
         """
-        Returns a boolean Series indicating which values are not NaN.
+        Returns a :class:`Boolean` :class:`Series` of which values are not `NaN`.
 
         Notes
         -----
         Floating point `NaN` (Not A Number) should not be confused
-        with missing data represented as `Null/None`.
+        with missing data represented as `null`/`None`.
 
         Examples
         --------
@@ -1241,7 +1242,7 @@ class Expr:
         """
         Get the group indexes of the group by operation.
 
-        Should be used in aggregation context only.
+        Should be used in an aggregation context only.
 
         Examples
         --------
@@ -1274,7 +1275,7 @@ class Expr:
 
     def count(self) -> Self:
         """
-        Return the number of non-null elements in the column.
+        Return the number of non-`null` elements in the column.
 
         Returns
         -------
@@ -1304,7 +1305,7 @@ class Expr:
         """
         Return the number of elements in the column.
 
-        Null values count towards the total.
+        `null` values count towards the total.
 
         Returns
         -------
@@ -1372,14 +1373,14 @@ class Expr:
         """
         Append expressions.
 
-        This is done by adding the chunks of `other` to this `Series`.
+        This is done by adding the chunks of `other` to this :class:`Series`.
 
         Parameters
         ----------
         other
             Expression to append.
         upcast
-            Cast both `Series` to the same supertype.
+            Cast both :class:`Series` to the same supertype.
 
         Examples
         --------
@@ -1406,13 +1407,13 @@ class Expr:
 
     def rechunk(self) -> Self:
         """
-        Create a single chunk of memory for this Series.
+        Create a single chunk of memory for this :class:`Series`.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
 
-        Create a Series with 3 nulls, append column a then rechunk
+        Create a :class:`Series` with 3 nulls, append column and then :func:`rechunk`:
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
@@ -1434,7 +1435,7 @@ class Expr:
 
     def drop_nulls(self) -> Self:
         """
-        Drop all null values.
+        Drop all `null` values.
 
         The original order of the remaining elements is preserved.
 
@@ -1444,8 +1445,8 @@ class Expr:
 
         Notes
         -----
-        A null value is not the same as a NaN value.
-        To drop NaN values, use :func:`drop_nans`.
+        A `null` value is not the same as a `NaN` value.
+        To drop `NaN` values, use :func:`drop_nans`.
 
         Examples
         --------
@@ -1467,7 +1468,7 @@ class Expr:
 
     def drop_nans(self) -> Self:
         """
-        Drop all floating point NaN values.
+        Drop all floating-point `NaN` values.
 
         The original order of the remaining elements is preserved.
 
@@ -1477,8 +1478,8 @@ class Expr:
 
         Notes
         -----
-        A NaN value is not the same as a null value.
-        To drop null values, use :func:`drop_nulls`.
+        A `NaN` value is not the same as a `null` value.
+        To drop `null` values, use :func:`drop_nulls`.
 
         Examples
         --------
@@ -1509,8 +1510,8 @@ class Expr:
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        Dtypes in {:class:`Int8`, :class:`UInt8`, :class:`Int16`, :class:`UInt16`} are
+        cast to :class:`Int64` before summing to prevent overflow issues.
 
         Examples
         --------
@@ -1531,7 +1532,8 @@ class Expr:
         │ 4   ┆ 10      ┆ 4               │
         └─────┴─────────┴─────────────────┘
 
-        Null values are excluded, but can also be filled by calling `forward_fill`.
+        `null` values are excluded, but can also be filled by calling
+        :func:`forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
@@ -1571,8 +1573,8 @@ class Expr:
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        Dtypes in {:class:`Int8`, :class:`UInt8`, :class:`Int16`, :class:`UInt16`} are
+        cast to :class:`Int64` before summing to prevent overflow issues.
 
         Examples
         --------
@@ -1655,7 +1657,8 @@ class Expr:
         │ 4   ┆ 4       ┆ 4               │
         └─────┴─────────┴─────────────────┘
 
-        Null values are excluded, but can also be filled by calling `forward_fill`.
+        `null` values are excluded, but can also be filled by calling
+        :func:`forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
@@ -1684,8 +1687,6 @@ class Expr:
     def cum_count(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative count computed at every element.
-
-        Counting from 0 to len
 
         Parameters
         ----------
@@ -1716,9 +1717,7 @@ class Expr:
 
     def floor(self) -> Self:
         """
-        Rounds down to the nearest integer value.
-
-        Only works on floating point Series.
+        Rounds down elements of floating-point columns to the nearest integer.
 
         Examples
         --------
@@ -1741,9 +1740,7 @@ class Expr:
 
     def ceil(self) -> Self:
         """
-        Rounds up to the nearest integer value.
-
-        Only works on floating point Series.
+        Rounds up elements of floating-point columns to the nearest integer.
 
         Examples
         --------
@@ -1766,7 +1763,7 @@ class Expr:
 
     def round(self, decimals: int = 0) -> Self:
         """
-        Round underlying floating point data by `decimals` digits.
+        Round floating-point data to `decimals` digits.
 
         Parameters
         ----------
@@ -1794,7 +1791,7 @@ class Expr:
 
     def round_sig_figs(self, digits: int) -> Self:
         """
-        Round to a number of significant figures.
+        Round floating-point data to `digits` significant figures.
 
         Parameters
         ----------
@@ -1821,7 +1818,7 @@ class Expr:
 
     def dot(self, other: Expr | str) -> Self:
         """
-        Compute the dot/inner product between two Expressions.
+        Compute the dot/inner product between two expressions.
 
         Parameters
         ----------
@@ -1852,9 +1849,7 @@ class Expr:
 
     def mode(self) -> Self:
         """
-        Compute the most occurring value(s).
-
-        Can return multiple Values.
+        Compute the most commonly occurring value(s). Can return multiple values.
 
         Examples
         --------
@@ -1931,7 +1926,7 @@ class Expr:
         descending
             Sort in descending order.
         nulls_last
-            Place null values last.
+            Place `null` values last.
 
         Examples
         --------
@@ -2102,7 +2097,7 @@ class Expr:
         descending
             Sort in descending (descending) order.
         nulls_last
-            Place null values last instead of first.
+            Place `null` values last instead of first.
 
         Returns
         -------
@@ -2190,9 +2185,9 @@ class Expr:
         element
             Expression or scalar value.
         side : {'any', 'left', 'right'}
-            If 'any', the index of the first suitable location found is given.
-            If 'left', the index of the leftmost suitable location found is given.
-            If 'right', return the rightmost suitable location found is given.
+            If `"any"`, the index of the first suitable location found is given.
+            If `"left"`, the index of the leftmost suitable location found is given.
+            If `"right"`, return the rightmost suitable location found is given.
 
         Examples
         --------
@@ -2363,12 +2358,12 @@ class Expr:
         Parameters
         ----------
         indices
-            An expression that leads to a UInt32 dtyped Series.
+            An expression that leads to a :class:`UInt32`-dtyped :class:`Series`.
 
         Returns
         -------
         Expr
-            Expression of the same data type.
+            An expression of the same data type.
 
         See Also
         --------
@@ -2464,10 +2459,10 @@ class Expr:
         Parameters
         ----------
         n
-            Number of indices to shift forward. If a negative value is passed, values
-            are shifted in the opposite direction instead.
+            Number of indices to shift forward. If negative, values are shifted
+            backward instead.
         fill_value
-            Fill the resulting null values with this value.
+            Fill the resulting `null` values with this value.
 
         Notes
         -----
@@ -2492,7 +2487,7 @@ class Expr:
         │ 4   ┆ 3     │
         └─────┴───────┘
 
-        Pass a negative value to shift in the opposite direction instead.
+        Pass a negative value to shift backward instead.
 
         >>> df.with_columns(shift=pl.col("a").shift(-2))
         shape: (4, 2)
@@ -2507,7 +2502,7 @@ class Expr:
         │ 4   ┆ null  │
         └─────┴───────┘
 
-        Specify `fill_value` to fill the resulting null values.
+        Specify `fill_value` to fill the resulting `null` values.
 
         >>> df.with_columns(shift=pl.col("a").shift(-2, fill_value=100))
         shape: (4, 2)
@@ -2535,20 +2530,20 @@ class Expr:
         limit: int | None = None,
     ) -> Self:
         """
-        Fill null values using the specified value or strategy.
+        Fill `null` values using the specified value or strategy.
 
-        To interpolate over null values see interpolate.
-        See the examples below to fill nulls with an expression.
+        To interpolate over `null` values see interpolate.
+        See the examples below to fill `null` values with an expression.
 
         Parameters
         ----------
         value
-            Value used to fill null values.
+            Value used to fill `null` values.
         strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
-            Strategy used to fill null values.
+            Strategy used to fill `null` values.
         limit
-            Number of consecutive null values to fill when using the 'forward' or
-            'backward' strategy.
+            Number of consecutive `null` values to fill when using the `'forward'` or
+            `'backward'` strategy.
 
         Examples
         --------
@@ -2634,7 +2629,7 @@ class Expr:
 
     def fill_nan(self, value: int | float | Expr | None) -> Self:
         """
-        Fill floating point NaN value with a fill value.
+        Fill floating-point `NaN` values with `value`.
 
         Examples
         --------
@@ -2667,7 +2662,7 @@ class Expr:
         Parameters
         ----------
         limit
-            The number of consecutive null values to forward fill.
+            The number of consecutive `null` values to forward fill.
 
         Examples
         --------
@@ -2694,12 +2689,12 @@ class Expr:
 
     def backward_fill(self, limit: int | None = None) -> Self:
         """
-        Fill missing values with the next to be seen values.
+        Fill missing values with the next-to-be-seen values.
 
         Parameters
         ----------
         limit
-            The number of consecutive null values to backward fill.
+            The number of consecutive `null` values to backward fill.
 
         Examples
         --------
@@ -2774,7 +2769,7 @@ class Expr:
 
     def std(self, ddof: int = 1) -> Self:
         """
-        Get standard deviation.
+        Get the standard deviation of an expression.
 
         Parameters
         ----------
@@ -2801,7 +2796,7 @@ class Expr:
 
     def var(self, ddof: int = 1) -> Self:
         """
-        Get variance.
+        Get the variance of an expression.
 
         Parameters
         ----------
@@ -2828,7 +2823,7 @@ class Expr:
 
     def max(self) -> Self:
         """
-        Get maximum value.
+        Get the maximum value of an expression.
 
         Examples
         --------
@@ -2848,7 +2843,7 @@ class Expr:
 
     def min(self) -> Self:
         """
-        Get minimum value.
+        Get the minimum value of an expression.
 
         Examples
         --------
@@ -2868,10 +2863,12 @@ class Expr:
 
     def nan_max(self) -> Self:
         """
-        Get maximum value, but propagate/poison encountered NaN values.
+        Get the maximum value, but propagate/poison encountered `NaN` values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
-        whereas polars defaults to ignoring them.
+        This differs from `numpy.nanmax
+        <https://numpy.org/doc/stable/reference/generated/numpy.nanmax.html>`_
+        as numpy defaults to propagating NaN values, whereas polars defaults to
+        ignoring them.
 
         Examples
         --------
@@ -2891,10 +2888,12 @@ class Expr:
 
     def nan_min(self) -> Self:
         """
-        Get minimum value, but propagate/poison encountered NaN values.
+        Get the minimum value, but propagate/poison encountered `NaN` values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
-        whereas polars defaults to ignoring them.
+        This differs from `numpy.nanmin
+        <https://numpy.org/doc/stable/reference/generated/numpy.nanmin.html>`_
+        as numpy defaults to propagating NaN values, whereas polars defaults to
+        ignoring them.
 
         Examples
         --------
@@ -2914,12 +2913,12 @@ class Expr:
 
     def sum(self) -> Self:
         """
-        Get sum value.
+        Get the sum of an expression.
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        Dtypes in {:class:`Int8`, :class:`UInt8`, :class:`Int16`, :class:`UInt16`} are
+        cast to :class:`Int64` before summing to prevent overflow issues.
 
         Examples
         --------
@@ -2939,7 +2938,7 @@ class Expr:
 
     def mean(self) -> Self:
         """
-        Get mean value.
+        Get the mean of an expression.
 
         Examples
         --------
@@ -2959,7 +2958,7 @@ class Expr:
 
     def median(self) -> Self:
         """
-        Get median value using linear interpolation.
+        Get the median of an expression using linear interpolation.
 
         Examples
         --------
@@ -2979,7 +2978,7 @@ class Expr:
 
     def product(self) -> Self:
         """
-        Compute the product of an expression.
+        Get the product of an expression.
 
         Examples
         --------
@@ -3041,7 +3040,7 @@ class Expr:
 
     def null_count(self) -> Self:
         """
-        Count null values.
+        Count `null` values.
 
         Examples
         --------
@@ -3066,7 +3065,7 @@ class Expr:
 
     def arg_unique(self) -> Self:
         """
-        Get index of first unique value.
+        Get the index of the first unique value.
 
         Examples
         --------
@@ -3189,7 +3188,7 @@ class Expr:
         Compute expressions over the given groups.
 
         This expression is similar to performing a group by aggregation and joining the
-        result back into the original DataFrame.
+        result back into the original :class:`DataFrame`.
 
         The outcome is similar to how `window functions
         <https://www.postgresql.org/docs/current/tutorial-window.html>`_
@@ -3203,14 +3202,14 @@ class Expr:
         *more_exprs
             Additional columns to group by, specified as positional arguments.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
-            - group_to_rows
-                If the aggregation results in multiple values, assign them back to their
-                position in the DataFrame. This can only be done if the group yields
-                the same elements before aggregation as after.
-            - join
-                Join the groups as 'List<group_dtype>' to the row positions.
-                warning: this can be memory intensive.
-            - explode
+            - `group_to_rows`
+                If the aggregation results in multiple values, assign them back to
+                their position in the DataFrame. This can only be done if the group
+                yields the same elements before aggregation as after.
+            - `join`
+                Join the groups as a :class:`List`.
+                Warning: this can be memory-intensive.
+            - `explode`
                 Don't do any mapping, but simply flatten the group.
                 This only makes sense if the input data is sorted.
 
@@ -3309,7 +3308,7 @@ class Expr:
         check_sorted: bool = True,
     ) -> Self:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups from a time, :class:`Int32`, or :class:`Int64` column.
 
         If you have a time series `<t_0, t_1, ..., t_n>`, then by default the
         windows created will be
@@ -3357,24 +3356,26 @@ class Expr:
         Parameters
         ----------
         index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
+            The column used to group based on the time window.
+            Often of type :class:`Date`/:class:`Datetime`.
             This column must be sorted in ascending order.
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+
+            In the case of a rolling group by on indices, dtype needs to be one of
+            {:class:`Int32`, :class:`Int64`}. Note that :class:`Int32` gets
+            temporarily cast to :class:`Int64`, so if performance matters use an
+            :class:`Int64` column.
         period
-            length of the window - must be non-negative
+            The length of the window; must be non-negative.
         offset
-            offset of the window. Default is -period
+            The offset of the window. Default is `-period`.
         closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Which sides of the temporal interval are closed (inclusive).
         check_sorted
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
             data within the by groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
+            Doing so incorrectly will lead to incorrect output.
 
         Examples
         --------
@@ -3445,7 +3446,7 @@ class Expr:
 
     def is_first_distinct(self) -> Self:
         """
-        Return a boolean mask indicating the first occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the first occurrence of each distinct value.
 
         Returns
         -------
@@ -3474,7 +3475,7 @@ class Expr:
 
     def is_last_distinct(self) -> Self:
         """
-        Return a boolean mask indicating the last occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the last occurrence of each distinct value.
 
         Returns
         -------
@@ -3503,7 +3504,7 @@ class Expr:
 
     def is_duplicated(self) -> Self:
         """
-        Return a boolean mask indicating duplicated values.
+        Return a :class:`Boolean` mask of duplicated values.
 
         Returns
         -------
@@ -3530,7 +3531,7 @@ class Expr:
 
     def peak_max(self) -> Self:
         """
-        Get a boolean mask of the local maximum peaks.
+        Get a :class:`Boolean` mask of the local maximum peaks.
 
         Examples
         --------
@@ -3554,7 +3555,7 @@ class Expr:
 
     def peak_min(self) -> Self:
         """
-        Get a boolean mask of the local minimum peaks.
+        Get a :class:`Boolean` mask of the local minimum peaks.
 
         Examples
         --------
@@ -3663,7 +3664,7 @@ class Expr:
             Names of the categories. The number of labels must be equal to the number
             of cut points plus one.
         left_closed
-            Set the intervals to be left-closed instead of right-closed.
+            Whether to set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
             in. This will change the data type of the output from a
@@ -3744,7 +3745,7 @@ class Expr:
             Names of the categories. The number of labels must be equal to the number
             of categories.
         left_closed
-            Set the intervals to be left-closed instead of right-closed.
+            Whether to set the intervals to be left-closed instead of right-closed.
         allow_duplicates
             If set to `True`, duplicates in the resulting quantiles are dropped,
             rather than raising a `DuplicateError`. This can happen even with unique
@@ -3904,13 +3905,13 @@ class Expr:
 
         The original order of the remaining elements is preserved.
 
-        Mostly useful in an aggregation context. If you want to filter on a DataFrame
-        level, use `LazyFrame.filter`.
+        Mostly useful in an aggregation context. If you want to filter on a
+        :class:`DataFrame` level, use :func:`LazyFrame.filter`.
 
         Parameters
         ----------
         predicates
-            Expression(s) that evaluates to a boolean Series.
+            Expression(s) that evaluates to a :class:`Boolean` :class:`Series`.
         constraints
             Column filters; use `name = value` to filter columns by the supplied value.
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
@@ -3994,7 +3995,7 @@ class Expr:
         Parameters
         ----------
         predicate
-            Boolean expression.
+            :class:`Boolean` expression.
 
         Examples
         --------
@@ -4032,12 +4033,12 @@ class Expr:
         is_elementwise: bool = False,
     ) -> Self:
         """
-        Apply a custom python function to a whole Series or sequence of Series.
+        Apply a custom Python function to a :class:`Series` or sequence thereof.
 
-        The output of this custom function must be a Series. If you want to apply a
-        custom function elementwise over single values, see :func:`map_elements`.
-        A reasonable use case for `map` functions is transforming the values
-        represented by an expression using a third-party library.
+        The output of this custom function must be a :class:`Series`. If you want to
+        apply a custom function elementwise over single values, see
+        :func:`map_elements`. A reasonable use case for `map` functions is transforming
+        the values represented by an expression using a third-party library.
 
         .. warning::
             If you are looking to map a function over a window function or group_by
@@ -4050,10 +4051,10 @@ class Expr:
         function
             Lambda/function to apply.
         return_dtype
-            Dtype of the output Series.
+            Dtype of the output :class:`Series`.
         is_elementwise
             If set to true this can run in the streaming engine, but may yield
-            incorrect results in group-by. Ensure you know what you are doing!
+            incorrect results in a group by context. Ensure you know what you are doing!
         agg_list
             Aggregate list.
 
@@ -4102,15 +4103,15 @@ class Expr:
         strategy: MapElementsStrategy = "thread_local",
     ) -> Self:
         """
-        Map a custom/user-defined function (UDF) to each element of a column.
+        Apply a custom Python function to each element of an expression.
 
         .. warning::
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
-        The UDF is applied to each element of a column. Note that, in a GroupBy
-        context, the column will have been pre-aggregated and so each element
-        will itself be a Series. Therefore, depending on the context,
+        The custom function is applied to each element of a column. Note that, in a
+        group by context, the column will have been pre-aggregated and so each element
+        will itself be a :class:`Series`. Therefore, depending on the context,
         requirements for `function` differ:
 
         * Selection
@@ -4126,31 +4127,34 @@ class Expr:
         function
             Lambda/function to map.
         return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be `pl.Unknown`.
+            Data type of the output :class:`Series`.
+            If not set, the dtype will be :class:`Unknown`.
         skip_nulls
-            Don't map the function over values that contain nulls (this is faster).
+            Don't map the function over `null` values (this is faster).
         pass_name
-            Pass the Series name to the custom function (this is more expensive).
+            Pass the :class:`Series`' name to the custom function (this is more
+            expensive).
         strategy : {'thread_local', 'threading'}
             This functionality is considered experimental and may be removed/changed.
 
-            - 'thread_local': run the python function on a single thread.
-            - 'threading': run the python function on separate threads. Use with
+            - 'thread_local': run the Python function on a single thread.
+            - 'threading': run the Python function on separate threads. Use with
               care as this can slow performance. This might only speed up
               your code if the amount of work per element is significant
-              and the python function releases the GIL (e.g. via calling
-              a c function)
+              and the Python function releases the GIL (e.g. via calling
+              a C function)
 
         Notes
         -----
         * Using `map_elements` is strongly discouraged as you will be effectively
-          running python "for" loops, which will be very slow. Wherever possible you
+          running Python "for" loops, which will be very slow. Wherever possible, you
           should prefer the native expression API to achieve the best performance.
 
         * If your function is expensive and you don't want it to be called more than
-          once for a given input, consider applying an `@lru_cache` decorator to it.
-          If your data is suitable you may achieve *significant* speedups.
+          once for a given input, consider applying an `@lru_cache
+          <https://docs.python.org/3/library/functools.html#functools.lru_cache>`_
+          decorator to it. If your data is suitable you may achieve *significant*
+          speedups.
 
         * Window function application using `over` is considered a GroupBy context
           here, so `map_elements` can be used to map functions over window groups.
@@ -4192,7 +4196,7 @@ class Expr:
         ...     (pl.col("a") * 2).alias("a_times_2"),
         ... )  # doctest: +IGNORE_RESULT
 
-        In a GroupBy context, each element of the column is itself a Series:
+        In a group by context, each element of the column is itself a :class:`Series`:
 
         >>> (
         ...     df.lazy().group_by("b").agg(pl.col("a")).collect()
@@ -4236,7 +4240,7 @@ class Expr:
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
-        Window function application using `over` will behave as a GroupBy
+        Window function application using `over` will behave as a group by
         context, with your function receiving individual window groups:
 
         >>> df = pl.DataFrame(
@@ -4346,9 +4350,10 @@ class Expr:
 
     def flatten(self) -> Self:
         """
-        Flatten a list or string column.
+        Flatten a :class:`List` or :class:`String` column.
 
-        Alias for :func:`polars.expr.list.ExprListNameSpace.explode`.
+        Alias for :func:`polars.Expr.list.explode` or
+        :func:`polars.Expr.str.explode`.
 
         Examples
         --------
@@ -4374,7 +4379,7 @@ class Expr:
 
     def explode(self) -> Self:
         """
-        Explode a list expression.
+        Explode a :class:`List` column.
 
         This means that every item is expanded to a new row.
 
@@ -4417,7 +4422,7 @@ class Expr:
 
     def implode(self) -> Self:
         """
-        Aggregate values into a list.
+        Aggregate values into a :class:`List` column.
 
         Examples
         --------
@@ -4442,12 +4447,12 @@ class Expr:
 
     def gather_every(self, n: int, offset: int = 0) -> Self:
         """
-        Take every nth value in the Series and return as a new Series.
+        Return every `n`th value in the expression.
 
         Parameters
         ----------
         n
-            Gather every *n*-th row.
+            Gather every `n`-th row.
         offset
             Starting index.
 
@@ -4570,7 +4575,7 @@ class Expr:
         Parameters
         ----------
         *others
-            One or more integer or boolean expressions to evaluate/combine.
+            One or more integer or :class:`Boolean` expressions to evaluate/combine.
 
         Examples
         --------
@@ -4614,7 +4619,7 @@ class Expr:
         Parameters
         ----------
         *others
-            One or more integer or boolean expressions to evaluate/combine.
+            One or more integer or :class:`Boolean` expressions to evaluate/combine.
 
         Examples
         --------
@@ -5200,7 +5205,7 @@ class Expr:
         Parameters
         ----------
         other
-            Integer or boolean value; accepts expression input.
+            Integer or :class:`Boolean` value; accepts expression input.
 
         Examples
         --------
@@ -5253,12 +5258,12 @@ class Expr:
 
     def is_in(self, other: Expr | Collection[Any] | Series) -> Self:
         """
-        Check if elements of this expression are present in the other Series.
+        Check if elements of this expression are present in `other`.
 
         Parameters
         ----------
         other
-            Series or sequence of primitive type.
+            :class:`Series` or sequence of primitive type.
 
         Returns
         -------
@@ -5295,14 +5300,14 @@ class Expr:
         """
         Repeat the elements in this Series as specified in the given expression.
 
-        The repeated elements are expanded into a `List`.
+        The repeated elements are expanded into a :class:`List`.
 
         Parameters
         ----------
         by
             Numeric column that determines how often the values will be repeated.
-            The column will be coerced to UInt32. Give this dtype to make the coercion a
-            no-op.
+            The column will be coerced to :class:`UInt32`. Give this dtype to make the
+            coercion a no-op.
 
         Returns
         -------
@@ -5341,7 +5346,7 @@ class Expr:
         closed: ClosedInterval = "both",
     ) -> Self:
         """
-        Check if this expression is between the given start and end values.
+        Determine which values are between `lower_bound` and `upper_bound`.
 
         Parameters
         ----------
@@ -5357,7 +5362,8 @@ class Expr:
         Returns
         -------
         Expr
-            Expression of data type :class:`Boolean`.
+            A :class:`Boolean` expression of which values are between `lower_bound`
+            and `upper_bound`.
 
         Examples
         --------
@@ -5445,7 +5451,7 @@ class Expr:
         """
         Hash the elements in the selection.
 
-        The hash value is of type `UInt64`.
+        The hash value is of type :class:`UInt64`.
 
         Parameters
         ----------
@@ -5495,13 +5501,14 @@ class Expr:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
-        This operation is only allowed for 64bit integers. For lower bits integers,
-        you can safely use that cast operation.
+        This operation is only allowed for 64-bit integers. For smaller integer dtypes,
+        you can safely use the :func:`cast` operation.
 
         Parameters
         ----------
         signed
-            If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+            If True, reinterpret as :class:`Int64`. Otherwise, reinterpret as
+            :class:`UInt64`.
 
         Examples
         --------
@@ -5530,6 +5537,12 @@ class Expr:
     def inspect(self, fmt: str = "{}") -> Self:
         """
         Print the value that this expression evaluates to and pass on the value.
+
+        Parameters
+        ----------
+        fmt
+            The string to print, which must contain a `"{}"` that will be replaced by
+            the value of the expression.
 
         Examples
         --------
@@ -5563,7 +5576,7 @@ class Expr:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Self:
         """
-        Fill null values using interpolation.
+        Fill `null` values using interpolation.
 
         Parameters
         ----------
@@ -5572,7 +5585,7 @@ class Expr:
 
         Examples
         --------
-        Fill null values using linear interpolation.
+        Fill `null` values using linear interpolation.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -5592,7 +5605,7 @@ class Expr:
         │ 3.0 ┆ 3.0 │
         └─────┴─────┘
 
-        Fill null values using nearest interpolation.
+        Fill `null` values using nearest-neighbors interpolation.
 
         >>> df.select(pl.all().interpolate("nearest"))
         shape: (3, 2)
@@ -5650,11 +5663,11 @@ class Expr:
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
-        Apply a rolling min (moving min) over the values in this array.
+        Apply a rolling (moving) minimum over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their min.
+        `weight` vector. The resulting values will be aggregated to their minimum.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -5700,13 +5713,13 @@ class Expr:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -5863,11 +5876,11 @@ class Expr:
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
-        Apply a rolling max (moving max) over the values in this array.
+        Apply a rolling (moving) maximum over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their max.
+        `weight` vector. The resulting values will be aggregated to their maximum.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -5913,13 +5926,13 @@ class Expr:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -6099,7 +6112,7 @@ class Expr:
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
-        Apply a rolling mean (moving mean) over the values in this array.
+        Apply a rolling (moving) mean over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -6149,13 +6162,13 @@ class Expr:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -6345,7 +6358,7 @@ class Expr:
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
-        Apply a rolling sum (moving sum) over the values in this array.
+        Apply a rolling (moving) sum over the values in this array.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -6395,13 +6408,13 @@ class Expr:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -6628,13 +6641,13 @@ class Expr:
             An optional slice with the same length as the window that determines the
             relative contribution of each value in a window to the output.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -6874,13 +6887,13 @@ class Expr:
             An optional slice with the same length as the window that determines the
             relative contribution of each value in a window to the output.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -7119,13 +7132,13 @@ class Expr:
             An optional slice with the same length as the window that determines the
             relative contribution of each value in a window to the output.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -7287,13 +7300,13 @@ class Expr:
             An optional slice with the same length as the window that determines the
             relative contribution of each value in a window to the output.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
@@ -7492,13 +7505,13 @@ class Expr:
             A list of weights with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window.
+            Whether to set the labels at the center of the window.
 
         Examples
         --------
@@ -7583,9 +7596,9 @@ class Expr:
               assigned the rank immediately after those assigned to the tied
               elements.
             - 'ordinal' : All values are given a distinct rank, corresponding to
-              the order that the values occur in the Series.
+              the order that the values occur in the :class:`Series`.
             - 'random' : Like 'ordinal', but the rank for ties is not dependent
-              on the order that the values occur in the Series.
+              on the order that the values occur in the :class:`Series`.
         descending
             Rank in descending order.
         seed
@@ -7627,7 +7640,7 @@ class Expr:
         │ 5   │
         └─────┘
 
-        Use 'rank' with 'over' to rank within groups:
+        Use `rank` with :func:`over` to rank within groups:
 
         >>> df = pl.DataFrame({"a": [1, 1, 2, 2, 2], "b": [6, 7, 5, 14, 11]})
         >>> df.with_columns(pl.col("b").rank().over("a").alias("rank"))
@@ -7654,9 +7667,9 @@ class Expr:
         Parameters
         ----------
         n
-            Number of slots to shift.
+            The number of items to shift by when calculating the difference.
         null_behavior : {'ignore', 'drop'}
-            How to handle null values.
+            How to handle `null` values.
 
         Examples
         --------
@@ -7709,14 +7722,14 @@ class Expr:
         Computes percentage change between values.
 
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least `n` period(s) before the current element.
+        non-`null` element at least `n` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
         Parameters
         ----------
         n
-            periods to shift for forming percent change.
+            The number of items to shift by when calculating the percent change.
 
         Examples
         --------
@@ -7750,16 +7763,19 @@ class Expr:
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
         that there is more weight in the right tail of the distribution. The
-        function `skewtest` can be used to determine if the skewness value
-        is close enough to zero, statistically speaking.
+        function `scipy.stats.skewtest
+        <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.skewtest.html>`_
+        can be used to determine if the skewness value is close enough to zero,
+        statistically speaking.
 
-
-        See scipy.stats for more information.
+        See `scipy.stats.skew
+        <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.skew.html>`_
+        for more information.
 
         Parameters
         ----------
         bias : bool, optional
-            If False, the calculations are corrected for statistical bias.
+            If `False`, the calculations are corrected for statistical bias.
 
         Notes
         -----
@@ -7774,7 +7790,7 @@ class Expr:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean.  If `bias` is `False`, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -7804,18 +7820,20 @@ class Expr:
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
         the result to give 0.0 for a normal distribution.
-        If bias is False then the kurtosis is calculated using k statistics to
+        If bias is `False` then the kurtosis is calculated using k statistics to
         eliminate bias coming from biased moment estimators.
 
-        See scipy.stats for more information
+        See `scipy.stats.kurtosis
+        <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kurtosis.html>`_
+        for more information.
 
         Parameters
         ----------
         fisher : bool, optional
-            If True, Fisher's definition is used (normal ==> 0.0). If False,
+            If `True`, Fisher's definition is used (normal ==> 0.0). If `False`,
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
-            If False, the calculations are corrected for statistical bias.
+            If `False`, the calculations are corrected for statistical bias.
 
         Examples
         --------
@@ -7903,8 +7921,12 @@ class Expr:
         """
         Calculate the lower bound.
 
-        Returns a unit Series with the lowest value possible for the dtype of this
-        expression.
+        Returns a unit :class:`Series` with the lowest value possible for the dtype of
+        this expression.
+
+        See Also
+        --------
+        upper_bound : return the upper bound of the given expression's dtype.
 
         Examples
         --------
@@ -7926,8 +7948,12 @@ class Expr:
         """
         Calculate the upper bound.
 
-        Returns a unit Series with the highest value possible for the dtype of this
-        expression.
+        Returns a unit :class:`Series with the highest value possible for the dtype of
+        this expression.
+
+        See Also
+        --------
+        lower_bound : return the lower bound of the given expression's dtype.
 
         Examples
         --------
@@ -7947,15 +7973,14 @@ class Expr:
 
     def sign(self) -> Self:
         """
-        Compute the element-wise indication of the sign.
+        Compute an element-wise indication of the sign.
 
-        The returned values can be -1, 0, or 1:
+        The returned values can be -1, 0, 1, or `null`:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
-
-        (null values are preserved as-is).
+        * -1 if the element is negative.
+        *  0 if the element is 0.
+        *  1 if the element is positive.
+        *  `null` if the element is `null`.
 
         Examples
         --------
@@ -8369,13 +8394,13 @@ class Expr:
 
     def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
-        Reshape this Expr to a flat Series or a Series of Lists.
+        Reshape to a flat :class:`Series` or :class:`Series` of :class:`List`s.
 
         Parameters
         ----------
         dimensions
-            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
-            dimension is inferred.
+            Tuple of the dimension sizes. If a `-1` is used in any of the dimensions,
+            that dimension is inferred.
 
         Returns
         -------
@@ -8383,7 +8408,11 @@ class Expr:
             If a single dimension is given, results in an expression of the original
             data type.
             If a multiple dimensions are given, results in an expression of data type
-            :class:`List` with shape (rows, cols).
+            :class:`List` with shape `(rows, cols)`.
+
+        See Also
+        --------
+        Expr.list.explode : Explode a :class:`List` column.
 
         Examples
         --------
@@ -8414,7 +8443,7 @@ class Expr:
         Parameters
         ----------
         seed
-            Seed for the random number generator. If set to None (default), a
+            Seed for the random number generator. If set to `None` (default), a
             random seed is generated each time the shuffle is called.
 
         Examples
@@ -8455,11 +8484,11 @@ class Expr:
         fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
-            Allow values to be sampled more than once.
+            Whether to allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Whether to shuffle the order of sampled data points.
         seed
-            Seed for the random number generator. If set to None (default), a
+            Seed for the random number generator. If set to `None` (default), a
             random seed is generated for each sample operation.
 
         Examples
@@ -8542,10 +8571,10 @@ class Expr:
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
-            Minimum number of observations in window required to have a value
-            (otherwise result is null).
+            Minimum number of observations in the window required to have a value
+            (otherwise, the result is `null`).
         ignore_nulls
-            Ignore missing values when calculating weights.
+            Whether to ignore missing values when calculating weights.
 
                 - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
@@ -8635,10 +8664,10 @@ class Expr:
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
         min_periods
-            Minimum number of observations in window required to have a value
-            (otherwise result is null).
+            Minimum number of observations in the window required to have a value
+            (otherwise, the result is `null`).
         ignore_nulls
-            Ignore missing values when calculating weights.
+            Whether to ignore missing values when calculating weights.
 
                 - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
@@ -8728,8 +8757,8 @@ class Expr:
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
         min_periods
-            Minimum number of observations in window required to have a value
-            (otherwise result is null).
+            Minimum number of observations in the window required to have a value
+            (otherwise, the result is `null`).
         ignore_nulls
             Ignore missing values when calculating weights.
 
@@ -8771,13 +8800,13 @@ class Expr:
 
     def extend_constant(self, value: PythonLiteral | None, n: int) -> Self:
         """
-        Extremely fast method for extending the Series with 'n' copies of a value.
+        Extremely fast method for extending the Series with `n` copies of a value.
 
         Parameters
         ----------
         value
             A constant literal value (not an expression) with which to extend the
-            expression result Series; can pass None to extend with nulls.
+            expression result Series; can pass `None` to extend with `null`s.
         n
             The number of additional values that will be added.
 
@@ -8866,7 +8895,7 @@ class Expr:
         Return a count of the unique values in the order of appearance.
 
         This method differs from `value_counts` in that it does not return the
-        values, only the counts and might be faster
+        values, only the counts, and might be faster.
 
         Examples
         --------
@@ -8896,7 +8925,7 @@ class Expr:
 
     def log(self, base: float = math.e) -> Self:
         """
-        Compute the logarithm to a given base.
+        Compute the logarithm to a given `base`.
 
         Parameters
         ----------
@@ -8956,7 +8985,7 @@ class Expr:
         base
             Given base, defaults to `e`
         normalize
-            Normalize pk if it doesn't sum to 1.
+            Normalize `pk` if it doesn't sum to 1.
 
         Examples
         --------
@@ -8987,18 +9016,18 @@ class Expr:
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Self:
         """
-        Run an expression over a sliding window that increases `1` slot every iteration.
+        Run an expression over a sliding window that slides one element at a time.
 
         Parameters
         ----------
         expr
-            Expression to evaluate
+            The expression to evaluate.
         min_periods
-            Number of valid values there should be in the window before the expression
-            is evaluated. valid values = `length - null_count`
+            The number of non-`null` values there should be in the window before
+            the expression is evaluated.
         parallel
-            Run in parallel. Don't do this in a group by or another operation that
-            already has much parallelization.
+            Whether to run in parallel. Don't do this in a group by or another
+            operation that already has substantial parallelization.
 
         Warnings
         --------
@@ -9045,11 +9074,11 @@ class Expr:
         Parameters
         ----------
         descending
-            Whether the `Series` order is descending.
+            Whether the :class:`Series`' order is descending.
 
         Warnings
         --------
-        This can lead to incorrect results if this `Series` is not sorted!!
+        This can lead to incorrect results if this :class:`Series` is not sorted!!
         Use with care!
 
         Examples
@@ -9072,7 +9101,7 @@ class Expr:
         """
         Shrink numeric columns to the minimal required datatype.
 
-        Shrink to the dtype needed to fit the extrema of this [`Series`].
+        Shrink to the dtype needed to fit the extrema of this :class:`Series`.
         This can be used to reduce memory pressure.
 
         Examples
@@ -9118,14 +9147,14 @@ class Expr:
         ----------
         bins
             Discretizations to make.
-            If None given, we determine the boundaries based on the data.
+            If `None`, determine the boundaries based on the data.
         bin_count
-            If no bins provided, this will be used to determine
+            If no bins are provided, this will be used to determine
             the distance of the bins
         include_breakpoint
-            Include a column that indicates the upper breakpoint.
+            Whether to include a column that indicates the upper breakpoint.
         include_category
-            Include a column that shows the intervals as categories.
+            Whether to include a column that shows the intervals as categories.
 
         Returns
         -------
@@ -9195,7 +9224,7 @@ class Expr:
             Accepts expression input. Sequences are parsed as Series,
             other non-expression inputs are parsed as literals.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+            `replace(new=pl.Series(mapping.keys()), old=pl.Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Accepts expression input. Sequences are parsed as Series,
@@ -9457,13 +9486,13 @@ class Expr:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
+            The number of values in the window that should be non-`null` before
+            computing a result. If `None`, it will be set equal to:
 
-            - the window size, if `window_size` is a fixed integer
+            - `window_size`, if `window_size` is a fixed integer
             - 1, if `window_size` is a dynamic temporal size
         center
-            Set the labels at the center of the window
+            Whether to set the labels at the center of the window
 
         """
         return self.rolling_map(
@@ -9473,7 +9502,7 @@ class Expr:
     @deprecate_renamed_function("is_first_distinct", version="0.19.3")
     def is_first(self) -> Self:
         """
-        Return a boolean mask indicating the first occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the first occurrence of each distinct value.
 
         .. deprecated:: 0.19.3
             This method has been renamed to :func:`Expr.is_first_distinct`.
@@ -9489,7 +9518,7 @@ class Expr:
     @deprecate_renamed_function("is_last_distinct", version="0.19.3")
     def is_last(self) -> Self:
         """
-        Return a boolean mask indicating the last occurrence of each distinct value.
+        Return a :class:`Boolean` mask of the last occurrence of each distinct value.
 
         .. deprecated:: 0.19.3
             This method has been renamed to :func:`Expr.is_last_distinct`.
@@ -9597,13 +9626,12 @@ class Expr:
         symbol
             Function to load.
         args
-            Arguments (other than self) passed to this function.
-            These arguments have to be of type Expression.
+            Arguments (other than `self`) passed to this function.
+            These arguments have to be of type `Expr`.
         kwargs
             Non-expression arguments. They must be JSON serializable.
         is_elementwise
-            If the function only operates on scalars
-            this will trigger fast paths.
+            If the function only operates on scalars this will trigger fast paths.
         input_wildcard_expansion
             Expand expressions as input of this function.
         returns_scalar
@@ -9612,10 +9640,11 @@ class Expr:
         cast_to_supertypes
             Cast the input datatypes to their supertype.
         pass_name_to_apply
-            if set, then the `Series` passed to the function in the group_by operation
-            will ensure the name is set. This is an extra heap allocation per group.
+            if set, then the :class:`Series` passed to the function in the group_by
+            operation will ensure the name is set. This entails an extra heap allocation
+            per group.
         changes_length
-            For example a `unique` or a `slice`
+            For example a :func:`unique` or a :func:`slice`.
 
         """
         if args is None:
@@ -9819,7 +9848,7 @@ class Expr:
         """
         Create an object namespace of all binary related methods.
 
-        See the individual method pages for full details
+        See the individual method pages for full details.
         """
         return ExprBinaryNameSpace(self)
 
@@ -9828,7 +9857,7 @@ class Expr:
         """
         Create an object namespace of all categorical related methods.
 
-        See the individual method pages for full details
+        See the individual method pages for full details.
 
         Examples
         --------

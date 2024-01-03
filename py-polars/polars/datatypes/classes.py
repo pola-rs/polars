@@ -717,16 +717,16 @@ class Array(NestedType):
 
 
 class Field:
-    """Definition of a single field within a `Struct` DataType."""
+    """Definition of a single field within a :class:`Struct` DataType."""
 
     def __init__(self, name: str, dtype: PolarsDataType):
         """
-        Definition of a single field within a `Struct` DataType.
+        Definition of a single field within a :class:`Struct` DataType.
 
         Parameters
         ----------
         name
-            The name of the field within its parent `Struct`
+            The name of the field within its parent :class:`Struct`
         dtype
             The `DataType` of the field's values
 

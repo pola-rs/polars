@@ -295,7 +295,7 @@ def _get_strategy_dtypes(
     Parameters
     ----------
     base_type
-        If True, return the base types for each dtype (eg:`List(String)` → `List`).
+        If True, return the base types for each dtype (e.g. `List(String)` → `List`).
     excluding
         A dtype or sequence of dtypes to omit from the results.
 

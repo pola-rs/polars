@@ -91,11 +91,11 @@ def date_range(
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting `Datetime` data type.
-        Only takes effect if the output column is of type `Datetime`.
+        Time unit of the resulting :class:`Datetime` data type.
+        Only takes effect if the output column is of type :class:`Datetime`.
     time_zone
-        Time zone of the resulting `Datetime` data type.
-        Only takes effect if the output column is of type `Datetime`.
+        Time zone of the resulting :class:`Datetime` data type.
+        Only takes effect if the output column is of type :class:`Datetime`.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
@@ -112,8 +112,9 @@ def date_range(
        type date. All other permutations return a datetime Series.
 
        .. deprecated:: 0.19.3
-           In a future version of Polars, `date_range` will always return a `Date`.
-           Please use :func:`datetime_range` if you want a `Datetime` instead.
+           In a future version of Polars, `date_range` will always return a
+           :class:`Date`. Please use :func:`datetime_range` if you want a
+           :class:`Datetime` instead.
 
     2) `interval` is created according to the following string language:
 
@@ -259,11 +260,11 @@ def date_ranges(
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting `Datetime` data type.
-        Only takes effect if the output column is of type `Datetime`.
+        Time unit of the resulting :class:`Datetime` data type.
+        Only takes effect if the output column is of type :class:`Datetime`.
     time_zone
-        Time zone of the resulting `Datetime` data type.
-        Only takes effect if the output column is of type `Datetime`.
+        Time zone of the resulting :class:`Datetime` data type.
+        Only takes effect if the output column is of type :class:`Datetime`.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.

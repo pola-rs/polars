@@ -50,12 +50,15 @@ def scan_iceberg(
     Parameters
     ----------
     source
-        A PyIceberg table, or a direct path to the metadata.
+        A `PyIceberg
+        <https://py.iceberg.apache.org>`_ table, or a direct path to the metadata.
 
-        Note: For Local filesystem, absolute and relative paths are supported but
-        for the supported object storages - GCS, Azure and S3 full URI must be provided.
+        Note: For the local filesystem, absolute and relative paths are supported, but
+        for the supported object storages - GCS, Azure and S3 - full URIs must be
+        provided.
     storage_options
-        Extra options for the storage backends supported by `pyiceberg`.
+        Extra options for the storage backends supported by `PyIceberg
+        <https://py.iceberg.apache.org>`_.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
@@ -89,11 +92,11 @@ def scan_iceberg(
     Supported options for Azure are available `here
     <https://py.iceberg.apache.org/configuration/#azure-data-lake>`__.
 
-    Following type of table paths are supported:
+    The following type of table paths are supported:
 
-    * az://<container>/<path>/metadata.json
-    * adl://<container>/<path>/metadata.json
-    * abfs[s]://<container>/<path>/metadata.json
+    * `az://<container>/<path>/metadata.json`
+    * `adl://<container>/<path>/metadata.json`
+    * `abfs[s]://<container>/<path>/metadata.json`
 
     >>> table_path = "az://container/path/to/iceberg-table/metadata.json"
     >>> storage_options = {

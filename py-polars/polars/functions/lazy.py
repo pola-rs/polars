@@ -1663,7 +1663,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     Parameters
     ----------
     condition
-        Boolean expression to evaluate
+        :class:`Boolean` expression to evaluate
     eager
         Evaluate immediately and return a `Series`. If set to `False` (default),
         return an expression instead.
@@ -1702,7 +1702,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
 
 def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
-    Folds the columns from left to right, keeping the first non-null value.
+    Folds the columns from left to right, keeping the first non-`null` value.
 
     Parameters
     ----------
@@ -1850,7 +1850,7 @@ def rolling_cov(
     window_size
         The length of the window.
     min_periods
-        The number of values in the window that should be non-null before computing
+        The number of values in the window that should be non-`null` before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom.  The divisor used in calculations
@@ -1891,7 +1891,7 @@ def rolling_corr(
     window_size
         The length of the window.
     min_periods
-        The number of values in the window that should be non-null before computing
+        The number of values in the window that should be non-`null` before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom.  The divisor used in calculations

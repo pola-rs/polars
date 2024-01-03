@@ -76,7 +76,7 @@ def arange(
     step
         Step size of the range.
     dtype
-        Data type of the range. Defaults to `Int64`.
+        Data type of the range. Defaults to :class:`Int64`.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
@@ -252,7 +252,7 @@ def int_ranges(
     step
         Step size of the range.
     dtype
-        Integer data type of the ranges. Defaults to `Int64`.
+        Integer data type of the ranges. Defaults to :class:`Int64`.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.

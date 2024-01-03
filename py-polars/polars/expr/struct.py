@@ -28,7 +28,7 @@ class ExprStructNameSpace:
 
     def field(self, name: str) -> Expr:
         """
-        Retrieve a `Struct` field as a new Series.
+        Retrieve a :class:`Struct` field as a new :class:`Series`.
 
         Parameters
         ----------

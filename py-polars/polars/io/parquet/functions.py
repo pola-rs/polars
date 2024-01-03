@@ -73,7 +73,8 @@ def read_parquet(
     storage_options
         Options that indicate how to connect to a cloud provider.
         If the cloud provider is not supported by Polars, the storage options
-        are passed to `fsspec.open()`.
+        are passed to `fsspec.open()
+        <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_.
 
         The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:
@@ -191,8 +192,9 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        that have a `read()` method, such as a file handler (e.g. via the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
 
     Returns
     -------
@@ -258,7 +260,8 @@ def scan_parquet(
     storage_options
         Options that indicate how to connect to a cloud provider.
         If the cloud provider is not supported by Polars, the storage options
-        are passed to `fsspec.open()`.
+        are passed to `fsspec.open()
+        <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_.
 
         The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:

@@ -440,7 +440,8 @@ def read_database(  # noqa: D417
     connection
         An instantiated connection (or cursor/client object) that the query can be
         executed against. Can also pass a valid ODBC connection string, starting with
-        "Driver=", in which case the `arrow-odbc` package will be used to establish
+        "Driver=", in which case the `arrow-odbc
+        <https://arrow-odbc.readthedocs.io/en/latest/modules.html>`_ package will be used to establish
         the connection and return Arrow-native data to Polars.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
@@ -461,12 +462,15 @@ def read_database(  # noqa: D417
         A dictionary mapping column names to dtypes, used to override the schema
         inferred from the query cursor or given by the incoming Arrow data (depending
         on driver/backend). This can be useful if the given types can be more precisely
-        defined (for example, if you know that a given column can be declared as `u32`
-        instead of `i64`).
+        defined (for example, if you know that a given column can be declared as :class:`UInt32`
+        instead of :class:`Int64`).
     execute_options
         These options will be passed through into the underlying query execution method
         as kwargs. In the case of connections made using an ODBC string (which use
-        `arrow-odbc`) these options are passed to the `read_arrow_batches_from_odbc`
+        `arrow-odbc
+        <https://arrow-odbc.readthedocs.io/en/latest/modules.html>`_) these options are passed to the
+        `read_arrow_batches_from_odbc
+        <https://arrow-odbc.readthedocs.io/en/latest/arrow_odbc.html#arrow_odbc.read_arrow_batches_from_odbc>`_
         method.
 
     Notes
@@ -649,8 +653,8 @@ def read_database_uri(
     For `connectorx`, ensure that you have `connectorx>=0.3.2`. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
-    For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
-    with the backend you are connecting to, eg: `adbc-driver-postgresql`.
+    For `adbc` you will need to have installed :mod:`pyarrow` and the ADBC driver
+    associated with the backend you are connecting to, eg: `adbc-driver-postgresql`.
 
     See Also
     --------

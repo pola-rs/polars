@@ -87,9 +87,9 @@ def datetime_range(
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting `Datetime` data type.
+        Time unit of the resulting :class:`Datetime` data type.
     time_zone
-        Time zone of the resulting `Datetime` data type.
+        Time zone of the resulting :class:`Datetime` data type.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
@@ -264,9 +264,9 @@ def datetime_ranges(
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting `Datetime` data type.
+        Time unit of the resulting :class:`Datetime` data type.
     time_zone
-        Time zone of the resulting `Datetime` data type.
+        Time zone of the resulting :class:`Datetime` data type.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.

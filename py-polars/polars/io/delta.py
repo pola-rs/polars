@@ -24,32 +24,33 @@ def read_delta(
     pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
-    Reads into a DataFrame from a Delta lake table.
+    Reads into a `DataFrame` from a Delta Lake table.
 
     Parameters
     ----------
     source
-        Path or URI to the root of the Delta lake table.
+        Path or URI to the root of the Delta Lake table.
 
-        Note: For Local filesystem, absolute and relative paths are supported but
-        for the supported object storages - GCS, Azure and S3 full URI must be provided.
+        Note: For the local filesystem, absolute and relative paths are supported, but
+        for the supported object storages - GCS, Azure and S3 - full URIs must be
+        provided.
     version
-        Version of the Delta lake table.
+        The version of the Delta Lake table.
 
-        Note: If `version` is not provided, the latest version of delta lake
-        table is read.
+        Note: If `version` is not provided, the latest version of the table is read.
     columns
         Columns to select. Accepts a list of column names.
     storage_options
-        Extra options for the storage backends supported by `deltalake`.
+        Extra options for the storage backends supported by the `deltalake
+        <https://delta-io.github.io/delta-rs/python>`_ Python package.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
         <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments while reading a Delta Lake table.
     pyarrow_options
-        Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Keyword arguments for converting the Delta Lake table to a pyarrow table.
 
     Returns
     -------
@@ -57,8 +58,8 @@ def read_delta(
 
     Examples
     --------
-    Reads a Delta table from local filesystem.
-    Note: Since version is not provided, the latest version of the delta table is read.
+    Reads a Delta Lake table from local filesystem.
+    Note: Since `version` is not provided, the latest version of the table is read.
 
     >>> table_path = "/path/to/delta-table/"
     >>> pl.read_delta(table_path)  # doctest: +SKIP
@@ -72,12 +73,12 @@ def read_delta(
     ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
     ... )
 
-    Reads a specific version of the Delta table from local filesystem.
-    Note: This will fail if the provided version of the delta table does not exist.
+    Reads a specific version of the Delta Lake table from local filesystem.
+    Note: This will fail if the provided version of the Delta Lake table does not exist.
 
     >>> pl.read_delta(table_path, version=1)  # doctest: +SKIP
 
-    Reads a Delta table from AWS S3.
+    Reads a Delta Lake table from AWS S3.
     See a list of supported storage options for S3 `here
     <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
 
@@ -88,7 +89,7 @@ def read_delta(
     ... }
     >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
 
-    Reads a Delta table from Google Cloud storage (GCS).
+    Reads a Delta Lake table from Google Cloud storage (GCS).
     See a list of supported storage options for GCS `here
     <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
 
@@ -96,13 +97,13 @@ def read_delta(
     >>> storage_options = {"SERVICE_ACCOUNT": "SERVICE_ACCOUNT_JSON_ABSOLUTE_PATH"}
     >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
 
-    Reads a Delta table from Azure.
+    Reads a Delta Lake table from Azure.
 
-    Following type of table paths are supported,
+    The following types of table paths are supported:
 
-    * az://<container>/<path>
-    * adl://<container>/<path>
-    * abfs://<container>/<path>
+    * `az://<container>/<path>`
+    * `adl://<container>/<path>`
+    * `abfs://<container>/<path>`
 
     See a list of supported storage options for Azure `here
     <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
@@ -114,8 +115,8 @@ def read_delta(
     ... }
     >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
 
-    Reads a Delta table with additional delta specific options. In the below example,
-    `without_files` option is used which loads the table without file tracking
+    Reads a Delta Lake table with additional delta specific options. In the below
+    example, the `without_files` option is used to load the table without file tracking
     information.
 
     >>> table_path = "/path/to/delta-table/"
@@ -149,32 +150,34 @@ def scan_delta(
     pyarrow_options: dict[str, Any] | None = None,
 ) -> LazyFrame:
     """
-    Lazily read from a Delta lake table.
+    Lazily read from a Delta Lake table.
 
     Parameters
     ----------
     source
-        Path or URI to the root of the Delta lake table.
+        Path or URI to the root of the Delta Lake table.
 
-        Note: For Local filesystem, absolute and relative paths are supported but
-        for the supported object storages - GCS, Azure and S3 full URI must be provided.
+        Note: For the local filesystem, absolute and relative paths are supported, but
+        for the supported object storages - GCS, Azure and S3 - full URIs must be
+        provided.
     version
-        Version of the Delta lake table.
+        The version of the Delta Lake table.
 
-        Note: If `version` is not provided, the latest version of delta lake
-        table is read.
+        Note: If `version` is not provided, the latest version of the table is read.
     storage_options
-        Extra options for the storage backends supported by `deltalake`.
+        Extra options for the storage backends supported by the `deltalake
+        <https://delta-io.github.io/delta-rs/python>`_ Python package.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
         <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments while reading a Delta Lake table.
     pyarrow_options
-        Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Keyword arguments for converting the Delta Lake table to a pyarrow table.
         Use this parameter when filtering on partitioned columns or to read
-        from a 'fsspec' supported filesystem.
+        from an `fsspec
+        <https://filesystem-spec.readthedocs.io>`_-supported filesystem.
 
     Returns
     -------
@@ -182,8 +185,9 @@ def scan_delta(
 
     Examples
     --------
-    Creates a scan for a Delta table from local filesystem.
-    Note: Since version is not provided, the latest version of the delta table is read.
+    Creates a scan for a Delta Lake table from the local filesystem.
+    Note: Since `version` is not provided, the latest version of the Delta Lake table
+    is read.
 
     >>> table_path = "/path/to/delta-table/"
     >>> pl.scan_delta(table_path).collect()  # doctest: +SKIP
@@ -195,12 +199,12 @@ def scan_delta(
     ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
     ... )
 
-    Creates a scan for a specific version of the Delta table from local filesystem.
-    Note: This will fail if the provided version of the delta table does not exist.
+    Creates a scan for a specific version of the Delta Lake table from local filesystem.
+    Note: This will fail if the provided version of the Delta Lake table does not exist.
 
     >>> pl.scan_delta(table_path, version=1).collect()  # doctest: +SKIP
 
-    Creates a scan for a Delta table from AWS S3.
+    Creates a scan for a Delta Lake table from AWS S3.
     See a list of supported storage options for S3 `here
     <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
 
@@ -214,7 +218,7 @@ def scan_delta(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Delta table from Google Cloud storage (GCS).
+    Creates a scan for a Delta Lake table from Google Cloud storage (GCS).
     See a list of supported storage options for GCS `here
     <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
 
@@ -224,7 +228,7 @@ def scan_delta(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Delta table from Azure.
+    Creates a scan for a Delta Lake table from Azure.
     Supported options for Azure are available `here
     <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
 
@@ -243,7 +247,7 @@ def scan_delta(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Delta table with additional delta specific options.
+    Creates a scan for a Delta Lake table with additional delta specific options.
     In the below example, `without_files` option is used which loads the table without
     file tracking information.
 
@@ -288,7 +292,7 @@ def _get_delta_lake_table(
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
     """
-    Initialize a Delta lake table for use in read and scan operations.
+    Initialize a Delta Lake table for use in read and scan operations.
 
     Notes
     -----

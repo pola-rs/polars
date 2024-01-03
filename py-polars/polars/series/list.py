@@ -34,7 +34,7 @@ class ListNameSpace:
 
     def all(self) -> Series:
         """
-        Evaluate whether all boolean values in a list are true.
+        Evaluate whether all :class:`Boolean` values in a list are `true`.
 
         Returns
         -------
@@ -63,7 +63,7 @@ class ListNameSpace:
 
     def any(self) -> Series:
         """
-        Evaluate whether any boolean value in a list is true.
+        Evaluate whether any :class:`Boolean` value in a list is `true`.
 
         Returns
         -------
@@ -94,7 +94,7 @@ class ListNameSpace:
         """
         Return the number of elements in each list.
 
-        Null values count towards the total.
+        `null` values count towards the total.
 
         Returns
         -------
@@ -116,7 +116,7 @@ class ListNameSpace:
 
     def drop_nulls(self) -> Series:
         """
-        Drop all null values in the list.
+        Drop all `null` values in the list.
 
         The original order of the remaining elements is preserved.
 
@@ -265,7 +265,7 @@ class ListNameSpace:
         Take sublists by multiple indices.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype `List`.
+        column of dtype :class:`List`.
 
         Parameters
         ----------
@@ -273,9 +273,9 @@ class ListNameSpace:
             Indices to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
-            Note that defaulting to raising an error is much cheaper
+            `True` -> set to `null`
+            `False` -> raise an error
+            Note that defaulting to raising an error is much cheaper.
         """
 
     def __getitem__(self, item: int) -> Series:
@@ -365,7 +365,7 @@ class ListNameSpace:
         n
             Number of slots to shift.
         null_behavior : {'ignore', 'drop'}
-            How to handle null values.
+            How to handle `null` values.
 
         Examples
         --------
@@ -582,21 +582,22 @@ class ListNameSpace:
         fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """
-        Convert the series of type `List` to a series of type `Struct`.
+        Convert the series of type :class:`List` to a series of type :class:`Struct`.
 
         Parameters
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
 
-            * "first_non_null": set number of fields equal to the length of the
+            * `"first_non_null"`: set number of fields equal to the length of the
               first non zero-length sublist.
-            * "max_width": set number of fields as max length of all sublists.
+            * `"max_width"`: set number of fields as max length of all sublists.
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.
             Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            used; if neither are set, fields will be `field_0`, `field_1`, ...,
+            `field_n`.
 
         Examples
         --------
@@ -821,7 +822,7 @@ class ListNameSpace:
             Indices to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
-            Note that defaulting to raising an error is much cheaper
+            `True` -> set to `null`
+            `False` -> raise an error
+            Note that defaulting to raising an error is much cheaper.
         """

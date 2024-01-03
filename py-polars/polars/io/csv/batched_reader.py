@@ -110,14 +110,13 @@ class BatchedCsvReader:
         """
         Read `n` batches from the reader.
 
-        The `n` chunks will be parallelized over the
-        available threads.
+        The `n` chunks will be parallelized over the available threads.
 
         Parameters
         ----------
         n
             Number of chunks to fetch.
-            This is ideally >= number of threads
+            This is ideally greater than or equal to the number of threads.
 
         Examples
         --------
@@ -130,7 +129,7 @@ class BatchedCsvReader:
 
         Returns
         -------
-        list of DataFrames
+        List of DataFrames
 
         """
         batches = self._reader.next_batches(n)

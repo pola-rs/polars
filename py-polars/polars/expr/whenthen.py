@@ -74,8 +74,8 @@ class Then(Expr):
         ----------
         predicates
             Condition(s) that must be met in order to apply the subsequent statement.
-            Accepts one or more boolean expressions, which are implicitly combined with
-            `&`. String input is parsed as a column name.
+            Accepts one or more :class:`Boolean` expressions, which are implicitly
+            combined with `&`. String input is parsed as a column name.
         constraints
             Apply conditions as `colname = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,
@@ -159,8 +159,8 @@ class ChainedThen(Expr):
         ----------
         predicates
             Condition(s) that must be met in order to apply the subsequent statement.
-            Accepts one or more boolean expressions, which are implicitly combined with
-            `&`. String input is parsed as a column name.
+            Accepts one or more :class:`Boolean` expressions, which are implicitly
+            combined with `&`. String input is parsed as a column name.
         constraints
             Apply conditions as `colname = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,

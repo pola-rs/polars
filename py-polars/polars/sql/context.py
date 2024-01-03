@@ -86,10 +86,10 @@ class SQLContext(Generic[FrameType]):
             mapping their variable name to a table name. If given an integer
             then only the most recent "n" frames found will be registered.
         eager_execution
-            Return query execution results as `DataFrame` instead of `LazyFrame`.
-            (Note that the query itself is always executed in lazy-mode; this
-            parameter impacts whether :meth:`execute` returns an eager or lazy
-            result frame).
+            Return query execution results as :class:`DataFrame` instead of
+            :class:`LazyFrame`. (Note that the query itself is always executed in
+            lazy-mode; this parameter impacts whether :meth:`execute` returns an eager
+            or lazy result frame).
         **named_frames
             Named eager/lazy frames, provided as kwargs.
 
@@ -202,10 +202,11 @@ class SQLContext(Generic[FrameType]):
         query
             A valid string SQL query.
         eager
-            Apply the query eagerly, returning `DataFrame` instead of `LazyFrame`.
-            If unset, the value of the init-time parameter "eager_execution" will be
-            used. (Note that the query itself is always executed in lazy-mode; this
-            parameter only impacts the type of the returned frame).
+            Apply the query eagerly, returning :class:`DataFrame` instead of
+            :class:`LazyFrame`. If unset, the value of the init-time parameter
+            `eager_execution` will be used. (Note that the query itself is always
+            executed in lazy-mode; this parameter only impacts the type of the returned
+            frame).
 
         Examples
         --------

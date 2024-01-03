@@ -28,28 +28,29 @@ def from_dict(
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a dictionary of sequences.
+    Construct a :class:`DataFrame` from a dictionary of sequences.
 
-    This operation clones data, unless you pass a `{str: pl.Series,}` dict.
+    This operation clones data, unless you pass a `{str: pl.Series}` dict.
 
     Parameters
     ----------
     data : dict of sequences
         Two-dimensional data represented as a dictionary. dict must contain
         Sequences.
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+    schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+          auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+        * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
-        any dtypes inferred from the columns param will be overridden.
+        any dtypes inferred from the `schema` parameter will be overridden.
 
     Returns
     -------
@@ -83,18 +84,21 @@ def from_dicts(
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a sequence of dictionaries. This operation clones data.
+    Construct a :class:`DataFrame` from a sequence of dictionaries.
+
+    This operation clones data.
 
     Parameters
     ----------
     data
         Sequence with dictionaries mapping column name to value
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The DataFrame schema may be declared in several ways:
+    schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
+        The :class:`DataFrame` schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+          auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+        * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
 
         If a list of column names is supplied that does NOT match the names in the
         underlying data, the names given here will overwrite the actual fields in
@@ -146,7 +150,7 @@ def from_dicts(
     │ 3   │
     └─────┘
 
-    Can also use the `schema` param to extend the loaded columns with one
+    Can also use the `schema` parameter to extend the loaded columns with one
     or more additional (empty) columns that are not present in the input dicts:
 
     >>> pl.from_dicts(
@@ -186,7 +190,9 @@ def from_records(
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a sequence of sequences. This operation clones data.
+    Construct a :class:`DataFrame` from a sequence of sequences.
+
+    This operation clones data.
 
     Note that this is slower than creating from columnar memory.
 
@@ -194,21 +200,22 @@ def from_records(
     ----------
     data : Sequence of sequences
         Two-dimensional data represented as a sequence of sequences.
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+    schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+          auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+        * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
-        any dtypes inferred from the columns param will be overridden.
+        any dtypes inferred from the `schema` parameter will be overridden.
     orient : {None, 'col', 'row'}
-        Whether to interpret two-dimensional data as columns or as rows. If None,
+        Whether to interpret two-dimensional data as columns or as rows. If `None`,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length
@@ -360,23 +367,24 @@ def _from_series_repr(m: re.Match[str]) -> Series:
 
 def from_repr(tbl: str) -> DataFrame | Series:
     """
-    Utility function that reconstructs a DataFrame or Series from the object's repr.
+    Reconstructs a :class:`DataFrame` or :class:`Series` from the object's repr.
 
     Parameters
     ----------
     tbl
-        A string containing a polars DataFrame or Series repr; does not need
-        to be trimmed of whitespace (or leading prompts) as the repr will be
+        A string containing a polars :class:`DataFrame` or :class:`Series` repr; does
+        not need to be trimmed of whitespace (or leading prompts) as the repr will be
         found/extracted automatically.
 
     Notes
     -----
-    This function handles the default UTF8_FULL and UTF8_FULL_CONDENSED DataFrame
-    tables (with or without rounded corners). Truncated columns/rows are omitted,
-    wrapped headers are accounted for, and dtypes automatically identified.
+    This function handles the default `UTF8_FULL` and `UTF8_FULL_CONDENSED`
+    :class:`DataFrame` tables (with or without rounded corners). Truncated columns/rows
+    are omitted, wrapped headers are accounted for, and dtypes automatically
+    identified.
 
-    Currently compound/nested dtypes such as List and Struct are not supported;
-    neither are Object dtypes.
+    Currently compound/nested dtypes such as :class:`List` and :class:`Struct` are not
+    supported; neither is the :class:`Object` dtype.
 
     See Also
     --------
@@ -456,29 +464,32 @@ def from_numpy(
     orient: Orientation | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a numpy ndarray. This operation clones data.
+    Construct a DataFrame from a :class:`numpy.ndarray`.
+
+    This operation clones data.
 
     Note that this is slower than creating from columnar memory.
 
     Parameters
     ----------
     data : :class:`numpy.ndarray`
-        Two-dimensional data represented as a numpy ndarray.
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        Two-dimensional data represented as a :class:`numpy.ndarray`.
+    schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+          auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+        * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
-        any dtypes inferred from the columns param will be overridden.
+        any dtypes inferred from the `schema` parameter will be overridden.
     orient : {None, 'col', 'row'}
-        Whether to interpret two-dimensional data as columns or as rows. If None,
+        Whether to interpret two-dimensional data as columns or as rows. If `None`,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
 
@@ -528,21 +539,22 @@ def from_arrow(
     rechunk: bool = True,
 ) -> DataFrame | Series:
     """
-    Create a DataFrame or Series from an Arrow Table or Array.
+    Construct a DataFrame from an Arrow Table or Array.
 
-    This operation will be zero copy for the most part. Types that are not
+    This operation will be zero-copy for the most part. Types that are not
     supported by Polars may be cast to the closest supported type.
 
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
         Data representing an Arrow Table, Array, or sequence of RecordBatches or Tables.
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+    schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+          auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+        * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
@@ -661,7 +673,7 @@ def from_pandas(
     include_index: bool = False,
 ) -> DataFrame | Series:
     """
-    Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
+    Build a polars :class:`DataFrame`/:class:`Series` from a pandas DataFrame/Series.
 
     This operation clones data.
 
@@ -674,11 +686,11 @@ def from_pandas(
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
     rechunk : bool, default True
-        Make sure that all data is in contiguous memory.
+        Whether to make sure that all data is in contiguous memory.
     nan_to_null : bool, default True
         If data contains `NaN` values PyArrow will convert the `NaN` to `None`
     include_index : bool, default False
-        Load any non-default pandas indexes as columns.
+        Whether to load any non-default pandas indexes as columns.
 
     Returns
     -------
@@ -735,7 +747,7 @@ def from_pandas(
 
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
     """
-    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+    Build a :class:`DataFrame` from any dataframe supporting the interchange protocol.
 
     Parameters
     ----------
@@ -743,7 +755,7 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
         Object supporting the dataframe interchange protocol, i.e. must have implemented
         the `__dataframe__` method.
     allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, causes
+        Allow memory to be copied to perform the conversion. If set to `False`, causes
         conversions that are not zero-copy to fail.
 
     Notes
@@ -764,7 +776,9 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
 
     Examples
     --------
-    Convert a pandas dataframe to Polars through the interchange protocol.
+    Convert a `pandas DataFrame`_ to Polars through the interchange protocol.
+
+    .. _pandas DataFrame: https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html.
 
     >>> import pandas as pd
     >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})

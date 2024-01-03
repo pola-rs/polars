@@ -149,7 +149,7 @@ class ExprArrayNameSpace:
 
     def any(self) -> Expr:
         """
-        Evaluate whether any boolean value is true for every subarray.
+        Evaluate whether any :class:`Boolean` value is true for every subarray.
 
         Examples
         --------
@@ -184,7 +184,7 @@ class ExprArrayNameSpace:
 
     def all(self) -> Expr:
         """
-        Evaluate whether all boolean values are true for every subarray.
+        Evaluate whether all :class:`Boolean` values are true for every subarray.
 
         Examples
         --------

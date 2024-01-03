@@ -50,7 +50,7 @@ class DtypeKind(IntEnum):
     FLOAT : int
         Matches to floating point data type.
     BOOL : int
-        Matches to boolean data type.
+        Matches to :class:`Boolean` data type.
     STRING : int
         Matches to string data type (UTF-8 encoded).
     DATETIME : int

@@ -188,7 +188,7 @@ def duration(
     time_unit: TimeUnit = "us",
 ) -> Expr:
     """
-    Create polars `Duration` from distinct time components.
+    Create polars :class:`Duration` from distinct time components.
 
     Parameters
     ----------
@@ -492,7 +492,7 @@ def concat_str(
     exprs
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
-        literals. Non-`String` columns are cast to `String`.
+        literals. Non-:class:`String` columns are cast to :class:`String`.
     *more_exprs
         Additional columns to concatenate into a single string column, specified as
         positional arguments.

@@ -1216,7 +1216,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` expression.
+            Unit of time for the :class:`Datetime` expression.
 
         Examples
         --------
@@ -1259,7 +1259,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Time unit for the `Datetime` expression.
+            Time unit for the :class:`Datetime` expression.
 
         Examples
         --------
@@ -1299,7 +1299,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_zone
-            Time zone for the `Datetime` expression.
+            Time zone for the :class:`Datetime` expression.
 
         Examples
         --------
@@ -1352,7 +1352,8 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_zone
-            Time zone for the `Datetime` expression. Pass `None` to unset time zone.
+            Time zone for the :class:`Datetime` expression. Pass `None` to unset the
+            time zone.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -1445,7 +1446,7 @@ class ExprDateTimeNameSpace:
 
     def total_days(self) -> Expr:
         """
-        Extract the total days from a Duration type.
+        Extract the total days from a :class:`Duration` :class:`Series`.
 
         Returns
         -------
@@ -1484,7 +1485,7 @@ class ExprDateTimeNameSpace:
 
     def total_hours(self) -> Expr:
         """
-        Extract the total hours from a Duration type.
+        Extract the total hours from a :class:`Duration` :class:`Series`.
 
         Returns
         -------
@@ -1524,7 +1525,7 @@ class ExprDateTimeNameSpace:
 
     def total_minutes(self) -> Expr:
         """
-        Extract the total minutes from a Duration type.
+        Extract the total minutes from a :class:`Duration` :class:`Series`.
 
         Returns
         -------
@@ -1564,7 +1565,7 @@ class ExprDateTimeNameSpace:
 
     def total_seconds(self) -> Expr:
         """
-        Extract the total seconds from a Duration type.
+        Extract the total seconds from a :class:`Duration` :class:`Series`.
 
         Returns
         -------
@@ -1606,7 +1607,7 @@ class ExprDateTimeNameSpace:
 
     def total_milliseconds(self) -> Expr:
         """
-        Extract the total milliseconds from a Duration type.
+        Extract the total milliseconds from a :class:`Duration` :class:`Series`.
 
         Returns
         -------
@@ -1652,7 +1653,7 @@ class ExprDateTimeNameSpace:
 
     def total_microseconds(self) -> Expr:
         """
-        Extract the total microseconds from a Duration type.
+        Extract the total microseconds from a :class:`Duration` :class:`Series`.
 
         Returns
         -------
@@ -1698,7 +1699,7 @@ class ExprDateTimeNameSpace:
 
     def total_nanoseconds(self) -> Expr:
         """
-        Extract the total nanoseconds from a Duration type.
+        Extract the total nanoseconds from a :class:`Duration` :class:`Series`.
 
         Returns
         -------
@@ -2000,7 +2001,7 @@ class ExprDateTimeNameSpace:
     @deprecate_renamed_function("total_days", version="0.19.13")
     def days(self) -> Expr:
         """
-        Extract the total days from a Duration type.
+        Extract the total days from a :class:`Duration` :class:`Series`.
 
         .. deprecated:: 0.19.13
             Use :meth:`total_days` instead.
@@ -2011,7 +2012,7 @@ class ExprDateTimeNameSpace:
     @deprecate_renamed_function("total_hours", version="0.19.13")
     def hours(self) -> Expr:
         """
-        Extract the total hours from a Duration type.
+        Extract the total hours from a :class:`Duration` :class:`Series`.
 
         .. deprecated:: 0.19.13
             Use :meth:`total_hours` instead.
@@ -2022,7 +2023,7 @@ class ExprDateTimeNameSpace:
     @deprecate_renamed_function("total_minutes", version="0.19.13")
     def minutes(self) -> Expr:
         """
-        Extract the total minutes from a Duration type.
+        Extract the total minutes from a :class:`Duration` :class:`Series`.
 
         .. deprecated:: 0.19.13
             Use :meth:`total_minutes` instead.
@@ -2033,7 +2034,7 @@ class ExprDateTimeNameSpace:
     @deprecate_renamed_function("total_seconds", version="0.19.13")
     def seconds(self) -> Expr:
         """
-        Extract the total seconds from a Duration type.
+        Extract the total seconds from a :class:`Duration` :class:`Series`.
 
         .. deprecated:: 0.19.13
             Use :meth:`total_seconds` instead.
@@ -2044,7 +2045,7 @@ class ExprDateTimeNameSpace:
     @deprecate_renamed_function("total_milliseconds", version="0.19.13")
     def milliseconds(self) -> Expr:
         """
-        Extract the total milliseconds from a Duration type.
+        Extract the total milliseconds from a :class:`Duration` :class:`Series`.
 
         .. deprecated:: 0.19.13
             Use :meth:`total_milliseconds` instead.
@@ -2055,7 +2056,7 @@ class ExprDateTimeNameSpace:
     @deprecate_renamed_function("total_microseconds", version="0.19.13")
     def microseconds(self) -> Expr:
         """
-        Extract the total microseconds from a Duration type.
+        Extract the total microseconds from a :class:`Duration` :class:`Series`.
 
         .. deprecated:: 0.19.13
             Use :meth:`total_microseconds` instead.
@@ -2066,7 +2067,7 @@ class ExprDateTimeNameSpace:
     @deprecate_renamed_function("total_nanoseconds", version="0.19.13")
     def nanoseconds(self) -> Expr:
         """
-        Extract the total nanoseconds from a Duration type.
+        Extract the total nanoseconds from a :class:`Duration` :class:`Series`.
 
         .. deprecated:: 0.19.13
             Use :meth:`total_nanoseconds` instead.

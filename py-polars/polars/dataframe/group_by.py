@@ -887,7 +887,7 @@ class RollingGroupBy:
         Parameters
         ----------
         function
-            Function to apply over each group of the `LazyFrame`; it receives
+            Function to apply over each group of the :class:`LazyFrame`; it receives
             a DataFrame and should return a DataFrame.
         schema
             Schema of the output function. This has to be known statically. If the
@@ -924,7 +924,7 @@ class RollingGroupBy:
         Parameters
         ----------
         function
-            Function to apply over each group of the `LazyFrame`.
+            Function to apply over each group of the :class:`LazyFrame`.
         schema
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
@@ -1083,7 +1083,7 @@ class DynamicGroupBy:
         Parameters
         ----------
         function
-            Function to apply over each group of the `LazyFrame`; it receives
+            Function to apply over each group of the :class:`LazyFrame`; it receives
             a DataFrame and should return a DataFrame.
         schema
             Schema of the output function. This has to be known statically. If the
@@ -1124,7 +1124,7 @@ class DynamicGroupBy:
         Parameters
         ----------
         function
-            Function to apply over each group of the `LazyFrame`.
+            Function to apply over each group of the :class:`LazyFrame`.
         schema
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
