@@ -10,7 +10,7 @@ use crate::prelude::*;
 type Trail = Vec<Node>;
 
 fn union_inputs(
-    inputs: &Vec<Node>,
+    inputs: &[Node],
     lp_arena: &Arena<ALogicalPlan>,
     trails: &mut BTreeMap<u32, Trail>,
     id: &mut u32,
