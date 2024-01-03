@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date
+from polars.datatypes import Date, Datetime
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TemporalLiteral, TimeUnit
 
 
 @expr_dispatch
@@ -57,7 +57,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> dt.date | dt.datetime | dt.timedelta | None:
+    def median(self) -> TemporalLiteral | float | None:
         """
         Return median as python DateTime.
 
@@ -83,12 +83,14 @@ class DateTimeNameSpace:
         out = s.median()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
+                return _to_python_date(int(out))  # type: ignore[arg-type]
+            elif s.dtype == Datetime:
+                return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
-    def mean(self) -> dt.date | dt.datetime | None:
+    def mean(self) -> TemporalLiteral | float | None:
         """
         Return mean as python DateTime.
 
@@ -106,9 +108,11 @@ class DateTimeNameSpace:
         out = s.mean()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
+                return _to_python_date(int(out))  # type: ignore[arg-type]
+            elif s.dtype == Datetime:
+                return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
     def to_string(self, format: str) -> Series:
