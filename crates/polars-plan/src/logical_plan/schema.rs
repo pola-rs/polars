@@ -17,7 +17,6 @@ impl LogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
             Union { inputs, .. } => inputs[0].schema(),
-            #[cfg(feature = "horizontal_concat")]
             HConcat { schema, .. } => Ok(Cow::Borrowed(schema)),
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),

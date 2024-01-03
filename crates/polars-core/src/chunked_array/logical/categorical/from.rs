@@ -3,7 +3,6 @@ use arrow::datatypes::IntegerType;
 use arrow::legacy::compute::cast::cast;
 
 use super::*;
-use crate::using_string_cache;
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {
@@ -79,34 +78,6 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
                         .unwrap()
                 }
             },
-        }
-    }
-}
-
-impl CategoricalChunked {
-    /// # Safety
-    /// The caller must ensure that index values in the `keys` are in within bounds of the `values` length.
-    pub(crate) unsafe fn from_keys_and_values(
-        name: &str,
-        keys: &PrimitiveArray<u32>,
-        values: &Utf8Array<i64>,
-    ) -> Self {
-        if using_string_cache() {
-            let mut builder = CategoricalChunkedBuilder::new(name, keys.len(), Default::default());
-            let capacity = keys.len();
-            builder.global_map_from_local(
-                [keys.iter().map(|v| v.copied())],
-                capacity,
-                values.clone(),
-            );
-            builder.finish()
-        } else {
-            CategoricalChunked::from_chunks_original(
-                name,
-                keys.clone(),
-                RevMapping::build_local(values.clone()),
-                Default::default(),
-            )
         }
     }
 }

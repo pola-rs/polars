@@ -295,3 +295,14 @@ def test_cat_is_in_with_lit_str_non_existent(dtype: pl.DataType) -> None:
     expected = pl.Series([False, False, False, None])
 
     assert_series_equal(s.is_in(lit), expected)
+
+
+@StringCache()
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
+def test_cat_is_in_with_lit_str_cache_setup(dtype: pl.DataType) -> None:
+    # init the global cache
+    _ = pl.Series(["c", "b", "a"], dtype=dtype)
+
+    assert_series_equal(pl.Series(["a"], dtype=dtype).is_in(["a"]), pl.Series([True]))
+    assert_series_equal(pl.Series(["b"], dtype=dtype).is_in(["b"]), pl.Series([True]))
+    assert_series_equal(pl.Series(["c"], dtype=dtype).is_in(["c"]), pl.Series([True]))

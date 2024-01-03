@@ -209,7 +209,7 @@ fn apply_offsets_to_datetime(
 #[cfg(feature = "date_offset")]
 pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
     let ts = &s[0];
-    let offsets = &s[1].str().unwrap();
+    let offsets = &s[1].str()?;
 
     let preserve_sortedness: bool;
     let out = match ts.dtype() {

@@ -1152,7 +1152,7 @@ class DataFrame:
         >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 3)],
+        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)],
         ...         "stock_1": [1, 4, 6],
         ...         "stock_2": [1, 5, 2],
         ...     }

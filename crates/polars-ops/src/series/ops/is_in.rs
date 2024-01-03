@@ -362,20 +362,36 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
         },
         DataType::String => {
             let ca_other = other.str().unwrap();
-            let categories = ca_in.get_rev_map().get_categories();
-
+            let rev_map = ca_in.get_rev_map();
+            let categories = rev_map.get_categories();
             let others: PlHashSet<&str> = ca_other.downcast_iter().flatten().flatten().collect();
+            let mut set = PlHashSet::with_capacity(std::cmp::min(categories.len(), ca_other.len()));
 
-            let mut set = PlHashSet::with_capacity(categories.len());
-            #[allow(clippy::unnecessary_cast)]
-            categories
-                .values_iter()
-                .enumerate_idx()
-                .for_each(|(idx, v)| {
-                    if others.contains(v) {
-                        set.insert(TotalOrdWrap(idx as u32));
+            // Either store the global or local indices of the overlapping strings
+            match &**rev_map {
+                RevMapping::Global(hash_map, categories, _) => {
+                    for (global_idx, local_idx) in hash_map.iter() {
+                        // Safety: index is in bounds
+                        if others
+                            .contains(unsafe { categories.value_unchecked(*local_idx as usize) })
+                        {
+                            #[allow(clippy::unnecessary_cast)]
+                            set.insert(TotalOrdWrap(*global_idx as u32));
+                        }
                     }
-                });
+                },
+                RevMapping::Local(categories, _) | RevMapping::Enum(categories, _) => {
+                    categories
+                        .values_iter()
+                        .enumerate_idx()
+                        .for_each(|(idx, v)| {
+                            if others.contains(v) {
+                                #[allow(clippy::unnecessary_cast)]
+                                set.insert(TotalOrdWrap(idx as u32));
+                            }
+                        });
+                },
+            }
 
             Ok(ca_in
                 .physical()

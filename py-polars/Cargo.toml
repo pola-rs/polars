@@ -50,7 +50,6 @@ features = [
   "dynamic_group_by",
   "ewma",
   "fmt",
-  "horizontal_concat",
   "interpolate",
   "is_first_distinct",
   "is_last_distinct",
