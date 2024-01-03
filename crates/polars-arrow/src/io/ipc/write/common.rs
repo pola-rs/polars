@@ -347,7 +347,7 @@ impl DictionaryTracker {
     ///   has never been seen before, return `Ok(true)` to indicate that the dictionary was just
     ///   inserted.
     pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
-        let values = match array.data_type() {
+        let values = match array.data_type().to_logical_type() {
             ArrowDataType::Dictionary(key_type, _, _) => {
                 match_integer_type!(key_type, |$T| {
                     let array = array
@@ -356,19 +356,6 @@ impl DictionaryTracker {
                         .unwrap();
                     array.values()
                 })
-            },
-            ArrowDataType::Extension(_, dt, _) => {
-                if let ArrowDataType::Dictionary(key_type, _, _) = &**dt {
-                    match_integer_type!(key_type, |$T| {
-                        let array = array
-                            .as_any()
-                            .downcast_ref::<DictionaryArray<$T>>()
-                            .unwrap();
-                        array.values()
-                    })
-                } else {
-                    unreachable!();
-                }
             },
             _ => unreachable!(),
         };
