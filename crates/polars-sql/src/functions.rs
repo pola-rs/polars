@@ -279,7 +279,8 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LTRIM(column_1) from df;
     /// ```
     LTrim,
-    /// SQL 'octet_length' function (bytes)
+    /// SQL 'octet_length' function
+    /// Returns the length of a given string in bytes.
     /// ```sql
     /// SELECT OCTET_LENGTH(column_1) from df;
     /// ```
@@ -290,6 +291,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT REGEXP_LIKE(column_1, 'xyz', 'i') from df;
     /// ```
     RegexpLike,
+    /// SQL 'replace' function
+    /// Replace a given substring with another string.
+    /// ```sql
+    /// SELECT REPLACE(column_1,'old','new') from df;
+    /// ```
+    Replace,
     /// SQL 'rtrim' function
     /// Strip whitespaces from the right
     /// ```sql
@@ -604,6 +611,7 @@ impl PolarsSQLFunctions {
             "ltrim" => Self::LTrim,
             "octet_length" => Self::OctetLength,
             "regexp_like" => Self::RegexpLike,
+            "replace" => Self::Replace,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
             "substr" => Self::Substring,
@@ -715,6 +723,14 @@ impl SQLFunctionVisitor<'_> {
             // String functions
             // ----
             BitLength => self.visit_unary(|e| e.str().len_bytes() * lit(8)),
+            Date => match function.args.len() {
+                1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
+                2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
+                _ => polars_bail!(InvalidOperation:
+                    "Invalid number of arguments for Date: {}",
+                    function.args.len()
+                ),
+            },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
@@ -754,14 +770,15 @@ impl SQLFunctionVisitor<'_> {
                 }),
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
-            Date => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
-                2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
+            Replace => match function.args.len() {
+                3 => self.try_visit_ternary(|e, old, new| {
+                    Ok(e.str().replace_all(old, new, true))
+                }),
                 _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for Date: {}",
+                    "Invalid number of arguments for Replace: {}",
                     function.args.len()
                 ),
-            },
+            }
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
