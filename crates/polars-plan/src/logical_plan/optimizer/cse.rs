@@ -9,6 +9,33 @@ use crate::prelude::*;
 // nodes into an alogicalplan.
 type Trail = Vec<Node>;
 
+fn union_inputs(
+    inputs: &Vec<Node>,
+    lp_arena: &Arena<ALogicalPlan>,
+    trails: &mut BTreeMap<u32, Trail>,
+    id: &mut u32,
+) -> Option<()> {
+    if inputs.len() > 200 {
+        // don't even bother with cse on this many inputs
+        return None;
+    }
+    let new_trail = trails.get(id).unwrap().clone();
+
+    let last_i = inputs.len() - 1;
+
+    for (i, input) in inputs.iter().enumerate() {
+        collect_trails(*input, lp_arena, trails, id, true)?;
+
+        // don't add a trail on the last iteration as that would only add a Union
+        // without any inputs
+        if i != last_i {
+            *id += 1;
+            trails.insert(*id, new_trail.clone());
+        }
+    }
+    Some(())
+}
+
 // we use mutation of `id` to get a unique trail
 // we traverse left first, so the `id` remains the same for an all left traversal.
 // every right node may increment `id` and because it's shared mutable there will
@@ -48,26 +75,9 @@ pub(super) fn collect_trails(
             trails.insert(*id, new_trail);
             collect_trails(*input_right, lp_arena, trails, id, true)?;
         },
-        Union { inputs, .. } | HConcat { inputs, .. } => {
-            if inputs.len() > 200 {
-                // don't even bother with cse on this many inputs
-                return None;
-            }
-            let new_trail = trails.get(id).unwrap().clone();
-
-            let last_i = inputs.len() - 1;
-
-            for (i, input) in inputs.iter().enumerate() {
-                collect_trails(*input, lp_arena, trails, id, true)?;
-
-                // don't add a trail on the last iteration as that would only add a Union
-                // without any inputs
-                if i != last_i {
-                    *id += 1;
-                    trails.insert(*id, new_trail.clone());
-                }
-            }
-        },
+        Union { inputs, .. } => union_inputs(inputs, lp_arena, trails, id)?,
+        #[cfg(feature = "horizontal_concat")]
+        HConcat { inputs, .. } => union_inputs(inputs, lp_arena, trails, id)?,
         ExtContext { .. } => {
             // block for now.
         },
