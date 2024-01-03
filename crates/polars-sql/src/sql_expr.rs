@@ -811,7 +811,7 @@ pub(super) fn process_join_constraint(
                  constraints; found '{:?}' op in\n{:?}", op, constraint)
         }
         match (left.as_ref(), right.as_ref()) {
-            (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
+            (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
                 return collect_compound_identifiers(left, right, left_name, right_name);
             },
             (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {

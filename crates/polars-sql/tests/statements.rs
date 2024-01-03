@@ -237,9 +237,12 @@ fn test_compound_join_basic() {
     }
     .unwrap();
 
-    println!("expected = {:?}", expected);
-    println!("actual = {:?}", actual);
-    assert!(actual.equals(&expected));
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
 }
 
 #[test]
@@ -271,9 +274,12 @@ fn test_compound_join_different_column_names() {
     }
     .unwrap();
 
-    println!("expected = {:?}", expected);
-    println!("actual = {:?}", actual);
-    assert!(actual.equals(&expected));
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
 }
 
 #[test]
@@ -295,9 +301,12 @@ fn test_compound_join_three_tables() {
     }
     .unwrap();
 
-    println!("expected = {:?}", expected);
-    println!("actual = {:?}", actual);
-    assert!(actual.equals(&expected));
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
 }
 
 #[test]
@@ -338,9 +347,12 @@ fn test_compound_join_nested_and() {
     }
     .unwrap();
 
-    println!("expected = {:?}", expected);
-    println!("actual = {:?}", actual);
-    assert!(actual.equals(&expected));
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
 }
 
 #[test]
