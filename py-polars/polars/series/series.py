@@ -7585,7 +7585,7 @@ class Series:
         --------
         Histogram:
 
-        >>> s = pl.Series([1, 4, 2])
+        >>> s = pl.Series("values", [1, 4, 2])
         >>> s.plot.hist()  # doctest: +SKIP
 
         KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
