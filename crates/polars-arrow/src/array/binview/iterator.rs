@@ -13,13 +13,12 @@ unsafe impl<'a, T: ViewType + ?Sized> ArrayAccessor<'a> for BinaryViewArrayGener
 
     #[inline]
     fn len(&self) -> usize {
-        self.len()
+        self.views.len()
     }
 }
 
 /// Iterator of values of an [`BinaryArray`].
-pub type BinaryViewValueIter<'a, T: ViewType + ?Sized> =
-    ArrayValuesIter<'a, BinaryViewArrayGeneric<T>>;
+pub type BinaryViewValueIter<'a, T> = ArrayValuesIter<'a, BinaryViewArrayGeneric<T>>;
 
 impl<'a, T: ViewType + ?Sized> IntoIterator for &'a BinaryViewArrayGeneric<T> {
     type Item = Option<&'a T>;

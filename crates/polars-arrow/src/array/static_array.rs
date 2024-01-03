@@ -3,7 +3,7 @@ use bytemuck::Zeroable;
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BooleanArray, FixedSizeListArray,
-    PrimitiveArray, Utf8Array, Utf8ValuesIter,
+    ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter,
 };
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -239,7 +239,6 @@ impl ParameterFreeDtypeStaticArray for BinaryArray<i64> {
     }
 }
 
-#[cfg(feature = "compute_concatenate")]
 impl StaticArray for ListArray<i64> {
     type ValueT<'a> = Box<dyn Array>;
     type ZeroableValueT<'a> = Option<Box<dyn Array>>;

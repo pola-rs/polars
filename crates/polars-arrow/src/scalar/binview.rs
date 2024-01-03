@@ -1,7 +1,8 @@
 use std::fmt::{Debug, Formatter};
+
 use super::Scalar;
-use crate::datatypes::ArrowDataType;
 use crate::array::ViewType;
+use crate::datatypes::ArrowDataType;
 
 /// The implementation of [`Scalar`] for utf8, semantically equivalent to [`Option<String>`].
 #[derive(PartialEq, Eq)]
@@ -20,7 +21,7 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewScalar<T> {
     fn clone(&self) -> Self {
         Self {
             value: self.value.clone(),
-            phantom: Default::default()
+            phantom: Default::default(),
         }
     }
 }
@@ -30,7 +31,7 @@ impl<T: ViewType + ?Sized> BinaryViewScalar<T> {
     #[inline]
     pub fn new(value: Option<&T>) -> Self {
         Self {
-            value: value.map(|x| x.to_owned()),
+            value: value.map(|x| x.into_owned()),
             phantom: std::marker::PhantomData,
         }
     }

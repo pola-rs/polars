@@ -10,7 +10,6 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub use mutable::*;
 use polars_error::*;
 
 use crate::array::Array;
@@ -38,11 +37,14 @@ pub trait ViewType: Sealed + 'static + PartialEq {
     const DATA_TYPE: ArrowDataType;
     type Owned: Debug + Clone + Sync + Send + AsRef<Self>;
 
+    /// # Safety
+    /// The caller must ensure `index < self.len()`.
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
 
     fn to_bytes(&self) -> &[u8];
 
-    fn to_owned(&self) -> Self::Owned;
+    #[allow(clippy::wrong_self_convention)]
+    fn into_owned(&self) -> Self::Owned;
 }
 
 impl ViewType for str {
@@ -60,7 +62,7 @@ impl ViewType for str {
         self.as_bytes()
     }
 
-    fn to_owned(&self) -> Self::Owned {
+    fn into_owned(&self) -> Self::Owned {
         self.to_string()
     }
 }
@@ -80,7 +82,7 @@ impl ViewType for [u8] {
         self
     }
 
-    fn to_owned(&self) -> Self::Owned {
+    fn into_owned(&self) -> Self::Owned {
         self.to_vec()
     }
 }

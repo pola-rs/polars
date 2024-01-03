@@ -27,10 +27,10 @@ pub use struct_::*;
 mod fixed_size_list;
 pub use fixed_size_list::*;
 mod fixed_size_binary;
-pub use fixed_size_binary::*;
 pub use binview::*;
-mod union;
+pub use fixed_size_binary::*;
 mod binview;
+mod union;
 
 pub use union::UnionScalar;
 
@@ -65,7 +65,10 @@ macro_rules! dyn_new_utf8 {
 
 macro_rules! dyn_new_binview {
     ($array:expr, $index:expr, $type:ty) => {{
-        let array = $array.as_any().downcast_ref::<BinaryViewArrayGeneric<$type>>().unwrap();
+        let array = $array
+            .as_any()
+            .downcast_ref::<BinaryViewArrayGeneric<$type>>()
+            .unwrap();
         let value = if array.is_valid($index) {
             Some(array.value($index))
         } else {

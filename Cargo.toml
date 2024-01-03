@@ -109,7 +109,6 @@ features = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_concatenate",
   "compute_filter",
   "compute_if_then_else",
 ]

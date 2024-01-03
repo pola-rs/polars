@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;

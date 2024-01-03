@@ -167,6 +167,7 @@ fn encode_dictionary(
                 encoded_dictionaries,
             )
         },
+        Utf8View | BinaryView => todo!(),
     }
 }
 

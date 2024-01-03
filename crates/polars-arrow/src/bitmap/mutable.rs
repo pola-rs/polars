@@ -145,8 +145,9 @@ impl MutableBitmap {
     }
 
     /// Returns whether the position `index` is set.
-    /// # Panics
-    /// Panics iff `index >= self.len()`.
+    ///
+    /// # Safety
+    /// The caller must ensure `index < self.len()`.
     #[inline]
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
         get_bit_unchecked(&self.buffer, index)

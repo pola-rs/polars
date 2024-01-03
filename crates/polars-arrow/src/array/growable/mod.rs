@@ -130,12 +130,12 @@ pub fn make_growable<'a>(
         },
         Utf8View => {
             dyn_growable!(
-            binview::GrowableBinaryViewArray::<str>,
-            arrays,
-            use_validity,
-            capacity
+                binview::GrowableBinaryViewArray::<str>,
+                arrays,
+                use_validity,
+                capacity
             )
-        }
+        },
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 let arrays = arrays

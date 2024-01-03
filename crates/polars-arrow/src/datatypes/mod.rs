@@ -456,7 +456,6 @@ impl ArrowDataType {
             FixedSizeBinary(_) => PhysicalType::FixedSizeBinary,
             LargeBinary => PhysicalType::LargeBinary,
             Utf8 => PhysicalType::Utf8,
-            Utf8 => PhysicalType::Utf8,
             LargeUtf8 => PhysicalType::LargeUtf8,
             BinaryView => PhysicalType::BinaryView,
             Utf8View => PhysicalType::Utf8View,
@@ -569,7 +568,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::Float64 => ArrowDataType::Float64,
             PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
             PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
-            PrimitiveType::UInt128 => unimplemented!()
+            PrimitiveType::UInt128 => unimplemented!(),
         }
     }
 }

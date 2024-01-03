@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
@@ -13,7 +14,7 @@ pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     completed_buffers: Vec<Buffer<u8>>,
     in_progress_buffer: Vec<u8>,
     validity: Option<MutableBitmap>,
-    phantom: std::marker::PhantomData<T>
+    phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
@@ -24,8 +25,9 @@ impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
 
 impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGeneric<T> {
     fn from(mut value: MutableBinaryViewArray<T>) -> Self {
-
-        value.completed_buffers.push(std::mem::take(&mut value.in_progress_buffer).into());
+        value
+            .completed_buffers
+            .push(std::mem::take(&mut value.in_progress_buffer).into());
 
         unsafe {
             Self::new_unchecked(
@@ -49,7 +51,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             completed_buffers: vec![],
             in_progress_buffer: vec![],
             validity: None,
-            phantom: Default::default()
+            phantom: Default::default(),
         }
     }
 
@@ -88,7 +90,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
                 let new_capacity = (self.in_progress_buffer.capacity() * 2)
                     .clamp(DEFAULT_BLOCK_SIZE, 16 * 1024 * 1024)
                     .max(bytes.len());
-                let mut in_progress= Vec::with_capacity(new_capacity);
+                let in_progress = Vec::with_capacity(new_capacity);
                 let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
                 if !flushed.is_empty() {
                     self.completed_buffers.push(flushed.into())
@@ -145,9 +147,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     pub fn from_iter<I, P>(iterator: I) -> Self
-        where
-            I: Iterator<Item = Option<P>>,
-            P: AsRef<T>,
+    where
+        I: Iterator<Item = Option<P>>,
+        P: AsRef<T>,
     {
         let mut mutable = Self::with_capacity(iterator.size_hint().0);
         mutable.extend(iterator);
@@ -155,9 +157,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     pub fn from_values_iter<I, P>(iterator: I) -> Self
-        where
-            I: Iterator<Item = P>,
-            P: AsRef<T>,
+    where
+        I: Iterator<Item = P>,
+        P: AsRef<T>,
     {
         let mut mutable = Self::with_capacity(iterator.size_hint().0);
         mutable.extend_values(iterator);

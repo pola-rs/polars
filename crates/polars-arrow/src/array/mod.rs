@@ -695,6 +695,7 @@ pub mod growable;
 mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
+pub use binview::{BinaryViewArray, BinaryViewArrayGeneric, Utf8ViewArray, ViewType};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use equal::equal;
@@ -714,7 +715,6 @@ pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 pub use values::ValueSize;
-pub use binview::{BinaryViewArray, BinaryViewArrayGeneric, Utf8ViewArray, ViewType};
 
 pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
 use crate::{match_integer_type, with_match_primitive_type, with_match_primitive_type_full};

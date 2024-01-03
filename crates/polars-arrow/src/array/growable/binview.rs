@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
-use super::utils::{extend_offset_values};
 use super::Growable;
-use crate::array::binview::{BinaryViewArrayGeneric, MutableBinaryViewArray, ViewType};
-use crate::array::{Array, BinaryArray};
+use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
+use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use crate::offset::{Offset, Offsets};
 
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
@@ -23,7 +21,11 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
     /// Creates a new [`GrowableBinaryViewArray`] bound to `arrays` with a pre-allocated `capacity`.
     /// # Panics
     /// If `arrays` is empty.
-    pub fn new(arrays: Vec<&'a BinaryViewArrayGeneric<T>>, mut use_validity: bool, capacity: usize) -> Self {
+    pub fn new(
+        arrays: Vec<&'a BinaryViewArrayGeneric<T>>,
+        mut use_validity: bool,
+        capacity: usize,
+    ) -> Self {
         let data_type = arrays[0].data_type().clone();
 
         // if any of the arrays has nulls, insertions from any array requires setting bits
@@ -32,7 +34,10 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             use_validity = true;
         };
 
-        let n_buffers = arrays.iter().map(|binview| binview.data_buffers().len()).sum::<usize>();
+        let n_buffers = arrays
+            .iter()
+            .map(|binview| binview.data_buffers().len())
+            .sum::<usize>();
 
         Self {
             arrays,
@@ -47,12 +52,14 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         let views = std::mem::take(&mut self.views);
         let buffers = std::mem::take(&mut self.buffers);
         let validity = self.validity.take();
-        unsafe { BinaryViewArrayGeneric::<T>::new_unchecked(
-            self.data_type.clone(),
-            views.into(),
-            Arc::from(buffers),
-            validity.map(|v| v.into())
-        ) }
+        unsafe {
+            BinaryViewArrayGeneric::<T>::new_unchecked(
+                self.data_type.clone(),
+                views.into(),
+                Arc::from(buffers),
+                validity.map(|v| v.into()),
+            )
+        }
     }
 }
 
@@ -65,7 +72,8 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
         let buffer_offset = (buffer_offset as u128) << 64;
 
         let range = start..start + len;
-        self.buffers.extend_from_slice(&array.data_buffers()[range.clone()]);
+        self.buffers
+            .extend_from_slice(&array.data_buffers()[range.clone()]);
         self.views.extend(array.views()[range].iter().map(|&view| {
             // If null the buffer index is ignored because the length is 0,
             // so we can just do this
@@ -96,11 +104,13 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
 
 impl<'a, T: ViewType + ?Sized> From<GrowableBinaryViewArray<'a, T>> for BinaryViewArrayGeneric<T> {
     fn from(val: GrowableBinaryViewArray<'a, T>) -> Self {
-        unsafe { BinaryViewArrayGeneric::<T>::new_unchecked(
-            val.data_type,
-            val.views.into(),
-            Arc::from(val.buffers),
-        val.validity.map(|v| v.into()),
-        ) }
+        unsafe {
+            BinaryViewArrayGeneric::<T>::new_unchecked(
+                val.data_type,
+                val.views.into(),
+                Arc::from(val.buffers),
+                val.validity.map(|v| v.into()),
+            )
+        }
     }
 }
