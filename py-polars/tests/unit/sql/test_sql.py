@@ -232,7 +232,7 @@ def test_sql_distinct() -> None:
         ctx.execute("SELECT * FROM df")
 
 
-def test_sql_div() -> None:
+def test_sql_div_sign() -> None:
     df = pl.LazyFrame(
         {
             "a": [10.0, 20.0, 30.0, 40.0, 50.0],
@@ -244,7 +244,8 @@ def test_sql_div() -> None:
             """
             SELECT
               a / b AS a_div_b,
-              a // b AS a_floordiv_b
+              a // b AS a_floordiv_b,
+              SIGN(b) AS b_sign,
             FROM df
             """
         )
@@ -254,8 +255,9 @@ def test_sql_div() -> None:
             [
                 [-0.0995024875621891, 2.85714285714286, 12.0, None, -15.92356687898089],
                 [-1, 2, 12, None, -16],
+                [-1, 1, 1, None, -1],
             ],
-            schema=["a_div_b", "a_floordiv_b"],
+            schema=["a_div_b", "a_floordiv_b", "b_sign"],
         ),
         res,
     )
@@ -1187,12 +1189,7 @@ def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
 
 def test_sql_order_by(foods_ipc_path: Path) -> None:
     foods = pl.scan_ipc(foods_ipc_path)
-    nums = pl.LazyFrame(
-        {
-            "x": [1, 2, 3],
-            "y": [4, 3, 2],
-        }
-    )
+    nums = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 3, 2]})
 
     order_by_distinct_res = pl.SQLContext(foods1=foods).execute(
         """
