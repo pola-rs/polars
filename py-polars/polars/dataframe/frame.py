@@ -4071,7 +4071,9 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
         >>> df.rename({"foo": "apple"})
         shape: (3, 3)
         ┌───────┬─────┬─────┐
@@ -4497,7 +4499,9 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
         >>> df.get_column_index("ham")
         2
 
@@ -10431,7 +10435,9 @@ class DataFrame:
         Update `df` values including null values in `new_df`, using an outer join
         strategy that defines explicit join columns in each frame:
 
-        >>> df.update(new_df, left_on="A", right_on="C", how="outer", include_nulls=True)
+        >>> df.update(
+        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
+        ... )
         shape: (5, 2)
         ┌─────┬──────┐
         │ A   ┆ B    │
