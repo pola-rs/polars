@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use arrow_format::ipc::planus::Builder;
 
 use super::super::IpcField;
@@ -100,32 +98,29 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
     // custom metadata.
     let mut kv_vec = vec![];
 
-    // Use inner type on extensions
-    let field = if let ArrowDataType::Extension(name, dt, metadata) = field.data_type() {
+    if let ArrowDataType::Extension(name, _, metadata) = field.data_type() {
         write_extension(name, metadata, &mut kv_vec);
-        Cow::Owned(Field::new(&field.name, *dt.clone(), field.is_nullable))
-    } else {
-        Cow::Borrowed(field)
     };
 
     let type_ = serialize_type(field.data_type());
     let children = serialize_children(field.data_type(), ipc_field);
 
-    let dictionary =
-        if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = field.data_type() {
-            if let ArrowDataType::Extension(name, _, metadata) = inner.as_ref() {
-                write_extension(name, metadata, &mut kv_vec);
-            }
-            Some(serialize_dictionary(
-                index_type,
-                ipc_field
-                    .dictionary_id
-                    .expect("All Dictionary types have `dict_id`"),
-                *is_ordered,
-            ))
-        } else {
-            None
-        };
+    let dictionary = if let ArrowDataType::Dictionary(index_type, inner, is_ordered) =
+        field.data_type().to_logical_type()
+    {
+        if let ArrowDataType::Extension(name, _, metadata) = inner.as_ref() {
+            write_extension(name, metadata, &mut kv_vec);
+        }
+        Some(serialize_dictionary(
+            index_type,
+            ipc_field
+                .dictionary_id
+                .expect("All Dictionary types have `dict_id`"),
+            *is_ordered,
+        ))
+    } else {
+        None
+    };
 
     write_metadata(&field.metadata, &mut kv_vec);
 

@@ -183,11 +183,8 @@ fn find_first_dict_field_d<'a>(
     ipc_field: &'a IpcField,
 ) -> Option<(&'a Field, &'a IpcField)> {
     use ArrowDataType::*;
-    match data_type {
+    match data_type.to_logical_type() {
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
-        Extension(s, inner, _) if s == "POLARS_ENUM_TYPE" => {
-            find_first_dict_field_d(id, inner.as_ref(), ipc_field)
-        },
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
         },
