@@ -22,7 +22,15 @@ For it to work well for the Polars code base, add the following settings to your
 ### Ruff
 
 The Ruff extension will help you conform to the formatting requirements of the Python code.
-We use both the Ruff linter and formatter.
+We use both the Ruff linter and formatter. The project's `polars/py-polars/pyproject.toml` file has the format and lint settings required for PRs. It might be necessary to point your IDE's "ruff.format.args" settings to that file. In VSCode that would look like
+
+```json
+{
+        "ruff.format.args": [
+        "\"args\": [\"--config=/polars/py-polars/pyproject.toml\"]"
+    ]
+}
+```
 
 ## PyCharm / RustRover / CLion
 
