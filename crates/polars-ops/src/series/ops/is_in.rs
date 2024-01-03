@@ -365,7 +365,7 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
             let rev_map = ca_in.get_rev_map();
             let categories = rev_map.get_categories();
             let others: PlHashSet<&str> = ca_other.downcast_iter().flatten().flatten().collect();
-            let mut set = PlHashSet::with_capacity(categories.len());
+            let mut set = PlHashSet::with_capacity(std::cmp::min(categories.len(), ca_other.len()));
 
             // Either store the global or local indices of the overlapping strings
             match &**rev_map {
