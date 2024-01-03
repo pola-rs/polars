@@ -3845,6 +3845,10 @@ class Expr:
         Expr
             Expression of data type :class:`Struct` with Fields "lengths" and "values".
 
+        See Also
+        --------
+        rle_id
+
         Examples
         --------
         >>> df = pl.DataFrame(pl.Series("s", [1, 1, 2, 1, None, 1, 3, 3]))
@@ -3863,10 +3867,6 @@ class Expr:
         │ 2       ┆ 3      │
         └─────────┴────────┘
 
-        See Also
-        --------
-        rle_id
-
         """
         return self._from_pyexpr(self._pyexpr.rle())
 
@@ -3874,11 +3874,15 @@ class Expr:
         """
         Get a distinct integer ID for each run of identical values.
 
-        The ID increases by one each time the value of a column (or a set of columns,
-        if using :func:`pl.struct`) changes.
+        The ID increases by one each time the value of a column (which can be a
+        :class:`Struct`) changes.
 
         This is especially useful when you want to define a new group for every time a
         column's value changes, rather than for every distinct value of that column.
+
+        See Also
+        --------
+        rle
 
         Examples
         --------
@@ -3897,10 +3901,6 @@ class Expr:
         │ 1   ┆ y    ┆ 2   ┆ 3    │
         │ 1   ┆ y    ┆ 2   ┆ 3    │
         └─────┴──────┴─────┴──────┘
-
-        See Also
-        --------
-        rle
 
         """
         return self._from_pyexpr(self._pyexpr.rle_id())
