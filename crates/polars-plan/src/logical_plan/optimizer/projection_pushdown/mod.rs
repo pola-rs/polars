@@ -1,7 +1,6 @@
 mod functions;
 mod generic;
 mod group_by;
-#[cfg(feature = "horizontal_concat")]
 mod hconcat;
 mod hstack;
 mod joins;
@@ -20,7 +19,6 @@ use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
-#[cfg(feature = "horizontal_concat")]
 use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
@@ -650,7 +648,6 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            #[cfg(feature = "horizontal_concat")]
             HConcat {
                 inputs,
                 schema,

@@ -172,7 +172,6 @@ pub fn create_physical_plan(
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         },
-        #[cfg(feature = "horizontal_concat")]
         HConcat {
             inputs, options, ..
         } => {

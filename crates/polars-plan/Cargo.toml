@@ -153,7 +153,6 @@ cov = ["polars-ops/cov"]
 hist = ["polars-ops/hist"]
 replace = ["polars-ops/replace"]
 find_many = ["polars-ops/find_many"]
-horizontal_concat = []
 
 bigidx = ["polars-core/bigidx"]
 
@@ -247,7 +246,6 @@ features = [
   "concat_str",
   "coalesce",
   "dot_diagram",
-  "horizontal_concat",
   "trigonometry",
   "streaming",
   "true_div",
