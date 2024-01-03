@@ -14,9 +14,13 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import Dtype
 
 
-def test_init_global_categorical_zero_copy_fails() -> None:
+def test_init_global_categorical() -> None:
     with pl.StringCache():
         s = pl.Series("a", ["x"], dtype=pl.Categorical)
+
+    col = PolarsColumn(s)
+    expected = pl.Series("a", ["x"], dtype=pl.Categorical)
+    assert_series_equal(col._col, expected)
 
     with pytest.raises(
         CopyNotAllowedError, match="column 'a' must be converted to a local categorical"
