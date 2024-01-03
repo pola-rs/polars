@@ -690,7 +690,7 @@ impl Expr {
     }
 
     /// Shift the values in the array by some period and fill the resulting empty values.
-    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+    pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.apply_many_private(
             FunctionExpr::ShiftAndFill,
             &[n.into(), fill_value.into()],
