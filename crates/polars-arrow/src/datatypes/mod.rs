@@ -533,6 +533,10 @@ impl ArrowDataType {
             _ => None,
         }
     }
+
+    pub fn is_view(&self) -> bool {
+        matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
+    }
 }
 
 impl From<IntegerType> for ArrowDataType {

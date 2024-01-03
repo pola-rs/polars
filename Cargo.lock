@@ -180,18 +180,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arrow-format"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07884ea216994cdc32a2d5f8274a8bee979cfe90274b83f86f440866ee3132c7"
-dependencies = [
- "planus",
- "prost",
- "prost-derive",
- "serde",
-]
-
-[[package]]
 name = "arrow-schema"
 version = "49.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2610,7 +2598,6 @@ dependencies = [
  "arrow-array",
  "arrow-buffer",
  "arrow-data",
- "arrow-format",
  "arrow-schema",
  "async-stream",
  "atoi",
@@ -2637,6 +2624,7 @@ dependencies = [
  "lz4",
  "multiversion",
  "num-traits",
+ "polars-arrow-format",
  "polars-error",
  "polars-utils",
  "proptest",
@@ -2655,6 +2643,18 @@ dependencies = [
  "tokio-util",
  "version_check",
  "zstd",
+]
+
+[[package]]
+name = "polars-arrow-format"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19b0ef2474af9396b19025b189d96e992311e6a47f90c53cd998b36c4c64b84c"
+dependencies = [
+ "planus",
+ "prost",
+ "prost-derive",
+ "serde",
 ]
 
 [[package]]
@@ -2721,9 +2721,9 @@ dependencies = [
 name = "polars-error"
 version = "0.36.2"
 dependencies = [
- "arrow-format",
  "avro-schema",
  "object_store",
+ "polars-arrow-format",
  "regex",
  "simdutf8",
  "thiserror",

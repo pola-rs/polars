@@ -44,7 +44,7 @@ streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
 
-arrow-format = { version = "0.8", optional = true, features = ["ipc"] }
+arrow-format = { workspace = true, optional = true, features = ["ipc"] }
 
 hex = { workspace = true, optional = true }
 
