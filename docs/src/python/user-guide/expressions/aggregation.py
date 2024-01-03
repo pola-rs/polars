@@ -75,20 +75,7 @@ from datetime import date
 
 
 def compute_age():
-    today = date.today()
-
-    y = pl.col("birthday").dt.year()
-    m = pl.col("birthday").dt.month()
-    d = pl.col("birthday").dt.date()
-    return (
-        today.year
-        - y
-        - (
-            # subtract a year if we have surpassed their birth anniversary
-            (today.month > m) | ((today.month == m) & (today.day > d))
-        )
-        - 1
-    )
+    return date.today().year - pl.col("birthday").dt.year()
 
 
 def avg_birthday(gender: str) -> pl.Expr:
