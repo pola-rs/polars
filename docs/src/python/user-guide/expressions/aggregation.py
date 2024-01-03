@@ -87,6 +87,7 @@ def compute_age():
             # subtract a year if we have surpassed their birth anniversary
             (today.month > m) | ((today.month == m) & (today.day > d))
         )
+        - 1
     )
 
 
