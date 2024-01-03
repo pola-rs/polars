@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow_format::ipc::planus::Builder;
 
 use super::super::IpcField;
@@ -97,15 +99,20 @@ fn write_extension(
 pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_format::ipc::Field {
     // custom metadata.
     let mut kv_vec = vec![];
-    if let ArrowDataType::Extension(name, _, metadata) = field.data_type() {
+
+    // Use inner type on extensions
+    let field = if let ArrowDataType::Extension(name, dt, metadata) = field.data_type() {
         write_extension(name, metadata, &mut kv_vec);
-    }
+        Cow::Owned(Field::new(&field.name, *dt.clone(), field.is_nullable))
+    } else {
+        Cow::Borrowed(field)
+    };
 
     let type_ = serialize_type(field.data_type());
     let children = serialize_children(field.data_type(), ipc_field);
 
-    let dictionary = match field.data_type() {
-        ArrowDataType::Dictionary(index_type, inner, is_ordered) => {
+    let dictionary =
+        if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = field.data_type() {
             if let ArrowDataType::Extension(name, _, metadata) = inner.as_ref() {
                 write_extension(name, metadata, &mut kv_vec);
             }
@@ -116,22 +123,9 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
                     .expect("All Dictionary types have `dict_id`"),
                 *is_ordered,
             ))
-        },
-        ArrowDataType::Extension(s, inner, _) if s == "POLARS_ENUM_TYPE" => {
-            if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = &**inner {
-                Some(serialize_dictionary(
-                    index_type,
-                    ipc_field
-                        .dictionary_id
-                        .expect("All Dictionary types have `dict_id`"),
-                    *is_ordered,
-                ))
-            } else {
-                None
-            }
-        },
-        _ => None,
-    };
+        } else {
+            None
+        };
 
     write_metadata(&field.metadata, &mut kv_vec);
 
