@@ -2494,12 +2494,16 @@ class Series:
 
     def rle(self) -> Series:
         """
-        Get the lengths of runs of identical values.
+        Get the lengths and values of runs of identical values.
 
         Returns
         -------
         Series
             Series of data type :class:`Struct` with Fields "lengths" and "values".
+
+        See Also
+        --------
+        rle_id
 
         Examples
         --------
@@ -2518,15 +2522,18 @@ class Series:
         │ 1       ┆ 1      │
         │ 2       ┆ 3      │
         └─────────┴────────┘
+
         """
 
     def rle_id(self) -> Series:
         """
-        Map values to run IDs.
+        Get a distinct integer ID for each run of identical values.
 
-        Similar to RLE, but it maps each value to an ID corresponding to the run into
-        which it falls. This is especially useful when you want to define groups by
-        runs of identical values rather than the values themselves.
+        The ID increases by one each time the value of a column (which can be a
+        :class:`Struct`) changes.
+
+        This is especially useful when you want to define a new group for every time a
+        column's value changes, rather than for every distinct value of that column.
 
         Returns
         -------
