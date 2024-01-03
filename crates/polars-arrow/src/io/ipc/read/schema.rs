@@ -237,44 +237,28 @@ fn get_data_type(
     extension: Extension,
     may_be_dictionary: bool,
 ) -> PolarsResult<(ArrowDataType, IpcField)> {
+    if let Some(extension) = extension {
+        let (name, metadata) = extension;
+        let (data_type, fields) = get_data_type(field, None, true)?;
+        return Ok((
+            ArrowDataType::Extension(name, Box::new(data_type), metadata),
+            fields,
+        ));
+    }
+
     if let Some(dictionary) = field.dictionary()? {
         if may_be_dictionary {
             let int = dictionary
                 .index_type()?
                 .ok_or_else(|| polars_err!(oos = "indexType is mandatory in Dictionary."))?;
             let index_type = deserialize_integer(int)?;
-            let (inner, mut ipc_field) = get_data_type(field, None, false)?;
+            let (inner, mut ipc_field) = get_data_type(field, extension, false)?;
             ipc_field.dictionary_id = Some(dictionary.id()?);
-            if let Some(ex) = extension {
-                if ex.0 == "POLARS_ENUM_TYPE" {
-                    return Ok((
-                        ArrowDataType::Extension(
-                            ex.0,
-                            Box::new(ArrowDataType::Dictionary(
-                                index_type,
-                                Box::new(inner),
-                                dictionary.is_ordered()?,
-                            )),
-                            ex.1,
-                        ),
-                        ipc_field,
-                    ));
-                }
-            }
             return Ok((
                 ArrowDataType::Dictionary(index_type, Box::new(inner), dictionary.is_ordered()?),
                 ipc_field,
             ));
         }
-    }
-
-    if let Some(extension) = extension {
-        let (name, metadata) = extension;
-        let (data_type, fields) = get_data_type(field, None, false)?;
-        return Ok((
-            ArrowDataType::Extension(name, Box::new(data_type), metadata),
-            fields,
-        ));
     }
 
     let type_ = field
