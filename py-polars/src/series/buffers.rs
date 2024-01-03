@@ -225,7 +225,7 @@ impl PySeries {
         let arr_boxed = match dtype {
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_type!(dt, |$T|  unsafe {
-                    from_buffer_impl::<$T>(pointer, length, owner)
+                    from_buffer_impl::<$T>(pointer, offset, length, owner)
                 })
             },
             DataType::Boolean => {
@@ -245,10 +245,12 @@ impl PySeries {
 
 unsafe fn from_buffer_impl<T: NativeType>(
     pointer: usize,
+    offset: usize,
     length: usize,
     owner: Py<PyAny>,
 ) -> Box<dyn Array> {
     let pointer = pointer as *const T;
+    let pointer = unsafe { pointer.add(offset) };
     let slice = unsafe { std::slice::from_raw_parts(pointer, length) };
     let arr = unsafe { arrow::ffi::mmap::slice_and_owner(slice, owner) };
     arr.to_boxed()
