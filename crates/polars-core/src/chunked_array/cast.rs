@@ -202,10 +202,9 @@ impl ChunkCast for StringChunked {
                     // Safety: length is correct
                     let iter =
                         unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
-                    let mut builder =
+                    let builder =
                         CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
-                    builder.drain_iter(iter);
-                    let ca = builder.finish();
+                    let ca = builder.drain_iter_and_finish(iter);
                     Ok(ca.into_series())
                 },
                 Some(rev_map) => {
