@@ -447,9 +447,10 @@ class Datetime(TemporalType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return (
-            f"{class_name}(time_unit={self.time_unit!r}, time_zone={self.time_zone!r})"
-        )
+        if self.time_zone is None:
+            return f"{class_name}(time_unit={self.time_unit!r})"
+        else:
+            return f"{class_name}(time_unit={self.time_unit!r}, time_zone={self.time_zone!r})"
 
 
 class Duration(TemporalType):
