@@ -544,6 +544,10 @@ class Enum(DataType):
         if not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 
+        if categories.is_empty():
+            self.categories = pl.Series(name="categories", dtype=String)
+            return
+
         if categories.null_count() > 0:
             msg = "Enum categories must not contain null values"
             raise TypeError(msg)
