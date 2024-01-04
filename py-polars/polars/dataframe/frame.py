@@ -1966,11 +1966,11 @@ class DataFrame:
         bar: [["a","b","c","d","e","f"]]
 
         """
-        if self.shape[1]:  # all except 0x0 dataframe
-            record_batches = self._df.to_arrow()
-            return pa.Table.from_batches(record_batches)
-        else:  # 0x0 dataframe, cannot infer schema from batches
+        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
+
+        record_batches = self._df.to_arrow()
+        return pa.Table.from_batches(record_batches)
 
     @overload
     def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]:
@@ -2277,6 +2277,9 @@ class DataFrame:
         dtype: object
 
         """
+        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
+            return pd.DataFrame()
+
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleUpgradeRequired(

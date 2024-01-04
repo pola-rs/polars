@@ -319,9 +319,15 @@ impl Series {
 
                 // Safety
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
-                let mut ca = CategoricalChunked::from_keys_and_values(name, keys, values);
-                ca.set_fast_unique(false);
-                Ok(ca.into_series())
+                Ok(
+                    CategoricalChunked::from_keys_and_values(
+                        name,
+                        keys,
+                        values,
+                        Default::default(),
+                    )
+                    .into_series(),
+                )
             },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {

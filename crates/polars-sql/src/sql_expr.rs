@@ -24,9 +24,11 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
         SQLDataType::BigInt(_) => DataType::Int64,
-        SQLDataType::Binary(_) | SQLDataType::Blob(_) | SQLDataType::Varbinary(_) => {
-            DataType::Binary
-        },
+        SQLDataType::Bytea
+        | SQLDataType::Bytes(_)
+        | SQLDataType::Binary(_)
+        | SQLDataType::Blob(_)
+        | SQLDataType::Varbinary(_) => DataType::Binary,
         SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Char(_)
         | SQLDataType::CharVarying(_)
@@ -385,8 +387,13 @@ impl SQLExprVisitor<'_> {
         Ok(match value {
             SQLValue::Boolean(b) => lit(*b),
             SQLValue::DoubleQuotedString(s) => lit(s.clone()),
-            SQLValue::HexStringLiteral(s) => lit(s.clone()),
-            SQLValue::NationalStringLiteral(s) => lit(s.clone()),
+            #[cfg(feature = "binary_encoding")]
+            SQLValue::HexStringLiteral(x) => {
+                if x.len() % 2 != 0 {
+                    polars_bail!(ComputeError: "hex string literal must have an even number of digits; found '{}'", x)
+                };
+                lit(hex::decode(x.clone()).unwrap())
+            },
             SQLValue::Null => Expr::Literal(LiteralValue::Null),
             SQLValue::Number(s, _) => {
                 // Check for existence of decimal separator dot
@@ -396,6 +403,26 @@ impl SQLExprVisitor<'_> {
                     s.parse::<i64>().map(lit).map_err(|_| ())
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
+            },
+            SQLValue::SingleQuotedByteStringLiteral(b) => {
+                // note: for PostgreSQL this syntax represents a BIT string literal (eg: b'10101') not a BYTE
+                // string literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser
+                // patterned the token name after BigQuery (where b'str' really IS a byte string)
+                if !b.chars().all(|c| c == '0' || c == '1') {
+                    polars_bail!(ComputeError: "bit string literal should contain only 0s and 1s; found '{}'", b)
+                }
+                let n_bits = b.len();
+                let s = b.as_str();
+                lit(match n_bits {
+                    0 => b"".to_vec(),
+                    1..=8 => u8::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    9..=16 => u16::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    17..=32 => u32::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    33..=64 => u64::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    _ => {
+                        polars_bail!(ComputeError: "cannot parse bit string literal with len > 64 (len={:?})", n_bits)
+                    },
+                })
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
