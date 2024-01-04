@@ -757,10 +757,10 @@ fn process_and_constraint(
     let mut left_on: Vec<Expr> = vec![];
     let mut right_on: Vec<Expr> = vec![];
 
-    if let SqlExpr::BinaryOp { left, op, right } = expression {
+    if let SQLExpr::BinaryOp { left, op, right } = expression {
         match *op {
             BinaryOperator::Eq => {
-                if let (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) =
+                if let (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) =
                     (left.as_ref(), right.as_ref())
                 {
                     let (mut left_i, mut right_i) =
@@ -768,7 +768,7 @@ fn process_and_constraint(
                     left_on.append(&mut left_i);
                     right_on.append(&mut right_i);
                 } else {
-                    polars_bail!(InvalidOperation: "process_and_constraint: BinaryOperator::Eq supports only SqlExpr::CompoundIdentifier, but found: left={:?}, right={:?}", left, right);
+                    polars_bail!(InvalidOperation: "process_and_constraint: BinaryOperator::Eq supports only SQLExpr::CompoundIdentifier, but found: left={:?}, right={:?}", left, right);
                 }
             },
             BinaryOperator::And => {
@@ -786,7 +786,7 @@ fn process_and_constraint(
             },
         }
     } else {
-        polars_bail!(InvalidOperation: "process_and_constraint supports only SqlExpr::BinaryOp, but found expression = {:?}", expression);
+        polars_bail!(InvalidOperation: "process_and_constraint supports only SQLExpr::BinaryOp, but found expression = {:?}", expression);
     }
     Ok((left_on, right_on))
 }
@@ -796,7 +796,7 @@ pub(super) fn process_join_constraint(
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let JoinConstraint::On(SqlExpr::BinaryOp { left, op, right }) = constraint {
+    if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
         if op == &BinaryOperator::And {
             let (mut left_on, mut right_on) = process_and_constraint(left, left_name, right_name)?;
             let (mut left_on_2, mut right_on_2) =
