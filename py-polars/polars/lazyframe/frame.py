@@ -2898,7 +2898,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool = False,
-        **named_more_by: IntoExpr,
+        **named_by: IntoExpr,
     ) -> LazyGroupBy:
         """
         Start a group by operation.
@@ -2910,7 +2910,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
-        **named_more_by
+        **named_by
             Additional named columns to group by, specified as named parameters.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
@@ -2990,7 +2990,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        exprs = parse_as_list_of_expressions(by, *more_by, **named_more_by)
+        exprs = parse_as_list_of_expressions(by, *more_by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
