@@ -195,8 +195,6 @@ fn iss_9560_join_as() {
     assert!(actual.equals(&expected));
 }
 
-// Tests for https://github.com/pola-rs/polars/issues/11290 --------------
-
 fn prepare_compound_join_context() -> SQLContext {
     let df1 = df! {
         "a" => [1, 2, 3, 4, 5],
@@ -227,7 +225,7 @@ fn test_compound_join_basic() {
     let mut ctx = prepare_compound_join_context();
     let sql = r#"
         SELECT * FROM df1
-        JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+        INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -263,7 +261,7 @@ fn test_compound_join_different_column_names() {
     ctx.register("df2", df2.lazy());
 
     let sql = r#"
-        SELECT * FROM df1 JOIN df2 ON df1.a = df2.b AND df1.b = df2.a
+        SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.b AND df1.b = df2.a
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -287,9 +285,9 @@ fn test_compound_join_three_tables() {
     let mut ctx = prepare_compound_join_context();
     let sql = r#"
         SELECT * FROM df1
-            JOIN df2
+            INNER JOIN df2
                 ON df1.a = df2.a AND df1.b = df2.b
-            JOIN df3
+            INNER JOIN df3
                 ON df1.a = df3.a AND df1.b = df3.b
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
@@ -331,7 +329,7 @@ fn test_compound_join_nested_and() {
 
     let sql = r#"
         SELECT * FROM df1
-            JOIN df2 ON
+            INNER JOIN df2 ON
                 df1.a = df2.a AND
                 df1.b = df2.b AND
                 df1.c = df2.c AND
@@ -359,7 +357,7 @@ fn test_compound_join_nested_and() {
 #[should_panic]
 fn test_compound_invalid_1() {
     let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 JOIN df2 ON a AND b";
+    let sql = "SELECT * FROM df1 OUTER JOIN df2 ON a AND b";
     ctx.execute(sql).unwrap().collect().unwrap();
 }
 
@@ -367,7 +365,7 @@ fn test_compound_invalid_1() {
 #[should_panic]
 fn test_compound_invalid_2() {
     let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 JOIN df2 ON df1.a = df2.a AND b = b";
+    let sql = "SELECT * FROM df1 LEFT JOIN df2 ON df1.a = df2.a AND b = b";
     ctx.execute(sql).unwrap().collect().unwrap();
 }
 
@@ -375,6 +373,6 @@ fn test_compound_invalid_2() {
 #[should_panic]
 fn test_compound_invalid_3() {
     let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 JOIN df2 ON df1.a = df2.a AND b";
+    let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
     ctx.execute(sql).unwrap().collect().unwrap();
 }
