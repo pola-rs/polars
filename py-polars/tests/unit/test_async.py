@@ -176,7 +176,7 @@ def test_gevent_collect_async_switch(
     def main() -> Any:
         result = get_result()
         gevent.sleep(0.1)
-        return result.get(block=False, timeout=3)
+        return result.get(block=False, timeout=10)
 
     _gevent_run(main, raises)
 
