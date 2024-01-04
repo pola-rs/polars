@@ -64,7 +64,6 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     ╞═══════╡
     │ false │
     └───────┘
-
     """  # noqa: W505
     if not names:
         return F.col("*")
@@ -112,7 +111,6 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     ╞══════╡
     │ true │
     └──────┘
-
     """
     return F.col(*names).any(ignore_nulls=ignore_nulls)
 
@@ -173,7 +171,6 @@ def max(*names: str) -> Expr:
     ╞═════╪═════╡
     │ 8   ┆ 5   │
     └─────┴─────┘
-
     """
     return F.col(*names).max()
 
@@ -234,7 +231,6 @@ def min(*names: str) -> Expr:
     ╞═════╪═════╡
     │ 1   ┆ 2   │
     └─────┴─────┘
-
     """
     return F.col(*names).min()
 
@@ -295,7 +291,6 @@ def sum(*names: str) -> Expr:
     ╞═════╪═════╡
     │ 7   ┆ 11  │
     └─────┴─────┘
-
     """
     return F.col(*names).sum()
 
@@ -334,7 +329,6 @@ def cum_sum(*names: str) -> Expr:
     │ 3   │
     │ 6   │
     └─────┘
-
     """
     return F.col(*names).cum_sum()
 
@@ -351,6 +345,5 @@ def cumsum(*names: str) -> Expr:
     ----------
     *names
         Name(s) of the columns to use in the aggregation.
-
     """
     return cum_sum(*names)

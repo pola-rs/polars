@@ -71,7 +71,6 @@ def lit(
 
     >>> pl.lit([[1, 2], [3, 4]])  # doctest: +SKIP
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
-
     """
     time_unit: TimeUnit
 

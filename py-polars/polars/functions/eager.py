@@ -123,7 +123,6 @@ def concat(
     │ 2   ┆ 4    ┆ 5    ┆ null │
     │ 3   ┆ null ┆ 6    ┆ 8    │
     └─────┴──────┴──────┴──────┘
-
     """  # noqa: W505
     # unpack/standardise (handles generator input)
     elems = list(items)
@@ -419,7 +418,6 @@ def align_frames(
     ├╌╌╌╌╌╌╌┤
     │ 47.0  │
     └───────┘
-
     """  # noqa: W505
     if not frames:
         return []

@@ -84,7 +84,6 @@ def assert_series_equal(
     AssertionError: Series are different (value mismatch)
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
-
     """
     if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
         raise_assertion_error(
@@ -349,7 +348,6 @@ def assert_series_not_equal(
     Traceback (most recent call last):
     ...
     AssertionError: Series are equal
-
     """
     try:
         assert_series_equal(

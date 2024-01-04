@@ -54,7 +54,6 @@ class GroupBy:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-
         """
         self.df = df
         self.by = by
@@ -92,7 +91,6 @@ class GroupBy:
         ╞═════╪═════╡
         │ b   ┆ 3   │
         └─────┴─────┘
-
         """
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
@@ -233,7 +231,6 @@ class GroupBy:
         │ c   ┆ 3     ┆ 1.0            │
         │ b   ┆ 5     ┆ 10.0           │
         └─────┴───────┴────────────────┘
-
         """
         return (
             self.df.lazy()
@@ -302,7 +299,6 @@ class GroupBy:
         >>> df.filter(
         ...     pl.int_range(0, pl.count()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
-
         """
         by: list[str]
 
@@ -366,7 +362,6 @@ class GroupBy:
         │ c       ┆ 1   │
         │ c       ┆ 2   │
         └─────────┴─────┘
-
         """
         return (
             self.df.lazy()
@@ -419,7 +414,6 @@ class GroupBy:
         │ c       ┆ 2   │
         │ c       ┆ 4   │
         └─────────┴─────┘
-
         """
         return (
             self.df.lazy()
@@ -445,7 +439,6 @@ class GroupBy:
         │ one ┆ [1, 3]    │
         │ two ┆ [2, 4]    │
         └─────┴───────────┘
-
         """
         return self.agg(F.all())
 
@@ -501,7 +494,6 @@ class GroupBy:
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
-
         """
         return self.agg(F.all().first())
 
@@ -530,7 +522,6 @@ class GroupBy:
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
         │ Banana ┆ 5   ┆ 14.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
-
         """
         return self.agg(F.all().last())
 
@@ -559,7 +550,6 @@ class GroupBy:
         │ Orange ┆ 2   ┆ 0.5  ┆ true │
         │ Banana ┆ 5   ┆ 14.0 ┆ true │
         └────────┴─────┴──────┴──────┘
-
         """
         return self.agg(F.all().max())
 
@@ -588,7 +578,6 @@ class GroupBy:
         │ Orange ┆ 2.0 ┆ 0.5      ┆ 1.0      │
         │ Banana ┆ 4.5 ┆ 13.5     ┆ 0.5      │
         └────────┴─────┴──────────┴──────────┘
-
         """
         return self.agg(F.all().mean())
 
@@ -615,7 +604,6 @@ class GroupBy:
         │ Apple  ┆ 2.0 ┆ 4.0  │
         │ Banana ┆ 4.0 ┆ 13.0 │
         └────────┴─────┴──────┘
-
         """
         return self.agg(F.all().median())
 
@@ -644,7 +632,6 @@ class GroupBy:
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
-
         """
         return self.agg(F.all().min())
 
@@ -671,7 +658,6 @@ class GroupBy:
         │ Apple  ┆ 2   ┆ 2   │
         │ Banana ┆ 3   ┆ 3   │
         └────────┴─────┴─────┘
-
         """
         return self.agg(F.all().n_unique())
 
@@ -708,7 +694,6 @@ class GroupBy:
         │ Orange ┆ 2.0 ┆ 0.5  │
         │ Banana ┆ 5.0 ┆ 14.0 │
         └────────┴─────┴──────┘
-
         """
         return self.agg(F.all().quantile(quantile, interpolation=interpolation))
 
@@ -737,7 +722,6 @@ class GroupBy:
         │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
         │ Banana ┆ 9   ┆ 27.0 ┆ 1   │
         └────────┴─────┴──────┴─────┘
-
         """
         return self.agg(F.all().sum())
 
@@ -753,7 +737,6 @@ class GroupBy:
         ----------
         function
             Custom function.
-
         """
         return self.map_groups(function)
 
@@ -891,7 +874,6 @@ class RollingGroupBy:
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
-
         """
         return (
             self.df.lazy()
@@ -927,7 +909,6 @@ class RollingGroupBy:
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
-
         """
         return self.map_groups(function, schema)
 
@@ -1086,7 +1067,6 @@ class DynamicGroupBy:
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
-
         """
         return (
             self.df.lazy()
@@ -1126,6 +1106,5 @@ class DynamicGroupBy:
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
-
         """
         return self.map_groups(function, schema)

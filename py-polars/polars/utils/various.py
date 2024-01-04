@@ -278,7 +278,6 @@ def _cast_repr_strings_with_schema(
     -----
     Table repr strings are less strict (or different) than equivalent CSV data, so need
     special handling; as this function is only used for reprs, parsing is flexible.
-
     """
     tp: PolarsDataType | None
     if not df.is_empty():
@@ -471,7 +470,6 @@ def _get_stack_locals(
         If specified, look at objects in the last `n` stack frames only.
     named
         If specified, only return objects matching the given name(s).
-
     """
     if isinstance(named, str):
         named = (named,)

@@ -198,7 +198,6 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -293,7 +292,6 @@ def scan_parquet(
     ...     "aws_region": "us-east-1",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)

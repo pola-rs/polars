@@ -72,7 +72,6 @@ def read_ipc(
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that you cannot write to the same filename.
     E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
-
     """
     if use_pyarrow and n_rows and not memory_map:
         raise ValueError(
@@ -153,7 +152,6 @@ def read_ipc_stream(
     Returns
     -------
     DataFrame
-
     """
     with _prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
@@ -201,7 +199,6 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     -------
     dict
         Dictionary mapping column names to datatypes
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -249,7 +246,6 @@ def scan_ipc(
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
-
     """
     return pl.LazyFrame._scan_ipc(
         source,

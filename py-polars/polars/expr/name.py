@@ -62,7 +62,6 @@ class ExprNameNameSpace:
         │ 9   ┆ 3   │
         │ 18  ┆ 4   │
         └─────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.name_keep())
 
@@ -104,7 +103,6 @@ class ExprNameNameSpace:
         │ 2         ┆ y         ┆ 2   ┆ y   │
         │ 1         ┆ x         ┆ 3   ┆ z   │
         └───────────┴───────────┴─────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.name_map(function))
 
@@ -147,7 +145,6 @@ class ExprNameNameSpace:
         │ 2   ┆ y   ┆ 2         ┆ y         │
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.name_prefix(prefix))
 
@@ -190,7 +187,6 @@ class ExprNameNameSpace:
         │ 2   ┆ y   ┆ 2         ┆ y         │
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.name_suffix(suffix))
 
@@ -228,7 +224,6 @@ class ExprNameNameSpace:
         │ 2    ┆ y    ┆ 2    ┆ y    │
         │ 3    ┆ z    ┆ 3    ┆ z    │
         └──────┴──────┴──────┴──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.name_to_lowercase())
 
@@ -266,6 +261,5 @@ class ExprNameNameSpace:
         │ 2    ┆ y    ┆ 2    ┆ y    │
         │ 3    ┆ z    ┆ 3    ┆ z    │
         └──────┴──────┴──────┴──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.name_to_uppercase())

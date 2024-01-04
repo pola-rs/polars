@@ -279,7 +279,6 @@ def int_ranges(
     │ 1     ┆ 3   ┆ [1, 2]     │
     │ -1    ┆ 2   ┆ [-1, 0, 1] │
     └───────┴─────┴────────────┘
-
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)

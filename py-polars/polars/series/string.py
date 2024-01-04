@@ -72,7 +72,6 @@ class StringNameSpace:
                 2020-02-01
                 2020-03-01
         ]
-
         """
 
     def to_datetime(
@@ -186,7 +185,6 @@ class StringNameSpace:
                 02:00:00
                 03:00:00
         ]
-
         """
 
     def strptime(
@@ -318,7 +316,6 @@ class StringNameSpace:
             143.09
             143.90
         ]
-
         """
 
     def len_bytes(self) -> Series:
@@ -353,7 +350,6 @@ class StringNameSpace:
             6
             null
         ]
-
         """
 
     def len_chars(self) -> Series:
@@ -387,7 +383,6 @@ class StringNameSpace:
             2
             null
         ]
-
         """
 
     def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Series:
@@ -423,7 +418,6 @@ class StringNameSpace:
         [
             null
         ]
-
         """
 
     def contains(
@@ -490,7 +484,6 @@ class StringNameSpace:
             true
             null
         ]
-
         """
 
     def ends_with(self, suffix: str | Expr) -> Series:
@@ -518,7 +511,6 @@ class StringNameSpace:
             true
             null
         ]
-
         """
 
     def starts_with(self, prefix: str | Expr) -> Series:
@@ -546,7 +538,6 @@ class StringNameSpace:
             false
             null
         ]
-
         """
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
@@ -560,7 +551,6 @@ class StringNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
-
         """
 
     def encode(self, encoding: TransferEncoding) -> Series:
@@ -588,7 +578,6 @@ class StringNameSpace:
             "626172"
             null
         ]
-
         """
 
     def json_decode(
@@ -624,7 +613,6 @@ class StringNameSpace:
                 {null,null}
                 {2,false}
         ]
-
         """
 
     def json_path_match(self, json_path: str) -> Series:
@@ -663,7 +651,6 @@ class StringNameSpace:
             "2.1"
             "true"
         ]
-
         """
 
     def extract(self, pattern: str, group_index: int = 1) -> Series:
@@ -728,7 +715,6 @@ class StringNameSpace:
             "ronaldo"
             null
         ]
-
         """
 
     def extract_all(self, pattern: str | Series) -> Series:
@@ -855,7 +841,6 @@ class StringNameSpace:
             {"weghorst","polars"}
             {null,null}
         ]
-
         """
 
     def count_matches(self, pattern: str | Series, *, literal: bool = False) -> Series:
@@ -901,7 +886,6 @@ class StringNameSpace:
             2
             null
         ]
-
         """
 
     def split(self, by: IntoExpr, *, inclusive: bool = False) -> Series:
@@ -919,7 +903,6 @@ class StringNameSpace:
         -------
         Series
             Series of data type `List(String)`.
-
         """
 
     def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Series:
@@ -980,7 +963,6 @@ class StringNameSpace:
         Series
             Series of data type :class:`Struct` with fields of data type
             :class:`String`.
-
         """
 
     def splitn(self, by: IntoExpr, n: int) -> Series:
@@ -1039,7 +1021,6 @@ class StringNameSpace:
         Series
             Series of data type :class:`Struct` with fields of data type
             :class:`String`.
-
         """
 
     def replace(
@@ -1101,7 +1082,6 @@ class StringNameSpace:
             "123ABC"
             "abc456"
         ]
-
         """
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
@@ -1132,7 +1112,6 @@ class StringNameSpace:
             "-bc-bc"
             "123-123"
         ]
-
         """
 
     def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
@@ -1168,7 +1147,6 @@ class StringNameSpace:
             "hell"
             "	world"
         ]
-
         """
 
     def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Series:
@@ -1203,7 +1181,6 @@ class StringNameSpace:
                 " hello "
                 "rld"
         ]
-
         """
 
     def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Series:
@@ -1238,7 +1215,6 @@ class StringNameSpace:
             " hello "
             "w"
         ]
-
         """
 
     def strip_prefix(self, prefix: IntoExpr) -> Series:
@@ -1264,7 +1240,6 @@ class StringNameSpace:
                 ""
                 "bar"
         ]
-
         """
 
     def strip_suffix(self, suffix: IntoExpr) -> Series:
@@ -1321,7 +1296,6 @@ class StringNameSpace:
             "hippopotamus"
             null
         ]
-
         """
 
     def pad_end(self, length: int, fill_char: str = " ") -> Series:
@@ -1352,7 +1326,6 @@ class StringNameSpace:
             "hippopotamus"
             null
         ]
-
         """
 
     @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
@@ -1390,7 +1363,6 @@ class StringNameSpace:
                 "999999"
                 null
         ]
-
         """
 
     def to_lowercase(self) -> Series:
@@ -1407,7 +1379,6 @@ class StringNameSpace:
             "cat"
             "dog"
         ]
-
         """
 
     def to_uppercase(self) -> Series:
@@ -1424,7 +1395,6 @@ class StringNameSpace:
             "CAT"
             "DOG"
         ]
-
         """
 
     def to_titlecase(self) -> Series:
@@ -1441,7 +1411,6 @@ class StringNameSpace:
             "Welcome To My …
             "There's No Tur…
         ]
-
         """
 
     def reverse(self) -> Series:
@@ -1503,7 +1472,6 @@ class StringNameSpace:
             "ya"
             "onf"
         ]
-
         """
 
     def explode(self) -> Series:
@@ -1529,7 +1497,6 @@ class StringNameSpace:
                 "a"
                 "r"
         ]
-
         """
 
     def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
@@ -1573,7 +1540,6 @@ class StringNameSpace:
                 51966
                 null
         ]
-
         """
 
     @deprecate_renamed_function("to_integer", version="0.19.14")
@@ -1592,7 +1558,6 @@ class StringNameSpace:
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
-
         """
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
@@ -1609,7 +1574,6 @@ class StringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
 
     @deprecate_renamed_function("strip_chars_start", version="0.19.3")
@@ -1626,7 +1590,6 @@ class StringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
 
     @deprecate_renamed_function("strip_chars_end", version="0.19.3")
@@ -1643,7 +1606,6 @@ class StringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
 
     @deprecate_renamed_function("count_matches", version="0.19.3")
@@ -1666,7 +1628,6 @@ class StringNameSpace:
         Series
             Series of data type :class:`UInt32`. Returns null if the original
             value is null.
-
         """
 
     @deprecate_renamed_function("len_bytes", version="0.19.8")
@@ -1676,7 +1637,6 @@ class StringNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len_bytes`.
-
         """
 
     @deprecate_renamed_function("len_chars", version="0.19.8")
@@ -1686,7 +1646,6 @@ class StringNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len_chars`.
-
         """
 
     @deprecate_renamed_function("pad_end", version="0.19.12")
@@ -1704,7 +1663,6 @@ class StringNameSpace:
             Justify left to this length.
         fill_char
             Fill with this ASCII character.
-
         """
 
     @deprecate_renamed_function("pad_start", version="0.19.12")
@@ -1722,7 +1680,6 @@ class StringNameSpace:
             Justify right to this length.
         fill_char
             Fill with this ASCII character.
-
         """
 
     @deprecate_renamed_function("json_decode", version="0.19.15")
@@ -1782,7 +1739,6 @@ class StringNameSpace:
             true
             true
         ]
-
         """
 
     def replace_many(
@@ -1826,5 +1782,4 @@ class StringNameSpace:
             "Tell you what me want, what me really really want"
             "Can me feel the love tonight"
         ]
-
         """

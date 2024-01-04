@@ -170,7 +170,6 @@ def date_range(
         1985-01-07
         1985-01-09
     ]
-
     """
     interval = deprecate_saturating(interval)
 
@@ -315,7 +314,6 @@ def date_ranges(
     │ 2022-01-01 ┆ 2022-01-03 ┆ [2022-01-01, 2022-01-02, 2022-01… │
     │ 2022-01-02 ┆ 2022-01-03 ┆ [2022-01-02, 2022-01-03]          │
     └────────────┴────────────┴───────────────────────────────────┘
-
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)

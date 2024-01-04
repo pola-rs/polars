@@ -37,7 +37,6 @@ def show_versions() -> None:
     sqlalchemy:           2.0.23
     xlsx2csv:             0.8.1
     xlsxwriter:           3.1.9
-
     """  # noqa: W505
     # note: we import 'platform' here (rather than at the top of the
     # module) as a micro-optimisation for polars' initial import

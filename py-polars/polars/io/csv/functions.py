@@ -186,7 +186,6 @@ def read_csv(
     all data will be stored continuously in memory.
     Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
     an expensive operation.
-
     """
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
@@ -570,7 +569,6 @@ def read_csv_batched(
     ...         seen_groups.add(group)
     ...
     ...     batches = reader.next_batches(100)
-
     """
     projection, columns = handle_projection_columns(columns)
 
@@ -887,7 +885,6 @@ def scan_csv(
     │ 3   ┆ to   │
     │ 4   ┆ read │
     └─────┴──────┘
-
     """
     if not new_columns and isinstance(dtypes, Sequence):
         raise TypeError(f"expected 'dtypes' dict, found {type(dtypes).__name__!r}")
