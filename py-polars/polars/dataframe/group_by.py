@@ -37,6 +37,7 @@ class GroupBy:
         *more_by: IntoExpr,
         maintain_order: bool,
         **named_by: IntoExpr,
+        **named_by: IntoExpr,
     ):
         """
         Utility class for performing a group by operation over the given DataFrame.
