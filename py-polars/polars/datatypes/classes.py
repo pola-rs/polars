@@ -545,7 +545,7 @@ class Enum(DataType):
             categories = pl.Series(values=categories)
 
         if categories.is_empty():
-            self.categories = pl.Series(name="categories", dtype=String)
+            self.categories = pl.Series(name="category", dtype=String)
             return
 
         if categories.null_count() > 0:
@@ -561,7 +561,7 @@ class Enum(DataType):
             msg = f"Enum categories must be unique; found duplicate {duplicate!r}"
             raise ValueError(msg)
 
-        self.categories = categories.rechunk().alias("categories")
+        self.categories = categories.rechunk().alias("category")
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
