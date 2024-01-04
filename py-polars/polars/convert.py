@@ -68,7 +68,6 @@ def from_dict(
     │ 1   ┆ 3   │
     │ 2   ┆ 4   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_dict(
         data, schema=schema, schema_overrides=schema_overrides
@@ -164,7 +163,6 @@ def from_dicts(
     │ 2   ┆ 5   ┆ null ┆ null │
     │ 3   ┆ 6   ┆ null ┆ null │
     └─────┴─────┴──────┴──────┘
-
     """
     if not data and not (schema or schema_overrides):
         raise NoDataError("no data, cannot infer schema")
@@ -234,7 +232,6 @@ def from_records(
     │ 2   ┆ 5   │
     │ 3   ┆ 6   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_records(
         data,
@@ -429,7 +426,6 @@ def from_repr(tbl: str) -> DataFrame | Series:
     ... )
     >>> s.to_list()
     [True, False, True]
-
     """
     # find DataFrame table...
     m = re.search(r"([┌╭].*?[┘╯])", tbl, re.DOTALL)
@@ -502,7 +498,6 @@ def from_numpy(
     │ 2   ┆ 5   │
     │ 3   ┆ 6   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_numpy(
         data, schema=schema, orient=orient, schema_overrides=schema_overrides
@@ -589,7 +584,6 @@ def from_arrow(
         2
         3
     ]
-
     """  # noqa: W505
     if isinstance(data, pa.Table):
         return pl.DataFrame._from_arrow(
@@ -715,7 +709,6 @@ def from_pandas(
         2
         3
     ]
-
     """
     if isinstance(data, (pd.Series, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
@@ -779,7 +772,6 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     │ 1   ┆ 3.0 ┆ x   │
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
-
     """
     from polars.interchange.from_dataframe import from_dataframe
 

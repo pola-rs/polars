@@ -31,7 +31,6 @@ class SQLContext(Generic[FrameType]):
     --------
     This feature is stabilising, but is still considered experimental and
     changes may be made without them necessarily being considered breaking.
-
     """
 
     _ctxt: PySQLContext
@@ -109,7 +108,6 @@ class SQLContext(Generic[FrameType]):
         │ x   ┆ 2     │
         │ z   ┆ 6     │
         └─────┴───────┘
-
         """
         self._ctxt = PySQLContext.new()
         self._eager_execution = eager_execution
@@ -144,7 +142,6 @@ class SQLContext(Generic[FrameType]):
         See Also
         --------
         unregister
-
         """
         self.unregister(
             names=(set(self.tables()) - self._tables_scope_stack.pop()),
@@ -304,7 +301,6 @@ class SQLContext(Generic[FrameType]):
         ╞═══════╡
         │ world │
         └───────┘
-
         """
         if frame is None:
             frame = LazyFrame()
@@ -356,7 +352,6 @@ class SQLContext(Generic[FrameType]):
         │ 2   ┆ null ┆ t    │
         │ 1   ┆ x    ┆ null │
         └─────┴──────┴──────┘
-
         """
         return self.register_many(
             frames=_get_stack_locals(of_type=(DataFrame, LazyFrame), n_objects=n)
@@ -400,7 +395,6 @@ class SQLContext(Generic[FrameType]):
 
         >>> ctx.register_many(tbl3=lf3, tbl4=lf4).tables()
         ['tbl1', 'tbl2', 'tbl3', 'tbl4']
-
         """
         frames = dict(frames or {})
         frames.update(named_frames)
@@ -463,7 +457,6 @@ class SQLContext(Generic[FrameType]):
         ['test2']
         >>> ctx.unregister("test2").tables()
         []
-
         """
         if isinstance(names, str):
             names = [names]
@@ -506,6 +499,5 @@ class SQLContext(Generic[FrameType]):
         >>> ctx = pl.SQLContext(hello_data=df1, foo_bar=df2)
         >>> ctx.tables()
         ['foo_bar', 'hello_data']
-
         """
         return sorted(self._ctxt.get_tables())

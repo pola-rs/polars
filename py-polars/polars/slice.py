@@ -15,7 +15,6 @@ class PolarsSlice:
     Apply Python slice object to Polars DataFrame or Series.
 
     Has full support for negative indexing and/or stride.
-
     """
 
     stop: int
@@ -113,7 +112,6 @@ class LazyPolarsSlice:
 
     Only slices with efficient computation paths that map directly
     to existing lazy methods are supported.
-
     """
 
     obj: LazyFrame
@@ -128,7 +126,6 @@ class LazyPolarsSlice:
         Note that LazyFrame is designed primarily for efficient computation and does not
         know its own length so, unlike DataFrame, certain slice patterns (such as those
         requiring negative stop/step) may not be supported.
-
         """
         start = s.start or 0
         step = s.step or 1

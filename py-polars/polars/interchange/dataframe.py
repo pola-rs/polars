@@ -26,7 +26,6 @@ class PolarsDataFrame(InterchangeDataFrame):
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError is raised if data would be copied.
-
     """
 
     version = 0
@@ -55,7 +54,6 @@ class PolarsDataFrame(InterchangeDataFrame):
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
-
         """
         if nan_as_null:
             raise NotImplementedError(
@@ -89,7 +87,6 @@ class PolarsDataFrame(InterchangeDataFrame):
         See Also
         --------
         polars.dataframe.frame.DataFrame.n_chunks
-
         """
         return self._df.n_chunks("first")
 
@@ -105,7 +102,6 @@ class PolarsDataFrame(InterchangeDataFrame):
         ----------
         i
             Index of the column.
-
         """
         s = self._df.to_series(i)
         return PolarsColumn(s, allow_copy=self._allow_copy)
@@ -118,7 +114,6 @@ class PolarsDataFrame(InterchangeDataFrame):
         ----------
         name
             Name of the column.
-
         """
         s = self._df.get_column(name)
         return PolarsColumn(s, allow_copy=self._allow_copy)
@@ -136,7 +131,6 @@ class PolarsDataFrame(InterchangeDataFrame):
         ----------
         indices
             Column indices
-
         """
         if not isinstance(indices, Sequence):
             raise TypeError("`indices` is not a sequence")
@@ -156,7 +150,6 @@ class PolarsDataFrame(InterchangeDataFrame):
         ----------
         names
             Column names.
-
         """
         if not isinstance(names, Sequence):
             raise TypeError("`names` is not a sequence")
@@ -182,7 +175,6 @@ class PolarsDataFrame(InterchangeDataFrame):
         higher than the number of chunks in the dataframe, a slice must be performed
         that is not on the chunk boundary. This will trigger some compute for columns
         that contain null values and boolean columns.
-
         """
         total_n_chunks = self.num_chunks()
         chunks = self._get_chunks_from_col_chunks()
@@ -216,7 +208,6 @@ class PolarsDataFrame(InterchangeDataFrame):
 
         If columns are not all chunked identically, they will be rechunked like the
         first column. If copy is not allowed, this raises a RuntimeError.
-
         """
         col_chunks = self.get_column(0).get_chunks()
         chunk_sizes = [chunk.size() for chunk in col_chunks]

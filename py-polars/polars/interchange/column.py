@@ -32,7 +32,6 @@ class PolarsColumn(Column):
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError will be raised if data would be copied.
-
     """
 
     def __init__(self, column: Series, *, allow_copy: bool = True):
@@ -71,7 +70,6 @@ class PolarsColumn(Column):
         ------
         TypeError
             If the data type of the column is not categorical.
-
         """
         if self.dtype[0] != DtypeKind.CATEGORICAL:
             raise TypeError("`describe_categorical` only works on categorical columns")
@@ -121,7 +119,6 @@ class PolarsColumn(Column):
         must be performed that is not on the chunk boundary. This will trigger some
         compute if the column contains null values or if the column is of data type
         boolean.
-
         """
         total_n_chunks = self.num_chunks()
         chunks = self._col.get_chunks()

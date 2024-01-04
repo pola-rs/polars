@@ -537,7 +537,6 @@ def read_database(  # noqa: D417
     ...     batch_size=1000,
     ... ):
     ...     do_something(df)  # doctest: +SKIP
-
     """  # noqa: W505
     if isinstance(connection, str):
         # check for odbc connection string
@@ -694,7 +693,6 @@ def read_database_uri(
     ...     "snowflake://user:pass@company-org/testdb/public?warehouse=test&role=myrole",
     ...     engine="adbc",
     ... )  # doctest: +SKIP
-
     """
     if not isinstance(uri, str):
         raise TypeError(

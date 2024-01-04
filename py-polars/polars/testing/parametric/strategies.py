@@ -175,7 +175,6 @@ class StrategyLookup(MutableMapping[PolarsDataType, SearchStrategy[Any]]):
     We customise this so that retrieval of nested strategies respects the inner dtype
     of List/Struct types; nested strategies are stored as callables that create the
     given strategy on demand (there are infinitely many possible nested dtypes).
-
     """
 
     _items: dict[
@@ -198,7 +197,6 @@ class StrategyLookup(MutableMapping[PolarsDataType, SearchStrategy[Any]]):
         ----------
         items
             A dtype to strategy dict/mapping.
-
         """
         self._items = {}
         if items is not None:
@@ -298,7 +296,6 @@ def _get_strategy_dtypes(
         If True, return the base types for each dtype (eg:`List(String)` → `List`).
     excluding
         A dtype or sequence of dtypes to omit from the results.
-
     """
     excluding = (excluding,) if is_polars_dtype(excluding) else (excluding or ())  # type: ignore[assignment]
     strategy_dtypes = list(chain(scalar_strategies.keys(), nested_strategies.keys()))
@@ -378,7 +375,6 @@ def create_list_strategy(
     [(12, 22), (15, 131)]
     >>> uint8_pairs().example()  # doctest: +SKIP
     [(59, 176), (149, 149)]
-
     """
     if select_from and inner_dtype is None:
         raise ValueError("if specifying `select_from`, must also specify `inner_dtype`")

@@ -78,7 +78,6 @@ class ExprStringNameSpace:
                 2020-02-01
                 2020-03-01
         ]
-
         """
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
@@ -199,7 +198,6 @@ class ExprStringNameSpace:
                 02:00:00
                 03:00:00
         ]
-
         """
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
@@ -365,7 +363,6 @@ class ExprStringNameSpace:
         │ 143.09    ┆ 143.09          │
         │ 143.9     ┆ 143.90          │
         └───────────┴─────────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
 
@@ -407,7 +404,6 @@ class ExprStringNameSpace:
         │ 東京 ┆ 6       ┆ 2       │
         │ null ┆ null    ┆ null    │
         └──────┴─────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.str_len_bytes())
 
@@ -448,7 +444,6 @@ class ExprStringNameSpace:
         │ 東京 ┆ 2       ┆ 6       │
         │ null ┆ null    ┆ null    │
         └──────┴─────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.str_len_chars())
 
@@ -493,7 +488,6 @@ class ExprStringNameSpace:
         ╞══════╡
         │ null │
         └──────┘
-
         """
         return wrap_expr(self._pyexpr.str_concat(delimiter, ignore_nulls))
 
@@ -514,7 +508,6 @@ class ExprStringNameSpace:
         │ cat ┆ CAT       │
         │ dog ┆ DOG       │
         └─────┴───────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_uppercase())
 
@@ -535,7 +528,6 @@ class ExprStringNameSpace:
         │ CAT ┆ cat       │
         │ DOG ┆ dog       │
         └─────┴───────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
@@ -558,7 +550,6 @@ class ExprStringNameSpace:
         │ welcome to my world     ┆ Welcome To My World     │
         │ THERE'S NO TURNING BACK ┆ There's No Turning Back │
         └─────────────────────────┴─────────────────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
 
@@ -615,7 +606,6 @@ class ExprStringNameSpace:
         │        ┆ rld          │
         │ world  ┆              │
         └────────┴──────────────┘
-
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
@@ -685,7 +675,6 @@ class ExprStringNameSpace:
         ╞═════════╪═════════════════╡
         │ aabcdef ┆ def             │
         └─────────┴─────────────────┘
-
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
@@ -767,7 +756,6 @@ class ExprStringNameSpace:
         ╞═════════╪═══════════════╡
         │ abcdeff ┆ abc           │
         └─────────┴───────────────┘
-
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
@@ -808,7 +796,6 @@ class ExprStringNameSpace:
         │ foo       ┆          │
         │ bar       ┆ bar      │
         └───────────┴──────────┘
-
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
@@ -849,7 +836,6 @@ class ExprStringNameSpace:
         │ foo       ┆ foo      │
         │ bar       ┆          │
         └───────────┴──────────┘
-
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
@@ -886,7 +872,6 @@ class ExprStringNameSpace:
         │ hippopotamus ┆ hippopotamus │
         │ null         ┆ null         │
         └──────────────┴──────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
@@ -921,7 +906,6 @@ class ExprStringNameSpace:
         │ hippopotamus ┆ hippopotamus │
         │ null         ┆ null         │
         └──────────────┴──────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
@@ -963,7 +947,6 @@ class ExprStringNameSpace:
         │ 999999 ┆ 999999 │
         │ null   ┆ null   │
         └────────┴────────┘
-
         """
         return wrap_expr(self._pyexpr.str_zfill(length))
 
@@ -1032,7 +1015,6 @@ class ExprStringNameSpace:
         │ rab$bit     ┆ true  ┆ true    │
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
@@ -1096,7 +1078,6 @@ class ExprStringNameSpace:
         ╞════════╪════════╡
         │ mango  ┆ go     │
         └────────┴────────┘
-
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
@@ -1160,7 +1141,6 @@ class ExprStringNameSpace:
         ╞════════╪════════╡
         │ apple  ┆ app    │
         └────────┴────────┘
-
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
@@ -1204,7 +1184,6 @@ class ExprStringNameSpace:
         │ null                ┆ {null,null} │
         │ {"a":2, "b": false} ┆ {2,false}   │
         └─────────────────────┴─────────────┘
-
         """
         if dtype is not None:
             dtype = py_type_to_dtype(dtype)
@@ -1250,7 +1229,6 @@ class ExprStringNameSpace:
         │ {"a":2.1}  ┆ 2.1     │
         │ {"a":true} ┆ true    │
         └────────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
@@ -1265,7 +1243,6 @@ class ExprStringNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
-
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_decode(strict))
@@ -1304,7 +1281,6 @@ class ExprStringNameSpace:
         │ bar     ┆ 626172      │
         │ null    ┆ null        │
         └─────────┴─────────────┘
-
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_encode())
@@ -1394,7 +1370,6 @@ class ExprStringNameSpace:
         │ messi     ┆ polars  ┆ null  │
         │ ronaldo   ┆ polars  ┆ null  │
         └───────────┴─────────┴───────┘
-
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
@@ -1568,7 +1543,6 @@ class ExprStringNameSpace:
         │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
         │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
         └───────────────────────────────────┴───────────────────────┴──────────┘
-
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
@@ -1625,7 +1599,6 @@ class ExprStringNameSpace:
         │ 1zy3\d\d   ┆ 2            │
         │ null       ┆ null         │
         └────────────┴──────────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
@@ -1683,7 +1656,6 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`String`.
-
         """
         by = parse_as_expression(by, str_as_lit=True)
         if inclusive:
@@ -1754,7 +1726,6 @@ class ExprStringNameSpace:
         │ c    ┆ c          ┆ null        │
         │ d_4  ┆ d          ┆ 4           │
         └──────┴────────────┴─────────────┘
-
         """
         by = parse_as_expression(by, str_as_lit=True)
         if inclusive:
@@ -1820,7 +1791,6 @@ class ExprStringNameSpace:
         │ foo-bar     ┆ foo-bar    ┆ null        │
         │ foo bar baz ┆ foo        ┆ bar baz     │
         └─────────────┴────────────┴─────────────┘
-
         """
         by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_splitn(by, n))
@@ -1899,7 +1869,6 @@ class ExprStringNameSpace:
         │ 1   ┆ 123ABC │
         │ 2   ┆ abc456 │
         └─────┴────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
@@ -1938,7 +1907,6 @@ class ExprStringNameSpace:
         │ 1   ┆ -bc-bc  │
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
@@ -2016,7 +1984,6 @@ class ExprStringNameSpace:
         │ papaya      ┆ ya       │
         │ dragonfruit ┆ onf      │
         └─────────────┴──────────┘
-
         """
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
@@ -2046,7 +2013,6 @@ class ExprStringNameSpace:
         │ a   │
         │ r   │
         └─────┘
-
         """
         return wrap_expr(self._pyexpr.str_explode())
 
@@ -2097,7 +2063,6 @@ class ExprStringNameSpace:
         │ cafe ┆ 51966  │
         │ null ┆ null   │
         └──────┴────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
@@ -2119,7 +2084,6 @@ class ExprStringNameSpace:
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
-
         """
         if base is None:
             base = 2
@@ -2139,7 +2103,6 @@ class ExprStringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
         return self.strip_chars(characters)
 
@@ -2157,7 +2120,6 @@ class ExprStringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
         return self.strip_chars_start(characters)
 
@@ -2175,7 +2137,6 @@ class ExprStringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
         return self.strip_chars_end(characters)
 
@@ -2198,7 +2159,6 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`UInt32`. Returns null if the
             original value is null.
-
         """
         return self.count_matches(pattern)
 
@@ -2209,7 +2169,6 @@ class ExprStringNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len_bytes`.
-
         """
         return self.len_bytes()
 
@@ -2220,7 +2179,6 @@ class ExprStringNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len_chars`.
-
         """
         return self.len_chars()
 
@@ -2239,7 +2197,6 @@ class ExprStringNameSpace:
             Justify left to this length.
         fill_char
             Fill with this ASCII character.
-
         """
         return self.pad_end(length, fill_char)
 
@@ -2258,7 +2215,6 @@ class ExprStringNameSpace:
             Justify right to this length.
         fill_char
             Fill with this ASCII character.
-
         """
         return self.pad_start(length, fill_char)
 
@@ -2325,7 +2281,6 @@ class ExprStringNameSpace:
         │ Tell me what you want, what you really really want ┆ true         │
         │ Can you feel the love tonight                      ┆ true         │
         └────────────────────────────────────────────────────┴──────────────┘
-
         """
         patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
         return wrap_expr(
@@ -2403,7 +2358,6 @@ class ExprStringNameSpace:
         │ Tell me what you want, what you really really want ┆ Tell you what me want, what me really really want │
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
-
         """  # noqa: W505
         patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
         replace_with = parse_as_expression(

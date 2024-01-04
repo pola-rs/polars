@@ -33,7 +33,6 @@ def load_profile(
     >>> # load a custom profile that will run with 1500 iterations
     >>> from polars.testing.parametric.profiles import load_profile
     >>> load_profile(1500)
-
     """
     common_settings = {"print_blob": True, "deadline": None}
     profile_name = str(profile)
@@ -87,7 +86,6 @@ def set_profile(profile: ParametricProfileNames | int) -> None:
     >>> # prefer the 'balanced' profile for running parametric tests
     >>> from polars.testing.parametric.profiles import set_profile
     >>> set_profile("balanced")
-
     """
     profile_name = str(profile).split(".")[-1]
     if profile_name.replace("_", "").isdigit():

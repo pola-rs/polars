@@ -212,7 +212,6 @@ def test_struct_cols() -> None:
         Build Polars df from list of dicts.
 
         Can't import directly because of issue #3145.
-
         """
         arrow_df = pa.Table.from_pylist(data)
         polars_df = pl.from_arrow(arrow_df)

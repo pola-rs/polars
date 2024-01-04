@@ -49,7 +49,6 @@ def read_json(
     See Also
     --------
     read_ndjson
-
     """
     return pl.DataFrame._read_json(
         source,

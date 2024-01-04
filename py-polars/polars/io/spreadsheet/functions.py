@@ -229,7 +229,6 @@ def read_excel(
     ...     engine="openpyxl",
     ...     schema_overrides={"dt": pl.Datetime, "value": pl.Int32},
     ... )  # doctest: +SKIP
-
     """
     if engine and engine != "xlsx2csv":
         if xlsx2csv_options:
@@ -378,7 +377,6 @@ def read_ods(
     ...     schema_overrides={"dt": pl.Date},
     ...     raise_if_empty=False,
     ... )  # doctest: +SKIP
-
     """
     return _read_spreadsheet(
         sheet_id,

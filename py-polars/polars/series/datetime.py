@@ -39,7 +39,6 @@ class DateTimeNameSpace:
         >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
         >>> s.dt.min()
         datetime.date(2001, 1, 1)
-
         """
         return wrap_s(self._s).min()  # type: ignore[return-value]
 
@@ -53,7 +52,6 @@ class DateTimeNameSpace:
         >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
         >>> s.dt.max()
         datetime.date(2001, 1, 3)
-
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
@@ -77,7 +75,6 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.median()
         datetime.datetime(2001, 1, 2, 0, 0)
-
         """
         s = wrap_s(self._s)
         out = s.median()
@@ -100,7 +97,6 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.mean()
         datetime.datetime(2001, 1, 2, 0, 0)
-
         """
         s = wrap_s(self._s)
         out = s.mean()
@@ -140,7 +136,6 @@ class DateTimeNameSpace:
             "2020/04/01"
             "2020/05/01"
         ]
-
         """
 
     def strftime(self, format: str) -> Series:
@@ -178,7 +173,6 @@ class DateTimeNameSpace:
             "2020/04/01"
             "2020/05/01"
         ]
-
         """
         return self.to_string(format)
 
@@ -206,7 +200,6 @@ class DateTimeNameSpace:
                 2001
                 2002
         ]
-
         """
 
     def is_leap_year(self) -> Series:
@@ -234,7 +227,6 @@ class DateTimeNameSpace:
                 false
                 false
         ]
-
         """
 
     def iso_year(self) -> Series:
@@ -261,7 +253,6 @@ class DateTimeNameSpace:
         [
                 2021
         ]
-
         """
 
     def quarter(self) -> Series:
@@ -292,7 +283,6 @@ class DateTimeNameSpace:
                 1
                 2
         ]
-
         """
 
     def month(self) -> Series:
@@ -324,7 +314,6 @@ class DateTimeNameSpace:
                 3
                 4
         ]
-
         """
 
     def week(self) -> Series:
@@ -356,7 +345,6 @@ class DateTimeNameSpace:
                 9
                 13
         ]
-
         """
 
     def weekday(self) -> Series:
@@ -390,7 +378,6 @@ class DateTimeNameSpace:
                 6
                 7
         ]
-
         """
 
     def day(self) -> Series:
@@ -423,7 +410,6 @@ class DateTimeNameSpace:
                 7
                 9
         ]
-
         """
 
     def ordinal_day(self) -> Series:
@@ -454,7 +440,6 @@ class DateTimeNameSpace:
                 32
                 60
         ]
-
         """
 
     def time(self) -> Series:
@@ -589,7 +574,6 @@ class DateTimeNameSpace:
                 2
                 3
         ]
-
         """
 
     def minute(self) -> Series:
@@ -629,7 +613,6 @@ class DateTimeNameSpace:
                 2
                 4
         ]
-
         """
 
     def second(self, *, fractional: bool = False) -> Series:
@@ -679,7 +662,6 @@ class DateTimeNameSpace:
                 3.11111
                 5.765431
         ]
-
         """
 
     def millisecond(self) -> Series:
@@ -715,7 +697,6 @@ class DateTimeNameSpace:
                 500
                 0
         ]
-
         """
 
     def microsecond(self) -> Series:
@@ -765,7 +746,6 @@ class DateTimeNameSpace:
                 500000
                 0
         ]
-
         """
 
     def nanosecond(self) -> Series:
@@ -815,7 +795,6 @@ class DateTimeNameSpace:
                 500000000
                 0
         ]
-
         """
 
     def timestamp(self, time_unit: TimeUnit = "us") -> Series:
@@ -859,7 +838,6 @@ class DateTimeNameSpace:
                 978393600000000000
                 978480000000000000
         ]
-
         """
 
     def epoch(self, time_unit: EpochTimeUnit = "us") -> Series:
@@ -903,7 +881,6 @@ class DateTimeNameSpace:
                 978393600
                 978480000
         ]
-
         """
 
     def with_time_unit(self, time_unit: TimeUnit) -> Series:
@@ -934,7 +911,6 @@ class DateTimeNameSpace:
                 +32974-01-22 00:00:00
                 +32976-10-18 00:00:00
         ]
-
         """
 
     def cast_time_unit(self, time_unit: TimeUnit) -> Series:
@@ -976,7 +952,6 @@ class DateTimeNameSpace:
                 2001-01-02 00:00:00
                 2001-01-03 00:00:00
         ]
-
         """
 
     def convert_time_zone(self, time_zone: str) -> Series:
@@ -1115,7 +1090,6 @@ class DateTimeNameSpace:
         │ 2018-10-28 02:30:00 ┆ earliest  ┆ 2018-10-28 02:30:00 CEST      │
         │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
         └─────────────────────┴───────────┴───────────────────────────────┘
-
         """
 
     def total_days(self) -> Series:
@@ -1149,7 +1123,6 @@ class DateTimeNameSpace:
                 31
                 30
         ]
-
         """
 
     def total_hours(self) -> Series:
@@ -1185,7 +1158,6 @@ class DateTimeNameSpace:
                 24
                 24
         ]
-
         """
 
     def total_minutes(self) -> Series:
@@ -1221,7 +1193,6 @@ class DateTimeNameSpace:
                 1440
                 1440
         ]
-
         """
 
     def total_seconds(self) -> Series:
@@ -1259,7 +1230,6 @@ class DateTimeNameSpace:
                 60
                 60
         ]
-
         """
 
     def total_milliseconds(self) -> Series:
@@ -1296,7 +1266,6 @@ class DateTimeNameSpace:
                 1
                 1
         ]
-
         """
 
     def total_microseconds(self) -> Series:
@@ -1333,7 +1302,6 @@ class DateTimeNameSpace:
                 1000
                 1000
         ]
-
         """
 
     def total_nanoseconds(self) -> Series:
@@ -1370,7 +1338,6 @@ class DateTimeNameSpace:
                 1000000
                 1000000
         ]
-
         """
 
     def offset_by(self, by: str | Expr) -> Series:
@@ -1589,7 +1556,6 @@ class DateTimeNameSpace:
                 2001-01-01 00:30:00
                 2001-01-01 01:00:00
         ]
-
         """
 
     def round(
@@ -1717,7 +1683,6 @@ class DateTimeNameSpace:
                 2001-01-01 01:00:00
                 2001-01-01 01:00:00
         ]
-
         """
 
     def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Expr:
@@ -1748,7 +1713,6 @@ class DateTimeNameSpace:
             2022-12-31 01:02:03.456
             2023-07-05 01:02:03.456
         ]
-
         """
 
     def month_start(self) -> Series:
@@ -1892,7 +1856,6 @@ class DateTimeNameSpace:
                 1h
                 0ms
         ]
-
         """
 
     @deprecate_renamed_function("total_days", version="0.19.13")
@@ -1902,7 +1865,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_days` instead.
-
         """
         return self.total_days()
 
@@ -1913,7 +1875,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_hours` instead.
-
         """
         return self.total_hours()
 
@@ -1924,7 +1885,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_minutes` instead.
-
         """
         return self.total_minutes()
 
@@ -1935,7 +1895,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_seconds` instead.
-
         """
         return self.total_seconds()
 
@@ -1946,7 +1905,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_milliseconds` instead.
-
         """
         return self.total_milliseconds()
 
@@ -1957,7 +1915,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_microseconds` instead.
-
         """
         return self.total_microseconds()
 
@@ -1968,6 +1925,5 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_nanoseconds` instead.
-
         """
         return self.total_nanoseconds()
