@@ -108,7 +108,7 @@ class GroupBy:
                 **self.named_by,
                 maintain_order=self.maintain_order,
             )
-            .agg(F.col(temp_col))
+            .agg(F.first().agg_groups().alias(temp_col))
             .collect(no_optimization=True)
         )
 
