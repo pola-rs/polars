@@ -28,3 +28,10 @@ def test_binary_to_list() -> None:
         schema={"binary": pl.List(pl.UInt8)},
     )
     assert_frame_equal(df, expected)
+
+
+def test_string_to_binary() -> None:
+    s = pl.Series("data", ["", None, "\x01\x02"])
+
+    assert [b"", None, b"\x01\x02"] == s.cast(pl.Binary).to_list()
+    assert ["", None, "\x01\x02"] == s.cast(pl.Binary).cast(pl.Utf8).to_list()
