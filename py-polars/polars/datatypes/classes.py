@@ -6,12 +6,14 @@ from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
+import polars._reexport as pl
 import polars.datatypes
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
+    from polars import Series
     from polars.type_aliases import (
         CategoricalOrdering,
         PolarsDataType,
@@ -536,9 +538,9 @@ class Enum(DataType):
 
     """
 
-    categories: list[str]
+    categories: Series
 
-    def __init__(self, categories: Iterable[str]):
+    def __init__(self, categories: Series | Iterable[str]):
         """
         A fixed set categorical encoding of a set of strings.
 
@@ -548,29 +550,30 @@ class Enum(DataType):
             Valid categories in the dataset.
 
         """
-        if not isinstance(categories, list):
-            categories = list(categories)
+        if not isinstance(categories, pl.Series):
+            categories = pl.Series(values=categories)
 
-        seen: set[str] = set()
-        for cat in categories:
-            if cat in seen:
-                raise ValueError(
-                    f"Enum categories must be unique; found duplicate {cat!r}"
-                )
-            if not isinstance(cat, str):
-                raise TypeError(
-                    f"Enum categories must be strings; found {cat!r} ({type(cat).__name__})"
-                )
-            seen.add(cat)
+        if categories.null_count() > 0:
+            msg = "Enum categories must not contain null values"
+            raise TypeError(msg)
 
-        self.categories = categories
+        if (dtype := categories.dtype) != String:
+            msg = f"Enum categories must be strings; found data of type {dtype}"
+            raise TypeError(msg)
+
+        if categories.n_unique() != categories.len():
+            duplicate = categories.filter(categories.is_duplicated())[0]
+            msg = f"Enum categories must be unique; found duplicate {duplicate!r}"
+            raise ValueError(msg)
+
+        self.categories = categories.rechunk().alias("categories")
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Enum):
             return True
         elif isinstance(other, Enum):
-            return self.categories == other.categories
+            return self.categories.equals(other.categories)
         else:
             return False
 
@@ -579,7 +582,7 @@ class Enum(DataType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(categories={self.categories!r})"
+        return f"{class_name}(categories={self.categories.to_list()!r})"
 
 
 class Object(DataType):
