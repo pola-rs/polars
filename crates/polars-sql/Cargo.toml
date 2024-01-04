@@ -24,7 +24,7 @@ sqlparser = { workspace = true }
 
 [dev-dependencieso]
 # to display dataframes in case of test failures
-polars-core = { workspace = true, features = ["fmt"]}
+polars-core = { workspace = true, features = ["fmt"] }
 
 [features]
 csv = ["polars-lazy/csv"]
