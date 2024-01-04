@@ -319,7 +319,7 @@ def test_different_enum_comparison_order() -> None:
 @pytest.mark.parametrize("categories", [[None], ["x", "y", None]])
 def test_enum_categories_null(categories: list[str | None]) -> None:
     with pytest.raises(TypeError, match="Enum categories must not contain null values"):
-        pl.Enum(categories)
+        pl.Enum(categories)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -338,6 +338,19 @@ def test_enum_categories_unique() -> None:
 
 
 def test_enum_categories_series_input() -> None:
-    categories = pl.Series("a", ["x", "z", "y"])
+    categories = pl.Series("a", ["x", "y", "z"])
     dtype = pl.Enum(categories)
     assert_series_equal(dtype.categories, categories.alias("categories"))
+
+
+def test_enum_categories_series_zero_copy() -> None:
+    categories = pl.Series(["a", "b"])
+    dtype = pl.Enum(categories)
+
+    s = pl.Series([None, "a", "b"], dtype=dtype)
+    result_dtype = s.dtype
+
+    assert result_dtype == dtype
+
+    assert categories._get_buffer_info() == dtype.categories._get_buffer_info()
+    assert categories._get_buffer_info() == result_dtype.categories._get_buffer_info()  # type: ignore[attr-defined]
