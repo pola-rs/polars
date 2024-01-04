@@ -749,46 +749,44 @@ fn collect_compound_identifiers(
     }
 }
 
-fn process_and_constraint(
+fn process_join_conjunction(
     expression: &sqlparser::ast::Expr,
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    let mut left_on: Vec<Expr> = vec![];
-    let mut right_on: Vec<Expr> = vec![];
-
     if let SQLExpr::BinaryOp { left, op, right } = expression {
         match *op {
             BinaryOperator::Eq => {
                 if let (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) =
                     (left.as_ref(), right.as_ref())
                 {
-                    let (mut left_i, mut right_i) =
-                        collect_compound_identifiers(left, right, left_name, right_name)?;
-                    left_on.append(&mut left_i);
-                    right_on.append(&mut right_i);
+                    collect_compound_identifiers(left, right, left_name, right_name)
                 } else {
-                    polars_bail!(InvalidOperation: "process_and_constraint: BinaryOperator::Eq supports only SQLExpr::CompoundIdentifier, but found: left={:?}, right={:?}", left, right);
+                    polars_bail!(
+                        InvalidOperation: 
+                        "SQL join clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
                 }
             },
             BinaryOperator::And => {
                 let (mut left_i, mut right_i) =
-                    process_and_constraint(left, left_name, right_name)?;
+                    process_join_conjunction(left, left_name, right_name)?;
                 let (mut left_j, mut right_j) =
-                    process_and_constraint(right, left_name, right_name)?;
-                left_on.append(&mut left_i);
-                right_on.append(&mut right_i);
-                left_on.append(&mut left_j);
-                right_on.append(&mut right_j);
+                    process_join_conjunction(right, left_name, right_name)?;
+                left_i.append(&mut left_j);
+                right_i.append(&mut right_j);
+                Ok((left_i, right_i))
             },
             _ => {
-                polars_bail!(InvalidOperation: "process_and_constraint supports only BinaryOperator::Eq and BinaryOperator::And, but found op = {:?}", op);
+                polars_bail!(
+                    InvalidOperation: 
+                    "SQL join clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
             },
         }
     } else {
-        polars_bail!(InvalidOperation: "process_and_constraint supports only SQLExpr::BinaryOp, but found expression = {:?}", expression);
+        polars_bail!(
+            InvalidOperation: 
+            "SQL join clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
     }
-    Ok((left_on, right_on))
 }
 
 pub(super) fn process_join_constraint(
@@ -798,16 +796,16 @@ pub(super) fn process_join_constraint(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
         if op == &BinaryOperator::And {
-            let (mut left_on, mut right_on) = process_and_constraint(left, left_name, right_name)?;
-            let (mut left_on_2, mut right_on_2) =
-                process_and_constraint(right, left_name, right_name)?;
-            left_on.append(&mut left_on_2);
-            right_on.append(&mut right_on_2);
+            let (mut left_on, mut right_on) =
+                process_join_conjunction(left, left_name, right_name)?;
+            let (left_on_2, right_on_2) = process_join_conjunction(right, left_name, right_name)?;
+            left_on.extend(left_on_2);
+            right_on.extend(right_on_2);
             return Ok((left_on, right_on));
         }
         if op != &BinaryOperator::Eq {
             polars_bail!(InvalidOperation:
-                "process_join_constraint: SQL interface (currently) only supports basic equi-join \
+                "SQL interface (currently) only supports basic equi-join \
                  constraints; found '{:?}' op in\n{:?}", op, constraint)
         }
         match (left.as_ref(), right.as_ref()) {
@@ -822,8 +820,7 @@ pub(super) fn process_join_constraint(
     }
     if let JoinConstraint::Using(idents) = constraint {
         if !idents.is_empty() {
-            let mut using = Vec::with_capacity(idents.len());
-            using.extend(idents.iter().map(|id| col(&id.value)));
+            let using: Vec<Expr> = idents.iter().map(|id| col(&id.value)).collect();
             return Ok((using.clone(), using.clone()));
         }
     }

@@ -22,7 +22,7 @@ serde_json = { workspace = true }
 sqlparser = { workspace = true }
 # sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
 
-[dev-dependencieso]
+[dev-dependencies]
 # to display dataframes in case of test failures
 polars-core = { workspace = true, features = ["fmt"] }
 
