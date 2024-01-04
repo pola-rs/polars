@@ -3996,9 +3996,13 @@ class Expr:
         combined_predicate = F.all_horizontal(*all_predicates)
         return self._from_pyexpr(self._pyexpr.filter(combined_predicate._pyexpr))
 
+    @deprecate_function("Use `filter` instead.", version="0.20.4")
     def where(self, predicate: Expr) -> Self:
         """
         Filter a single column.
+
+        .. deprecated:: 0.20.4
+            Use :func:`filter` instead.
 
         Alias for :func:`filter`.
 
@@ -4015,7 +4019,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.group_by("group_col").agg(
+        >>> df.group_by("group_col").agg(  # doctest: +SKIP
         ...     [
         ...         pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
