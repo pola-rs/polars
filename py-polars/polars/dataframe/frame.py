@@ -5281,7 +5281,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr] = None,
         *more_by: IntoExpr,
         maintain_order: bool = False,
-        **named_more_by: IntoExpr,
+        **named_by: IntoExpr,
     ) -> GroupBy:
         """
         Start a group by operation.
@@ -5293,7 +5293,7 @@ class DataFrame:
             column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
-        **named_more_by
+        **named_by
             Additional named columns to group by, specified as named parameters.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
@@ -5416,9 +5416,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return GroupBy(
-            self, by, *more_by, **named_more_by, maintain_order=maintain_order
-        )
+        return GroupBy(self, by, *more_by, **named_by, maintain_order=maintain_order)
 
     def rolling(
         self,

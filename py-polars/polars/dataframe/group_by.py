@@ -36,7 +36,7 @@ class GroupBy:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool,
-        **named_more_by: IntoExpr,
+        **named_by: IntoExpr,
     ):
         """
         Utility class for performing a group by operation over the given DataFrame.
@@ -52,7 +52,7 @@ class GroupBy:
             as column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
-        **named_more_by
+        **named_by
             Additional named columns to group by, specified as named parameters.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
@@ -62,7 +62,7 @@ class GroupBy:
         self.df = df
         self.by = by
         self.more_by = more_by
-        self.named_more_by = named_more_by
+        self.named_by = named_by
         self.maintain_order = maintain_order
 
     def __iter__(self) -> Self:
@@ -105,7 +105,7 @@ class GroupBy:
             .group_by(
                 self.by,
                 *self.more_by,
-                **self.named_more_by,
+                **self.named_by,
                 maintain_order=self.maintain_order,
             )
             .agg(F.col(temp_col))
@@ -250,7 +250,7 @@ class GroupBy:
             .group_by(
                 self.by,
                 *self.more_by,
-                **self.named_more_by,
+                **self.named_by,
                 maintain_order=self.maintain_order,
             )
             .agg(*aggs, **named_aggs)
@@ -326,9 +326,9 @@ class GroupBy:
         # documented that expressions in the group_by won't be seen by the agg
         # function or a with_columns can invisibly be inserted before handing off
         # to the next step to materialize those expressions. In the absence of
-        # direction on this issue, I'll just disallow named_more_by in map_groups
+        # direction on this issue, I'll just disallow named_by in map_groups
         # but it is inconsistent with lazy which has no such checks.
-        if len(self.named_more_by) > 0:
+        if len(self.named_by) > 0:
             raise TypeError(
                 "cannot call `map_groups` when grouping with named expressions"
             )
@@ -399,7 +399,7 @@ class GroupBy:
             .group_by(
                 self.by,
                 *self.more_by,
-                *self.named_more_by,
+                *self.named_by,
                 maintain_order=self.maintain_order,
             )
             .head(n)
@@ -457,7 +457,7 @@ class GroupBy:
             .group_by(
                 self.by,
                 *self.more_by,
-                **self.named_more_by,
+                **self.named_by,
                 maintain_order=self.maintain_order,
             )
             .tail(n)
