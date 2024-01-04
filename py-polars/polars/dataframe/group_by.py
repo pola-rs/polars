@@ -328,7 +328,7 @@ class GroupBy:
         # to the next step to materialize those expressions. In the absence of
         # direction on this issue, I'll just disallow named_by in map_groups
         # but it is inconsistent with lazy which has no such checks.
-        if len(self.named_by) > 0:
+        if self.named_more_by:
             raise TypeError(
                 "cannot call `map_groups` when grouping with named expressions"
             )
