@@ -749,7 +749,7 @@ fn collect_compound_identifiers(
     }
 }
 
-fn process_join_conjunction(
+fn process_join_on(
     expression: &sqlparser::ast::Expr,
     left_name: &str,
     right_name: &str,
@@ -768,10 +768,8 @@ fn process_join_conjunction(
                 }
             },
             BinaryOperator::And => {
-                let (mut left_i, mut right_i) =
-                    process_join_conjunction(left, left_name, right_name)?;
-                let (mut left_j, mut right_j) =
-                    process_join_conjunction(right, left_name, right_name)?;
+                let (mut left_i, mut right_i) = process_join_on(left, left_name, right_name)?;
+                let (mut left_j, mut right_j) = process_join_on(right, left_name, right_name)?;
                 left_i.append(&mut left_j);
                 right_i.append(&mut right_j);
                 Ok((left_i, right_i))
@@ -796,9 +794,8 @@ pub(super) fn process_join_constraint(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
         if op == &BinaryOperator::And {
-            let (mut left_on, mut right_on) =
-                process_join_conjunction(left, left_name, right_name)?;
-            let (left_on_2, right_on_2) = process_join_conjunction(right, left_name, right_name)?;
+            let (mut left_on, mut right_on) = process_join_on(left, left_name, right_name)?;
+            let (left_on_2, right_on_2) = process_join_on(right, left_name, right_name)?;
             left_on.extend(left_on_2);
             right_on.extend(right_on_2);
             return Ok((left_on, right_on));
