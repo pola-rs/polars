@@ -23,7 +23,7 @@ pub(crate) enum PolarsSQLFunctions {
     // Math functions
     // ----
     /// SQL 'abs' function
-    /// Returns the absolute value of the input column
+    /// Returns the absolute value of the input column.
     /// ```sql
     /// SELECT ABS(column_1) from df;
     /// ```
@@ -48,55 +48,55 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Floor,
     /// SQL 'pi' function
-    /// Returns a (very good) approximation of 𝜋
+    /// Returns a (very good) approximation of 𝜋.
     /// ```sql
     /// SELECT PI() from df;
     /// ```
     Pi,
     /// SQL 'ln' function
-    /// Computes the natural logarithm of the given value
+    /// Computes the natural logarithm of the given value.
     /// ```sql
     /// SELECT LN(column_1) from df;
     /// ```
     Ln,
     /// SQL 'log2' function
-    /// Computes the logarithm of the given value in base 2
+    /// Computes the logarithm of the given value in base 2.
     /// ```sql
     /// SELECT LOG2(column_1) from df;
     /// ```
     Log2,
     /// SQL 'log10' function
-    /// Computes the logarithm of the given value in base 10
+    /// Computes the logarithm of the given value in base 10.
     /// ```sql
     /// SELECT LOG10(column_1) from df;
     /// ```
     Log10,
     /// SQL 'log' function
-    /// Computes the `base` logarithm of the given value
+    /// Computes the `base` logarithm of the given value.
     /// ```sql
     /// SELECT LOG(column_1, 10) from df;
     /// ```
     Log,
     /// SQL 'log1p' function
-    /// Computes the natural logarithm of the “given value plus one”
+    /// Computes the natural logarithm of "given value plus one".
     /// ```sql
     /// SELECT LOG1P(column_1) from df;
     /// ```
     Log1p,
     /// SQL 'pow' function
-    /// Returns the value to the power of `exponent`
+    /// Returns the value to the power of the given exponent.
     /// ```sql
     /// SELECT POW(column_1, 2) from df;
     /// ```
     Pow,
     /// SQL 'sqrt' function
-    /// Returns the square root (√) of a number
+    /// Returns the square root (√) of a number.
     /// ```sql
     /// SELECT SQRT(column_1) from df;
     /// ```
     Sqrt,
     /// SQL 'cbrt' function
-    /// Returns the cube root (∛) of a number
+    /// Returns the cube root (∛) of a number.
     /// ```sql
     /// SELECT CBRT(column_1) from df;
     /// ```
@@ -108,12 +108,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ROUND(column_1, 3) from df;
     /// ```
     Round,
+    /// SQL 'sign' function
+    /// Returns the sign of the argument as -1, 0, or +1.
+    /// ```sql
+    /// SELECT SIGN(column_1) from df;
+    /// ```
+    Sign,
 
     // ----
     // Trig functions
     // ----
     /// SQL 'cos' function
-    /// Compute the cosine sine of the input column (in radians)
+    /// Compute the cosine sine of the input column (in radians).
     /// ```sql
     /// SELECT COS(column_1) from df;
     /// ```
@@ -566,6 +572,7 @@ impl PolarsSQLFunctions {
             "pi" => Self::Pi,
             "pow" | "power" => Self::Pow,
             "round" => Self::Round,
+            "sign" => Self::Sign,
             "sqrt" => Self::Sqrt,
 
             // ----
@@ -715,6 +722,7 @@ impl SQLFunctionVisitor<'_> {
                     polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}", function.args.len());
                 },
             },
+            Sign => self.visit_unary(Expr::sign),
 
             // ----
             // Conditional functions
