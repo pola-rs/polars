@@ -1072,6 +1072,35 @@ def test_sql_string_case() -> None:
         }
 
 
+def test_sql_string_concat() -> None:
+    lf = pl.LazyFrame(
+        {
+            "x": ["a", None, "c"],
+            "y": ["d", "e", "f"],
+            "z": [1, 2, 3],
+        }
+    )
+    res = pl.SQLContext(data=lf).execute(
+        """
+        SELECT
+          ("x" || "x" || "y")         AS c0,
+          ("x" || "y" || "z")         AS c1,
+          CONCAT(("x" + "x"), "y")    AS c2,
+          CONCAT("x", "x", "y")       AS c3,
+          CONCAT("x", "y", ("z" * 2)) AS c4,
+        FROM data
+        """,
+        eager=True,
+    )
+    assert res.to_dict(as_series=False) == {
+        "c0": ["aad", None, "ccf"],
+        "c1": ["ad1", None, "cf3"],
+        "c2": ["aad", None, "ccf"],
+        "c3": ["aad", None, "ccf"],
+        "c4": ["ad2", None, "cf6"],
+    }
+
+
 def test_sql_string_lengths() -> None:
     df = pl.DataFrame({"words": ["Café", None, "東京", ""]})
 
@@ -1121,7 +1150,7 @@ def test_sql_string_replace() -> None:
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
-def test_sql_substr() -> None:
+def test_sql_string_substr() -> None:
     df = pl.DataFrame({"scol": ["abcdefg", "abcde", "abc", None]})
     with pl.SQLContext(df=df) as ctx:
         res = ctx.execute(
@@ -1155,7 +1184,7 @@ def test_sql_substr() -> None:
         ctx.execute("SELECT SUBSTR(scol,-1) FROM df")
 
 
-def test_sql_trim(foods_ipc_path: Path) -> None:
+def test_sql_string_trim(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
     out = pl.SQLContext(foods1=lf).execute(
         """
