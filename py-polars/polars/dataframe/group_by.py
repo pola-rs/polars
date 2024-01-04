@@ -330,19 +330,20 @@ class GroupBy:
         # but it is inconsistent with lazy which has no such checks.
         if self.named_more_by:
             raise TypeError(
-                "cannot call `map_groups` when grouping with named expressions"
+                "cannot call `map_groups` when grouping with named parameters"
             )
+        msg = "cannot call `map_groups` when grouping by an expression"
         if isinstance(self.by, str):
             by = [self.by]
         elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
             by = list(self.by)  # type: ignore[arg-type]
         else:
-            raise TypeError("cannot call `map_groups` when grouping by an expression")
+            raise TypeError(msg)
 
         if all(isinstance(c, str) for c in self.more_by):
             by.extend(self.more_by)  # type: ignore[arg-type]
         else:
-            raise TypeError("cannot call `map_groups` when grouping by an expression")
+            raise TypeError(msg)
 
         return self.df.__class__._from_pydf(
             self.df._df.group_by_map_groups(by, function, self.maintain_order)
