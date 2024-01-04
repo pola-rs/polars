@@ -321,7 +321,7 @@ class GroupBy:
         """
         by: list[str]
 
-        if self.named_more_by:
+        if self.named_by:
             raise TypeError(
                 "cannot call `map_groups` when grouping with named parameters"
             )
