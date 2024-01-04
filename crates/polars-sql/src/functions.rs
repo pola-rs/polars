@@ -316,18 +316,28 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT UPPER(column_1) from df;
     /// ```
     Upper,
-    /// SQL 'nullif' function
-    /// Returns NULL if two expressions are equal, otherwise returns the first
-    /// ```sql
-    /// SELECT NULLIF(column_1, column_2) from df;
-    /// ```
-    NullIf,
+
+    // ----
+    // Conditional functions
+    // ----
     /// SQL 'coalesce' function
     /// Returns the first non-null value in the provided values/columns
     /// ```sql
     /// SELECT COALESCE(column_1, ...) from df;
     /// ```
     Coalesce,
+    /// SQL 'ifnull' function
+    /// If an expression value is NULL, return an alternative value.
+    /// ```sql
+    /// SELECT IFNULL(string_col, 'n/a') from df;
+    /// ```
+    IfNull,
+    /// SQL 'nullif' function
+    /// Returns NULL if two expressions are equal, otherwise returns the first
+    /// ```sql
+    /// SELECT NULLIF(column_1, column_2) from df;
+    /// ```
+    NullIf,
 
     // ----
     // Aggregate functions
@@ -581,9 +591,10 @@ impl PolarsSQLFunctions {
             "radians" => Self::Radians,
 
             // ----
-            // Comparison functions
+            // Conditional functions
             // ----
             "coalesce" => Self::Coalesce,
+            "ifnull" => Self::IfNull,
             "nullif" => Self::NullIf,
 
             // ----
@@ -701,15 +712,19 @@ impl SQLFunctionVisitor<'_> {
                     }))
                 }),
                 _ => {
-                    polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}",function.args.len());
+                    polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}", function.args.len());
                 },
             },
 
             // ----
-            // Comparison functions
+            // Conditional functions
             // ----
-            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
             Coalesce => self.visit_variadic(coalesce),
+            IfNull => match function.args.len() {
+                2 => self.visit_variadic(coalesce),
+                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for IfNull: {}", function.args.len())
+            },
+            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
 
             // ----
             // String functions

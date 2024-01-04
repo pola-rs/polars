@@ -1161,28 +1161,35 @@ def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
         {
             "x": [1, None, 2, 3, None, 4],
             "y": [5, 4, None, 3, None, 2],
-            "z": [3, 4, None, 3, None, None],
+            "z": [3, 4, None, 3, 6, None],
         }
     )
-
     res = pl.SQLContext(df=nums).execute(
         """
         SELECT
-        COALESCE(x,y,z) as "coal",
-        NULLIF(x,y) as "nullif x_y",
-        NULLIF(y,z) as "nullif y_z",
-        COALESCE(x, NULLIF(y,z)) as "both"
+          COALESCE(x,y,z) as "coalsc",
+          NULLIF(x, y) as "nullif x_y",
+          NULLIF(y, z) as "nullif y_z",
+          IFNULL(x, y) as "ifnull x_y",
+          IFNULL(y,-1) as "inullf y_z",
+          COALESCE(x, NULLIF(y,z)) as "both"
         FROM df
         """,
         eager=True,
     )
 
     assert res.to_dict(as_series=False) == {
-        "coal": [1, 4, 2, 3, None, 4],
+        "coalsc": [1, 4, 2, 3, 6, 4],
         "nullif x_y": [1, None, 2, None, None, 4],
         "nullif y_z": [5, None, None, None, None, 2],
+        "ifnull x_y": [1, 4, 2, 3, None, 4],
+        "inullf y_z": [5, 4, -1, 3, -1, 2],
         "both": [1, None, 2, 3, None, 4],
     }
+    for null_func in ("IFNULL", "NULLIF"):
+        # both functions expect only 2 arguments
+        with pytest.raises(InvalidOperationError):
+            pl.SQLContext(df=nums).execute(f"SELECT {null_func}(x,y,z) FROM df")
 
 
 def test_sql_order_by(foods_ipc_path: Path) -> None:
