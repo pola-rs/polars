@@ -321,13 +321,6 @@ class GroupBy:
         """
         by: list[str]
 
-        # I don't think any of these checks are necessary as the rule prohibiting
-        # expressions isn't enforced on the lazy side. It should either be better
-        # documented that expressions in the group_by won't be seen by the agg
-        # function or a with_columns can invisibly be inserted before handing off
-        # to the next step to materialize those expressions. In the absence of
-        # direction on this issue, I'll just disallow named_by in map_groups
-        # but it is inconsistent with lazy which has no such checks.
         if self.named_more_by:
             raise TypeError(
                 "cannot call `map_groups` when grouping with named parameters"
