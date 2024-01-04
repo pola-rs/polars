@@ -727,3 +727,9 @@ def test_group_by_apply_first_input_is_literal() -> None:
         "g": [1, 2],
         "x": [[2.0, 4.0], [8.0, 16.0, 32.0]],
     }
+
+
+def test_group_by_all_12869() -> None:
+    df = pl.DataFrame({"a": [1]})
+    result = next(iter(df.group_by(pl.all())))[1]
+    assert_frame_equal(df, result)
