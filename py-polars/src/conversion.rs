@@ -500,9 +500,9 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
-                let categories = categories.extract::<Wrap<StringChunked>>()?.0;
-                let arr = categories.rechunk().into_series().to_arrow(0);
-                let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                let s = get_series(categories)?;
+                let ca = s.str()?;
+                let arr = ca.downcast_iter().next().unwrap();
                 create_enum_data_type(arr.clone())
             },
             "Date" => DataType::Date,
