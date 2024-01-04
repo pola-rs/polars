@@ -747,10 +747,6 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
     efficient method of conversion.
 
-    Zero-copy support for categorical data is limited, as Polars needs to copy
-    the categories to construct a mapping. Additionally, Polars only supports UInt32
-    as the physical type.
-
     Examples
     --------
     Convert a pandas dataframe to Polars through the interchange protocol.

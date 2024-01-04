@@ -140,15 +140,12 @@ def _categorical_column_to_series(column: Column, *, allow_copy: bool = True) ->
     categories_col = categorical["categories"]
     if categories_col.size() == 0:
         dtype = Enum([])
-    elif not allow_copy:
-        msg = "categorical mapping must be constructed"
-        raise CopyNotAllowedError(msg)
     elif categories_col.dtype[0] != DtypeKind.STRING:
         msg = "non-string categories are not supported"
         raise NotImplementedError(msg)
     else:
         categories = _string_column_to_series(categories_col, allow_copy=allow_copy)
-        dtype = Enum(categories.to_list())
+        dtype = Enum(categories)
 
     buffers = column.get_buffers()
     offset = column.offset
@@ -156,7 +153,6 @@ def _categorical_column_to_series(column: Column, *, allow_copy: bool = True) ->
     data_buffer = _construct_data_buffer(
         *buffers["data"], column.size(), offset, allow_copy=allow_copy
     )
-
     validity_buffer = _construct_validity_buffer(
         buffers["validity"], column, dtype, data_buffer, offset, allow_copy=allow_copy
     )

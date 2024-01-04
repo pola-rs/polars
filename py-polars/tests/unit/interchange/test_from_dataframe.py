@@ -52,16 +52,11 @@ def test_from_dataframe_categorical() -> None:
     df = pl.DataFrame({"a": ["foo", "bar"]}, schema={"a": pl.Categorical})
     df_pa = df.to_arrow()
 
-    result = pl.from_dataframe(df_pa)
+    result = pl.from_dataframe(df_pa, allow_copy=False)
     expected = pl.DataFrame(
         {"a": ["foo", "bar"]}, schema={"a": pl.Enum(["foo", "bar"])}
     )
     assert_frame_equal(result, expected)
-
-    with pytest.raises(
-        CopyNotAllowedError, match="categorical mapping must be constructed"
-    ):
-        pl.from_dataframe(df_pa, allow_copy=False)
 
 
 def test_from_dataframe_empty_bool_zero_copy() -> None:
@@ -190,9 +185,7 @@ def test_from_dataframe_categorical_pandas() -> None:
     expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(
-        CopyNotAllowedError, match="categorical mapping must be constructed"
-    ):
+    with pytest.raises(CopyNotAllowedError, match="bitmask must be constructed"):
         result = pl.from_dataframe(df_pd, allow_copy=False)
 
 
@@ -208,21 +201,9 @@ def test_from_dataframe_categorical_pyarrow() -> None:
     assert_frame_equal(result, expected)
 
     with pytest.raises(
-        CopyNotAllowedError, match="categorical mapping must be constructed"
+        CopyNotAllowedError, match="offsets buffer must be cast from Int32 to Int64"
     ):
         result = pl.from_dataframe(df_pa, allow_copy=False)
-
-
-def test_from_dataframe_categorical_offsets_copy() -> None:
-    values = [None, None]
-    dtype = pa.dictionary(pa.int32(), pa.utf8())
-    arr = pa.array(values, dtype)
-    df_pa = pa.Table.from_arrays([arr], names=["a"])
-
-    with pytest.raises(
-        CopyNotAllowedError, match="data buffer must be cast from Int32 to UInt32"
-    ):
-        pl.from_dataframe(df_pa, allow_copy=False)
 
 
 def test_from_dataframe_categorical_non_string_keys() -> None:
