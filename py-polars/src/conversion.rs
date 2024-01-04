@@ -13,7 +13,7 @@ use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
-use polars_core::utils::arrow::array::Utf8Array;
+use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
@@ -86,6 +86,14 @@ pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
 pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {
     let pydf = obj.getattr(intern!(obj.py(), "_s"))?;
     Ok(pydf.extract::<PySeries>()?.series)
+}
+
+pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
+    let series = SERIES.as_ref(py);
+    let constructor = series
+        .getattr(intern!(series.py(), "_from_pyseries"))
+        .unwrap();
+    constructor.call1((s,)).unwrap().into_py(py)
 }
 
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
@@ -389,8 +397,9 @@ impl ToPyObject for Wrap<DataType> {
                 if let Some(rev_map) = rev_map {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
                         let class = pl.getattr(intern!(py, "Enum")).unwrap();
-                        let ca = StringChunked::from_iter(categories);
-                        return class.call1((Wrap(&ca).to_object(py),)).unwrap().into();
+                        let s = Series::from_arrow("categories", categories.to_boxed()).unwrap();
+                        let series = to_series(py, s.into());
+                        return class.call1((series,)).unwrap().into();
                     }
                 }
                 let class = pl.getattr(intern!(py, "Categorical")).unwrap();
@@ -500,9 +509,9 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
-                let categories = categories.extract::<Wrap<StringChunked>>()?.0;
-                let arr = categories.rechunk().into_series().to_arrow(0);
-                let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                let s = get_series(categories)?;
+                let ca = s.str().map_err(PyPolarsErr::from)?;
+                let arr = ca.downcast_iter().next().unwrap();
                 create_enum_data_type(arr.clone())
             },
             "Date" => DataType::Date,
