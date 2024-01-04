@@ -27,6 +27,13 @@ def test_enum_creation() -> None:
     assert e.categories.to_list() == ["a", "b", "c", "d", "e"]
 
 
+@pytest.mark.parametrize("categories", [[], pl.Series("foo", dtype=pl.Int16), None])
+def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
+    dtype = pl.Enum(categories)  # type: ignore[arg-type]
+    expected = pl.Series("categories", dtype=pl.String)
+    assert_series_equal(dtype.categories, expected)
+
+
 def test_enum_non_existent() -> None:
     with pytest.raises(
         pl.ComputeError,
