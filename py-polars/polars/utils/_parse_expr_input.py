@@ -36,7 +36,7 @@ def parse_as_list_of_expressions(
     -------
     list of PyExpr
     """
-    exprs = _parse_regular_inputs(inputs, structify=__structify)
+    exprs = _parse_positional_inputs(inputs, structify=__structify)  # type: ignore[arg-type]
     if named_inputs:
         named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
         exprs.extend(named_exprs)
@@ -44,7 +44,7 @@ def parse_as_list_of_expressions(
     return exprs
 
 
-def _parse_regular_inputs(
+def _parse_positional_inputs(
     inputs: tuple[IntoExpr, ...] | tuple[Iterable[IntoExpr]],
     *,
     structify: bool = False,
@@ -130,35 +130,6 @@ def parse_as_expression(
     return expr._pyexpr
 
 
-def parse_when_constraint_expressions(
-    *predicates: IntoExpr | Iterable[IntoExpr],
-    **constraints: Any,
-) -> PyExpr:
-    all_predicates: list[pl.Expr] = []
-    for p in predicates:
-        all_predicates.extend(wrap_expr(x) for x in parse_as_list_of_expressions(p))
-
-    if "condition" in constraints:
-        if isinstance(constraints["condition"], pl.Expr):
-            all_predicates.append(constraints.pop("condition"))
-            issue_deprecation_warning(
-                "`when` no longer takes a 'condition' parameter.\n"
-                "To silence this warning you should omit the keyword and pass "
-                "as a positional argument instead.",
-                version="0.19.16",
-            )
-
-    all_predicates.extend(F.col(name).eq(value) for name, value in constraints.items())
-    if not all_predicates:
-        raise ValueError("No predicates or constraints provided to `when`.")
-
-    return (
-        F.all_horizontal(*all_predicates)
-        if len(all_predicates) > 1
-        else all_predicates[0]
-    )._pyexpr
-
-
 def _structify_expression(expr: Expr) -> Expr:
     unaliased_expr = expr.meta.undo_aliases()
     if unaliased_expr.meta.has_multiple_outputs():
@@ -169,3 +140,36 @@ def _structify_expression(expr: Expr) -> Expr:
         else:
             expr = F.struct(unaliased_expr).alias(expr_name)
     return expr
+
+
+def parse_when_constraint_expressions(
+    *predicates: IntoExpr | Iterable[IntoExpr],
+    **constraints: Any,
+) -> PyExpr:
+    all_predicates: list[Expr] = [
+        wrap_expr(e)
+        for e in _parse_positional_inputs(predicates)  # type: ignore[arg-type]
+    ]
+
+    if "condition" in constraints:
+        if isinstance(constraints["condition"], pl.Expr):
+            issue_deprecation_warning(
+                "`when` no longer takes a 'condition' parameter.\n"
+                "To silence this warning you should omit the keyword and pass "
+                "as a positional argument instead.",
+                version="0.19.16",
+            )
+            all_predicates.append(constraints.pop("condition"))
+
+    if constraints:
+        all_predicates.extend(
+            F.col(name).eq(value) for name, value in constraints.items()
+        )
+
+    if not all_predicates:
+        raise TypeError("no predicates or constraints provided to `when`")
+
+    if len(all_predicates) == 1:
+        return all_predicates[0]._pyexpr
+
+    return F.all_horizontal(all_predicates)._pyexpr
