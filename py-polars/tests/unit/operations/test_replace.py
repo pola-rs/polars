@@ -468,6 +468,30 @@ def test_replace_fast_path_many_to_one_null() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([2, 2], 100),
+        ([2, 2], [100, 200]),
+        ([2, 2], [100, 100]),
+    ],
+)
+def test_replace_duplicates_old(old: list[int], new: int | list[int]) -> None:
+    s = pl.Series([1, 2, 3, 2, 3])
+    with pytest.raises(
+        pl.ComputeError,
+        match="`old` input for `replace` must not contain duplicates",
+    ):
+        s.replace(old, new)
+
+
+def test_replace_duplicates_new() -> None:
+    s = pl.Series([1, 2, 3, 2, 3])
+    result = s.replace([1, 2], [100, 100])
+    expected = s = pl.Series([100, 100, 3, 100, 3])
+    assert_series_equal(result, expected)
+
+
 def test_map_dict_deprecated() -> None:
     s = pl.Series("a", [1, 2, 3])
     with pytest.deprecated_call():
