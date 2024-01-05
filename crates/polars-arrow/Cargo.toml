@@ -44,7 +44,7 @@ streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
 
-arrow-format = { version = "0.8", optional = true, features = ["ipc"] }
+arrow-format = { workspace = true, optional = true, features = ["ipc"] }
 
 hex = { workspace = true, optional = true }
 
@@ -139,7 +139,6 @@ compute_boolean = []
 compute_boolean_kleene = []
 compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
-compute_concatenate = []
 compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
@@ -153,7 +152,6 @@ compute = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_concatenate",
   "compute_filter",
   "compute_hash",
   "compute_if_then_else",

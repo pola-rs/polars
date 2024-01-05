@@ -1188,3 +1188,22 @@ def test_string_reverse() -> None:
 
     result = df.select(pl.col("text").str.reverse())
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("data", "expected_dat"),
+    [
+        (["", None, "a"], ["", None, "b"]),
+        ([None, None, "a"], [None, None, "b"]),
+        (["", "", ""], ["", "", ""]),
+        ([None, None, None], [None, None, None]),
+        (["a", "", None], ["b", "", None]),
+    ],
+)
+def test_replace_lit_n_char_13385(
+    data: list[str | None], expected_dat: list[str | None]
+) -> None:
+    s = pl.Series(data, dtype=pl.String)
+    res = s.str.replace("a", "b", literal=True)
+    expected_s = pl.Series(expected_dat, dtype=pl.String)
+    assert_series_equal(res, expected_s)

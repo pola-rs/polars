@@ -12,14 +12,19 @@ description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 arrow = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
-polars-lazy = { workspace = true, features = ["strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg", "dtype-date"] }
+polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "cross_join", "cum_agg", "dtype-date", "is_in", "log", "meta", "regex", "round_series", "sign", "string_reverse", "strings", "trigonometry"] }
 polars-plan = { workspace = true }
 
+hex = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlparser = { workspace = true }
 # sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
+
+[dev-dependencies]
+# to display dataframes in case of test failures
+polars-core = { workspace = true, features = ["fmt"] }
 
 [features]
 csv = ["polars-lazy/csv"]
@@ -29,4 +34,5 @@ ipc = ["polars-lazy/ipc"]
 parquet = ["polars-lazy/parquet"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
+binary_encoding = ["polars-lazy/binary_encoding"]
 nightly = []

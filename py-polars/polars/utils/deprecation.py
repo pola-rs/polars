@@ -41,7 +41,6 @@ def issue_deprecation_warning(message: str, *, version: str) -> None:
         The Polars version number in which the warning is first issued.
         This argument is used to help developers determine when to remove the
         deprecated functionality.
-
     """
     warnings.warn(message, DeprecationWarning, stacklevel=find_stacklevel())
 
@@ -88,7 +87,6 @@ def deprecate_renamed_parameter(
         @deprecate_renamed_parameter("old_name", "new_name", version="0.1.2")
         def myfunc(new_name):
             ...
-
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -146,7 +144,6 @@ def deprecate_nonkeyword_arguments(
         The Polars version number in which the warning is first issued.
         This argument is used to help developers determine when to remove the
         deprecated functionality.
-
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:

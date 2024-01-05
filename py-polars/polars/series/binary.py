@@ -32,7 +32,6 @@ class BinaryNameSpace:
         -------
         Series
             Series of data type :class:`Boolean`.
-
         """
 
     def ends_with(self, suffix: IntoExpr) -> Series:
@@ -43,7 +42,6 @@ class BinaryNameSpace:
         ----------
         suffix
             Suffix substring.
-
         """
 
     def starts_with(self, prefix: IntoExpr) -> Series:
@@ -54,7 +52,6 @@ class BinaryNameSpace:
         ----------
         prefix
             Prefix substring.
-
         """
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
@@ -68,7 +65,6 @@ class BinaryNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
-
         """
 
     def encode(self, encoding: TransferEncoding) -> Series:
@@ -84,5 +80,4 @@ class BinaryNameSpace:
         -------
         Series
             Series of data type :class:`Boolean`.
-
         """

@@ -97,6 +97,10 @@ polars-sql = { version = "0.36.2", path = "crates/polars-sql", default-features 
 polars-time = { version = "0.36.2", path = "crates/polars-time", default-features = false }
 polars-utils = { version = "0.36.2", path = "crates/polars-utils", default-features = false }
 
+[workspace.dependencies.arrow-format]
+package = "polars-arrow-format"
+version = "0.1.0"
+
 [workspace.dependencies.arrow]
 package = "polars-arrow"
 version = "0.36.2"
@@ -109,7 +113,6 @@ features = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_concatenate",
   "compute_filter",
   "compute_if_then_else",
 ]

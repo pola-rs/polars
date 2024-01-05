@@ -58,7 +58,6 @@ class ListNameSpace:
             true
             null
         ]
-
         """
 
     def any(self) -> Series:
@@ -87,7 +86,6 @@ class ListNameSpace:
             false
             null
         ]
-
         """
 
     def len(self) -> Series:
@@ -111,7 +109,6 @@ class ListNameSpace:
             3
             1
         ]
-
         """
 
     def drop_nulls(self) -> Series:
@@ -131,7 +128,6 @@ class ListNameSpace:
             []
             [3, 4]
         ]
-
         """
 
     def sample(
@@ -171,20 +167,71 @@ class ListNameSpace:
             [2, 1]
             [5]
         ]
-
         """
 
     def sum(self) -> Series:
-        """Sum all the arrays in the list."""
+        """
+        Sum all the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[1], [2, 3]])
+        >>> s.list.sum()
+        shape: (2,)
+        Series: 'values' [i64]
+        [
+            1
+            5
+        ]
+        """
 
     def max(self) -> Series:
-        """Compute the max value of the arrays in the list."""
+        """
+        Compute the max value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[4, 1], [2, 3]])
+        >>> s.list.max()
+        shape: (2,)
+        Series: 'values' [i64]
+        [
+            4
+            3
+        ]
+        """
 
     def min(self) -> Series:
-        """Compute the min value of the arrays in the list."""
+        """
+        Compute the min value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[4, 1], [2, 3]])
+        >>> s.list.min()
+        shape: (2,)
+        Series: 'values' [i64]
+        [
+            1
+            2
+        ]
+        """
 
     def mean(self) -> Series:
-        """Compute the mean value of the arrays in the list."""
+        """
+        Compute the mean value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[3, 1], [3, 3]])
+        >>> s.list.mean()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+            2.0
+            3.0
+        ]
+        """
 
     def sort(self, *, descending: bool = False) -> Series:
         """
@@ -212,11 +259,23 @@ class ListNameSpace:
                 [3, 2, 1]
                 [9, 2, 1]
         ]
-
         """
 
     def reverse(self) -> Series:
-        """Reverse the arrays in the list."""
+        """
+        Reverse the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]])
+        >>> s.list.reverse()
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 2, 3]
+            [2, 1, 9]
+        ]
+        """
 
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
@@ -227,6 +286,16 @@ class ListNameSpace:
         maintain_order
             Maintain order of data. This requires more work.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 1, 2], [2, 3, 3]])
+        >>> s.list.unique()
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 2]
+            [2, 3]
+        ]
         """
 
     def concat(self, other: list[Series] | Series | list[Any]) -> Series:
@@ -238,6 +307,17 @@ class ListNameSpace:
         other
             Columns to concat into a List Series
 
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [["a", "b"], ["c"]])
+        >>> s2 = pl.Series("b", [["c"], ["d", None]])
+        >>> s1.list.concat(s2)
+        shape: (2,)
+        Series: 'a' [list[str]]
+        [
+            ["a", "b", "c"]
+            ["c", "d", null]
+        ]
         """
 
     def get(self, index: int | Series | list[int]) -> Series:
@@ -253,6 +333,17 @@ class ListNameSpace:
         index
             Index to return per sublist
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.get(0)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            3
+            null
+            1
+        ]
         """
 
     def gather(
@@ -276,6 +367,18 @@ class ListNameSpace:
             True -> set as null
             False -> raise an error
             Note that defaulting to raising an error is much cheaper
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.gather([0, 2], null_on_oob=True)
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [3, 1]
+            [null, null]
+            [1, null]
+        ]
         """
 
     def __getitem__(self, item: int) -> Series:
@@ -307,14 +410,41 @@ class ListNameSpace:
             "foo-bar"
             "hello-world"
         ]
-
         """
 
     def first(self) -> Series:
-        """Get the first value of the sublists."""
+        """
+        Get the first value of the sublists.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.first()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            3
+            null
+            1
+        ]
+        """
 
     def last(self) -> Series:
-        """Get the last value of the sublists."""
+        """
+        Get the last value of the sublists.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.last()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            null
+            2
+        ]
+        """
 
     def contains(self, item: float | str | bool | int | date | datetime) -> Series:
         """
@@ -330,6 +460,17 @@ class ListNameSpace:
         Series
             Series of data type :class:`Boolean`.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.contains(1)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            true
+            false
+            true
+        ]
         """
 
     def arg_min(self) -> Series:
@@ -342,6 +483,16 @@ class ListNameSpace:
             Series of data type :class:`UInt32` or :class:`UInt64`
             (depending on compilation).
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [2, 1]])
+        >>> s.list.arg_min()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            0
+            1
+        ]
         """
 
     def arg_max(self) -> Series:
@@ -354,6 +505,16 @@ class ListNameSpace:
             Series of data type :class:`UInt32` or :class:`UInt64`
             (depending on compilation).
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [2, 1]])
+        >>> s.list.arg_max()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            1
+            0
+        ]
         """
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
@@ -393,7 +554,6 @@ class ListNameSpace:
             [2, 2]
             [-9]
         ]
-
         """
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
@@ -434,7 +594,6 @@ class ListNameSpace:
                 [3, null, null]
                 [null, null]
         ]
-
         """
 
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Series:
@@ -459,7 +618,6 @@ class ListNameSpace:
             [2, 3]
             [2, 1]
         ]
-
         """
 
     def head(self, n: int | Expr = 5) -> Series:
@@ -481,7 +639,6 @@ class ListNameSpace:
             [1, 2]
             [10, 2]
         ]
-
         """
 
     def tail(self, n: int | Expr = 5) -> Series:
@@ -503,7 +660,6 @@ class ListNameSpace:
             [3, 4]
             [2, 1]
         ]
-
         """
 
     def explode(self) -> Series:
@@ -533,7 +689,6 @@ class ListNameSpace:
             5
             6
         ]
-
         """
 
     def count_matches(
@@ -547,6 +702,19 @@ class ListNameSpace:
         element
             An expression that produces a single value
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]])
+        >>> s.list.count_matches(1)
+        shape: (5,)
+        Series: 'a' [u32]
+        [
+            0
+            1
+            1
+            2
+            0
+        ]
         """
 
     def to_array(self, width: int) -> Series:
@@ -573,7 +741,6 @@ class ListNameSpace:
                 [1, 2]
                 [3, 4]
         ]
-
         """
 
     def to_struct(
@@ -632,7 +799,6 @@ class ListNameSpace:
         │ 0   ┆ 1   ┆ 2     │
         │ 0   ┆ 1   ┆ null  │
         └─────┴─────┴───────┘
-
         """
         s = wrap_s(self._s)
         return (
@@ -667,21 +833,15 @@ class ListNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_columns(
-        ...     pl.concat_list(["a", "b"]).list.eval(pl.element().rank()).alias("rank")
-        ... )
-        shape: (3, 3)
-        ┌─────┬─────┬────────────┐
-        │ a   ┆ b   ┆ rank       │
-        │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list[f64]  │
-        ╞═════╪═════╪════════════╡
-        │ 1   ┆ 4   ┆ [1.0, 2.0] │
-        │ 8   ┆ 5   ┆ [2.0, 1.0] │
-        │ 3   ┆ 2   ┆ [2.0, 1.0] │
-        └─────┴─────┴────────────┘
-
+        >>> s = pl.Series("a", [[1, 4], [8, 5], [3, 2]])
+        >>> s.list.eval(pl.element().rank())
+        shape: (3,)
+        Series: 'a' [list[f64]]
+        [
+            [1.0, 2.0]
+            [2.0, 1.0]
+            [2.0, 1.0]
+        ]
         """
 
     def set_union(self, other: Series) -> Series:
@@ -706,7 +866,6 @@ class ListNameSpace:
                 [null, 3, 4]
                 [5, 6, 7, 8]
         ]
-
         """  # noqa: W505
 
     def set_difference(self, other: Series) -> Series:
@@ -735,7 +894,6 @@ class ListNameSpace:
                 []
                 [5, 7]
         ]
-
         """  # noqa: W505
 
     def set_intersection(self, other: Series) -> Series:
@@ -760,7 +918,6 @@ class ListNameSpace:
                 [null, 3]
                 [6]
         ]
-
         """  # noqa: W505
 
     def set_symmetric_difference(self, other: Series) -> Series:
@@ -772,6 +929,19 @@ class ListNameSpace:
         other
             Right hand side of the set operation.
 
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.set_symmetric_difference(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+            [1, 4]
+            [3]
+            [4]
+            [5, 7, 8]
+        ]
         """  # noqa: W505
 
     @deprecate_renamed_function("count_matches", version="0.19.3")
@@ -788,7 +958,6 @@ class ListNameSpace:
         ----------
         element
             An expression that produces a single value
-
         """
 
     @deprecate_renamed_function("len", version="0.19.8")
@@ -798,7 +967,6 @@ class ListNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len`.
-
         """
 
     @deprecate_renamed_function("gather", version="0.19.14")

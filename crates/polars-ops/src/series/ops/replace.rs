@@ -13,6 +13,11 @@ pub fn replace(
     default: &Series,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
+    polars_ensure!(
+        old.n_unique()? == old.len(),
+        ComputeError: "`old` input for `replace` must not contain duplicates"
+    );
+
     let return_dtype = match return_dtype {
         Some(dtype) => dtype,
         None => try_get_supertype(new.dtype(), default.dtype())?,
@@ -96,7 +101,7 @@ fn replace_by_multiple(
 
     match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {
-            let mask = col.bool()?;
+            let mask = col.bool().unwrap();
             replaced.zip_with(mask, default)
         },
         Err(_) => {

@@ -1,4 +1,4 @@
-use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
+use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::{coalesce, count, when};
 use polars_plan::logical_plan::LiteralValue;
@@ -23,13 +23,103 @@ pub(crate) enum PolarsSQLFunctions {
     // Math functions
     // ----
     /// SQL 'abs' function
-    /// Returns the absolute value of the input column
+    /// Returns the absolute value of the input column.
     /// ```sql
     /// SELECT ABS(column_1) from df;
     /// ```
     Abs,
+    /// SQL 'ceil' function
+    /// Returns the nearest integer closest from zero.
+    /// ```sql
+    /// SELECT CEIL(column_1) from df;
+    /// ```
+    Ceil,
+    /// SQL 'exp' function
+    /// Computes the exponential of the given value.
+    /// ```sql
+    /// SELECT EXP(column_1) from df;
+    /// ```
+    Exp,
+    /// SQL 'floor' function
+    /// Returns the nearest integer away from zero.
+    ///   0.5 will be rounded
+    /// ```sql
+    /// SELECT FLOOR(column_1) from df;
+    /// ```
+    Floor,
+    /// SQL 'pi' function
+    /// Returns a (very good) approximation of 𝜋.
+    /// ```sql
+    /// SELECT PI() from df;
+    /// ```
+    Pi,
+    /// SQL 'ln' function
+    /// Computes the natural logarithm of the given value.
+    /// ```sql
+    /// SELECT LN(column_1) from df;
+    /// ```
+    Ln,
+    /// SQL 'log2' function
+    /// Computes the logarithm of the given value in base 2.
+    /// ```sql
+    /// SELECT LOG2(column_1) from df;
+    /// ```
+    Log2,
+    /// SQL 'log10' function
+    /// Computes the logarithm of the given value in base 10.
+    /// ```sql
+    /// SELECT LOG10(column_1) from df;
+    /// ```
+    Log10,
+    /// SQL 'log' function
+    /// Computes the `base` logarithm of the given value.
+    /// ```sql
+    /// SELECT LOG(column_1, 10) from df;
+    /// ```
+    Log,
+    /// SQL 'log1p' function
+    /// Computes the natural logarithm of "given value plus one".
+    /// ```sql
+    /// SELECT LOG1P(column_1) from df;
+    /// ```
+    Log1p,
+    /// SQL 'pow' function
+    /// Returns the value to the power of the given exponent.
+    /// ```sql
+    /// SELECT POW(column_1, 2) from df;
+    /// ```
+    Pow,
+    /// SQL 'sqrt' function
+    /// Returns the square root (√) of a number.
+    /// ```sql
+    /// SELECT SQRT(column_1) from df;
+    /// ```
+    Sqrt,
+    /// SQL 'cbrt' function
+    /// Returns the cube root (∛) of a number.
+    /// ```sql
+    /// SELECT CBRT(column_1) from df;
+    /// ```
+    Cbrt,
+    /// SQL 'round' function
+    /// Round a number to `x` decimals (default: 0) away from zero.
+    ///   .5 is rounded away from zero.
+    /// ```sql
+    /// SELECT ROUND(column_1, 3) from df;
+    /// ```
+    Round,
+    /// SQL 'sign' function
+    /// Returns the sign of the argument as -1, 0, or +1.
+    /// ```sql
+    /// SELECT SIGN(column_1) from df;
+    /// ```
+    Sign,
+
+    // ----
+    // Trig functions
+    // ----
     /// SQL 'cos' function
-    /// Compute the cosine sine of the input column (in radians)
+    /// Compute the cosine sine of the input column (in radians).
     /// ```sql
     /// SELECT COS(column_1) from df;
     /// ```
@@ -124,91 +214,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ATAN2D(column_1) from df;
     /// ```
     Atan2D,
-    /// SQL 'ceil' function
-    /// Returns the nearest integer closest from zero.
-    /// ```sql
-    /// SELECT CEIL(column_1) from df;
-    /// ```
-    Ceil,
-    /// SQL 'exp' function
-    /// Computes the exponential of the given value.
-    /// ```sql
-    /// SELECT EXP(column_1) from df;
-    /// ```
-    Exp,
-    /// SQL 'floor' function
-    /// Returns the nearest integer away from zero.
-    ///   0.5 will be rounded
-    /// ```sql
-    /// SELECT FLOOR(column_1) from df;
-    /// ```
-    Floor,
-    /// SQL 'pi' function
-    /// Returns a (very good) approximation of 𝜋
-    /// ```sql
-    /// SELECT PI() from df;
-    /// ```
-    Pi,
-    /// SQL 'ln' function
-    /// Computes the natural logarithm of the given value
-    /// ```sql
-    /// SELECT LN(column_1) from df;
-    /// ```
-    Ln,
-    /// SQL 'log2' function
-    /// Computes the logarithm of the given value in base 2
-    /// ```sql
-    /// SELECT LOG2(column_1) from df;
-    /// ```
-    Log2,
-    /// SQL 'log10' function
-    /// Computes the logarithm of the given value in base 10
-    /// ```sql
-    /// SELECT LOG10(column_1) from df;
-    /// ```
-    Log10,
-    /// SQL 'log' function
-    /// Computes the `base` logarithm of the given value
-    /// ```sql
-    /// SELECT LOG(column_1, 10) from df;
-    /// ```
-    Log,
-    /// SQL 'log1p' function
-    /// Computes the natural logarithm of the “given value plus one”
-    /// ```sql
-    /// SELECT LOG1P(column_1) from df;
-    /// ```
-    Log1p,
-    /// SQL 'pow' function
-    /// Returns the value to the power of `exponent`
-    /// ```sql
-    /// SELECT POW(column_1, 2) from df;
-    /// ```
-    Pow,
-    /// SQL 'sqrt' function
-    /// Returns the square root (√) of a number
-    /// ```sql
-    /// SELECT SQRT(column_1) from df;
-    /// ```
-    Sqrt,
-    /// SQL 'cbrt' function
-    /// Returns the cube root (∛) of a number
-    /// ```sql
-    /// SELECT CBRT(column_1) from df;
-    /// ```
-    Cbrt,
-    /// SQL 'round' function
-    /// Round a number to `x` decimals (default: 0) away from zero.
-    ///   .5 is rounded away from zero.
-    /// ```sql
-    /// SELECT ROUND(column_1, 3) from df;
-    /// ```
-    Round,
     /// SQL 'degrees' function
     /// Convert between radians and degrees
     /// ```sql
     /// SELECT DEGREES(column_1) from df;
     /// ```
+    ///
+    ///
     Degrees,
     /// SQL 'RADIANS' function
     /// Convert between degrees and radians
@@ -230,6 +242,17 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // String functions
     // ----
+    /// SQL 'bit_length' function (bytes)
+    /// ```sql
+    /// SELECT BIT_LENGTH(column_1) from df;
+    /// ```
+    BitLength,
+    /// SQL 'concat' function
+    /// Returns all input expressions concatenated together as a string.
+    /// ```sql
+    /// SELECT CONCAT(column_1, ':', column_2) from df;
+    /// ```
+    Concat,
     /// SQL 'ends_with' function
     /// Returns True if the value ends with the second argument.
     /// ```sql
@@ -245,7 +268,7 @@ pub(crate) enum PolarsSQLFunctions {
     #[cfg(feature = "nightly")]
     InitCap,
     /// SQL 'left' function
-    /// Returns the `length` first characters
+    /// Returns the first (leftmost) `n` characters
     /// ```sql
     /// SELECT LEFT(column_1, 3) from df;
     /// ```
@@ -268,7 +291,8 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LTRIM(column_1) from df;
     /// ```
     LTrim,
-    /// SQL 'octet_length' function (bytes)
+    /// SQL 'octet_length' function
+    /// Returns the length of a given string in bytes.
     /// ```sql
     /// SELECT OCTET_LENGTH(column_1) from df;
     /// ```
@@ -279,6 +303,24 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT REGEXP_LIKE(column_1, 'xyz', 'i') from df;
     /// ```
     RegexpLike,
+    /// SQL 'replace' function
+    /// Replace a given substring with another string.
+    /// ```sql
+    /// SELECT REPLACE(column_1,'old','new') from df;
+    /// ```
+    Replace,
+    /// SQL 'reverse' function
+    /// Return the reversed string.
+    /// ```sql
+    /// SELECT REVERSE(column_1) from df;
+    /// ```
+    Reverse,
+    /// SQL 'right' function
+    /// Returns the last (rightmost) `n` characters
+    /// ```sql
+    /// SELECT RIGHT(column_1, 3) from df;
+    /// ```
+    Right,
     /// SQL 'rtrim' function
     /// Strip whitespaces from the right
     /// ```sql
@@ -305,18 +347,28 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT UPPER(column_1) from df;
     /// ```
     Upper,
-    /// SQL 'nullif' function
-    /// Returns NULL if two expressions are equal, otherwise returns the first
-    /// ```sql
-    /// SELECT NULLIF(column_1, column_2) from df;
-    /// ```
-    NullIf,
+
+    // ----
+    // Conditional functions
+    // ----
     /// SQL 'coalesce' function
     /// Returns the first non-null value in the provided values/columns
     /// ```sql
     /// SELECT COALESCE(column_1, ...) from df;
     /// ```
     Coalesce,
+    /// SQL 'ifnull' function
+    /// If an expression value is NULL, return an alternative value.
+    /// ```sql
+    /// SELECT IFNULL(string_col, 'n/a') from df;
+    /// ```
+    IfNull,
+    /// SQL 'nullif' function
+    /// Returns NULL if two expressions are equal, otherwise returns the first
+    /// ```sql
+    /// SELECT NULLIF(column_1, column_2) from df;
+    /// ```
+    NullIf,
 
     // ----
     // Aggregate functions
@@ -533,6 +585,24 @@ impl PolarsSQLFunctions {
             // Math functions
             // ----
             "abs" => Self::Abs,
+            "cbrt" => Self::Cbrt,
+            "ceil" | "ceiling" => Self::Ceil,
+            "exp" => Self::Exp,
+            "floor" => Self::Floor,
+            "ln" => Self::Ln,
+            "log" => Self::Log,
+            "log10" => Self::Log10,
+            "log1p" => Self::Log1p,
+            "log2" => Self::Log2,
+            "pi" => Self::Pi,
+            "pow" | "power" => Self::Pow,
+            "round" => Self::Round,
+            "sign" => Self::Sign,
+            "sqrt" => Self::Sqrt,
+
+            // ----
+            // Trig functions
+            // ----
             "cos" => Self::Cos,
             "cot" => Self::Cot,
             "sin" => Self::Sin,
@@ -551,25 +621,13 @@ impl PolarsSQLFunctions {
             "atan2d" => Self::Atan2D,
             "degrees" => Self::Degrees,
             "radians" => Self::Radians,
-            "ceil" | "ceiling" => Self::Ceil,
-            "exp" => Self::Exp,
-            "floor" => Self::Floor,
-            "pi" => Self::Pi,
-            "ln" => Self::Ln,
-            "log" => Self::Log,
-            "log10" => Self::Log10,
-            "log1p" => Self::Log1p,
-            "log2" => Self::Log2,
-            "pow" | "power" => Self::Pow,
-            "sqrt" => Self::Sqrt,
-            "cbrt" => Self::Cbrt,
-            "round" => Self::Round,
 
             // ----
-            // Comparison functions
+            // Conditional functions
             // ----
-            "nullif" => Self::NullIf,
             "coalesce" => Self::Coalesce,
+            "ifnull" => Self::IfNull,
+            "nullif" => Self::NullIf,
 
             // ----
             // Date functions
@@ -579,15 +637,20 @@ impl PolarsSQLFunctions {
             // ----
             // String functions
             // ----
+            "bit_length" => Self::BitLength,
+            "concat" => Self::Concat,
             "ends_with" => Self::EndsWith,
             #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
-            "length" => Self::Length,
+            "length" | "char_length" | "character_length" => Self::Length,
             "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
             "octet_length" => Self::OctetLength,
             "regexp_like" => Self::RegexpLike,
+            "replace" => Self::Replace,
+            "reverse" => Self::Reverse,
+            "right" => Self::Right,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
             "substr" => Self::Substring,
@@ -685,19 +748,34 @@ impl SQLFunctionVisitor<'_> {
                     }))
                 }),
                 _ => {
-                    polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}",function.args.len());
+                    polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}", function.args.len());
                 },
             },
+            Sign => self.visit_unary(Expr::sign),
 
             // ----
-            // Comparison functions
+            // Conditional functions
             // ----
-            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
             Coalesce => self.visit_variadic(coalesce),
+            IfNull => match function.args.len() {
+                2 => self.visit_variadic(coalesce),
+                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for IfNull: {}", function.args.len())
+            },
+            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
 
             // ----
             // String functions
             // ----
+            BitLength => self.visit_unary(|e| e.str().len_bytes() * lit(8)),
+            Concat => self.visit_variadic(|exprs: &[Expr]| exprs.iter().fold(lit(""), |acc, expr| acc + expr.clone().cast(DataType::String))),
+            Date => match function.args.len() {
+                1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
+                2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
+                _ => polars_bail!(InvalidOperation:
+                    "Invalid number of arguments for Date: {}",
+                    function.args.len()
+                ),
+            },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
@@ -737,14 +815,24 @@ impl SQLFunctionVisitor<'_> {
                 }),
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
-            Date => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
-                2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
+            Replace => match function.args.len() {
+                3 => self.try_visit_ternary(|e, old, new| {
+                    Ok(e.str().replace_all(old, new, true))
+                }),
                 _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for Date: {}",
+                    "Invalid number of arguments for Replace: {}",
                     function.args.len()
                 ),
             },
+            Reverse => self.visit_unary(|e| e.str().reverse()),
+            Right => self.try_visit_binary(|e, length| {
+                Ok(e.str().slice( match length {
+                    Expr::Literal(LiteralValue::Int64(n)) => -n,
+                    _ => {
+                        polars_bail!(InvalidOperation: "Invalid 'length' for Right: {}", function.args[1]);
+                    }
+                }, None))
+            }),
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),

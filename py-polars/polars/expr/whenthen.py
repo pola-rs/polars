@@ -22,7 +22,6 @@ class When:
     Represents the initial state of the expression after `pl.when(...)` is called.
 
     In this state, `then` must be called to continue to finish the expression.
-
     """
 
     def __init__(self, when: Any):
@@ -37,7 +36,6 @@ class When:
         statement
             The statement to apply if the corresponding condition is true.
             Accepts expression input. Non-expression inputs are parsed as literals.
-
         """
         statement_pyexpr = parse_as_expression(statement)
         return Then(self._when.then(statement_pyexpr))
@@ -48,7 +46,6 @@ class Then(Expr):
     Utility class for the `when-then-otherwise` expression.
 
     Represents the state of the expression after `pl.when(...).then(...)` is called.
-
     """
 
     def __init__(self, then: Any):
@@ -80,7 +77,6 @@ class Then(Expr):
             Apply conditions as `colname = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
-
         """
         condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
         return ChainedWhen(self._then.when(condition_pyexpr))
@@ -94,7 +90,6 @@ class Then(Expr):
         statement
             The statement to apply if all conditions are false.
             Accepts expression input. Non-expression inputs are parsed as literals.
-
         """
         statement_pyexpr = parse_as_expression(statement)
         return wrap_expr(self._then.otherwise(statement_pyexpr))
@@ -107,7 +102,6 @@ class ChainedWhen(Expr):
     Represents the state of the expression after an additional `when` is called.
 
     In this state, `then` must be called to continue to finish the expression.
-
     """
 
     def __init__(self, chained_when: Any):
@@ -122,7 +116,6 @@ class ChainedWhen(Expr):
         statement
             The statement to apply if the corresponding condition is true.
             Accepts expression input. Non-expression inputs are parsed as literals.
-
         """
         statement_pyexpr = parse_as_expression(statement)
         return ChainedThen(self._chained_when.then(statement_pyexpr))
@@ -133,7 +126,6 @@ class ChainedThen(Expr):
     Utility class for the `when-then-otherwise` expression.
 
     Represents the state of the expression after an additional `then` is called.
-
     """
 
     def __init__(self, chained_then: Any):
@@ -165,7 +157,6 @@ class ChainedThen(Expr):
             Apply conditions as `colname = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
-
         """
         condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
         return ChainedWhen(self._chained_then.when(condition_pyexpr))
@@ -179,7 +170,6 @@ class ChainedThen(Expr):
         statement
             The statement to apply if all conditions are false.
             Accepts expression input. Non-expression inputs are parsed as literals.
-
         """
         statement_pyexpr = parse_as_expression(statement)
         return wrap_expr(self._chained_then.otherwise(statement_pyexpr))

@@ -261,7 +261,6 @@ def _get_first_non_none(values: Sequence[Any | None]) -> Any:
     Return the first value from a sequence that isn't None.
 
     If sequence doesn't contain non-None values, return None.
-
     """
     if values is not None:
         return next((v for v in values if v is not None), None)
@@ -272,7 +271,6 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
     Last resort conversion.
 
     AnyValues are most flexible and if they fail we go for object types
-
     """
     try:
         return PySeries.new_from_anyvalues(name, values, strict=True)
@@ -292,7 +290,6 @@ def sequence_from_anyvalue_and_dtype_or_object(
     Last resort conversion.
 
     AnyValues are most flexible and if they fail we go for object types
-
     """
     try:
         return PySeries.new_from_anyvalues_and_dtype(name, values, dtype, strict=True)
@@ -622,7 +619,6 @@ def _pandas_series_to_arrow(
     Returns
     -------
     :class:`pyarrow.Array`
-
     """
     dtype = getattr(values, "dtype", None)
     if dtype == "object":

@@ -858,6 +858,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
             }
         },
         Union => todo!(),
+        BinaryView | Utf8View => todo!(),
     }
 }
 

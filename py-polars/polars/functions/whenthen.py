@@ -140,7 +140,6 @@ def when(
     │ 3   ┆ 4   ┆ -1  │
     │ 4   ┆ 0   ┆ 99  │
     └─────┴─────┴─────┘
-
     """
     condition = parse_when_constraint_expressions(*predicates, **constraints)
     return pl.When(plr.when(condition))

@@ -24,9 +24,11 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
         SQLDataType::BigInt(_) => DataType::Int64,
-        SQLDataType::Binary(_) | SQLDataType::Blob(_) | SQLDataType::Varbinary(_) => {
-            DataType::Binary
-        },
+        SQLDataType::Bytea
+        | SQLDataType::Bytes(_)
+        | SQLDataType::Binary(_)
+        | SQLDataType::Blob(_)
+        | SQLDataType::Varbinary(_) => DataType::Binary,
         SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Char(_)
         | SQLDataType::CharVarying(_)
@@ -385,8 +387,13 @@ impl SQLExprVisitor<'_> {
         Ok(match value {
             SQLValue::Boolean(b) => lit(*b),
             SQLValue::DoubleQuotedString(s) => lit(s.clone()),
-            SQLValue::HexStringLiteral(s) => lit(s.clone()),
-            SQLValue::NationalStringLiteral(s) => lit(s.clone()),
+            #[cfg(feature = "binary_encoding")]
+            SQLValue::HexStringLiteral(x) => {
+                if x.len() % 2 != 0 {
+                    polars_bail!(ComputeError: "hex string literal must have an even number of digits; found '{}'", x)
+                };
+                lit(hex::decode(x.clone()).unwrap())
+            },
             SQLValue::Null => Expr::Literal(LiteralValue::Null),
             SQLValue::Number(s, _) => {
                 // Check for existence of decimal separator dot
@@ -396,6 +403,26 @@ impl SQLExprVisitor<'_> {
                     s.parse::<i64>().map(lit).map_err(|_| ())
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
+            },
+            SQLValue::SingleQuotedByteStringLiteral(b) => {
+                // note: for PostgreSQL this syntax represents a BIT string literal (eg: b'10101') not a BYTE
+                // string literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser
+                // patterned the token name after BigQuery (where b'str' really IS a byte string)
+                if !b.chars().all(|c| c == '0' || c == '1') {
+                    polars_bail!(ComputeError: "bit string literal should contain only 0s and 1s; found '{}'", b)
+                }
+                let n_bits = b.len();
+                let s = b.as_str();
+                lit(match n_bits {
+                    0 => b"".to_vec(),
+                    1..=8 => u8::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    9..=16 => u16::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    17..=32 => u32::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    33..=64 => u64::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+                    _ => {
+                        polars_bail!(ComputeError: "cannot parse bit string literal with len > 64 (len={:?})", n_bits)
+                    },
+                })
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
@@ -700,12 +727,79 @@ pub(super) fn process_join(
         .finish())
 }
 
+fn collect_compound_identifiers(
+    left: &[Ident],
+    right: &[Ident],
+    left_name: &str,
+    right_name: &str,
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
+    if left.len() == 2 && right.len() == 2 {
+        let (tbl_a, col_a) = (&left[0].value, &left[1].value);
+        let (tbl_b, col_b) = (&right[0].value, &right[1].value);
+
+        if left_name == tbl_a && right_name == tbl_b {
+            Ok((vec![col(col_a)], vec![col(col_b)]))
+        } else if left_name == tbl_b && right_name == tbl_a {
+            Ok((vec![col(col_b)], vec![col(col_a)]))
+        } else {
+            polars_bail!(InvalidOperation: "collect_compound_identifiers: left_name={:?}, right_name={:?}, tbl_a={:?}, tbl_b={:?}", left_name, right_name, tbl_a, tbl_b);
+        }
+    } else {
+        polars_bail!(InvalidOperation: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
+    }
+}
+
+fn process_join_on(
+    expression: &sqlparser::ast::Expr,
+    left_name: &str,
+    right_name: &str,
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
+    if let SQLExpr::BinaryOp { left, op, right } = expression {
+        match *op {
+            BinaryOperator::Eq => {
+                if let (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) =
+                    (left.as_ref(), right.as_ref())
+                {
+                    collect_compound_identifiers(left, right, left_name, right_name)
+                } else {
+                    polars_bail!(
+                        InvalidOperation: 
+                        "SQL join clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
+                }
+            },
+            BinaryOperator::And => {
+                let (mut left_i, mut right_i) = process_join_on(left, left_name, right_name)?;
+                let (mut left_j, mut right_j) = process_join_on(right, left_name, right_name)?;
+                left_i.append(&mut left_j);
+                right_i.append(&mut right_j);
+                Ok((left_i, right_i))
+            },
+            _ => {
+                polars_bail!(
+                    InvalidOperation: 
+                    "SQL join clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
+            },
+        }
+    } else {
+        polars_bail!(
+            InvalidOperation: 
+            "SQL join clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
+    }
+}
+
 pub(super) fn process_join_constraint(
     constraint: &JoinConstraint,
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
+        if op == &BinaryOperator::And {
+            let (mut left_on, mut right_on) = process_join_on(left, left_name, right_name)?;
+            let (left_on_2, right_on_2) = process_join_on(right, left_name, right_name)?;
+            left_on.extend(left_on_2);
+            right_on.extend(right_on_2);
+            return Ok((left_on, right_on));
+        }
         if op != &BinaryOperator::Eq {
             polars_bail!(InvalidOperation:
                 "SQL interface (currently) only supports basic equi-join \
@@ -713,16 +807,7 @@ pub(super) fn process_join_constraint(
         }
         match (left.as_ref(), right.as_ref()) {
             (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
-                if left.len() == 2 && right.len() == 2 {
-                    let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-                    let (tbl_b, col_b) = (&right[0].value, &right[1].value);
-
-                    if left_name == tbl_a && right_name == tbl_b {
-                        return Ok((vec![col(col_a)], vec![col(col_b)]));
-                    } else if left_name == tbl_b && right_name == tbl_a {
-                        return Ok((vec![col(col_b)], vec![col(col_a)]));
-                    }
-                }
+                return collect_compound_identifiers(left, right, left_name, right_name);
             },
             (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
                 return Ok((vec![col(&left.value)], vec![col(&right.value)]))
@@ -732,8 +817,7 @@ pub(super) fn process_join_constraint(
     }
     if let JoinConstraint::Using(idents) = constraint {
         if !idents.is_empty() {
-            let mut using = Vec::with_capacity(idents.len());
-            using.extend(idents.iter().map(|id| col(&id.value)));
+            let using: Vec<Expr> = idents.iter().map(|id| col(&id.value)).collect();
             return Ok((using.clone(), using.clone()));
         }
     }

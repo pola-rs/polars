@@ -23,6 +23,12 @@ macro_rules! dyn_binary {
     }};
 }
 
+fn binview_size<T: ViewType + ?Sized>(array: &BinaryViewArrayGeneric<T>) -> usize {
+    array.views().len() * std::mem::size_of::<u128>()
+        + array.data_buffers().iter().map(|b| b.len()).sum::<usize>()
+        + validity_size(array.validity())
+}
+
 /// Returns the total (heap) allocated size of the array in bytes.
 /// # Implementation
 /// This estimation is the sum of the size of its buffers, validity, including nested arrays.
@@ -110,6 +116,8 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .unwrap();
             estimated_bytes_size(array.keys()) + estimated_bytes_size(array.values().as_ref())
         }),
+        Utf8View => binview_size::<str>(array.as_any().downcast_ref().unwrap()),
+        BinaryView => binview_size::<[u8]>(array.as_any().downcast_ref().unwrap()),
         Map => {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
             let offsets = array.offsets().len_proxy() * std::mem::size_of::<i32>();

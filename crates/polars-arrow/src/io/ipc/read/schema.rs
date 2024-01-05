@@ -349,6 +349,10 @@ fn get_data_type(
         Struct(_) => deserialize_struct(field)?,
         Union(union_) => deserialize_union(union_, field)?,
         Map(map) => deserialize_map(map, field)?,
+        RunEndEncoded(_) => todo!(),
+        BinaryView(_) => todo!(),
+        Utf8View(_) => todo!(),
+        LargeListView(_) | ListView(_) => todo!(),
     })
 }
 
