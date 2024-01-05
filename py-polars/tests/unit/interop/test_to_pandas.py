@@ -3,7 +3,6 @@ from datetime import date, datetime
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-import pytest
 
 import polars as pl
 
@@ -15,7 +14,6 @@ def test_df_to_pandas_empty() -> None:
     pd.testing.assert_frame_equal(result, expected)
 
 
-@pytest.mark.filterwarnings("ignore:make_block is deprecated:DeprecationWarning")
 def test_to_pandas() -> None:
     df = pl.DataFrame(
         {
@@ -75,7 +73,6 @@ def test_to_pandas() -> None:
         pass
 
 
-@pytest.mark.filterwarnings("ignore:make_block is deprecated:DeprecationWarning")
 def test_cat_to_pandas() -> None:
     df = pl.DataFrame({"a": ["best", "test"]})
     df = df.with_columns(pl.all().cast(pl.Categorical))
