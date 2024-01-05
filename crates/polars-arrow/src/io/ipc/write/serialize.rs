@@ -564,6 +564,7 @@ pub fn write(
                 compression,
             );
         },
+        Utf8View | BinaryView => todo!(),
     }
 }
 

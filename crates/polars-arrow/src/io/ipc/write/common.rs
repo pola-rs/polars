@@ -167,6 +167,7 @@ fn encode_dictionary(
                 encoded_dictionaries,
             )
         },
+        Utf8View | BinaryView => todo!(),
     }
 }
 
@@ -242,7 +243,23 @@ fn chunk_to_bytes_amortized(
     arrow_data.clear();
 
     let mut offset = 0;
+    let mut variadic_buffer_counts = vec![];
     for array in chunk.arrays() {
+        let dtype = array.data_type();
+        if dtype.is_view() {
+            match dtype {
+                ArrowDataType::Utf8View => {
+                    let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+                    variadic_buffer_counts.push(array.data_buffers().len() as i64);
+                },
+                ArrowDataType::BinaryView => {
+                    let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+                    variadic_buffer_counts.push(array.data_buffers().len() as i64);
+                },
+                _ => {},
+            }
+        }
+
         write(
             array.as_ref(),
             &mut buffers,
@@ -254,6 +271,12 @@ fn chunk_to_bytes_amortized(
         )
     }
 
+    let variadic_buffer_counts = if variadic_buffer_counts.is_empty() {
+        None
+    } else {
+        Some(variadic_buffer_counts)
+    };
+
     let compression = serialize_compression(options.compression);
 
     let message = arrow_format::ipc::Message {
@@ -264,6 +287,7 @@ fn chunk_to_bytes_amortized(
                 nodes: Some(nodes),
                 buffers: Some(buffers),
                 compression,
+                variadic_buffer_counts,
             },
         ))),
         body_length: arrow_data.len() as i64,
@@ -311,6 +335,7 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
                     nodes: Some(nodes),
                     buffers: Some(buffers),
                     compression,
+                    variadic_buffer_counts: None,
                 })),
                 is_delta: false,
             },

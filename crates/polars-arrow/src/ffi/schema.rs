@@ -453,6 +453,8 @@ fn to_format(data_type: &ArrowDataType) -> String {
                 tz.as_ref().map(|x| x.as_ref()).unwrap_or("")
             )
         },
+        ArrowDataType::Utf8View => "vu".to_string(),
+        ArrowDataType::BinaryView => "vz".to_string(),
         ArrowDataType::Decimal(precision, scale) => format!("d:{precision},{scale}"),
         ArrowDataType::Decimal256(precision, scale) => format!("d:{precision},{scale},256"),
         ArrowDataType::List(_) => "+l".to_string(),

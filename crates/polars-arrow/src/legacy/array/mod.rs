@@ -11,7 +11,6 @@ use crate::types::NativeType;
 pub mod default_arrays;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
-#[cfg(feature = "compute_concatenate")]
 pub mod list;
 pub mod null;
 pub mod slice;

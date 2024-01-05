@@ -156,7 +156,16 @@ pub enum ArrowDataType {
     /// Decimal backed by 256 bits
     Decimal256(usize, usize),
     /// Extension type.
+    /// - name
+    /// - physical type
+    /// - metadata
     Extension(String, Box<ArrowDataType>, Option<String>),
+    /// A binary type that inlines small values
+    /// and can intern bytes.
+    BinaryView,
+    /// A string type that inlines small values
+    /// and can intern strings.
+    Utf8View,
 }
 
 #[cfg(feature = "arrow_rs")]
@@ -218,6 +227,9 @@ impl From<ArrowDataType> for arrow_schema::DataType {
                 Self::Decimal256(precision as _, scale as _)
             },
             ArrowDataType::Extension(_, d, _) => (*d).into(),
+            ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
+                panic!("view datatypes not supported by arrow-rs")
+            },
         }
     }
 }
@@ -445,6 +457,8 @@ impl ArrowDataType {
             LargeBinary => PhysicalType::LargeBinary,
             Utf8 => PhysicalType::Utf8,
             LargeUtf8 => PhysicalType::LargeUtf8,
+            BinaryView => PhysicalType::BinaryView,
+            Utf8View => PhysicalType::Utf8View,
             List(_) => PhysicalType::List,
             FixedSizeList(_, _) => PhysicalType::FixedSizeList,
             LargeList(_) => PhysicalType::LargeList,
@@ -519,6 +533,10 @@ impl ArrowDataType {
             _ => None,
         }
     }
+
+    pub fn is_view(&self) -> bool {
+        matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
+    }
 }
 
 impl From<IntegerType> for ArrowDataType {
@@ -554,6 +572,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::Float64 => ArrowDataType::Float64,
             PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
             PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
+            PrimitiveType::UInt128 => unimplemented!(),
         }
     }
 }
