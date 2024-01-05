@@ -46,9 +46,21 @@ pub(super) fn replace_lit_n_char(
 
     let mut offsets_iter = offsets.iter();
     // ignore the first
-    let _ = offsets_iter.next().unwrap();
+    let _ = *offsets_iter.next().unwrap();
+    let mut end = None;
+    // must loop to skip all null/empty values, as they all have the same offsets.
+    for next in offsets_iter.by_ref() {
+        // we correct offsets before, it's guaranteed to start at 0.
+        if *next != 0 {
+            end = Some(*next as usize - 1);
+            break;
+        }
+    }
 
-    let mut end = *offsets_iter.next().unwrap() as usize - 1;
+    let Some(mut end) = end else {
+        return arr.clone();
+    };
+
     let mut count = 0;
     for (i, byte) in values.iter_mut().enumerate() {
         if *byte == pat && count < n {
@@ -62,7 +74,7 @@ pub(super) fn replace_lit_n_char(
             // set the end of this string region
             // safety: invariant of Utf8Array tells us that there is a next offset.
 
-            // must loop to skip null values, as they have the same offsets
+            // must loop to skip null/empty values, as they have the same offsets
             for next in offsets_iter.by_ref() {
                 let new_end = *next as usize - 1;
                 if new_end != end {
