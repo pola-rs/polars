@@ -12,7 +12,7 @@ description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 arrow = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
-polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "cross_join", "cum_agg", "dtype-date", "is_in", "log", "meta", "regex", "round_series", "sign", "strings", "trigonometry"] }
+polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "cross_join", "cum_agg", "dtype-date", "is_in", "log", "meta", "regex", "round_series", "sign", "string_reverse", "strings", "trigonometry"] }
 polars-plan = { workspace = true }
 
 hex = { workspace = true }
