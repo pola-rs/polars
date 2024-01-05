@@ -262,14 +262,13 @@ impl DataType {
 
     // Convert to an Arrow Field
     pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
-        if let DataType::Categorical(opt_rev_map, _) = self {
-            if let Some(rev_map) = opt_rev_map {
-                if rev_map.is_enum() {
-                    let mut metadata = BTreeMap::<String, String>::new();
-                    metadata.insert("POLARS.CATEGORICAL_TYPE".to_string(), "ENUM".to_string());
-                    return ArrowField::new(name, self.to_arrow(pl_flavor), true)
-                        .with_metadata(metadata);
-                }
+        #[cfg(feature = "dtype-categorical")]
+        if let DataType::Categorical(Some(rev_map), _) = self {
+            if rev_map.is_enum() {
+                let mut metadata = BTreeMap::<String, String>::new();
+                metadata.insert("POLARS.CATEGORICAL_TYPE".to_string(), "ENUM".to_string());
+                return ArrowField::new(name, self.to_arrow(pl_flavor), true)
+                    .with_metadata(metadata);
             }
         }
         ArrowField::new(name, self.to_arrow(pl_flavor), true)
@@ -313,15 +312,11 @@ impl DataType {
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(arrow::datatypes::Field::new(
-                    "item",
-                    dt.try_to_arrow(true)?,
-                    true,
-                )),
+                Box::new(dt.to_arrow_field("item", true)),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                arrow::datatypes::Field::new("item", dt.to_arrow(true), true),
+                dt.to_arrow_field("item", true),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]

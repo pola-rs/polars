@@ -210,8 +210,6 @@ def test_from_float16() -> None:
     assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float32]
 
 
-
-
 def test_list_nested_enum() -> None:
     dtype = pl.List(pl.Enum(["a", "b", "c"]))
     df = pl.DataFrame(pl.Series("list_cat", [["a", "b", "c", None]], dtype=dtype))

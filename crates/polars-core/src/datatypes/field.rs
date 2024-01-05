@@ -108,7 +108,7 @@ impl Field {
     /// assert_eq!(f.to_arrow(true), af);
     /// ```
     pub fn to_arrow(&self, pl_flavor: bool) -> ArrowField {
-        ArrowField::new(self.name.as_str(), self.dtype.to_arrow(pl_flavor), true)
+        self.dtype.to_arrow_field(self.name.as_str(), pl_flavor)
     }
 }
 

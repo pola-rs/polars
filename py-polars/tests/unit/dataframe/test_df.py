@@ -633,7 +633,7 @@ def test_to_dummies_drop_first() -> None:
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
     # pyarrow cannot convert a time64 w/ non-zero nanoseconds
-    df = df.drop(["cat", "time","enum"])
+    df = df.drop(["cat", "time", "enum"])
     df.to_arrow()
     df.to_pandas()
     # test shifted df

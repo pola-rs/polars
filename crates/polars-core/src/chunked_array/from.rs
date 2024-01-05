@@ -20,13 +20,9 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let array = concatenate_owned_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values_arr = list_arr.values();
+            let field = ArrowField::new("", values_arr.data_type().clone(), true);
             let cat = unsafe {
-                Series::_try_from_arrow_unchecked(
-                    "",
-                    vec![values_arr.clone()],
-                    values_arr.data_type(),
-                )
-                .unwrap()
+                Series::_try_from_arrow_unchecked(&field, vec![values_arr.clone()]).unwrap()
             };
 
             // we nest only the physical representation
@@ -47,13 +43,9 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let array = concatenate_owned_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values_arr = list_arr.values();
+            let field = ArrowField::new("", values_arr.data_type().clone(), true);
             let cat = unsafe {
-                Series::_try_from_arrow_unchecked(
-                    "",
-                    vec![values_arr.clone()],
-                    values_arr.data_type(),
-                )
-                .unwrap()
+                Series::_try_from_arrow_unchecked(&field, vec![values_arr.clone()]).unwrap()
             };
 
             // we nest only the physical representation

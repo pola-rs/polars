@@ -32,16 +32,9 @@ impl ArrayChunked {
     /// Get the inner values as `Series`
     pub fn get_inner(&self) -> Series {
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow(true);
+        let field = self.inner_dtype().to_arrow_field(self.name(), true);
         let arr = ca.downcast_iter().next().unwrap();
-        unsafe {
-            Series::_try_from_arrow_unchecked(
-                self.name(),
-                vec![(arr.values()).clone()],
-                &inner_dtype,
-            )
-            .unwrap()
-        }
+        unsafe { Series::_try_from_arrow_unchecked(&field, vec![(arr.values()).clone()]).unwrap() }
     }
 
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
@@ -51,16 +44,12 @@ impl ArrayChunked {
     ) -> PolarsResult<ArrayChunked> {
         // Rechunk or the generated Series will have wrong length.
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow(true);
+
+        let field = self.inner_dtype().to_arrow_field(self.name(), true);
 
         let chunks = ca.downcast_iter().map(|arr| {
             let elements = unsafe {
-                Series::_try_from_arrow_unchecked(
-                    self.name(),
-                    vec![(*arr.values()).clone()],
-                    &inner_dtype,
-                )
-                .unwrap()
+                Series::_try_from_arrow_unchecked(&field, vec![(*arr.values()).clone()]).unwrap()
             };
 
             let expected_len = elements.len();
