@@ -268,7 +268,7 @@ pub(crate) enum PolarsSQLFunctions {
     #[cfg(feature = "nightly")]
     InitCap,
     /// SQL 'left' function
-    /// Returns the `length` first characters
+    /// Returns the first (leftmost) `n` characters
     /// ```sql
     /// SELECT LEFT(column_1, 3) from df;
     /// ```
@@ -315,6 +315,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT RTRIM(column_1) from df;
     /// ```
     RTrim,
+    /// SQL 'right' function
+    /// Returns the last (rightmost) `n` characters
+    /// ```sql
+    /// SELECT RIGHT(column_1, 3) from df;
+    /// ```
+    Right,
     /// SQL 'starts_with' function
     /// Returns True if the value starts with the second argument.
     /// ```sql
@@ -637,6 +643,7 @@ impl PolarsSQLFunctions {
             "octet_length" => Self::OctetLength,
             "regexp_like" => Self::RegexpLike,
             "replace" => Self::Replace,
+            "right" => Self::Right,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
             "substr" => Self::Substring,
@@ -809,7 +816,15 @@ impl SQLFunctionVisitor<'_> {
                     "Invalid number of arguments for Replace: {}",
                     function.args.len()
                 ),
-            }
+            },
+            Right => self.try_visit_binary(|e, length| {
+                Ok(e.str().slice( match length {
+                    Expr::Literal(LiteralValue::Int64(n)) => -n,
+                    _ => {
+                        polars_bail!(InvalidOperation: "Invalid 'length' for Right: {}", function.args[1]);
+                    }
+                }, None))
+            }),
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),

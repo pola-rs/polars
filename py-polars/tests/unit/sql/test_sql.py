@@ -592,24 +592,23 @@ def test_sql_group_by(foods_ipc_path: Path) -> None:
     assert out.to_dict(as_series=False) == {"grp": ["c"], "n_dist_attr": [2]}
 
 
-def test_sql_left() -> None:
+def test_sql_left_right() -> None:
     df = pl.DataFrame({"scol": ["abcde", "abc", "a", None]})
     ctx = pl.SQLContext(df=df)
     res = ctx.execute(
-        'SELECT scol, LEFT(scol,2) AS "scol:left2" FROM df',
+        """SELECT LEFT(scol,2) AS "l2", RIGHT(scol,2) AS "r2" FROM df""",
     ).collect()
 
     assert res.to_dict(as_series=False) == {
-        "scol": ["abcde", "abc", "a", None],
-        "scol:left2": ["ab", "ab", "a", None],
+        "l2": ["ab", "ab", "a", None],
+        "r2": ["de", "bc", "a", None],
     }
-    with pytest.raises(
-        InvalidOperationError,
-        match="Invalid 'length' for Left: 'xyz'",
-    ):
-        ctx.execute(
-            """SELECT scol, LEFT(scol,'xyz') AS "scol:left2" FROM df"""
-        ).collect()
+    for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "-1")):
+        with pytest.raises(
+            InvalidOperationError,
+            match=f"Invalid 'length' for {func.capitalize()}: {invalid}",
+        ):
+            ctx.execute(f"""SELECT {func}(scol,{invalid}) FROM df""").collect()
 
 
 def test_sql_limit_offset() -> None:
