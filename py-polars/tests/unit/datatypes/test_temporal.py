@@ -782,7 +782,7 @@ def test_read_utc_times_parquet() -> None:
     df = pd.DataFrame(
         data={
             "Timestamp": pd.date_range(
-                "2022-01-01T00:00+00:00", "2022-01-01T10:00+00:00", freq="H"
+                "2022-01-01T00:00+00:00", "2022-01-01T10:00+00:00", freq="h"
             )
         }
     )
