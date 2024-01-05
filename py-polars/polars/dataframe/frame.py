@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
+import warnings
 from collections import OrderedDict, defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -2268,15 +2269,33 @@ class DataFrame:
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
-            return tbl.to_pandas(
-                self_destruct=True,
-                split_blocks=True,
-                types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
-                **kwargs,
-            )
+            with warnings.catch_warnings():
+                # Needs fixing upstream in pyarrow
+                # Silence here as it's something Polars users can't do
+                # anything about.
+                warnings.filterwarnings(
+                    "ignore",
+                    message="make_block is deprecated and will be removed",
+                    category=DeprecationWarning,
+                )
+                return tbl.to_pandas(
+                    self_destruct=True,
+                    split_blocks=True,
+                    types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
+                    **kwargs,
+                )
 
         date_as_object = kwargs.pop("date_as_object", False)
-        return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
+        with warnings.catch_warnings():
+            # Needs fixing upstream in pyarrow
+            # Silence here as it's something Polars users can't do
+            # anything about.
+            warnings.filterwarnings(
+                "ignore",
+                message="make_block is deprecated and will be removed",
+                category=DeprecationWarning,
+            )
+            return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
 
     def to_series(self, index: int = 0) -> Series:
         """
