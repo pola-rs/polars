@@ -397,7 +397,7 @@ impl ToPyObject for Wrap<DataType> {
                 if let Some(rev_map) = rev_map {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
                         let class = pl.getattr(intern!(py, "Enum")).unwrap();
-                        let s = Series::from_arrow("categories", categories.to_boxed()).unwrap();
+                        let s = Series::from_arrow("category", categories.to_boxed()).unwrap();
                         let series = to_series(py, s.into());
                         return class.call1((series,)).unwrap().into();
                     }

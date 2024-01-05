@@ -30,7 +30,7 @@ def test_enum_creation() -> None:
 @pytest.mark.parametrize("categories", [[], pl.Series("foo", dtype=pl.Int16), None])
 def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
     dtype = pl.Enum(categories)  # type: ignore[arg-type]
-    expected = pl.Series("categories", dtype=pl.String)
+    expected = pl.Series("category", dtype=pl.String)
     assert_series_equal(dtype.categories, expected)
 
 
@@ -347,7 +347,7 @@ def test_enum_categories_unique() -> None:
 def test_enum_categories_series_input() -> None:
     categories = pl.Series("a", ["x", "y", "z"])
     dtype = pl.Enum(categories)
-    assert_series_equal(dtype.categories, categories.alias("categories"))
+    assert_series_equal(dtype.categories, categories.alias("category"))
 
 
 def test_enum_categories_series_zero_copy() -> None:
