@@ -762,3 +762,30 @@ def test_list_ordering() -> None:
     s = pl.Series("a", [[2, 1], [1, 3, 2]])
     assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
     assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
+
+
+def test_list_get_logical_type() -> None:
+    s = pl.Series(
+        "a",
+        [
+            [date(1999, 1, 1), date(2000, 1, 1)],
+            [date(2001, 10, 1), None],
+        ],
+        dtype=pl.List(pl.Date),
+    )
+
+    out = s.list.get(0)
+    expected = pl.Series(
+        "a",
+        [date(1999, 1, 1), date(2001, 10, 1)],
+        dtype=pl.Date,
+    )
+    assert_series_equal(out, expected)
+
+    out = s.list.get(pl.Series([1, -2]))
+    expected = pl.Series(
+        "a",
+        [date(2000, 1, 1), date(2001, 10, 1)],
+        dtype=pl.Date,
+    )
+    assert_series_equal(out, expected)
