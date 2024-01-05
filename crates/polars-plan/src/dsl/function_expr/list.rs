@@ -399,7 +399,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
             if let Some(index) = index {
                 ca.lst_get(index).map(Some)
             } else {
-                polars_bail!(ComputeError: "unexpected null index received in `arr.get`")
+                polars_bail!(ComputeError: "unexpected null index received in `list.get`")
             }
         },
         len if len == ca.len() => {
@@ -424,11 +424,13 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
                 })
                 .collect::<IdxCa>();
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
-            unsafe { Ok(Some(s.take_unchecked(&take_by))) }
+            unsafe { s.take_unchecked(&take_by) }
+                .cast(&ca.inner_dtype())
+                .map(Some)
         },
         len => polars_bail!(
             ComputeError:
-            "`arr.get` expression got an index array of length {} while the list has {} elements",
+            "`list.get` expression got an index array of length {} while the list has {} elements",
             len, ca.len()
         ),
     }
