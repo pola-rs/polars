@@ -90,6 +90,8 @@ class DataTypeClass(type):
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
 
+    __slots__ = ()
+
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
@@ -267,69 +269,103 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
 class NumericType(DataType):
     """Base class for numeric data types."""
 
+    __slots__ = ()
+
 
 class IntegerType(NumericType):
     """Base class for integer data types."""
+
+    __slots__ = ()
 
 
 class SignedIntegerType(IntegerType):
     """Base class for signed integer data types."""
 
+    __slots__ = ()
+
 
 class UnsignedIntegerType(IntegerType):
     """Base class for unsigned integer data types."""
+
+    __slots__ = ()
 
 
 class FloatType(NumericType):
     """Base class for float data types."""
 
+    __slots__ = ()
+
 
 class TemporalType(DataType):
     """Base class for temporal data types."""
+
+    __slots__ = ()
 
 
 class NestedType(DataType):
     """Base class for nested data types."""
 
+    __slots__ = ()
+
 
 class Int8(SignedIntegerType):
     """8-bit signed integer type."""
+
+    __slots__ = ()
 
 
 class Int16(SignedIntegerType):
     """16-bit signed integer type."""
 
+    __slots__ = ()
+
 
 class Int32(SignedIntegerType):
     """32-bit signed integer type."""
+
+    __slots__ = ()
 
 
 class Int64(SignedIntegerType):
     """64-bit signed integer type."""
 
+    __slots__ = ()
+
 
 class UInt8(UnsignedIntegerType):
     """8-bit unsigned integer type."""
+
+    __slots__ = ()
 
 
 class UInt16(UnsignedIntegerType):
     """16-bit unsigned integer type."""
 
+    __slots__ = ()
+
 
 class UInt32(UnsignedIntegerType):
     """32-bit unsigned integer type."""
+
+    __slots__ = ()
 
 
 class UInt64(UnsignedIntegerType):
     """64-bit unsigned integer type."""
 
+    __slots__ = ()
+
 
 class Float32(FloatType):
     """32-bit floating point type."""
 
+    __slots__ = ()
+
 
 class Float64(FloatType):
     """64-bit floating point type."""
+
+    __slots__ = ()
 
 
 class Decimal(NumericType):
@@ -341,6 +377,8 @@ class Decimal(NumericType):
         It is a work-in-progress feature and may not always work as expected.
         It may be changed at any point without it being considered a breaking change.
     """
+
+    __slots__ = ("precision", "scale")
 
     precision: int | None
     scale: int
@@ -383,9 +421,13 @@ class Decimal(NumericType):
 class Boolean(DataType):
     """Boolean type."""
 
+    __slots__ = ()
+
 
 class String(DataType):
     """UTF-8 encoded string type."""
+
+    __slots__ = ()
 
 
 # Allow Utf8 as an alias for String
@@ -395,13 +437,19 @@ Utf8 = String
 class Binary(DataType):
     """Binary type."""
 
+    __slots__ = ()
+
 
 class Date(TemporalType):
     """Calendar date type."""
 
+    __slots__ = ()
+
 
 class Time(TemporalType):
     """Time of day type."""
+
+    __slots__ = ()
 
 
 class Datetime(TemporalType):
@@ -606,13 +654,19 @@ class Enum(DataType):
 class Object(DataType):
     """Type for wrapping arbitrary Python objects."""
 
+    __slots__ = ()
+
 
 class Null(DataType):
     """Type representing Null / None values."""
 
+    __slots__ = ()
+
 
 class Unknown(DataType):
     """Type representing Datatype values that could not be determined statically."""
+
+    __slots__ = ()
 
 
 class List(NestedType):
@@ -738,6 +792,10 @@ class Array(NestedType):
 class Field:
     """Definition of a single field within a `Struct` DataType."""
 
+    __slots__ = ("name", "dtype")
+    name: str
+    dtype: PolarsDataType
+
     def __init__(self, name: str, dtype: PolarsDataType):
         """
         Definition of a single field within a `Struct` DataType.
@@ -766,6 +824,7 @@ class Field:
 class Struct(NestedType):
     """Struct composite type."""
 
+    __slots__ = ("fields",)
     fields: list[Field]
 
     def __init__(self, fields: Sequence[Field] | SchemaDict):
