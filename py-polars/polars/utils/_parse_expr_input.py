@@ -45,23 +45,28 @@ def parse_as_list_of_expressions(
 
 
 def _parse_regular_inputs(
-    inputs: tuple[IntoExpr | Iterable[IntoExpr], ...],
+    inputs: tuple[IntoExpr, ...] | tuple[Iterable[IntoExpr]],
     *,
     structify: bool = False,
 ) -> list[PyExpr]:
-    if not inputs:
-        return []
-
-    inputs_iter: Iterable[IntoExpr]
-    if len(inputs) == 1 and _is_iterable(inputs[0]):
-        inputs_iter = inputs[0]  # type: ignore[assignment]
-    else:
-        inputs_iter = inputs  # type: ignore[assignment]
-
+    inputs_iter = _parse_inputs_as_iterable(inputs)
     return [parse_as_expression(e, structify=structify) for e in inputs_iter]
 
 
-def _is_iterable(input: IntoExpr | Iterable[IntoExpr]) -> bool:
+def _parse_inputs_as_iterable(
+    inputs: tuple[Any, ...] | tuple[Iterable[Any]],
+) -> Iterable[Any]:
+    if not inputs:
+        return []
+
+    # Treat input of a single iterable as separate inputs
+    if len(inputs) == 1 and _is_iterable(inputs[0]):
+        return inputs[0]
+
+    return inputs
+
+
+def _is_iterable(input: Any | Iterable[Any]) -> bool:
     return isinstance(input, Iterable) and not isinstance(
         input, (str, bytes, pl.Series)
     )
