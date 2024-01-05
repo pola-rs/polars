@@ -30,7 +30,7 @@ pub fn read<R: Read + Seek>(
     let data_type = field.data_type.clone();
 
     match data_type.to_physical_type() {
-        Null => read_null(field_nodes, data_type).map(|x| x.boxed()),
+        Null => read_null(field_nodes, data_type, limit).map(|x| x.boxed()),
         Boolean => read_boolean(
             field_nodes,
             data_type,

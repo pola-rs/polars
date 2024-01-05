@@ -6,10 +6,11 @@ use polars_error::{polars_err, PolarsResult};
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
-use super::super::{Compression, Dictionaries, IpcBuffer, Node, OutOfSpecKind, Version};
+use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::MapArray;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
+use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_map<R: Read + Seek>(
@@ -26,11 +27,7 @@ pub fn read_map<R: Read + Seek>(
     version: Version,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<MapArray> {
-    let field_node = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(oos =
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
-        )
-    })?;
+    let field_node = try_get_field_node(field_nodes, &data_type)?;
 
     let validity = read_validity(
         buffers,
@@ -43,11 +40,7 @@ pub fn read_map<R: Read + Seek>(
         scratch,
     )?;
 
-    let length: usize = field_node
-        .length()
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+    let length = try_get_array_length(field_node, limit)?;
 
     let offsets = read_buffer::<i32, _>(
         buffers,
