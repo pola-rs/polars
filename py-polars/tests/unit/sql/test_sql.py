@@ -1013,7 +1013,7 @@ def test_sql_string_case() -> None:
 
 
 def test_sql_string_lengths() -> None:
-    df = pl.DataFrame({"words": ["Café", None, "東京"]})
+    df = pl.DataFrame({"words": ["Café", None, "東京", ""]})
 
     with pl.SQLContext(frame=df) as ctx:
         res = ctx.execute(
@@ -1030,13 +1030,35 @@ def test_sql_string_lengths() -> None:
         ).collect()
 
     assert res.to_dict(as_series=False) == {
-        "words": ["Café", None, "東京"],
-        "n_chrs1": [4, None, 2],
-        "n_chrs2": [4, None, 2],
-        "n_chrs3": [4, None, 2],
-        "n_bytes": [5, None, 6],
-        "n_bits": [40, None, 48],
+        "words": ["Café", None, "東京", ""],
+        "n_chrs1": [4, None, 2, 0],
+        "n_chrs2": [4, None, 2, 0],
+        "n_chrs3": [4, None, 2, 0],
+        "n_bytes": [5, None, 6, 0],
+        "n_bits": [40, None, 48, 0],
     }
+
+
+def test_sql_string_replace() -> None:
+    df = pl.DataFrame({"words": ["Yemeni coffee is the best coffee", "", None]})
+    with pl.SQLContext(df=df) as ctx:
+        out = ctx.execute(
+            """
+            SELECT
+              REPLACE(
+                REPLACE(words, 'coffee', 'tea'),
+                'Yemeni',
+                'English breakfast'
+              )
+            FROM df
+            """
+        ).collect()
+
+        res = out["words"].to_list()
+        assert res == ["English breakfast tea is the best tea", "", None]
+
+        with pytest.raises(InvalidOperationError, match="Invalid number of arguments"):
+            ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
 def test_sql_substr() -> None:
