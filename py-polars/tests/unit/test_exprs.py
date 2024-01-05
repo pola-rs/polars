@@ -86,15 +86,17 @@ def test_cumcount_deprecated() -> None:
 
 def test_filter_where() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 7, 8, 9]})
-    result_where = df.group_by("a", maintain_order=True).agg(
-        pl.col("b").where(pl.col("b") > 4).alias("c")
-    )
     result_filter = df.group_by("a", maintain_order=True).agg(
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
-    assert_frame_equal(result_where, expected)
     assert_frame_equal(result_filter, expected)
+
+    with pytest.deprecated_call():
+        result_where = df.group_by("a", maintain_order=True).agg(
+            pl.col("b").where(pl.col("b") > 4).alias("c")
+        )
+    assert_frame_equal(result_where, expected)
 
     # apply filter constraints using kwargs
     df = pl.DataFrame(
