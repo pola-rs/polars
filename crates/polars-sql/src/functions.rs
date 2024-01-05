@@ -309,18 +309,24 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT REPLACE(column_1,'old','new') from df;
     /// ```
     Replace,
-    /// SQL 'rtrim' function
-    /// Strip whitespaces from the right
+    /// SQL 'reverse' function
+    /// Return the reversed string.
     /// ```sql
-    /// SELECT RTRIM(column_1) from df;
+    /// SELECT REVERSE(column_1) from df;
     /// ```
-    RTrim,
+    Reverse,
     /// SQL 'right' function
     /// Returns the last (rightmost) `n` characters
     /// ```sql
     /// SELECT RIGHT(column_1, 3) from df;
     /// ```
     Right,
+    /// SQL 'rtrim' function
+    /// Strip whitespaces from the right
+    /// ```sql
+    /// SELECT RTRIM(column_1) from df;
+    /// ```
+    RTrim,
     /// SQL 'starts_with' function
     /// Returns True if the value starts with the second argument.
     /// ```sql
@@ -643,6 +649,7 @@ impl PolarsSQLFunctions {
             "octet_length" => Self::OctetLength,
             "regexp_like" => Self::RegexpLike,
             "replace" => Self::Replace,
+            "reverse" => Self::Reverse,
             "right" => Self::Right,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
@@ -817,6 +824,7 @@ impl SQLFunctionVisitor<'_> {
                     function.args.len()
                 ),
             },
+            Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
                 Ok(e.str().slice( match length {
                     Expr::Literal(LiteralValue::Int64(n)) => -n,

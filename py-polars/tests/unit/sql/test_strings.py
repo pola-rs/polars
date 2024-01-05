@@ -66,23 +66,30 @@ def test_string_concat() -> None:
     }
 
 
-def test_left_right() -> None:
-    df = pl.DataFrame({"scol": ["abcde", "abc", "a", None]})
+def test_left_right_reverse() -> None:
+    df = pl.DataFrame({"txt": ["abcde", "abc", "a", None]})
     ctx = pl.SQLContext(df=df)
     res = ctx.execute(
-        """SELECT LEFT(scol,2) AS "l2", RIGHT(scol,2) AS "r2" FROM df""",
+        """
+        SELECT
+          LEFT(txt,2) AS "l",
+          RIGHT(txt,2) AS "r",
+          REVERSE(txt) AS "rev"
+        FROM df
+        """,
     ).collect()
 
     assert res.to_dict(as_series=False) == {
-        "l2": ["ab", "ab", "a", None],
-        "r2": ["de", "bc", "a", None],
+        "l": ["ab", "ab", "a", None],
+        "r": ["de", "bc", "a", None],
+        "rev": ["edcba", "cba", "a", None],
     }
     for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "-1")):
         with pytest.raises(
             InvalidOperationError,
             match=f"Invalid 'length' for {func.capitalize()}: {invalid}",
         ):
-            ctx.execute(f"""SELECT {func}(scol,{invalid}) FROM df""").collect()
+            ctx.execute(f"""SELECT {func}(txt,{invalid}) FROM df""").collect()
 
 
 def test_string_lengths() -> None:
