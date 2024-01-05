@@ -25,7 +25,6 @@ Notes
   whilst not immediately having to add IGNORE_RESULT directives everywhere or changing
   all outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output
   is being checked anymore.
-
 """
 from __future__ import annotations
 

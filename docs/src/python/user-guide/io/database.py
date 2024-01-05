@@ -40,5 +40,4 @@ df = pl.DataFrame({"foo": [1, 2, 3]})
 
 df.write_database(table_name="records", uri=uri, engine="adbc")
 # --8<-- [end:write_adbc]
-
 """

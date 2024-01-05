@@ -31,7 +31,6 @@ class SQLContext(Generic[FrameType]):
     --------
     This feature is stabilising, but is still considered experimental and
     changes may be made without them necessarily being considered breaking.
-
     """
 
     _ctxt: PySQLContext
@@ -47,32 +46,32 @@ class SQLContext(Generic[FrameType]):
     @overload
     def __init__(
         self: SQLContext[LazyFrame],
-        frames: Mapping[str, DataFrame | LazyFrame] | None = ...,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
         *,
         register_globals: bool | int = ...,
         eager_execution: Literal[False] = False,
-        **named_frames: DataFrame | LazyFrame,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         ...
 
     @overload
     def __init__(
         self: SQLContext[DataFrame],
-        frames: Mapping[str, DataFrame | LazyFrame] | None = ...,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
         *,
         register_globals: bool | int = ...,
         eager_execution: Literal[True],
-        **named_frames: DataFrame | LazyFrame,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         ...
 
     def __init__(
         self,
-        frames: Mapping[str, DataFrame | LazyFrame] | None = None,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
         *,
         register_globals: bool | int = False,
         eager_execution: bool = False,
-        **named_frames: DataFrame | LazyFrame,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         """
         Initialise a new `SQLContext`.
@@ -109,7 +108,6 @@ class SQLContext(Generic[FrameType]):
         │ x   ┆ 2     │
         │ z   ┆ 6     │
         └─────┴───────┘
-
         """
         self._ctxt = PySQLContext.new()
         self._eager_execution = eager_execution
@@ -144,7 +142,6 @@ class SQLContext(Generic[FrameType]):
         See Also
         --------
         unregister
-
         """
         self.unregister(
             names=(set(self.tables()) - self._tables_scope_stack.pop()),
@@ -274,7 +271,7 @@ class SQLContext(Generic[FrameType]):
         res = wrap_ldf(self._ctxt.execute(query))
         return res.collect() if (eager or self._eager_execution) else res
 
-    def register(self, name: str, frame: DataFrame | LazyFrame) -> Self:
+    def register(self, name: str, frame: DataFrame | LazyFrame | None) -> Self:
         """
         Register a single frame as a table, using the given name.
 
@@ -304,9 +301,10 @@ class SQLContext(Generic[FrameType]):
         ╞═══════╡
         │ world │
         └───────┘
-
         """
-        if isinstance(frame, DataFrame):
+        if frame is None:
+            frame = LazyFrame()
+        elif isinstance(frame, DataFrame):
             frame = frame.lazy()
         self._ctxt.register(name, frame._ldf)
         return self
@@ -354,7 +352,6 @@ class SQLContext(Generic[FrameType]):
         │ 2   ┆ null ┆ t    │
         │ 1   ┆ x    ┆ null │
         └─────┴──────┴──────┘
-
         """
         return self.register_many(
             frames=_get_stack_locals(of_type=(DataFrame, LazyFrame), n_objects=n)
@@ -362,8 +359,8 @@ class SQLContext(Generic[FrameType]):
 
     def register_many(
         self,
-        frames: Mapping[str, DataFrame | LazyFrame] | None = None,
-        **named_frames: DataFrame | LazyFrame,
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
+        **named_frames: DataFrame | LazyFrame | None,
     ) -> Self:
         """
         Register multiple eager/lazy frames as tables, using the associated names.
@@ -398,7 +395,6 @@ class SQLContext(Generic[FrameType]):
 
         >>> ctx.register_many(tbl3=lf3, tbl4=lf4).tables()
         ['tbl1', 'tbl2', 'tbl3', 'tbl4']
-
         """
         frames = dict(frames or {})
         frames.update(named_frames)
@@ -461,7 +457,6 @@ class SQLContext(Generic[FrameType]):
         ['test2']
         >>> ctx.unregister("test2").tables()
         []
-
         """
         if isinstance(names, str):
             names = [names]
@@ -504,6 +499,5 @@ class SQLContext(Generic[FrameType]):
         >>> ctx = pl.SQLContext(hello_data=df1, foo_bar=df2)
         >>> ctx.tables()
         ['foo_bar', 'hello_data']
-
         """
         return sorted(self._ctxt.get_tables())

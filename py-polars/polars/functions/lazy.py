@@ -71,7 +71,6 @@ def element() -> Expr:
     │ 8   ┆ 5   ┆ [16, 10]    │
     │ 3   ┆ 2   ┆ [6, 4]      │
     └─────┴─────┴─────────────┘
-
     """
     return F.col("")
 
@@ -144,7 +143,6 @@ def implode(name: str) -> Expr:
     ----------
     name
         Column name.
-
     """
     return F.col(name).implode()
 
@@ -178,7 +176,6 @@ def std(column: str, ddof: int = 1) -> Expr:
     └──────────┘
     >>> df["a"].std()
     3.605551275463989
-
     """
     return F.col(column).std(ddof)
 
@@ -212,7 +209,6 @@ def var(column: str, ddof: int = 1) -> Expr:
     └──────┘
     >>> df["a"].var()
     13.0
-
     """
     return F.col(column).var(ddof)
 
@@ -240,7 +236,6 @@ def mean(column: str) -> Expr:
     ╞═════╡
     │ 4.0 │
     └─────┘
-
     """
     return F.col(column).mean()
 
@@ -263,7 +258,6 @@ def median(column: str) -> Expr:
     ╞═════╡
     │ 3.0 │
     └─────┘
-
     """
     return F.col(column).median()
 
@@ -291,7 +285,6 @@ def n_unique(column: str) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
-
     """
     return F.col(column).n_unique()
 
@@ -319,7 +312,6 @@ def approx_n_unique(column: str | Expr) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
-
     """
     if isinstance(column, pl.Expr):
         return column.approx_n_unique()
@@ -364,7 +356,6 @@ def first(column: str | None = None) -> Expr:
     ╞═════╡
     │ 1   │
     └─────┘
-
     """
     if column is None:
         return wrap_expr(plr.first())
@@ -410,7 +401,6 @@ def last(column: str | None = None) -> Expr:
     ╞═════╡
     │ 3   │
     └─────┘
-
     """
     if column is None:
         return wrap_expr(plr.last())
@@ -455,7 +445,6 @@ def head(column: str, n: int = 10) -> Expr:
     │ 1   │
     │ 8   │
     └─────┘
-
     """
     return F.col(column).head(n)
 
@@ -497,7 +486,6 @@ def tail(column: str, n: int = 10) -> Expr:
     │ 8   │
     │ 3   │
     └─────┘
-
     """
     return F.col(column).tail(n)
 
@@ -598,7 +586,6 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     ╞═════╡
     │ 3.0 │
     └─────┘
-
     """
     a = parse_as_expression(a)
     b = parse_as_expression(b)
@@ -658,7 +645,6 @@ def map_batches(
     │ 3   ┆ 6   ┆ 10    │
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
@@ -693,7 +679,6 @@ def map(
     -------
     Expr
         Expression with the data type given by `return_dtype`.
-
     """
     return map_batches(exprs, function, return_dtype)
 
@@ -815,7 +800,6 @@ def apply(
     -------
     Expr
         Expression with the data type given by `return_dtype`.
-
     """
     return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
 
@@ -982,7 +966,6 @@ def reduce(
     │ 3   │
     │ 5   │
     └─────┘
-
     """
     # in case of col("*")
     if isinstance(exprs, pl.Expr):
@@ -1044,7 +1027,6 @@ def cum_fold(
     │ 2   ┆ 4   ┆ 6   ┆ {3,7,13}  │
     │ 3   ┆ 5   ┆ 7   ┆ {4,9,16}  │
     └─────┴─────┴─────┴───────────┘
-
     """
     # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
@@ -1139,7 +1121,6 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     │ 135.0  ┆ 2.356194  │
     │ -135.0 ┆ -2.356194 │
     └────────┴───────────┘
-
     """
     if isinstance(y, str):
         y = F.col(y)
@@ -1186,7 +1167,6 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     │ 135.0  ┆ 2.356194  │
     │ -135.0 ┆ -2.356194 │
     └────────┴───────────┘
-
     """
     if isinstance(y, str):
         y = F.col(y)
@@ -1285,7 +1265,6 @@ def exclude(
     │ b    │
     │ null │
     └──────┘
-
     """
     from polars.selectors import exclude
 
@@ -1313,7 +1292,6 @@ def quantile(
         Quantile between 0.0 and 1.0.
     interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
         Interpolation method.
-
     """
     return F.col(column).quantile(quantile, interpolation)
 
@@ -1375,7 +1353,6 @@ def arg_sort_by(
     │ 0   │
     │ 3   │
     └─────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
@@ -1433,7 +1410,6 @@ def collect_all(
     -------
     list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
-
     """
     if no_optimization:
         predicate_pushdown = False
@@ -1636,7 +1612,6 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     │ 2   │
     │ 1   │
     └─────┘
-
     """
     return pl.DataFrame().select(*exprs, **named_exprs)
 
@@ -1686,7 +1661,6 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         1
         3
     ]
-
     """
     if eager:
         if not isinstance(condition, pl.Series):
@@ -1745,7 +1719,6 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3.0  │
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.coalesce(exprs))
@@ -1808,7 +1781,6 @@ def from_epoch(
             2003-10-20
             2003-10-21
     ]
-
     """
     if isinstance(column, str):
         column = F.col(column)
@@ -1855,7 +1827,6 @@ def rolling_cov(
     ddof
         Delta degrees of freedom.  The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
-
     """
     if min_periods is None:
         min_periods = window_size
@@ -1896,7 +1867,6 @@ def rolling_corr(
     ddof
         Delta degrees of freedom.  The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
-
     """
     if min_periods is None:
         min_periods = window_size

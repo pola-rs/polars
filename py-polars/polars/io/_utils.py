@@ -93,7 +93,6 @@ def _prepare_file_arg(
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
     If encoding is not `utf8` or `utf8-lossy`, decoding is handled by
     fsspec too.
-
     """
     storage_options = storage_options or {}
 

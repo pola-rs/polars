@@ -139,7 +139,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
     │ 1   ┆ 3   ┆ 4   │
     │ 2   ┆ 4   ┆ 6   │
     └─────┴─────┴─────┘
-
     """
 
     def __new__(  # type: ignore[misc]
@@ -282,7 +281,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 1   ┆ 11        ┆ 2   │
         │ 2   ┆ 22        ┆ 1   │
         └─────┴───────────┴─────┘
-
         """
         return _create_col(name, *more_names)
 
@@ -325,7 +323,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 4   │
         │ 6   │
         └─────┘
-
         """
         return getattr(type(self), name)
 

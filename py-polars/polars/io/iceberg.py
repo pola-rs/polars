@@ -126,7 +126,6 @@ def scan_iceberg(
     >>> pl.scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
-
     """
     from pyiceberg.io.pyarrow import schema_to_pyarrow
     from pyiceberg.table import StaticTable
@@ -169,7 +168,6 @@ def _scan_pyarrow_dataset_impl(
     Returns
     -------
     DataFrame
-
     """
     from polars import from_arrow
 

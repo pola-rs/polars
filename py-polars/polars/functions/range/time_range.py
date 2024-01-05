@@ -133,7 +133,6 @@ def time_range(
         20:30:00
         23:45:00
     ]
-
     """
     interval = deprecate_saturating(interval)
 
@@ -273,7 +272,6 @@ def time_ranges(
     │ 09:00:00 ┆ 11:00:00 ┆ [09:00:00, 10:00:00, 11:00:00] │
     │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
     └──────────┴──────────┴────────────────────────────────┘
-
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)

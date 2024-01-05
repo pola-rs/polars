@@ -739,3 +739,26 @@ def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
     with pytest.raises(pl.ComputeError, match="expected List dtype"):
         s.list.to_array(2)
+
+
+def test_list_lengths() -> None:
+    s = pl.Series("a", [[1, 2], [1, 2, 3]])
+    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.UInt32))
+    df = pl.DataFrame([s])
+    assert_series_equal(
+        df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=pl.UInt32)
+    )
+
+
+def test_list_arithmetic() -> None:
+    s = pl.Series("a", [[1, 2], [1, 2, 3]])
+    assert_series_equal(s.list.sum(), pl.Series("a", [3, 6]))
+    assert_series_equal(s.list.mean(), pl.Series("a", [1.5, 2.0]))
+    assert_series_equal(s.list.max(), pl.Series("a", [2, 3]))
+    assert_series_equal(s.list.min(), pl.Series("a", [1, 1]))
+
+
+def test_list_ordering() -> None:
+    s = pl.Series("a", [[2, 1], [1, 3, 2]])
+    assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
+    assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))

@@ -133,7 +133,6 @@ select = [
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
   "D213", # Augment NumPy docstring convention: Multi-line docstring summary should start at the second line
-  "D413", # Augment NumPy docstring convention: Missing blank line after last section
   "D417", # Augment NumPy docstring convention: Missing argument descriptions
   "I", # isort
   "SIM", # flake8-simplify

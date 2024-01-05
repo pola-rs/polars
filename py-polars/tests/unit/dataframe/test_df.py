@@ -1521,7 +1521,6 @@ def test_reproducible_hash_with_seeds() -> None:
 
     cf. issue #3966, hashes must always be reproducible across sessions when using
     the same seeds.
-
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)

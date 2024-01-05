@@ -45,7 +45,6 @@ def read_ndjson(
         underlying data, the names given here will overwrite them.
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
-
     """
     return pl.DataFrame._read_ndjson(
         source,
@@ -102,7 +101,6 @@ def scan_ndjson(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
-
     """
     return pl.LazyFrame._scan_ndjson(
         source,

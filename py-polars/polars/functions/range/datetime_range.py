@@ -176,7 +176,6 @@ def datetime_range(
         2022-02-01 00:00:00 EST
         2022-03-01 00:00:00 EST
     ]
-
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
@@ -298,7 +297,6 @@ def datetime_ranges(
     -------
     Expr or Series
         Column of data type `List(Datetime)`.
-
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)

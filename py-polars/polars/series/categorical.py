@@ -56,7 +56,6 @@ class CatNameSpace:
             "bar"
             "ham"
         ]
-
         """
 
     def is_local(self) -> bool:
@@ -77,7 +76,6 @@ class CatNameSpace:
         ...     s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
         >>> s.cat.is_local()
         False
-
         """
         return self._s.cat_is_local()
 
@@ -113,7 +111,6 @@ class CatNameSpace:
                 1
                 2
         ]
-
         """
         return wrap_s(self._s.cat_to_local())
 
@@ -140,6 +137,5 @@ class CatNameSpace:
         >>> s = s.cast(pl.Categorical("lexical"))
         >>> s.cat.uses_lexical_ordering()
         True
-
         """
         return self._s.cat_uses_lexical_ordering()

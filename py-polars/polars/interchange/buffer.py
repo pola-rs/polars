@@ -27,7 +27,6 @@ class PolarsBuffer(Buffer):
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError will be raised if data would be copied.
-
     """
 
     def __init__(self, data: Series, *, allow_copy: bool = True):

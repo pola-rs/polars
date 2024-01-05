@@ -228,7 +228,6 @@ class Series:
             2
             3
     ]
-
     """
 
     _s: PySeries = None
@@ -502,7 +501,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.dtype
         Int64
-
         """
         return self._s.dtype()
 
@@ -515,7 +513,6 @@ class Series:
         -------
         dict
             Dictionary containing the flag name and the value
-
         """
         out = {
             "SORTED_ASC": self._s.is_sorted_ascending_flag(),
@@ -536,7 +533,6 @@ class Series:
         Returns
         -------
         DataType
-
         """
         issue_deprecation_warning(
             "`Series.inner_dtype` is deprecated. Use `Series.dtype.inner` instead.",
@@ -823,7 +819,6 @@ class Series:
             true
             true
         ]
-
         """
 
     def ne(self, other: Any) -> Self | Expr:
@@ -874,7 +869,6 @@ class Series:
             false
             false
         ]
-
         """
 
     def ge(self, other: Any) -> Self | Expr:
@@ -1389,7 +1383,6 @@ class Series:
         >>> s2 = pl.Series("a", [9, 8, 7])
         >>> s2.cum_sum().item(-1)
         24
-
         """
         if index is None:
             if len(self) != 1:
@@ -1430,7 +1423,6 @@ class Series:
         4000000
         >>> s.estimated_size("mb")
         3.814697265625
-
         """
         sz = self._s.estimated_size()
         return scale_bytes(sz, unit)
@@ -1460,7 +1452,6 @@ class Series:
             1.414214
             1.732051
         ]
-
         """
 
     def cbrt(self) -> Series:
@@ -1488,7 +1479,6 @@ class Series:
             1.259921
             1.44225
         ]
-
         """
 
     @overload
@@ -1533,7 +1523,6 @@ class Series:
         Enable Kleene logic by setting `ignore_nulls=False`.
 
         >>> pl.Series([None, False]).any(ignore_nulls=False)  # Returns None
-
         """
         return self._s.any(ignore_nulls=ignore_nulls)
 
@@ -1579,7 +1568,6 @@ class Series:
         Enable Kleene logic by setting `ignore_nulls=False`.
 
         >>> pl.Series([None, True]).all(ignore_nulls=False)  # Returns None
-
         """
         return self._s.all(ignore_nulls=ignore_nulls)
 
@@ -1677,7 +1665,6 @@ class Series:
                 3.0
                 NaN
         ]
-
         """
 
     def drop_nans(self) -> Series:
@@ -1706,7 +1693,6 @@ class Series:
                 null
                 3.0
         ]
-
         """
 
     def to_frame(self, name: str | None = None) -> DataFrame:
@@ -1744,7 +1730,6 @@ class Series:
         │ 123 │
         │ 456 │
         └─────┘
-
         """
         if isinstance(name, str):
             return wrap_df(PyDataFrame([self.rename(name)._s]))
@@ -1809,7 +1794,6 @@ class Series:
         │ null_count ┆ 1     │
         │ unique     ┆ 4     │
         └────────────┴───────┘
-
         """
         stats: dict[str, PythonLiteral | None]
         stats_dtype: PolarsDataType
@@ -1874,7 +1858,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.sum()
         6
-
         """
         return self._s.sum()
 
@@ -1887,7 +1870,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.mean()
         2.0
-
         """
         return self._s.mean()
 
@@ -1916,7 +1898,6 @@ class Series:
                 27.0
                 64.0
         ]
-
         """
         if self.dtype.is_temporal():
             raise TypeError(
@@ -1935,7 +1916,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.min()
         1
-
         """
         return self._s.min()
 
@@ -1948,7 +1928,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.max()
         3
-
         """
         return self._s.max()
 
@@ -1958,7 +1937,6 @@ class Series:
 
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
-
         """
         return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
@@ -1968,7 +1946,6 @@ class Series:
 
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
-
         """
         return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
@@ -1988,7 +1965,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.std()
         1.0
-
         """
         if not self.dtype.is_numeric():
             return None
@@ -2010,7 +1986,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.var()
         1.0
-
         """
         if not self.dtype.is_numeric():
             return None
@@ -2025,7 +2000,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.median()
         2.0
-
         """
         return self._s.median()
 
@@ -2047,7 +2021,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.quantile(0.5)
         2.0
-
         """
         return self._s.quantile(quantile, interpolation)
 
@@ -2074,7 +2047,6 @@ class Series:
         │ 0   ┆ 1   ┆ 0   │
         │ 0   ┆ 0   ┆ 1   │
         └─────┴─────┴─────┘
-
         """
         return wrap_df(self._s.to_dummies(separator))
 
@@ -2214,7 +2186,6 @@ class Series:
         │ 1   ┆ 1.0         ┆ (-1, 1]    │
         │ 2   ┆ inf         ┆ (1, inf]   │
         └─────┴─────────────┴────────────┘
-
         """
         if break_point_label != "break_point":
             issue_deprecation_warning(
@@ -2433,7 +2404,6 @@ class Series:
         │ 1   ┆ 1.0         ┆ (-1, 1]    │
         │ 2   ┆ inf         ┆ (1, inf]   │
         └─────┴─────────────┴────────────┘
-
         """
         if break_point_label != "break_point":
             issue_deprecation_warning(
@@ -2494,12 +2464,16 @@ class Series:
 
     def rle(self) -> Series:
         """
-        Get the lengths of runs of identical values.
+        Get the lengths and values of runs of identical values.
 
         Returns
         -------
         Series
             Series of data type :class:`Struct` with Fields "lengths" and "values".
+
+        See Also
+        --------
+        rle_id
 
         Examples
         --------
@@ -2522,11 +2496,13 @@ class Series:
 
     def rle_id(self) -> Series:
         """
-        Map values to run IDs.
+        Get a distinct integer ID for each run of identical values.
 
-        Similar to RLE, but it maps each value to an ID corresponding to the run into
-        which it falls. This is especially useful when you want to define groups by
-        runs of identical values rather than the values themselves.
+        The ID increases by one each time the value of a column (which can be a
+        :class:`Struct`) changes.
+
+        This is especially useful when you want to define a new group for every time a
+        column's value changes, rather than for every distinct value of that column.
 
         Returns
         -------
@@ -2603,7 +2579,6 @@ class Series:
         │ 6.75        ┆ (4.5, 6.75] ┆ 0     │
         │ inf         ┆ (6.75, inf] ┆ 2     │
         └─────────────┴─────────────┴───────┘
-
         """
         out = (
             self.to_frame()
@@ -2691,7 +2666,6 @@ class Series:
             2
             3
         ]
-
         """
 
     def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
@@ -2715,7 +2689,6 @@ class Series:
         >>> b = pl.Series([0.65, 0.10, 0.25])
         >>> b.entropy(normalize=True)
         0.8568409950394724
-
         """
         return (
             self.to_frame()
@@ -2762,7 +2735,6 @@ class Series:
             -15.0
             -24.0
         ]
-
         """
 
     def alias(self, name: str) -> Series:
@@ -2785,7 +2757,6 @@ class Series:
                 2
                 3
         ]
-
         """
         s = self.clone()
         s._s.rename(name)
@@ -2813,7 +2784,6 @@ class Series:
                 2
                 3
         ]
-
         """
         return self.alias(name)
 
@@ -2835,7 +2805,6 @@ class Series:
 
         >>> pl.concat([s, s2], rechunk=False).chunk_lengths()
         [3, 3]
-
         """
         return self._s.chunk_lengths()
 
@@ -2859,7 +2828,6 @@ class Series:
 
         >>> pl.concat([s, s2], rechunk=False).n_chunks()
         2
-
         """
         return self._s.n_chunks()
 
@@ -2883,7 +2851,6 @@ class Series:
             5
             5
         ]
-
         """
 
     def cum_min(self, *, reverse: bool = False) -> Series:
@@ -2906,7 +2873,6 @@ class Series:
             1
             1
         ]
-
         """
 
     def cum_prod(self, *, reverse: bool = False) -> Series:
@@ -2934,7 +2900,6 @@ class Series:
             2
             6
         ]
-
         """
 
     def cum_sum(self, *, reverse: bool = False) -> Series:
@@ -2962,7 +2927,6 @@ class Series:
             3
             6
         ]
-
         """
 
     def slice(self, offset: int, length: int | None = None) -> Series:
@@ -2987,7 +2951,6 @@ class Series:
                 2
                 3
         ]
-
         """
         return self._from_pyseries(self._s.slice(offset=offset, length=length))
 
@@ -3030,7 +2993,6 @@ class Series:
 
         >>> a.n_chunks()
         2
-
         """
         try:
             self._s.append(other._s)
@@ -3094,7 +3056,6 @@ class Series:
 
         >>> a.n_chunks()
         1
-
         """
         try:
             self._s.extend(other._s)
@@ -3127,7 +3088,6 @@ class Series:
                 1
                 3
         ]
-
         """
         if isinstance(predicate, list):
             predicate = Series("", predicate)
@@ -3168,7 +3128,6 @@ class Series:
                 1
                 2
         ]
-
         """
         if n < 0:
             n = max(0, self.len() + n)
@@ -3209,7 +3168,6 @@ class Series:
                 4
                 5
         ]
-
         """
         if n < 0:
             n = max(0, self.len() + n)
@@ -3230,7 +3188,6 @@ class Series:
         See Also
         --------
         head
-
         """
         return self.head(n)
 
@@ -3262,7 +3219,6 @@ class Series:
             2
             4
         ]
-
         """
 
     def sort(self, *, descending: bool = False, in_place: bool = False) -> Self:
@@ -3297,7 +3253,6 @@ class Series:
                 2
                 1
         ]
-
         """
         if in_place:
             self._s = self._s.sort(descending)
@@ -3333,7 +3288,6 @@ class Series:
             4
             3
         ]
-
         """
 
     def bottom_k(self, k: int | IntoExprColumn = 5) -> Series:
@@ -3364,7 +3318,6 @@ class Series:
             2
             3
         ]
-
         """
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
@@ -3391,7 +3344,6 @@ class Series:
             2
             0
         ]
-
         """
 
     def arg_unique(self) -> Series:
@@ -3413,7 +3365,6 @@ class Series:
                 1
                 3
         ]
-
         """
 
     def arg_min(self) -> int | None:
@@ -3429,7 +3380,6 @@ class Series:
         >>> s = pl.Series("a", [3, 2, 1])
         >>> s.arg_min()
         2
-
         """
         return self._s.arg_min()
 
@@ -3446,7 +3396,6 @@ class Series:
         >>> s = pl.Series("a", [3, 2, 1])
         >>> s.arg_max()
         0
-
         """
         return self._s.arg_max()
 
@@ -3480,7 +3429,6 @@ class Series:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
-
         """
         if isinstance(element, (int, float)):
             return F.select(F.lit(self).search_sorted(element, side)).item()
@@ -3507,7 +3455,6 @@ class Series:
             2
             3
         ]
-
         """
 
     def gather(
@@ -3531,7 +3478,6 @@ class Series:
                 2
                 4
         ]
-
         """
 
     def null_count(self) -> int:
@@ -3560,7 +3506,6 @@ class Series:
         bitmask could be `false`.
 
         To confirm that a column has `null` values use :func:`null_count`.
-
         """
         return self._s.has_validity()
 
@@ -3573,7 +3518,6 @@ class Series:
         >>> s = pl.Series("a", [], dtype=pl.Float32)
         >>> s.is_empty()
         True
-
         """
         return self.len() == 0
 
@@ -3595,7 +3539,6 @@ class Series:
         >>> s = pl.Series([3, 2, 1])
         >>> s.is_sorted(descending=True)
         True
-
         """
         return self._s.is_sorted(descending)
 
@@ -3619,7 +3562,6 @@ class Series:
             true
             true
         ]
-
         """
 
     def is_null(self) -> Series:
@@ -3643,7 +3585,6 @@ class Series:
             false
             true
         ]
-
         """
 
     def is_not_null(self) -> Series:
@@ -3667,7 +3608,6 @@ class Series:
             true
             false
         ]
-
         """
 
     def is_finite(self) -> Series:
@@ -3691,7 +3631,6 @@ class Series:
                 true
                 false
         ]
-
         """
 
     def is_infinite(self) -> Series:
@@ -3715,7 +3654,6 @@ class Series:
                 false
                 true
         ]
-
         """
 
     def is_nan(self) -> Series:
@@ -3740,7 +3678,6 @@ class Series:
                 false
                 true
         ]
-
         """
 
     def is_not_nan(self) -> Series:
@@ -3765,7 +3702,6 @@ class Series:
                 true
                 false
         ]
-
         """
 
     def is_in(self, other: Series | Collection[Any]) -> Series:
@@ -3816,7 +3752,6 @@ class Series:
             true
             false
         ]
-
         """
 
     def arg_true(self) -> Series:
@@ -3837,7 +3772,6 @@ class Series:
         [
                 1
         ]
-
         """
         return F.arg_where(self, eager=True)
 
@@ -3862,7 +3796,6 @@ class Series:
                 false
                 true
         ]
-
         """
 
     def is_first_distinct(self) -> Series:
@@ -3887,7 +3820,6 @@ class Series:
                 true
                 false
         ]
-
         """
 
     def is_last_distinct(self) -> Series:
@@ -3912,7 +3844,6 @@ class Series:
                 true
                 true
         ]
-
         """
 
     def is_duplicated(self) -> Series:
@@ -3936,7 +3867,6 @@ class Series:
                 true
                 false
         ]
-
         """
 
     def explode(self) -> Series:
@@ -3954,7 +3884,6 @@ class Series:
         --------
         Series.list.explode : Explode a list column.
         Series.str.explode : Explode a string column.
-
         """
 
     def equals(
@@ -4025,7 +3954,6 @@ class Series:
             0
             1
         ]
-
         """
         # Do not dispatch cast as it is expensive and used in other functions.
         dtype = py_type_to_dtype(dtype)
@@ -4060,7 +3988,6 @@ class Series:
             1
             0
         ]
-
         """
 
     def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
@@ -4079,7 +4006,6 @@ class Series:
         [1, 2, 3]
         >>> type(s.to_list())
         <class 'list'>
-
         """
         if use_pyarrow is not None:
             issue_deprecation_warning(
@@ -4100,7 +4026,6 @@ class Series:
         ----------
         in_place
             In place or not.
-
         """
         opt_s = self._s.rechunk(in_place)
         return self if in_place else self._from_pyseries(opt_s)
@@ -4120,7 +4045,6 @@ class Series:
             2
             1
         ]
-
         """
 
     def is_between(
@@ -4183,7 +4107,6 @@ class Series:
             true
             false
         ]
-
         """
         if closed == "none":
             out = (self > lower_bound) & (self < upper_bound)
@@ -4244,7 +4167,6 @@ class Series:
         array([1, 2, 3], dtype=int64)
         >>> type(arr)
         <class 'numpy.ndarray'>
-
         """
 
         def convert_to_date(arr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
@@ -4326,7 +4248,6 @@ class Series:
         >>> s = pl.Series("a", [1, None])
         >>> s._view(ignore_nulls=True)
         SeriesView([1, 0])
-
         """
         if not ignore_nulls:
             assert not self.null_count()
@@ -4356,7 +4277,6 @@ class Series:
           2,
           3
         ]
-
         """
         return self._s.to_arrow()
 
@@ -4408,7 +4328,6 @@ class Series:
         2    <NA>
         3       4
         Name: b, dtype: int64[pyarrow]
-
         """
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
@@ -4465,7 +4384,6 @@ class Series:
             null
             4
         ]
-
         """
         return (
             f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
@@ -4549,7 +4467,6 @@ class Series:
         │ 10      │
         │ 3       │
         └─────────┘
-
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
@@ -4619,7 +4536,6 @@ class Series:
         │ 10      │
         │ 3       │
         └─────────┘
-
         """
         if isinstance(indices, int):
             indices = [indices]
@@ -4669,7 +4585,6 @@ class Series:
             null
             null
         ]
-
         """
         if n == 0:
             return self._from_pyseries(self._s.clear())
@@ -4702,7 +4617,6 @@ class Series:
                 2
                 3
         ]
-
         """
         return self._from_pyseries(self._s.clone())
 
@@ -4727,7 +4641,6 @@ class Series:
                 3.0
                 0.0
         ]
-
         """
 
     def fill_null(
@@ -4779,7 +4692,6 @@ class Series:
             ""
             "z"
         ]
-
         """
 
     def floor(self) -> Series:
@@ -4799,7 +4711,6 @@ class Series:
                 2.0
                 3.0
         ]
-
         """
 
     def ceil(self) -> Series:
@@ -4819,7 +4730,6 @@ class Series:
                 3.0
                 4.0
         ]
-
         """
 
     def round(self, decimals: int = 0) -> Series:
@@ -4842,7 +4752,6 @@ class Series:
         ----------
         decimals
             number of decimals to round by.
-
         """
 
     def round_sig_figs(self, digits: int) -> Series:
@@ -4865,7 +4774,6 @@ class Series:
                 3.3
                 1200.0
         ]
-
         """
 
     def dot(self, other: Series | ArrayLike) -> float | None:
@@ -4883,7 +4791,6 @@ class Series:
         ----------
         other
             Series (or array) to compute dot product with.
-
         """
         if not isinstance(other, Series):
             other = Series(other)
@@ -4907,7 +4814,6 @@ class Series:
         [
                 2
         ]
-
         """
 
     def sign(self) -> Series:
@@ -4935,7 +4841,6 @@ class Series:
                 1
                 null
         ]
-
         """
 
     def sin(self) -> Series:
@@ -4954,7 +4859,6 @@ class Series:
             1.0
             1.2246e-16
         ]
-
         """
 
     def cos(self) -> Series:
@@ -4973,7 +4877,6 @@ class Series:
             6.1232e-17
             -1.0
         ]
-
         """
 
     def tan(self) -> Series:
@@ -4992,7 +4895,6 @@ class Series:
             1.6331e16
             -1.2246e-16
         ]
-
         """
 
     def cot(self) -> Series:
@@ -5011,7 +4913,6 @@ class Series:
             6.1232e-17
             -8.1656e15
         ]
-
         """
 
     def arcsin(self) -> Series:
@@ -5029,7 +4930,6 @@ class Series:
             0.0
             -1.570796
         ]
-
         """
 
     def arccos(self) -> Series:
@@ -5047,7 +4947,6 @@ class Series:
             1.570796
             3.141593
         ]
-
         """
 
     def arctan(self) -> Series:
@@ -5065,7 +4964,6 @@ class Series:
             0.0
             -0.785398
         ]
-
         """
 
     def arcsinh(self) -> Series:
@@ -5083,7 +4981,6 @@ class Series:
             0.0
             -0.881374
         ]
-
         """
 
     def arccosh(self) -> Series:
@@ -5102,7 +4999,6 @@ class Series:
             NaN
             NaN
         ]
-
         """
 
     def arctanh(self) -> Series:
@@ -5124,7 +5020,6 @@ class Series:
             -inf
             NaN
         ]
-
         """
 
     def sinh(self) -> Series:
@@ -5142,7 +5037,6 @@ class Series:
             0.0
             -1.175201
         ]
-
         """
 
     def cosh(self) -> Series:
@@ -5160,7 +5054,6 @@ class Series:
             1.0
             1.543081
         ]
-
         """
 
     def tanh(self) -> Series:
@@ -5178,7 +5071,6 @@ class Series:
             0.0
             -0.761594
         ]
-
         """
 
     def map_elements(
@@ -5248,7 +5140,6 @@ class Series:
         Returns
         -------
         Series
-
         """
         from polars.utils.udfs import warn_on_inefficient_map
 
@@ -5319,7 +5210,6 @@ class Series:
                 100
                 100
         ]
-
         """
 
     def zip_with(self, mask: Series, other: Series) -> Self:
@@ -5365,7 +5255,6 @@ class Series:
                 2
                 5
         ]
-
         """
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
@@ -5416,7 +5305,6 @@ class Series:
             200
             300
         ]
-
         """
         return (
             self.to_frame()
@@ -5475,7 +5363,6 @@ class Series:
             400
             500
         ]
-
         """
         return (
             self.to_frame()
@@ -5534,7 +5421,6 @@ class Series:
             350.0
             450.0
         ]
-
         """
         return (
             self.to_frame()
@@ -5593,7 +5479,6 @@ class Series:
                 7
                 9
         ]
-
         """
         return (
             self.to_frame()
@@ -5656,7 +5541,6 @@ class Series:
                 1.527525
                 2.0
         ]
-
         """
         return (
             self.to_frame()
@@ -5719,7 +5603,6 @@ class Series:
                 2.333333
                 4.0
         ]
-
         """
         return (
             self.to_frame()
@@ -5784,7 +5667,6 @@ class Series:
                 11.0
                 17.0
         ]
-
         """
 
     def rolling_median(
@@ -5831,7 +5713,6 @@ class Series:
                 4.0
                 6.0
         ]
-
         """
         if min_periods is None:
             min_periods = window_size
@@ -5907,7 +5788,6 @@ class Series:
                 3.66
                 5.32
         ]
-
         """
         if min_periods is None:
             min_periods = window_size
@@ -5957,7 +5837,6 @@ class Series:
 
         >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
         (0.38180177416060584, 0.47033046033698594)
-
         """
 
     def sample(
@@ -5997,7 +5876,6 @@ class Series:
             1
             5
         ]
-
         """
 
     def peak_max(self) -> Self:
@@ -6017,7 +5895,6 @@ class Series:
                 false
                 true
         ]
-
         """
 
     def peak_min(self) -> Self:
@@ -6037,7 +5914,6 @@ class Series:
             true
             false
         ]
-
         """
 
     def n_unique(self) -> int:
@@ -6049,7 +5925,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 2, 3])
         >>> s.n_unique()
         3
-
         """
         return self._s.n_unique()
 
@@ -6059,7 +5934,6 @@ class Series:
 
         Shrinks the underlying array capacity to exactly fit the actual data.
         (Note that this function does not change the Series data type).
-
         """
         if in_place:
             self._s.shrink_to_fit()
@@ -6109,7 +5983,6 @@ class Series:
             3022416320763508302
             13756996518000038261
         ]
-
         """
 
     def reinterpret(self, *, signed: bool = True) -> Series:
@@ -6123,7 +5996,6 @@ class Series:
         ----------
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
-
         """
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
@@ -6148,7 +6020,6 @@ class Series:
             4.0
             5.0
         ]
-
         """
 
     def abs(self) -> Series:
@@ -6234,7 +6105,6 @@ class Series:
             2
             5
         ]
-
         """
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
@@ -6281,7 +6151,6 @@ class Series:
             15
             5
         ]
-
         """
 
     def pct_change(self, n: int | IntoExprColumn = 1) -> Series:
@@ -6331,7 +6200,6 @@ class Series:
             3.0
             3.0
         ]
-
         """
 
     def skew(self, *, bias: bool = True) -> float | None:
@@ -6377,7 +6245,6 @@ class Series:
         >>> s = pl.Series([1, 2, 2, 4, 5])
         >>> s.skew()
         0.34776706224699483
-
         """
         return self._s.skew(bias)
 
@@ -6400,7 +6267,6 @@ class Series:
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
             If False, the calculations are corrected for statistical bias.
-
         """
         return self._s.kurtosis(fisher, bias)
 
@@ -6458,7 +6324,6 @@ class Series:
                 10
                 null
         ]
-
         """
 
     def lower_bound(self) -> Self:
@@ -6486,7 +6351,6 @@ class Series:
         [
             -inf
         ]
-
         """
 
     def upper_bound(self) -> Self:
@@ -6514,7 +6378,6 @@ class Series:
         [
             inf
         ]
-
         """
 
     def replace(
@@ -6677,7 +6540,6 @@ class Series:
                 [4, 5, 6]
                 [7, 8, 9]
         ]
-
         """
 
     def shuffle(self, seed: int | None = None) -> Series:
@@ -6701,7 +6563,6 @@ class Series:
                 1
                 3
         ]
-
         """
 
     @deprecate_nonkeyword_arguments(version="0.19.10")
@@ -6783,7 +6644,6 @@ class Series:
                 1.666667
                 2.428571
         ]
-
         """
 
     @deprecate_nonkeyword_arguments(version="0.19.10")
@@ -6869,7 +6729,6 @@ class Series:
             0.707107
             0.963624
         ]
-
         """
 
     @deprecate_nonkeyword_arguments(version="0.19.10")
@@ -6955,7 +6814,6 @@ class Series:
             0.5
             0.928571
         ]
-
         """
 
     def extend_constant(self, value: PythonLiteral | None, n: int) -> Series:
@@ -6983,7 +6841,6 @@ class Series:
                 99
                 99
         ]
-
         """
 
     def set_sorted(self, *, descending: bool = False) -> Self:
@@ -7007,7 +6864,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.set_sorted().max()
         3
-
         """
         return self._from_pyseries(self._s.set_sorted_flag(descending))
 
@@ -7055,7 +6911,6 @@ class Series:
             Nulls will be skipped and not passed to the python function.
             This is faster because python can be skipped and because we call
             more specialized functions.
-
         """
         return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
 
@@ -7092,7 +6947,6 @@ class Series:
             - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
-
         """
 
     @deprecate_renamed_function("is_first_distinct", version="0.19.3")
@@ -7107,7 +6961,6 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
-
         """
 
     @deprecate_renamed_function("is_last_distinct", version="0.19.3")
@@ -7122,7 +6975,6 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
-
         """
 
     @deprecate_function("Use `clip` instead.", version="0.19.12")
@@ -7139,7 +6991,6 @@ class Series:
         ----------
         lower_bound
             Lower bound.
-
         """
 
     @deprecate_function("Use `clip` instead.", version="0.19.12")
@@ -7156,7 +7007,6 @@ class Series:
         ----------
         upper_bound
             Upper bound.
-
         """
 
     @deprecate_function("Use `shift` instead.", version="0.19.12")
@@ -7179,7 +7029,6 @@ class Series:
             Fill None values with the result of this expression.
         n
             Number of places to shift (may be negative).
-
         """
 
     @deprecate_function("Use `Series.dtype.is_float()` instead.", version="0.19.13")
@@ -7195,7 +7044,6 @@ class Series:
         >>> s = pl.Series("a", [1.0, 2.0, 3.0])
         >>> s.is_float()  # doctest: +SKIP
         True
-
         """
         return self.dtype.is_float()
 
@@ -7230,7 +7078,6 @@ class Series:
         True
         >>> s.is_integer(signed=True)  # doctest: +SKIP
         False
-
         """
         if signed is None:
             return self.dtype.is_integer()
@@ -7254,7 +7101,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.is_numeric()  # doctest: +SKIP
         True
-
         """
         return self.dtype.is_numeric()
 
@@ -7279,7 +7125,6 @@ class Series:
         True
         >>> s.is_temporal(excluding=[pl.Date])  # doctest: +SKIP
         False
-
         """
         if excluding is not None:
             if not isinstance(excluding, Iterable):
@@ -7302,7 +7147,6 @@ class Series:
         >>> s = pl.Series("a", [True, False, True])
         >>> s.is_boolean()  # doctest: +SKIP
         True
-
         """
         return self.dtype == Boolean
 
@@ -7319,7 +7163,6 @@ class Series:
         >>> s = pl.Series("x", ["a", "b", "c"])
         >>> s.is_utf8()  # doctest: +SKIP
         True
-
         """
         return self.dtype == String
 
@@ -7407,7 +7250,6 @@ class Series:
         ----------
         reverse
             reverse the operation.
-
         """
         return self.cum_sum(reverse=reverse)
 
@@ -7474,7 +7316,6 @@ class Series:
         ignore_nulls
             If True then nulls are converted to 0.
             If False then an Exception is raised if nulls are present.
-
         """
         return self._view(ignore_nulls=ignore_nulls)
 
@@ -7585,7 +7426,7 @@ class Series:
         --------
         Histogram:
 
-        >>> s = pl.Series([1, 4, 2])
+        >>> s = pl.Series("values", [1, 4, 2])
         >>> s.plot.hist()  # doctest: +SKIP
 
         KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):

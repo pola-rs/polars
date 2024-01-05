@@ -575,7 +575,10 @@ impl<'a> AnyValue<'a> {
                 },
                 _ => return cast_numeric(self, dtype),
             },
-            _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
+            AnyValue::String(s) if dtype == &DataType::Binary => AnyValue::Binary(s.as_bytes()),
+            _ => {
+                polars_bail!(ComputeError: "cannot cast any-value '{:?}' to '{:?}'", self.dtype(), dtype)
+            },
         };
         Ok(new_av)
     }
