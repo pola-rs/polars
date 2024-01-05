@@ -3,6 +3,7 @@ use super::*;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
 #[cfg(feature = "array_any_all")]
 use crate::prelude::array::any_all::{array_all, array_any};
+use crate::prelude::array::get::array_get;
 use crate::prelude::array::sum_mean::sum_array_numerical;
 use crate::series::ArgAgg;
 
@@ -91,6 +92,11 @@ pub trait ArrayNameSpace: AsArray {
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
         })
+    }
+
+    fn array_get(&self, index: &Int64Chunked) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        array_get(ca, index)
     }
 }
 

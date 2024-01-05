@@ -2,9 +2,10 @@ use std::error::Error;
 
 use arrow::array::Array;
 use arrow::compute::utils::combine_validities_and;
+use polars_error::PolarsResult;
 
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
-use crate::prelude::{ChunkedArray, PolarsDataType};
+use crate::prelude::{ChunkedArray, PolarsDataType, Series};
 use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
 // We need this helper because for<'a> notation can't yet be applied properly
@@ -442,6 +443,26 @@ where
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect();
     lhs.copy_with_chunks(chunks, keep_sorted, keep_fast_explode)
+}
+
+#[inline]
+pub fn binary_to_series<T, U, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: FnMut(&T::Array, &U::Array) -> Box<dyn Array>,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let chunks = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
+        .collect::<Vec<_>>();
+    Series::try_from((lhs.name(), chunks))
 }
 
 /// Applies a kernel that produces `ArrayRef` of the same type.

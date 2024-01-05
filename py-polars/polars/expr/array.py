@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
+    from polars.type_aliases import IntoExprColumn
 
 
 class ExprArrayNameSpace:
@@ -340,3 +342,38 @@ class ExprArrayNameSpace:
 
         """
         return wrap_expr(self._pyexpr.arr_arg_max())
+
+    def get(self, index: int | IntoExprColumn) -> Expr:
+        """
+        Get the value by index in the sub-arrays.
+
+        So index `0` would return the first item of every sublist
+        and index `-1` would return the last item of every sublist
+        if an index is out of bounds, it will return a `None`.
+
+        Parameters
+        ----------
+        index
+            Index to return per sub-array
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"arr": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "idx": [1, -2, 4]},
+        ...     schema={"arr": pl.Array(pl.Int32, 3), "idx": pl.Int32},
+        ... )
+        >>> df.with_columns(get=pl.col("arr").arr.get("idx"))
+        shape: (3, 3)
+        ┌───────────────┬─────┬──────┐
+        │ arr           ┆ idx ┆ get  │
+        │ ---           ┆ --- ┆ ---  │
+        │ array[i32, 3] ┆ i32 ┆ i32  │
+        ╞═══════════════╪═════╪══════╡
+        │ [1, 2, 3]     ┆ 1   ┆ 2    │
+        │ [4, 5, 6]     ┆ -2  ┆ 5    │
+        │ [7, 8, 9]     ┆ 4   ┆ null │
+        └───────────────┴─────┴──────┘
+
+        """
+        index = parse_as_expression(index)
+        return wrap_expr(self._pyexpr.arr_get(index))
