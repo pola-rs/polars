@@ -125,13 +125,9 @@ impl Series {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_median, groups);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
+                // back to physical and then
+                // back to logical type
+                s.cast(physical_type).unwrap().cast(dt).unwrap()
             },
             _ => Series::full_null("", groups.len(), self.dtype()),
         }
@@ -187,13 +183,9 @@ impl Series {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_mean, groups);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
+                // back to physical and then
+                // back to logical type
+                s.cast(physical_type).unwrap().cast(dt).unwrap()
             },
             _ => Series::full_null("", groups.len(), self.dtype()),
         }
