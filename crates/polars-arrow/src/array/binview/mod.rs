@@ -26,6 +26,7 @@ mod private {
 use private::Sealed;
 
 use crate::array::binview::iterator::BinaryViewValueIter;
+use crate::array::binview::view::{validate_binary_view, validate_utf8_view};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 
@@ -157,10 +158,11 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         if T::IS_UTF8 {
-            // check utf8?
-            todo!()
+            validate_utf8_view(views.as_ref(), buffers.as_ref())?;
+        } else {
+            validate_binary_view(views.as_ref(), buffers.as_ref())?;
         }
-        // traverse views and validate offsets?
+
         if let Some(validity) = &validity {
             polars_ensure!(validity.len()== views.len(), ComputeError: "validity mask length must match the number of values" )
         }
