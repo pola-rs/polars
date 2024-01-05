@@ -710,28 +710,88 @@ def test_sql_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     }
 
 
-def test_sql_join_left() -> None:
+@pytest.mark.parametrize(
+    "join_clause",
+    [
+        """
+        INNER JOIN tbl_b USING (a,b)
+        INNER JOIN tbl_c USING (c)
+        """,
+        """
+        INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
+        """,
+    ],
+)
+def test_sql_join_inner_multi(join_clause: str) -> None:
     frames = {
         "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
         "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
         "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
     }
-    ctx = pl.SQLContext(frames)
-    out = ctx.execute(
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
+        for select_cols in ("a, b, c, d", "tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d"):
+            out = ctx.execute(
+                f"SELECT {select_cols} FROM tbl_a {join_clause} ORDER BY a DESC"
+            )
+            assert out.collect().rows() == [(1, 4, "z", 25.5)]
+
+
+@pytest.mark.parametrize(
+    "join_clause",
+    [
         """
-        SELECT a, b, c, d
-        FROM tbl_a
         LEFT JOIN tbl_b USING (a,b)
         LEFT JOIN tbl_c USING (c)
-        ORDER BY a DESC
+        """,
         """
-    )
-    assert out.collect().rows() == [
-        (3, 6, "x", None),
-        (2, None, None, None),
-        (1, 4, "z", 25.5),
-    ]
-    assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
+        LEFT JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+        LEFT JOIN tbl_c ON tbl_a.c = tbl_c.c
+        """,
+    ],
+)
+def test_sql_join_left_multi(join_clause: str) -> None:
+    frames = {
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        for select_cols in ("a, b, c, d", "tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d"):
+            out = ctx.execute(
+                f"SELECT {select_cols} FROM tbl_a {join_clause} ORDER BY a DESC"
+            )
+            assert out.collect().rows() == [
+                (3, 6, "x", None),
+                (2, None, None, None),
+                (1, 4, "z", 25.5),
+            ]
+
+
+def test_sql_join_left_multi_nested() -> None:
+    frames = {
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        for select_cols in ("a, b, c, d", "tbl_x.a, tbl_x.b, tbl_x.c, tbl_c.d"):
+            out = ctx.execute(
+                f"""
+                SELECT {select_cols} FROM (SELECT *
+                    FROM tbl_a
+                    LEFT JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+                ) tbl_x
+                LEFT JOIN tbl_c ON tbl_x.c = tbl_c.c
+                ORDER BY tbl_x.a ASC
+                """
+            ).collect()
+            assert out.rows() == [
+                (1, 4, "z", 25.5),
+                (2, None, None, None),
+                (3, 6, "x", None),
+            ]
 
 
 @pytest.mark.parametrize(
