@@ -174,3 +174,95 @@ class ArrayNameSpace:
             null
         ]
         """
+
+    def sort(self, *, descending: bool = False) -> Series:
+        """
+        Sort the arrays in this column.
+
+        Parameters
+        ----------
+        descending
+            Sort in descending order.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.sort()
+        shape: (2,)
+        Series: 'a' [array[i64, 3]]
+        [
+            [1, 2, 3]
+            [1, 2, 9]
+        ]
+        >>> s.arr.sort(descending=True)
+        shape: (2,)
+        Series: 'a' [array[i64, 3]]
+        [
+            [3, 2, 1]
+            [9, 2, 1]
+        ]
+
+        """
+
+    def reverse(self) -> Series:
+        """
+        Reverse the arrays in this column.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.reverse()
+        shape: (2,)
+        Series: 'a' [array[i64, 3]]
+        [
+            [1, 2, 3]
+            [2, 1, 9]
+        ]
+
+        """
+
+    def arg_min(self) -> Series:
+        """
+        Retrieve the index of the minimal value in every sub-array.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.arg_min()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            1
+        ]
+
+        """
+
+    def arg_max(self) -> Series:
+        """
+        Retrieve the index of the maximum value in every sub-array.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[0, 9, 3], [9, 1, 2]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.arg_max()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            1
+            0
+        ]
+
+        """
