@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
@@ -256,6 +258,21 @@ impl DataType {
             DataType::UInt16 => true,
             _ => false,
         }
+    }
+
+    // Convert to an Arrow Field
+    pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
+        if let DataType::Categorical(opt_rev_map, _) = self {
+            if let Some(rev_map) = opt_rev_map {
+                if rev_map.is_enum() {
+                    let mut metadata = BTreeMap::<String, String>::new();
+                    metadata.insert("POLARS.CATEGORICAL_TYPE".to_string(), "ENUM".to_string());
+                    return ArrowField::new(name, self.to_arrow(pl_flavor), true)
+                        .with_metadata(metadata);
+                }
+            }
+        }
+        ArrowField::new(name, self.to_arrow(pl_flavor), true)
     }
 
     /// Convert to an Arrow data type.

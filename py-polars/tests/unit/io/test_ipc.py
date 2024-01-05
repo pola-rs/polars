@@ -208,3 +208,27 @@ def test_from_float16() -> None:
     pandas_df.to_feather(f)
     f.seek(0)
     assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float32]
+
+
+
+
+def test_list_nested_enum() -> None:
+    dtype = pl.List(pl.Enum(["a", "b", "c"]))
+    df = pl.DataFrame(pl.Series("list_cat", [["a", "b", "c", None]], dtype=dtype))
+    buffer = io.BytesIO()
+    df.write_ipc(buffer)
+    df = pl.read_ipc(buffer)
+    assert df.get_column("list_cat").dtype == dtype
+
+
+def test_struct_nested_enum() -> None:
+    dtype = pl.Struct({"enum": pl.Enum(["a", "b", "c"])})
+    df = pl.DataFrame(
+        pl.Series(
+            "struct_cat", [{"enum": "a"}, {"enum": "b"}, {"enum": None}], dtype=dtype
+        )
+    )
+    buffer = io.BytesIO()
+    df.write_ipc(buffer)
+    df = pl.read_ipc(buffer)
+    assert df.get_column("struct_cat").dtype == dtype

@@ -83,7 +83,7 @@ impl RevMapping {
         }
     }
 
-    fn build_hash(categories: &Utf8Array<i64>) -> u128 {
+    pub fn build_hash(categories: &Utf8Array<i64>) -> u128 {
         let hash_builder = RandomState::with_seed(0);
         let value_hash = hash_builder.hash_one(categories.values().as_slice());
         let offset_hash = hash_builder.hash_one(categories.offsets().as_slice());

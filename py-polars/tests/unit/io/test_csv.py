@@ -72,7 +72,11 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 
     read_df = pl.read_csv(buf, try_parse_dates=True)
     read_df = read_df.with_columns(
-        [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
+        [
+            pl.col("cat").cast(pl.Categorical),
+            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+            pl.col("time").cast(pl.Time),
+        ]
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
     with pytest.raises(AssertionError):

@@ -347,7 +347,7 @@ impl Schema {
         let fields: Vec<_> = self
             .inner
             .iter()
-            .map(|(name, dtype)| ArrowField::new(name.as_str(), dtype.to_arrow(pl_flavor), true))
+            .map(|(name, dtype)| dtype.to_arrow_field(name, pl_flavor))
             .collect();
         ArrowSchema::from(fields)
     }

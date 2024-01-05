@@ -149,7 +149,7 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
-            ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
+            ArrowDataType::List(f) | ArrowDataType::LargeList(_) => {
                 let (chunks, dtype) = to_physical_and_dtype(chunks);
                 unsafe {
                     Ok(
@@ -638,6 +638,38 @@ unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataTy
             let dtype = dt.into();
             (arrays, dtype)
         },
+    }
+}
+
+impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
+    type Error = PolarsError;
+
+    fn try_from(field_arr: (&ArrowField, Vec<ArrayRef>)) -> Result<Self, Self::Error> {
+        let (field, chunks) = field_arr;
+        let name: &str = &field.name;
+        // Check for custom metadata for Enum
+        if let ArrowDataType::Dictionary(_, _, _) = &field.data_type {
+            if &field.metadata.get("POLARS.CATEGORICAL_TYPE") == &Some(&"ENUM".to_string()) {
+                // TODO build enum type without going to categoricals first, could be very slow when string cache is on
+                let s = Series::try_from((name, chunks))?;
+                let ca = s.categorical().unwrap();
+                let categories = ca.get_rev_map().get_categories();
+                return Ok(ca
+                    .to_enum(categories, RevMapping::build_hash(categories))?
+                    .into_series());
+            }
+        }
+
+        Series::try_from((name, chunks))
+    }
+}
+
+impl TryFrom<(&ArrowField, ArrayRef)> for Series {
+    type Error = PolarsError;
+
+    fn try_from(field_arr: (&ArrowField, ArrayRef)) -> Result<Self, Self::Error> {
+        let (name, arr) = field_arr;
+        Series::try_from((name, vec![arr]))
     }
 }
 
