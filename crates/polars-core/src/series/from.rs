@@ -413,6 +413,7 @@ impl Series {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 fn map_arrow_dictionary_to_cat_series(
     name: &str,
     chunks: Vec<ArrayRef>,
