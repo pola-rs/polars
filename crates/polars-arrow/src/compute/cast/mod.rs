@@ -491,7 +491,7 @@ pub fn cast(
     }
 
     let as_options = options.with_wrapped(true);
-    match (from_type, to_type) {
+    match (from_type.to_logical_type(), to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
             "Cannot cast from struct to other types"

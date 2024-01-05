@@ -3,6 +3,7 @@ from datetime import date, datetime
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pytest
 
 import polars as pl
 
@@ -73,9 +74,10 @@ def test_to_pandas() -> None:
         pass
 
 
-def test_cat_to_pandas() -> None:
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["best", "test"])])
+def test_cat_to_pandas(dtype: pl.DataType) -> None:
     df = pl.DataFrame({"a": ["best", "test"]})
-    df = df.with_columns(pl.all().cast(pl.Categorical))
+    df = df.with_columns(pl.all().cast(dtype))
 
     pd_out = df.to_pandas()
     assert isinstance(pd_out["a"].dtype, pd.CategoricalDtype)

@@ -265,11 +265,11 @@ impl Series {
                     polars_bail!(ComputeError: "Incorrect datatype for Polars Enum");
                 };
 
-                map_arrow_dictionary_to_cat_series(name, chunks, &key_type, &**value_type, true)
+                map_arrow_dictionary_to_cat_series(name, chunks, key_type, value_type, true)
             },
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
-                map_arrow_dictionary_to_cat_series(name, chunks, key_type, &**value_type, false)
+                map_arrow_dictionary_to_cat_series(name, chunks, key_type, value_type, false)
             },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
@@ -480,10 +480,9 @@ fn map_arrow_dictionary_to_cat_series(
     // the invariants of an Arrow Dictionary guarantee the keys are in bounds
     let mut ca = unsafe {
         if is_enum {
-            CategoricalChunked::from_chunks_original(
-                name,
-                keys.clone(),
-                RevMapping::build_enum(values.clone()),
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                UInt32Chunked::with_chunk(name, keys.clone()),
+                Arc::new(RevMapping::build_enum(values.clone())),
                 Default::default(),
             )
         } else {
