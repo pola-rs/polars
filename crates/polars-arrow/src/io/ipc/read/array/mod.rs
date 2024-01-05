@@ -23,8 +23,9 @@ mod dictionary;
 pub use dictionary::*;
 mod union;
 pub use union::*;
+mod binview;
 mod map;
-
+pub use binview::*;
 pub use map::*;
 use polars_error::{PolarsResult, *};
 
@@ -36,7 +37,7 @@ fn try_get_field_node<'a>(
     data_type: &ArrowDataType,
 ) -> PolarsResult<Node<'a>> {
     field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(ComputeError: "IPC: unable to fetch the field for {:?}. The file or stream is corrupted.", data_type)
+        polars_err!(ComputeError: "IPC: unable to fetch the field for {:?}\n\nThe file or stream is corrupted.", data_type)
     })
 }
 
