@@ -254,7 +254,8 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Concat,
     /// SQL 'concat_ws' function
-    /// Returns all input expressions concatenated together with a separator as a string.
+    /// Returns all input expressions concatenated together
+    /// (and interleaved with a separator) as a string.
     /// ```sql
     /// SELECT CONCAT_WS(':', column_1, column_2, column_3) from df;
     /// ```
