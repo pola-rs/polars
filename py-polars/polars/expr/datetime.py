@@ -908,14 +908,15 @@ class ExprDateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
-        ... {
-        ...     "date and time": pl.datetime_range(
-        ...         datetime(2020, 1, 1),
-        ...         datetime(2021, 1, 1, 0, 0, 0, 1),
-        ...         "1d2h3m4s",
-        ...         eager=True,
-        ...     ),
-        ... })
+        ...     {
+        ...         "date and time": pl.datetime_range(
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2021, 1, 1, 0, 0, 0, 1),
+        ...             "1d2h3m4s",
+        ...             eager=True,
+        ...         ),
+        ...     }
+        ... )
         >>> df.with_columns(
         ...     pl.col("date and time").dt.date().alias("date (YYYY-MM-DD)"),
         ... )
@@ -953,15 +954,16 @@ class ExprDateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
-        ... {
-        ...     "date (UTC)": pl.datetime_range(
-        ...         datetime(2020, 1, 1),
-        ...         datetime(2021, 1, 1, 0, 0, 0, 1),
-        ...         "1d2h3m4s",
-        ...         eager=True,
-        ...         time_zone="UTC",
-        ...     ),
-        ... })
+        ...     {
+        ...         "date (UTC)": pl.datetime_range(
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2021, 1, 1, 0, 0, 0, 1),
+        ...             "1d2h3m4s",
+        ...             eager=True,
+        ...             time_zone="UTC",
+        ...         ),
+        ...     }
+        ... )
         >>> df.with_columns(
         ...     pl.col("date (UTC)").dt.datetime().alias("date (no time zone)"),
         ... )
