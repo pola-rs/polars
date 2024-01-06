@@ -131,61 +131,61 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Cos,
     /// SQL 'cot' function
-    /// Compute the cotangent of the input column (in radians)
+    /// Compute the cotangent of the input column (in radians).
     /// ```sql
     /// SELECT COT(column_1) from df;
     /// ```
     Cot,
     /// SQL 'sin' function
-    /// Compute the sine of the input column (in radians)
+    /// Compute the sine of the input column (in radians).
     /// ```sql
     /// SELECT SIN(column_1) from df;
     /// ```
     Sin,
     /// SQL 'tan' function
-    /// Compute the tangent of the input column (in radians)
+    /// Compute the tangent of the input column (in radians).
     /// ```sql
     /// SELECT TAN(column_1) from df;
     /// ```
     Tan,
     /// SQL 'cosd' function
-    /// Compute the cosine sine of the input column (in degrees)
+    /// Compute the cosine sine of the input column (in degrees).
     /// ```sql
     /// SELECT COSD(column_1) from df;
     /// ```
     CosD,
     /// SQL 'cotd' function
-    /// Compute cotangent of the input column (in degrees)
+    /// Compute cotangent of the input column (in degrees).
     /// ```sql
     /// SELECT COTD(column_1) from df;
     /// ```
     CotD,
     /// SQL 'sind' function
-    /// Compute the sine of the input column (in degrees)
+    /// Compute the sine of the input column (in degrees).
     /// ```sql
     /// SELECT SIND(column_1) from df;
     /// ```
     SinD,
     /// SQL 'tand' function
-    /// Compute the tangent of the input column (in degrees)
+    /// Compute the tangent of the input column (in degrees).
     /// ```sql
     /// SELECT TAND(column_1) from df;
     /// ```
     TanD,
     /// SQL 'acos' function
-    /// Compute inverse cosinus of the input column (in radians)
+    /// Compute inverse cosinus of the input column (in radians).
     /// ```sql
     /// SELECT ACOS(column_1) from df;
     /// ```
     Acos,
     /// SQL 'asin' function
-    /// Compute inverse sine of the input column (in radians)
+    /// Compute inverse sine of the input column (in radians).
     /// ```sql
     /// SELECT ASIN(column_1) from df;
     /// ```
     Asin,
     /// SQL 'atan' function
-    /// Compute inverse tangent of the input column (in radians)
+    /// Compute inverse tangent of the input column (in radians).
     /// ```sql
     /// SELECT ATAN(column_1) from df;
     /// ```
@@ -197,19 +197,19 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Atan2,
     /// SQL 'acosd' function
-    /// Compute inverse cosinus of the input column (in degrees)
+    /// Compute inverse cosinus of the input column (in degrees).
     /// ```sql
     /// SELECT ACOSD(column_1) from df;
     /// ```
     AcosD,
     /// SQL 'asind' function
-    /// Compute inverse sine of the input column (in degrees)
+    /// Compute inverse sine of the input column (in degrees).
     /// ```sql
     /// SELECT ASIND(column_1) from df;
     /// ```
     AsinD,
     /// SQL 'atand' function
-    /// Compute inverse tangent of the input column (in degrees)
+    /// Compute inverse tangent of the input column (in degrees).
     /// ```sql
     /// SELECT ATAND(column_1) from df;
     /// ```
@@ -221,7 +221,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Atan2D,
     /// SQL 'degrees' function
-    /// Convert between radians and degrees
+    /// Convert between radians and degrees.
     /// ```sql
     /// SELECT DEGREES(column_1) from df;
     /// ```
@@ -229,7 +229,7 @@ pub(crate) enum PolarsSQLFunctions {
     ///
     Degrees,
     /// SQL 'RADIANS' function
-    /// Convert between degrees and radians
+    /// Convert between degrees and radians.
     /// ```sql
     /// SELECT radians(column_1) from df;
     /// ```
@@ -238,9 +238,12 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // Date Functions
     // ----
-    /// SQL 'date' function
+    /// SQL 'date' function.
+    /// Converts a formatted string date to an actual Date type; ISO-8601 format is assumed
+    /// unless a strftime-compatible formatting string is provided as the second parameter.
     /// ```sql
     /// SELECT DATE('2021-03-15') from df;
+    /// SELECT DATE('2021-15-03', '%Y-d%-%m') from df;
     /// SELECT DATE('2021-03', '%Y-%m') from df;
     /// ```
     Date,
@@ -248,7 +251,7 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // String functions
     // ----
-    /// SQL 'bit_length' function (bytes)
+    /// SQL 'bit_length' function (bytes).
     /// ```sql
     /// SELECT BIT_LENGTH(column_1) from df;
     /// ```
@@ -274,32 +277,32 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     EndsWith,
     /// SQL 'initcap' function
-    /// Returns the value with the first letter capitalized
+    /// Returns the value with the first letter capitalized.
     /// ```sql
     /// SELECT INITCAP(column_1) from df;
     /// ```
     #[cfg(feature = "nightly")]
     InitCap,
     /// SQL 'left' function
-    /// Returns the first (leftmost) `n` characters
+    /// Returns the first (leftmost) `n` characters.
     /// ```sql
     /// SELECT LEFT(column_1, 3) from df;
     /// ```
     Left,
     /// SQL 'length' function (characters)
-    /// Returns the character length of the string
+    /// Returns the character length of the string.
     /// ```sql
     /// SELECT LENGTH(column_1) from df;
     /// ```
     Length,
     /// SQL 'lower' function
-    /// Returns an lowercased column
+    /// Returns an lowercased column.
     /// ```sql
     /// SELECT LOWER(column_1) from df;
     /// ```
     Lower,
     /// SQL 'ltrim' function
-    /// Strip whitespaces from the left
+    /// Strip whitespaces from the left.
     /// ```sql
     /// SELECT LTRIM(column_1) from df;
     /// ```
@@ -329,13 +332,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Reverse,
     /// SQL 'right' function
-    /// Returns the last (rightmost) `n` characters
+    /// Returns the last (rightmost) `n` characters.
     /// ```sql
     /// SELECT RIGHT(column_1, 3) from df;
     /// ```
     Right,
     /// SQL 'rtrim' function
-    /// Strip whitespaces from the right
+    /// Strip whitespaces from the right.
     /// ```sql
     /// SELECT RTRIM(column_1) from df;
     /// ```
@@ -348,14 +351,14 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     StartsWith,
     /// SQL 'substr' function
-    /// Returns a portion of the data (first character = 0) in the range
+    /// Returns a portion of the data (first character = 0) in the range.
     ///   \[start, start + length]
     /// ```sql
     /// SELECT SUBSTR(column_1, 3, 5) from df;
     /// ```
     Substring,
     /// SQL 'upper' function
-    /// Returns an uppercased column
+    /// Returns an uppercased column.
     /// ```sql
     /// SELECT UPPER(column_1) from df;
     /// ```
@@ -365,11 +368,18 @@ pub(crate) enum PolarsSQLFunctions {
     // Conditional functions
     // ----
     /// SQL 'coalesce' function
-    /// Returns the first non-null value in the provided values/columns
+    /// Returns the first non-null value in the provided values/columns.
     /// ```sql
     /// SELECT COALESCE(column_1, ...) from df;
     /// ```
     Coalesce,
+    /// SQL 'if' function
+    /// Returns expr1 if the boolean condition provided as the first
+    /// parameter evaluates to true, and expr2 otherwise.
+    /// ```sql
+    /// SELECT IF(column < 0, expr1, expr2) from df;
+    /// ```
+    If,
     /// SQL 'ifnull' function
     /// If an expression value is NULL, return an alternative value.
     /// ```sql
@@ -377,7 +387,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     IfNull,
     /// SQL 'nullif' function
-    /// Returns NULL if two expressions are equal, otherwise returns the first
+    /// Returns NULL if two expressions are equal, otherwise returns the first.
     /// ```sql
     /// SELECT NULLIF(column_1, column_2) from df;
     /// ```
@@ -387,7 +397,7 @@ pub(crate) enum PolarsSQLFunctions {
     // Aggregate functions
     // ----
     /// SQL 'count' function
-    /// Returns the amount of elements in the grouping
+    /// Returns the amount of elements in the grouping.
     /// ```sql
     /// SELECT COUNT(column_1) from df;
     /// SELECT COUNT(*) from df;
@@ -396,49 +406,49 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Count,
     /// SQL 'sum' function
-    /// Returns the sum of all the elements in the grouping
+    /// Returns the sum of all the elements in the grouping.
     /// ```sql
     /// SELECT SUM(column_1) from df;
     /// ```
     Sum,
     /// SQL 'min' function
-    /// Returns the smallest (minimum) of all the elements in the grouping
+    /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
     /// SELECT MIN(column_1) from df;
     /// ```
     Min,
     /// SQL 'max' function
-    /// Returns the greatest (maximum) of all the elements in the grouping
+    /// Returns the greatest (maximum) of all the elements in the grouping.
     /// ```sql
     /// SELECT MAX(column_1) from df;
     /// ```
     Max,
     /// SQL 'avg' function
-    /// Returns the average (mean) of all the elements in the grouping
+    /// Returns the average (mean) of all the elements in the grouping.
     /// ```sql
     /// SELECT AVG(column_1) from df;
     /// ```
     Avg,
     /// SQL 'stddev' function
-    /// Returns the standard deviation of all the elements in the grouping
+    /// Returns the standard deviation of all the elements in the grouping.
     /// ```sql
     /// SELECT STDDEV(column_1) from df;
     /// ```
     StdDev,
     /// SQL 'variance' function
-    /// Returns the variance of all the elements in the grouping
+    /// Returns the variance of all the elements in the grouping.
     /// ```sql
     /// SELECT VARIANCE(column_1) from df;
     /// ```
     Variance,
     /// SQL 'first' function
-    /// Returns the first element of the grouping
+    /// Returns the first element of the grouping.
     /// ```sql
     /// SELECT FIRST(column_1) from df;
     /// ```
     First,
     /// SQL 'last' function
-    /// Returns the last element of the grouping
+    /// Returns the last element of the grouping.
     /// ```sql
     /// SELECT LAST(column_1) from df;
     /// ```
@@ -448,67 +458,67 @@ pub(crate) enum PolarsSQLFunctions {
     // Array functions
     // ----
     /// SQL 'array_length' function
-    /// Returns the length of the array
+    /// Returns the length of the array.
     /// ```sql
     /// SELECT ARRAY_LENGTH(column_1) from df;
     /// ```
     ArrayLength,
     /// SQL 'array_lower' function
-    /// Returns the minimum value in an array; equivalent to `array_min`
+    /// Returns the minimum value in an array; equivalent to `array_min`.
     /// ```sql
     /// SELECT ARRAY_LOWER(column_1) from df;
     /// ```
     ArrayMin,
     /// SQL 'array_upper' function
-    /// Returns the maximum value in an array; equivalent to `array_max`
+    /// Returns the maximum value in an array; equivalent to `array_max`.
     /// ```sql
     /// SELECT ARRAY_UPPER(column_1) from df;
     /// ```
     ArrayMax,
     /// SQL 'array_sum' function
-    /// Returns the sum of all values in an array
+    /// Returns the sum of all values in an array.
     /// ```sql
     /// SELECT ARRAY_SUM(column_1) from df;
     /// ```
     ArraySum,
     /// SQL 'array_mean' function
-    /// Returns the mean of all values in an array
+    /// Returns the mean of all values in an array.
     /// ```sql
     /// SELECT ARRAY_MEAN(column_1) from df;
     /// ```
     ArrayMean,
     /// SQL 'array_reverse' function
-    /// Returns the array with the elements in reverse order
+    /// Returns the array with the elements in reverse order.
     /// ```sql
     /// SELECT ARRAY_REVERSE(column_1) from df;
     /// ```
     ArrayReverse,
     /// SQL 'array_unique' function
-    /// Returns the array with the unique elements
+    /// Returns the array with the unique elements.
     /// ```sql
     /// SELECT ARRAY_UNIQUE(column_1) from df;
     /// ```
     ArrayUnique,
     /// SQL 'unnest' function
-    /// Unnest/explodes an array column into multiple rows
+    /// Unnest/explodes an array column into multiple rows.
     /// ```sql
     /// SELECT unnest(column_1) from df;
     /// ```
     Explode,
     /// SQL 'array_to_string' function
-    /// Takes all elements of the array and joins them into one string
+    /// Takes all elements of the array and joins them into one string.
     /// ```sql
     /// SELECT ARRAY_TO_STRING(column_1, ', ') from df;
     /// ```
     ArrayToString,
     /// SQL 'array_get' function
-    /// Returns the value at the given index in the array
+    /// Returns the value at the given index in the array.
     /// ```sql
     /// SELECT ARRAY_GET(column_1, 1) from df;
     /// ```
     ArrayGet,
     /// SQL 'array_contains' function
-    /// Returns true if the array contains the value
+    /// Returns true if the array contains the value.
     /// ```sql
     /// SELECT ARRAY_CONTAINS(column_1, 'foo') from df;
     /// ```
@@ -639,6 +649,7 @@ impl PolarsSQLFunctions {
             // ----
             // Conditional functions
             // ----
+            "if" => Self::If,
             "coalesce" => Self::Coalesce,
             "ifnull" => Self::IfNull,
             "nullif" => Self::NullIf,
@@ -722,37 +733,18 @@ impl SQLFunctionVisitor<'_> {
             // Math functions
             // ----
             Abs => self.visit_unary(Expr::abs),
-            Cos => self.visit_unary(Expr::cos),
-            Cot => self.visit_unary(Expr::cot),
-            Sin => self.visit_unary(Expr::sin),
-            Tan => self.visit_unary(Expr::tan),
-            CosD => self.visit_unary(|e| e.radians().cos()),
-            CotD => self.visit_unary(|e| e.radians().cot()),
-            SinD => self.visit_unary(|e| e.radians().sin()),
-            TanD => self.visit_unary(|e| e.radians().tan()),
-            Acos => self.visit_unary(Expr::arccos),
-            Asin => self.visit_unary(Expr::arcsin),
-            Atan => self.visit_unary(Expr::arctan),
-            Atan2 => self.visit_binary(Expr::arctan2),
-            AcosD => self.visit_unary(|e| e.arccos().degrees()),
-            AsinD => self.visit_unary(|e| e.arcsin().degrees()),
-            AtanD => self.visit_unary(|e| e.arctan().degrees()),
-            Atan2D => self.visit_binary(|e, s| e.arctan2(s).degrees()),
-            Degrees => self.visit_unary(Expr::degrees),
-            Radians => self.visit_unary(Expr::radians),
+            Cbrt => self.visit_unary(Expr::cbrt),
             Ceil => self.visit_unary(Expr::ceil),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
-            Pi => self.visit_nullary(Expr::pi),
             Ln => self.visit_unary(|e| e.log(std::f64::consts::E)),
             Log => self.visit_binary(Expr::log),
             Log10 => self.visit_unary(|e| e.log(10.0)),
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| e.log(2.0)),
+            Pi => self.visit_nullary(Expr::pi),
             Mod => self.visit_binary(|e1, e2| e1 % e2),
             Pow => self.visit_binary::<Expr>(Expr::pow),
-            Sqrt => self.visit_unary(Expr::sqrt),
-            Cbrt => self.visit_unary(Expr::cbrt),
             Round => match function.args.len() {
                 1 => self.visit_unary(|e| e.round(0)),
                 2 => self.try_visit_binary(|e, decimals| {
@@ -768,16 +760,46 @@ impl SQLFunctionVisitor<'_> {
                 },
             },
             Sign => self.visit_unary(Expr::sign),
+            Sqrt => self.visit_unary(Expr::sqrt),
+
+            // ----
+            // Trig functions
+            // ----
+            Acos => self.visit_unary(Expr::arccos),
+            AcosD => self.visit_unary(|e| e.arccos().degrees()),
+            Asin => self.visit_unary(Expr::arcsin),
+            AsinD => self.visit_unary(|e| e.arcsin().degrees()),
+            Atan => self.visit_unary(Expr::arctan),
+            Atan2 => self.visit_binary(Expr::arctan2),
+            Atan2D => self.visit_binary(|e, s| e.arctan2(s).degrees()),
+            AtanD => self.visit_unary(|e| e.arctan().degrees()),
+            Cos => self.visit_unary(Expr::cos),
+            CosD => self.visit_unary(|e| e.radians().cos()),
+            Cot => self.visit_unary(Expr::cot),
+            CotD => self.visit_unary(|e| e.radians().cot()),
+            Degrees => self.visit_unary(Expr::degrees),
+            Radians => self.visit_unary(Expr::radians),
+            Sin => self.visit_unary(Expr::sin),
+            SinD => self.visit_unary(|e| e.radians().sin()),
+            Tan => self.visit_unary(Expr::tan),
+            TanD => self.visit_unary(|e| e.radians().tan()),
 
             // ----
             // Conditional functions
             // ----
             Coalesce => self.visit_variadic(coalesce),
+            If => match function.args.len() {
+                3 => self.try_visit_ternary(|cond: Expr, expr1: Expr, expr2: Expr| {
+                    Ok(when(cond).then(expr1).otherwise(expr2))
+                }),
+                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for If: {}", function.args.len()
+                ),
+            },
             IfNull => match function.args.len() {
                 2 => self.visit_variadic(coalesce),
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for IfNull: {}", function.args.len())
             },
-            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
+            NullIf => self.visit_binary(|l: Expr, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
 
             // ----
             // String functions
