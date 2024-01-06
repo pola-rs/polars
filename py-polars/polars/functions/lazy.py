@@ -135,9 +135,9 @@ def count(column: str | None = None) -> Expr:
 
 def cum_count(*names: str, reverse: bool = False) -> Expr:
     """
-    Return the row numbers of a context, or return the cumulative count of values in the column.
+    Return the cumulative count of the values in the column or of the context.
 
-    If no arguments are passed, returns the row numbers of a context.
+    If no arguments are passed, returns the cumulative count of a context.
     Rows containing null values count towards the result.
 
     Otherwise, this function is syntactic sugar for `col(names).cum_count()`.
@@ -162,9 +162,9 @@ def cum_count(*names: str, reverse: bool = False) -> Expr:
     │ ---       │
     │ u32       │
     ╞═══════════╡
-    │ 0         │
     │ 1         │
     │ 2         │
+    │ 3         │
     └───────────┘
 
     Return the cumulative count of values in a column.
@@ -180,7 +180,7 @@ def cum_count(*names: str, reverse: bool = False) -> Expr:
     │ 1   │
     │ 2   │
     └─────┘
-    """  # noqa: W505
+    """
     if not names:
         return wrap_expr(plr.cum_count(reverse=reverse))
     return F.col(*names).cum_count(reverse=reverse)
