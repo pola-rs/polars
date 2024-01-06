@@ -237,7 +237,7 @@ def test_column_to_series_use_sentinel_i64_min() -> None:
     col.describe_null = (ColumnNullType.USE_SENTINEL, I64_MIN)
     col.null_count = 1
 
-    result = _column_to_series(col, dtype)
+    result = _column_to_series(col, dtype, allow_copy=True)
     expected = pl.Series([datetime(1970, 1, 1), None])
     assert_series_equal(result, expected)
 
@@ -245,14 +245,14 @@ def test_column_to_series_use_sentinel_i64_min() -> None:
 def test_column_to_series_duration() -> None:
     s = pl.Series([timedelta(seconds=10), timedelta(days=5), None])
     col = PolarsColumn(s)
-    result = _column_to_series(col, s.dtype)
+    result = _column_to_series(col, s.dtype, allow_copy=True)
     assert_series_equal(result, s)
 
 
 def test_column_to_series_time() -> None:
     s = pl.Series([time(10, 0), time(23, 59, 59), None])
     col = PolarsColumn(s)
-    result = _column_to_series(col, s.dtype)
+    result = _column_to_series(col, s.dtype, allow_copy=True)
     assert_series_equal(result, s)
 
 
@@ -265,7 +265,7 @@ def test_column_to_series_use_sentinel_date() -> None:
     col.describe_null = (ColumnNullType.USE_SENTINEL, mask_value)
     col.null_count = 1
 
-    result = _column_to_series(col, pl.Date)
+    result = _column_to_series(col, pl.Date, allow_copy=True)
     expected = pl.Series([date(1970, 1, 1), None, date(2000, 1, 1)])
     assert_series_equal(result, expected)
 
@@ -280,7 +280,7 @@ def test_column_to_series_use_sentinel_datetime() -> None:
     col.describe_null = (ColumnNullType.USE_SENTINEL, mask_value)
     col.null_count = 1
 
-    result = _column_to_series(col, dtype)
+    result = _column_to_series(col, dtype, allow_copy=True)
     expected = pl.Series(
         [datetime(1970, 1, 1), None, datetime(2000, 1, 1)], dtype=dtype
     )
@@ -301,7 +301,7 @@ def test_column_to_series_use_sentinel_invalid_value() -> None:
         TypeError,
         match="invalid sentinel value for column of type Datetime\\(time_unit='ns', time_zone=None\\): 'invalid'",
     ):
-        _column_to_series(col, dtype)
+        _column_to_series(col, dtype, allow_copy=True)
 
 
 def test_string_column_to_series_no_offsets() -> None:
@@ -311,7 +311,7 @@ def test_string_column_to_series_no_offsets() -> None:
         RuntimeError,
         match="cannot create String column without an offsets buffer",
     ):
-        _string_column_to_series(col)
+        _string_column_to_series(col, allow_copy=True)
 
 
 def test_categorical_column_to_series_non_dictionary() -> None:
@@ -323,7 +323,7 @@ def test_categorical_column_to_series_non_dictionary() -> None:
     with pytest.raises(
         NotImplementedError, match="non-dictionary categoricals are not yet supported"
     ):
-        _categorical_column_to_series(col)
+        _categorical_column_to_series(col, allow_copy=True)
 
 
 def test_construct_data_buffer() -> None:
@@ -331,7 +331,7 @@ def test_construct_data_buffer() -> None:
     buffer = PolarsBuffer(data)
     dtype = (DtypeKind.INT, 64, "l", NE)
 
-    result = _construct_data_buffer(buffer, dtype, length=5)
+    result = _construct_data_buffer(buffer, dtype, length=5, allow_copy=True)
     assert_series_equal(result, data)
 
 
@@ -341,7 +341,7 @@ def test_construct_data_buffer_boolean_sliced() -> None:
     buffer = PolarsBuffer(data_sliced)
     dtype = (DtypeKind.BOOL, 1, "b", NE)
 
-    result = _construct_data_buffer(buffer, dtype, length=2, offset=2)
+    result = _construct_data_buffer(buffer, dtype, length=2, offset=2, allow_copy=True)
     assert_series_equal(result, data_sliced)
 
 
@@ -350,7 +350,7 @@ def test_construct_data_buffer_logical_dtype() -> None:
     buffer = PolarsBuffer(data)
     dtype = (DtypeKind.DATETIME, 32, "tdD", NE)
 
-    result = _construct_data_buffer(buffer, dtype, length=3)
+    result = _construct_data_buffer(buffer, dtype, length=3, allow_copy=True)
     assert_series_equal(result, data)
 
 
@@ -359,7 +359,7 @@ def test_construct_offsets_buffer() -> None:
     buffer = PolarsBuffer(data)
     dtype = (DtypeKind.INT, 64, "l", NE)
 
-    result = _construct_offsets_buffer(buffer, dtype)
+    result = _construct_offsets_buffer(buffer, dtype, allow_copy=True)
     assert_series_equal(result, data)
 
 
@@ -371,7 +371,7 @@ def test_construct_offsets_buffer_copy() -> None:
     with pytest.raises(CopyNotAllowedError):
         _construct_offsets_buffer(buffer, dtype, allow_copy=False)
 
-    result = _construct_offsets_buffer(buffer, dtype)
+    result = _construct_offsets_buffer(buffer, dtype, allow_copy=True)
     expected = pl.Series([0, 1, 3, 3, 9], dtype=pl.Int64)
     assert_series_equal(result, expected)
 
@@ -395,7 +395,7 @@ def test_construct_validity_buffer_non_nullable() -> None:
     col.describe_null = (ColumnNullType.NON_NULLABLE, None)
     col.null_count = 1
 
-    result = _construct_validity_buffer(None, col, s.dtype, s)
+    result = _construct_validity_buffer(None, col, s.dtype, s, allow_copy=True)
     assert result is None
 
 
@@ -406,7 +406,7 @@ def test_construct_validity_buffer_null_count() -> None:
     col.describe_null = (ColumnNullType.USE_SENTINEL, -1)
     col.null_count = 0
 
-    result = _construct_validity_buffer(None, col, s.dtype, s)
+    result = _construct_validity_buffer(None, col, s.dtype, s, allow_copy=True)
     assert result is None
 
 
@@ -420,11 +420,13 @@ def test_construct_validity_buffer_use_bitmask(bitmask: PolarsBuffer) -> None:
     dtype = (DtypeKind.BOOL, 1, "b", NE)
     validity_buffer_info = (bitmask, dtype)
 
-    result = _construct_validity_buffer(validity_buffer_info, col, s.dtype, s)
+    result = _construct_validity_buffer(
+        validity_buffer_info, col, s.dtype, s, allow_copy=True
+    )
     expected = pl.Series([False, True, True, False])
     assert_series_equal(result, expected)  # type: ignore[arg-type]
 
-    result = _construct_validity_buffer(None, col, s.dtype, s)
+    result = _construct_validity_buffer(None, col, s.dtype, s, allow_copy=True)
     assert result is None
 
 
@@ -438,11 +440,13 @@ def test_construct_validity_buffer_use_bytemask(bytemask: PolarsBuffer) -> None:
     dtype = (DtypeKind.UINT, 8, "C", NE)
     validity_buffer_info = (bytemask, dtype)
 
-    result = _construct_validity_buffer(validity_buffer_info, col, s.dtype, s)
+    result = _construct_validity_buffer(
+        validity_buffer_info, col, s.dtype, s, allow_copy=True
+    )
     expected = pl.Series([False, True, True, False])
     assert_series_equal(result, expected)  # type: ignore[arg-type]
 
-    result = _construct_validity_buffer(None, col, s.dtype, s)
+    result = _construct_validity_buffer(None, col, s.dtype, s, allow_copy=True)
     assert result is None
 
 
@@ -453,7 +457,7 @@ def test_construct_validity_buffer_use_nan() -> None:
     col.describe_null = (ColumnNullType.USE_NAN, None)
     col.null_count = 1
 
-    result = _construct_validity_buffer(None, col, s.dtype, s)
+    result = _construct_validity_buffer(None, col, s.dtype, s, allow_copy=True)
     expected = pl.Series([True, True, False])
     assert_series_equal(result, expected)  # type: ignore[arg-type]
 
@@ -468,7 +472,7 @@ def test_construct_validity_buffer_use_sentinel() -> None:
     col.describe_null = (ColumnNullType.USE_SENTINEL, "NULL")
     col.null_count = 1
 
-    result = _construct_validity_buffer(None, col, s.dtype, s)
+    result = _construct_validity_buffer(None, col, s.dtype, s, allow_copy=True)
     expected = pl.Series([True, True, False])
     assert_series_equal(result, expected)  # type: ignore[arg-type]
 
@@ -484,7 +488,7 @@ def test_construct_validity_buffer_unsupported() -> None:
     col.null_count = 1
 
     with pytest.raises(NotImplementedError, match="unsupported null type: 100"):
-        _construct_validity_buffer(None, col, s.dtype, s)
+        _construct_validity_buffer(None, col, s.dtype, s, allow_copy=True)
 
 
 @pytest.mark.parametrize("allow_copy", [True, False])
@@ -500,7 +504,7 @@ def test_construct_validity_buffer_from_bitmask(
 
 def test_construct_validity_buffer_from_bitmask_inverted(bitmask: PolarsBuffer) -> None:
     result = _construct_validity_buffer_from_bitmask(
-        bitmask, null_value=1, offset=0, length=4
+        bitmask, null_value=1, offset=0, length=4, allow_copy=True
     )
     expected = pl.Series([True, False, False, True])
     assert_series_equal(result, expected)
@@ -521,13 +525,15 @@ def test_construct_validity_buffer_from_bitmask_sliced() -> None:
     bitmask = PolarsBuffer(data_sliced)
 
     result = _construct_validity_buffer_from_bitmask(
-        bitmask, null_value=0, offset=2, length=2
+        bitmask, null_value=0, offset=2, length=2, allow_copy=True
     )
     assert_series_equal(result, data_sliced)
 
 
 def test_construct_validity_buffer_from_bytemask(bytemask: PolarsBuffer) -> None:
-    result = _construct_validity_buffer_from_bytemask(bytemask, null_value=0)
+    result = _construct_validity_buffer_from_bytemask(
+        bytemask, null_value=0, allow_copy=True
+    )
     expected = pl.Series([False, True, True, False])
     assert_series_equal(result, expected)
 
@@ -535,7 +541,9 @@ def test_construct_validity_buffer_from_bytemask(bytemask: PolarsBuffer) -> None
 def test_construct_validity_buffer_from_bytemask_inverted(
     bytemask: PolarsBuffer,
 ) -> None:
-    result = _construct_validity_buffer_from_bytemask(bytemask, null_value=1)
+    result = _construct_validity_buffer_from_bytemask(
+        bytemask, null_value=1, allow_copy=True
+    )
     expected = pl.Series([True, False, False, True])
     assert_series_equal(result, expected)
 

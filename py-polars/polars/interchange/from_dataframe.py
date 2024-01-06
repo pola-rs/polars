@@ -50,7 +50,7 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     )
 
 
-def _from_dataframe(df: InterchangeDataFrame, *, allow_copy: bool = True) -> DataFrame:
+def _from_dataframe(df: InterchangeDataFrame, *, allow_copy: bool) -> DataFrame:
     chunks = []
     for chunk in df.get_chunks():
         polars_chunk = _protocol_df_chunk_to_polars(chunk, allow_copy=allow_copy)
@@ -65,7 +65,7 @@ def _from_dataframe(df: InterchangeDataFrame, *, allow_copy: bool = True) -> Dat
 
 
 def _protocol_df_chunk_to_polars(
-    df: InterchangeDataFrame, *, allow_copy: bool = True
+    df: InterchangeDataFrame, *, allow_copy: bool
 ) -> DataFrame:
     columns = []
     for column, name in zip(df.get_columns(), df.column_names()):
@@ -82,7 +82,7 @@ def _protocol_df_chunk_to_polars(
 
 
 def _column_to_series(
-    column: Column, dtype: PolarsDataType, *, allow_copy: bool = True
+    column: Column, dtype: PolarsDataType, *, allow_copy: bool
 ) -> Series:
     buffers = column.get_buffers()
     offset = column.offset
@@ -96,7 +96,7 @@ def _column_to_series(
     return pl.Series._from_buffers(dtype, data=data_buffer, validity=validity_buffer)
 
 
-def _string_column_to_series(column: Column, *, allow_copy: bool = True) -> Series:
+def _string_column_to_series(column: Column, *, allow_copy: bool) -> Series:
     buffers = column.get_buffers()
     offset = column.offset
 
@@ -131,7 +131,7 @@ def _string_column_to_series(column: Column, *, allow_copy: bool = True) -> Seri
     return data
 
 
-def _categorical_column_to_series(column: Column, *, allow_copy: bool = True) -> Series:
+def _categorical_column_to_series(column: Column, *, allow_copy: bool) -> Series:
     categorical = column.describe_categorical
     if not categorical["is_dictionary"]:
         msg = "non-dictionary categoricals are not yet supported"
@@ -183,7 +183,7 @@ def _construct_data_buffer(
     length: int,
     offset: int = 0,
     *,
-    allow_copy: bool = True,
+    allow_copy: bool,
 ) -> Series:
     polars_dtype = dtype_to_polars_dtype(dtype)
 
@@ -210,7 +210,7 @@ def _construct_offsets_buffer(
     buffer: Buffer,
     dtype: Dtype,
     *,
-    allow_copy: bool = True,
+    allow_copy: bool,
 ) -> Series:
     polars_dtype = dtype_to_polars_dtype(dtype)
     length = get_buffer_length_in_elements(buffer.bufsize, dtype)
@@ -235,7 +235,7 @@ def _construct_validity_buffer(
     data: Series,
     offset: int = 0,
     *,
-    allow_copy: bool = True,
+    allow_copy: bool,
 ) -> Series | None:
     null_type, null_value = column.describe_null
     if null_type == ColumnNullType.NON_NULLABLE or column.null_count == 0:
@@ -288,7 +288,7 @@ def _construct_validity_buffer_from_bitmask(
     length: int,
     offset: int = 0,
     *,
-    allow_copy: bool = True,
+    allow_copy: bool,
 ) -> Series:
     buffer_info = (buffer.ptr, offset, length)
     s = pl.Series._from_buffer(Boolean, buffer_info, buffer)
@@ -305,7 +305,7 @@ def _construct_validity_buffer_from_bytemask(
     buffer: Buffer,
     null_value: int,
     *,
-    allow_copy: bool = True,
+    allow_copy: bool,
 ) -> Series:
     if not allow_copy:
         raise CopyNotAllowedError("bytemask must be converted into a bitmask")
