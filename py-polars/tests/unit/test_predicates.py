@@ -233,7 +233,7 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
 )
 def test_invalid_filter_predicates(predicate: Any) -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
-    with pytest.raises(ValueError, match="invalid predicate"):
+    with pytest.raises(TypeError, match="invalid predicate"):
         df.filter(predicate)
 
 

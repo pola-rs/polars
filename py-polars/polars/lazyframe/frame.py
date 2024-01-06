@@ -2669,9 +2669,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 err = (
                     f"Series(…, dtype={p.dtype})"
                     if isinstance(p, pl.Series)
-                    else f"{p!r}"
+                    else repr(p)
                 )
-                raise ValueError(f"invalid predicate for `filter`: {err}")
+                raise TypeError(f"invalid predicate for `filter`: {err}")
             else:
                 all_predicates.extend(
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
@@ -2700,7 +2700,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             F.col(name).eq_missing(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
-            raise ValueError("No predicates or constraints provided to `filter`.")
+            raise TypeError("at least one predicate or constraint must be provided")
 
         # if multiple predicates, combine as 'horizontal' expression
         combined_predicate = (
