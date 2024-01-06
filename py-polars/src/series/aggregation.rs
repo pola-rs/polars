@@ -43,23 +43,49 @@ impl PySeries {
         .into_py(py))
     }
 
-    fn mean(&self) -> Option<f64> {
+    fn mean(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
-            DataType::Boolean => {
-                let s = self.series.cast(&DataType::UInt8).unwrap();
-                s.mean()
-            },
-            _ => self.series.mean(),
+            DataType::Boolean => Ok(Wrap(
+                self.series
+                    .cast(&DataType::UInt8)
+                    .unwrap()
+                    .mean_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            DataType::Datetime(_, _) => Ok(Wrap(
+                self.series
+                    .mean_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            _ => Ok(self.series.mean().into_py(py)),
         }
     }
 
-    fn median(&self) -> Option<f64> {
+    fn median(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
-            DataType::Boolean => {
-                let s = self.series.cast(&DataType::UInt8).unwrap();
-                s.median()
-            },
-            _ => self.series.median(),
+            DataType::Boolean => Ok(Wrap(
+                self.series
+                    .cast(&DataType::UInt8)
+                    .unwrap()
+                    .median_as_series()
+                    .map_err(PyPolarsErr::from)?
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            DataType::Datetime(_, _) => Ok(Wrap(
+                self.series
+                    .median_as_series()
+                    .map_err(PyPolarsErr::from)?
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            _ => Ok(self.series.median().into_py(py)),
         }
     }
 

@@ -356,12 +356,18 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .max_as_series()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
     }
+
     fn min_as_series(&self) -> PolarsResult<Series> {
         Ok(self
             .0
             .min_as_series()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
     }
+
+    fn median_as_series(&self) -> PolarsResult<Series> {
+        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+    }
+
     fn quantile_as_series(
         &self,
         _quantile: f64,

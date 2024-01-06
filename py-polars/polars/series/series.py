@@ -1864,7 +1864,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> int | float | None:
+    def mean(self) -> PythonLiteral | None:
         """
         Reduce this Series to the mean value.
 
@@ -1994,7 +1994,7 @@ class Series:
             return None
         return self._s.var(ddof)
 
-    def median(self) -> float | None:
+    def median(self) -> PythonLiteral | None:
         """
         Get the median of this Series.
 
