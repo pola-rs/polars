@@ -250,9 +250,16 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'concat' function
     /// Returns all input expressions concatenated together as a string.
     /// ```sql
-    /// SELECT CONCAT(column_1, ':', column_2) from df;
+    /// SELECT CONCAT(column_1, column_2) from df;
     /// ```
     Concat,
+    /// SQL 'concat_ws' function
+    /// Returns all input expressions concatenated together
+    /// (and interleaved with a separator) as a string.
+    /// ```sql
+    /// SELECT CONCAT_WS(':', column_1, column_2, column_3) from df;
+    /// ```
+    ConcatWS,
     /// SQL 'ends_with' function
     /// Returns True if the value ends with the second argument.
     /// ```sql
@@ -639,6 +646,7 @@ impl PolarsSQLFunctions {
             // ----
             "bit_length" => Self::BitLength,
             "concat" => Self::Concat,
+            "concat_ws" => Self::ConcatWS,
             "ends_with" => Self::EndsWith,
             #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
@@ -767,14 +775,23 @@ impl SQLFunctionVisitor<'_> {
             // String functions
             // ----
             BitLength => self.visit_unary(|e| e.str().len_bytes() * lit(8)),
-            Concat => self.visit_variadic(|exprs: &[Expr]| exprs.iter().fold(lit(""), |acc, expr| acc + expr.clone().cast(DataType::String))),
+            Concat => if function.args.is_empty() {
+                polars_bail!(InvalidOperation: "Invalid number of arguments for Concat: 0");
+            } else {
+                self.visit_variadic(|exprs: &[Expr]| exprs.iter().fold(lit(""), |acc, expr| acc + expr.clone().cast(DataType::String)))
+            },
+            ConcatWS => if function.args.len() < 2 {
+                polars_bail!(InvalidOperation: "Invalid number of arguments for ConcatWS: {}", function.args.len());
+            } else {
+                self.visit_variadic(|exprs: &[Expr]| {
+                    let (sep, fields) = exprs.split_at(1);
+                    let (first, sep) = (&fields[0], &sep[0]);
+                    fields[1..].iter().fold(first.clone(), |acc, expr| acc + sep.clone() + expr.clone().cast(DataType::String))
+                })},
             Date => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
                 2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
-                _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for Date: {}",
-                    function.args.len()
-                ),
+                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for Date: {}", function.args.len()),
             },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             #[cfg(feature = "nightly")]
