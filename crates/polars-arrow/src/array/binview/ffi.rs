@@ -67,6 +67,11 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             buffers.push(values);
         }
 
-        Self::try_new(data_type, views, Arc::from(buffers), validity)
+        Ok(Self::new_unchecked(
+            data_type,
+            views,
+            Arc::from(buffers),
+            validity,
+        ))
     }
 }

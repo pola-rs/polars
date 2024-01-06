@@ -64,6 +64,6 @@ impl<O: Offset, A: ffi::ArrowArrayRef> FromFfi<A> for ListArray<O> {
         // assumption that data from FFI is well constructed
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets) };
 
-        Ok(Self::new(data_type, offsets, values, validity))
+        Self::try_new(data_type, offsets, values, validity)
     }
 }
