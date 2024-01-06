@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -66,13 +66,19 @@ def test_group_by() -> None:
         ([1, 2, 3, 4], [2, 4], pl.Float64, pl.Float64),
         ([False, True, True, True], [2 / 3, 1], pl.Boolean, pl.Float64),
         (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
+            [datetime(2023, 1, 2, 8, 0, 0), datetime(2023, 1, 5)],
+            pl.Date,
+            pl.Datetime("ms"),
+        ),
+        (
             [
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 2),
-                datetime(2023, 1, 3),
                 datetime(2023, 1, 4),
+                datetime(2023, 1, 5),
             ],
-            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            [datetime(2023, 1, 2, 8, 0, 0), datetime(2023, 1, 5)],
             pl.Datetime("ms"),
             pl.Datetime("ms"),
         ),
@@ -156,6 +162,12 @@ def test_group_by_mean_by_dtype(
         ([1, 2, 4, 5], [2, 5], pl.Float32, pl.Float32),
         ([1, 2, 4, 5], [2, 5], pl.Float64, pl.Float64),
         ([False, True, True, True], [1, 1], pl.Boolean, pl.Float64),
+        (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Date,
+            pl.Datetime("ms"),
+        ),
         (
             [
                 datetime(2023, 1, 1),

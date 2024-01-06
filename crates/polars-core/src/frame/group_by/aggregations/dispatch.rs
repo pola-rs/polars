@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "dtype-date")]
+use crate::chunked_array::temporal::conversion::MS_IN_DAY;
 
 // implemented on the series because we don't need types
 impl Series {
@@ -113,6 +115,17 @@ impl Series {
             Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_median(groups),
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
             dt if dt.is_numeric() => apply_method_physical_integer!(self, agg_median, groups),
+            #[cfg(feature = "dtype-date")]
+            Date => {
+                let s = self.cast(&Int64).unwrap() * (MS_IN_DAY as f64);
+                // agg_median returns Float64
+                let out = s.agg_median(groups);
+                // cast back to Int64 and then to logical temporal type
+                out.cast(&Int64)
+                    .unwrap()
+                    .cast(&Datetime(TimeUnit::Milliseconds, None))
+                    .unwrap()
+            },
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -121,7 +134,17 @@ impl Series {
                 .unwrap()
                 .cast(dt)
                 .unwrap(),
-            dt @ (Date | Duration(_) | Time) => {
+            #[cfg(feature = "dtype-duration")]
+            dt @ Duration(_) => {
+                let ca = self.to_physical_repr();
+                let physical_type = ca.dtype();
+                let s = apply_method_physical_integer!(ca, agg_median, groups);
+                // back to physical and then
+                // back to logical type
+                s.cast(physical_type).unwrap().cast(dt).unwrap()
+            },
+            #[cfg(feature = "dtype-time")]
+            dt @ Time => {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_median, groups);
@@ -171,6 +194,17 @@ impl Series {
             Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_numeric() => apply_method_physical_integer!(self, agg_mean, groups),
+            #[cfg(feature = "dtype-date")]
+            Date => {
+                let s = self.cast(&Int64).unwrap() * (MS_IN_DAY as f64);
+                // agg_median returns Float64
+                let out = s.agg_mean(groups);
+                // cast back to Int64 and then to logical temporal type
+                out.cast(&Int64)
+                    .unwrap()
+                    .cast(&Datetime(TimeUnit::Milliseconds, None))
+                    .unwrap()
+            },
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -179,7 +213,17 @@ impl Series {
                 .unwrap()
                 .cast(dt)
                 .unwrap(),
-            dt @ (Date | Duration(_) | Time) => {
+            #[cfg(feature = "dtype-duration")]
+            dt @ Duration(_) => {
+                let ca = self.to_physical_repr();
+                let physical_type = ca.dtype();
+                let s = apply_method_physical_integer!(ca, agg_mean, groups);
+                // back to physical and then
+                // back to logical type
+                s.cast(physical_type).unwrap().cast(dt).unwrap()
+            },
+            #[cfg(feature = "dtype-time")]
+            dt @ Time => {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_mean, groups);

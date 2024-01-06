@@ -900,9 +900,9 @@ def test_weekday(time_unit: TimeUnit) -> None:
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 1, 2)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], datetime(2022, 1, 2)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], datetime(2022, 1, 2)),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
             datetime(2022, 1, 2),
@@ -930,9 +930,12 @@ def test_median(values: list[date | None], expected_median: date | None) -> None
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 10, 16)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], datetime(2022, 1, 2)),
+        (
+            [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)],
+            datetime(2022, 10, 16, 16, 0, 0),
+        ),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
             datetime(2022, 10, 16, 16, 0, 0),
@@ -976,9 +979,12 @@ def test_datetime_mean_with_tu(values: list[datetime], expected_mean: datetime) 
     assert pl.Series(values, dtype=pl.Datetime("ns")).dt.mean() == expected_mean
 
 
-def test_agg_expr() -> None:
+def test_agg_expr_mean() -> None:
     df = pl.DataFrame(
         {
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)], dtype=pl.Date
+            ),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
                 dtype=pl.Datetime("ms"),
@@ -1008,6 +1014,10 @@ def test_agg_expr() -> None:
 
     expected = pl.DataFrame(
         {
+            "date": pl.Series(
+                [datetime(2023, 1, 2, 8, 0, 0)],
+                dtype=pl.Datetime("ms"),
+            ),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("ms")
             ),
@@ -1030,3 +1040,60 @@ def test_agg_expr() -> None:
     )
 
     assert_frame_equal(df.select(pl.all().mean()), expected)
+
+
+def test_agg_expr_median() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)], dtype=pl.Date
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_us": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("us"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ns"),
+            ),
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [datetime(2023, 1, 2, 0, 0, 0)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 2, 0, 0, 0)], dtype=pl.Datetime("ms")
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 2, 0, 0, 0)], dtype=pl.Datetime("us")
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 2, 0, 0, 0)], dtype=pl.Datetime("ns")
+            ),
+            "duration_ms": pl.Series([timedelta(days=2)], dtype=pl.Duration("ms")),
+            "duration_us": pl.Series([timedelta(days=2)], dtype=pl.Duration("us")),
+            "duration_ns": pl.Series([timedelta(days=2)], dtype=pl.Duration("ns")),
+        }
+    )
+
+    assert_frame_equal(df.select(pl.all().median()), expected)

@@ -787,6 +787,13 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let ms = MS_IN_DAY as f64;
+                Series::new(self.name(), &[self.mean().map(|v| (v * ms) as i64)])
+                    .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                    .unwrap()
+            },
             #[cfg(feature = "dtype-datetime")]
             dt @ DataType::Datetime(_, _) => {
                 Series::new(self.name(), &[self.mean().map(|v| v as i64)])

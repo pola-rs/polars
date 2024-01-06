@@ -40,6 +40,7 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
+    Date,
     Enum,
     Float64,
     Null,
@@ -4375,27 +4376,30 @@ class DataFrame:
         ... )
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬───────┬──────┬──────┬────────────┐
-        │ describe   ┆ float    ┆ int      ┆ bool  ┆ str  ┆ str2 ┆ date       │
-        │ ---        ┆ ---      ┆ ---      ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
-        │ str        ┆ f64      ┆ f64      ┆ str   ┆ str  ┆ str  ┆ str        │
-        ╞════════════╪══════════╪══════════╪═══════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3     ┆ 2    ┆ 2    ┆ 3          │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0     ┆ 1    ┆ 1    ┆ 0          │
-        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ null       │
-        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null       │
-        │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01 │
-        └────────────┴──────────┴──────────┴───────┴──────┴──────┴────────────┘
+        ┌────────────┬──────────┬──────────┬───────┬──────┬──────┬─────────────────────┐
+        │ describe   ┆ float    ┆ int      ┆ bool  ┆ str  ┆ str2 ┆ date                │
+        │ ---        ┆ ---      ┆ ---      ┆ ---   ┆ ---  ┆ ---  ┆ ---                 │
+        │ str        ┆ f64      ┆ f64      ┆ str   ┆ str  ┆ str  ┆ str                 │
+        ╞════════════╪══════════╪══════════╪═══════╪══════╪══════╪═════════════════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3     ┆ 2    ┆ 2    ┆ 3                   │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0     ┆ 1    ┆ 1    ┆ 0                   │
+        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ null                │
+        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null                │
+        │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-12-31 16:00:00 │
+        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null                │
+        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null                │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null                │
+        │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01          │
+        └────────────┴──────────┴──────────┴───────┴──────┴──────┴─────────────────────┘
         """
         if not self.columns:
             raise TypeError("cannot describe a DataFrame without any columns")
 
         # Determine which columns should get std/mean/percentile statistics
         stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
+        mean_cols = {
+            c for c, dt in self.schema.items() if dt.is_numeric() or dt == Date
+        }
 
         # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
@@ -4409,7 +4413,7 @@ class DataFrame:
         metrics.append("max")
 
         mean_exprs = [
-            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
+            (F.col(c).mean() if c in mean_cols else F.lit(None)).alias(f"mean:{c}")
             for c in self.columns
         ]
         std_exprs = [

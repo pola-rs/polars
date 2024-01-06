@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import numpy as np
@@ -83,7 +83,7 @@ def test_streaming_group_by_types() -> None:
             "bool_mean": pl.Boolean,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
-            "date_mean": pl.Date,
+            "date_mean": pl.Datetime,
             "date_first": pl.Date,
             "date_last": pl.Date,
             "date_min": pl.Date,
@@ -100,7 +100,7 @@ def test_streaming_group_by_types() -> None:
             "bool_mean": [None],
             "bool_sum": [1],
             "date_sum": [date(2074, 1, 1)],
-            "date_mean": [date(2022, 1, 1)],
+            "date_mean": [datetime(2022, 1, 1)],
             "date_first": [date(2022, 1, 1)],
             "date_last": [date(2022, 1, 1)],
             "date_min": [date(2022, 1, 1)],

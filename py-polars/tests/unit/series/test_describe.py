@@ -78,7 +78,7 @@ def test_series_describe_date() -> None:
         "count": "3",
         "null_count": "0",
         "min": "2021-01-01",
-        "50%": "2021-01-02",
+        "50%": "2021-01-02 00:00:00",
         "max": "2021-01-03",
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
