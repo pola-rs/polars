@@ -667,7 +667,10 @@ class Series:
             return self._from_pyseries(f(d))
 
         if isinstance(other, Sequence) and not isinstance(other, str):
+            if self.dtype in (List, Array):
+                other = [other]
             other = Series("", other, dtype_if_empty=self.dtype)
+
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
 
