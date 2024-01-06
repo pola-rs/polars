@@ -1642,7 +1642,7 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
-    pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
+    pub fn with_row_number(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
             LogicalPlan::Scan {
                 file_options: options,

@@ -142,13 +142,13 @@ fn test_sorted_path() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_number("row_number", None)
         .explode(["a"])
-        .group_by(["row_nr"])
+        .group_by(["row_number"])
         .agg([col("a").count().alias("count")])
         .collect()?;
 
-    let s = out.column("row_nr")?;
+    let s = out.column("row_number")?;
     assert_eq!(s.is_sorted_flag(), IsSorted::Ascending);
 
     Ok(())

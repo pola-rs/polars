@@ -61,7 +61,7 @@ pub trait LazyFileListReader: Clone {
                 lf = lf.slice(0, n_rows as IdxSize)
             };
             if let Some(rc) = self.row_count() {
-                lf = lf.with_row_count(&rc.name, Some(rc.offset))
+                lf = lf.with_row_number(&rc.name, Some(rc.offset))
             };
 
             Ok(lf)

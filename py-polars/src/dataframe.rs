@@ -1139,7 +1139,7 @@ impl PyDataFrame {
     pub fn with_row_number(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
-            .with_row_count(name, offset)
+            .with_row_number(name, offset)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }

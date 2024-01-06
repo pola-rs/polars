@@ -351,11 +351,11 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_number("row_number", None)
         .tail(5)
         .collect()?;
     let expected = df![
-        "row_nr" => [5 as IdxSize, 6, 7, 8, 9],
+        "row_number" => [5 as IdxSize, 6, 7, 8, 9],
         "a" => [5, 6, 7, 8, 9],
     ]?;
 
@@ -363,11 +363,11 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_number("row_number", None)
         .slice(1, 2)
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("row_number")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
@@ -377,11 +377,11 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_number("row_number", None)
         .filter(col("a").eq(lit(3i32)))
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("row_number")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
@@ -392,10 +392,10 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
         .clone()
         .lazy()
         .slice(1, 2)
-        .with_row_count("row_nr", None)
+        .with_row_number("row_number", None)
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("row_number")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
@@ -405,10 +405,10 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .lazy()
         .filter(col("a").eq(lit(3i32)))
-        .with_row_count("row_nr", None)
+        .with_row_number("row_number", None)
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("row_number")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),

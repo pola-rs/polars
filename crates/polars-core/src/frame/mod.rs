@@ -344,7 +344,7 @@ impl DataFrame {
     /// let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
     /// assert_eq!(df1.shape(), (4, 1));
     ///
-    /// let df2: DataFrame = df1.with_row_count("Id", None)?;
+    /// let df2: DataFrame = df1.with_row_number("Id", None)?;
     /// assert_eq!(df2.shape(), (4, 2));
     /// println!("{}", df2);
     ///
@@ -369,7 +369,7 @@ impl DataFrame {
     ///  | 3   | Patricia |
     ///  +-----+----------+
     /// ```
-    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PolarsResult<Self> {
+    pub fn with_row_number(&self, name: &str, offset: Option<IdxSize>) -> PolarsResult<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
 
