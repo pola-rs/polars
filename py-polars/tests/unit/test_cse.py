@@ -147,7 +147,7 @@ def test_schema_row_count_cse() -> None:
     )
     csv_a.seek(0)
 
-    df_a = pl.scan_csv(csv_a.name).with_row_count("Idx")
+    df_a = pl.scan_csv(csv_a.name).with_row_number("Idx")
 
     result = (
         df_a.join(df_a, on="B")

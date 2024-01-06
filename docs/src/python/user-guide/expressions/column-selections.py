@@ -17,7 +17,7 @@ df = pl.DataFrame(
             datetime(2022, 12, 1), datetime(2022, 12, 1, 0, 0, 2), "1s", eager=True
         ),
     }
-).with_row_count("rn")
+).with_row_number("rn")
 print(df)
 # --8<-- [end:selectors_df]
 

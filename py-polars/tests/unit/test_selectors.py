@@ -524,7 +524,7 @@ def test_selector_or() -> None:
             "float": [1.0, 2.0, 3.0],
             "str": ["x", "y", "z"],
         }
-    ).with_row_count("rn")
+    ).with_row_number("rn")
 
     result = df.select(cs.by_name("rn") | ~cs.numeric())
 

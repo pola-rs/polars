@@ -89,10 +89,10 @@ def test_explode_empty_list_4003() -> None:
 
 
 def test_explode_empty_list_4107() -> None:
-    df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_count()
+    df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_number()
 
     assert_frame_equal(
-        df.explode(["b"]), df.explode(["b"]).drop("row_nr").with_row_count()
+        df.explode(["b"]), df.explode(["b"]).drop("row_number").with_row_number()
     )
 
 
@@ -112,15 +112,15 @@ def test_explode_correct_for_slice() -> None:
             )
         )
         .sort("group")
-        .with_row_count()
+        .with_row_number()
     )
     expected = pl.DataFrame(
         {
-            "row_nr": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
+            "row_number": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
             "group": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             "b": [1, 2, 3, 2, 3, 4, 1, 2, 3, 0, 1, 2, 3, 2, 3, 4, 1, 2, 3, 0],
         },
-        schema_overrides={"row_nr": pl.UInt32},
+        schema_overrides={"row_number": pl.UInt32},
     )
     assert_frame_equal(df.slice(0, 10).explode(["b"]), expected)
 
@@ -215,12 +215,12 @@ def test_explode_in_agg_context() -> None:
     )
 
     assert (
-        df.with_row_count("row_nr")
+        df.with_row_number()
         .explode("idxs")
-        .group_by("row_nr")
+        .group_by("row_number")
         .agg(pl.col("array").flatten())
     ).to_dict(as_series=False) == {
-        "row_nr": [0, 1, 2],
+        "row_number": [0, 1, 2],
         "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
     }
 
@@ -281,7 +281,7 @@ def test_explode_invalid_element_count() -> None:
             "col1": [["X", "Y", "Z"], ["F", "G"], ["P"]],
             "col2": [["A", "B", "C"], ["C"], ["D", "E"]],
         }
-    ).with_row_count()
+    ).with_row_number()
     with pytest.raises(
         pl.ShapeError, match=r"exploded columns must have matching element counts"
     ):

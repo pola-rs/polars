@@ -29,7 +29,7 @@ def test_row_count(foods_ipc_path: Path) -> None:
 
     df = (
         pl.scan_ipc(foods_ipc_path, row_count_name="row_count")
-        .with_row_count("foo", 10)
+        .with_row_number("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )

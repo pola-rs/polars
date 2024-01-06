@@ -4589,15 +4589,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.with_row_number().collect()
         shape: (3, 3)
-        ┌────────┬─────┬─────┐
-        │ row_nr ┆ a   ┆ b   │
-        │ ---    ┆ --- ┆ --- │
-        │ u32    ┆ i64 ┆ i64 │
-        ╞════════╪═════╪═════╡
-        │ 0      ┆ 1   ┆ 2   │
-        │ 1      ┆ 3   ┆ 4   │
-        │ 2      ┆ 5   ┆ 6   │
-        └────────┴─────┴─────┘
+        ┌────────────┬─────┬─────┐
+        │ row_number ┆ a   ┆ b   │
+        │ ---        ┆ --- ┆ --- │
+        │ u32        ┆ i64 ┆ i64 │
+        ╞════════════╪═════╪═════╡
+        │ 0          ┆ 1   ┆ 2   │
+        │ 1          ┆ 3   ┆ 4   │
+        │ 2          ┆ 5   ┆ 6   │
+        └────────────┴─────┴─────┘
         """
         return self._from_pyldf(self._ldf.with_row_number(name, offset))
 
@@ -4609,6 +4609,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
+
+        .. deprecated::
+            Use `meth`:with_row_number` instead.
+            Note that the default column name has changed from 'row_nr' to 'row_number'.
 
         Parameters
         ----------
@@ -4630,7 +4634,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.with_row_number().collect()
+        >>> lf.with_row_count().collect()  # doctest: +SKIP
         shape: (3, 3)
         ┌────────┬─────┬─────┐
         │ row_nr ┆ a   ┆ b   │
