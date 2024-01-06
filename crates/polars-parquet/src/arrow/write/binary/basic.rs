@@ -13,33 +13,27 @@ use crate::parquet::statistics::{
 use crate::write::Page;
 use crate::write::utils::invalid_encoding;
 
+pub(crate) fn encode_non_null_values<'a, I: Iterator<Item=&'a [u8]>>(
+    iter: I,
+    buffer: &mut Vec<u8>
+) {
+    iter.for_each(|x| {
+        // BYTE_ARRAY: first 4 bytes denote length in littleendian.
+        let len = (x.len() as u32).to_le_bytes();
+        buffer.extend_from_slice(&len);
+        buffer.extend_from_slice(x);
+    })
+}
+
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,
-    is_optional: bool,
     buffer: &mut Vec<u8>,
 ) {
     let len_before = buffer.len();
     let capacity =
         array.get_values_size() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
     buffer.reserve(capacity);
-    // append the non-null values
-    if is_optional {
-        array.iter().for_each(|x| {
-            if let Some(x) = x {
-                // BYTE_ARRAY: first 4 bytes denote length in littleendian.
-                let len = (x.len() as u32).to_le_bytes();
-                buffer.extend_from_slice(&len);
-                buffer.extend_from_slice(x);
-            }
-        })
-    } else {
-        array.values_iter().for_each(|x| {
-            // BYTE_ARRAY: first 4 bytes denote length in littleendian.
-            let len = (x.len() as u32).to_le_bytes();
-            buffer.extend_from_slice(&len);
-            buffer.extend_from_slice(x);
-        })
-    }
+    encode_non_null_values(array.non_null_values_iter(), buffer);
     // Ensure we allocated properly.
     debug_assert_eq!(buffer.len() - len_before, capacity);
 }
@@ -65,7 +59,7 @@ pub fn array_to_page<O: Offset>(
     let definition_levels_byte_length = buffer.len();
 
     match encoding {
-        Encoding::Plain => encode_plain(array, is_optional, &mut buffer),
+        Encoding::Plain => encode_plain(array, &mut buffer),
         Encoding::DeltaLengthByteArray => encode_delta(
             array.values(),
             array.offsets().buffer(),

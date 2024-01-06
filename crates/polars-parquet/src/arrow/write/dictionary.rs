@@ -270,7 +270,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let array = array.as_any().downcast_ref().unwrap();
 
                         let mut buffer = vec![];
-                        binary_encode_plain::<i64>(array, false, &mut buffer);
+                        binary_encode_plain::<i64>(array, &mut buffer);
                         let stats = if options.write_statistics {
                             Some(binary_build_statistics(array, type_.clone()))
                         } else {
@@ -282,7 +282,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let values = array.values().as_any().downcast_ref().unwrap();
 
                         let mut buffer = vec![];
-                        binary_encode_plain::<i64>(values, false, &mut buffer);
+                        binary_encode_plain::<i64>(values, &mut buffer);
                         let stats = if options.write_statistics {
                             let mut stats = binary_build_statistics(values, type_.clone());
                             stats.null_count = Some(array.null_count() as i64);
