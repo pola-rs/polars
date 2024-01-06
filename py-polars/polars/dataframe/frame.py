@@ -5205,6 +5205,44 @@ class DataFrame:
         """
         return function(self, *args, **kwargs)
 
+    def with_row_number(self, name: str = "row_number", offset: int = 0) -> Self:
+        """
+        Add a column at index 0 that counts the rows.
+
+        Parameters
+        ----------
+        name
+            Name of the column to add.
+        offset
+            Start the row count at this offset. Default = 0
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.with_row_number()
+        shape: (3, 3)
+        ┌────────┬─────┬─────┐
+        │ row_number ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ u32    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ 0      ┆ 1   ┆ 2   │
+        │ 1      ┆ 3   ┆ 4   │
+        │ 2      ┆ 5   ┆ 6   │
+        └────────┴─────┴─────┘
+        """
+        return self._from_pydf(self._df.with_row_number(name, offset))
+
+    @deprecate_function(
+        "Use `with_row_number` instead."
+        "Note that the default column name has changed from 'row_nr' to 'row_number'.",
+        version="0.20.4",
+    )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
@@ -5224,7 +5262,7 @@ class DataFrame:
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> df.with_row_count()
+        >>> df.with_row_number()
         shape: (3, 3)
         ┌────────┬─────┬─────┐
         │ row_nr ┆ a   ┆ b   │
@@ -5236,7 +5274,7 @@ class DataFrame:
         │ 2      ┆ 5   ┆ 6   │
         └────────┴─────┴─────┘
         """
-        return self._from_pydf(self._df.with_row_count(name, offset))
+        return self.with_row_number(name, offset)
 
     def group_by(
         self,

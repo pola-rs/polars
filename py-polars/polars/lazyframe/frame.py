@@ -441,7 +441,7 @@ class LazyFrame:
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
-                scan = scan.with_row_count(row_count_name, row_count_offset)
+                scan = scan.with_row_number(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
         if storage_options:
@@ -504,7 +504,7 @@ class LazyFrame:
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
-                scan = scan.with_row_count(row_count_name, row_count_offset)
+                scan = scan.with_row_number(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
@@ -4563,6 +4563,49 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.all().approx_n_unique())
 
+    def with_row_number(self, name: str = "row_number", offset: int = 0) -> Self:
+        """
+        Add a column at index 0 with the row number.
+
+        Parameters
+        ----------
+        name
+            Name of the column to add.
+        offset
+            Start the row count at this offset.
+
+        Warnings
+        --------
+        Using this function can have a negative effect on query performance.
+        This may, for instance, block predicate pushdown optimization.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> lf.with_row_number().collect()
+        shape: (3, 3)
+        ┌────────┬─────┬─────┐
+        │ row_nr ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ u32    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ 0      ┆ 1   ┆ 2   │
+        │ 1      ┆ 3   ┆ 4   │
+        │ 2      ┆ 5   ┆ 6   │
+        └────────┴─────┴─────┘
+        """
+        return self._from_pyldf(self._ldf.with_row_number(name, offset))
+
+    @deprecate_function(
+        "Use `with_row_number` instead."
+        "Note that the default column name has changed from 'row_nr' to 'row_number'.",
+        version="0.20.4",
+    )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
@@ -4587,7 +4630,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.with_row_count().collect()
+        >>> lf.with_row_number().collect()
         shape: (3, 3)
         ┌────────┬─────┬─────┐
         │ row_nr ┆ a   ┆ b   │
@@ -4599,7 +4642,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2      ┆ 5   ┆ 6   │
         └────────┴─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.with_row_count(name, offset))
+        return self.with_row_number(name, offset)
 
     def gather_every(self, n: int, offset: int = 0) -> Self:
         """
@@ -5784,8 +5827,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 # no keys provided--use row count
                 row_count_used = True
                 row_count_name = "__POLARS_ROW_COUNT"
-                self = self.with_row_count(row_count_name)
-                other = other.with_row_count(row_count_name)
+                self = self.with_row_number(row_count_name)
+                other = other.with_row_number(row_count_name)
                 left_on = right_on = [row_count_name]
             else:
                 # one of left or right is missing, raise error

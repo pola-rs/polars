@@ -1136,7 +1136,7 @@ impl PyDataFrame {
         }
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
+    pub fn with_row_number(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
             .with_row_count(name, offset)

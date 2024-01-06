@@ -986,7 +986,7 @@ impl PyLazyFrame {
         ldf.melt(args).into()
     }
 
-    fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Self {
+    fn with_row_number(&self, name: &str, offset: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_row_count(name, offset).into()
     }
