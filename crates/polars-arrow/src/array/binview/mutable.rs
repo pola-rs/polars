@@ -165,6 +165,10 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         mutable.extend_values(iterator);
         mutable
     }
+
+    pub fn from<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
+        Self::from_iter(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()))
+    }
 }
 
 impl<T: ViewType + ?Sized, P: AsRef<T>> Extend<Option<P>> for MutableBinaryViewArray<T> {

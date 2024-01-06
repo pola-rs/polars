@@ -121,7 +121,7 @@ arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
-io_ipc_compression = ["lz4", "zstd"]
+io_ipc_compression = ["lz4", "zstd", "io_ipc"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]

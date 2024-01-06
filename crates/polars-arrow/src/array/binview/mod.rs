@@ -26,6 +26,7 @@ mod private {
 use private::Sealed;
 
 use crate::array::binview::iterator::BinaryViewValueIter;
+use crate::array::binview::mutable::MutableBinaryViewArray;
 use crate::array::binview::view::{validate_binary_view, validate_utf8_view};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
@@ -147,6 +148,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         self.buffers.as_ref()
     }
 
+    pub fn variadic_buffer_lengths(&self) -> Vec<i64> {
+        self.buffers.iter().map(|buf| buf.len() as i64).collect()
+    }
+
     pub fn views(&self) -> &Buffer<u128> {
         &self.views
     }
@@ -251,6 +256,12 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     impl_sliced!();
     impl_mut_validity!();
     impl_into_array!();
+
+    pub fn from<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
+        let mutable =
+            MutableBinaryViewArray::from_iter(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()));
+        mutable.into()
+    }
 }
 
 impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {

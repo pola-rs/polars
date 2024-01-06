@@ -257,7 +257,8 @@ fn serialize_type(data_type: &ArrowDataType) -> arrow_format::ipc::Type {
         Struct(_) => ipc::Type::Struct(Box::new(ipc::Struct {})),
         Dictionary(_, v, _) => serialize_type(v),
         Extension(_, v, _) => serialize_type(v),
-        Utf8View | BinaryView => todo!(),
+        Utf8View => ipc::Type::Utf8View(Box::new(ipc::Utf8View {})),
+        BinaryView => ipc::Type::BinaryView(Box::new(ipc::BinaryView {})),
     }
 }
 
