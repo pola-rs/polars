@@ -6,7 +6,7 @@ import polars.functions as F
 from polars.expr.expr import Expr
 from polars.utils._parse_expr_input import (
     parse_as_expression,
-    parse_when_constraint_expressions,
+    parse_when_inputs,
 )
 from polars.utils._wrap import wrap_expr
 
@@ -78,7 +78,7 @@ class Then(Expr):
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
         """
-        condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
+        condition_pyexpr = parse_when_inputs(*predicates, **constraints)
         return ChainedWhen(self._then.when(condition_pyexpr))
 
     def otherwise(self, statement: IntoExpr) -> Expr:
@@ -158,7 +158,7 @@ class ChainedThen(Expr):
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
         """
-        condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
+        condition_pyexpr = parse_when_inputs(*predicates, **constraints)
         return ChainedWhen(self._chained_then.when(condition_pyexpr))
 
     def otherwise(self, statement: IntoExpr) -> Expr:

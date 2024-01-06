@@ -44,8 +44,8 @@ from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
+    parse_predicates_constraints_as_expression,
 )
-from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
@@ -3887,27 +3887,20 @@ class Expr:
         │ b   ┆ 1   ┆ 2   ┆ 9   │
         └─────┴─────┴─────┴─────┘
         """
-        all_predicates: list[pl.Expr] = []
-        for p in predicates:
-            all_predicates.extend(wrap_expr(x) for x in parse_as_list_of_expressions(p))
-
         if "predicate" in constraints:
             if isinstance(constraints["predicate"], pl.Expr):
-                all_predicates.append(constraints.pop("predicate"))
                 issue_deprecation_warning(
                     "`filter` no longer takes a 'predicate' parameter.\n"
                     "To silence this warning you should omit the keyword and pass "
                     "as a positional argument instead.",
                     version="0.19.17",
                 )
-        all_predicates.extend(
-            F.col(name).eq_missing(value) for name, value in constraints.items()
-        )
-        if not all_predicates:
-            raise ValueError("No predicates or constraints provided to `filter`.")
+                predicates = (*predicates, constraints.pop("predicate"))
 
-        combined_predicate = F.all_horizontal(*all_predicates)
-        return self._from_pyexpr(self._pyexpr.filter(combined_predicate._pyexpr))
+        predicate = parse_predicates_constraints_as_expression(
+            *predicates, **constraints
+        )
+        return self._from_pyexpr(self._pyexpr.filter(predicate))
 
     @deprecate_function("Use `filter` instead.", version="0.20.4")
     def where(self, predicate: Expr) -> Self:
