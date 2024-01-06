@@ -862,6 +862,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
         ...         "datetime": [
