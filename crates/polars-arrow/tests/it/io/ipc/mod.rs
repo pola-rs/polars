@@ -17,12 +17,7 @@ pub(crate) fn write(
 ) -> PolarsResult<Vec<u8>> {
     let result = vec![];
     let options = WriteOptions { compression };
-    let mut writer = FileWriter::try_new(
-        result,
-        Arc::from(schema.clone()),
-        ipc_fields.clone(),
-        options,
-    )?;
+    let mut writer = FileWriter::try_new(result, schema.clone(), ipc_fields.clone(), options)?;
     for batch in batches {
         writer.write(batch, ipc_fields.as_ref().map(|x| x.as_ref()))?;
     }
