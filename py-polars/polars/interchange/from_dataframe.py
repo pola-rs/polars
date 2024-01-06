@@ -104,8 +104,8 @@ def _string_column_to_series(column: Column, *, allow_copy: bool) -> Series:
     if offsets_buffer_info is None:
         msg = "cannot create String column without an offsets buffer"
         raise RuntimeError(msg)
-    offsets_buffer: Series = _construct_offsets_buffer(
-        *offsets_buffer_info, allow_copy=allow_copy
+    offsets_buffer = _construct_offsets_buffer(
+        *offsets_buffer_info, offset, allow_copy=allow_copy
     )
 
     buffer, dtype = buffers["data"]
@@ -115,9 +115,8 @@ def _string_column_to_series(column: Column, *, allow_copy: bool) -> Series:
 
     # First construct a Series without a validity buffer
     # to allow constructing the validity buffer from a sentinel value
-    data_buffers: list[Series] = [data_buffer, offsets_buffer]
+    data_buffers = [data_buffer, offsets_buffer]
     data = pl.Series._from_buffers(String, data=data_buffers, validity=None)
-    data = data[offset:]
 
     # Add the validity buffer if present
     validity_buffer = _construct_validity_buffer(
@@ -209,13 +208,14 @@ def _construct_data_buffer(
 def _construct_offsets_buffer(
     buffer: Buffer,
     dtype: Dtype,
+    offset: int,
     *,
     allow_copy: bool,
 ) -> Series:
     polars_dtype = dtype_to_polars_dtype(dtype)
-    length = get_buffer_length_in_elements(buffer.bufsize, dtype)
+    length = get_buffer_length_in_elements(buffer.bufsize, dtype) - offset
 
-    buffer_info = (buffer.ptr, 0, length)
+    buffer_info = (buffer.ptr, offset, length)
     s = pl.Series._from_buffer(polars_dtype, buffer_info, owner=buffer)
 
     # Polars only supports Int64 offsets

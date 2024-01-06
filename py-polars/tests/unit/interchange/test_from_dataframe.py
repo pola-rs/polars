@@ -145,14 +145,14 @@ def test_from_dataframe_chunked() -> None:
 
 
 def test_from_dataframe_chunked_string() -> None:
-    df = pl.Series("a", ["a", "bc"]).to_frame()
-    df_chunked = pl.concat([df[:1], df[1:]], rechunk=False)
+    df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
+    df_chunked = pl.concat([df[:1], df[1:3], df[3:]], rechunk=False)
 
     df_pa = df_chunked.to_arrow()
     result = pl.from_dataframe(df_pa)
 
     assert_frame_equal(result, df_chunked)
-    assert result.n_chunks() == 2
+    assert result.n_chunks() == 3
 
 
 def test_from_dataframe_pandas_nan_as_null() -> None:
@@ -359,8 +359,18 @@ def test_construct_offsets_buffer() -> None:
     buffer = PolarsBuffer(data)
     dtype = (DtypeKind.INT, 64, "l", NE)
 
-    result = _construct_offsets_buffer(buffer, dtype, allow_copy=True)
+    result = _construct_offsets_buffer(buffer, dtype, offset=0, allow_copy=True)
     assert_series_equal(result, data)
+
+
+def test_construct_offsets_buffer_offset() -> None:
+    data = pl.Series([0, 1, 3, 3, 9], dtype=pl.Int64)
+    buffer = PolarsBuffer(data)
+    dtype = (DtypeKind.INT, 64, "l", NE)
+    offset = 2
+
+    result = _construct_offsets_buffer(buffer, dtype, offset=offset, allow_copy=True)
+    assert_series_equal(result, data[offset:])
 
 
 def test_construct_offsets_buffer_copy() -> None:
@@ -369,9 +379,9 @@ def test_construct_offsets_buffer_copy() -> None:
     dtype = (DtypeKind.UINT, 32, "I", NE)
 
     with pytest.raises(CopyNotAllowedError):
-        _construct_offsets_buffer(buffer, dtype, allow_copy=False)
+        _construct_offsets_buffer(buffer, dtype, offset=0, allow_copy=False)
 
-    result = _construct_offsets_buffer(buffer, dtype, allow_copy=True)
+    result = _construct_offsets_buffer(buffer, dtype, offset=0, allow_copy=True)
     expected = pl.Series([0, 1, 3, 3, 9], dtype=pl.Int64)
     assert_series_equal(result, expected)
 
