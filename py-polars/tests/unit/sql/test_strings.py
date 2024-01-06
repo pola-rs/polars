@@ -48,11 +48,13 @@ def test_string_concat() -> None:
     res = pl.SQLContext(data=lf).execute(
         """
         SELECT
-          ("x" || "x" || "y")         AS c0,
-          ("x" || "y" || "z")         AS c1,
-          CONCAT(("x" + "x"), "y")    AS c2,
-          CONCAT("x", "x", "y")       AS c3,
-          CONCAT("x", "y", ("z" * 2)) AS c4,
+          ("x" || "x" || "y")           AS c0,
+          ("x" || "y" || "z")           AS c1,
+          CONCAT(("x" || '-'), "y")     AS c2,
+          CONCAT("x", "x", "y")         AS c3,
+          CONCAT("x", "y", ("z" * 2))   AS c4,
+          CONCAT_WS(':', "x", "y", "z") AS c5,
+          CONCAT_WS("x", "y", "z", '!') AS c6
         FROM data
         """,
         eager=True,
@@ -60,10 +62,21 @@ def test_string_concat() -> None:
     assert res.to_dict(as_series=False) == {
         "c0": ["aad", None, "ccf"],
         "c1": ["ad1", None, "cf3"],
-        "c2": ["aad", None, "ccf"],
+        "c2": ["a-d", None, "c-f"],
         "c3": ["aad", None, "ccf"],
         "c4": ["ad2", None, "cf6"],
+        "c5": ["a:d:1", None, "c:f:3"],
+        "c6": ["da1a!", None, "fc3c!"],
     }
+
+
+@pytest.mark.parametrize(
+    "invalid_concat", ["CONCAT()", "CONCAT_WS()", "CONCAT_WS(':')"]
+)
+def test_concat_errors(invalid_concat: str) -> None:
+    lf = pl.LazyFrame({"x": ["a", "b", "c"]})
+    with pytest.raises(InvalidOperationError, match="Invalid number of arguments"):
+        pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
 
 
 def test_left_right_reverse() -> None:
