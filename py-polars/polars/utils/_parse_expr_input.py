@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
 from polars.exceptions import ComputeError
-from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import issue_deprecation_warning
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars.polars as plr
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -59,7 +62,7 @@ def _parse_inputs_as_iterable(
     if not inputs:
         return []
 
-    # Treat input of a single iterable as separate inputs
+    # Treat elements of a single iterable as separate inputs
     if len(inputs) == 1 and _is_iterable(inputs[0]):
         return inputs[0]
 
@@ -75,10 +78,8 @@ def _is_iterable(input: Any | Iterable[Any]) -> bool:
 def _parse_named_inputs(
     named_inputs: dict[str, IntoExpr], *, structify: bool = False
 ) -> Iterable[PyExpr]:
-    return (
-        parse_as_expression(input, structify=structify).alias(name)
-        for name, input in named_inputs.items()
-    )
+    for name, input in named_inputs.items():
+        yield parse_as_expression(input, structify=structify).alias(name)
 
 
 def parse_as_expression(
@@ -163,23 +164,28 @@ def parse_predicates_constraints_as_expression(
     -------
     PyExpr
     """
-    all_predicates: list[Expr] = [
-        wrap_expr(e)
-        for e in _parse_positional_inputs(predicates)  # type: ignore[arg-type]
-    ]
+    all_predicates = _parse_positional_inputs(predicates)  # type: ignore[arg-type]
 
     if constraints:
-        all_predicates.extend(
-            F.col(name).eq(value) for name, value in constraints.items()
-        )
+        constraint_predicates = _parse_constraints(constraints)
+        all_predicates.extend(constraint_predicates)
 
-    if not all_predicates:
+    return _combine_predicates(all_predicates)
+
+
+def _parse_constraints(constraints: dict[str, IntoExpr]) -> Iterable[PyExpr]:
+    for name, value in constraints.items():
+        yield F.col(name).eq(value)._pyexpr
+
+
+def _combine_predicates(predicates: list[PyExpr]) -> PyExpr:
+    if not predicates:
         raise TypeError("at least one predicate or constraint must be provided")
 
-    if len(all_predicates) == 1:
-        return all_predicates[0]._pyexpr
+    if len(predicates) == 1:
+        return predicates[0]
 
-    return F.all_horizontal(all_predicates)._pyexpr
+    return plr.all_horizontal(predicates)
 
 
 def parse_when_inputs(

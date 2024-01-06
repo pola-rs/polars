@@ -12,7 +12,6 @@ from polars.utils.deprecation import deprecate_renamed_function
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
-
 if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import IntoExpr
