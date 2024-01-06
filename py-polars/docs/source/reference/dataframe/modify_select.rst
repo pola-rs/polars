@@ -80,3 +80,4 @@ Manipulation/selection
     DataFrame.with_columns
     DataFrame.with_columns_seq
     DataFrame.with_row_count
+    DataFrame.with_row_number
