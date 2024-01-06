@@ -1,6 +1,9 @@
 from datetime import datetime
 
+import pytest
+
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_equals() -> None:
@@ -25,3 +28,45 @@ def test_equals() -> None:
     assert s3.equals(s4, strict=True) is False
     assert s3.equals(s4, null_equal=False) is False
     assert s3.dt.convert_time_zone("Asia/Tokyo").equals(s4) is True
+
+
+def test_eq_list_cmp_list() -> None:
+    s = pl.Series([[1], [1, 2]])
+    result = s == [1, 2]
+    expected = pl.Series([False, True])
+    assert_series_equal(result, expected)
+
+
+def test_eq_list_cmp_int() -> None:
+    s = pl.Series([[1], [1, 2]])
+    with pytest.raises(
+        TypeError, match="cannot convert Python type 'int' to List\\(Int64\\)"
+    ):
+        s == 1  # noqa: B015
+
+
+def test_eq_array_cmp_list() -> None:
+    s = pl.Series([[1, 3], [1, 2]], dtype=pl.Array(pl.Int16, 2))
+    result = s == [1, 2]
+    expected = pl.Series([False, True])
+    assert_series_equal(result, expected)
+
+
+def test_eq_array_cmp_int() -> None:
+    s = pl.Series([[1, 3], [1, 2]], dtype=pl.Array(pl.Int16, 2))
+    with pytest.raises(
+        TypeError, match="cannot convert Python type 'int' to Array\\(Int16, width=2\\)"
+    ):
+        s == 1  # noqa: B015
+
+
+def test_eq_list() -> None:
+    s = pl.Series([1, 1])
+
+    result = s == [1, 2]
+    expected = pl.Series([True, False])
+    assert_series_equal(result, expected)
+
+    result = s == 1
+    expected = pl.Series([True, True])
+    assert_series_equal(result, expected)
