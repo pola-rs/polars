@@ -133,6 +133,59 @@ def count(column: str | None = None) -> Expr:
     return F.col(column).count()
 
 
+def cum_count(*names: str, reverse: bool = False) -> Expr:
+    """
+    Return the row numbers of a context, or return the cumulative count of values in the column.
+
+    If no arguments are passed, returns the row numbers of a context.
+    Rows containing null values count towards the result.
+
+    Otherwise, this function is syntactic sugar for `col(names).cum_count()`.
+
+    Parameters
+    ----------
+    *names
+        Name(s) of the columns to use.
+    reverse
+        Reverse the operation.
+
+    Examples
+    --------
+    Return the row numbers of a context. Note that rows containing null values are
+    counted towards the total.
+
+    >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
+    >>> df.select(pl.cum_count())
+    shape: (3, 1)
+    ┌───────────┐
+    │ cum_count │
+    │ ---       │
+    │ u32       │
+    ╞═══════════╡
+    │ 0         │
+    │ 1         │
+    │ 2         │
+    └───────────┘
+
+    Return the cumulative count of values in a column.
+
+    >>> df.select(pl.cum_count("a"))
+    shape: (3, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 0   │
+    │ 1   │
+    │ 2   │
+    └─────┘
+    """  # noqa: W505
+    if not names:
+        return wrap_expr(plr.cum_count(reverse=reverse))
+    return F.col(*names).cum_count(reverse=reverse)
+
+
 def implode(name: str) -> Expr:
     """
     Aggregate all column values into a list.
