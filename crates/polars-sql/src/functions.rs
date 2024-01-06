@@ -1,6 +1,6 @@
-use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult};
+use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
 use polars_lazy::dsl::Expr;
-use polars_plan::dsl::{coalesce, count, when};
+use polars_plan::dsl::{coalesce, concat_str, count, when};
 use polars_plan::logical_plan::LiteralValue;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{lit, StrptimeOptions};
@@ -778,16 +778,18 @@ impl SQLFunctionVisitor<'_> {
             Concat => if function.args.is_empty() {
                 polars_bail!(InvalidOperation: "Invalid number of arguments for Concat: 0");
             } else {
-                self.visit_variadic(|exprs: &[Expr]| exprs.iter().fold(lit(""), |acc, expr| acc + expr.clone().cast(DataType::String)))
+                self.visit_variadic(|exprs: &[Expr]| concat_str(exprs, ""))
             },
             ConcatWS => if function.args.len() < 2 {
                 polars_bail!(InvalidOperation: "Invalid number of arguments for ConcatWS: {}", function.args.len());
             } else {
-                self.visit_variadic(|exprs: &[Expr]| {
-                    let (sep, fields) = exprs.split_at(1);
-                    let (first, sep) = (&fields[0], &sep[0]);
-                    fields[1..].iter().fold(first.clone(), |acc, expr| acc + sep.clone() + expr.clone().cast(DataType::String))
-                })},
+                self.try_visit_variadic(|exprs: &[Expr]| {
+                    match &exprs[0] {
+                        Expr::Literal(LiteralValue::String(s)) => Ok(concat_str(&exprs[1..], s)),
+                        _ => polars_bail!(InvalidOperation: "ConcatWS 'separator' must be a literal string; found {:?}", exprs[0]),
+                    }
+                })
+            },
             Date => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
                 2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
@@ -809,10 +811,7 @@ impl SQLFunctionVisitor<'_> {
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
-                _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for LTrim: {}",
-                    function.args.len()
-                ),
+                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for LTrim: {}", function.args.len()),
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             RegexpLike => match function.args.len() {
@@ -821,7 +820,9 @@ impl SQLFunctionVisitor<'_> {
                     Ok(e.str().contains(
                         match (pat, flags) {
                             (Expr::Literal(LiteralValue::String(s)), Expr::Literal(LiteralValue::String(f))) => {
-                                if f.is_empty() { polars_bail!(InvalidOperation: "Invalid/empty 'flags' for RegexpLike: {}", function.args[2]); };
+                                if f.is_empty() {
+                                    polars_bail!(InvalidOperation: "Invalid/empty 'flags' for RegexpLike: {}", function.args[2]);
+                                };
                                 lit(format!("(?{}){}", f, s))
                             },
                             _ => {
@@ -862,12 +863,11 @@ impl SQLFunctionVisitor<'_> {
             Substring => match function.args.len() {
                 // note that SQL is 1-indexed, not 0-indexed
                 2 => self.try_visit_binary(|e, start| {
-                    Ok(e.str().slice(match start {
-                        Expr::Literal(LiteralValue::Int64(n)) => n - 1 ,
-                        _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
-                        }
-                    }, None))
+                    Ok(e.str().slice(
+                        match start {
+                            Expr::Literal(LiteralValue::Int64(n)) => n - 1 ,
+                            _ => polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]),
+                        }, None))
                 }),
                 3 => self.try_visit_ternary(|e, start, length| {
                     Ok(e.str().slice(
@@ -883,10 +883,7 @@ impl SQLFunctionVisitor<'_> {
                             }
                         }))
                 }),
-                _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for Substring: {}",
-                    function.args.len()
-                ),
+                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for Substring: {}", function.args.len()),
             }
             Upper => self.visit_unary(|e| e.str().to_uppercase()),
             // ----
@@ -922,10 +919,7 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
-        let function = self.func;
-
-        let args = extract_args(function);
-        let args = args
+        let args = extract_args(self.func)
             .into_iter()
             .map(|arg| {
                 if let FunctionArgExpr::Expr(e) = arg {
@@ -935,11 +929,12 @@ impl SQLFunctionVisitor<'_> {
                 }
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        if let Some(expr) = self.ctx.function_registry.get_udf(func_name)? {
-            expr.call(args)
-        } else {
-            polars_bail!(ComputeError: "UDF {} not found", func_name)
-        }
+
+        self.ctx
+            .function_registry
+            .get_udf(func_name)?
+            .ok_or_else(|| polars_err!(ComputeError: "UDF {} not found", func_name))?
+            .call(args)
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -1000,9 +995,7 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_unary_no_window(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
-        let function = self.func;
-
-        let args = extract_args(function);
+        let args = extract_args(self.func);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
                 let expr = parse_sql_expr(sql_expr, self.ctx)?;
@@ -1024,8 +1017,7 @@ impl SQLFunctionVisitor<'_> {
         &mut self,
         f: impl Fn(Expr, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
-        let function = self.func;
-        let args = extract_args(function);
+        let args = extract_args(self.func);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2)] => {
                 let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
@@ -1044,8 +1036,7 @@ impl SQLFunctionVisitor<'_> {
         &mut self,
         f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
-        let function = self.func;
-        let args = extract_args(function);
+        let args = extract_args(self.func);
         let mut expr_args = vec![];
         for arg in args {
             if let FunctionArgExpr::Expr(sql_expr) = arg {
@@ -1057,19 +1048,11 @@ impl SQLFunctionVisitor<'_> {
         f(&expr_args)
     }
 
-    // fn visit_ternary<Arg: FromSQLExpr>(
-    //     &self,
-    //     f: impl Fn(Expr, Arg, Arg) -> Expr,
-    // ) -> PolarsResult<Expr> {
-    //     self.try_visit_ternary(|e, a1, a2| Ok(f(e, a1, a2)))
-    // }
-
     fn try_visit_ternary<Arg: FromSQLExpr>(
         &mut self,
         f: impl Fn(Expr, Arg, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
-        let function = self.func;
-        let args = extract_args(function);
+        let args = extract_args(self.func);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2), FunctionArgExpr::Expr(sql_expr3)] =>
             {
