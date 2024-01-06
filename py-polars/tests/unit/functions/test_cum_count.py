@@ -6,7 +6,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-@pytest.mark.parametrize(("reverse", "output"), [(False, [0, 1, 2]), (True, [2, 1, 0])])
+@pytest.mark.parametrize(("reverse", "output"), [(False, [1, 2, 3]), (True, [3, 2, 1])])
 def test_cum_count_no_args(reverse: bool, output: list[int]) -> None:
     df = pl.DataFrame({"a": [5, 5, None]})
     result = df.select(pl.cum_count(reverse=reverse))
