@@ -142,24 +142,31 @@ def _structify_expression(expr: Expr) -> Expr:
     return expr
 
 
-def parse_when_constraint_expressions(
+def parse_predicates_constraints_as_expression(
     *predicates: IntoExpr | Iterable[IntoExpr],
     **constraints: Any,
 ) -> PyExpr:
+    """
+    Parse predicates and constraints into a single expression.
+
+    The result is an AND-reduction of all inputs.
+
+    Parameters
+    ----------
+    *predicates
+        Predicates to be parsed, specified as positional arguments.
+    **constraints
+        Constraints to be parsed, specified as keyword arguments.
+        These will be converted to predicates of the form "keyword equals input value".
+
+    Returns
+    -------
+    PyExpr
+    """
     all_predicates: list[Expr] = [
         wrap_expr(e)
         for e in _parse_positional_inputs(predicates)  # type: ignore[arg-type]
     ]
-
-    if "condition" in constraints:
-        if isinstance(constraints["condition"], pl.Expr):
-            issue_deprecation_warning(
-                "`when` no longer takes a 'condition' parameter.\n"
-                "To silence this warning you should omit the keyword and pass "
-                "as a positional argument instead.",
-                version="0.19.16",
-            )
-            all_predicates.append(constraints.pop("condition"))
 
     if constraints:
         all_predicates.extend(
@@ -167,9 +174,26 @@ def parse_when_constraint_expressions(
         )
 
     if not all_predicates:
-        raise TypeError("no predicates or constraints provided to `when`")
+        raise TypeError("at least one predicate or constraint must be provided")
 
     if len(all_predicates) == 1:
         return all_predicates[0]._pyexpr
 
     return F.all_horizontal(all_predicates)._pyexpr
+
+
+def parse_when_inputs(
+    *predicates: IntoExpr | Iterable[IntoExpr],
+    **constraints: Any,
+) -> PyExpr:
+    if "condition" in constraints:
+        if isinstance(constraints["condition"], pl.Expr):
+            issue_deprecation_warning(
+                "`when` no longer takes a 'condition' parameter."
+                " To silence this warning, omit the keyword and pass"
+                " as a positional argument instead.",
+                version="0.19.16",
+            )
+            predicates = (*predicates, constraints.pop("condition"))
+
+    return parse_predicates_constraints_as_expression(*predicates, **constraints)
