@@ -859,6 +859,37 @@ class ExprDateTimeNameSpace:
         -------
         Expr
             Expression of data type :class:`Time`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "datetime": pl.datetime_range(
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 2),
+        ...             "5ms",
+        ...             eager=True,
+        ...         ),
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("datetime").dt.time().alias("time"))
+        shape: (17_280_001, 2)
+        ┌─────────────────────────┬──────────────┐
+        │ date                    ┆ time         │
+        │ ---                     ┆ ---          │
+        │ datetime[μs]            ┆ time         │
+        ╞═════════════════════════╪══════════════╡
+        │ 2020-01-01 00:00:00     ┆ 00:00:00     │
+        │ 2020-01-01 00:00:00.005 ┆ 00:00:00.005 │
+        │ 2020-01-01 00:00:00.010 ┆ 00:00:00.010 │
+        │ 2020-01-01 00:00:00.015 ┆ 00:00:00.015 │
+        │ …                       ┆ …            │
+        │ 2020-01-01 23:59:59.985 ┆ 23:59:59.985 │
+        │ 2020-01-01 23:59:59.990 ┆ 23:59:59.990 │
+        │ 2020-01-01 23:59:59.995 ┆ 23:59:59.995 │
+        │ 2020-01-02 00:00:00     ┆ 00:00:00     │
+        └─────────────────────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.dt_time())
 
@@ -872,6 +903,38 @@ class ExprDateTimeNameSpace:
         -------
         Expr
             Expression of data type :class:`Date`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ... {
+        ...     "date and time": pl.datetime_range(
+        ...         datetime(2020, 1, 1),
+        ...         datetime(2021, 1, 1, 0, 0, 0, 1),
+        ...         "1d2h3m4s",
+        ...         eager=True,
+        ...     ),
+        ... })
+        >>> df.with_columns(
+        ...     pl.col("date and time").dt.date().alias("date (YYYY-MM-DD)"),
+        ... )
+        shape: (338, 2)
+        ┌─────────────────────┬───────────────────┐
+        │ date and time       ┆ date (YYYY-MM-DD) │
+        │ ---                 ┆ ---               │
+        │ datetime[μs]        ┆ date              │
+        ╞═════════════════════╪═══════════════════╡
+        │ 2020-01-01 00:00:00 ┆ 2020-01-01        │
+        │ 2020-01-02 02:03:04 ┆ 2020-01-02        │
+        │ 2020-01-03 04:06:08 ┆ 2020-01-03        │
+        │ 2020-01-04 06:09:12 ┆ 2020-01-04        │
+        │ …                   ┆ …                 │
+        │ 2020-12-28 13:04:16 ┆ 2020-12-28        │
+        │ 2020-12-29 15:07:20 ┆ 2020-12-29        │
+        │ 2020-12-30 17:10:24 ┆ 2020-12-30        │
+        │ 2020-12-31 19:13:28 ┆ 2020-12-31        │
+        └─────────────────────┴───────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_date())
 
@@ -885,6 +948,39 @@ class ExprDateTimeNameSpace:
         -------
         Expr
             Expression of data type :class:`Datetime`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ... {
+        ...     "date (UTC)": pl.datetime_range(
+        ...         datetime(2020, 1, 1),
+        ...         datetime(2021, 1, 1, 0, 0, 0, 1),
+        ...         "1d2h3m4s",
+        ...         eager=True,
+        ...         time_zone="UTC",
+        ...     ),
+        ... })
+        >>> df.with_columns(
+        ...     pl.col("date (UTC)").dt.datetime().alias("date (no time zone)"),
+        ... )
+        shape: (338, 2)
+        ┌─────────────────────────┬─────────────────────┐
+        │ date (UTC)              ┆ date (no time zone) │
+        │ ---                     ┆ ---                 │
+        │ datetime[μs, UTC]       ┆ datetime[μs]        │
+        ╞═════════════════════════╪═════════════════════╡
+        │ 2020-01-01 00:00:00 UTC ┆ 2020-01-01 00:00:00 │
+        │ 2020-01-02 02:03:04 UTC ┆ 2020-01-02 02:03:04 │
+        │ 2020-01-03 04:06:08 UTC ┆ 2020-01-03 04:06:08 │
+        │ 2020-01-04 06:09:12 UTC ┆ 2020-01-04 06:09:12 │
+        │ …                       ┆ …                   │
+        │ 2020-12-28 13:04:16 UTC ┆ 2020-12-28 13:04:16 │
+        │ 2020-12-29 15:07:20 UTC ┆ 2020-12-29 15:07:20 │
+        │ 2020-12-30 17:10:24 UTC ┆ 2020-12-30 17:10:24 │
+        │ 2020-12-31 19:13:28 UTC ┆ 2020-12-31 19:13:28 │
+        └─────────────────────────┴─────────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_datetime())
 
@@ -1040,6 +1136,37 @@ class ExprDateTimeNameSpace:
         -------
         Expr
             Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.datetime_range(
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 2),
+        ...             "5ms",
+        ...             eager=True,
+        ...         ),
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("date").dt.millisecond().alias("ms"))
+        shape: (17_280_001, 2)
+        ┌─────────────────────────┬─────┐
+        │ date                    ┆ ms  │
+        │ ---                     ┆ --- │
+        │ datetime[μs]            ┆ i32 │
+        ╞═════════════════════════╪═════╡
+        │ 2020-01-01 00:00:00     ┆ 0   │
+        │ 2020-01-01 00:00:00.005 ┆ 5   │
+        │ 2020-01-01 00:00:00.010 ┆ 10  │
+        │ 2020-01-01 00:00:00.015 ┆ 15  │
+        │ …                       ┆ …   │
+        │ 2020-01-01 23:59:59.985 ┆ 985 │
+        │ 2020-01-01 23:59:59.990 ┆ 990 │
+        │ 2020-01-01 23:59:59.995 ┆ 995 │
+        │ 2020-01-02 00:00:00     ┆ 0   │
+        └─────────────────────────┴─────┘
         """
         return wrap_expr(self._pyexpr.dt_millisecond())
 
@@ -1102,6 +1229,39 @@ class ExprDateTimeNameSpace:
         -------
         Expr
             Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.datetime_range(
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 1, 0, 0, 0, 1),
+        ...             "10ns",
+        ...             eager=True,
+        ...         ),
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("date").dt.nanosecond().alias("nanosecond"),
+        ... )
+        shape: (101, 2)
+        ┌───────────────────────────────┬────────────┐
+        │ date                          ┆ nanosecond │
+        │ ---                           ┆ ---        │
+        │ datetime[ns]                  ┆ i32        │
+        ╞═══════════════════════════════╪════════════╡
+        │ 2020-01-01 00:00:00           ┆ 0          │
+        │ 2020-01-01 00:00:00.000000010 ┆ 10         │
+        │ 2020-01-01 00:00:00.000000020 ┆ 20         │
+        │ 2020-01-01 00:00:00.000000030 ┆ 30         │
+        │ …                             ┆ …          │
+        │ 2020-01-01 00:00:00.000000970 ┆ 970        │
+        │ 2020-01-01 00:00:00.000000980 ┆ 980        │
+        │ 2020-01-01 00:00:00.000000990 ┆ 990        │
+        │ 2020-01-01 00:00:00.000001    ┆ 1000       │
+        └───────────────────────────────┴────────────┘
         """
         return wrap_expr(self._pyexpr.dt_nanosecond())
 
