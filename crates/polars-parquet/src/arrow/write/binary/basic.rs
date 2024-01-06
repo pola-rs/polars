@@ -11,6 +11,7 @@ use crate::parquet::statistics::{
     serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
 };
 use crate::write::Page;
+use crate::write::utils::invalid_encoding;
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,
@@ -73,11 +74,7 @@ pub fn array_to_page<O: Offset>(
             &mut buffer,
         ),
         _ => {
-            polars_bail!(InvalidOperation:
-                "Datatype {:?} cannot be encoded by {:?} encoding",
-                array.data_type(),
-                encoding
-            )
+            return Err(invalid_encoding(encoding, array.data_type()))
         },
     }
 

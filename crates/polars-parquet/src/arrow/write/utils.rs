@@ -1,5 +1,6 @@
 use arrow::bitmap::Bitmap;
-use polars_error::PolarsResult;
+use arrow::datatypes::ArrowDataType;
+use polars_error::*;
 
 use super::{Version, WriteOptions};
 use crate::parquet::compression::CompressionOptions;
@@ -143,4 +144,13 @@ impl<T, I: Iterator<Item = T>> Iterator for ExactSizedIter<T, I> {
 #[inline]
 pub fn get_bit_width(max: u64) -> u32 {
     64 - max.leading_zeros()
+}
+
+
+pub(super) fn invalid_encoding(encoding: Encoding, data_type: &ArrowDataType) -> PolarsError {
+    polars_err!(InvalidOperation:
+                "Datatype {:?} cannot be encoded by {:?} encoding",
+                data_type,
+                encoding
+            )
 }

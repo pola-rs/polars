@@ -25,6 +25,7 @@ mod schema;
 #[cfg(feature = "async")]
 mod sink;
 mod utils;
+mod binview;
 
 use arrow::array::*;
 use arrow::datatypes::*;
