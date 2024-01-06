@@ -876,7 +876,7 @@ class ExprDateTimeNameSpace:
         >>> df.with_columns(pl.col("datetime").dt.time().alias("time"))
         shape: (17_280_001, 2)
         ┌─────────────────────────┬──────────────┐
-        │ date                    ┆ time         │
+        │ datetime                ┆ time         │
         │ ---                     ┆ ---          │
         │ datetime[μs]            ┆ time         │
         ╞═════════════════════════╪══════════════╡
