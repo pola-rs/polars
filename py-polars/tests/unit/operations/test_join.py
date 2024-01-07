@@ -659,6 +659,7 @@ def test_outer_join_list_() -> None:
     }
 
 
+@pytest.mark.slow()
 def test_join_validation() -> None:
     def test_each_join_validation(
         unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy
