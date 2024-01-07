@@ -35,3 +35,6 @@ target/
 /docs/data/
 /docs/images/
 /docs/people.md
+
+# Windows
+/py-polars/rust-toolchain
