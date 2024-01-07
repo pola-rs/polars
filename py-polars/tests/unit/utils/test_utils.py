@@ -124,6 +124,7 @@ def test_parse_version(v1: Any, v2: Any) -> None:
     assert parse_version(v2) < parse_version(v1)
 
 
+@pytest.mark.slow()
 def test_in_notebook() -> None:
     # private function, but easier to test this separately and mock it in the callers
     assert not _in_notebook()
