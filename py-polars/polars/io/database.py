@@ -614,6 +614,10 @@ def read_database_uri(
 
         * "postgresql://user:pass@server:port/database"
         * "snowflake://user:pass@account/database/schema?warehouse=warehouse&role=role"
+
+        The caller is responsible for escaping any special characters in the string,
+        which will be passed "as-is" to the underlying engine (this is most often
+        required when coming across special characters in the password).
     partition_on
         The column on which to partition the result (connectorx).
     partition_range
@@ -650,6 +654,15 @@ def read_database_uri(
 
     For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
     with the backend you are connecting to, eg: `adbc-driver-postgresql`.
+
+    If your password contains special characters, you will need to escape them.
+    This will usually require the use of a URL-escaping function, for example:
+
+    >>> from urllib.parse import quote, quote_plus
+    >>> quote_plus("pass word?")
+    'pass+word%3F'
+    >>> quote("pass word?")
+    'pass%20word%3F'
 
     See Also
     --------
