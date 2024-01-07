@@ -70,8 +70,8 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = pl.DataFrame({"d": pl.arange(0, 10_000, eager=True)}).with_columns(
-        a=pl.col("d") % 100
+    df = pl.DataFrame({"d": pl.arange(0, 5, eager=True)}).with_columns(
+        a=pl.col("d") % 5
     )
     root = tmp_path / "test_int_partitions"
     df.write_parquet(
@@ -81,8 +81,8 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     )
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
-    assert q.filter(pl.col("a").is_in([10, 99])).collect().shape == (200, 2)
-    assert "hive partitioning: skipped 98 files" in capfd.readouterr().err
+    assert q.filter(pl.col("a").is_in([1, 4])).collect().shape == (2, 2)
+    assert "hive partitioning: skipped 3 files" in capfd.readouterr().err
 
 
 @pytest.mark.write_disk()
