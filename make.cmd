@@ -58,7 +58,7 @@ exit /b
 %VENV_BIN%\python -m pip install --upgrade -r %py_path%\requirements-lint.txt
 %VENV_BIN%\python -m pip install --upgrade -r %py_path%\docs\requirements-docs.txt
 %VENV_BIN%\python -m pip install --upgrade -r %base_path%\docs\requirements.txt
-powershell -command "iwr https://dprint.dev/install.ps1 -useb | iex"
+::powershell -command "iwr https://dprint.dev/install.ps1 -useb | iex"
 exit /b
 
 :build
@@ -139,9 +139,9 @@ exit /b
 %VENV_BIN%\ruff check %base_path%  &^
 %VENV_BIN%\ruff format %base_path% &^
 cargo fmt --all &^
-if exist %USERPROFILE%\.dprint\bin\dprint.exe (
-    %USERPROFILE%\.dprint\bin\dprint.exe fmt --excludes py-polars/rust-toolchain.toml
-) &^
+::if exist %USERPROFILE%\.dprint\bin\dprint.exe (
+::    %USERPROFILE%\.dprint\bin\dprint.exe fmt --excludes py-polars/rust-toolchain.toml
+::) &^
 %VENV_BIN%\typos &^
 exit /b
 
