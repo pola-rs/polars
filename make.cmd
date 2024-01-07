@@ -138,9 +138,11 @@ exit /b
 :: Run autoformatting and linting
 %VENV_BIN%\ruff check %base_path%  &^
 %VENV_BIN%\ruff format %base_path% &^
-cargo fmt --all                      &^
-dprint fmt                           &^
-%VENV_BIN%\typos                     &^
+cargo fmt --all &^
+if exist %USERPROFILE%\.dprint\bin\dprint.exe (
+    %USERPROFILE%\.dprint\bin\dprint.exe fmt --excludes py-polars/rust-toolchain.toml
+) &^
+%VENV_BIN%\typos &^
 exit /b
 
 :pre-commit
