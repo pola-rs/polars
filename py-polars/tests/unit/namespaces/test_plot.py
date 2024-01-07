@@ -5,6 +5,10 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsPanicError
 
+# Calling `plot` the first time is slow
+# https://github.com/pola-rs/polars/issues/13500
+pytestmark = pytest.mark.slow
+
 
 def test_dataframe_scatter() -> None:
     df = pl.DataFrame(
