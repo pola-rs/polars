@@ -89,6 +89,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT POW(column_1, 2) from df;
     /// ```
     Pow,
+    /// SQL 'mod' function
+    /// Returns the remainder of a numeric expression divided by another numeric expression.
+    /// ```sql
+    /// SELECT MOD(column_1, 2) from df;
+    /// ```
+    Mod,
     /// SQL 'sqrt' function
     /// Returns the square root (√) of a number.
     /// ```sql
@@ -601,6 +607,7 @@ impl PolarsSQLFunctions {
             "log10" => Self::Log10,
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
+            "mod" => Self::Mod,
             "pi" => Self::Pi,
             "pow" | "power" => Self::Pow,
             "round" => Self::Round,
@@ -742,6 +749,7 @@ impl SQLFunctionVisitor<'_> {
             Log10 => self.visit_unary(|e| e.log(10.0)),
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| e.log(2.0)),
+            Mod => self.visit_binary(|e1, e2| e1 % e2),
             Pow => self.visit_binary::<Expr>(Expr::pow),
             Sqrt => self.visit_unary(Expr::sqrt),
             Cbrt => self.visit_unary(Expr::cbrt),
