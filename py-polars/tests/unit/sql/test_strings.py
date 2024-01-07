@@ -54,7 +54,7 @@ def test_string_concat() -> None:
           CONCAT("x", "x", "y")         AS c3,
           CONCAT("x", "y", ("z" * 2))   AS c4,
           CONCAT_WS(':', "x", "y", "z") AS c5,
-          CONCAT_WS("x", "y", "z", '!') AS c6
+          CONCAT_WS('', "y", "z", '!')  AS c6
         FROM data
         """,
         eager=True,
@@ -66,7 +66,7 @@ def test_string_concat() -> None:
         "c3": ["aad", None, "ccf"],
         "c4": ["ad2", None, "cf6"],
         "c5": ["a:d:1", None, "c:f:3"],
-        "c6": ["da1a!", None, "fc3c!"],
+        "c6": ["d1!", "e2!", "f3!"],
     }
 
 
