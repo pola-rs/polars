@@ -937,15 +937,15 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> from pytz import utc
         >>> df = pl.DataFrame(
         ...     {
         ...         "datetime UTC": [
-        ...             datetime(1978, 1, 1, 1, 1, 1, 0, tzinfo=utc),
-        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000, tzinfo=utc),
-        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000, tzinfo=utc),
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
         ...         ]
-        ...     }
+        ...     },
+        ...     schema={"datetime UTC": pl.Datetime(time_zone="UTC")},
         ... )
         >>> df.with_columns(
         ...     pl.col("datetime UTC").dt.datetime().alias("datetime (no timezone)"),
