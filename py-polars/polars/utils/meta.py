@@ -44,7 +44,7 @@ def threadpool_size() -> int:
 
     Examples
     --------
-    >>> pl.threadpool_size() # doctest: +SKIP
+    >>> pl.threadpool_size()  # doctest: +SKIP
     24
     """
     return _threadpool_size()
