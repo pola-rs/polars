@@ -20,6 +20,11 @@ def get_index_type() -> DataTypeClass:
     -------
     DataType
         :class:`UInt32` in regular Polars, :class:`UInt64` in bigidx Polars.
+
+    Examples
+    --------
+    >>> pl.get_index_type()
+    UInt32
     """
     return _get_index_type()
 
@@ -36,5 +41,10 @@ def threadpool_size() -> int:
     be temporarily setting max threads to a low value before importing polars in a
     pyspark UDF or similar context. Otherwise, it is strongly recommended not to
     override this value as it will be set automatically by the engine.
+
+    Examples
+    --------
+    >>> pl.threadpool_size() # doctest: +SKIP
+    24
     """
     return _threadpool_size()
