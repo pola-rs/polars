@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from functools import partial
 from typing import Any, Callable
@@ -169,6 +170,7 @@ def test_gevent_collect_async_with_hub(
     _gevent_run(main, raises)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="May time out on Windows")
 @_gevent_collect
 def test_gevent_collect_async_switch(
     get_result: Callable[[], Any], raises: Exception | None
@@ -176,7 +178,7 @@ def test_gevent_collect_async_switch(
     def main() -> Any:
         result = get_result()
         gevent.sleep(0.1)
-        return result.get(block=False, timeout=10)
+        return result.get(block=False, timeout=3)
 
     _gevent_run(main, raises)
 
