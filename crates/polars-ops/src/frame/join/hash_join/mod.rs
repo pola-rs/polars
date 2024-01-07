@@ -244,7 +244,7 @@ pub trait JoinDispatch: IntoDf {
         s_right: &Series,
         args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
-        let ca_self = self.to_df();
+        let df_self = self.to_df();
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -262,7 +262,7 @@ pub trait JoinDispatch: IntoDf {
 
         // Take the left and right dataframes by join tuples
         let (df_left, df_right) = POOL.join(
-            || unsafe { ca_self.take_unchecked(&idx_ca_l) },
+            || unsafe { df_self.take_unchecked(&idx_ca_l) },
             || unsafe { other.take_unchecked(&idx_ca_r) },
         );
 
@@ -276,6 +276,7 @@ pub trait JoinDispatch: IntoDf {
                 &[s_left.name()],
                 &[s_right.name()],
                 args.suffix.as_deref(),
+                df_self,
             ))
         } else {
             out

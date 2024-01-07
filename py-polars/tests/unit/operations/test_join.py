@@ -817,3 +817,20 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
     )
+
+
+def test_outer_join_coalesce_different_names_13450() -> None:
+    df1 = pl.DataFrame({"L1": ["a", "b", "c"], "L3": ["b", "c", "d"], "L2": [1, 2, 3]})
+    df2 = pl.DataFrame({"L3": ["a", "c", "d"], "R2": [7, 8, 9]})
+
+    expected = pl.DataFrame(
+        {
+            "L1": ["a", "c", "d", "b"],
+            "L3": ["b", "d", None, "c"],
+            "L2": [1, 3, None, 2],
+            "R2": [7, 8, 9, None],
+        }
+    )
+
+    out = df1.join(df2, left_on="L1", right_on="L3", how="outer_coalesce")
+    assert_frame_equal(out, expected)
