@@ -35,7 +35,7 @@ When some expressions produce length-1 `Series` and some do not, the length-1 `S
 
 As you can see from the query the `select` context is very powerful and allows you to evaluate arbitrary expressions independent of (and in parallel to) each other.
 
-The other selection context is `with_columns`. The main difference between `select` and `with_columns` is that `with_columns` retains the original columns and adds new ones, whereas `select` drops the original columns. The other difference is that `with_columns` always yields a `DataFrame` of the same length as the original, so broadcasting will occur even if every `Series` produced has a length of 1. For instance, `df.select(pl.all().sum())` results in a length-1 DataFrame, whereas `df.with_columns(pl.all().sum())` broadcasts each of the sums to the length of the original `DataFrame`.
+The other selection context is `with_columns`. The main difference between `with_columns` and `select` is that `with_columns` retains the original columns and adds new ones, whereas `select` drops the original columns. The other difference is that `with_columns` always yields a `DataFrame` of the same length as the original, so broadcasting will occur even if every `Series` produced has a length of 1. For instance, `df.select(pl.all().sum())` results in a length-1 `DataFrame`, whereas `df.with_columns(pl.all().sum())` broadcasts each of the sums to the length of the original `DataFrame`.
 
 {{code_block('user-guide/concepts/contexts','with_columns',['with_columns'])}}
 
