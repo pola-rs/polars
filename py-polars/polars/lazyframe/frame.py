@@ -140,7 +140,7 @@ class LazyFrame:
         Two-dimensional data in various forms; dict input must contain Sequences,
         Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The DataFrame schema may be declared in several ways:
+        The LazyFrame schema may be declared in several ways:
 
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
@@ -152,7 +152,6 @@ class LazyFrame:
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
-        underlying data, the names given here will overwrite them.
 
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
@@ -1116,8 +1115,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Inspect a node in the computation graph.
 
-        Print the value that this node in the computation graph evaluates to and passes
-        on the value.
+        Print the value that this node in the computation graph evaluates to and pass on
+        the value.
 
         Examples
         --------
@@ -1147,7 +1146,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Sort the DataFrame by the given columns.
+        Sort the LazyFrame by the given columns.
 
         Parameters
         ----------
@@ -1261,7 +1260,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Return the `k` largest elements.
 
-        If 'descending=True` the smallest elements will be given.
+        If `descending=True` the smallest elements will be given.
 
         Parameters
         ----------
@@ -1271,7 +1270,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
+            Return the `k` smallest. Top-k by multiple columns can be specified
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
@@ -1346,7 +1345,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Return the `k` smallest elements.
 
-        If 'descending=True` the largest elements will be given.
+        If `descending=True` the largest elements will be given.
 
         Parameters
         ----------
@@ -1356,7 +1355,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
+            Return the `k` largest. Bottom-k by multiple columns can be specified
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
@@ -2205,7 +2204,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             File path to which the file should be written.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -3850,7 +3849,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **named_exprs: IntoExpr,
     ) -> Self:
         """
-        Add columns to this DataFrame.
+        Add columns to this LazyFrame.
 
         Added columns will replace existing columns with the same name.
 
@@ -4003,7 +4002,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **named_exprs: IntoExpr,
     ) -> Self:
         """
-        Add columns to this DataFrame.
+        Add columns to this LazyFrame.
 
         Added columns will replace existing columns with the same name.
 
