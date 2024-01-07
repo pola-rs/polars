@@ -248,9 +248,13 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns an iterator of the non-null values.
-    #[inline]
     pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, BinaryViewArrayGeneric<T>> {
         NonNullValuesIter::new(self, self.validity())
+    }
+
+    /// Returns an iterator of the non-null values.
+    pub fn non_null_views_iter(&self) -> NonNullValuesIter<'_, Buffer<u128>> {
+        NonNullValuesIter::new(self.views(), self.validity())
     }
 
     impl_sliced!();

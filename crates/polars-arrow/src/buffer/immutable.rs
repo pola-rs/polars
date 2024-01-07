@@ -5,6 +5,7 @@ use std::usize;
 
 use either::Either;
 use num_traits::Zero;
+use crate::array::ArrayAccessor;
 
 use super::{Bytes, IntoIter};
 
@@ -335,5 +336,17 @@ impl<T: crate::types::NativeType> From<Buffer<T>> for arrow_buffer::Buffer {
             value.offset * std::mem::size_of::<T>(),
             value.length * std::mem::size_of::<T>(),
         )
+    }
+}
+
+unsafe impl<'a, T: 'a> ArrayAccessor<'a> for Buffer<T> {
+    type Item = &'a T;
+
+    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
+        self.as_slice().get_unchecked(index)
+    }
+
+    fn len(&self) -> usize {
+        Buffer::len(self)
     }
 }

@@ -2,6 +2,7 @@ use arrow::array::{Array, BinaryViewArray, BinaryViewArrayGeneric, ViewType};
 use arrow::compute::aggregate::estimated_bytes_size;
 use crate::parquet::schema::types::PrimitiveType;
 use polars_error::PolarsResult;
+use crate::parquet::encoding::delta_bitpacked;
 use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics, serialize_statistics, Statistics};
 use crate::read::schema::is_nullable;
 use crate::write::{Encoding, WriteOptions, Page, utils};
@@ -24,10 +25,12 @@ pub(crate) fn encode_plain(
 
 pub(crate) fn encode_delta(
     array: &BinaryViewArray,
-    is_optional: bool,
     buffer: &mut Vec<u8>
 ) {
-
+    let len = array.len() - array.null_count();
+    let lengths = array.non_null_views_iter().map(|v| (*v as u32) as i64);
+    let lengths = utils::ExactSizedIter::new(lengths, len);
+    delta_bitpacked::encode(lengths, buffer);
 }
 
 pub fn array_to_page(
@@ -46,7 +49,7 @@ pub fn array_to_page(
 
     match encoding {
         Encoding::Plain => encode_plain(array, &mut buffer),
-        Encoding::DeltaLengthByteArray => todo!(),
+        Encoding::DeltaLengthByteArray => encode_delta(array, &mut buffer),
         _ => {
             return Err(invalid_encoding(encoding, array.data_type()))
         }
