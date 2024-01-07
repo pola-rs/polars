@@ -73,13 +73,13 @@ def test_string_concat() -> None:
 @pytest.mark.parametrize(
     "invalid_concat", ["CONCAT()", "CONCAT_WS()", "CONCAT_WS(':')"]
 )
-def test_concat_errors(invalid_concat: str) -> None:
+def test_string_concat_errors(invalid_concat: str) -> None:
     lf = pl.LazyFrame({"x": ["a", "b", "c"]})
     with pytest.raises(InvalidOperationError, match="Invalid number of arguments"):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
 
 
-def test_left_right_reverse() -> None:
+def test_string_left_right_reverse() -> None:
     df = pl.DataFrame({"txt": ["abcde", "abc", "a", None]})
     ctx = pl.SQLContext(df=df)
     res = ctx.execute(
@@ -130,6 +130,48 @@ def test_string_lengths() -> None:
         "n_bytes": [5, None, 6, 0],
         "n_bits": [40, None, 48, 0],
     }
+
+
+@pytest.mark.parametrize(
+    ("pattern", "like", "expected"),
+    [
+        ("a%", "LIKE", [1, 4]),
+        ("a%", "ILIKE", [0, 1, 3, 4]),
+        ("ab%", "LIKE", [1]),
+        ("AB%", "ILIKE", [0, 1]),
+        ("ab_", "LIKE", [1]),
+        ("A__", "ILIKE", [0, 1]),
+        ("_0%_", "LIKE", [2, 4]),
+        ("%0", "LIKE", [2]),
+        ("0%", "LIKE", [2]),
+        ("__0%", "LIKE", [2, 3]),
+        ("%*%", "ILIKE", [3]),
+        ("____", "LIKE", [4]),
+        ("a%C", "LIKE", []),
+        ("a%C", "ILIKE", [0, 1, 3]),
+        ("%C?", "ILIKE", [4]),
+        ("a0c?", "LIKE", [4]),
+        ("000", "LIKE", [2]),
+        ("00", "LIKE", []),
+    ],
+)
+def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [0, 1, 2, 3, 4],
+            "txt": ["ABC", "abc", "000", "A[0]*C", "a0c?"],
+        }
+    )
+    with pl.SQLContext(df=df) as ctx:
+        for not_ in ("", "NOT "):
+            out = ctx.execute(
+                f"""SELECT idx FROM df WHERE txt {not_}{like} '{pattern}'"""
+            ).collect()
+
+            res = out["idx"].to_list()
+            if not_:
+                expected = [i for i in df["idx"] if i not in expected]
+            assert res == expected
 
 
 def test_string_replace() -> None:
