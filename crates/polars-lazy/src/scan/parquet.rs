@@ -26,7 +26,7 @@ impl Default for ScanArgsParquet {
             n_rows: None,
             cache: true,
             parallel: Default::default(),
-            rechunk: true,
+            rechunk: false,
             row_count: None,
             low_memory: false,
             cloud_options: None,

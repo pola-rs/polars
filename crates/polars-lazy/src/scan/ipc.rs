@@ -19,7 +19,7 @@ impl Default for ScanArgsIpc {
         Self {
             n_rows: None,
             cache: true,
-            rechunk: true,
+            rechunk: false,
             row_count: None,
             memmap: true,
         }
