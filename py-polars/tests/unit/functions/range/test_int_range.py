@@ -37,6 +37,18 @@ def test_int_range() -> None:
     assert_series_equal(pl.select(int_range=result).to_series(), expected)
 
 
+def test_int_range_short_syntax() -> None:
+    result = pl.int_range(3)
+    expected = pl.Series("int", [0, 1, 2])
+    assert_series_equal(pl.select(int=result).to_series(), expected)
+
+
+def test_int_range_start_default() -> None:
+    result = pl.int_range(end=3)
+    expected = pl.Series("int", [0, 1, 2])
+    assert_series_equal(pl.select(int=result).to_series(), expected)
+
+
 def test_int_range_eager() -> None:
     result = pl.int_range(0, 3, eager=True)
     expected = pl.Series("literal", [0, 1, 2])
