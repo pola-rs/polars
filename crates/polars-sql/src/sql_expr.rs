@@ -125,8 +125,9 @@ impl SQLExprVisitor<'_> {
             SQLExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
             SQLExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
             SQLExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
-            // note: parses both RLIKE and REGEXP
+            SQLExpr::Nested(expr) => self.visit_expr(expr),
             SQLExpr::RLike {
+                // note: parses both RLIKE and REGEXP
                 negated,
                 expr,
                 pattern,
@@ -138,7 +139,6 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
-            SQLExpr::Nested(expr) => self.visit_expr(expr),
             SQLExpr::Subquery(_) => polars_bail!(InvalidOperation: "Unexpected SQL Subquery"),
             SQLExpr::Trim {
                 expr,

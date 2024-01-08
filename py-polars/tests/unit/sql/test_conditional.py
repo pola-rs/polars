@@ -34,7 +34,7 @@ def test_case_when() -> None:
     }
 
 
-def test_nullif_coalesce(foods_ipc_path: Path) -> None:
+def test_control_flow(foods_ipc_path: Path) -> None:
     nums = pl.LazyFrame(
         {
             "x": [1, None, 2, 3, None, 4],
@@ -50,7 +50,8 @@ def test_nullif_coalesce(foods_ipc_path: Path) -> None:
           NULLIF(y, z) as "nullif y_z",
           IFNULL(x, y) as "ifnull x_y",
           IFNULL(y,-1) as "inullf y_z",
-          COALESCE(x, NULLIF(y,z)) as "both"
+          COALESCE(x, NULLIF(y,z)) as "both",
+          IF(x = y, 'eq', 'ne') as "x_eq_y",
         FROM df
         """,
         eager=True,
@@ -63,6 +64,7 @@ def test_nullif_coalesce(foods_ipc_path: Path) -> None:
         "ifnull x_y": [1, 4, 2, 3, None, 4],
         "inullf y_z": [5, 4, -1, 3, -1, 2],
         "both": [1, None, 2, 3, None, 4],
+        "x_eq_y": ["ne", "ne", "ne", "eq", "ne", "ne"],
     }
     for null_func in ("IFNULL", "NULLIF"):
         # both functions expect only 2 arguments
