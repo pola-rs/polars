@@ -9,12 +9,13 @@ use polars_error::PolarsResult;
 use super::super::nested_utils::*;
 use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::basic::{deserialize_plain, finish, Dict, ValuesDictionary};
+use super::basic::{finish};
 use super::utils::*;
 use crate::arrow::read::PagesIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
+use super::decoders::*;
 
 #[derive(Debug)]
 enum State<'a> {

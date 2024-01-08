@@ -16,7 +16,6 @@ use super::utils::FixedSizeBinary;
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
 use crate::read::deserialize::utils;
 
 pub(super) type Dict = Vec<u8>;

@@ -14,7 +14,6 @@ use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
 struct Values<'a>(BitmapIter<'a>);

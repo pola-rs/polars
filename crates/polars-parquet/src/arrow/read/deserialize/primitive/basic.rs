@@ -13,7 +13,6 @@ use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 
 #[derive(Debug)]
