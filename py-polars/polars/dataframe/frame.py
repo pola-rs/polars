@@ -5251,6 +5251,24 @@ class DataFrame:
         │ 1001 ┆ 3   ┆ 4   │
         │ 1002 ┆ 5   ┆ 6   │
         └──────┴─────┴─────┘
+
+        An index column can also be created using the expressions :func:`int_range`
+        and :func:`count`.
+
+        >>> df.select(
+        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.all(),
+        ... )
+        shape: (3, 3)
+        ┌───────┬─────┬─────┐
+        │ index ┆ a   ┆ b   │
+        │ ---   ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   │
+        │ 1     ┆ 3   ┆ 4   │
+        │ 2     ┆ 5   ┆ 6   │
+        └───────┴─────┴─────┘
         """
         try:
             return self._from_pydf(self._df.with_row_index(name, offset))
