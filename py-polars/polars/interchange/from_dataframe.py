@@ -268,8 +268,8 @@ def _construct_validity_buffer(
             msg = "bitmask must be constructed"
             raise CopyNotAllowedError(msg)
 
+        sentinel = pl.Series([null_value])
         try:
-            sentinel = pl.Series([null_value])
             if column_dtype.is_temporal():
                 sentinel = sentinel.cast(column_dtype)
             return data != sentinel  # noqa: TRY300
