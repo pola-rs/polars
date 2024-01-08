@@ -216,12 +216,11 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
 }
 
 pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    // Fast paths for no nulls / all nulls
-    match s.null_count() {
-        0 => return Ok(cum_count_no_nulls(s.name(), s.len(), reverse)),
-        c if c == s.len() => return Ok(IdxCa::full(s.name(), 0 as IdxSize, c).into()),
-        _ => (),
-    };
+    // Fast paths for no nulls
+    if s.null_count() == 0 {
+        let out = cum_count_no_nulls(s.name(), s.len(), reverse);
+        return Ok(out);
+    }
 
     let mut count = 0 as IdxSize;
     let f = |v: bool| {
@@ -232,9 +231,10 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
     };
 
     let ca = s.is_not_null();
+    let iter = ca.into_no_null_iter();
     let out: NoNull<IdxCa> = match reverse {
-        false => ca.into_no_null_iter().map(f).collect(),
-        true => ca.into_no_null_iter().rev().map(f).collect_reversed(),
+        false => iter.map(f).collect(),
+        true => iter.rev().map(f).collect_reversed(),
     };
     Ok(out.into_inner().into())
 }
