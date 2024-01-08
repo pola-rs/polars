@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 @overload
 def arange(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -32,8 +32,8 @@ def arange(
 
 @overload
 def arange(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -44,8 +44,8 @@ def arange(
 
 @overload
 def arange(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -55,8 +55,8 @@ def arange(
 
 
 def arange(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = 1,
+    end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
     dtype: PolarsIntegerType = Int64,
@@ -107,8 +107,8 @@ def arange(
 
 @overload
 def int_range(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -119,8 +119,8 @@ def int_range(
 
 @overload
 def int_range(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -131,8 +131,8 @@ def int_range(
 
 @overload
 def int_range(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -157,9 +157,8 @@ def int_range(
     start
         Start of the range (inclusive). Defaults to 0.
     end
-        End of the range (exclusive).
-        If set to `None` (default), the value of `start` is used and `start` is set
-        to `0`.
+        End of the range (exclusive). If set to `None` (default),
+        the value of `start` is used and `start` is set to `0`.
     step
         Step size of the range.
     dtype
@@ -188,12 +187,23 @@ def int_range(
             2
     ]
 
+    `end` can be omitted for a shorter syntax.
+
+    >>> pl.int_range(3, eager=True).alias("int")
+    shape: (3,)
+    Series: 'int' [i64]
+    [
+            0
+            1
+            2
+    ]
+
     `int_range` can be used in conjunction with `count` to generate an index column
     for a DataFrame.
 
     >>> df = pl.DataFrame({"a": [1, 3, 5], "b": [2, 4, 6]})
     >>> df.select(
-    ...     pl.int_range(0, pl.count(), dtype=pl.UInt32).alias("index"),
+    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
     ...     pl.all(),
     ... )
     shape: (3, 3)
@@ -271,9 +281,9 @@ def int_ranges(
     Parameters
     ----------
     start
-        Lower bound of the range (inclusive).
+        Start of the range (inclusive).
     end
-        Upper bound of the range (exclusive).
+        End of the range (exclusive).
     step
         Step size of the range.
     dtype
