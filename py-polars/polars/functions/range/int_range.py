@@ -142,8 +142,8 @@ def int_range(
 
 
 def int_range(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = 0,
+    end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
     dtype: PolarsIntegerType = Int64,
@@ -155,9 +155,11 @@ def int_range(
     Parameters
     ----------
     start
-        Lower bound of the range (inclusive).
+        Start of the range (inclusive). Defaults to 0.
     end
-        Upper bound of the range (exclusive).
+        End of the range (exclusive).
+        If set to `None` (default), the value of `start` is used and `start` is set
+        to `0`.
     step
         Step size of the range.
     dtype
@@ -205,6 +207,10 @@ def int_range(
     │ 2     ┆ 5   ┆ 6   │
     └───────┴─────┴─────┘
     """
+    if end is None:
+        end = start
+        start = 0
+
     start = parse_as_expression(start)
     end = parse_as_expression(end)
     result = wrap_expr(plr.int_range(start, end, step, dtype))
