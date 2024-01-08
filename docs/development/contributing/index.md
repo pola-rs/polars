@@ -45,7 +45,7 @@ You may use the issue to discuss possible solutions.
 Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
-> *Note: if you are a Windows user, see the [Windows Development](windows) setup guide.*
+> _Note: if you are a Windows user, see the [Windows Development](windows) setup guide._
 
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
