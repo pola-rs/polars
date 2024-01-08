@@ -368,3 +368,11 @@ def test_schema_outer_join_projection_pd_13287() -> None:
     ).with_columns(
         pl.col("a").fill_null(pl.col("c")),
     ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
+
+
+def test_projection_pushdown_outer_join_duplicates() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    assert (
+        df1.join(df2, on="a", how="outer").with_columns(c=0).select("a", "c").collect()
+    ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
