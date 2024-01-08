@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Mul};
 
 use num_traits::Bounded;
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, NoNull};
+use polars_core::utils::CustomIterTools;
 use polars_core::with_match_physical_numeric_polars_type;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
@@ -216,15 +216,7 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
 }
 
 pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    if reverse {
-        let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
-        let mut ca = ca.into_inner();
-        ca.rename(s.name());
-        Ok(ca.into_series())
-    } else {
-        let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
-        let mut ca = ca.into_inner();
-        ca.rename(s.name());
-        Ok(ca.into_series())
-    }
+    let s = s.is_not_null().cast(&IDX_DTYPE).unwrap();
+    let ca = s.idx().unwrap();
+    Ok(cum_sum_numeric(ca, reverse).into_series())
 }
