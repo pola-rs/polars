@@ -12,6 +12,7 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
+from polars.utils.various import parse_version
 
 protocol_dtypes = [
     pl.Int8,
@@ -244,7 +245,8 @@ def test_to_dataframe_pyarrow_boolean_midbyte_slice() -> None:
 
 
 @pytest.mark.xfail(
-    reason="Bug in pandas: https://github.com/pandas-dev/pandas/issues/56712"
+    parse_version(pd.__version__) < (2, 2),
+    reason="Bug in pandas: https://github.com/pandas-dev/pandas/issues/56712",
 )
 def test_from_dataframe_pandas_timestamp_ns() -> None:
     df = pl.Series("a", [datetime(2000, 1, 1)], dtype=pl.Datetime("ns")).to_frame()
