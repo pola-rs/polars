@@ -33,14 +33,7 @@ run a Linux environment without dual-booting or a separate virtual machine. Sett
 
 3. You can now enter WSL in a command prompt by typing `wsl`.
 4. Update your system with `sudo apt update && sudo apt upgrade`.
-5. Python should already be installed on your system, which you can run with the `python3` command. If you wish to be able
-   to load python3 with the `python` command, set an alias in your bash prompt with `alias python='python3'` or to make it
-   permanent you can edit `~.bashrc` with an alias, e.g.:
-
-   ```bash
-   # python aliases
-   alias python='/usr/local/bin/python3.11'
-   ```
+5. Python should already be installed on your system, which you can run with the `python3` command.
 
 ### Fork and clone Polars
 
@@ -74,10 +67,23 @@ feature:
 2. Type `ctrl+shift+p` to bring up the command palette and type `WSL: Connect to WSL`
 3. Open your polars project with `File → Open Folder...` and select the root polars folder of your cloned repository.
 4. Open a command prompt (in VS Code this is `` ctrl + ` ``).
-5. Build polars:
+5. Create and setup your virtual environment:
+
+   ```shell
+   user@PC:~/projects/polars$ make .venv
+   ```
+
+6. Build polars:
 
    ```shell
    user@PC:~/projects/polars$ make build
+   ```
+
+7. Test your polars build:
+
+   ```shell
+   user@PC:~/projects/polars$ cd py-polars
+   user@PC:~/projects/polars/py-polars$ make test
    ```
 
 ## Native Windows compilation
