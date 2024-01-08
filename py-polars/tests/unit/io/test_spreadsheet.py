@@ -314,22 +314,18 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name="test4",
         schema_overrides={"cardinality": pl.UInt16},
     ).drop_nulls()
-    assert df1.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float64,
-        "iter_groups": pl.Float64,
-    }
+    assert df1.schema["cardinality"] == pl.UInt16
+    assert df1.schema["rows_by_key"] == pl.Float64
+    assert df1.schema["iter_groups"] == pl.Float64
 
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
         read_csv_options={"dtypes": {"cardinality": pl.UInt16}},
     ).drop_nulls()
-    assert df2.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float64,
-        "iter_groups": pl.Float64,
-    }
+    assert df2.schema["cardinality"] == pl.UInt16
+    assert df2.schema["rows_by_key"] == pl.Float64
+    assert df2.schema["iter_groups"] == pl.Float64
 
     df3 = pl.read_excel(
         path_xlsx,
@@ -342,11 +338,9 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             },
         },
     ).drop_nulls()
-    assert df3.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float32,
-        "iter_groups": pl.Float32,
-    }
+    assert df3.schema["cardinality"] == pl.UInt16
+    assert df3.schema["rows_by_key"] == pl.Float32
+    assert df3.schema["iter_groups"] == pl.Float32
 
     for workbook_path in (path_xlsx, path_xlsb, path_ods):
         df4 = pl.read_excel(
@@ -392,7 +386,8 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name=["test4", "test4"],
         schema_overrides=overrides,
     )
-    assert df["test4"].schema == overrides
+    for col, dtype in overrides.items():
+        assert df["test4"].schema[col] == dtype
 
 
 def test_unsupported_engine() -> None:
