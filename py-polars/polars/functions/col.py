@@ -139,7 +139,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
     │ 1   ┆ 3   ┆ 4   │
     │ 2   ┆ 4   ┆ 6   │
     └─────┴─────┴─────┘
-
     """
 
     def __new__(  # type: ignore[misc]
@@ -262,7 +261,7 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         Easily select all columns that match a certain data type by passing that
         datatype.
 
-        >>> df.select(pl.col(pl.Utf8))
+        >>> df.select(pl.col(pl.String))
         shape: (2, 1)
         ┌─────┐
         │ bar │
@@ -282,7 +281,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 1   ┆ 11        ┆ 2   │
         │ 2   ┆ 22        ┆ 1   │
         └─────┴───────────┴─────┘
-
         """
         return _create_col(name, *more_names)
 
@@ -325,7 +323,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 4   │
         │ 6   │
         └─────┘
-
         """
         return getattr(type(self), name)
 

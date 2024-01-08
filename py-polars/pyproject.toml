@@ -33,7 +33,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
-Documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
+Documentation = "https://docs.pola.rs/py-polars/html/reference/index.html"
 Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
@@ -45,6 +45,7 @@ connectorx = ["connectorx >= 0.3.2"]
 deltalake = ["deltalake >= 0.14.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
+plot = ["hvplot >= 0.9.1"]
 matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
@@ -58,7 +59,7 @@ timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_syst
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[pyarrow,pandas,numpy,fsspec,plot,connectorx,xlsx2csv,deltalake,timezone,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
 [tool.maturin]
@@ -88,6 +89,7 @@ module = [
   "ezodf.*",
   "fsspec.*",
   "gevent",
+  "hvplot.*",
   "matplotlib.*",
   "moto.server",
   "openpyxl",
@@ -131,7 +133,6 @@ select = [
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
   "D213", # Augment NumPy docstring convention: Multi-line docstring summary should start at the second line
-  "D413", # Augment NumPy docstring convention: Missing blank line after last section
   "D417", # Augment NumPy docstring convention: Missing argument descriptions
   "I", # isort
   "SIM", # flake8-simplify

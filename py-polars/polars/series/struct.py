@@ -50,7 +50,6 @@ class StructNameSpace:
         ----------
         name
             Name of the field
-
         """
 
     def rename_fields(self, names: Sequence[str]) -> Series:
@@ -61,7 +60,6 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields
-
         """
 
     @property
@@ -88,7 +86,6 @@ class StructNameSpace:
         │ 1   ┆ 2   │
         │ 3   ┆ 4   │
         └─────┴─────┘
-
         """
         return wrap_df(self._s.struct_unnest())
 
@@ -106,5 +103,4 @@ class StructNameSpace:
             "{"a":[1,2],"b"…
             "{"a":[9,1,3],"…
         ]
-
         """

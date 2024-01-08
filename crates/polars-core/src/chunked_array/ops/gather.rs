@@ -34,7 +34,7 @@ pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
             check_bounds_nulls(a, len).is_ok()
         }
     });
-    polars_ensure!(all_valid, ComputeError: "gather indices are out of bounds");
+    polars_ensure!(all_valid, OutOfBounds: "gather indices are out of bounds");
     Ok(())
 }
 

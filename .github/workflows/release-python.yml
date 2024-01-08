@@ -47,7 +47,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -75,9 +75,9 @@ jobs:
           python -c 'import polars'
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: sdist
+          name: sdist-${{ matrix.package }}
           path: dist/*.tar.gz
 
   build-wheels:
@@ -92,6 +92,9 @@ jobs:
           - os: windows-32gb-ram
             architecture: aarch64
 
+    env:
+      SED_INPLACE: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,7 +108,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -118,21 +121,32 @@ jobs:
       - name: Add bigidx feature
         if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
-      - name: Set _LTS_CPU variable
+
+      - name: Set _POLARS_ARCH variable
+        run: sed $SED_INPLACE 's/^_POLARS_ARCH = \"unknown\"$/_POLARS_ARCH = \"${{ matrix.architecture }}\"/g' py-polars/polars/_cpu_check.py
+
+      - name: Set _POLARS_LTS_CPU variable
         if: matrix.package == 'polars-lts-cpu'
-        env:
-          SED_OPTIONS: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
-        run: sed $SED_OPTIONS 's/^_LTS_CPU = False$/_LTS_CPU = True/g' py-polars/polars/_cpu_check.py
+        run: sed $SED_INPLACE 's/^_LTS_CPU = False$/_LTS_CPU = True/g' py-polars/polars/_cpu_check.py
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os != 'macos-latest'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt" >> $GITHUB_ENV
+        run: |
+          FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
+          echo "RUSTFLAGS=-C target-feature=$FEATURES" >> $GITHUB_ENV
+          sed $SED_INPLACE "s/^_POLARS_FEATURE_FLAGS = \"\"\$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g" py-polars/polars/_cpu_check.py
       - name: Set RUSTFLAGS for x86-64 MacOS
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os == 'macos-latest'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
+        run: |
+          FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+          echo "RUSTFLAGS=-C target-feature=$FEATURES" >> $GITHUB_ENV
+          sed $SED_INPLACE "s/^_POLARS_FEATURE_FLAGS = \"\"\$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g" py-polars/polars/_cpu_check.py
       - name: Set RUSTFLAGS for x86-64 LTS CPU
         if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
+        run: |
+          FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
+          echo "RUSTFLAGS=-C target-feature=$FEATURES --cfg use_mimalloc" >> $GITHUB_ENV
+          sed $SED_INPLACE "s/^_POLARS_FEATURE_FLAGS = \"\"\$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g" py-polars/polars/_cpu_check.py
 
       - name: Set Rust target for aarch64
         if: matrix.architecture == 'aarch64'
@@ -158,9 +172,9 @@ jobs:
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheel-${{ matrix.package }}-${{ matrix.os }}-${{ matrix.architecture }}
           path: dist/*.whl
 
   publish-to-pypi:
@@ -173,17 +187,11 @@ jobs:
       id-token: write
 
     steps:
-      - name: Download sdist
-        uses: actions/download-artifact@v3
+      - name: Download sdists and wheels
+        uses: actions/download-artifact@v4
         with:
-          name: sdist
           path: dist
-
-      - name: Download wheels
-        uses: actions/download-artifact@v3
-        with:
-          name: wheels
-          path: dist
+          merge-multiple: true
 
       - name: Publish to PyPI
         if: inputs.dry-run == false
@@ -200,9 +208,9 @@ jobs:
           ref: ${{ inputs.sha }}
 
       - name: Download sdist
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: sdist
+          name: sdist-polars
           path: dist
 
       - name: Get version from Cargo.toml

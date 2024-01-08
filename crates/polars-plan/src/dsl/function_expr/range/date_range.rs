@@ -22,9 +22,7 @@ pub(super) fn temporal_range(
     if s[0].dtype() == &DataType::Date && interval.is_full_days() {
         date_range(s, interval, closed)
     } else {
-        let mut s = datetime_range(s, interval, closed, time_unit, time_zone)?;
-        s.rename("date");
-        Ok(s)
+        datetime_range(s, interval, closed, time_unit, time_zone)
     }
 }
 
@@ -38,15 +36,14 @@ pub(super) fn temporal_ranges(
     if s[0].dtype() == &DataType::Date && interval.is_full_days() {
         date_ranges(s, interval, closed)
     } else {
-        let mut s = datetime_ranges(s, interval, closed, time_unit, time_zone)?;
-        s.rename("date_range");
-        Ok(s)
+        datetime_ranges(s, interval, closed, time_unit, time_zone)
     }
 }
 
 fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
+    let name = start.name();
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
@@ -59,7 +56,7 @@ fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsR
         * MILLISECONDS_IN_DAY;
 
     let result = datetime_range_impl(
-        "date",
+        name,
         start,
         end,
         interval,
@@ -83,7 +80,7 @@ fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> Polars
     let end = end.i64().unwrap() * MILLISECONDS_IN_DAY;
 
     let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
-        "date_range",
+        start.name(),
         start.len(),
         start.len() * CAPACITY_FACTOR,
         DataType::Int32,

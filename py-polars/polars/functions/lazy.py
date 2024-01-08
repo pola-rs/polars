@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         IntoExpr,
         PolarsDataType,
         RollingInterpolationMethod,
+        SelectorType,
     )
 
 
@@ -70,7 +71,6 @@ def element() -> Expr:
     │ 8   ┆ 5   ┆ [16, 10]    │
     │ 3   ┆ 2   ┆ [6, 4]      │
     └─────┴─────┴─────────────┘
-
     """
     return F.col("")
 
@@ -126,11 +126,81 @@ def count(column: str | None = None) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
+
+    Generate an index column using `count` in conjunction with :func:`int_range`.
+
+    >>> df.select(
+    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+    ...     pl.all(),
+    ... )
+    shape: (3, 3)
+    ┌───────┬──────┬──────┐
+    │ index ┆ a    ┆ b    │
+    │ ---   ┆ ---  ┆ ---  │
+    │ u32   ┆ i64  ┆ i64  │
+    ╞═══════╪══════╪══════╡
+    │ 0     ┆ 1    ┆ 3    │
+    │ 1     ┆ 2    ┆ null │
+    │ 2     ┆ null ┆ null │
+    └───────┴──────┴──────┘
     """  # noqa: W505
     if column is None:
         return wrap_expr(plr.count())
 
     return F.col(column).count()
+
+
+def cum_count(*names: str, reverse: bool = False) -> Expr:
+    """
+    Return the cumulative count of the values in the column or of the context.
+
+    If no arguments are passed, returns the cumulative count of a context.
+    Rows containing null values count towards the result.
+
+    Otherwise, this function is syntactic sugar for `col(names).cum_count()`.
+
+    Parameters
+    ----------
+    *names
+        Name(s) of the columns to use.
+    reverse
+        Reverse the operation.
+
+    Examples
+    --------
+    Return the row numbers of a context. Note that rows containing null values are
+    counted towards the total.
+
+    >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
+    >>> df.select(pl.cum_count())
+    shape: (3, 1)
+    ┌───────────┐
+    │ cum_count │
+    │ ---       │
+    │ u32       │
+    ╞═══════════╡
+    │ 1         │
+    │ 2         │
+    │ 3         │
+    └───────────┘
+
+    Return the cumulative count of values in a column.
+
+    >>> df.select(pl.cum_count("a"))
+    shape: (3, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 0   │
+    │ 1   │
+    │ 2   │
+    └─────┘
+    """
+    if not names:
+        return wrap_expr(plr.cum_count(reverse=reverse))
+    return F.col(*names).cum_count(reverse=reverse)
 
 
 def implode(name: str) -> Expr:
@@ -143,7 +213,6 @@ def implode(name: str) -> Expr:
     ----------
     name
         Column name.
-
     """
     return F.col(name).implode()
 
@@ -177,7 +246,6 @@ def std(column: str, ddof: int = 1) -> Expr:
     └──────────┘
     >>> df["a"].std()
     3.605551275463989
-
     """
     return F.col(column).std(ddof)
 
@@ -211,7 +279,6 @@ def var(column: str, ddof: int = 1) -> Expr:
     └──────┘
     >>> df["a"].var()
     13.0
-
     """
     return F.col(column).var(ddof)
 
@@ -239,7 +306,6 @@ def mean(column: str) -> Expr:
     ╞═════╡
     │ 4.0 │
     └─────┘
-
     """
     return F.col(column).mean()
 
@@ -262,7 +328,6 @@ def median(column: str) -> Expr:
     ╞═════╡
     │ 3.0 │
     └─────┘
-
     """
     return F.col(column).median()
 
@@ -290,7 +355,6 @@ def n_unique(column: str) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
-
     """
     return F.col(column).n_unique()
 
@@ -318,7 +382,6 @@ def approx_n_unique(column: str | Expr) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
-
     """
     if isinstance(column, pl.Expr):
         return column.approx_n_unique()
@@ -363,7 +426,6 @@ def first(column: str | None = None) -> Expr:
     ╞═════╡
     │ 1   │
     └─────┘
-
     """
     if column is None:
         return wrap_expr(plr.first())
@@ -409,7 +471,6 @@ def last(column: str | None = None) -> Expr:
     ╞═════╡
     │ 3   │
     └─────┘
-
     """
     if column is None:
         return wrap_expr(plr.last())
@@ -454,7 +515,6 @@ def head(column: str, n: int = 10) -> Expr:
     │ 1   │
     │ 8   │
     └─────┘
-
     """
     return F.col(column).head(n)
 
@@ -496,7 +556,6 @@ def tail(column: str, n: int = 10) -> Expr:
     │ 8   │
     │ 3   │
     └─────┘
-
     """
     return F.col(column).tail(n)
 
@@ -597,7 +656,6 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     ╞═════╡
     │ 3.0 │
     └─────┘
-
     """
     a = parse_as_expression(a)
     b = parse_as_expression(b)
@@ -657,7 +715,6 @@ def map_batches(
     │ 3   ┆ 6   ┆ 10    │
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
@@ -692,7 +749,6 @@ def map(
     -------
     Expr
         Expression with the data type given by `return_dtype`.
-
     """
     return map_batches(exprs, function, return_dtype)
 
@@ -814,7 +870,6 @@ def apply(
     -------
     Expr
         Expression with the data type given by `return_dtype`.
-
     """
     return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
 
@@ -981,7 +1036,6 @@ def reduce(
     │ 3   │
     │ 5   │
     └─────┘
-
     """
     # in case of col("*")
     if isinstance(exprs, pl.Expr):
@@ -1043,7 +1097,6 @@ def cum_fold(
     │ 2   ┆ 4   ┆ 6   ┆ {3,7,13}  │
     │ 3   ┆ 5   ┆ 7   ┆ {4,9,16}  │
     └─────┴─────┴─────┴───────────┘
-
     """
     # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
@@ -1138,7 +1191,6 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     │ 135.0  ┆ 2.356194  │
     │ -135.0 ┆ -2.356194 │
     └────────┴───────────┘
-
     """
     if isinstance(y, str):
         y = F.col(y)
@@ -1185,7 +1237,6 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     │ 135.0  ┆ 2.356194  │
     │ -135.0 ┆ -2.356194 │
     └────────┴───────────┘
-
     """
     if isinstance(y, str):
         y = F.col(y)
@@ -1195,21 +1246,28 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
 
 
 def exclude(
-    columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
-    *more_columns: str | PolarsDataType,
+    columns: (
+        str
+        | PolarsDataType
+        | SelectorType
+        | Expr
+        | Collection[str | PolarsDataType | SelectorType | Expr]
+    ),
+    *more_columns: str | PolarsDataType | SelectorType | Expr,
 ) -> Expr:
     """
-    Represent all columns except for the given columns.
+    Select all columns except those matching the given columns, datatypes, or selectors.
 
-    Syntactic sugar for `pl.all().exclude(columns)`.
+    .. versionchanged:: 0.20.3
+        This function is now a simple redirect to the `cs.exclude()` selector.
 
     Parameters
     ----------
     columns
-        The name or datatype of the column(s) to exclude. Accepts regular expression
-        input. Regular expressions should start with `^` and end with `$`.
+        One or more columns (col or name), datatypes, columns, or selectors representing
+        the columns to exclude.
     *more_columns
-        Additional names or datatypes of columns to exclude, specified as positional
+        Additional columns, datatypes, or selectors to exclude, specified as positional
         arguments.
 
     Examples
@@ -1223,7 +1281,7 @@ def exclude(
     ...         "cc": [None, 2.5, 1.5],
     ...     }
     ... )
-    >>> df.select(pl.exclude("ba"))
+    >>> df.select(pl.exclude("ba", "xx"))
     shape: (3, 2)
     ┌─────┬──────┐
     │ aa  ┆ cc   │
@@ -1251,7 +1309,7 @@ def exclude(
 
     Exclude by dtype(s), e.g. removing all columns of type Int64 or Float64:
 
-    >>> df.select(pl.exclude([pl.Int64, pl.Float64]))
+    >>> df.select(pl.exclude(pl.Int64, pl.Float64))
     shape: (3, 1)
     ┌──────┐
     │ ba   │
@@ -1263,8 +1321,24 @@ def exclude(
     │ null │
     └──────┘
 
+    Exclude column using a compound selector:
+
+    >>> import polars.selectors as cs
+    >>> df.select(pl.exclude(cs.first() | cs.last()))
+    shape: (3, 1)
+    ┌──────┐
+    │ ba   │
+    │ ---  │
+    │ str  │
+    ╞══════╡
+    │ a    │
+    │ b    │
+    │ null │
+    └──────┘
     """
-    return F.col("*").exclude(columns, *more_columns)
+    from polars.selectors import exclude
+
+    return exclude(columns, *more_columns)
 
 
 def groups(column: str) -> Expr:
@@ -1288,7 +1362,6 @@ def quantile(
         Quantile between 0.0 and 1.0.
     interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
         Interpolation method.
-
     """
     return F.col(column).quantile(quantile, interpolation)
 
@@ -1350,7 +1423,6 @@ def arg_sort_by(
     │ 0   │
     │ 3   │
     └─────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
@@ -1408,7 +1480,6 @@ def collect_all(
     -------
     list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
-
     """
     if no_optimization:
         predicate_pushdown = False
@@ -1611,7 +1682,6 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     │ 2   │
     │ 1   │
     └─────┘
-
     """
     return pl.DataFrame().select(*exprs, **named_exprs)
 
@@ -1661,7 +1731,6 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         1
         3
     ]
-
     """
     if eager:
         if not isinstance(condition, pl.Series):
@@ -1720,7 +1789,6 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3.0  │
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.coalesce(exprs))
@@ -1783,7 +1851,6 @@ def from_epoch(
             2003-10-20
             2003-10-21
     ]
-
     """
     if isinstance(column, str):
         column = F.col(column)
@@ -1830,7 +1897,6 @@ def rolling_cov(
     ddof
         Delta degrees of freedom.  The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
-
     """
     if min_periods is None:
         min_periods = window_size
@@ -1871,7 +1937,6 @@ def rolling_corr(
     ddof
         Delta degrees of freedom.  The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
-
     """
     if min_periods is None:
         min_periods = window_size

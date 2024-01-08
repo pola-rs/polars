@@ -4,7 +4,7 @@ import contextlib
 from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
-from polars.utils._parse_expr_input import parse_when_constraint_expressions
+from polars.utils._parse_expr_input import parse_when_inputs
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -140,7 +140,6 @@ def when(
     │ 3   ┆ 4   ┆ -1  │
     │ 4   ┆ 0   ┆ 99  │
     └─────┴─────┴─────┘
-
     """
-    condition = parse_when_constraint_expressions(*predicates, **constraints)
+    condition = parse_when_inputs(*predicates, **constraints)
     return pl.When(plr.when(condition))

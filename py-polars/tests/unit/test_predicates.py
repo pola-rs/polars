@@ -233,13 +233,13 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
 )
 def test_invalid_filter_predicates(predicate: Any) -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
-    with pytest.raises(ValueError, match="invalid predicate"):
+    with pytest.raises(TypeError, match="invalid predicate"):
         df.filter(predicate)
 
 
 def test_fast_path_boolean_filter_predicates() -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
-    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.Utf8}))
+    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.String}))
     assert_frame_equal(df.filter(True), df)
 
 
@@ -420,3 +420,49 @@ def test_all_any_cleanup_at_single_predicate_case() -> None:
     plan = pl.LazyFrame({"a": [1], "b": [2]}).select(["a"]).drop_nulls().explain()
     assert "horizontal" not in plan
     assert "all" not in plan
+
+
+def test_hconcat_predicate() -> None:
+    # Predicates shouldn't be pushed down past an hconcat as we can't filter
+    # across the different inputs
+    lf1 = pl.LazyFrame(
+        {
+            "a1": [0, 1, 2, 3, 4],
+            "a2": [5, 6, 7, 8, 9],
+        }
+    )
+    lf2 = pl.LazyFrame(
+        {
+            "b1": [0, 1, 2, 3, 4],
+            "b2": [5, 6, 7, 8, 9],
+        }
+    )
+
+    query = pl.concat(
+        [
+            lf1.filter(pl.col("a1") < 4),
+            lf2.filter(pl.col("b1") > 0),
+        ],
+        how="horizontal",
+    ).filter(pl.col("b2") < 9)
+
+    expected = pl.DataFrame(
+        {
+            "a1": [0, 1, 2],
+            "a2": [5, 6, 7],
+            "b1": [1, 2, 3],
+            "b2": [6, 7, 8],
+        }
+    )
+
+    result = query.collect(predicate_pushdown=True)
+    assert_frame_equal(result, expected)
+
+
+def test_predicate_pd_join_13300() -> None:
+    lf = pl.LazyFrame({"col3": range(10, 14), "new_col": range(11, 15)})
+    lf_other = pl.LazyFrame({"col4": [0, 11, 2, 13]})
+
+    lf = lf.join(lf_other, left_on="new_col", right_on="col4", how="left")
+    lf = lf.filter(pl.col("new_col") < 12)
+    assert lf.collect().to_dict(as_series=False) == {"col3": [10], "new_col": [11]}

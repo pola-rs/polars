@@ -150,6 +150,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cov)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::cum_count))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cum_fold))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cum_reduce))
@@ -164,6 +166,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::concat_expr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf_diagonal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::concat_lf_horizontal))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
         .unwrap();

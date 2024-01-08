@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, Struct, Utf8
+from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -68,7 +68,6 @@ def from_dict(
     │ 1   ┆ 3   │
     │ 2   ┆ 4   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_dict(
         data, schema=schema, schema_overrides=schema_overrides
@@ -152,7 +151,7 @@ def from_dicts(
     >>> pl.from_dicts(
     ...     data,
     ...     schema=["a", "b", "c", "d"],
-    ...     schema_overrides={"c": pl.Float64, "d": pl.Utf8},
+    ...     schema_overrides={"c": pl.Float64, "d": pl.String},
     ... )
     shape: (3, 4)
     ┌─────┬─────┬──────┬──────┐
@@ -164,7 +163,6 @@ def from_dicts(
     │ 2   ┆ 5   ┆ null ┆ null │
     │ 3   ┆ 6   ┆ null ┆ null │
     └─────┴─────┴──────┴──────┘
-
     """
     if not data and not (schema or schema_overrides):
         raise NoDataError("no data, cannot infer schema")
@@ -234,7 +232,6 @@ def from_records(
     │ 2   ┆ 5   │
     │ 3   ┆ 6   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_records(
         data,
@@ -286,15 +283,15 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             if coldata:
                 coldata.pop(idx)
 
-    # init cols as utf8 Series, handle "null" -> None, create schema from repr dtype
+    # init cols as String Series, handle "null" -> None, create schema from repr dtype
     data = [
-        pl.Series([(None if v == "null" else v) for v in cd], dtype=Utf8)
+        pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
         for cd in coldata
     ]
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
-        data.extend((pl.Series(empty_data, dtype=Utf8)) for _ in range(n_extend_cols))
+        data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             raise NotImplementedError(
@@ -306,10 +303,10 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     if no_dtypes:
         if df.is_empty():
             # if no dtypes *and* empty, default to string
-            return df.with_columns(F.all().cast(Utf8))
+            return df.with_columns(F.all().cast(String))
         else:
             # otherwise, take a trip through our CSV inference logic
-            if all(tp == Utf8 for tp in df.schema.values()):
+            if all(tp == String for tp in df.schema.values()):
                 buf = io.BytesIO()
                 df.write_csv(file=buf)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
@@ -347,10 +344,10 @@ def _from_series_repr(m: re.Match[str]) -> Series:
     if not values:
         return pl.Series(name=name, values=values, dtype=dtype)
     else:
-        srs = pl.Series(name=name, values=values, dtype=Utf8)
+        srs = pl.Series(name=name, values=values, dtype=String)
         if dtype is None:
             return srs
-        elif dtype in (Categorical, Utf8):
+        elif dtype in (Categorical, String):
             return srs.str.replace('^"(.*)"$', r"$1").cast(dtype)
 
         return _cast_repr_strings_with_schema(
@@ -429,7 +426,6 @@ def from_repr(tbl: str) -> DataFrame | Series:
     ... )
     >>> s.to_list()
     [True, False, True]
-
     """
     # find DataFrame table...
     m = re.search(r"([┌╭].*?[┘╯])", tbl, re.DOTALL)
@@ -502,7 +498,6 @@ def from_numpy(
     │ 2   ┆ 5   │
     │ 3   ┆ 6   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_numpy(
         data, schema=schema, orient=orient, schema_overrides=schema_overrides
@@ -589,7 +584,6 @@ def from_arrow(
         2
         3
     ]
-
     """  # noqa: W505
     if isinstance(data, pa.Table):
         return pl.DataFrame._from_arrow(
@@ -715,7 +709,6 @@ def from_pandas(
         2
         3
     ]
-
     """
     if isinstance(data, (pd.Series, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
@@ -779,7 +772,6 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     │ 1   ┆ 3.0 ┆ x   │
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
-
     """
     from polars.interchange.from_dataframe import from_dataframe
 

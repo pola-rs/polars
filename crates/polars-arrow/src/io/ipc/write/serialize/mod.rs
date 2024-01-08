@@ -11,419 +11,29 @@ use crate::offset::{Offset, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type_full};
+mod binary;
+mod binview;
+mod boolean;
+mod dictionary;
+mod fixed_size_binary;
+mod fixed_sized_list;
+mod list;
+mod map;
+mod primitive;
+mod struct_;
+mod union;
 
-fn write_primitive<T: NativeType>(
-    array: &PrimitiveArray<T>,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    write_bitmap(
-        array.validity(),
-        array.len(),
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-
-    write_buffer(
-        array.values(),
-        buffers,
-        arrow_data,
-        offset,
-        is_little_endian,
-        compression,
-    )
-}
-
-fn write_boolean(
-    array: &BooleanArray,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    offset: &mut i64,
-    _: bool,
-    compression: Option<Compression>,
-) {
-    write_bitmap(
-        array.validity(),
-        array.len(),
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-    write_bitmap(
-        Some(&array.values().clone()),
-        array.len(),
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_generic_binary<O: Offset>(
-    validity: Option<&Bitmap>,
-    offsets: &OffsetsBuffer<O>,
-    values: &[u8],
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    let offsets = offsets.buffer();
-    write_bitmap(
-        validity,
-        offsets.len() - 1,
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-
-    let first = *offsets.first().unwrap();
-    let last = *offsets.last().unwrap();
-    if first == O::default() {
-        write_buffer(
-            offsets,
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    } else {
-        write_buffer_from_iter(
-            offsets.iter().map(|x| *x - first),
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    }
-
-    write_bytes(
-        &values[first.to_usize()..last.to_usize()],
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-}
-
-fn write_binary<O: Offset>(
-    array: &BinaryArray<O>,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    write_generic_binary(
-        array.validity(),
-        array.offsets(),
-        array.values(),
-        buffers,
-        arrow_data,
-        offset,
-        is_little_endian,
-        compression,
-    );
-}
-
-fn write_utf8<O: Offset>(
-    array: &Utf8Array<O>,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    write_generic_binary(
-        array.validity(),
-        array.offsets(),
-        array.values(),
-        buffers,
-        arrow_data,
-        offset,
-        is_little_endian,
-        compression,
-    );
-}
-
-fn write_fixed_size_binary(
-    array: &FixedSizeBinaryArray,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    offset: &mut i64,
-    _is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    write_bitmap(
-        array.validity(),
-        array.len(),
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-    write_bytes(array.values(), buffers, arrow_data, offset, compression);
-}
-
-fn write_list<O: Offset>(
-    array: &ListArray<O>,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    nodes: &mut Vec<ipc::FieldNode>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    let offsets = array.offsets().buffer();
-    let validity = array.validity();
-
-    write_bitmap(
-        validity,
-        offsets.len() - 1,
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-
-    let first = *offsets.first().unwrap();
-    let last = *offsets.last().unwrap();
-    if first == O::zero() {
-        write_buffer(
-            offsets,
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    } else {
-        write_buffer_from_iter(
-            offsets.iter().map(|x| *x - first),
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    }
-
-    write(
-        array
-            .values()
-            .sliced(first.to_usize(), last.to_usize() - first.to_usize())
-            .as_ref(),
-        buffers,
-        arrow_data,
-        nodes,
-        offset,
-        is_little_endian,
-        compression,
-    );
-}
-
-pub fn write_struct(
-    array: &StructArray,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    nodes: &mut Vec<ipc::FieldNode>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    write_bitmap(
-        array.validity(),
-        array.len(),
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-    array.values().iter().for_each(|array| {
-        write(
-            array.as_ref(),
-            buffers,
-            arrow_data,
-            nodes,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    });
-}
-
-pub fn write_union(
-    array: &UnionArray,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    nodes: &mut Vec<ipc::FieldNode>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    write_buffer(
-        array.types(),
-        buffers,
-        arrow_data,
-        offset,
-        is_little_endian,
-        compression,
-    );
-
-    if let Some(offsets) = array.offsets() {
-        write_buffer(
-            offsets,
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    }
-    array.fields().iter().for_each(|array| {
-        write(
-            array.as_ref(),
-            buffers,
-            arrow_data,
-            nodes,
-            offset,
-            is_little_endian,
-            compression,
-        )
-    });
-}
-
-fn write_map(
-    array: &MapArray,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    nodes: &mut Vec<ipc::FieldNode>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    let offsets = array.offsets().buffer();
-    let validity = array.validity();
-
-    write_bitmap(
-        validity,
-        offsets.len() - 1,
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-
-    let first = *offsets.first().unwrap();
-    let last = *offsets.last().unwrap();
-    if first == 0 {
-        write_buffer(
-            offsets,
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    } else {
-        write_buffer_from_iter(
-            offsets.iter().map(|x| *x - first),
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-    }
-
-    write(
-        array
-            .field()
-            .sliced(first as usize, last as usize - first as usize)
-            .as_ref(),
-        buffers,
-        arrow_data,
-        nodes,
-        offset,
-        is_little_endian,
-        compression,
-    );
-}
-
-fn write_fixed_size_list(
-    array: &FixedSizeListArray,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    nodes: &mut Vec<ipc::FieldNode>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-) {
-    write_bitmap(
-        array.validity(),
-        array.len(),
-        buffers,
-        arrow_data,
-        offset,
-        compression,
-    );
-    write(
-        array.values().as_ref(),
-        buffers,
-        arrow_data,
-        nodes,
-        offset,
-        is_little_endian,
-        compression,
-    );
-}
-
-// use `write_keys` to either write keys or values
-#[allow(clippy::too_many_arguments)]
-pub(super) fn write_dictionary<K: DictionaryKey>(
-    array: &DictionaryArray<K>,
-    buffers: &mut Vec<ipc::Buffer>,
-    arrow_data: &mut Vec<u8>,
-    nodes: &mut Vec<ipc::FieldNode>,
-    offset: &mut i64,
-    is_little_endian: bool,
-    compression: Option<Compression>,
-    write_keys: bool,
-) -> usize {
-    if write_keys {
-        write_primitive(
-            array.keys(),
-            buffers,
-            arrow_data,
-            offset,
-            is_little_endian,
-            compression,
-        );
-        array.keys().len()
-    } else {
-        write(
-            array.values().as_ref(),
-            buffers,
-            arrow_data,
-            nodes,
-            offset,
-            is_little_endian,
-            compression,
-        );
-        array.values().len()
-    }
-}
+use binary::*;
+use binview::*;
+use boolean::*;
+pub(super) use dictionary::*;
+use fixed_size_binary::*;
+use fixed_sized_list::*;
+use list::*;
+use map::*;
+use primitive::*;
+use struct_::*;
+use union::*;
 
 /// Writes an [`Array`] to `arrow_data`
 pub fn write(
@@ -564,13 +174,31 @@ pub fn write(
                 compression,
             );
         },
+        Utf8View => write_binview(
+            array.as_any().downcast_ref::<Utf8ViewArray>().unwrap(),
+            buffers,
+            arrow_data,
+            offset,
+            is_little_endian,
+            compression,
+        ),
+        BinaryView => write_binview(
+            array.as_any().downcast_ref::<BinaryViewArray>().unwrap(),
+            buffers,
+            arrow_data,
+            offset,
+            is_little_endian,
+            compression,
+        ),
     }
 }
 
 #[inline]
 fn pad_buffer_to_64(buffer: &mut Vec<u8>, length: usize) {
     let pad_len = pad_to_64(length);
-    buffer.extend_from_slice(&vec![0u8; pad_len]);
+    for _ in 0..pad_len {
+        buffer.push(0u8);
+    }
 }
 
 /// writes `bytes` to `arrow_data` updating `buffers` and `offset` and guaranteeing a 8 byte boundary.

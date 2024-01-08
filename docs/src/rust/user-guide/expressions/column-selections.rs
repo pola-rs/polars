@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "logged_at" => date_range("logged_at",
 			    NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(), NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 2).unwrap(), Duration::parse("1s"),ClosedWindow::Both, TimeUnit::Milliseconds, None)?,
     )?
-    .with_row_count("rn", None)?;
+    .with_row_index("index", None)?;
     println!("{}", &df);
     // --8<-- [end:selectors_df]
 
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = df
         .clone()
         .lazy()
-        .select([col("*").exclude(["logged_at", "rn"])])
+        .select([col("*").exclude(["logged_at", "index"])])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:exclude]

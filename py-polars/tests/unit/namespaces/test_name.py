@@ -7,7 +7,7 @@ import polars as pl
 
 def test_name_change_case() -> None:
     df = pl.DataFrame(
-        schema={"ColX": pl.Int32, "ColY": pl.Utf8},
+        schema={"ColX": pl.Int32, "ColY": pl.String},
     ).with_columns(
         pl.all().name.to_uppercase(),
         pl.all().name.to_lowercase(),
@@ -15,18 +15,18 @@ def test_name_change_case() -> None:
     assert df.schema == OrderedDict(
         [
             ("ColX", pl.Int32),
-            ("ColY", pl.Utf8),
+            ("ColY", pl.String),
             ("COLX", pl.Int32),
-            ("COLY", pl.Utf8),
+            ("COLY", pl.String),
             ("colx", pl.Int32),
-            ("coly", pl.Utf8),
+            ("coly", pl.String),
         ]
     )
 
 
 def test_name_prefix_suffix() -> None:
     df = pl.DataFrame(
-        schema={"ColX": pl.Int32, "ColY": pl.Utf8},
+        schema={"ColX": pl.Int32, "ColY": pl.String},
     ).with_columns(
         pl.all().name.prefix("#"),
         pl.all().name.suffix("!!"),
@@ -34,11 +34,11 @@ def test_name_prefix_suffix() -> None:
     assert df.schema == OrderedDict(
         [
             ("ColX", pl.Int32),
-            ("ColY", pl.Utf8),
+            ("ColY", pl.String),
             ("#ColX", pl.Int32),
-            ("#ColY", pl.Utf8),
+            ("#ColY", pl.String),
             ("ColX!!", pl.Int32),
-            ("ColY!!", pl.Utf8),
+            ("ColY!!", pl.String),
         ]
     )
 

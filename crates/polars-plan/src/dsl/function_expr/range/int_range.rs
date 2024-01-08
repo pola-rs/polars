@@ -9,6 +9,7 @@ const CAPACITY_FACTOR: usize = 5;
 pub(super) fn int_range(s: &[Series], step: i64, dtype: DataType) -> PolarsResult<Series> {
     let mut start = &s[0];
     let mut end = &s[1];
+    let name = start.name();
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
     polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
@@ -26,7 +27,7 @@ pub(super) fn int_range(s: &[Series], step: i64, dtype: DataType) -> PolarsResul
     with_match_physical_integer_polars_type!(dtype, |$T| {
         let start_v = get_first_series_value::<$T>(start)?;
         let end_v = get_first_series_value::<$T>(end)?;
-        int_range_impl::<$T>(start_v, end_v, step)
+        int_range_impl::<$T>(start_v, end_v, step, name)
     })
 }
 
@@ -36,18 +37,22 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
     let value_opt = ca.get(0);
-    let value = value_opt.ok_or(polars_err!(ComputeError: "invalid null input for `int_range`"))?;
+    let value =
+        value_opt.ok_or_else(|| polars_err!(ComputeError: "invalid null input for `int_range`"))?;
     Ok(value)
 }
 
-fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
+fn int_range_impl<T>(
+    start: T::Native,
+    end: T::Native,
+    step: i64,
+    name: &str,
+) -> PolarsResult<Series>
 where
     T: PolarsIntegerType,
     ChunkedArray<T>: IntoSeries,
     std::ops::Range<T::Native>: DoubleEndedIterator<Item = T::Native>,
 {
-    let name = "int";
-
     let mut ca = match step {
         0 => polars_bail!(InvalidOperation: "step must not be zero"),
         1 => ChunkedArray::<T>::from_iter_values(name, start..end),
@@ -85,7 +90,8 @@ pub(super) fn int_ranges(s: &[Series]) -> PolarsResult<Series> {
 
     let len = std::cmp::max(start.len(), end.len());
     let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-        "int_range",
+        // The name should follow our left hand rule.
+        start.name(),
         len,
         len * CAPACITY_FACTOR,
         DataType::Int64,

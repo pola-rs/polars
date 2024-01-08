@@ -1,0 +1,82 @@
+use std::collections::VecDeque;
+use std::io::{Read, Seek};
+use std::sync::Arc;
+
+use polars_error::{polars_err, PolarsResult};
+
+use super::super::read_basic::*;
+use super::*;
+use crate::array::{ArrayRef, BinaryViewArrayGeneric, ViewType};
+use crate::buffer::Buffer;
+use crate::datatypes::ArrowDataType;
+
+#[allow(clippy::too_many_arguments)]
+pub fn read_binview<T: ViewType + ?Sized, R: Read + Seek>(
+    field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
+    data_type: ArrowDataType,
+    buffers: &mut VecDeque<IpcBuffer>,
+    reader: &mut R,
+    block_offset: u64,
+    is_little_endian: bool,
+    compression: Option<Compression>,
+    limit: Option<usize>,
+    scratch: &mut Vec<u8>,
+) -> PolarsResult<ArrayRef> {
+    let field_node = try_get_field_node(field_nodes, &data_type)?;
+
+    let validity = read_validity(
+        buffers,
+        field_node,
+        reader,
+        block_offset,
+        is_little_endian,
+        compression,
+        limit,
+        scratch,
+    )?;
+
+    let length = try_get_array_length(field_node, limit)?;
+    let views: Buffer<u128> = read_buffer(
+        buffers,
+        length,
+        reader,
+        block_offset,
+        is_little_endian,
+        compression,
+        scratch,
+    )?;
+
+    let n_variadic = variadic_buffer_counts.pop_front().ok_or_else(
+        || polars_err!(ComputeError: "IPC: unable to fetch the variadic buffers\n\nThe file or stream is corrupted.")
+    )?;
+
+    let variadic_buffer_lengths: Buffer<i64> = read_buffer(
+        buffers,
+        n_variadic,
+        reader,
+        block_offset,
+        is_little_endian,
+        compression,
+        scratch,
+    )?;
+
+    let variadic_buffers = variadic_buffer_lengths
+        .iter()
+        .map(|length| {
+            let length = *length as usize;
+            read_buffer(
+                buffers,
+                length,
+                reader,
+                block_offset,
+                is_little_endian,
+                compression,
+                scratch,
+            )
+        })
+        .collect::<PolarsResult<Vec<Buffer<u8>>>>()?;
+
+    BinaryViewArrayGeneric::<T>::try_new(data_type, views, Arc::from(variadic_buffers), validity)
+        .map(|arr| arr.boxed())
+}

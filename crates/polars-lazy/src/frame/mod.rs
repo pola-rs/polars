@@ -463,7 +463,7 @@ impl LazyFrame {
     /// with the result of the `fill_value` expression.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+    pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.select(vec![col("*").shift_and_fill(n.into(), fill_value.into())])
     }
 
@@ -1383,7 +1383,13 @@ impl LazyFrame {
     /// - String columns will have a mean of None.
     pub fn mean(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || matches!(dt, DataType::Boolean | DataType::Duration(_)),
+            |dt| {
+                dt.is_numeric()
+                    || matches!(
+                        dt,
+                        DataType::Boolean | DataType::Duration(_) | DataType::Datetime(_, _)
+                    )
+            },
             |name| col(name).mean(),
         )
     }
@@ -1395,7 +1401,7 @@ impl LazyFrame {
     /// - String columns will sum to None.
     pub fn median(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || dt.is_bool(),
+            |dt| dt.is_numeric() || matches!(dt, DataType::Boolean | DataType::Datetime(_, _)),
             |name| col(name).median(),
         )
     }
@@ -1636,7 +1642,7 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
-    pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
+    pub fn with_row_index(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
             LogicalPlan::Scan {
                 file_options: options,

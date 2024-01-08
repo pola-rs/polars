@@ -327,11 +327,7 @@ impl<'a> CoreReader<'a> {
             bytes = skip_line_ending(bytes, eol_char)
         }
 
-        // If there is a header we skip it.
-        if self.has_header {
-            bytes = skip_header(bytes, quote_char, eol_char);
-        }
-
+        // skip 'n' leading rows
         if self.skip_rows_before_header > 0 {
             for _ in 0..self.skip_rows_before_header {
                 let pos = next_line_position_naive(bytes, eol_char)
@@ -339,7 +335,11 @@ impl<'a> CoreReader<'a> {
                 bytes = &bytes[pos..];
             }
         }
-
+        // skip header row
+        if self.has_header {
+            bytes = skip_this_line(bytes, quote_char, eol_char);
+        }
+        // skip 'n' rows following the header
         if self.skip_rows_after_header > 0 {
             for _ in 0..self.skip_rows_after_header {
                 let pos = if is_comment_line(bytes, self.comment_prefix.as_ref()) {

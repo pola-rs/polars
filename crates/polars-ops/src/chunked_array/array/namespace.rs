@@ -4,6 +4,7 @@ use crate::chunked_array::array::sum_mean::sum_with_nulls;
 #[cfg(feature = "array_any_all")]
 use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::sum_mean::sum_array_numerical;
+use crate::series::ArgAgg;
 
 pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
     for arr in ca.downcast_iter() {
@@ -61,12 +62,12 @@ pub trait ArrayNameSpace: AsArray {
 
     fn array_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_array();
-        ca.try_apply_amortized(|s| s.as_ref().unique())
+        ca.try_apply_amortized_to_list(|s| s.as_ref().unique())
     }
 
     fn array_unique_stable(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_array();
-        ca.try_apply_amortized(|s| s.as_ref().unique_stable())
+        ca.try_apply_amortized_to_list(|s| s.as_ref().unique_stable())
     }
 
     #[cfg(feature = "array_any_all")]
@@ -79,6 +80,32 @@ pub trait ArrayNameSpace: AsArray {
     fn array_all(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
         array_all(ca)
+    }
+
+    fn array_sort(&self, options: SortOptions) -> ArrayChunked {
+        let ca = self.as_array();
+        // SAFETY: Sort only changes the order of the elements in each subarray.
+        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().sort_with(options)) }
+    }
+
+    fn array_reverse(&self) -> ArrayChunked {
+        let ca = self.as_array();
+        // SAFETY: Reverse only changes the order of the elements in each subarray
+        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
+    }
+
+    fn array_arg_min(&self) -> IdxCa {
+        let ca = self.as_array();
+        ca.apply_amortized_generic(|opt_s| {
+            opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
+        })
+    }
+
+    fn array_arg_max(&self) -> IdxCa {
+        let ca = self.as_array();
+        ca.apply_amortized_generic(|opt_s| {
+            opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
+        })
     }
 }
 

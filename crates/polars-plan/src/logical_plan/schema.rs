@@ -17,6 +17,7 @@ impl LogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
             Union { inputs, .. } => inputs[0].schema(),
+            HConcat { schema, .. } => Ok(Cow::Borrowed(schema)),
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),

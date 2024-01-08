@@ -52,7 +52,7 @@ def test_schema_on_agg() -> None:
             ]
         )
     ).schema == {
-        "a": pl.Utf8,
+        "a": pl.String,
         "min": pl.Int64,
         "max": pl.Int64,
         "sum": pl.Int64,
@@ -213,7 +213,7 @@ def test_lazy_map_schema() -> None:
         df: pl.DataFrame,
     ) -> pl.DataFrame:
         # changes schema
-        return df.select(pl.all().cast(pl.Utf8))
+        return df.select(pl.all().cast(pl.String))
 
     with pytest.raises(
         pl.ComputeError,
@@ -309,7 +309,7 @@ def test_shrink_dtype() -> None:
         pl.Int32,
         pl.Int8,
         pl.Int16,
-        pl.Utf8,
+        pl.String,
         pl.Float32,
         pl.Boolean,
         pl.UInt8,
@@ -369,7 +369,7 @@ def test_lazy_rename() -> None:
 
 
 def test_all_null_cast_5826() -> None:
-    df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.Utf8)])
+    df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.String)])
     out = df.with_columns(pl.col("a").cast(pl.Boolean))
     assert out.dtypes == [pl.Boolean]
     assert out.item() is None
@@ -390,8 +390,8 @@ def test_list_eval_type_cast_11188() -> None:
         schema={"a": pl.List(pl.Int64)},
     )
     assert df.select(
-        pl.col("a").list.eval(pl.element().cast(pl.Utf8)).alias("a_str")
-    ).schema == {"a_str": pl.List(pl.Utf8)}
+        pl.col("a").list.eval(pl.element().cast(pl.String)).alias("a_str")
+    ).schema == {"a_str": pl.List(pl.String)}
 
 
 def test_schema_true_divide_6643() -> None:
@@ -427,7 +427,7 @@ def test_from_dicts_all_cols_6716() -> None:
         pl.ComputeError, match="make sure that all rows have the same schema"
     ):
         pl.from_dicts(dicts, infer_schema_length=20)
-    assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.Utf8]
+    assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.String]
 
 
 def test_from_dicts_empty() -> None:
@@ -508,8 +508,8 @@ def test_absence_off_null_prop_8224() -> None:
         (
             {"x": ["x"], "y": ["y"]},
             pl.coalesce(pl.col("x"), pl.col("y")),
-            {"x": pl.Utf8},
-            {"x": pl.List(pl.Utf8)},
+            {"x": pl.String},
+            {"x": pl.List(pl.String)},
         ),
         (
             {"x": [True]},
@@ -624,3 +624,12 @@ def test_nested_binary_literal_super_type_12227() -> None:
         ).item()
         == 0.1
     )
+
+
+def test_literal_subtract_schema_13284() -> None:
+    assert (
+        pl.LazyFrame({"a": [23, 30]}, schema={"a": pl.UInt8})
+        .with_columns(pl.col("a") - pl.lit(1))
+        .group_by(by="a")
+        .count()
+    ).schema == OrderedDict([("a", pl.UInt8), ("count", pl.UInt32)])

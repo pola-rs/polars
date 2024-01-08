@@ -157,15 +157,11 @@ where
     &input[read..]
 }
 
+/// Remove whitespace from the start of buffer.
 /// Makes sure that the bytes stream starts with
 ///     'field_1,field_2'
 /// and not with
 ///     '\nfield_1,field_1'
-pub(crate) fn skip_header(input: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
-    skip_this_line(input, quote, eol_char)
-}
-
-/// Remove whitespace from the start of buffer.
 #[inline]
 pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
     skip_condition(input, is_whitespace)
@@ -338,7 +334,7 @@ fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
 }
 
 #[inline]
-fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
+pub(crate) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, eol_char),
         None => bytes.iter().position(|x| *x == eol_char),
@@ -359,8 +355,8 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn parse_lines<'a>(
-    mut bytes: &'a [u8],
+pub(super) fn parse_lines(
+    mut bytes: &[u8],
     offset: usize,
     separator: u8,
     comment_prefix: Option<&CommentPrefix>,
@@ -371,7 +367,7 @@ pub(super) fn parse_lines<'a>(
     mut truncate_ragged_lines: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
-    buffers: &mut [Buffer<'a>],
+    buffers: &mut [Buffer],
     n_lines: usize,
     // length of original schema
     schema_len: usize,

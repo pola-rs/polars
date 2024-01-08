@@ -41,7 +41,7 @@ pub(super) fn datetime_range(
         (DataType::Datetime(_, _), None) => start.dtype().clone(),
         // overwrite time unit, keep timezone
         (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        _ => unreachable!(),
+        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
     };
 
     // overwrite time zone, if specified
@@ -81,6 +81,7 @@ pub(super) fn datetime_range(
         _ => (start.cast(&dtype)?, end.cast(&dtype)?),
     };
 
+    let name = start.name();
     let start = temporal_series_to_i64_scalar(&start)
         .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?;
     let end = temporal_series_to_i64_scalar(&end)
@@ -93,7 +94,7 @@ pub(super) fn datetime_range(
                 Some(tz) => Some(parse_time_zone(tz)?),
                 _ => None,
             };
-            datetime_range_impl("datetime", start, end, interval, closed, tu, tz.as_ref())?
+            datetime_range_impl(name, start, end, interval, closed, tu, tz.as_ref())?
         },
         _ => unimplemented!(),
     };
@@ -185,7 +186,7 @@ pub(super) fn datetime_ranges(
     let out = match dtype {
         DataType::Datetime(tu, ref tz) => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                "datetime_range",
+                start.name(),
                 start.len(),
                 start.len() * CAPACITY_FACTOR,
                 DataType::Int64,

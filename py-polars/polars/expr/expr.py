@@ -25,7 +25,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    UInt32,
+    Int64,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -44,6 +44,7 @@ from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
+    parse_predicates_constraints_as_expression,
 )
 from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
@@ -52,6 +53,7 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
+    issue_deprecation_warning,
 )
 from polars.utils.meta import threadpool_size
 from polars.utils.various import (
@@ -290,7 +292,6 @@ class Expr:
         ----------
         value
             JSON encoded string value
-
         """
         expr = cls.__new__(cls)
         expr._pyexpr = PyExpr.meta_read_json(value)
@@ -336,7 +337,6 @@ class Expr:
         │ null ┆ null          │
         │ a    ┆ 0             │
         └──────┴───────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
@@ -393,7 +393,6 @@ class Expr:
         ╞══════╪═══════╪══════╡
         │ true ┆ false ┆ null │
         └──────┴───────┴──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.any(ignore_nulls))
 
@@ -454,7 +453,6 @@ class Expr:
         ╞══════╪═══════╪══════╡
         │ true ┆ false ┆ null │
         └──────┴───────┴──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.all(ignore_nulls))
 
@@ -485,7 +483,6 @@ class Expr:
         │ 1   │
         │ 3   │
         └─────┘
-
         """
         return self._from_pyexpr(py_arg_where(self._pyexpr))
 
@@ -507,7 +504,6 @@ class Expr:
         │ 1.414214 │
         │ 2.0      │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.sqrt())
 
@@ -529,7 +525,6 @@ class Expr:
         │ 1.259921 │
         │ 1.587401 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cbrt())
 
@@ -551,7 +546,6 @@ class Expr:
         │ 0.30103 │
         │ 0.60206 │
         └─────────┘
-
         """
         return self.log(10.0)
 
@@ -573,7 +567,6 @@ class Expr:
         │ 7.389056 │
         │ 54.59815 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.exp())
 
@@ -634,7 +627,6 @@ class Expr:
         │ 2   ┆ y   ┆ true ┆ 4.0 │
         │ 3   ┆ z   ┆ true ┆ 4.0 │
         └─────┴─────┴──────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.alias(name))
 
@@ -680,7 +672,6 @@ class Expr:
         │ 2         ┆ y         ┆ 2   ┆ y   │
         │ 1         ┆ x         ┆ 3   ┆ z   │
         └───────────┴───────────┴─────┴─────┘
-
         """
         return self.name.map(function)  # type: ignore[return-value]
 
@@ -727,7 +718,6 @@ class Expr:
         │ 2   ┆ y   ┆ 2         ┆ y         │
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
-
         """
         return self.name.prefix(prefix)  # type: ignore[return-value]
 
@@ -774,7 +764,6 @@ class Expr:
         │ 2   ┆ y   ┆ 2         ┆ y         │
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
-
         """
         return self.name.suffix(suffix)  # type: ignore[return-value]
 
@@ -828,7 +817,6 @@ class Expr:
         │ 10.0 ┆ 3.333333 │
         │ 5.0  ┆ 2.5      │
         └──────┴──────────┘
-
         """
         return self.name.keep()  # type: ignore[return-value]
 
@@ -914,7 +902,6 @@ class Expr:
         │ b    │
         │ null │
         └──────┘
-
         """
         exclude_cols: list[str] = []
         exclude_dtypes: list[PolarsDataType] = []
@@ -933,7 +920,7 @@ class Expr:
             else:
                 raise TypeError(
                     "invalid input for `exclude`"
-                    f"\n\nExpected one or more `str`, `DataType`, or selector; found {type(item).__name__!r} instead."
+                    f"\n\nExpected one or more `str` or `DataType`; found {item!r} instead."
                 )
 
         if exclude_cols and exclude_dtypes:
@@ -1003,7 +990,6 @@ class Expr:
 
         .. deprecated:: 0.19.2
             This method has been renamed to :func:`Expr.not_`.
-
         """
         return self.not_()
 
@@ -1041,7 +1027,6 @@ class Expr:
         │ true  │
         │ true  │
         └───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.not_())
 
@@ -1070,7 +1055,6 @@ class Expr:
         │ 1    ┆ 1.0 ┆ false    ┆ false    │
         │ 5    ┆ 5.0 ┆ false    ┆ false    │
         └──────┴─────┴──────────┴──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_null())
 
@@ -1101,7 +1085,6 @@ class Expr:
         │ 1    ┆ 1.0 ┆ true       ┆ true       │
         │ 5    ┆ 5.0 ┆ true       ┆ true       │
         └──────┴─────┴────────────┴────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_not_null())
 
@@ -1132,7 +1115,6 @@ class Expr:
         │ true ┆ true  │
         │ true ┆ false │
         └──────┴───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_finite())
 
@@ -1163,7 +1145,6 @@ class Expr:
         │ false ┆ false │
         │ false ┆ true  │
         └───────┴───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_infinite())
 
@@ -1197,7 +1178,6 @@ class Expr:
         │ 1    ┆ 1.0 ┆ false   │
         │ 5    ┆ 5.0 ┆ false   │
         └──────┴─────┴─────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_nan())
 
@@ -1231,7 +1211,6 @@ class Expr:
         │ 1    ┆ 1.0 ┆ true         │
         │ 5    ┆ 5.0 ┆ true         │
         └──────┴─────┴──────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_not_nan())
 
@@ -1266,7 +1245,6 @@ class Expr:
         │ one   ┆ [0, 1, 2] │
         │ two   ┆ [3, 4, 5] │
         └───────┴───────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.agg_groups())
 
@@ -1358,7 +1336,6 @@ class Expr:
         │ 9   ┆ 4   │
         │ 10  ┆ 4   │
         └─────┴─────┘
-
         """
         if not isinstance(offset, Expr):
             offset = F.lit(offset)
@@ -1397,7 +1374,6 @@ class Expr:
         │ 8   ┆ null │
         │ 10  ┆ 4    │
         └─────┴──────┘
-
         """
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.append(other, upcast))
@@ -1426,7 +1402,6 @@ class Expr:
         │ 1      │
         │ 2      │
         └────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.rechunk())
 
@@ -1459,7 +1434,6 @@ class Expr:
         │ 3.0 │
         │ NaN │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.drop_nulls())
 
@@ -1492,7 +1466,6 @@ class Expr:
         │ null │
         │ 3.0  │
         └──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
@@ -1554,7 +1527,6 @@ class Expr:
         │ 16     ┆ 43            ┆ 43                       │
         │ null   ┆ null          ┆ 43                       │
         └────────┴───────────────┴──────────────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_sum(reverse))
 
@@ -1590,7 +1562,6 @@ class Expr:
         │ 3   ┆ 6        ┆ 12               │
         │ 4   ┆ 24       ┆ 4                │
         └─────┴──────────┴──────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_prod(reverse))
 
@@ -1621,7 +1592,6 @@ class Expr:
         │ 3   ┆ 1       ┆ 3               │
         │ 4   ┆ 1       ┆ 4               │
         └─────┴─────────┴─────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
@@ -1675,7 +1645,6 @@ class Expr:
         │ 16     ┆ 16      ┆ 16                 │
         │ null   ┆ null    ┆ 16                 │
         └────────┴─────────┴────────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_max(reverse))
 
@@ -1708,7 +1677,6 @@ class Expr:
         │ 3   ┆ 2         ┆ 1                 │
         │ 4   ┆ 3         ┆ 0                 │
         └─────┴───────────┴───────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_count(reverse))
 
@@ -1733,7 +1701,6 @@ class Expr:
         │ 1.0 │
         │ 1.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.floor())
 
@@ -1758,7 +1725,6 @@ class Expr:
         │ 1.0 │
         │ 2.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.ceil())
 
@@ -1786,7 +1752,6 @@ class Expr:
         │ 1.0 │
         │ 1.2 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.round(decimals))
 
@@ -1813,7 +1778,6 @@ class Expr:
         │ 3.333   ┆ 3.3            │
         │ 1234.0  ┆ 1200.0         │
         └─────────┴────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.round_sig_figs(digits))
 
@@ -1843,7 +1807,6 @@ class Expr:
         ╞═════╡
         │ 44  │
         └─────┘
-
         """
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.dot(other))
@@ -1872,7 +1835,6 @@ class Expr:
         │ 1   ┆ 1   │
         │ 1   ┆ 2   │
         └─────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.mode())
 
@@ -1912,7 +1874,6 @@ class Expr:
         │ 2.0 ┆ 5   │
         │ 3.0 ┆ 6   │
         └─────┴─────┘
-
         """
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
@@ -1993,7 +1954,6 @@ class Expr:
         │ two   ┆ [3, 4, 99] │
         │ one   ┆ [1, 2, 98] │
         └───────┴────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
@@ -2039,7 +1999,6 @@ class Expr:
         │ 3     ┆ 4        │
         │ 2     ┆ 98       │
         └───────┴──────────┘
-
         """
         k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.top_k(k))
@@ -2086,7 +2045,6 @@ class Expr:
         │ 3     ┆ 4        │
         │ 2     ┆ 98       │
         └───────┴──────────┘
-
         """
         k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.bottom_k(k))
@@ -2125,7 +2083,6 @@ class Expr:
         │ 0   │
         │ 2   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arg_sort(descending, nulls_last))
 
@@ -2149,7 +2106,6 @@ class Expr:
         ╞═════╡
         │ 2   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arg_max())
 
@@ -2173,7 +2129,6 @@ class Expr:
         ╞═════╡
         │ 1   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arg_min())
 
@@ -2214,7 +2169,6 @@ class Expr:
         ╞══════╪═══════╪═════╡
         │ 0    ┆ 2     ┆ 4   │
         └──────┴───────┴─────┘
-
         """
         element = parse_as_expression(element)
         return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
@@ -2341,7 +2295,6 @@ class Expr:
         │ a     ┆ 3      ┆ 7      |
         │ b     ┆ 2      ┆ 5      |
         └───────┴────────┴────────┘
-
         """
         by = parse_as_list_of_expressions(by, *more_by)
         if isinstance(descending, bool):
@@ -2403,7 +2356,7 @@ class Expr:
         if isinstance(indices, list) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
-            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
+            indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
             indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.gather(indices_lit))
@@ -2447,7 +2400,6 @@ class Expr:
         │ one   ┆ 98    │
         │ two   ┆ 99    │
         └───────┴───────┘
-
         """
         index_lit = parse_as_expression(index)
         return self._from_pyexpr(self._pyexpr.get(index_lit))
@@ -2519,7 +2471,6 @@ class Expr:
         │ 3   ┆ 100   │
         │ 4   ┆ 100   │
         └─────┴───────┘
-
         """
         if fill_value is not None:
             fill_value = parse_as_expression(fill_value, str_as_lit=True)
@@ -2611,7 +2562,6 @@ class Expr:
         │ 2.0 ┆ 5.0 │
         │ 1.5 ┆ 6.0 │
         └─────┴─────┘
-
         """
         if value is not None and strategy is not None:
             raise ValueError("cannot specify both `value` and `strategy`")
@@ -2653,7 +2603,6 @@ class Expr:
         │ null ┆ 0.0 │
         │ NaN  ┆ 6.0 │
         └──────┴─────┘
-
         """
         fill_value = parse_as_expression(value, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
@@ -2686,7 +2635,6 @@ class Expr:
         │ 2   ┆ 4   │
         │ 2   ┆ 6   │
         └─────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.forward_fill(limit))
 
@@ -2730,7 +2678,6 @@ class Expr:
         │ 2    ┆ 6   ┆ 2    │
         │ null ┆ 6   ┆ 2    │
         └──────┴─────┴──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.backward_fill(limit))
 
@@ -2766,7 +2713,6 @@ class Expr:
         │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
-
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.reverse())
 
@@ -2793,7 +2739,6 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.std(ddof))
 
@@ -2820,7 +2765,6 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.var(ddof))
 
@@ -2840,7 +2784,6 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.max())
 
@@ -2860,7 +2803,6 @@ class Expr:
         ╞══════╡
         │ -1.0 │
         └──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.min())
 
@@ -2883,7 +2825,6 @@ class Expr:
         ╞═════╡
         │ NaN │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.nan_max())
 
@@ -2906,7 +2847,6 @@ class Expr:
         ╞═════╡
         │ NaN │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.nan_min())
 
@@ -2931,7 +2871,6 @@ class Expr:
         ╞═════╡
         │  0  │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.sum())
 
@@ -2951,7 +2890,6 @@ class Expr:
         ╞═════╡
         │ 0.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.mean())
 
@@ -2971,7 +2909,6 @@ class Expr:
         ╞═════╡
         │ 0.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.median())
 
@@ -2991,7 +2928,6 @@ class Expr:
         ╞═════╡
         │ 6   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.product())
 
@@ -3011,7 +2947,6 @@ class Expr:
         ╞═════╡
         │ 2   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
@@ -3033,7 +2968,6 @@ class Expr:
         ╞═════╡
         │ 2   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.approx_n_unique())
 
@@ -3058,7 +2992,6 @@ class Expr:
         ╞═════╪═════╡
         │ 2   ┆ 0   │
         └─────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.null_count())
 
@@ -3095,7 +3028,6 @@ class Expr:
         │ 0   │
         │ 1   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arg_unique())
 
@@ -3131,7 +3063,6 @@ class Expr:
         │ 1   │
         │ 2   │
         └─────┘
-
         """
         if maintain_order:
             return self._from_pyexpr(self._pyexpr.unique_stable())
@@ -3153,7 +3084,6 @@ class Expr:
         ╞═════╡
         │ 1   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.first())
 
@@ -3173,7 +3103,6 @@ class Expr:
         ╞═════╡
         │ 2   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.last())
 
@@ -3292,7 +3221,6 @@ class Expr:
         │ b   ┆ 5   ┆ 2   ┆ 1     │
         │ b   ┆ 3   ┆ 1   ┆ 1     │
         └─────┴─────┴─────┴───────┘
-
         """
         exprs = parse_as_list_of_expressions(expr, *more_exprs)
         return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
@@ -3405,7 +3333,6 @@ class Expr:
         │ 2020-01-03 19:45:32 ┆ 2   ┆ 11    ┆ 2     ┆ 9     │
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
-
         """
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
@@ -3437,7 +3364,6 @@ class Expr:
         │ false │
         │ true  │
         └───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_unique())
 
@@ -3466,7 +3392,6 @@ class Expr:
         │ 3   ┆ true  │
         │ 2   ┆ false │
         └─────┴───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_first_distinct())
 
@@ -3495,7 +3420,6 @@ class Expr:
         │ 3   ┆ true  │
         │ 2   ┆ true  │
         └─────┴───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_last_distinct())
 
@@ -3522,7 +3446,6 @@ class Expr:
         │ true  │
         │ false │
         └───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.is_duplicated())
 
@@ -3546,7 +3469,6 @@ class Expr:
         │ false │
         │ true  │
         └───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.peak_max())
 
@@ -3570,7 +3492,6 @@ class Expr:
         │ true  │
         │ false │
         └───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.peak_min())
 
@@ -3637,7 +3558,6 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-
         """
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
@@ -3715,7 +3635,6 @@ class Expr:
         │ 1   ┆ 1.0  ┆ (-1, 1]    │
         │ 2   ┆ inf  ┆ (1, inf]   │
         └─────┴──────┴────────────┘
-
         """
         return self._from_pyexpr(
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
@@ -3821,7 +3740,6 @@ class Expr:
         │ 1   ┆ 1.0  ┆ (-1, 1]    │
         │ 2   ┆ inf  ┆ (1, inf]   │
         └─────┴──────┴────────────┘
-
         """
         if isinstance(quantiles, int):
             pyexpr = self._pyexpr.qcut_uniform(
@@ -3836,12 +3754,16 @@ class Expr:
 
     def rle(self) -> Self:
         """
-        Get the lengths of runs of identical values.
+        Get the lengths and values of runs of identical values.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Struct` with Fields "lengths" and "values".
+
+        See Also
+        --------
+        rle_id
 
         Examples
         --------
@@ -3865,12 +3787,17 @@ class Expr:
 
     def rle_id(self) -> Self:
         """
-        Map values to run IDs.
+        Get a distinct integer ID for each run of identical values.
 
-        Similar to RLE, but it maps each value to an ID corresponding to the run into
-        which it falls. This is especially useful when you want to define groups by
-        runs of identical values rather than the values themselves.
+        The ID increases by one each time the value of a column (which can be a
+        :class:`Struct`) changes.
 
+        This is especially useful when you want to define a new group for every time a
+        column's value changes, rather than for every distinct value of that column.
+
+        See Also
+        --------
+        rle
 
         Examples
         --------
@@ -3892,9 +3819,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rle_id())
 
-    def filter(self, predicate: Expr) -> Self:
+    def filter(
+        self,
+        *predicates: IntoExprColumn | Iterable[IntoExprColumn],
+        **constraints: Any,
+    ) -> Self:
         """
-        Filter a single column.
+        Filter the expression based on one or more predicate expressions.
 
         The original order of the remaining elements is preserved.
 
@@ -3903,8 +3834,12 @@ class Expr:
 
         Parameters
         ----------
-        predicate
-            Boolean expression.
+        predicates
+            Expression(s) that evaluates to a boolean Series.
+        constraints
+            Column filters; use `name = value` to filter columns by the supplied value.
+            Each constraint will behave the same as `pl.col(name).eq(value)`, and
+            will be implicitly joined with the other filter conditions using `&`.
 
         Examples
         --------
@@ -3928,12 +3863,52 @@ class Expr:
         │ g2        ┆ 0   ┆ 3   │
         └───────────┴─────┴─────┘
 
-        """
-        return self._from_pyexpr(self._pyexpr.filter(predicate._pyexpr))
+        Filter expressions can also take constraints as keyword arguments.
 
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "key": ["a", "a", "a", "a", "b", "b", "b", "b", "b"],
+        ...         "n": [1, 2, 2, 3, 1, 3, 3, 2, 3],
+        ...     },
+        ... )
+        >>> df.group_by("key").agg(
+        ...     n_1=pl.col("n").filter(n=1).sum(),
+        ...     n_2=pl.col("n").filter(n=2).sum(),
+        ...     n_3=pl.col("n").filter(n=3).sum(),
+        ... ).sort(by="key")
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ key ┆ n_1 ┆ n_2 ┆ n_3 │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 4   ┆ 3   │
+        │ b   ┆ 1   ┆ 2   ┆ 9   │
+        └─────┴─────┴─────┴─────┘
+        """
+        if "predicate" in constraints:
+            if isinstance(constraints["predicate"], pl.Expr):
+                issue_deprecation_warning(
+                    "`filter` no longer takes a 'predicate' parameter.\n"
+                    "To silence this warning you should omit the keyword and pass "
+                    "as a positional argument instead.",
+                    version="0.19.17",
+                )
+                predicates = (*predicates, constraints.pop("predicate"))
+
+        predicate = parse_predicates_constraints_as_expression(
+            *predicates, **constraints
+        )
+        return self._from_pyexpr(self._pyexpr.filter(predicate))
+
+    @deprecate_function("Use `filter` instead.", version="0.20.4")
     def where(self, predicate: Expr) -> Self:
         """
         Filter a single column.
+
+        .. deprecated:: 0.20.4
+            Use :func:`filter` instead.
 
         Alias for :func:`filter`.
 
@@ -3950,7 +3925,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.group_by("group_col").agg(
+        >>> df.group_by("group_col").agg(  # doctest: +SKIP
         ...     [
         ...         pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
@@ -3965,9 +3940,23 @@ class Expr:
         │ g1        ┆ 1   ┆ 2   │
         │ g2        ┆ 0   ┆ 3   │
         └───────────┴─────┴─────┘
-
         """
         return self.filter(predicate)
+
+    class _map_batches_wrapper:
+        def __init__(
+            self,
+            function: Callable[[Series], Series | Any],
+            return_dtype: PolarsDataType | None,
+        ):
+            self.function = function
+            self.return_dtype = return_dtype
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            result = self.function(*args, **kwargs)
+            if _check_for_numpy(result) and isinstance(result, np.ndarray):
+                result = pl.Series(result, dtype=self.return_dtype)
+            return result
 
     def map_batches(
         self,
@@ -3980,7 +3969,8 @@ class Expr:
         """
         Apply a custom python function to a whole Series or sequence of Series.
 
-        The output of this custom function must be a Series. If you want to apply a
+        The output of this custom function must be a Series (or a NumPy array, in which
+        case it will be automatically converted into a Series). If you want to apply a
         custom function elementwise over single values, see :func:`map_elements`.
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
@@ -3989,7 +3979,7 @@ class Expr:
             If you are looking to map a function over a window function or group_by
             context, refer to :func:`map_elements` instead.
             Read more in `the book
-            <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
+            <https://docs.pola.rs/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
@@ -4030,12 +4020,17 @@ class Expr:
         ╞══════╪════════╡
         │ 1    ┆ 0      │
         └──────┴────────┘
-
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
+
         return self._from_pyexpr(
-            self._pyexpr.map_batches(function, return_dtype, agg_list, is_elementwise)
+            self._pyexpr.map_batches(
+                self._map_batches_wrapper(function, return_dtype),
+                return_dtype,
+                agg_list,
+                is_elementwise,
+            )
         )
 
     def map_elements(
@@ -4213,7 +4208,6 @@ class Expr:
         >>> df.with_columns(
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
         ... ).sort("key")  # doctest: +IGNORE_RESULT
-
         """
         # input x: Series of type list containing the group values
         from polars.utils.udfs import warn_on_inefficient_map
@@ -4314,7 +4308,6 @@ class Expr:
         │ a     ┆ [1, 2]    │
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.explode())
 
@@ -4357,7 +4350,6 @@ class Expr:
         │ 3      │
         │ 4      │
         └────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.explode())
 
@@ -4382,7 +4374,6 @@ class Expr:
         ╞═══════════╪═══════════╡
         │ [1, 2, 3] ┆ [4, 5, 6] │
         └───────────┴───────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.implode())
 
@@ -4423,7 +4414,6 @@ class Expr:
         │ 5   │
         │ 8   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.gather_every(n, offset))
 
@@ -4450,7 +4440,6 @@ class Expr:
         │ 2   │
         │ 3   │
         └─────┘
-
         """
         return self.slice(0, n)
 
@@ -4477,7 +4466,6 @@ class Expr:
         │ 6   │
         │ 7   │
         └─────┘
-
         """
         offset = -self._from_pyexpr(parse_as_expression(n))
         return self.slice(offset, n)
@@ -4505,7 +4493,6 @@ class Expr:
         │ 2   │
         │ 3   │
         └─────┘
-
         """
         return self.head(n)
 
@@ -4549,7 +4536,6 @@ class Expr:
         │ false │
         │ false │
         └───────┘
-
         """
         return reduce(operator.and_, (self,) + others)
 
@@ -4592,7 +4578,6 @@ class Expr:
         │ true  │
         │ false │
         └───────┘
-
         """
         return reduce(operator.or_, (self,) + others)
 
@@ -4627,7 +4612,6 @@ class Expr:
         │ NaN ┆ NaN ┆ true   │
         │ 4.0 ┆ 4.0 ┆ true   │
         └─────┴─────┴────────┘
-
         """
         return self.__eq__(other)
 
@@ -4667,7 +4651,6 @@ class Expr:
         │ null ┆ 5.0  ┆ null   ┆ false          │
         │ null ┆ null ┆ null   ┆ true           │
         └──────┴──────┴────────┴────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.eq_missing(self._to_pyexpr(other)))
 
@@ -4702,7 +4685,6 @@ class Expr:
         │ NaN ┆ NaN ┆ true   │
         │ 2.0 ┆ 1.0 ┆ true   │
         └─────┴─────┴────────┘
-
         """
         return self.__ge__(other)
 
@@ -4737,7 +4719,6 @@ class Expr:
         │ NaN ┆ NaN ┆ false │
         │ 2.0 ┆ 1.0 ┆ true  │
         └─────┴─────┴───────┘
-
         """
         return self.__gt__(other)
 
@@ -4772,7 +4753,6 @@ class Expr:
         │ NaN ┆ NaN ┆ true   │
         │ 0.5 ┆ 2.0 ┆ true   │
         └─────┴─────┴────────┘
-
         """
         return self.__le__(other)
 
@@ -4807,7 +4787,6 @@ class Expr:
         │ NaN ┆ NaN ┆ false │
         │ 3.0 ┆ 4.0 ┆ true  │
         └─────┴─────┴───────┘
-
         """
         return self.__lt__(other)
 
@@ -4842,7 +4821,6 @@ class Expr:
         │ NaN ┆ NaN ┆ false  │
         │ 4.0 ┆ 4.0 ┆ false  │
         └─────┴─────┴────────┘
-
         """
         return self.__ne__(other)
 
@@ -4882,7 +4860,6 @@ class Expr:
         │ null ┆ 5.0  ┆ null   ┆ true           │
         │ null ┆ null ┆ null   ┆ false          │
         └──────┴──────┴────────┴────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.neq_missing(self._to_pyexpr(other)))
 
@@ -4929,7 +4906,6 @@ class Expr:
         │ d   ┆ e   ┆ f   ┆ def │
         │ g   ┆ h   ┆ i   ┆ ghi │
         └─────┴─────┴─────┴─────┘
-
         """
         return self.__add__(other)
 
@@ -4965,7 +4941,6 @@ class Expr:
         │ 4   ┆ 2.0 ┆ 2    │
         │ 5   ┆ 2.5 ┆ 2    │
         └─────┴─────┴──────┘
-
         """
         return self.__floordiv__(other)
 
@@ -4994,7 +4969,6 @@ class Expr:
         │ 3   ┆ 1   │
         │ 4   ┆ 0   │
         └─────┴─────┘
-
         """
         return self.__mod__(other)
 
@@ -5026,7 +5000,6 @@ class Expr:
         │ 8   ┆ 16  ┆ 24.0      │
         │ 16  ┆ 32  ┆ 64.0      │
         └─────┴─────┴───────────┘
-
         """
         return self.__mul__(other)
 
@@ -5058,7 +5031,6 @@ class Expr:
         │ 3   ┆ 1   ┆ -3     │
         │ 4   ┆ 2   ┆ -6     │
         └─────┴─────┴────────┘
-
         """
         return self.__sub__(other)
 
@@ -5103,7 +5075,6 @@ class Expr:
         │ 1   ┆ -4.0 ┆ 0.5  ┆ -0.25 │
         │ 2   ┆ -0.5 ┆ 1.0  ┆ -4.0  │
         └─────┴──────┴──────┴───────┘
-
         """
         return self.__truediv__(other)
 
@@ -5134,7 +5105,6 @@ class Expr:
         │ 4   ┆ 64.0  ┆ 16.0       │
         │ 8   ┆ 512.0 ┆ 512.0      │
         └─────┴───────┴────────────┘
-
         """
         exponent = parse_as_expression(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent))
@@ -5193,7 +5163,6 @@ class Expr:
         │ 250 ┆ 3   ┆ 11111010 ┆ 00000011 ┆ 249    ┆ 11111001   │
         │ 66  ┆ 4   ┆ 01000010 ┆ 00000100 ┆ 70     ┆ 01000110   │
         └─────┴─────┴──────────┴──────────┴────────┴────────────┘
-
         """
         return self.__xor__(other)
 
@@ -5227,7 +5196,6 @@ class Expr:
         │ [1, 2]    ┆ 2                ┆ true     │
         │ [9, 10]   ┆ 3                ┆ false    │
         └───────────┴──────────────────┴──────────┘
-
         """
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
@@ -5275,7 +5243,6 @@ class Expr:
         │ ["y", "y"]      │
         │ ["z", "z", "z"] │
         └─────────────────┘
-
         """
         by = parse_as_expression(by)
         return self._from_pyexpr(self._pyexpr.repeat_by(by))
@@ -5362,7 +5329,6 @@ class Expr:
         │ d   ┆ false      │
         │ e   ┆ false      │
         └─────┴────────────┘
-
         """
         lower_bound = self._from_pyexpr(parse_as_expression(lower_bound))
         upper_bound = self._from_pyexpr(parse_as_expression(upper_bound))
@@ -5429,7 +5395,6 @@ class Expr:
         │ 1101441246220388612  ┆ 11638928888656214026 │
         │ 11638928888656214026 ┆ 13382926553367784577 │
         └──────────────────────┴──────────────────────┘
-
         """
         k0 = seed
         k1 = seed_1 if seed_1 is not None else seed
@@ -5469,7 +5434,6 @@ class Expr:
         │ 1             ┆ 1        │
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.reinterpret(signed))
 
@@ -5498,7 +5462,6 @@ class Expr:
         │ 2   │
         │ 4   │
         └─────┘
-
         """
 
         def inspect(s: Series) -> Series:  # pragma: no cover
@@ -5580,7 +5543,6 @@ class Expr:
         │ 9           ┆ 18.0   │
         │ 10          ┆ 20.0   │
         └─────────────┴────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
@@ -5647,7 +5609,10 @@ class Expr:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -5743,46 +5708,45 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_count()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
-        ┌────────┬─────────────────────┐
-        │ row_nr ┆ date                │
-        │ ---    ┆ ---                 │
-        │ u32    ┆ datetime[μs]        │
-        ╞════════╪═════════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 │
-        │ 1      ┆ 2001-01-01 01:00:00 │
-        │ 2      ┆ 2001-01-01 02:00:00 │
-        │ 3      ┆ 2001-01-01 03:00:00 │
-        │ …      ┆ …                   │
-        │ 21     ┆ 2001-01-01 21:00:00 │
-        │ 22     ┆ 2001-01-01 22:00:00 │
-        │ 23     ┆ 2001-01-01 23:00:00 │
-        │ 24     ┆ 2001-01-02 00:00:00 │
-        └────────┴─────────────────────┘
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ …     ┆ …                   │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
         >>> df_temporal.with_columns(
-        ...     rolling_row_min=pl.col("row_nr").rolling_min(
+        ...     rolling_row_min=pl.col("index").rolling_min(
         ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_min │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1               │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 19              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 20              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 21              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 22              │
-        └────────┴─────────────────────┴─────────────────┘
-
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_min │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1               │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 19              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 20              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 21              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 22              │
+        └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -5857,7 +5821,10 @@ class Expr:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -5949,73 +5916,72 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_count()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
-        ┌────────┬─────────────────────┐
-        │ row_nr ┆ date                │
-        │ ---    ┆ ---                 │
-        │ u32    ┆ datetime[μs]        │
-        ╞════════╪═════════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 │
-        │ 1      ┆ 2001-01-01 01:00:00 │
-        │ 2      ┆ 2001-01-01 02:00:00 │
-        │ 3      ┆ 2001-01-01 03:00:00 │
-        │ …      ┆ …                   │
-        │ 21     ┆ 2001-01-01 21:00:00 │
-        │ 22     ┆ 2001-01-01 22:00:00 │
-        │ 23     ┆ 2001-01-01 23:00:00 │
-        │ 24     ┆ 2001-01-02 00:00:00 │
-        └────────┴─────────────────────┘
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ …     ┆ …                   │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
 
         Compute the rolling max with the default left closure of temporal windows
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_max=pl.col("row_nr").rolling_max(
+        ...     rolling_row_max=pl.col("index").rolling_max(
         ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_max │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 2               │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 20              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 21              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 22              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 23              │
-        └────────┴─────────────────────┴─────────────────┘
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_max │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
+        └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling max with the closure of windows on both sides
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_max=pl.col("row_nr").rolling_max(
+        ...     rolling_row_max=pl.col("index").rolling_max(
         ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_max │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 2               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 3               │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 21              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 22              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 23              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 24              │
-        └────────┴─────────────────────┴─────────────────┘
-
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_max │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
+        └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -6090,7 +6056,10 @@ class Expr:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -6186,73 +6155,72 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_count()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
-        ┌────────┬─────────────────────┐
-        │ row_nr ┆ date                │
-        │ ---    ┆ ---                 │
-        │ u32    ┆ datetime[μs]        │
-        ╞════════╪═════════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 │
-        │ 1      ┆ 2001-01-01 01:00:00 │
-        │ 2      ┆ 2001-01-01 02:00:00 │
-        │ 3      ┆ 2001-01-01 03:00:00 │
-        │ …      ┆ …                   │
-        │ 21     ┆ 2001-01-01 21:00:00 │
-        │ 22     ┆ 2001-01-01 22:00:00 │
-        │ 23     ┆ 2001-01-01 23:00:00 │
-        │ 24     ┆ 2001-01-02 00:00:00 │
-        └────────┴─────────────────────┘
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ …     ┆ …                   │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
 
         Compute the rolling mean with the default left closure of temporal windows
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
+        ...     rolling_row_mean=pl.col("index").rolling_mean(
         ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬──────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_mean │
-        │ ---    ┆ ---                 ┆ ---              │
-        │ u32    ┆ datetime[μs]        ┆ f64              │
-        ╞════════╪═════════════════════╪══════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ null             │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.0              │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0.5              │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1.5              │
-        │ …      ┆ …                   ┆ …                │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 19.5             │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 20.5             │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 21.5             │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 22.5             │
-        └────────┴─────────────────────┴──────────────────┘
+        ┌───────┬─────────────────────┬──────────────────┐
+        │ index ┆ date                ┆ rolling_row_mean │
+        │ ---   ┆ ---                 ┆ ---              │
+        │ u32   ┆ datetime[μs]        ┆ f64              │
+        ╞═══════╪═════════════════════╪══════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null             │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0              │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5              │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.5              │
+        │ …     ┆ …                   ┆ …                │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 19.5             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 20.5             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 21.5             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 22.5             │
+        └───────┴─────────────────────┴──────────────────┘
 
         Compute the rolling mean with the closure of windows on both sides
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
+        ...     rolling_row_mean=pl.col("index").rolling_mean(
         ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬──────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_mean │
-        │ ---    ┆ ---                 ┆ ---              │
-        │ u32    ┆ datetime[μs]        ┆ f64              │
-        ╞════════╪═════════════════════╪══════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0.0              │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.5              │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1.0              │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 2.0              │
-        │ …      ┆ …                   ┆ …                │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 20.0             │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 21.0             │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 22.0             │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 23.0             │
-        └────────┴─────────────────────┴──────────────────┘
-
+        ┌───────┬─────────────────────┬──────────────────┐
+        │ index ┆ date                ┆ rolling_row_mean │
+        │ ---   ┆ ---                 ┆ ---              │
+        │ u32   ┆ datetime[μs]        ┆ f64              │
+        ╞═══════╪═════════════════════╪══════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0              │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0              │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.0              │
+        │ …     ┆ …                   ┆ …                │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.0             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.0             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.0             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0             │
+        └───────┴─────────────────────┴──────────────────┘
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -6333,7 +6301,10 @@ class Expr:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -6425,73 +6396,72 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_count()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
-        ┌────────┬─────────────────────┐
-        │ row_nr ┆ date                │
-        │ ---    ┆ ---                 │
-        │ u32    ┆ datetime[μs]        │
-        ╞════════╪═════════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 │
-        │ 1      ┆ 2001-01-01 01:00:00 │
-        │ 2      ┆ 2001-01-01 02:00:00 │
-        │ 3      ┆ 2001-01-01 03:00:00 │
-        │ …      ┆ …                   │
-        │ 21     ┆ 2001-01-01 21:00:00 │
-        │ 22     ┆ 2001-01-01 22:00:00 │
-        │ 23     ┆ 2001-01-01 23:00:00 │
-        │ 24     ┆ 2001-01-02 00:00:00 │
-        └────────┴─────────────────────┘
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ …     ┆ …                   │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
 
         Compute the rolling sum with the default left closure of temporal windows
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
+        ...     rolling_row_sum=pl.col("index").rolling_sum(
         ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_sum │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 3               │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 39              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 41              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 43              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 45              │
-        └────────┴─────────────────────┴─────────────────┘
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_sum │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 39              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 41              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 43              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 45              │
+        └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling sum with the closure of windows on both sides
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
+        ...     rolling_row_sum=pl.col("index").rolling_sum(
         ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_sum │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 3               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 6               │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 60              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 63              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 66              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 69              │
-        └────────┴─────────────────────┴─────────────────┘
-
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_sum │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 6               │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 60              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 63              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 66              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 69              │
+        └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -6563,7 +6533,10 @@ class Expr:
             relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -6661,73 +6634,72 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_count()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
-        ┌────────┬─────────────────────┐
-        │ row_nr ┆ date                │
-        │ ---    ┆ ---                 │
-        │ u32    ┆ datetime[μs]        │
-        ╞════════╪═════════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 │
-        │ 1      ┆ 2001-01-01 01:00:00 │
-        │ 2      ┆ 2001-01-01 02:00:00 │
-        │ 3      ┆ 2001-01-01 03:00:00 │
-        │ …      ┆ …                   │
-        │ 21     ┆ 2001-01-01 21:00:00 │
-        │ 22     ┆ 2001-01-01 22:00:00 │
-        │ 23     ┆ 2001-01-01 23:00:00 │
-        │ 24     ┆ 2001-01-02 00:00:00 │
-        └────────┴─────────────────────┘
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ …     ┆ …                   │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
 
         Compute the rolling std with the default left closure of temporal windows
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_std=pl.col("row_nr").rolling_std(
+        ...     rolling_row_std=pl.col("index").rolling_std(
         ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_std │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ f64             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.0             │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 0.707107        │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 0.707107        │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 0.707107        │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 0.707107        │
-        └────────┴─────────────────────┴─────────────────┘
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_std │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.707107        │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.707107        │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.707107        │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 0.707107        │
+        └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling std with the closure of windows on both sides
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_std=pl.col("row_nr").rolling_std(
+        ...     rolling_row_std=pl.col("index").rolling_std(
         ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_std │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ f64             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0.0             │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1.0             │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1.0             │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 1.0             │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 1.0             │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 1.0             │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 1.0             │
-        └────────┴─────────────────────┴─────────────────┘
-
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_std │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
+        └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -6806,7 +6778,10 @@ class Expr:
             relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -6904,73 +6879,72 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_count()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
-        ┌────────┬─────────────────────┐
-        │ row_nr ┆ date                │
-        │ ---    ┆ ---                 │
-        │ u32    ┆ datetime[μs]        │
-        ╞════════╪═════════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 │
-        │ 1      ┆ 2001-01-01 01:00:00 │
-        │ 2      ┆ 2001-01-01 02:00:00 │
-        │ 3      ┆ 2001-01-01 03:00:00 │
-        │ …      ┆ …                   │
-        │ 21     ┆ 2001-01-01 21:00:00 │
-        │ 22     ┆ 2001-01-01 22:00:00 │
-        │ 23     ┆ 2001-01-01 23:00:00 │
-        │ 24     ┆ 2001-01-02 00:00:00 │
-        └────────┴─────────────────────┘
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ …     ┆ …                   │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
 
         Compute the rolling var with the default left closure of temporal windows
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_var=pl.col("row_nr").rolling_var(
+        ...     rolling_row_var=pl.col("index").rolling_var(
         ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_var │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ f64             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.0             │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0.5             │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 0.5             │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 0.5             │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 0.5             │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 0.5             │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 0.5             │
-        └────────┴─────────────────────┴─────────────────┘
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_var │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.5             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.5             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.5             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 0.5             │
+        └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling var with the closure of windows on both sides
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_var=pl.col("row_nr").rolling_var(
+        ...     rolling_row_var=pl.col("index").rolling_var(
         ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_var │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ f64             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0.0             │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.5             │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1.0             │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1.0             │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 1.0             │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 1.0             │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 1.0             │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 1.0             │
-        └────────┴─────────────────────┴─────────────────┘
-
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_var │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ …     ┆ …                   ┆ …               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
+        └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -7048,7 +7022,10 @@ class Expr:
             relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -7136,7 +7113,6 @@ class Expr:
         │ 5.0 ┆ 5.0            │
         │ 6.0 ┆ null           │
         └─────┴────────────────┘
-
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -7213,7 +7189,10 @@ class Expr:
             relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
         by
@@ -7329,7 +7308,6 @@ class Expr:
         │ 5.0 ┆ null             │
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
-
         """
         window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
@@ -7383,7 +7361,6 @@ class Expr:
 
         >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
         (0.38180177416060584, 0.47033046033698594)
-
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
 
@@ -7415,7 +7392,10 @@ class Expr:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window.
 
@@ -7436,7 +7416,6 @@ class Expr:
         │ 11.0 │
         │ 17.0 │
         └──────┘
-
         """
         if min_periods is None:
             min_periods = window_size
@@ -7471,7 +7450,6 @@ class Expr:
         │ 1.0 │
         │ 2.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.abs())
 
@@ -7562,7 +7540,6 @@ class Expr:
         │ 2   ┆ 14  ┆ 3.0  │
         │ 2   ┆ 11  ┆ 2.0  │
         └─────┴─────┴──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
@@ -7619,7 +7596,6 @@ class Expr:
         │ 15   │
         │ 5    │
         └──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.diff(n, null_behavior))
 
@@ -7657,7 +7633,6 @@ class Expr:
         │ null ┆ 0.0        │
         │ 12   ┆ 0.0        │
         └──────┴────────────┘
-
         """
         n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.pct_change(n))
@@ -7712,7 +7687,6 @@ class Expr:
         ╞══════════╡
         │ 0.343622 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.skew(bias))
 
@@ -7748,7 +7722,6 @@ class Expr:
         ╞═══════════╡
         │ -1.153061 │
         └───────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
@@ -7810,7 +7783,6 @@ class Expr:
         │ 50   ┆ 10   │
         │ null ┆ null │
         └──────┴──────┘
-
         """
         if lower_bound is not None:
             lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
@@ -7837,7 +7809,6 @@ class Expr:
         ╞══════════════════════╡
         │ -9223372036854775808 │
         └──────────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.lower_bound())
 
@@ -7860,7 +7831,6 @@ class Expr:
         ╞═════════════════════╡
         │ 9223372036854775807 │
         └─────────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.upper_bound())
 
@@ -7892,7 +7862,6 @@ class Expr:
         │ 1    │
         │ null │
         └──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.sign())
 
@@ -7917,7 +7886,6 @@ class Expr:
         ╞═════╡
         │ 0.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.sin())
 
@@ -7942,7 +7910,6 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cos())
 
@@ -7967,7 +7934,6 @@ class Expr:
         ╞══════╡
         │ 1.56 │
         └──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.tan())
 
@@ -7992,7 +7958,6 @@ class Expr:
         ╞══════╡
         │ 0.64 │
         └──────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cot())
 
@@ -8017,7 +7982,6 @@ class Expr:
         ╞══════════╡
         │ 1.570796 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arcsin())
 
@@ -8042,7 +8006,6 @@ class Expr:
         ╞══════════╡
         │ 1.570796 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arccos())
 
@@ -8067,7 +8030,6 @@ class Expr:
         ╞══════════╡
         │ 0.785398 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arctan())
 
@@ -8092,7 +8054,6 @@ class Expr:
         ╞══════════╡
         │ 1.175201 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.sinh())
 
@@ -8117,7 +8078,6 @@ class Expr:
         ╞══════════╡
         │ 1.543081 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cosh())
 
@@ -8142,7 +8102,6 @@ class Expr:
         ╞══════════╡
         │ 0.761594 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.tanh())
 
@@ -8167,7 +8126,6 @@ class Expr:
         ╞══════════╡
         │ 0.881374 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arcsinh())
 
@@ -8192,7 +8150,6 @@ class Expr:
         ╞═════╡
         │ 0.0 │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arccosh())
 
@@ -8217,7 +8174,6 @@ class Expr:
         ╞═════╡
         │ inf │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
@@ -8322,7 +8278,6 @@ class Expr:
         See Also
         --------
         Expr.list.explode : Explode a list column.
-
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
@@ -8350,7 +8305,6 @@ class Expr:
         │ 1   │
         │ 3   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
@@ -8395,7 +8349,6 @@ class Expr:
         │ 1   │
         │ 1   │
         └─────┘
-
         """
         if n is not None and fraction is not None:
             raise ValueError("cannot specify both `n` and `fraction`")
@@ -8495,7 +8448,6 @@ class Expr:
         │ 1.666667 │
         │ 2.428571 │
         └──────────┘
-
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
@@ -8588,7 +8540,6 @@ class Expr:
         │ 0.707107 │
         │ 0.963624 │
         └──────────┘
-
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
@@ -8681,7 +8632,6 @@ class Expr:
         │ 0.5      │
         │ 0.928571 │
         └──────────┘
-
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
@@ -8716,7 +8666,6 @@ class Expr:
         │ 99     │
         │ 99     │
         └────────┘
-
         """
         if isinstance(value, Expr):
             raise TypeError(f"`value` must be a supported literal; found {value!r}")
@@ -8776,7 +8725,6 @@ class Expr:
         │ {"red",2}   │
         │ {"green",1} │
         └─────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.value_counts(sort, parallel))
 
@@ -8809,7 +8757,6 @@ class Expr:
         │ 2   │
         │ 3   │
         └─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.unique_counts())
 
@@ -8836,7 +8783,6 @@ class Expr:
         │ 1.0      │
         │ 1.584963 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.log(base))
 
@@ -8860,7 +8806,6 @@ class Expr:
         │ 1.098612 │
         │ 1.386294 │
         └──────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.log1p())
 
@@ -8898,7 +8843,6 @@ class Expr:
         ╞═══════════╡
         │ -6.754888 │
         └───────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
@@ -8949,7 +8893,6 @@ class Expr:
         │ -15.0  │
         │ -24.0  │
         └────────┘
-
         """
         return self._from_pyexpr(
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
@@ -8983,7 +8926,6 @@ class Expr:
         ╞════════╡
         │ 3      │
         └────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.set_sorted_flag(descending))
 
@@ -9018,7 +8960,6 @@ class Expr:
         │ 2   ┆ 2          ┆ 2          ┆ 2    ┆ 2    ┆ b   ┆ 1.32 ┆ null  │
         │ 3   ┆ 8589934592 ┆ 1073741824 ┆ 112  ┆ 129  ┆ c   ┆ 0.12 ┆ false │
         └─────┴────────────┴────────────┴──────┴──────┴─────┴──────┴───────┘
-
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
@@ -9086,7 +9027,6 @@ class Expr:
         │ {3.0,"(2.0, 3.0]",2}  │
         │ {inf,"(3.0, inf]",2}  │
         └───────────────────────┘
-
         """
         if bins is not None:
             if isinstance(bins, list):
@@ -9296,7 +9236,6 @@ class Expr:
             Dtype of the output Series.
         agg_list
             Aggregate list
-
         """
         return self.map_batches(function, return_dtype, agg_list=agg_list)
 
@@ -9340,7 +9279,6 @@ class Expr:
                         your code if the amount of work per element is significant
                         and the python function releases the GIL (e.g. via calling
                         a c function)
-
         """
         return self.map_elements(
             function,
@@ -9377,10 +9315,12 @@ class Expr:
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
+            a result. If None, it will be set equal to:
+
+            - the window size, if `window_size` is a fixed integer
+            - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window
-
         """
         return self.rolling_map(
             function, window_size, weights, min_periods, center=center
@@ -9398,7 +9338,6 @@ class Expr:
         -------
         Expr
             Expression of data type :class:`Boolean`.
-
         """
         return self.is_first_distinct()
 
@@ -9414,7 +9353,6 @@ class Expr:
         -------
         Expr
             Expression of data type :class:`Boolean`.
-
         """
         return self.is_last_distinct()
 
@@ -9432,7 +9370,6 @@ class Expr:
         ----------
         lower_bound
             Lower bound.
-
         """
         return self.clip(lower_bound=lower_bound)
 
@@ -9450,7 +9387,6 @@ class Expr:
         ----------
         upper_bound
             Upper bound.
-
         """
         return self.clip(upper_bound=upper_bound)
 
@@ -9474,7 +9410,6 @@ class Expr:
             Fill None values with the result of this expression.
         n
             Number of places to shift (may be negative).
-
         """
         return self.shift(n, fill_value=fill_value)
 
@@ -9532,7 +9467,6 @@ class Expr:
             will ensure the name is set. This is an extra heap allocation per group.
         changes_length
             For example a `unique` or a `slice`
-
         """
         if args is None:
             args = []
@@ -9726,7 +9660,6 @@ class Expr:
             Use `pl.first()`, to keep the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
-
         """
         return self.replace(mapping, default=default, return_dtype=return_dtype)
 
@@ -9761,7 +9694,6 @@ class Expr:
         │ a      │
         │ b      │
         └────────┘
-
         """
         return ExprCatNameSpace(self)
 
@@ -9779,7 +9711,6 @@ class Expr:
         Create an object namespace of all list related methods.
 
         See the individual method pages for full details.
-
         """
         return ExprListNameSpace(self)
 
@@ -9789,7 +9720,6 @@ class Expr:
         Create an object namespace of all array related methods.
 
         See the individual method pages for full details.
-
         """
         return ExprArrayNameSpace(self)
 
@@ -9799,7 +9729,6 @@ class Expr:
         Create an object namespace of all meta related expression methods.
 
         This can be used to modify and traverse existing expressions.
-
         """
         return ExprMetaNameSpace(self)
 
@@ -9809,7 +9738,6 @@ class Expr:
         Create an object namespace of all expressions that modify expression names.
 
         See the individual method pages for full details.
-
         """
         return ExprNameNameSpace(self)
 
@@ -9833,7 +9761,6 @@ class Expr:
         │ A       │
         │ B       │
         └─────────┘
-
         """
         return ExprStringNameSpace(self)
 
@@ -9868,7 +9795,6 @@ class Expr:
         │ a   │
         │ b   │
         └─────┘
-
         """
         return ExprStructNameSpace(self)
 

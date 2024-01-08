@@ -158,20 +158,7 @@ pub(crate) fn encode_delta<O: Offset>(
 
 /// Returns the ordering of two binary values. This corresponds to pyarrows' ordering
 /// of statistics.
+#[inline(always)]
 pub(crate) fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
-    use std::cmp::Ordering::*;
-    match (a.is_empty(), b.is_empty()) {
-        (true, true) => return Equal,
-        (true, false) => return Less,
-        (false, true) => return Greater,
-        (false, false) => {},
-    }
-
-    for (v1, v2) in a.iter().zip(b.iter()) {
-        match v1.cmp(v2) {
-            Equal => continue,
-            other => return other,
-        }
-    }
-    Equal
+    a.cmp(b)
 }

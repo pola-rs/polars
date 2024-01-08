@@ -6,7 +6,6 @@ Then run this script to get the runtime of certain queries.
 
 See:
 https://h2oai.github.io/db-benchmark/
-
 """
 
 import sys

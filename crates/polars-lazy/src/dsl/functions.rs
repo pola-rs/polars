@@ -169,6 +169,48 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
     concat(lfs_with_all_columns, args)
 }
 
+/// Concat [LazyFrame]s horizontally.
+pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
+    inputs: L,
+    args: UnionArgs,
+) -> PolarsResult<LazyFrame> {
+    let lfs = inputs.as_ref();
+    let mut opt_state = lfs.first().map(|lf| lf.opt_state).ok_or_else(
+        || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
+    )?;
+
+    for lf in &lfs[1..] {
+        // ensure we enable file caching if any lf has it enabled
+        opt_state.file_caching |= lf.opt_state.file_caching;
+    }
+
+    let mut lps = Vec::with_capacity(lfs.len());
+    let mut schemas = Vec::with_capacity(lfs.len());
+
+    for lf in lfs.iter() {
+        let mut lf = lf.clone();
+        let schema = lf.schema()?;
+        schemas.push(schema);
+        let lp = std::mem::take(&mut lf.logical_plan);
+        lps.push(lp);
+    }
+
+    let combined_schema = merge_schemas(&schemas)?;
+
+    let options = HConcatOptions {
+        parallel: args.parallel,
+    };
+    let lp = LogicalPlan::HConcat {
+        inputs: lps,
+        schema: Arc::new(combined_schema),
+        options,
+    };
+    let mut lf = LazyFrame::from(lp);
+    lf.opt_state = opt_state;
+
+    Ok(lf)
+}
+
 #[derive(Clone, Copy)]
 pub struct UnionArgs {
     pub parallel: bool,

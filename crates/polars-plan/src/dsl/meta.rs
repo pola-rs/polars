@@ -28,6 +28,7 @@ impl MetaNameSpace {
     pub fn root_names(&self) -> Vec<Arc<str>> {
         expr_to_leaf_column_names(&self.0)
     }
+
     /// A projection that only takes a column or a column + alias.
     pub fn is_simple_projection(&self) -> bool {
         let mut arena = Arena::with_capacity(8);
@@ -59,7 +60,7 @@ impl MetaNameSpace {
         self.0
     }
 
-    /// Whether this expression expands to multiple expressions.
+    /// Indicate if this expression expands to multiple expressions.
     pub fn has_multiple_outputs(&self) -> bool {
         self.0.into_iter().any(|e| match e {
             Expr::Selector(_) | Expr::Wildcard | Expr::Columns(_) | Expr::DtypeColumn(_) => true,
@@ -68,7 +69,15 @@ impl MetaNameSpace {
         })
     }
 
-    /// Whether this expression expands to multiple expressions with regex expansion.
+    /// Indicate if this expression is a basic (non-regex) column.
+    pub fn is_column(&self) -> bool {
+        match &self.0 {
+            Expr::Column(name) => !is_regex_projection(name),
+            _ => false,
+        }
+    }
+
+    /// Indicate if this expression expands to multiple expressions with regex expansion.
     pub fn is_regex_projection(&self) -> bool {
         self.0.into_iter().any(|e| match e {
             Expr::Column(name) => is_regex_projection(name),

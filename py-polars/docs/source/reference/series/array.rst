@@ -19,3 +19,7 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.var
     Series.arr.all
     Series.arr.any
+    Series.arr.sort
+    Series.arr.reverse
+    Series.arr.arg_min
+    Series.arr.arg_max

@@ -98,8 +98,7 @@ class column:
     >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
     column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
-    column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
-
+    column(name='ccy', dtype=String, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
     """  # noqa: W505
 
     name: str
@@ -227,7 +226,6 @@ def columns(
     ...     df = pl.DataFrame(schema=[(c.name, c.dtype) for c in columns(punctuation)])
     ...     assert len(cols) == len(df.columns)
     ...     assert 0 == len(df.rows())
-
     """
     # create/assign named columns
     if cols is None:
@@ -332,7 +330,7 @@ def series(
     >>> from polars.testing.parametric import create_list_strategy
     >>> s = series(
     ...     strategy=create_list_strategy(
-    ...         inner_dtype=pl.Utf8,
+    ...         inner_dtype=pl.String,
     ...         select_from=["xx", "yy", "zz"],
     ...     ),
     ...     min_size=2,
@@ -347,7 +345,6 @@ def series(
         ["zz", "yy", "zz"]
         ["xx"]
     ]
-
     """
     if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
         allowed_dtypes = [allowed_dtypes]
@@ -605,7 +602,6 @@ def dataframes(
     │ -15836    ┆ 1.1755e-38 │
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
-
     """
     _failed_frame_init_msgs_.clear()
 

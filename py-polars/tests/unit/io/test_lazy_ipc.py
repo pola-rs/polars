@@ -29,7 +29,7 @@ def test_row_count(foods_ipc_path: Path) -> None:
 
     df = (
         pl.scan_ipc(foods_ipc_path, row_count_name="row_count")
-        .with_row_count("foo", 10)
+        .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
@@ -58,7 +58,7 @@ def test_row_count_schema(foods_ipc_path: Path) -> None:
         pl.scan_ipc(foods_ipc_path, row_count_name="id")
         .select(["id", "category"])
         .collect()
-    ).dtypes == [pl.UInt32, pl.Utf8]
+    ).dtypes == [pl.UInt32, pl.String]
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:

@@ -72,7 +72,6 @@ def read_ipc(
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that you cannot write to the same filename.
     E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
-
     """
     if use_pyarrow and n_rows and not memory_map:
         raise ValueError(
@@ -94,7 +93,7 @@ def read_ipc(
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_count_name is not None:
-                df = df.with_row_count(row_count_name, row_count_offset)
+                df = df.with_row_index(row_count_name, row_count_offset)
             if n_rows is not None:
                 df = df.slice(0, n_rows)
             return df
@@ -153,7 +152,6 @@ def read_ipc_stream(
     Returns
     -------
     DataFrame
-
     """
     with _prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
@@ -171,7 +169,7 @@ def read_ipc_stream(
                 tbl = reader.read_all()
                 df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
                 if row_count_name is not None:
-                    df = df.with_row_count(row_count_name, row_count_offset)
+                    df = df.with_row_index(row_count_name, row_count_offset)
                 if n_rows is not None:
                     df = df.slice(0, n_rows)
                 return df
@@ -201,7 +199,6 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     -------
     dict
         Dictionary mapping column names to datatypes
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -214,7 +211,7 @@ def scan_ipc(
     *,
     n_rows: int | None = None,
     cache: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
@@ -249,7 +246,6 @@ def scan_ipc(
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
-
     """
     return pl.LazyFrame._scan_ipc(
         source,

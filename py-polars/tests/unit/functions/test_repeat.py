@@ -16,7 +16,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
         (2**31 - 1, 5, None, pl.Int32),
         (-(2**31) - 1, 3, None, pl.Int64),
         (-(2**31), 3, None, pl.Int32),
-        ("foo", 2, None, pl.Utf8),
+        ("foo", 2, None, pl.String),
         (1.0, 5, None, pl.Float64),
         (True, 4, None, pl.Boolean),
         (None, 7, None, pl.Null),
@@ -86,19 +86,26 @@ def test_repeat_n_negative() -> None:
 
 
 @pytest.mark.parametrize(
-    ("n", "dtype", "expected_dtype"),
+    ("n", "value", "dtype"),
     [
-        (3, None, pl.Float64),
-        (2, pl.UInt8, pl.UInt8),
-        (0, pl.Int32, pl.Int32),
+        (2, 1, pl.UInt32),
+        (0, 1, pl.Int16),
+        (3, 1, pl.Float32),
+        (1, "1", pl.Utf8),
+        (2, ["1"], pl.List(pl.Utf8)),
+        (4, True, pl.Boolean),
+        (2, [True], pl.List(pl.Boolean)),
+        (2, [1], pl.Array(pl.Int16, width=1)),
+        (2, [1, 1, 1], pl.Array(pl.Int8, width=3)),
+        (1, [1], pl.List(pl.UInt32)),
     ],
 )
 def test_ones(
     n: int,
+    value: Any,
     dtype: pl.PolarsDataType,
-    expected_dtype: pl.PolarsDataType,
 ) -> None:
-    expected = pl.Series("ones", [1] * n, dtype=expected_dtype)
+    expected = pl.Series("ones", [value] * n, dtype=dtype)
 
     result_eager = pl.ones(n=n, dtype=dtype, eager=True)
     assert_series_equal(result_eager, expected)
@@ -108,19 +115,26 @@ def test_ones(
 
 
 @pytest.mark.parametrize(
-    ("n", "dtype", "expected_dtype"),
+    ("n", "value", "dtype"),
     [
-        (3, None, pl.Float64),
-        (2, pl.UInt8, pl.UInt8),
-        (0, pl.Int32, pl.Int32),
+        (2, 0, pl.UInt8),
+        (0, 0, pl.Int32),
+        (3, 0, pl.Float32),
+        (1, "0", pl.Utf8),
+        (2, ["0"], pl.List(pl.Utf8)),
+        (4, False, pl.Boolean),
+        (2, [False], pl.List(pl.Boolean)),
+        (3, [0], pl.Array(pl.UInt32, width=1)),
+        (2, [0, 0, 0], pl.Array(pl.UInt32, width=3)),
+        (1, [0], pl.List(pl.UInt32)),
     ],
 )
 def test_zeros(
     n: int,
+    value: Any,
     dtype: pl.PolarsDataType,
-    expected_dtype: pl.PolarsDataType,
 ) -> None:
-    expected = pl.Series("zeros", [0] * n, dtype=expected_dtype)
+    expected = pl.Series("zeros", [value] * n, dtype=dtype)
 
     result_eager = pl.zeros(n=n, dtype=dtype, eager=True)
     assert_series_equal(result_eager, expected)
@@ -129,11 +143,19 @@ def test_zeros(
     assert_series_equal(result_lazy, expected)
 
 
-def test_zeros_ones_bool_type() -> None:
-    zeros = pl.zeros(3, pl.Boolean, eager=True)
-    ones = pl.ones(3, pl.Boolean, eager=True)
-    assert zeros.to_list() == [False, False, False]
-    assert ones.to_list() == [True, True, True]
+def test_ones_zeros_misc() -> None:
+    # check we default to f64 if dtype is unspecified
+    s_ones = pl.ones(n=2, eager=True)
+    s_zeros = pl.zeros(n=2, eager=True)
+
+    assert s_ones.dtype == s_zeros.dtype == pl.Float64
+
+    # confirm that we raise a suitable error if dtype is invalid
+    with pytest.raises(TypeError, match="invalid dtype for `ones`"):
+        pl.ones(n=2, dtype=pl.Struct({"x": pl.Date, "y": pl.Duration}), eager=True)
+
+    with pytest.raises(TypeError, match="invalid dtype for `zeros`"):
+        pl.zeros(n=2, dtype=pl.Struct({"x": pl.Date, "y": pl.Duration}), eager=True)
 
 
 def test_repeat_by_logical_dtype() -> None:

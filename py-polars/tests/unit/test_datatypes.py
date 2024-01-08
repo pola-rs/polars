@@ -26,7 +26,7 @@ SIMPLE_DTYPES: list[DataTypeClass] = list(
     | pl.FLOAT_DTYPES
     | {
         pl.Boolean,
-        pl.Utf8,
+        pl.String,
         pl.Binary,
         pl.Time,
         pl.Date,
@@ -138,8 +138,8 @@ def test_dtypes_hashable() -> None:
         (pl.List(pl.Duration(time_unit="ns")), "List(Duration(time_unit='ns'))"),
         (pl.Struct, "Struct"),
         (
-            pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
-            "Struct({'name': Utf8, 'ids': List(UInt32)})",
+            pl.Struct({"name": pl.String, "ids": pl.List(pl.UInt32)}),
+            "Struct({'name': String, 'ids': List(UInt32)})",
         ),
     ],
 )

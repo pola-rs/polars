@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Callable, NoReturn, Sequence, o
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Datetime
+from polars.datatypes import Date, Datetime, String
 from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io.csv.functions import read_csv
 from polars.utils.various import normalize_filepath
@@ -229,7 +229,6 @@ def read_excel(
     ...     engine="openpyxl",
     ...     schema_overrides={"dt": pl.Datetime, "value": pl.Int32},
     ... )  # doctest: +SKIP
-
     """
     if engine and engine != "xlsx2csv":
         if xlsx2csv_options:
@@ -378,7 +377,6 @@ def read_ods(
     ...     schema_overrides={"dt": pl.Date},
     ...     raise_if_empty=False,
     ... )  # doctest: +SKIP
-
     """
     return _read_spreadsheet(
         sheet_id,
@@ -719,11 +717,18 @@ def _read_spreadsheet_openpyxl(
                 header.extend(row_values)
                 break
 
-    series_data = [
-        pl.Series(name, [cell.value for cell in column_data])
-        for name, column_data in zip(header, zip(*rows_iter))
-        if name
-    ]
+    series_data = []
+    for name, column_data in zip(header, zip(*rows_iter)):
+        if name:
+            values = [cell.value for cell in column_data]
+            if (dtype := (schema_overrides or {}).get(name)) == String:
+                # note: if we init series with mixed-type data (eg: str/int)
+                # the non-strings will become null, so we handle the cast here
+                values = [str(v) if (v is not None) else v for v in values]
+
+            s = pl.Series(name, values, dtype=dtype)
+            series_data.append(s)
+
     df = pl.DataFrame(
         {s.name: s for s in series_data},
         schema_overrides=schema_overrides,
@@ -758,11 +763,24 @@ def _read_spreadsheet_pyxlsb(
                 break
 
         # load data rows as series
-        series_data = [
-            pl.Series(name, [cell.v for cell in column_data])
-            for name, column_data in zip(header, zip(*rows_iter))
-            if name
-        ]
+        series_data = []
+        for name, column_data in zip(header, zip(*rows_iter)):
+            if name:
+                values = [cell.v for cell in column_data]
+                if (dtype := (schema_overrides or {}).get(name)) == String:
+                    # note: if we init series with mixed-type data (eg: str/int)
+                    # the non-strings will become null, so we handle the cast here
+                    values = [
+                        str(int(v) if isinstance(v, float) and v.is_integer() else v)
+                        if (v is not None)
+                        else v
+                        for v in values
+                    ]
+                elif dtype in (Datetime, Date):
+                    dtype = None
+
+                s = pl.Series(name, values, dtype=dtype)
+                series_data.append(s)
     finally:
         ws.close()
 

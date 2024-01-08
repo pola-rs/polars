@@ -32,6 +32,11 @@ def path_xlsx_empty(io_files_path: Path) -> Path:
 
 
 @pytest.fixture()
+def path_xlsx_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.xlsx"
+
+
+@pytest.fixture()
 def path_xlsb(io_files_path: Path) -> Path:
     return io_files_path / "example.xlsb"
 
@@ -42,6 +47,11 @@ def path_xlsb_empty(io_files_path: Path) -> Path:
 
 
 @pytest.fixture()
+def path_xlsb_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.xlsb"
+
+
+@pytest.fixture()
 def path_ods(io_files_path: Path) -> Path:
     return io_files_path / "example.ods"
 
@@ -49,6 +59,11 @@ def path_ods(io_files_path: Path) -> Path:
 @pytest.fixture()
 def path_ods_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.ods"
+
+
+@pytest.fixture()
+def path_ods_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.ods"
 
 
 @pytest.mark.parametrize(
@@ -223,6 +238,63 @@ def test_read_invalid_worksheet(
             read_spreadsheet(
                 spreadsheet_path, sheet_id=sheet_id, sheet_name=sheet_name, **params
             )
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "additional_params"),
+    [
+        (pl.read_excel, "path_xlsx_mixed", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb_mixed", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods_mixed", {}),
+    ],
+)
+def test_read_mixed_dtype_columns(
+    read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
+    source: str,
+    additional_params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+    schema_overrides = {
+        "Employee ID": pl.Utf8,
+        "Employee Name": pl.Utf8,
+        "Date": pl.Date,
+        "Details": pl.Categorical,
+        "Asset ID": pl.Utf8,
+    }
+
+    df = read_spreadsheet(
+        spreadsheet_path,
+        sheet_id=0,
+        schema_overrides=schema_overrides,
+        **additional_params,
+    )["Sheet1"]
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "Employee ID": ["123456", "44333", "US00011", "135967", "IN86868"],
+                "Employee Name": ["Test1", "Test2", "Test4", "Test5", "Test6"],
+                "Date": [
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                ],
+                "Details": [
+                    "Healthcare",
+                    "Healthcare",
+                    "Healthcare",
+                    "Healthcare",
+                    "Something",
+                ],
+                "Asset ID": ["84444", "84444", "84444", "84444", "ABC123"],
+            },
+            schema_overrides=schema_overrides,
+        ),
+    )
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
@@ -580,10 +652,10 @@ def test_excel_write_multiple_tables() -> None:
     from xlsxwriter import Workbook
 
     # note: checks that empty tables don't error on write
-    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df4 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df4 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
 
     xls = BytesIO()
     with Workbook(xls) as wb:
@@ -619,9 +691,9 @@ def test_excel_freeze_panes() -> None:
     from xlsxwriter import Workbook
 
     # note: checks that empty tables don't error on write
-    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
 
     xls = BytesIO()
 

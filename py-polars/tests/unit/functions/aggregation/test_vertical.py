@@ -23,7 +23,6 @@ def assert_expr_equal(
     context
         The context in which the expressions will be evaluated. Defaults to an empty
         context.
-
     """
     if context is None:
         context = pl.DataFrame()

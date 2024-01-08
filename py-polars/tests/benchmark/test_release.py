@@ -155,7 +155,7 @@ def test_max_statistic_parquet_writer() -> None:
     n = 150_000
 
     # int64 is important to hit the page size
-    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).to_frame()
+    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).alias("int").to_frame()
     f = "/tmp/tmp.parquet"
     df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
     result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()

@@ -63,7 +63,7 @@ impl<'a> LazyCsvReader<'a> {
             null_values: None,
             missing_is_null: true,
             infer_schema_length: Some(100),
-            rechunk: true,
+            rechunk: false,
             skip_rows_after_header: 0,
             encoding: CsvEncoding::Utf8,
             row_count: None,

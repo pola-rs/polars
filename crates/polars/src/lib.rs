@@ -147,7 +147,7 @@
 //! (Note that within an expression there may be more parallelization going on).
 //!
 //! Understanding polars expressions is most important when starting with the polars library. Read more
-//! about them in the [User Guide](https://pola-rs.github.io/polars/user-guide/concepts/expressions).
+//! about them in the [User Guide](https://docs.pola.rs/user-guide/concepts/expressions).
 //! Though the examples given there are in python. The expressions API is almost identical and the
 //! the read should certainly be valuable to rust users as well.
 //!
@@ -407,7 +407,7 @@
 //! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
 //!
 //! ## User Guide
-//! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars/).
+//! If you want to read more, [check the User Guide](https://docs.pola.rs/).
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;

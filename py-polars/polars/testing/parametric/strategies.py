@@ -50,12 +50,12 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    String,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
-    Utf8,
     is_polars_dtype,
 )
 from polars.type_aliases import PolarsDataType
@@ -94,7 +94,7 @@ strategy_u32 = integers(min_value=0, max_value=(2**32) - 1)
 strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
 
 strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
-strategy_utf8 = text(
+strategy_string = text(
     alphabet=characters(max_codepoint=1000, exclude_categories=["Cs", "Cc"]),
     max_size=8,
 )
@@ -175,7 +175,6 @@ class StrategyLookup(MutableMapping[PolarsDataType, SearchStrategy[Any]]):
     We customise this so that retrieval of nested strategies respects the inner dtype
     of List/Struct types; nested strategies are stored as callables that create the
     given strategy on demand (there are infinitely many possible nested dtypes).
-
     """
 
     _items: dict[
@@ -198,7 +197,6 @@ class StrategyLookup(MutableMapping[PolarsDataType, SearchStrategy[Any]]):
         ----------
         items
             A dtype to strategy dict/mapping.
-
         """
         self._items = {}
         if items is not None:
@@ -273,7 +271,7 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Duration("ms"): strategy_duration,
         Duration: strategy_duration,
         Categorical: strategy_categorical,
-        Utf8: strategy_utf8,
+        String: strategy_string,
         Binary: strategy_binary,
     }
 )
@@ -295,10 +293,9 @@ def _get_strategy_dtypes(
     Parameters
     ----------
     base_type
-        If True, return the base types for each dtype (eg:`List(Utf8)` → `List`).
+        If True, return the base types for each dtype (eg:`List(String)` → `List`).
     excluding
         A dtype or sequence of dtypes to omit from the results.
-
     """
     excluding = (excluding,) if is_polars_dtype(excluding) else (excluding or ())  # type: ignore[assignment]
     strategy_dtypes = list(chain(scalar_strategies.keys(), nested_strategies.keys()))
@@ -359,7 +356,7 @@ def create_list_strategy(
     Create a strategy that generates lists of lists of specific strings:
 
     >>> lst = create_list_strategy(
-    ...     inner_dtype=pl.List(pl.Utf8),
+    ...     inner_dtype=pl.List(pl.String),
     ...     select_from=["xx", "yy", "zz"],
     ... )
     >>> lst.example()  # doctest: +SKIP
@@ -378,7 +375,6 @@ def create_list_strategy(
     [(12, 22), (15, 131)]
     >>> uint8_pairs().example()  # doctest: +SKIP
     [(59, 176), (149, 149)]
-
     """
     if select_from and inner_dtype is None:
         raise ValueError("if specifying `select_from`, must also specify `inner_dtype`")

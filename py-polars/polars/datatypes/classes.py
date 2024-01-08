@@ -6,12 +6,14 @@ from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
+import polars._reexport as pl
 import polars.datatypes
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
+    from polars import Series
     from polars.type_aliases import (
         CategoricalOrdering,
         PolarsDataType,
@@ -141,7 +143,6 @@ class DataType(metaclass=DataTypeClass):
         True
         >>> pl.List.is_(pl.List(pl.Int32))
         False
-
         """
         return self == other and hash(self) == hash(other)
 
@@ -167,7 +168,6 @@ class DataType(metaclass=DataTypeClass):
         False
         >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
         True
-
         """
         from polars.utils.deprecation import issue_deprecation_warning
 
@@ -249,7 +249,6 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
             iterable of data types
         match_base_type:
             match the base type
-
         """
         for it in items:
             if not isinstance(it, (DataType, DataTypeClass)):
@@ -340,7 +339,6 @@ class Decimal(NumericType):
 
     .. warning::
         This is an experimental work-in-progress feature and may not work as expected.
-
     """
 
     precision: int | None
@@ -376,8 +374,12 @@ class Boolean(DataType):
     """Boolean type."""
 
 
-class Utf8(DataType):
+class String(DataType):
     """UTF-8 encoded string type."""
+
+
+# Allow Utf8 as an alias for String
+Utf8 = String
 
 
 class Binary(DataType):
@@ -413,7 +415,6 @@ class Datetime(TemporalType):
             `import zoneinfo; zoneinfo.available_timezones()` for a full list).
             When using to match dtypes, can use "*" to check for Datetime columns
             that have any timezone.
-
         """
         if isinstance(time_zone, timezone):
             time_zone = str(time_zone)
@@ -461,7 +462,6 @@ class Duration(TemporalType):
         ----------
         time_unit : {'us', 'ns', 'ms'}
             Unit of time.
-
         """
         self.time_unit = time_unit
         if self.time_unit not in ("ms", "us", "ns"):
@@ -496,7 +496,6 @@ class Categorical(DataType):
         ordering : {'lexical', 'physical'}
             Ordering by order of appearance (physical, default)
             or string value (lexical).
-
     """
 
     ordering: CategoricalOrdering | None
@@ -529,29 +528,47 @@ class Enum(DataType):
 
     .. warning::
         This is an experimental work-in-progress feature and may not work as expected.
-
     """
 
-    categories: list[str]
+    categories: Series
 
-    def __init__(self, categories: list[str]):
+    def __init__(self, categories: Series | Iterable[str]):
         """
         A fixed set categorical encoding of a set of strings.
 
         Parameters
         ----------
         categories
-            Categories in the dataset.
-
+            Valid categories in the dataset.
         """
-        self.categories = categories
+        if not isinstance(categories, pl.Series):
+            categories = pl.Series(values=categories)
+
+        if categories.is_empty():
+            self.categories = pl.Series(name="category", dtype=String)
+            return
+
+        if categories.null_count() > 0:
+            msg = "Enum categories must not contain null values"
+            raise TypeError(msg)
+
+        if (dtype := categories.dtype) != String:
+            msg = f"Enum categories must be strings; found data of type {dtype}"
+            raise TypeError(msg)
+
+        if categories.n_unique() != categories.len():
+            duplicate = categories.filter(categories.is_duplicated())[0]
+            msg = f"Enum categories must be unique; found duplicate {duplicate!r}"
+            raise ValueError(msg)
+
+        self.categories = categories.rechunk().alias("category")
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Enum):
             return True
         elif isinstance(other, Enum):
-            return self.categories == other.categories
+            return self.categories.equals(other.categories)
         else:
             return False
 
@@ -560,7 +577,7 @@ class Enum(DataType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(categories={self.categories!r})"
+        return f"{class_name}(categories={self.categories.to_list()!r})"
 
 
 class Object(DataType):
@@ -607,7 +624,6 @@ class List(NestedType):
         │ [1, 2]        ┆ [1.0, 2.0]  │
         │ [3, 4]        ┆ [3.0, 4.0]  │
         └───────────────┴─────────────┘
-
         """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
@@ -664,7 +680,6 @@ class Array(NestedType):
                 [1, 2]
                 [4, 3]
         ]
-
         """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
         self.width = width
@@ -710,7 +725,6 @@ class Field:
             The name of the field within its parent `Struct`
         dtype
             The `DataType` of the field's values
-
         """
         self.name = name
         self.dtype = polars.datatypes.py_type_to_dtype(dtype)
@@ -745,15 +759,17 @@ class Struct(NestedType):
         --------
         Initialize using a dictionary:
 
-        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.Utf8)})
+        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.String)})
         >>> dtype
-        Struct({'a': Int8, 'b': List(Utf8)})
+        Struct({'a': Int8, 'b': List(String)})
 
         Initialize using a list of Field objects:
 
-        >>> dtype = pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.Utf8))])
+        >>> dtype = pl.Struct(
+        ...     [pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.String))]
+        ... )
         >>> dtype
-        Struct({'a': Int8, 'b': List(Utf8)})
+        Struct({'a': Int8, 'b': List(String)})
 
         When initializing a Series, Polars can infer a struct data type from the data.
 
@@ -766,7 +782,7 @@ class Struct(NestedType):
                 {2,["z"]}
         ]
         >>> s.dtype
-        Struct({'a': Int64, 'b': List(Utf8)})
+        Struct({'a': Int64, 'b': List(String)})
         """
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]

@@ -124,6 +124,12 @@ pub struct UnionOptions {
     pub rechunk: bool,
 }
 
+#[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct HConcatOptions {
+    pub parallel: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {

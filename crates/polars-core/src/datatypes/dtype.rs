@@ -144,9 +144,9 @@ impl DataType {
             Time => Int64,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) => UInt32,
-            List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-array")]
             Array(dt, width) => Array(Box::new(dt.to_physical()), *width),
+            List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let new_fields = fields
@@ -387,7 +387,10 @@ impl Display for DataType {
             #[cfg(feature = "object")]
             DataType::Object(s, _) => s,
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => "cat",
+            DataType::Categorical(rev_map, _) => match rev_map {
+                Some(r) if r.is_enum() => "enum",
+                _ => "cat",
+            },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
@@ -459,4 +462,16 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
 pub fn create_enum_data_type(categories: Utf8Array<i64>) -> DataType {
     let rev_map = RevMapping::build_enum(categories.clone());
     DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub fn enum_or_default_categorical(
+    opt_rev_map: &Option<Arc<RevMapping>>,
+    ordering: CategoricalOrdering,
+) -> DataType {
+    opt_rev_map
+        .as_ref()
+        .filter(|rev_map| rev_map.is_enum())
+        .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), ordering))
+        .unwrap_or_else(|| DataType::Categorical(None, ordering))
 }

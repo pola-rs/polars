@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import re
 from datetime import datetime
+from functools import partial
 from typing import Any, Callable
 
 import numpy
@@ -67,6 +68,11 @@ TEST_CASES = [
         "lambda x: (float(x) * int(x)) // 2",
         '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
     ),
+    (
+        "a",
+        "lambda x: 1 / (1 + np.exp(-x))",
+        '1 / (1 + (-pl.col("a")).exp())',
+    ),
     # ---------------------------------------------
     # numpy
     # ---------------------------------------------
@@ -129,7 +135,7 @@ TEST_CASES = [
     # ---------------------------------------------
     # string expr: case/cast ops
     # ---------------------------------------------
-    ("b", "lambda x: str(x).title()", 'pl.col("b").cast(pl.Utf8).str.to_titlecase()'),
+    ("b", "lambda x: str(x).title()", 'pl.col("b").cast(pl.String).str.to_titlecase()'),
     (
         "b",
         'lambda x: x.lower() + ":" + x.upper() + ":" + x.title()',
@@ -294,7 +300,7 @@ def test_parse_apply_raw_functions() -> None:
     assert_frame_equal(*result_frames)
 
     # test primitive python casts
-    for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
+    for py_cast, pl_dtype in ((str, pl.String), (int, pl.Int64), (float, pl.Float64)):
         with pytest.warns(
             PolarsInefficientMapWarning,
             match=rf'(?s)with this one instead.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
@@ -351,7 +357,7 @@ def test_parse_apply_miscellaneous() -> None:
         (
             [1, 2, 3],
             lambda x: str(x),
-            "s.cast(pl.Utf8)",
+            "s.cast(pl.String)",
         ),
         (
             [-20, -12, -5, 0, 5, 12, 20],
@@ -401,3 +407,13 @@ def test_expr_exact_warning_message() -> None:
         df.select(pl.col("a").map_elements(lambda x: x + 1))
 
     assert len(warnings) == 1
+
+
+def test_partial_functions_13523() -> None:
+    def plus(value, amount: int):  # type: ignore[no-untyped-def]
+        return value + amount
+
+    data = {"a": [1, 2], "b": [3, 4]}
+    df = pl.DataFrame(data)
+    # should not warn
+    _ = df["a"].map_elements(partial(plus, amount=1))

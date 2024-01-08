@@ -1136,10 +1136,10 @@ impl PyDataFrame {
         }
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
+    pub fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
-            .with_row_count(name, offset)
+            .with_row_index(name, offset)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }

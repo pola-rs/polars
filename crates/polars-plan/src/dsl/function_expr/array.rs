@@ -18,6 +18,10 @@ pub enum ArrayFunction {
     Any,
     #[cfg(feature = "array_any_all")]
     All,
+    Sort(SortOptions),
+    Reverse,
+    ArgMin,
+    ArgMax,
 }
 
 impl ArrayFunction {
@@ -33,6 +37,9 @@ impl ArrayFunction {
             Median => mapper.map_to_float_dtype(),
             #[cfg(feature = "array_any_all")]
             Any | All => mapper.with_dtype(DataType::Boolean),
+            Sort(_) => mapper.with_same_dtype(),
+            Reverse => mapper.with_same_dtype(),
+            ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
         }
     }
 }
@@ -61,6 +68,10 @@ impl Display for ArrayFunction {
             Any => "any",
             #[cfg(feature = "array_any_all")]
             All => "all",
+            Sort(_) => "sort",
+            Reverse => "reverse",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
         };
         write!(f, "arr.{name}")
     }
@@ -82,6 +93,10 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Any => map!(any),
             #[cfg(feature = "array_any_all")]
             All => map!(all),
+            Sort(options) => map!(sort, options),
+            Reverse => map!(reverse),
+            ArgMin => map!(arg_min),
+            ArgMax => map!(arg_max),
         }
     }
 }
@@ -132,4 +147,20 @@ pub(super) fn any(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "array_any_all")]
 pub(super) fn all(s: &Series) -> PolarsResult<Series> {
     s.array()?.array_all()
+}
+
+pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
+    Ok(s.array()?.array_sort(options).into_series())
+}
+
+pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
+    Ok(s.array()?.array_reverse().into_series())
+}
+
+pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {
+    Ok(s.array()?.array_arg_min().into_series())
+}
+
+pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
+    Ok(s.array()?.array_arg_max().into_series())
 }

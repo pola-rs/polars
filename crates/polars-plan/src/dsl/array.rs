@@ -1,3 +1,5 @@
+use polars_core::prelude::SortOptions;
+
 use crate::dsl::function_expr::{ArrayFunction, FunctionExpr};
 use crate::prelude::*;
 
@@ -74,5 +76,25 @@ impl ArrayNameSpace {
     pub fn any(self) -> Expr {
         self.0
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Any))
+    }
+
+    pub fn sort(self, options: SortOptions) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Sort(options)))
+    }
+
+    pub fn reverse(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Reverse))
+    }
+
+    pub fn arg_min(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::ArgMin))
+    }
+
+    pub fn arg_max(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::ArgMax))
     }
 }

@@ -124,7 +124,7 @@ def test_is_in_series() -> None:
     out = s.is_in(["a", "b"])
     assert out.to_list() == [True, True, False]
 
-    # Check if empty list is converted to pl.Utf8.
+    # Check if empty list is converted to pl.String
     out = s.is_in([])
     assert out.to_list() == [False] * out.len()
 
@@ -252,7 +252,7 @@ def test_cat_is_in_series(dtype: pl.DataType) -> None:
     expected = pl.Series([False, True, True, None])
     assert_series_equal(s.is_in(s2), expected)
 
-    s2_str = s2.cast(pl.Utf8)
+    s2_str = s2.cast(pl.String)
     assert_series_equal(s.is_in(s2_str), expected)
 
 
@@ -264,7 +264,7 @@ def test_cat_is_in_series_non_existent() -> None:
     expected = pl.Series([True, False, False, None])
     assert_series_equal(s.is_in(s2), expected)
 
-    s2_str = s2.cast(pl.Utf8)
+    s2_str = s2.cast(pl.String)
     assert_series_equal(s.is_in(s2_str), expected)
 
 
@@ -295,3 +295,14 @@ def test_cat_is_in_with_lit_str_non_existent(dtype: pl.DataType) -> None:
     expected = pl.Series([False, False, False, None])
 
     assert_series_equal(s.is_in(lit), expected)
+
+
+@StringCache()
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
+def test_cat_is_in_with_lit_str_cache_setup(dtype: pl.DataType) -> None:
+    # init the global cache
+    _ = pl.Series(["c", "b", "a"], dtype=dtype)
+
+    assert_series_equal(pl.Series(["a"], dtype=dtype).is_in(["a"]), pl.Series([True]))
+    assert_series_equal(pl.Series(["b"], dtype=dtype).is_in(["b"]), pl.Series([True]))
+    assert_series_equal(pl.Series(["c"], dtype=dtype).is_in(["c"]), pl.Series([True]))

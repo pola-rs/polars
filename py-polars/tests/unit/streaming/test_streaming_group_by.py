@@ -74,10 +74,10 @@ def test_streaming_group_by_types() -> None:
             .collect(streaming=True)
         )
         assert out.schema == {
-            "str_first": pl.Utf8,
-            "str_last": pl.Utf8,
-            "str_mean": pl.Utf8,
-            "str_sum": pl.Utf8,
+            "str_first": pl.String,
+            "str_last": pl.String,
+            "str_mean": pl.String,
+            "str_sum": pl.String,
             "bool_first": pl.Boolean,
             "bool_last": pl.Boolean,
             "bool_mean": pl.Boolean,
@@ -150,7 +150,7 @@ def test_streaming_non_streaming_gb() -> None:
     q = df.lazy().group_by("a").agg(pl.count()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
-    q = df.lazy().with_columns(pl.col("a").cast(pl.Utf8))
+    q = df.lazy().with_columns(pl.col("a").cast(pl.String))
     q = q.group_by("a").agg(pl.count()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
@@ -169,7 +169,7 @@ def test_streaming_group_by_sorted_fast_path() -> None:
             # test on int8 as that also tests proper conversions
             "a": pl.Series(np.sort(a), dtype=pl.Int8)
         }
-    ).with_row_count()
+    ).with_row_index()
 
     df_sorted = df.with_columns(pl.col("a").set_sorted())
 

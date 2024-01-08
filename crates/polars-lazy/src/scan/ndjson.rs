@@ -30,7 +30,7 @@ impl LazyJsonLineReader {
             paths: Arc::new([]),
             batch_size: None,
             low_memory: false,
-            rechunk: true,
+            rechunk: false,
             schema: None,
             row_count: None,
             infer_schema_length: Some(100),

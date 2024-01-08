@@ -89,10 +89,10 @@ def test_explode_empty_list_4003() -> None:
 
 
 def test_explode_empty_list_4107() -> None:
-    df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_count()
+    df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_index()
 
     assert_frame_equal(
-        df.explode(["b"]), df.explode(["b"]).drop("row_nr").with_row_count()
+        df.explode(["b"]), df.explode(["b"]).drop("index").with_row_index()
     )
 
 
@@ -112,15 +112,15 @@ def test_explode_correct_for_slice() -> None:
             )
         )
         .sort("group")
-        .with_row_count()
+        .with_row_index()
     )
     expected = pl.DataFrame(
         {
-            "row_nr": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
+            "index": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
             "group": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             "b": [1, 2, 3, 2, 3, 4, 1, 2, 3, 0, 1, 2, 3, 2, 3, 4, 1, 2, 3, 0],
         },
-        schema_overrides={"row_nr": pl.UInt32},
+        schema_overrides={"index": pl.UInt32},
     )
     assert_frame_equal(df.slice(0, 10).explode(["b"]), expected)
 
@@ -145,7 +145,7 @@ def test_sliced_null_explode() -> None:
     assert s.slice(2, 4).list.explode().to_list() == [True, False, None, True]
 
 
-def test_utf8_explode() -> None:
+def test_string_explode() -> None:
     assert pl.Series(["foobar", None]).str.explode().to_list() == [
         "f",
         "o",
@@ -215,12 +215,12 @@ def test_explode_in_agg_context() -> None:
     )
 
     assert (
-        df.with_row_count("row_nr")
+        df.with_row_index()
         .explode("idxs")
-        .group_by("row_nr")
+        .group_by("index")
         .agg(pl.col("array").flatten())
     ).to_dict(as_series=False) == {
-        "row_nr": [0, 1, 2],
+        "index": [0, 1, 2],
         "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
     }
 
@@ -270,7 +270,7 @@ def test_explode_binary() -> None:
 
 
 def test_explode_null_list() -> None:
-    assert pl.Series([["a"], None], dtype=pl.List(pl.Utf8))[
+    assert pl.Series([["a"], None], dtype=pl.List(pl.String))[
         1:2
     ].list.min().to_list() == [None]
 
@@ -281,7 +281,7 @@ def test_explode_invalid_element_count() -> None:
             "col1": [["X", "Y", "Z"], ["F", "G"], ["P"]],
             "col2": [["A", "B", "C"], ["C"], ["D", "E"]],
         }
-    ).with_row_count()
+    ).with_row_index()
     with pytest.raises(
         pl.ShapeError, match=r"exploded columns must have matching element counts"
     ):
@@ -320,7 +320,7 @@ def test_explode_array() -> None:
         assert_frame_equal(out, expected)
 
 
-def test_utf8_list_agg_explode() -> None:
+def test_string_list_agg_explode() -> None:
     df = pl.DataFrame({"a": [[None], ["b"]]})
 
     df = df.select(

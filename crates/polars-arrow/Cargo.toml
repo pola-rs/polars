@@ -44,7 +44,7 @@ streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
 
-arrow-format = { version = "0.8", optional = true, features = ["ipc"] }
+arrow-format = { workspace = true, optional = true, features = ["ipc"] }
 
 hex = { workspace = true, optional = true }
 
@@ -121,7 +121,7 @@ arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
-io_ipc_compression = ["lz4", "zstd"]
+io_ipc_compression = ["lz4", "zstd", "io_ipc"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]
@@ -139,7 +139,6 @@ compute_boolean = []
 compute_boolean_kleene = []
 compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
-compute_concatenate = []
 compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
@@ -153,7 +152,6 @@ compute = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_concatenate",
   "compute_filter",
   "compute_hash",
   "compute_if_then_else",

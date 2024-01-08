@@ -188,6 +188,11 @@ pub fn count() -> PyExpr {
 }
 
 #[pyfunction]
+pub fn cum_count(reverse: bool) -> PyExpr {
+    dsl::cum_count(reverse).into()
+}
+
+#[pyfunction]
 pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
     dsl::cov(a.inner, b.inner, ddof).into()
 }
@@ -282,6 +287,26 @@ pub fn concat_lf_diagonal(
         },
     )
     .map_err(PyPolarsErr::from)?;
+    Ok(lf.into())
+}
+
+#[pyfunction]
+pub fn concat_lf_horizontal(lfs: &PyAny, parallel: bool) -> PyResult<PyLazyFrame> {
+    let iter = lfs.iter()?;
+
+    let lfs = iter
+        .map(|item| {
+            let item = item?;
+            get_lf(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let args = UnionArgs {
+        rechunk: false, // No need to rechunk with horizontal concatenation
+        parallel,
+        to_supertypes: false,
+    };
+    let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 

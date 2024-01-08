@@ -533,6 +533,7 @@ impl LogicalPlanBuilder {
             let field = e
                 .to_field_amortized(&schema, Context::Default, &mut arena)
                 .unwrap();
+
             if !output_names.insert(field.name().clone()) {
                 let msg = format!(
                     "The name: '{}' passed to `LazyFrame.with_columns` is duplicate",

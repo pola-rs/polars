@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import operator
-from typing import Callable
+from datetime import date
+from textwrap import dedent
+from typing import Any, Callable
 
 import pytest
 
@@ -9,10 +13,25 @@ from polars.testing import assert_series_equal
 
 
 def test_enum_creation() -> None:
-    s = pl.Series([None, "a", "b"], dtype=pl.Enum(categories=["a", "b"]))
+    dtype = pl.Enum(["a", "b"])
+    s = pl.Series([None, "a", "b"], dtype=dtype)
     assert s.null_count() == 1
     assert s.len() == 3
-    assert s.dtype == pl.Enum(categories=["a", "b"])
+    assert s.dtype == dtype
+
+    # from iterables
+    e = pl.Enum(f"x{i}" for i in range(5))
+    assert e.categories.to_list() == ["x0", "x1", "x2", "x3", "x4"]
+
+    e = pl.Enum("abcde")
+    assert e.categories.to_list() == ["a", "b", "c", "d", "e"]
+
+
+@pytest.mark.parametrize("categories", [[], pl.Series("foo", dtype=pl.Int16), None])
+def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
+    dtype = pl.Enum(categories)  # type: ignore[arg-type]
+    expected = pl.Series("category", dtype=pl.String)
+    assert_series_equal(dtype.categories, expected)
 
 
 def test_enum_non_existent() -> None:
@@ -28,6 +47,14 @@ def test_enum_from_schema_argument() -> None:
         {"col1": ["a", "b", "c"]}, schema={"col1": pl.Enum(["a", "b", "c"])}
     )
     assert df.get_column("col1").dtype == pl.Enum
+    assert dedent(
+        """
+        │ col1 │
+        │ ---  │
+        │ enum │
+        ╞══════╡
+        """
+    ) in str(df)
 
 
 def test_equality_of_two_separately_constructed_enums() -> None:
@@ -178,7 +205,7 @@ def test_equality_enum(
     s2 = pl.Series([None, "c", "b", "c"], dtype=dtype)
 
     assert_series_equal(op(s, s2), expected)
-    assert_series_equal(op(s, s2.cast(pl.Utf8)), expected)
+    assert_series_equal(op(s, s2.cast(pl.String)), expected)
 
 
 @pytest.mark.parametrize(
@@ -215,10 +242,10 @@ def test_equality_missing_enum_scalar() -> None:
     expected = pl.Series("cmp", [False, False, False, True], dtype=pl.Boolean)
     assert_series_equal(out, expected)
 
-    out_utf8 = df.select(pl.col("a").eq_missing(pl.lit("c")).alias("cmp")).get_column(
+    out_str = df.select(pl.col("a").eq_missing(pl.lit("c")).alias("cmp")).get_column(
         "cmp"
     )
-    assert_series_equal(out_utf8, expected)
+    assert_series_equal(out_str, expected)
 
     out = df.select(
         pl.col("a").ne_missing(pl.lit("c", dtype=dtype)).alias("cmp")
@@ -226,10 +253,10 @@ def test_equality_missing_enum_scalar() -> None:
     expected = pl.Series("cmp", [True, True, True, False], dtype=pl.Boolean)
     assert_series_equal(out, expected)
 
-    out_utf8 = df.select(pl.col("a").ne_missing(pl.lit("c")).alias("cmp")).get_column(
+    out_str = df.select(pl.col("a").ne_missing(pl.lit("c")).alias("cmp")).get_column(
         "cmp"
     )
-    assert_series_equal(out_utf8, expected)
+    assert_series_equal(out_str, expected)
 
 
 def test_equality_missing_enum_none_scalar() -> None:
@@ -294,3 +321,43 @@ def test_different_enum_comparison_order() -> None:
             match="can only compare categoricals of the same type",
         ):
             df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+
+
+@pytest.mark.parametrize("categories", [[None], ["x", "y", None]])
+def test_enum_categories_null(categories: list[str | None]) -> None:
+    with pytest.raises(TypeError, match="Enum categories must not contain null values"):
+        pl.Enum(categories)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("categories", "type"), [([date.today()], "Date"), ([-10, 10], "Int64")]
+)
+def test_valid_enum_category_types(categories: Any, type: str) -> None:
+    with pytest.raises(
+        TypeError, match=f"Enum categories must be strings; found data of type {type}"
+    ):
+        pl.Enum(categories)
+
+
+def test_enum_categories_unique() -> None:
+    with pytest.raises(ValueError, match="must be unique; found duplicate 'a'"):
+        pl.Enum(["a", "a", "b", "b", "b", "c"])
+
+
+def test_enum_categories_series_input() -> None:
+    categories = pl.Series("a", ["x", "y", "z"])
+    dtype = pl.Enum(categories)
+    assert_series_equal(dtype.categories, categories.alias("category"))
+
+
+def test_enum_categories_series_zero_copy() -> None:
+    categories = pl.Series(["a", "b"])
+    dtype = pl.Enum(categories)
+
+    s = pl.Series([None, "a", "b"], dtype=dtype)
+    result_dtype = s.dtype
+
+    assert result_dtype == dtype
+
+    assert categories._get_buffer_info() == dtype.categories._get_buffer_info()
+    assert categories._get_buffer_info() == result_dtype.categories._get_buffer_info()  # type: ignore[attr-defined]

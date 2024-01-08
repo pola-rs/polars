@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.2"
+version = "0.20.3"
 edition = "2021"
 
 [lib]
@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-ops = { workspace = true, features = ["convert_index"] }
+polars-ops = { workspace = true }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-utils = { workspace = true }
@@ -50,7 +50,6 @@ features = [
   "dynamic_group_by",
   "ewma",
   "fmt",
-  "horizontal_concat",
   "interpolate",
   "is_first_distinct",
   "is_last_distinct",

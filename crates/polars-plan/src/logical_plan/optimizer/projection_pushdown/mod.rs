@@ -1,6 +1,7 @@
 mod functions;
 mod generic;
 mod group_by;
+mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
@@ -18,6 +19,7 @@ use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
+use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
@@ -642,6 +644,20 @@ impl ProjectionPushDown {
                 function,
                 acc_projections,
                 projected_names,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
+            HConcat {
+                inputs,
+                schema,
+                options,
+            } => process_hconcat(
+                self,
+                inputs,
+                schema,
+                options,
+                acc_projections,
                 projections_seen,
                 lp_arena,
                 expr_arena,

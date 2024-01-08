@@ -569,6 +569,10 @@ impl<'a> PredicatePushDown<'a> {
              => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
+            lp @ HConcat { .. }
+            => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            }
             #[cfg(feature = "python")]
              PythonScan {mut options, predicate} => {
                 if options.pyarrow {

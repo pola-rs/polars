@@ -119,13 +119,13 @@ def test_window_function_cache() -> None:
 def test_window_range_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
     expr = pl.int_range(0, pl.count()).over("x")
-    out = df.with_columns(expr)
+    out = df.with_columns(int=expr)
     assert_frame_equal(
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "int": [0, 1, 0, 1, 0, 1]})
     )
 
     df = pl.DataFrame({"x": []}, schema={"x": pl.Float32})
-    out = df.with_columns(expr)
+    out = df.with_columns(int=expr)
 
     expected = pl.DataFrame(schema={"x": pl.Float32, "int": pl.Int64})
     assert_frame_equal(out, expected)
@@ -330,7 +330,7 @@ def test_window_function_implode_contention_8536() -> None:
             "policy": ["a", "b", "c", "c", "d", "d", "d", "d", "e", "e"],
             "memo": ["LE", "RM", "", "", "", "LE", "", "", "", "RM"],
         },
-        schema={"policy": pl.Utf8, "memo": pl.Utf8},
+        schema={"policy": pl.String, "memo": pl.String},
     )
 
     assert df.select(

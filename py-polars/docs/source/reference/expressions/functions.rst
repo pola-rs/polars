@@ -29,6 +29,7 @@ These functions are available from the polars module root and can be used as exp
    corr
    count
    cov
+   cum_count
    cum_fold
    cum_reduce
    cum_sum

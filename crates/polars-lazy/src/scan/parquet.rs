@@ -26,7 +26,7 @@ impl Default for ScanArgsParquet {
             n_rows: None,
             cache: true,
             parallel: Default::default(),
-            rechunk: true,
+            rechunk: false,
             row_count: None,
             low_memory: false,
             cloud_options: None,
@@ -88,9 +88,9 @@ impl LazyFileListReader for LazyParquetReader {
         .build()
         .into();
 
-        // it is a bit hacky, but this row_count function updates the schema
+        // it is a bit hacky, but this row_index function updates the schema
         if let Some(row_count) = row_count {
-            lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
+            lf = lf.with_row_index(&row_count.name, Some(row_count.offset))
         }
 
         lf.opt_state.file_caching = true;

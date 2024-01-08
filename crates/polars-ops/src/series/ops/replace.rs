@@ -13,6 +13,11 @@ pub fn replace(
     default: &Series,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
+    polars_ensure!(
+        old.n_unique()? == old.len(),
+        ComputeError: "`old` input for `replace` must not contain duplicates"
+    );
+
     let return_dtype = match return_dtype {
         Some(dtype) => dtype,
         None => try_get_supertype(new.dtype(), default.dtype())?,
@@ -33,7 +38,14 @@ pub fn replace(
         return Ok(default);
     }
 
-    let old = old.strict_cast(s.dtype())?;
+    let old = match (s.dtype(), old.dtype()) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(opt_rev_map, ord), DataType::String) => {
+            let dt = enum_or_default_categorical(opt_rev_map, *ord);
+            old.strict_cast(&dt)?
+        },
+        _ => old.strict_cast(s.dtype())?,
+    };
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
@@ -83,9 +95,13 @@ fn replace_by_multiple(
 
     let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();
 
+    if replaced.null_count() == 0 {
+        return Ok(replaced.clone());
+    }
+
     match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {
-            let mask = col.bool()?;
+            let mask = col.bool().unwrap();
             replaced.zip_with(mask, default)
         },
         Err(_) => {

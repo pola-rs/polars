@@ -71,12 +71,12 @@ def test_join_same_cat_src() -> None:
 @pytest.mark.parametrize("reverse", [False, True])
 def test_sorted_merge_joins(reverse: bool) -> None:
     n = 30
-    df_a = pl.DataFrame({"a": np.sort(np.random.randint(0, n // 2, n))}).with_row_count(
+    df_a = pl.DataFrame({"a": np.sort(np.random.randint(0, n // 2, n))}).with_row_index(
         "row_a"
     )
     df_b = pl.DataFrame(
         {"a": np.sort(np.random.randint(0, n // 2, n // 2))}
-    ).with_row_count("row_b")
+    ).with_row_index("row_b")
 
     if reverse:
         df_a = df_a.select(pl.all().reverse())
@@ -233,20 +233,20 @@ def test_joins_dispatch() -> None:
 def test_join_on_cast() -> None:
     df_a = (
         pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
-        .with_row_count()
+        .with_row_index()
         .with_columns(pl.col("a").cast(pl.Int32))
     )
 
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
 
     assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(as_series=False) == {
-        "row_nr": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
     ).collect().to_dict(as_series=False) == {
-        "row_nr": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
 
@@ -659,6 +659,7 @@ def test_outer_join_list_() -> None:
     }
 
 
+@pytest.mark.slow()
 def test_join_validation() -> None:
     def test_each_join_validation(
         unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy
@@ -817,3 +818,20 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
     )
+
+
+def test_outer_join_coalesce_different_names_13450() -> None:
+    df1 = pl.DataFrame({"L1": ["a", "b", "c"], "L3": ["b", "c", "d"], "L2": [1, 2, 3]})
+    df2 = pl.DataFrame({"L3": ["a", "c", "d"], "R2": [7, 8, 9]})
+
+    expected = pl.DataFrame(
+        {
+            "L1": ["a", "c", "d", "b"],
+            "L3": ["b", "d", None, "c"],
+            "L2": [1, 3, None, 2],
+            "R2": [7, 8, 9, None],
+        }
+    )
+
+    out = df1.join(df2, left_on="L1", right_on="L3", how="outer_coalesce")
+    assert_frame_equal(out, expected)

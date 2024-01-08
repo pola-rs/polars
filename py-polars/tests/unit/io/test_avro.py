@@ -19,7 +19,7 @@ COMPRESSIONS = ["uncompressed", "snappy", "deflate"]
 
 @pytest.fixture()
 def example_df() -> pl.DataFrame:
-    return pl.DataFrame({"i64": [1, 2], "f64": [0.1, 0.2], "utf8": ["a", "b"]})
+    return pl.DataFrame({"i64": [1, 2], "f64": [0.1, 0.2], "str": ["a", "b"]})
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)

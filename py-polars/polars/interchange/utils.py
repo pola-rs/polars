@@ -8,18 +8,19 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Enum,
     Float32,
     Float64,
     Int8,
     Int16,
     Int32,
     Int64,
+    String,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
-    Utf8,
 )
 from polars.interchange.protocol import DtypeKind, Endianness
 
@@ -42,12 +43,13 @@ dtype_map: dict[DataTypeClass, Dtype] = {
     Float32: (DtypeKind.FLOAT, 32, "f", NE),
     Float64: (DtypeKind.FLOAT, 64, "g", NE),
     Boolean: (DtypeKind.BOOL, 1, "b", NE),
-    Utf8: (DtypeKind.STRING, 8, "U", NE),
+    String: (DtypeKind.STRING, 8, "U", NE),
     Date: (DtypeKind.DATETIME, 32, "tdD", NE),
     Time: (DtypeKind.DATETIME, 64, "ttu", NE),
     Datetime: (DtypeKind.DATETIME, 64, "tsu:", NE),
     Duration: (DtypeKind.DATETIME, 64, "tDu", NE),
     Categorical: (DtypeKind.CATEGORICAL, 32, "I", NE),
+    Enum: (DtypeKind.CATEGORICAL, 32, "I", NE),
 }
 
 

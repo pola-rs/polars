@@ -2,6 +2,7 @@ mod builder;
 mod from;
 mod merge;
 mod ops;
+pub mod revmap;
 pub mod string_cache;
 
 use bitflags::bitflags;
@@ -9,6 +10,7 @@ pub use builder::*;
 pub use merge::*;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
+pub use revmap::*;
 
 use super::*;
 use crate::chunked_array::Settings;
@@ -109,16 +111,17 @@ impl CategoricalChunked {
             RevMapping::Local(categories, _) => categories,
             RevMapping::Enum(categories, _) => categories,
         };
-        let physical = self.physical();
 
-        let mut builder =
-            CategoricalChunkedBuilder::new(self.name(), physical.len(), self.get_ordering());
-        let iter = physical
-            .downcast_iter()
-            .map(|z| z.into_iter().map(|z| z.copied()))
-            .collect::<Vec<_>>();
-        builder.global_map_from_local(iter, self.len(), categories.clone());
-        Ok(builder.finish())
+        // Safety: keys and values are in bounds
+        unsafe {
+            Ok(CategoricalChunked::from_keys_and_values_global(
+                self.name(),
+                self.physical(),
+                self.len(),
+                categories,
+                self.get_ordering(),
+            ))
+        }
     }
 
     // Convert to fixed enum. In case a value is not in the categories return Error
@@ -188,25 +191,6 @@ impl CategoricalChunked {
         self.physical_mut().set_flags(flags)
     }
 
-    /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
-    pub(crate) fn from_chunks_original(
-        name: &str,
-        chunk: PrimitiveArray<u32>,
-        rev_map: RevMapping,
-        ordering: CategoricalOrdering,
-    ) -> Self {
-        let ca = ChunkedArray::with_chunk(name, chunk);
-        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
-        logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map)), ordering));
-
-        let mut bit_settings = BitSettings::default();
-        bit_settings.insert(BitSettings::ORIGINAL);
-        Self {
-            physical: logical,
-            bit_settings,
-        }
-    }
-
     /// Return whether or not the [`CategoricalChunked`] uses the lexical order
     /// of the string values when sorting.
     pub fn uses_lexical_ordering(&self) -> bool {
@@ -263,7 +247,9 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn can_fast_unique(&self) -> bool {
-        self.bit_settings.contains(BitSettings::ORIGINAL) && self.physical.chunks.len() == 1
+        self.bit_settings.contains(BitSettings::ORIGINAL)
+            && self.physical.chunks.len() == 1
+            && self.null_count() == 0
     }
 
     pub(crate) fn set_fast_unique(&mut self, toggle: bool) {
@@ -272,6 +258,11 @@ impl CategoricalChunked {
         } else {
             self.bit_settings.remove(BitSettings::ORIGINAL);
         }
+    }
+
+    pub(crate) fn with_fast_unique(mut self, toggle: bool) -> Self {
+        self.set_fast_unique(toggle);
+        self
     }
 
     /// Get a reference to the mapping of categorical types to the string values.

@@ -172,7 +172,6 @@ class ExprBinaryNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
-
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_decode(strict))
@@ -195,7 +194,7 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8` with values encoded using provided
+            Expression of data type :class:`String` with values encoded using provided
             encoding.
 
         Examples
@@ -219,7 +218,6 @@ class ExprBinaryNameSpace:
         │ yellow ┆ [binary data] ┆ ffff00           │
         │ blue   ┆ [binary data] ┆ 0000ff           │
         └────────┴───────────────┴──────────────────┘
-
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_encode())

@@ -10,6 +10,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_function,
     deprecate_saturating,
     issue_deprecation_warning,
@@ -108,12 +109,16 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1),
-        ...     datetime(2001, 1, 2),
-        ...     timedelta(minutes=225),
-        ...     eager=True,
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1),
+        ...         datetime(2001, 1, 2),
+        ...         timedelta(minutes=225),
+        ...         eager=True,
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df
         shape: (7, 1)
         ┌─────────────────────┐
@@ -149,9 +154,13 @@ class ExprDateTimeNameSpace:
         >>> truncate_str.equals(truncate_td)
         True
 
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df.select(
         ...     "datetime", pl.col("datetime").dt.truncate("30m").alias("truncate")
         ... )
@@ -169,7 +178,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 00:50:00 ┆ 2001-01-01 00:30:00 │
         │ 2001-01-01 01:00:00 ┆ 2001-01-01 01:00:00 │
         └─────────────────────┴─────────────────────┘
-
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
@@ -270,12 +278,16 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1),
-        ...     datetime(2001, 1, 2),
-        ...     timedelta(minutes=225),
-        ...     eager=True,
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1),
+        ...         datetime(2001, 1, 2),
+        ...         timedelta(minutes=225),
+        ...         eager=True,
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(pl.col("datetime").dt.round("1h").alias("round"))
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
@@ -292,9 +304,13 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 22:30:00 ┆ 2001-01-01 23:00:00 │
         └─────────────────────┴─────────────────────┘
 
-        >>> df = pl.datetime_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.datetime_range(
+        ...         datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
+        ...     )
+        ...     .alias("datetime")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(pl.col("datetime").dt.round("30m").alias("round"))
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
@@ -310,7 +326,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 00:50:00 ┆ 2001-01-01 01:00:00 │
         │ 2001-01-01 01:00:00 ┆ 2001-01-01 01:00:00 │
         └─────────────────────┴─────────────────────┘
-
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
@@ -393,9 +408,9 @@ class ExprDateTimeNameSpace:
 
     def to_string(self, format: str) -> Expr:
         """
-        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+        Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
+        Similar to `cast(pl.String)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Parameters
@@ -432,15 +447,14 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
     def strftime(self, format: str) -> Expr:
         """
-        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+        Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
+        Similar to `cast(pl.String)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Alias for :func:`to_string`.
@@ -483,7 +497,6 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
-
         """
         return self.to_string(format)
 
@@ -521,7 +534,6 @@ class ExprDateTimeNameSpace:
         │ 1978-01-01 ┆ 1978          ┆ 1977     │
         │ 1979-01-01 ┆ 1979          ┆ 1979     │
         └────────────┴───────────────┴──────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_year())
 
@@ -553,7 +565,6 @@ class ExprDateTimeNameSpace:
         │ false │
         │ false │
         └───────┘
-
         """
         return wrap_expr(self._pyexpr.dt_is_leap_year())
 
@@ -592,7 +603,6 @@ class ExprDateTimeNameSpace:
         │ 1978-01-01 ┆ 1978          ┆ 1977     │
         │ 1979-01-01 ┆ 1979          ┆ 1979     │
         └────────────┴───────────────┴──────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_iso_year())
 
@@ -626,7 +636,6 @@ class ExprDateTimeNameSpace:
         │ 2001-06-30 ┆ 2       │
         │ 2001-12-27 ┆ 4       │
         └────────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_quarter())
 
@@ -661,7 +670,6 @@ class ExprDateTimeNameSpace:
         │ 2001-06-30 ┆ 6     │
         │ 2001-12-27 ┆ 12    │
         └────────────┴───────┘
-
         """
         return wrap_expr(self._pyexpr.dt_month())
 
@@ -696,7 +704,6 @@ class ExprDateTimeNameSpace:
         │ 2001-06-30 ┆ 26   │
         │ 2001-12-27 ┆ 52   │
         └────────────┴──────┘
-
         """
         return wrap_expr(self._pyexpr.dt_week())
 
@@ -744,7 +751,6 @@ class ExprDateTimeNameSpace:
         │ 2001-12-24 ┆ 1       ┆ 24           ┆ 358         │
         │ 2001-12-25 ┆ 2       ┆ 25           ┆ 359         │
         └────────────┴─────────┴──────────────┴─────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_weekday())
 
@@ -793,7 +799,6 @@ class ExprDateTimeNameSpace:
         │ 2001-12-24 ┆ 1       ┆ 24           ┆ 358         │
         │ 2001-12-25 ┆ 2       ┆ 25           ┆ 359         │
         └────────────┴─────────┴──────────────┴─────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_day())
 
@@ -842,7 +847,6 @@ class ExprDateTimeNameSpace:
         │ 2001-12-24 ┆ 1       ┆ 24           ┆ 358         │
         │ 2001-12-25 ┆ 2       ┆ 25           ┆ 359         │
         └────────────┴─────────┴──────────────┴─────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_ordinal_day())
 
@@ -857,6 +861,29 @@ class ExprDateTimeNameSpace:
         Expr
             Expression of data type :class:`Time`.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "datetime": [
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("datetime").dt.time().alias("time"))
+        shape: (3, 2)
+        ┌─────────────────────────┬──────────────┐
+        │ datetime                ┆ time         │
+        │ ---                     ┆ ---          │
+        │ datetime[μs]            ┆ time         │
+        ╞═════════════════════════╪══════════════╡
+        │ 1978-01-01 01:01:01     ┆ 01:01:01     │
+        │ 2024-10-13 05:30:14.500 ┆ 05:30:14.500 │
+        │ 2065-01-01 10:20:30.060 ┆ 10:20:30.060 │
+        └─────────────────────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.dt_time())
 
@@ -871,12 +898,39 @@ class ExprDateTimeNameSpace:
         Expr
             Expression of data type :class:`Date`.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "datetime": [
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("datetime").dt.date().alias("date"))
+        shape: (3, 2)
+        ┌─────────────────────────┬────────────┐
+        │ datetime                ┆ date       │
+        │ ---                     ┆ ---        │
+        │ datetime[μs]            ┆ date       │
+        ╞═════════════════════════╪════════════╡
+        │ 1978-01-01 01:01:01     ┆ 1978-01-01 │
+        │ 2024-10-13 05:30:14.500 ┆ 2024-10-13 │
+        │ 2065-01-01 10:20:30.060 ┆ 2065-01-01 │
+        └─────────────────────────┴────────────┘
         """
         return wrap_expr(self._pyexpr.dt_date())
 
+    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
     def datetime(self) -> Expr:
         """
         Return datetime.
+
+        .. deprecated:: 0.20.4
+            Use `dt.replace_time_zone(None)` instead.
 
         Applies to Datetime columns.
 
@@ -885,6 +939,32 @@ class ExprDateTimeNameSpace:
         Expr
             Expression of data type :class:`Datetime`.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "datetime UTC": [
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        ...         ]
+        ...     },
+        ...     schema={"datetime UTC": pl.Datetime(time_zone="UTC")},
+        ... )
+        >>> df.with_columns(  # doctest: +SKIP
+        ...     pl.col("datetime UTC").dt.datetime().alias("datetime (no timezone)"),
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────────────┬─────────────────────────┐
+        │ datetime UTC                ┆ datetime (no timezone)  │
+        │ ---                         ┆ ---                     │
+        │ datetime[μs, UTC]           ┆ datetime[μs]            │
+        ╞═════════════════════════════╪═════════════════════════╡
+        │ 1978-01-01 01:01:01 UTC     ┆ 1978-01-01 01:01:01     │
+        │ 2024-10-13 05:30:14.500 UTC ┆ 2024-10-13 05:30:14.500 │
+        │ 2065-01-01 10:20:30.060 UTC ┆ 2065-01-01 10:20:30.060 │
+        └─────────────────────────────┴─────────────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_datetime())
 
@@ -907,24 +987,28 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "datetime": [
-        ...             datetime(2001, 1, 1, 0, 0, 0),
-        ...             datetime(2010, 1, 1, 15, 30, 45),
-        ...             datetime(2022, 12, 31, 23, 59, 59),
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(pl.col("datetime").dt.hour().alias("hour"))
-        shape: (3, 2)
-        ┌─────────────────────┬──────┐
-        │ datetime            ┆ hour │
-        │ ---                 ┆ ---  │
-        │ datetime[μs]        ┆ i8   │
-        ╞═════════════════════╪══════╡
-        │ 2001-01-01 00:00:00 ┆ 0    │
-        │ 2010-01-01 15:30:45 ┆ 15   │
-        │ 2022-12-31 23:59:59 ┆ 23   │
-        └─────────────────────┴──────┘
-
+        >>> df.with_columns(
+        ...     pl.col("datetime").dt.hour().alias("hour"),
+        ...     pl.col("datetime").dt.minute().alias("minute"),
+        ...     pl.col("datetime").dt.second().alias("second"),
+        ...     pl.col("datetime").dt.millisecond().alias("millisecond"),
+        ... )
+        shape: (3, 5)
+        ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
+        │ datetime                ┆ hour ┆ minute ┆ second ┆ millisecond │
+        │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
+        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
+        │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
+        │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500         │
+        │ 2065-01-01 10:20:30.060 ┆ 10   ┆ 20     ┆ 30     ┆ 60          │
+        └─────────────────────────┴──────┴────────┴────────┴─────────────┘
         """
         return wrap_expr(self._pyexpr.dt_hour())
 
@@ -947,24 +1031,28 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "datetime": [
-        ...             datetime(2001, 1, 1, 0, 0, 0),
-        ...             datetime(2010, 1, 1, 15, 30, 45),
-        ...             datetime(2022, 12, 31, 23, 59, 59),
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(pl.col("datetime").dt.minute().alias("minute"))
-        shape: (3, 2)
-        ┌─────────────────────┬────────┐
-        │ datetime            ┆ minute │
-        │ ---                 ┆ ---    │
-        │ datetime[μs]        ┆ i8     │
-        ╞═════════════════════╪════════╡
-        │ 2001-01-01 00:00:00 ┆ 0      │
-        │ 2010-01-01 15:30:45 ┆ 30     │
-        │ 2022-12-31 23:59:59 ┆ 59     │
-        └─────────────────────┴────────┘
-
+        >>> df.with_columns(
+        ...     pl.col("datetime").dt.hour().alias("hour"),
+        ...     pl.col("datetime").dt.minute().alias("minute"),
+        ...     pl.col("datetime").dt.second().alias("second"),
+        ...     pl.col("datetime").dt.millisecond().alias("millisecond"),
+        ... )
+        shape: (3, 5)
+        ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
+        │ datetime                ┆ hour ┆ minute ┆ second ┆ millisecond │
+        │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
+        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
+        │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
+        │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500         │
+        │ 2065-01-01 10:20:30.060 ┆ 10   ┆ 20     ┆ 30     ┆ 60          │
+        └─────────────────────────┴──────┴────────┴────────┴─────────────┘
         """
         return wrap_expr(self._pyexpr.dt_minute())
 
@@ -994,37 +1082,42 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "datetime": [
-        ...             datetime(2000, 1, 1, 0, 0, 0, 456789),
-        ...             datetime(2000, 1, 1, 0, 0, 3, 111110),
-        ...             datetime(2000, 1, 1, 0, 0, 5, 765431),
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(pl.col("datetime").dt.second().alias("second"))
-        shape: (3, 2)
-        ┌────────────────────────────┬────────┐
-        │ datetime                   ┆ second │
-        │ ---                        ┆ ---    │
-        │ datetime[μs]               ┆ i8     │
-        ╞════════════════════════════╪════════╡
-        │ 2000-01-01 00:00:00.456789 ┆ 0      │
-        │ 2000-01-01 00:00:03.111110 ┆ 3      │
-        │ 2000-01-01 00:00:05.765431 ┆ 5      │
-        └────────────────────────────┴────────┘
         >>> df.with_columns(
-        ...     pl.col("datetime").dt.second(fractional=True).alias("second")
+        ...     pl.col("datetime").dt.hour().alias("hour"),
+        ...     pl.col("datetime").dt.minute().alias("minute"),
+        ...     pl.col("datetime").dt.second().alias("second"),
         ... )
-        shape: (3, 2)
-        ┌────────────────────────────┬──────────┐
-        │ datetime                   ┆ second   │
-        │ ---                        ┆ ---      │
-        │ datetime[μs]               ┆ f64      │
-        ╞════════════════════════════╪══════════╡
-        │ 2000-01-01 00:00:00.456789 ┆ 0.456789 │
-        │ 2000-01-01 00:00:03.111110 ┆ 3.11111  │
-        │ 2000-01-01 00:00:05.765431 ┆ 5.765431 │
-        └────────────────────────────┴──────────┘
-
+        shape: (3, 4)
+        ┌─────────────────────────┬──────┬────────┬────────┐
+        │ datetime                ┆ hour ┆ minute ┆ second │
+        │ ---                     ┆ ---  ┆ ---    ┆ ---    │
+        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     │
+        ╞═════════════════════════╪══════╪════════╪════════╡
+        │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      │
+        │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     │
+        │ 2065-01-01 10:20:30.060 ┆ 10   ┆ 20     ┆ 30     │
+        └─────────────────────────┴──────┴────────┴────────┘
+        >>> df.with_columns(
+        ...     pl.col("datetime").dt.hour().alias("hour"),
+        ...     pl.col("datetime").dt.minute().alias("minute"),
+        ...     pl.col("datetime").dt.second(fractional=True).alias("second"),
+        ... )
+        shape: (3, 4)
+        ┌─────────────────────────┬──────┬────────┬────────┐
+        │ datetime                ┆ hour ┆ minute ┆ second │
+        │ ---                     ┆ ---  ┆ ---    ┆ ---    │
+        │ datetime[μs]            ┆ i8   ┆ i8     ┆ f64    │
+        ╞═════════════════════════╪══════╪════════╪════════╡
+        │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1.0    │
+        │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14.5   │
+        │ 2065-01-01 10:20:30.060 ┆ 10   ┆ 20     ┆ 30.06  │
+        └─────────────────────────┴──────┴────────┴────────┘
         """
         sec = wrap_expr(self._pyexpr.dt_second())
         return (
@@ -1044,6 +1137,34 @@ class ExprDateTimeNameSpace:
         Expr
             Expression of data type :class:`Int32`.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "datetime": [
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("datetime").dt.hour().alias("hour"),
+        ...     pl.col("datetime").dt.minute().alias("minute"),
+        ...     pl.col("datetime").dt.second().alias("second"),
+        ...     pl.col("datetime").dt.millisecond().alias("millisecond"),
+        ... )
+        shape: (3, 5)
+        ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
+        │ datetime                ┆ hour ┆ minute ┆ second ┆ millisecond │
+        │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
+        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
+        │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
+        │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500         │
+        │ 2065-01-01 10:20:30.060 ┆ 10   ┆ 20     ┆ 30     ┆ 60          │
+        └─────────────────────────┴──────┴────────┴────────┴─────────────┘
         """
         return wrap_expr(self._pyexpr.dt_millisecond())
 
@@ -1063,37 +1184,29 @@ class ExprDateTimeNameSpace:
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": pl.datetime_range(
-        ...             datetime(2020, 1, 1),
-        ...             datetime(2020, 1, 1, 0, 0, 1, 0),
-        ...             "1ms",
-        ...             eager=True,
-        ...         ),
+        ...         "datetime": [
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        ...         ]
         ...     }
         ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").dt.microsecond().alias("microsecond"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("datetime").dt.hour().alias("hour"),
+        ...     pl.col("datetime").dt.minute().alias("minute"),
+        ...     pl.col("datetime").dt.second().alias("second"),
+        ...     pl.col("datetime").dt.microsecond().alias("microsecond"),
         ... )
-        shape: (1_001, 2)
-        ┌─────────────────────────┬─────────────┐
-        │ date                    ┆ microsecond │
-        │ ---                     ┆ ---         │
-        │ datetime[μs]            ┆ i32         │
-        ╞═════════════════════════╪═════════════╡
-        │ 2020-01-01 00:00:00     ┆ 0           │
-        │ 2020-01-01 00:00:00.001 ┆ 1000        │
-        │ 2020-01-01 00:00:00.002 ┆ 2000        │
-        │ 2020-01-01 00:00:00.003 ┆ 3000        │
-        │ …                       ┆ …           │
-        │ 2020-01-01 00:00:00.997 ┆ 997000      │
-        │ 2020-01-01 00:00:00.998 ┆ 998000      │
-        │ 2020-01-01 00:00:00.999 ┆ 999000      │
-        │ 2020-01-01 00:00:01     ┆ 0           │
-        └─────────────────────────┴─────────────┘
-
+        shape: (3, 5)
+        ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
+        │ datetime                ┆ hour ┆ minute ┆ second ┆ microsecond │
+        │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
+        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
+        │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
+        │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500000      │
+        │ 2065-01-01 10:20:30.060 ┆ 10   ┆ 20     ┆ 30     ┆ 60000       │
+        └─────────────────────────┴──────┴────────┴────────┴─────────────┘
         """
         return wrap_expr(self._pyexpr.dt_microsecond())
 
@@ -1108,6 +1221,34 @@ class ExprDateTimeNameSpace:
         Expr
             Expression of data type :class:`Int32`.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "datetime": [
+        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("datetime").dt.hour().alias("hour"),
+        ...     pl.col("datetime").dt.minute().alias("minute"),
+        ...     pl.col("datetime").dt.second().alias("second"),
+        ...     pl.col("datetime").dt.nanosecond().alias("nanosecond"),
+        ... )
+        shape: (3, 5)
+        ┌─────────────────────────┬──────┬────────┬────────┬────────────┐
+        │ datetime                ┆ hour ┆ minute ┆ second ┆ nanosecond │
+        │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---        │
+        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32        │
+        ╞═════════════════════════╪══════╪════════╪════════╪════════════╡
+        │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0          │
+        │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500000000  │
+        │ 2065-01-01 10:20:30.060 ┆ 10   ┆ 20     ┆ 30     ┆ 60000000   │
+        └─────────────────────────┴──────┴────────┴────────┴────────────┘
         """
         return wrap_expr(self._pyexpr.dt_nanosecond())
 
@@ -1123,9 +1264,11 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import date
-        >>> df = pl.date_range(
-        ...     date(2001, 1, 1), date(2001, 1, 3), eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.date_range(date(2001, 1, 1), date(2001, 1, 3), eager=True)
+        ...     .alias("date")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(
         ...     pl.col("date").dt.epoch().alias("epoch_ns"),
         ...     pl.col("date").dt.epoch(time_unit="s").alias("epoch_s"),
@@ -1140,7 +1283,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-02 ┆ 978393600000000 ┆ 978393600 │
         │ 2001-01-03 ┆ 978480000000000 ┆ 978480000 │
         └────────────┴─────────────────┴───────────┘
-
         """
         if time_unit in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(time_unit)  # type: ignore[arg-type]
@@ -1165,9 +1307,11 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import date
-        >>> df = pl.date_range(
-        ...     date(2001, 1, 1), date(2001, 1, 3), eager=True
-        ... ).to_frame()
+        >>> df = (
+        ...     pl.date_range(date(2001, 1, 1), date(2001, 1, 3), eager=True)
+        ...     .alias("date")
+        ...     .to_frame()
+        ... )
         >>> df.with_columns(
         ...     pl.col("date").dt.timestamp().alias("timestamp_ns"),
         ...     pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
@@ -1182,7 +1326,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-02 ┆ 978393600000000 ┆ 978393600000 │
         │ 2001-01-03 ┆ 978480000000000 ┆ 978480000000 │
         └────────────┴─────────────────┴──────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
@@ -1228,7 +1371,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-02 00:00:00 ┆ +32974-01-22 00:00:00 │
         │ 2001-01-03 00:00:00 ┆ +32976-10-18 00:00:00 │
         └─────────────────────┴───────────────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_with_time_unit(time_unit))
 
@@ -1268,7 +1410,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-02 00:00:00 ┆ 2001-01-02 00:00:00 ┆ 2001-01-02 00:00:00 │
         │ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 │
         └─────────────────────┴─────────────────────┴─────────────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(time_unit))
 
@@ -1414,7 +1555,6 @@ class ExprDateTimeNameSpace:
         │ 2018-10-28 02:30:00 ┆ latest    ┆ 2018-10-28 02:30:00 CET       │
         │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
         └─────────────────────┴───────────┴───────────────────────────────┘
-
         """
         ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
@@ -1458,7 +1598,6 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 31        │
         │ 2020-05-01 00:00:00 ┆ 30        │
         └─────────────────────┴───────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_total_days())
 
@@ -1498,7 +1637,6 @@ class ExprDateTimeNameSpace:
         │ 2020-01-03 00:00:00 ┆ 24         │
         │ 2020-01-04 00:00:00 ┆ 24         │
         └─────────────────────┴────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_total_hours())
 
@@ -1538,7 +1676,6 @@ class ExprDateTimeNameSpace:
         │ 2020-01-03 00:00:00 ┆ 1440         │
         │ 2020-01-04 00:00:00 ┆ 1440         │
         └─────────────────────┴──────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_total_minutes())
 
@@ -1580,7 +1717,6 @@ class ExprDateTimeNameSpace:
         │ 2020-01-01 00:03:00 ┆ 60           │
         │ 2020-01-01 00:04:00 ┆ 60           │
         └─────────────────────┴──────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_total_seconds())
 
@@ -1601,7 +1737,7 @@ class ExprDateTimeNameSpace:
         ...         "date": pl.datetime_range(
         ...             datetime(2020, 1, 1),
         ...             datetime(2020, 1, 1, 0, 0, 1, 0),
-        ...             "1ms",
+        ...             "200ms",
         ...             eager=True,
         ...         ),
         ...     }
@@ -1610,23 +1746,19 @@ class ExprDateTimeNameSpace:
         ...     pl.col("date"),
         ...     milliseconds_diff=pl.col("date").diff().dt.total_milliseconds(),
         ... )
-        shape: (1_001, 2)
+        shape: (6, 2)
         ┌─────────────────────────┬───────────────────┐
         │ date                    ┆ milliseconds_diff │
         │ ---                     ┆ ---               │
         │ datetime[μs]            ┆ i64               │
         ╞═════════════════════════╪═══════════════════╡
         │ 2020-01-01 00:00:00     ┆ null              │
-        │ 2020-01-01 00:00:00.001 ┆ 1                 │
-        │ 2020-01-01 00:00:00.002 ┆ 1                 │
-        │ 2020-01-01 00:00:00.003 ┆ 1                 │
-        │ …                       ┆ …                 │
-        │ 2020-01-01 00:00:00.997 ┆ 1                 │
-        │ 2020-01-01 00:00:00.998 ┆ 1                 │
-        │ 2020-01-01 00:00:00.999 ┆ 1                 │
-        │ 2020-01-01 00:00:01     ┆ 1                 │
+        │ 2020-01-01 00:00:00.200 ┆ 200               │
+        │ 2020-01-01 00:00:00.400 ┆ 200               │
+        │ 2020-01-01 00:00:00.600 ┆ 200               │
+        │ 2020-01-01 00:00:00.800 ┆ 200               │
+        │ 2020-01-01 00:00:01     ┆ 200               │
         └─────────────────────────┴───────────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_total_milliseconds())
 
@@ -1647,32 +1779,28 @@ class ExprDateTimeNameSpace:
         ...         "date": pl.datetime_range(
         ...             datetime(2020, 1, 1),
         ...             datetime(2020, 1, 1, 0, 0, 1, 0),
-        ...             "1ms",
+        ...             "200ms",
         ...             eager=True,
         ...         ),
         ...     }
         ... )
         >>> df.select(
         ...     pl.col("date"),
-        ...     microseconds_diff=pl.col("date").diff().dt.total_microseconds(),
+        ...     milliseconds_diff=pl.col("date").diff().dt.total_microseconds(),
         ... )
-        shape: (1_001, 2)
+        shape: (6, 2)
         ┌─────────────────────────┬───────────────────┐
-        │ date                    ┆ microseconds_diff │
+        │ date                    ┆ milliseconds_diff │
         │ ---                     ┆ ---               │
         │ datetime[μs]            ┆ i64               │
         ╞═════════════════════════╪═══════════════════╡
         │ 2020-01-01 00:00:00     ┆ null              │
-        │ 2020-01-01 00:00:00.001 ┆ 1000              │
-        │ 2020-01-01 00:00:00.002 ┆ 1000              │
-        │ 2020-01-01 00:00:00.003 ┆ 1000              │
-        │ …                       ┆ …                 │
-        │ 2020-01-01 00:00:00.997 ┆ 1000              │
-        │ 2020-01-01 00:00:00.998 ┆ 1000              │
-        │ 2020-01-01 00:00:00.999 ┆ 1000              │
-        │ 2020-01-01 00:00:01     ┆ 1000              │
+        │ 2020-01-01 00:00:00.200 ┆ 200000            │
+        │ 2020-01-01 00:00:00.400 ┆ 200000            │
+        │ 2020-01-01 00:00:00.600 ┆ 200000            │
+        │ 2020-01-01 00:00:00.800 ┆ 200000            │
+        │ 2020-01-01 00:00:01     ┆ 200000            │
         └─────────────────────────┴───────────────────┘
-
         """
         return wrap_expr(self._pyexpr.dt_total_microseconds())
 
@@ -1693,32 +1821,28 @@ class ExprDateTimeNameSpace:
         ...         "date": pl.datetime_range(
         ...             datetime(2020, 1, 1),
         ...             datetime(2020, 1, 1, 0, 0, 1, 0),
-        ...             "1ms",
+        ...             "200ms",
         ...             eager=True,
         ...         ),
         ...     }
         ... )
         >>> df.select(
         ...     pl.col("date"),
-        ...     nanoseconds_diff=pl.col("date").diff().dt.total_nanoseconds(),
+        ...     milliseconds_diff=pl.col("date").diff().dt.total_nanoseconds(),
         ... )
-        shape: (1_001, 2)
-        ┌─────────────────────────┬──────────────────┐
-        │ date                    ┆ nanoseconds_diff │
-        │ ---                     ┆ ---              │
-        │ datetime[μs]            ┆ i64              │
-        ╞═════════════════════════╪══════════════════╡
-        │ 2020-01-01 00:00:00     ┆ null             │
-        │ 2020-01-01 00:00:00.001 ┆ 1000000          │
-        │ 2020-01-01 00:00:00.002 ┆ 1000000          │
-        │ 2020-01-01 00:00:00.003 ┆ 1000000          │
-        │ …                       ┆ …                │
-        │ 2020-01-01 00:00:00.997 ┆ 1000000          │
-        │ 2020-01-01 00:00:00.998 ┆ 1000000          │
-        │ 2020-01-01 00:00:00.999 ┆ 1000000          │
-        │ 2020-01-01 00:00:01     ┆ 1000000          │
-        └─────────────────────────┴──────────────────┘
-
+        shape: (6, 2)
+        ┌─────────────────────────┬───────────────────┐
+        │ date                    ┆ milliseconds_diff │
+        │ ---                     ┆ ---               │
+        │ datetime[μs]            ┆ i64               │
+        ╞═════════════════════════╪═══════════════════╡
+        │ 2020-01-01 00:00:00     ┆ null              │
+        │ 2020-01-01 00:00:00.200 ┆ 200000000         │
+        │ 2020-01-01 00:00:00.400 ┆ 200000000         │
+        │ 2020-01-01 00:00:00.600 ┆ 200000000         │
+        │ 2020-01-01 00:00:00.800 ┆ 200000000         │
+        │ 2020-01-01 00:00:01     ┆ 200000000         │
+        └─────────────────────────┴───────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_total_nanoseconds())
 
@@ -1984,7 +2108,6 @@ class ExprDateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_days` instead.
-
         """
         return self.total_days()
 
@@ -1995,7 +2118,6 @@ class ExprDateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_hours` instead.
-
         """
         return self.total_hours()
 
@@ -2006,7 +2128,6 @@ class ExprDateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_minutes` instead.
-
         """
         return self.total_minutes()
 
@@ -2017,7 +2138,6 @@ class ExprDateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_seconds` instead.
-
         """
         return self.total_seconds()
 
@@ -2028,7 +2148,6 @@ class ExprDateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_milliseconds` instead.
-
         """
         return self.total_milliseconds()
 
@@ -2039,7 +2158,6 @@ class ExprDateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_microseconds` instead.
-
         """
         return self.total_microseconds()
 
@@ -2050,6 +2168,5 @@ class ExprDateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_nanoseconds` instead.
-
         """
         return self.total_nanoseconds()

@@ -43,7 +43,9 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, or a file-like object. If the path is a directory, files in that
+        Path to a file, or a file-like object (by file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`). If the path is a directory, files in that
         directory will all be read.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -198,7 +200,6 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -215,7 +216,7 @@ def scan_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
@@ -293,7 +294,6 @@ def scan_parquet(
     ...     "aws_region": "us-east-1",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)

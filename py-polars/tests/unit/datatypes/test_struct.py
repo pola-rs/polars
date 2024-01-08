@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
@@ -164,12 +164,16 @@ def test_struct_function_expansion() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
-    struct_schema = {"a": pl.UInt32, "b": pl.Utf8}
-    s = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
+    struct_schema = {"a": pl.UInt32, "b": pl.String}
+    dfs = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))
+    s = dfs["a"]
 
     assert isinstance(s, pl.Series)
     assert s.struct.fields == ["a", "b"]
     assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
+
+    assert_series_equal(s, pl.Series(dfs.select("a")))
+    assert_frame_equal(dfs, pl.DataFrame(dfs))
 
 
 def test_nested_struct() -> None:
@@ -187,11 +191,11 @@ def test_nested_struct() -> None:
 
 
 def test_struct_to_pandas() -> None:
-    df = pd.DataFrame([{"a": {"b": {"c": 2}}}])
-    pl_df = pl.from_pandas(df)
+    pdf = pd.DataFrame([{"a": {"b": {"c": 2}}}])
+    df = pl.from_pandas(pdf)
 
-    assert isinstance(pl_df.dtypes[0], pl.datatypes.Struct)
-    assert pl_df.to_pandas().equals(df)
+    assert isinstance(df.dtypes[0], pl.datatypes.Struct)
+    assert df.to_pandas().equals(pdf)
 
 
 def test_struct_logical_types_to_pandas() -> None:
@@ -208,7 +212,6 @@ def test_struct_cols() -> None:
         Build Polars df from list of dicts.
 
         Can't import directly because of issue #3145.
-
         """
         arrow_df = pa.Table.from_pylist(data)
         polars_df = pl.from_arrow(arrow_df)
@@ -496,7 +499,7 @@ def test_struct_arr_eval() -> None:
     }
 
 
-def test_arr_unique() -> None:
+def test_list_of_struct_unique() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
@@ -644,7 +647,7 @@ def test_empty_struct() -> None:
     [
         pl.List,
         pl.List(pl.Null),
-        pl.List(pl.Utf8),
+        pl.List(pl.String),
         pl.Array(pl.Null, 32),
         pl.Array(pl.UInt8, 16),
         pl.Struct,
@@ -699,7 +702,7 @@ def test_struct_null_cast() -> None:
     dtype = pl.Struct(
         [
             pl.Field("a", pl.Int64),
-            pl.Field("b", pl.Utf8),
+            pl.Field("b", pl.String),
             pl.Field("c", pl.List(pl.Float64)),
         ]
     )
@@ -722,15 +725,6 @@ def test_nested_struct_in_lists_cast() -> None:
     ).to_dict(as_series=False) == {
         "node_groups": [[{"nodes": [{"id": 1, "is_started": True}]}], [{"nodes": []}]]
     }
-
-
-def test_is_unique_struct() -> None:
-    assert pl.Series(
-        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
-    ).is_unique().to_list() == [False, True, False]
-    assert pl.Series(
-        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
-    ).is_duplicated().to_list() == [True, False, True]
 
 
 def test_struct_concat_self_no_rechunk() -> None:
@@ -761,17 +755,6 @@ def test_struct_applies_as_map() -> None:
     ).to_dict(as_series=False) == {
         "x": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
     }
-
-
-def test_struct_unique_df() -> None:
-    df = pl.DataFrame(
-        {
-            "numerical": [1, 2, 1],
-            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
-        }
-    )
-
-    df.select("numerical", "struct").unique().sort("numerical")
 
 
 def test_struct_is_in() -> None:

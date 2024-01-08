@@ -26,7 +26,7 @@ def test_root_and_output_names() -> None:
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "bar"]
 
-    e = pl.col("foo").filter(pl.col("bar") == 13)
+    e = pl.col("foo").filter(bar=13)
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "bar"]
 
@@ -69,10 +69,26 @@ def test_meta_has_multiple_outputs() -> None:
     assert e.meta.has_multiple_outputs()
 
 
+def test_is_column() -> None:
+    e = pl.col("foo")
+    assert e.meta.is_column()
+
+    e = pl.col("foo").alias("bar")
+    assert not e.meta.is_column()
+
+    e = pl.col("foo") * pl.col("bar")
+    assert not e.meta.is_column()
+
+
 def test_meta_is_regex_projection() -> None:
     e = pl.col("^.*$").alias("bar")
     assert e.meta.is_regex_projection()
     assert e.meta.has_multiple_outputs()
+
+    e = pl.col("^.*")  # no trailing '$'
+    assert not e.meta.is_regex_projection()
+    assert not e.meta.has_multiple_outputs()
+    assert e.meta.is_column()
 
 
 def test_meta_tree_format(namespace_files_path: Path) -> None:

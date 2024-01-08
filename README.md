@@ -23,7 +23,7 @@
 
 <p align="center">
   <b>Documentation</b>:
-  <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python</a>
+  <a href="https://docs.pola.rs/py-polars/html/reference/index.html">Python</a>
   -
   <a href="https://docs.rs/polars/latest/polars/">Rust</a>
   -
@@ -40,7 +40,7 @@
   -
   <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
   |
-  <a href="https://pola-rs.github.io/polars/">User Guide</a>
+  <a href="https://docs.pola.rs/">User Guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
@@ -58,7 +58,7 @@ Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Ru
 - Hybrid Streaming (larger than RAM datasets)
 - Rust | Python | NodeJS | R | ...
 
-To learn more, read the [User Guide](https://pola-rs.github.io/polars/).
+To learn more, read the [User Guide](https://docs.pola.rs/).
 
 ## Python
 
@@ -102,20 +102,18 @@ shape: (5, 8)
 ## SQL
 
 ```python
->>> # create a sql context
->>> context = pl.SQLContext()
->>> # register a table
->>> table = pl.scan_ipc("file.arrow")
->>> context.register("my_table", table)
->>> # the query we want to run
+>>> df = pl.scan_ipc("file.arrow")
+>>> # create a sql context, registering the frame as a table
+>>> sql = pl.SQLContext(my_table=df)
+>>> # create a sql query to execute
 >>> query = """
-... SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM my_table
-... WHERE id1 = 'id016'
-... LIMIT 10
+...   SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM my_table
+...   WHERE id1 = 'id016'
+...   LIMIT 10
 ... """
 >>> ## OPTION 1
->>> # run query to materialization
->>> context.query(query)
+>>> # run the query, materializing as a DataFrame
+>>> sql.execute(query, eager=True)
  shape: (1, 2)
  ┌────────┬────────┐
  │ sum_v1 ┆ min_v2 │
@@ -125,9 +123,9 @@ shape: (5, 8)
  │ 298268 ┆ 1      │
  └────────┴────────┘
 >>> ## OPTION 2
->>> # Don't materialize the query, but return as LazyFrame
->>> # and continue in Python
->>> lf = context.execute(query)
+>>> # run the query but don't immediately materialize the result.
+>>> # this returns a LazyFrame that you can continue to operate on.
+>>> lf = sql.execute(query)
 >>> (lf.join(other_table)
 ...      .group_by("foo")
 ...      .agg(
@@ -135,7 +133,7 @@ shape: (5, 8)
 ... ).collect())
 ```
 
-SQL commands can also be ran directly from your terminal using the Polars CLI:
+SQL commands can also be run directly from your terminal using the Polars CLI:
 
 ```bash
 # run an inline sql query
@@ -192,10 +190,13 @@ Install Polars with all optional dependencies.
 
 ```sh
 pip install 'polars[all]'
-pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional dependencies
 ```
 
-You can also install the dependencies directly.
+You can also install a subset of all optional dependencies.
+
+```sh
+pip install 'polars[numpy,pandas,pyarrow]'
+```
 
 | Tag        | Description                                                                  |
 | ---------- | ---------------------------------------------------------------------------- |
@@ -209,6 +210,7 @@ You can also install the dependencies directly.
 | openpyxl   | Support for reading from Excel files with native types                       |
 | deltalake  | Support for reading from Delta Lake Tables                                   |
 | pyiceberg  | Support for reading from Apache Iceberg tables                               |
+| plot       | Support for plot functions on Dataframes                                     |
 | timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.

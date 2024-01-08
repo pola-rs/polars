@@ -12,6 +12,7 @@ _DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _GEVENT_AVAILABLE = True
+_HVPLOT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
@@ -30,7 +31,6 @@ class _LazyModule(ModuleType):
     We do NOT register this module with `sys.modules` so as not to cause
     confusion in the global environment. This way we have a valid proxy
     module for our own use, but it lives *exclusively* within polars.
-
     """
 
     __lazy__ = True
@@ -58,7 +58,6 @@ class _LazyModule(ModuleType):
         module_available : bool
             indicate if the referenced module is actually available (we will proxy it
             in both cases, but raise a helpful error when invoked if it doesn't exist).
-
         """
         self._module_available = module_available
         self._module_name = module_name
@@ -123,7 +122,6 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
     tuple of (Module, bool)
         A lazy-loading module and a boolean indicating if the requested/underlying
         module exists (if not, the returned module is a proxy).
-
     """
     # check if module is LOADED
     if module_name in sys.modules:
@@ -158,6 +156,7 @@ if TYPE_CHECKING:
     import deltalake
     import fsspec
     import gevent
+    import hvplot
     import hypothesis
     import numpy
     import pandas
@@ -183,6 +182,7 @@ else:
     )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    hvplot, _HVPLOT_AVAILABLE = _lazy_import("hvplot")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
@@ -243,6 +243,7 @@ __all__ = [
     "deltalake",
     "fsspec",
     "gevent",
+    "hvplot",
     "numpy",
     "pandas",
     "pydantic",
@@ -260,6 +261,7 @@ __all__ = [
     "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
     "_GEVENT_AVAILABLE",
+    "_HVPLOT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",

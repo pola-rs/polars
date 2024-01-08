@@ -429,7 +429,7 @@ def test_when_then_nested_non_unit_literal_predicate_agg_broadcast_12242() -> No
 
     expect = pl.DataFrame(
         [
-            pl.Series("array_name", ["A", "B"], dtype=pl.Utf8),
+            pl.Series("array_name", ["A", "B"], dtype=pl.String),
             pl.Series(
                 "array_val",
                 [[1, None, None, 2, None, 3], [4, None, None, None, None, 5]],
@@ -463,7 +463,7 @@ def test_when_then_binary_op_predicate_agg_12526() -> None:
     )
 
     expect = pl.DataFrame(
-        {"a": [1], "col": [None]}, schema={"a": pl.Int64, "col": pl.Utf8}
+        {"a": [1], "col": [None]}, schema={"a": pl.Int64, "col": pl.String}
     )
 
     actual = df.group_by("a").agg(

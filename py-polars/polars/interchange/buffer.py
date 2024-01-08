@@ -27,7 +27,6 @@ class PolarsBuffer(Buffer):
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError will be raised if data would be copied.
-
     """
 
     def __init__(self, data: Series, *, allow_copy: bool = True):
@@ -48,7 +47,7 @@ class PolarsBuffer(Buffer):
         if dtype[0] == DtypeKind.STRING:
             return self._data.str.len_bytes().sum()  # type: ignore[return-value]
         elif dtype[0] == DtypeKind.BOOL:
-            offset, length, _pointer = self._data._s.get_ptr()
+            _, offset, length = self._data._get_buffer_info()
             n_bits = offset + length
             n_bytes, rest = divmod(n_bits, 8)
             # Round up to the nearest byte
@@ -62,7 +61,7 @@ class PolarsBuffer(Buffer):
     @property
     def ptr(self) -> int:
         """Pointer to start of the buffer as an integer."""
-        _offset, _length, pointer = self._data._s.get_ptr()
+        pointer, _, _ = self._data._get_buffer_info()
         return pointer
 
     def __dlpack__(self) -> NoReturn:

@@ -118,7 +118,6 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 55.0   ┆ 64        ┆ 32        ┆ 64           │
     │ 64.001 ┆ 128       ┆ 64        ┆ 64           │
     └────────┴───────────┴───────────┴──────────────┘
-
     """
     return _create_namespace(name, pl.Expr)
 
@@ -217,7 +216,6 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yy  ┆ 5   ┆ 6   ┆ 7   │
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘]
-
     """
     return _create_namespace(name, pl.DataFrame)
 
@@ -321,7 +319,6 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 5   ┆ 6   ┆ 7   │
     │ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┘]
-
     """
     return _create_namespace(name, pl.LazyFrame)
 
@@ -375,6 +372,5 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
         64
         125
     ]
-
     """
     return _create_namespace(name, pl.Series)

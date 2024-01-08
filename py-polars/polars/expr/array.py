@@ -36,7 +36,6 @@ class ExprArrayNameSpace:
         │ 1   │
         │ 3   │
         └─────┘
-
         """
         return wrap_expr(self._pyexpr.arr_min())
 
@@ -60,7 +59,6 @@ class ExprArrayNameSpace:
         │ 2   │
         │ 4   │
         └─────┘
-
         """
         return wrap_expr(self._pyexpr.arr_max())
 
@@ -84,7 +82,6 @@ class ExprArrayNameSpace:
         │ 3   │
         │ 7   │
         └─────┘
-
         """
         return wrap_expr(self._pyexpr.arr_sum())
 
@@ -183,7 +180,6 @@ class ExprArrayNameSpace:
         ╞═══════════╡
         │ [1, 2]    │
         └───────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_unique(maintain_order))
 
@@ -212,7 +208,6 @@ class ExprArrayNameSpace:
         │ [1, 2]   │
         │ [3, 4]   │
         └──────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_to_list())
 
@@ -247,7 +242,6 @@ class ExprArrayNameSpace:
         │ [null, null]   ┆ false │
         │ null           ┆ null  │
         └────────────────┴───────┘
-
         """
         return wrap_expr(self._pyexpr.arr_any())
 
@@ -282,6 +276,136 @@ class ExprArrayNameSpace:
         │ [null, null]   ┆ true  │
         │ null           ┆ null  │
         └────────────────┴───────┘
-
         """
         return wrap_expr(self._pyexpr.arr_all())
+
+    def sort(self, *, descending: bool = False) -> Expr:
+        """
+        Sort the arrays in this column.
+
+        Parameters
+        ----------
+        descending
+            Sort in descending order.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[3, 2, 1], [9, 1, 2]],
+        ...     },
+        ...     schema={"a": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.with_columns(sort=pl.col("a").arr.sort())
+        shape: (2, 2)
+        ┌───────────────┬───────────────┐
+        │ a             ┆ sort          │
+        │ ---           ┆ ---           │
+        │ array[i64, 3] ┆ array[i64, 3] │
+        ╞═══════════════╪═══════════════╡
+        │ [3, 2, 1]     ┆ [1, 2, 3]     │
+        │ [9, 1, 2]     ┆ [1, 2, 9]     │
+        └───────────────┴───────────────┘
+        >>> df.with_columns(sort=pl.col("a").arr.sort(descending=True))
+        shape: (2, 2)
+        ┌───────────────┬───────────────┐
+        │ a             ┆ sort          │
+        │ ---           ┆ ---           │
+        │ array[i64, 3] ┆ array[i64, 3] │
+        ╞═══════════════╪═══════════════╡
+        │ [3, 2, 1]     ┆ [3, 2, 1]     │
+        │ [9, 1, 2]     ┆ [9, 2, 1]     │
+        └───────────────┴───────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.arr_sort(descending))
+
+    def reverse(self) -> Expr:
+        """
+        Reverse the arrays in this column.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[3, 2, 1], [9, 1, 2]],
+        ...     },
+        ...     schema={"a": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.with_columns(reverse=pl.col("a").arr.reverse())
+        shape: (2, 2)
+        ┌───────────────┬───────────────┐
+        │ a             ┆ reverse       │
+        │ ---           ┆ ---           │
+        │ array[i64, 3] ┆ array[i64, 3] │
+        ╞═══════════════╪═══════════════╡
+        │ [3, 2, 1]     ┆ [1, 2, 3]     │
+        │ [9, 1, 2]     ┆ [2, 1, 9]     │
+        └───────────────┴───────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.arr_reverse())
+
+    def arg_min(self) -> Expr:
+        """
+        Retrieve the index of the minimal value in every sub-array.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [2, 1]],
+        ...     },
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.with_columns(arg_min=pl.col("a").arr.arg_min())
+        shape: (2, 2)
+        ┌───────────────┬─────────┐
+        │ a             ┆ arg_min │
+        │ ---           ┆ ---     │
+        │ array[i64, 2] ┆ u32     │
+        ╞═══════════════╪═════════╡
+        │ [1, 2]        ┆ 0       │
+        │ [2, 1]        ┆ 1       │
+        └───────────────┴─────────┘
+
+        """
+        return wrap_expr(self._pyexpr.arr_arg_min())
+
+    def arg_max(self) -> Expr:
+        """
+        Retrieve the index of the maximum value in every sub-array.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [2, 1]],
+        ...     },
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.with_columns(arg_max=pl.col("a").arr.arg_max())
+        shape: (2, 2)
+        ┌───────────────┬─────────┐
+        │ a             ┆ arg_max │
+        │ ---           ┆ ---     │
+        │ array[i64, 2] ┆ u32     │
+        ╞═══════════════╪═════════╡
+        │ [1, 2]        ┆ 1       │
+        │ [2, 1]        ┆ 0       │
+        └───────────────┴─────────┘
+
+        """
+        return wrap_expr(self._pyexpr.arr_arg_max())

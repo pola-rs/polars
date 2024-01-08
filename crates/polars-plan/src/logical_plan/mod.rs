@@ -238,6 +238,12 @@ pub enum LogicalPlan {
         inputs: Vec<LogicalPlan>,
         options: UnionOptions,
     },
+    /// Horizontal concatenation of multiple plans
+    HConcat {
+        inputs: Vec<LogicalPlan>,
+        schema: SchemaRef,
+        options: HConcatOptions,
+    },
     /// Catches errors and throws them later
     #[cfg_attr(feature = "serde", serde(skip))]
     Error {

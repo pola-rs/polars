@@ -131,7 +131,6 @@ class BatchedCsvReader:
         Returns
         -------
         list of DataFrames
-
         """
         batches = self._reader.next_batches(n)
         if batches is not None:

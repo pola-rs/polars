@@ -12,7 +12,6 @@ from polars.interchange.protocol import (
     Endianness,
 )
 from polars.interchange.utils import polars_dtype_to_dtype
-from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -33,7 +32,6 @@ class PolarsColumn(Column):
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError will be raised if data would be copied.
-
     """
 
     def __init__(self, column: Series, *, allow_copy: bool = True):
@@ -54,7 +52,7 @@ class PolarsColumn(Column):
     @property
     def offset(self) -> int:
         """Offset of the first element with respect to the start of the underlying buffer."""  # noqa: W505
-        offset, _length, _pointer = self._col._s.get_ptr()
+        _, offset, _ = self._col._get_buffer_info()
         return offset
 
     @property
@@ -72,7 +70,6 @@ class PolarsColumn(Column):
         ------
         TypeError
             If the data type of the column is not categorical.
-
         """
         if self.dtype[0] != DtypeKind.CATEGORICAL:
             raise TypeError("`describe_categorical` only works on categorical columns")
@@ -122,7 +119,6 @@ class PolarsColumn(Column):
         must be performed that is not on the chunk boundary. This will trigger some
         compute if the column contains null values or if the column is of data type
         boolean.
-
         """
         total_n_chunks = self.num_chunks()
         chunks = self._col.get_chunks()
@@ -158,7 +154,7 @@ class PolarsColumn(Column):
         }
 
     def _get_data_buffer(self) -> tuple[PolarsBuffer, Dtype]:
-        s = wrap_s(self._col._s.get_buffer(0))
+        s = self._col._get_buffer(0)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
 
         dtype = self.dtype
@@ -168,21 +164,19 @@ class PolarsColumn(Column):
         return buffer, dtype
 
     def _get_validity_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        buffer = self._col._s.get_buffer(1)
-        if buffer is None:
+        s = self._col._get_buffer(1)
+        if s is None:
             return None
 
-        s = wrap_s(buffer)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
         dtype = (DtypeKind.BOOL, 1, "b", Endianness.NATIVE)
         return buffer, dtype
 
     def _get_offsets_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        buffer = self._col._s.get_buffer(2)
-        if buffer is None:
+        s = self._col._get_buffer(2)
+        if s is None:
             return None
 
-        s = wrap_s(buffer)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
         dtype = (DtypeKind.INT, 64, "l", Endianness.NATIVE)
         return buffer, dtype

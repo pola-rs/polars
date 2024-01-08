@@ -81,7 +81,6 @@ def datetime_(
     -------
     Expr
         Expression of data type :class:`Datetime`.
-
     """
     ambiguous = parse_as_expression(
         rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
@@ -136,7 +135,6 @@ def date_(
     -------
     Expr
         Expression of data type :class:`Date`.
-
     """
     return datetime_(year, month, day).cast(Date).alias("date")
 
@@ -165,7 +163,6 @@ def time_(
     -------
     Expr
         Expression of data type :class:`Date`.
-
     """
     epoch_start = (1970, 1, 1)
     return (
@@ -285,7 +282,6 @@ def duration(
     │ 2022-01-02 00:00:00 ┆ 2022-02-01 00:00:00 ┆ 2023-01-01 00:00:00 │
     │ 2022-01-04 00:00:00 ┆ 2022-03-02 00:00:00 ┆ 2024-01-02 00:00:00 │
     └─────────────────────┴─────────────────────┴─────────────────────┘
-
     """  # noqa: W505
     if weeks is not None:
         weeks = parse_as_expression(weeks)
@@ -356,7 +352,6 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     │ [2.0, 9.0, 2.0]   │
     │ [9.0, 2.0, 13.0]  │
     └───────────────────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_list(exprs))
@@ -458,7 +453,6 @@ def struct(
 
     >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
     OrderedDict({'my_struct': Struct({'p': Int64, 'q': Boolean})})
-
     """
     pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(pyexprs))
@@ -492,7 +486,7 @@ def concat_str(
     exprs
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
-        literals. Non-`Utf8` columns are cast to `Utf8`.
+        literals. Non-`String` columns are cast to `String`.
     *more_exprs
         Additional columns to concatenate into a single string column, specified as
         positional arguments.
@@ -528,7 +522,6 @@ def concat_str(
     │ 2   ┆ cats ┆ swim ┆ 4 cats swim   │
     │ 3   ┆ null ┆ walk ┆ null          │
     └─────┴──────┴──────┴───────────────┘
-
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_str(exprs, separator))
@@ -569,7 +562,6 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     │ foo_b_bar_2 │
     │ foo_c_bar_3 │
     └─────────────┘
-
     """
     if f_string.count("{}") != len(args):
         raise ValueError("number of placeholders should equal the number of arguments")
