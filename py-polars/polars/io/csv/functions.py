@@ -191,7 +191,7 @@ def read_csv(
     --------
     >>> pl.read_csv("data.csv", separator="|")  # doctest: +SKIP
 
-    Reproducable example using BytesIO object, parsing dates.
+    Reproducible example using BytesIO object, parsing dates.
 
     >>> import io  # doctest: +SKIP
     >>> source = io.BytesIO(
