@@ -295,7 +295,8 @@ def _construct_validity_buffer_from_bitmask(
 
     if null_value != 0:
         if not allow_copy:
-            raise CopyNotAllowedError("bitmask must be inverted")
+            msg = "bitmask must be inverted"
+            raise CopyNotAllowedError(msg)
         s = ~s
 
     return s
@@ -308,7 +309,8 @@ def _construct_validity_buffer_from_bytemask(
     allow_copy: bool,
 ) -> Series:
     if not allow_copy:
-        raise CopyNotAllowedError("bytemask must be converted into a bitmask")
+        msg = "bytemask must be converted into a bitmask"
+        raise CopyNotAllowedError(msg)
 
     buffer_info = (buffer.ptr, 0, buffer.bufsize)
     s = pl.Series._from_buffer(UInt8, buffer_info, owner=buffer)
