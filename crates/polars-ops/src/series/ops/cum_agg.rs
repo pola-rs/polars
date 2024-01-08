@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Mul};
 
 use num_traits::Bounded;
 use polars_core::prelude::*;
-use polars_core::utils::CustomIterTools;
+use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
@@ -216,7 +216,37 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
 }
 
 pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    let s = s.is_not_null().cast(&IDX_DTYPE).unwrap();
-    let ca = s.idx().unwrap();
-    Ok(cum_sum_numeric(ca, reverse).into_series())
+    // Fast paths for no nulls / all nulls
+    match s.null_count() {
+        0 => return Ok(cum_count_no_nulls(s.name(), s.len(), reverse)),
+        c if c == s.len() => return Ok(IdxCa::full(s.name(), 0 as IdxSize, c).into()),
+        _ => (),
+    };
+
+    let mut count = 0 as IdxSize;
+    let f = |v: bool| {
+        if v {
+            count += 1
+        }
+        count
+    };
+
+    let ca = s.is_not_null();
+    let out: NoNull<IdxCa> = match reverse {
+        false => ca.into_no_null_iter().map(f).collect(),
+        true => ca.into_no_null_iter().rev().map(f).collect_reversed(),
+    };
+    Ok(out.into_inner().into())
+}
+
+fn cum_count_no_nulls(name: &str, len: usize, reverse: bool) -> Series {
+    let start = 1 as IdxSize;
+    let end = len as IdxSize + 1;
+    let ca: NoNull<IdxCa> = match reverse {
+        false => (start..end).collect(),
+        true => (start..end).rev().collect(),
+    };
+    let mut ca = ca.into_inner();
+    ca.rename(name);
+    ca.into_series()
 }
