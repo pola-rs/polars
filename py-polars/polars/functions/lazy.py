@@ -126,6 +126,23 @@ def count(column: str | None = None) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
+
+    Generate an index column using `count` in conjunction with :func:`int_range`.
+
+    >>> df.select(
+    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+    ...     pl.all(),
+    ... )
+    shape: (3, 3)
+    ┌───────┬──────┬──────┐
+    │ index ┆ a    ┆ b    │
+    │ ---   ┆ ---  ┆ ---  │
+    │ u32   ┆ i64  ┆ i64  │
+    ╞═══════╪══════╪══════╡
+    │ 0     ┆ 1    ┆ 3    │
+    │ 1     ┆ 2    ┆ null │
+    │ 2     ┆ null ┆ null │
+    └───────┴──────┴──────┘
     """  # noqa: W505
     if column is None:
         return wrap_expr(plr.count())

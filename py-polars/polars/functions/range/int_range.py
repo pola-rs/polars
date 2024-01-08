@@ -198,8 +198,7 @@ def int_range(
             2
     ]
 
-    `int_range` can be used in conjunction with `count` to generate an index column
-    for a DataFrame.
+    Generate an index column using `int_range` in conjunction with :func:`count`.
 
     >>> df = pl.DataFrame({"a": [1, 3, 5], "b": [2, 4, 6]})
     >>> df.select(
