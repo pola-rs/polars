@@ -27,10 +27,12 @@ pub(crate) fn encode_delta(
     array: &BinaryViewArray,
     buffer: &mut Vec<u8>
 ) {
-    let len = array.len() - array.null_count();
     let lengths = array.non_null_views_iter().map(|v| (*v as u32) as i64);
-    let lengths = utils::ExactSizedIter::new(lengths, len);
     delta_bitpacked::encode(lengths, buffer);
+
+    for slice in array.non_null_values_iter() {
+        buffer.extend_from_slice(slice)
+    }
 }
 
 pub fn array_to_page(
