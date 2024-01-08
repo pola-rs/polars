@@ -5207,14 +5207,19 @@ class DataFrame:
 
     def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
         """
-        Add a column at index 0 that counts the rows.
+        Add a row index as the first column in the DataFrame.
 
         Parameters
         ----------
         name
-            Name of the column to add.
+            Name of the index column.
         offset
-            Start the row count at this offset. Default = 0
+            Start the index at this offset. Cannot be negative.
+
+        Notes
+        -----
+        The resulting column does not have any special properties. It is a regular
+        column of type `UInt32` (or `UInt64` in `polars-u64-idx`).
 
         Examples
         --------
@@ -5235,8 +5240,24 @@ class DataFrame:
         │ 1     ┆ 3   ┆ 4   │
         │ 2     ┆ 5   ┆ 6   │
         └───────┴─────┴─────┘
+        >>> df.with_row_index("id", offset=1000)
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ id   ┆ a   ┆ b   │
+        │ ---  ┆ --- ┆ --- │
+        │ u32  ┆ i64 ┆ i64 │
+        ╞══════╪═════╪═════╡
+        │ 1000 ┆ 1   ┆ 2   │
+        │ 1001 ┆ 3   ┆ 4   │
+        │ 1002 ┆ 5   ┆ 6   │
+        └──────┴─────┴─────┘
         """
-        return self._from_pydf(self._df.with_row_index(name, offset))
+        try:
+            return self._from_pydf(self._df.with_row_index(name, offset))
+        except OverflowError:
+            issue = "negative" if offset < 0 else "greater than the maximum index value"
+            msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
+            raise ValueError(msg) from None
 
     @deprecate_function(
         "Use `with_row_index` instead."
