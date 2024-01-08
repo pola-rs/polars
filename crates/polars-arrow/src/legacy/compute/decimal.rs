@@ -88,10 +88,10 @@ pub(super) fn deserialize_decimal(
                     .map(|(lhs, rhs)| lhs * 10i128.pow(scale as u32) + rhs)
             },
             None => {
-                if lhs_b.len() > precision as usize || scale != 0 {
+                if lhs_b.len() > precision as usize {
                     return None;
                 }
-                parse_integer_checked(lhs_b)
+                parse_integer_checked(lhs_b).map(|lhs| lhs * 10i128.pow(scale as u32))
             },
         }
     });
@@ -163,6 +163,12 @@ mod test {
         assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
 
         let val = "5.";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(500000i128)
+        );
+
+        let val = "5";
         assert_eq!(
             deserialize_decimal(val.as_bytes(), precision, scale),
             Some(500000i128)
