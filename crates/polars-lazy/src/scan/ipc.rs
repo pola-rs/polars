@@ -65,7 +65,7 @@ impl LazyFileListReader for LazyIpcReader {
 
         // it is a bit hacky, but this row_count function updates the schema
         if let Some(row_count) = args.row_count {
-            lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
+            lf = lf.with_row_index(&row_count.name, Some(row_count.offset))
         }
 
         Ok(lf)

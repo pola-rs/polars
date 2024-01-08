@@ -50,7 +50,7 @@ def test_row_count(foods_parquet_path: Path) -> None:
 
     df = (
         pl.scan_parquet(foods_parquet_path, row_count_name="row_count")
-        .with_row_count("foo", 10)
+        .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
@@ -407,7 +407,7 @@ def test_row_count_empty_file(tmp_path: Path) -> None:
     file_path = tmp_path / "test.parquet"
     df = pl.DataFrame({"a": []}, schema={"a": pl.Float32})
     df.write_parquet(file_path)
-    result = pl.scan_parquet(file_path).with_row_count("idx").collect()
+    result = pl.scan_parquet(file_path).with_row_index("idx").collect()
     assert result.schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Float32)])
 
 

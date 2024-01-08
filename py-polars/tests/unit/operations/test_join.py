@@ -71,12 +71,12 @@ def test_join_same_cat_src() -> None:
 @pytest.mark.parametrize("reverse", [False, True])
 def test_sorted_merge_joins(reverse: bool) -> None:
     n = 30
-    df_a = pl.DataFrame({"a": np.sort(np.random.randint(0, n // 2, n))}).with_row_count(
+    df_a = pl.DataFrame({"a": np.sort(np.random.randint(0, n // 2, n))}).with_row_index(
         "row_a"
     )
     df_b = pl.DataFrame(
         {"a": np.sort(np.random.randint(0, n // 2, n // 2))}
-    ).with_row_count("row_b")
+    ).with_row_index("row_b")
 
     if reverse:
         df_a = df_a.select(pl.all().reverse())
@@ -233,20 +233,20 @@ def test_joins_dispatch() -> None:
 def test_join_on_cast() -> None:
     df_a = (
         pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
-        .with_row_count()
+        .with_row_index()
         .with_columns(pl.col("a").cast(pl.Int32))
     )
 
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
 
     assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(as_series=False) == {
-        "row_nr": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
     ).collect().to_dict(as_series=False) == {
-        "row_nr": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
 

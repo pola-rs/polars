@@ -1679,13 +1679,47 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
         }
 
 
-def test_with_row_count() -> None:
+def test_with_row_index() -> None:
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
 
-    out = df.with_row_count()
+    out = df.with_row_index()
+    assert out["index"].to_list() == [0, 1, 2]
+
+    out = df.lazy().with_row_index().collect()
+    assert out["index"].to_list() == [0, 1, 2]
+
+
+def test_with_row_index_bad_offset() -> None:
+    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
+
+    with pytest.raises(ValueError, match="cannot be negative"):
+        df.with_row_index(offset=-1)
+    with pytest.raises(
+        ValueError, match="cannot be greater than the maximum index value"
+    ):
+        df.with_row_index(offset=2**32)
+
+
+def test_with_row_index_bad_offset_lazy() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
+
+    with pytest.raises(ValueError, match="cannot be negative"):
+        lf.with_row_index(offset=-1)
+    with pytest.raises(
+        ValueError, match="cannot be greater than the maximum index value"
+    ):
+        lf.with_row_index(offset=2**32)
+
+
+def test_with_row_count_deprecated() -> None:
+    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
+
+    with pytest.deprecated_call():
+        out = df.with_row_count()
     assert out["row_nr"].to_list() == [0, 1, 2]
 
-    out = df.lazy().with_row_count().collect()
+    with pytest.deprecated_call():
+        out = df.lazy().with_row_count().collect()
     assert out["row_nr"].to_list() == [0, 1, 2]
 
 

@@ -23,13 +23,13 @@ def test_projection_on_semi_join_4789() -> None:
 def test_melt_projection_pd_block_4997() -> None:
     assert (
         pl.DataFrame({"col1": ["a"], "col2": ["b"]})
-        .with_row_count()
+        .with_row_index()
         .lazy()
-        .melt(id_vars="row_nr")
-        .group_by("row_nr")
+        .melt(id_vars="index")
+        .group_by("index")
         .agg(pl.col("variable").alias("result"))
         .collect()
-    ).to_dict(as_series=False) == {"row_nr": [0], "result": [["col1", "col2"]]}
+    ).to_dict(as_series=False) == {"index": [0], "result": [["col1", "col2"]]}
 
 
 def test_double_projection_pushdown() -> None:
