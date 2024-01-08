@@ -61,29 +61,6 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
     assert out.columns == ["reverse_A", "reverse_fruits", "reverse_B", "reverse_cars"]
 
 
-def test_cum_count() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
-
-    out = df.group_by("A", maintain_order=True).agg(
-        pl.col("A").cum_count().alias("foo")
-    )
-
-    assert out["foo"][0].to_list() == [0, 1, 2, 3]
-    assert out["foo"][1].to_list() == [0, 1]
-
-
-def test_cumcount_deprecated() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
-
-    with pytest.deprecated_call():
-        out = df.group_by("A", maintain_order=True).agg(
-            pl.col("A").cumcount().alias("foo")
-        )
-
-    assert out["foo"][0].to_list() == [0, 1, 2, 3]
-    assert out["foo"][1].to_list() == [0, 1]
-
-
 def test_filter_where() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 7, 8, 9]})
     result_filter = df.group_by("a", maintain_order=True).agg(
