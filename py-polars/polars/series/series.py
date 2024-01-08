@@ -4,6 +4,7 @@ import contextlib
 import math
 import os
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -895,6 +896,14 @@ class Series:
             and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
+        if isinstance(other, (PyDecimal, int)) and self.dtype.is_decimal():
+            _s = sequence_to_pyseries(self.name, [other], self.dtype).cast(
+                self.dtype, strict=True
+            )
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
