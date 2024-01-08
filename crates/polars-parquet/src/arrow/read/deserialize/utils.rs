@@ -475,3 +475,12 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> PolarsResult<hybrid_rle::
     hybrid_rle::HybridRleDecoder::try_new(indices_buffer, bit_width as u32, page.num_values())
         .map_err(to_compute_err)
 }
+
+
+pub(super) fn page_is_optional(page: &DataPage) -> bool {
+        page.descriptor.primitive_type.field_info.repetition == Repetition::Optional
+}
+
+pub(super) fn page_is_filtered(page: &DataPage) -> bool {
+    page.selected_rows().is_some()
+}

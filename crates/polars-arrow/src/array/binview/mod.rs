@@ -26,10 +26,10 @@ mod private {
 use private::Sealed;
 
 use crate::array::binview::iterator::BinaryViewValueIter;
-use crate::array::binview::mutable::MutableBinaryViewArray;
 use crate::array::binview::view::{validate_binary_view, validate_utf8_view};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
+pub use mutable::MutableBinaryViewArray;
 
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;

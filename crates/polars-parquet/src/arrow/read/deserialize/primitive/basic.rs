@@ -165,8 +165,8 @@ where
         dict: Option<&'a Self::Dict>,
     ) -> PolarsResult<Self::State> {
         let is_optional =
-            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-        let is_filtered = page.selected_rows().is_some();
+            utils::page_is_optional(page);
+        let is_filtered = utils::page_is_filtered(page);
 
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {

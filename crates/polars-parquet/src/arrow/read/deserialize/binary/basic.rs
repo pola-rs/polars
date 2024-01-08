@@ -309,8 +309,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
         dict: Option<&'a Self::Dict>,
     ) -> PolarsResult<Self::State> {
         let is_optional =
-            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-        let is_filtered = page.selected_rows().is_some();
+            utils::page_is_optional(page);
+        let is_filtered = utils::page_is_filtered(page);
 
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,

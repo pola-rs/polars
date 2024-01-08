@@ -10,6 +10,7 @@ mod primitive;
 mod simple;
 mod struct_;
 mod utils;
+mod binview;
 
 use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
 use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};
