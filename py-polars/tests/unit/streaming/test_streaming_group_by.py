@@ -169,7 +169,7 @@ def test_streaming_group_by_sorted_fast_path() -> None:
             # test on int8 as that also tests proper conversions
             "a": pl.Series(np.sort(a), dtype=pl.Int8)
         }
-    ).with_row_number()
+    ).with_row_index()
 
     df_sorted = df.with_columns(pl.col("a").set_sorted())
 

@@ -54,4 +54,4 @@ Manipulation/selection
     LazyFrame.with_columns_seq
     LazyFrame.with_context
     LazyFrame.with_row_count
-    LazyFrame.with_row_number
+    LazyFrame.with_row_index

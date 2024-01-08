@@ -73,7 +73,7 @@ fn test_row_number_pd() -> PolarsResult<()> {
 
     let df = df
         .lazy()
-        .with_row_number("row_number", None)
+        .with_row_index("row_number", None)
         .select([col("row_number"), col("x") * lit(3i32)])
         .collect()?;
 

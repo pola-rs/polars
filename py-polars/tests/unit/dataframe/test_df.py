@@ -1679,13 +1679,13 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
         }
 
 
-def test_with_row_number() -> None:
+def test_with_row_index() -> None:
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
 
-    out = df.with_row_number()
+    out = df.with_row_index()
     assert out["row_number"].to_list() == [0, 1, 2]
 
-    out = df.lazy().with_row_number().collect()
+    out = df.lazy().with_row_index().collect()
     assert out["row_number"].to_list() == [0, 1, 2]
 
 

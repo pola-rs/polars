@@ -351,7 +351,7 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_number("row_number", None)
+        .with_row_index("row_number", None)
         .tail(5)
         .collect()?;
     let expected = df![
@@ -363,7 +363,7 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_number("row_number", None)
+        .with_row_index("row_number", None)
         .slice(1, 2)
         .collect()?;
     assert_eq!(
@@ -377,7 +377,7 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_number("row_number", None)
+        .with_row_index("row_number", None)
         .filter(col("a").eq(lit(3i32)))
         .collect()?;
     assert_eq!(
@@ -392,7 +392,7 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
         .clone()
         .lazy()
         .slice(1, 2)
-        .with_row_number("row_number", None)
+        .with_row_index("row_number", None)
         .collect()?;
     assert_eq!(
         out.column("row_number")?
@@ -405,7 +405,7 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .lazy()
         .filter(col("a").eq(lit(3i32)))
-        .with_row_number("row_number", None)
+        .with_row_index("row_number", None)
         .collect()?;
     assert_eq!(
         out.column("row_number")?

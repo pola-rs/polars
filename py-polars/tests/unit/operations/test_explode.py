@@ -89,10 +89,10 @@ def test_explode_empty_list_4003() -> None:
 
 
 def test_explode_empty_list_4107() -> None:
-    df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_number()
+    df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_index()
 
     assert_frame_equal(
-        df.explode(["b"]), df.explode(["b"]).drop("row_number").with_row_number()
+        df.explode(["b"]), df.explode(["b"]).drop("row_number").with_row_index()
     )
 
 
@@ -112,7 +112,7 @@ def test_explode_correct_for_slice() -> None:
             )
         )
         .sort("group")
-        .with_row_number()
+        .with_row_index()
     )
     expected = pl.DataFrame(
         {
@@ -215,7 +215,7 @@ def test_explode_in_agg_context() -> None:
     )
 
     assert (
-        df.with_row_number()
+        df.with_row_index()
         .explode("idxs")
         .group_by("row_number")
         .agg(pl.col("array").flatten())
@@ -281,7 +281,7 @@ def test_explode_invalid_element_count() -> None:
             "col1": [["X", "Y", "Z"], ["F", "G"], ["P"]],
             "col2": [["A", "B", "C"], ["C"], ["D", "E"]],
         }
-    ).with_row_number()
+    ).with_row_index()
     with pytest.raises(
         pl.ShapeError, match=r"exploded columns must have matching element counts"
     ):

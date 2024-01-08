@@ -84,7 +84,7 @@ Examples
                     self._df = df
 
                 def by_alternate_rows(self) -> list[pl.DataFrame]:
-                    df = self._df.with_row_number(name="n")
+                    df = self._df.with_row_index(name="n")
                     return [
                         df.filter((pl.col("n") % 2) == 0).drop("n"),
                         df.filter((pl.col("n") % 2) != 0).drop("n"),

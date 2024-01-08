@@ -90,7 +90,7 @@ impl LazyFileListReader for LazyParquetReader {
 
         // it is a bit hacky, but this row_count function updates the schema
         if let Some(row_count) = row_count {
-            lf = lf.with_row_number(&row_count.name, Some(row_count.offset))
+            lf = lf.with_row_index(&row_count.name, Some(row_count.offset))
         }
 
         lf.opt_state.file_caching = true;

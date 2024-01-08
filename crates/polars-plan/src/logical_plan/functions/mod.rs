@@ -347,7 +347,7 @@ impl FunctionNode {
                 let args = (**args).clone();
                 df.melt2(args)
             },
-            RowCount { name, offset, .. } => df.with_row_number(name.as_ref(), *offset),
+            RowCount { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
         }
     }
 }

@@ -23,7 +23,7 @@ def test_projection_on_semi_join_4789() -> None:
 def test_melt_projection_pd_block_4997() -> None:
     assert (
         pl.DataFrame({"col1": ["a"], "col2": ["b"]})
-        .with_row_number()
+        .with_row_index()
         .lazy()
         .melt(id_vars="row_number")
         .group_by("row_number")

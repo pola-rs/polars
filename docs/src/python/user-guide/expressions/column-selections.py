@@ -1,10 +1,9 @@
 # --8<-- [start:setup]
-import polars as pl
-
 # --8<-- [end:setup]
-
 # --8<-- [start:selectors_df]
 from datetime import date, datetime
+
+import polars as pl
 
 df = pl.DataFrame(
     {
@@ -17,7 +16,7 @@ df = pl.DataFrame(
             datetime(2022, 12, 1), datetime(2022, 12, 1, 0, 0, 2), "1s", eager=True
         ),
     }
-).with_row_number("rn")
+).with_row_index("rn")
 print(df)
 # --8<-- [end:selectors_df]
 

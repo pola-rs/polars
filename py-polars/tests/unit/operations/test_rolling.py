@@ -18,7 +18,7 @@ def test_rolling_group_by_overlapping_groups() -> None:
 
     assert_series_equal(
         (
-            df.with_row_number()
+            df.with_row_index()
             .with_columns(pl.col("row_number").cast(pl.Int32))
             .rolling(index_column="row_number", period="5i")
             .agg(

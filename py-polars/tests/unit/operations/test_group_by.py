@@ -462,7 +462,7 @@ def test_arg_sort_sort_by_groups_update__4360() -> None:
 
 
 def test_unique_order() -> None:
-    df = pl.DataFrame({"a": [1, 2, 1]}).with_row_number()
+    df = pl.DataFrame({"a": [1, 2, 1]}).with_row_index()
     assert df.unique(keep="last", subset="a", maintain_order=True).to_dict(
         as_series=False
     ) == {

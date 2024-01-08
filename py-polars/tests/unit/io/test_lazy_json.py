@@ -30,7 +30,7 @@ def test_scan_ndjson(foods_ndjson_path: Path) -> None:
 
     df = (
         pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count")
-        .with_row_number("foo", 10)
+        .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )

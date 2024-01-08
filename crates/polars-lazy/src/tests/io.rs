@@ -373,21 +373,21 @@ fn test_row_count_on_files() -> PolarsResult<()> {
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
             .with_row_count(Some(RowCount {
-                name: "rn".into(),
+                name: "index".into(),
                 offset,
             }))
             .finish()?;
 
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.collect()?;
-        let rn = df.column("rn")?;
+        let rn = df.column("index")?;
         assert_eq!(
             rn.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
         let lf = LazyFrame::scan_parquet(FOODS_PARQUET, Default::default())?
-            .with_row_number("rn", Some(offset));
+            .with_row_index("rn", Some(offset));
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.collect()?;
         let rn = df.column("rn")?;
@@ -397,7 +397,7 @@ fn test_row_count_on_files() -> PolarsResult<()> {
         );
 
         let lf =
-            LazyFrame::scan_ipc(FOODS_IPC, Default::default())?.with_row_number("rn", Some(offset));
+            LazyFrame::scan_ipc(FOODS_IPC, Default::default())?.with_row_index("rn", Some(offset));
 
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.clone().collect()?;
@@ -408,7 +408,7 @@ fn test_row_count_on_files() -> PolarsResult<()> {
         );
 
         let out = lf
-            .filter(col("rn").gt(lit(-1)))
+            .filter(col("index").gt(lit(-1)))
             .select([col("calories")])
             .collect()?;
         assert!(out.column("calories").is_ok());

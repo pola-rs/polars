@@ -5708,7 +5708,7 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_number()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
         ┌────────────┬─────────────────────┐
@@ -5916,7 +5916,7 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_number()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
         ┌────────────┬─────────────────────┐
@@ -6155,7 +6155,7 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_number()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
         ┌────────────┬─────────────────────┐
@@ -6396,7 +6396,7 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_number()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
         ┌────────────┬─────────────────────┐
@@ -6634,7 +6634,7 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_number()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
         ┌────────────┬─────────────────────┐
@@ -6879,7 +6879,7 @@ class Expr:
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
         ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_number()
+        ... ).with_row_index()
         >>> df_temporal
         shape: (25, 2)
         ┌────────────┬─────────────────────┐

@@ -629,7 +629,7 @@ def test_rolling_aggregations_with_over_11225() -> None:
             "date": [start + timedelta(days=k) for k in range(5)],
             "group": ["A"] * 2 + ["B"] * 3,
         }
-    ).with_row_number()
+    ).with_row_index()
 
     df_temporal = df_temporal.sort("group", "date")
 

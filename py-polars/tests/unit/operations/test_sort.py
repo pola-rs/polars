@@ -119,7 +119,7 @@ def test_sort_nans_3740() -> None:
 
 
 def test_sort_by_exps_nulls_last() -> None:
-    df = pl.DataFrame({"a": [1, 3, -2, None, 1]}).with_row_number()
+    df = pl.DataFrame({"a": [1, 3, -2, None, 1]}).with_row_index()
 
     assert df.sort(pl.col("a") ** 2, nulls_last=True).to_dict(as_series=False) == {
         "row_number": [0, 4, 2, 1, 3],
@@ -179,7 +179,7 @@ def test_sorted_join_and_dtypes() -> None:
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int16]:
         df_a = (
             pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
-            .with_row_number()
+            .with_row_index()
             .with_columns(pl.col("a").cast(dt).set_sorted())
         )
 
@@ -395,7 +395,7 @@ def test_sorted_join_query_5406() -> None:
             }
         )
         .with_columns(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
-        .with_row_number("RowId")
+        .with_row_index("RowId")
     )
 
     df1 = df.sort(by=["Datetime", "RowId"])
@@ -437,7 +437,7 @@ def test_merge_sorted() -> None:
             datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
         )
         .to_frame("range")
-        .with_row_number()
+        .with_row_index()
     )
 
     df_b = (
@@ -445,7 +445,7 @@ def test_merge_sorted() -> None:
             datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo", eager=True
         )
         .to_frame("range")
-        .with_row_number()
+        .with_row_index()
         .with_columns(pl.col("row_number") * 10)
     )
     out = df_a.merge_sorted(df_b, key="range")
@@ -573,7 +573,7 @@ def test_limit_larger_than_sort() -> None:
 
 
 def test_sort_by_struct() -> None:
-    df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_number()
+    df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_index()
     assert df.sort("st").to_dict(as_series=False) == {
         "row_number": [1, 2, 0],
         "st": [{"a": 20}, {"a": 55}, {"a": 300}],

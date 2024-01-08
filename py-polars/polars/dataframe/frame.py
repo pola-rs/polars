@@ -5205,7 +5205,7 @@ class DataFrame:
         """
         return function(self, *args, **kwargs)
 
-    def with_row_number(self, name: str = "row_number", offset: int = 0) -> Self:
+    def with_row_index(self, name: str = "row_number", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
 
@@ -5224,7 +5224,7 @@ class DataFrame:
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> df.with_row_number()
+        >>> df.with_row_index()
         shape: (3, 3)
         ┌────────────┬─────┬─────┐
         │ row_number ┆ a   ┆ b   │
@@ -5236,10 +5236,10 @@ class DataFrame:
         │ 2          ┆ 5   ┆ 6   │
         └────────────┴─────┴─────┘
         """
-        return self._from_pydf(self._df.with_row_number(name, offset))
+        return self._from_pydf(self._df.with_row_index(name, offset))
 
     @deprecate_function(
-        "Use `with_row_number` instead."
+        "Use `with_row_index` instead."
         "Note that the default column name has changed from 'row_nr' to 'row_number'.",
         version="0.20.4",
     )
@@ -5248,7 +5248,7 @@ class DataFrame:
         Add a column at index 0 that counts the rows.
 
         .. deprecated::
-            Use `meth`:with_row_number` instead.
+            Use `meth`:with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'row_number'.
 
         Parameters
@@ -5278,7 +5278,7 @@ class DataFrame:
         │ 2      ┆ 5   ┆ 6   │
         └────────┴─────┴─────┘
         """
-        return self.with_row_number(name, offset)
+        return self.with_row_index(name, offset)
 
     def group_by(
         self,

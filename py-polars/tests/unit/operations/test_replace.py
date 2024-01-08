@@ -50,7 +50,7 @@ def test_replace_str_to_str_default_null(str_mapping: dict[str | None, str]) -> 
 def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) -> None:
     df = pl.DataFrame({"country_code": ["FR", None, "ES", "DE"]})
 
-    result = df.with_row_number().select(
+    result = df.with_row_index().select(
         replaced=pl.col("country_code").replace(
             str_mapping, default=pl.col("row_number")
         )
