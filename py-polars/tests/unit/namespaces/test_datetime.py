@@ -104,15 +104,24 @@ def test_dt_date_and_time(
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 @pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
-def test_dt_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
+def test_dt_replace_time_zone_none(time_zone: str | None, time_unit: TimeUnit) -> None:
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)])
         .dt.cast_time_unit(time_unit)
         .dt.replace_time_zone(time_zone)
     )
-    result = ser.dt.datetime()
+    result = ser.dt.replace_time_zone(None)
     expected = datetime(2022, 1, 1, 23)
     assert result.dtype == pl.Datetime(time_unit, None)
+    assert result.item() == expected
+
+
+def test_dt_datetime_deprecated() -> None:
+    s = pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone("Asia/Kathmandu")
+    with pytest.deprecated_call():
+        result = s.dt.datetime()
+    expected = datetime(2022, 1, 1, 23)
+    assert result.dtype == pl.Datetime(time_zone=None)
     assert result.item() == expected
 
 
@@ -124,12 +133,9 @@ def test_dt_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
         ("UTC", True),
     ],
 )
-@pytest.mark.parametrize("attribute", ["datetime", "date"])
-def test_local_datetime_sortedness(
-    time_zone: str | None, expected: bool, attribute: str
-) -> None:
+def test_local_datetime_sortedness(time_zone: str | None, expected: bool) -> None:
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
-    result = getattr(ser.dt, attribute)()
+    result = ser.dt.date()
     assert result.flags["SORTED_ASC"] == expected
     assert result.flags["SORTED_DESC"] is False
 
@@ -174,16 +180,10 @@ def test_offset_by_sortedness(
 
 
 def test_dt_datetime_date_time_invalid() -> None:
-    with pytest.raises(ComputeError, match="expected Datetime"):
-        pl.Series([date(2021, 1, 2)]).dt.datetime()
     with pytest.raises(ComputeError, match="expected Datetime or Date"):
         pl.Series([time(23)]).dt.date()
-    with pytest.raises(ComputeError, match="expected Datetime"):
-        pl.Series([time(23)]).dt.datetime()
     with pytest.raises(ComputeError, match="expected Datetime or Date"):
         pl.Series([timedelta(1)]).dt.date()
-    with pytest.raises(ComputeError, match="expected Datetime"):
-        pl.Series([timedelta(1)]).dt.datetime()
     with pytest.raises(ComputeError, match="expected Datetime, Date, or Time"):
         pl.Series([timedelta(1)]).dt.time()
 
