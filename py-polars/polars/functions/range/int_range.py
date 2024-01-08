@@ -185,6 +185,25 @@ def int_range(
             1
             2
     ]
+
+    `int_range` can be used in conjunction with `count` to generate an index column
+    for a DataFrame.
+
+    >>> df = pl.DataFrame({"a": [1, 3, 5], "b": [2, 4, 6]})
+    >>> df.select(
+    ...     pl.int_range(0, pl.count(), dtype=pl.UInt32).alias("index"),
+    ...     pl.all(),
+    ... )
+    shape: (3, 3)
+    ┌───────┬─────┬─────┐
+    │ index ┆ a   ┆ b   │
+    │ ---   ┆ --- ┆ --- │
+    │ u32   ┆ i64 ┆ i64 │
+    ╞═══════╪═════╪═════╡
+    │ 0     ┆ 1   ┆ 2   │
+    │ 1     ┆ 3   ┆ 4   │
+    │ 2     ┆ 5   ┆ 6   │
+    └───────┴─────┴─────┘
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
