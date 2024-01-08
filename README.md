@@ -249,6 +249,10 @@ This can be done by going through the following steps in sequence:
    Append `-native` (e.g. `make build-release-native`) to enable further optimizations specific to
    your CPU. This produces a non-portable binary/wheel however.
 
+> *Note for Windows users*: `make` is not natively supported Windows, use `maturin build --release` directly.
+> See [Native Windows Compilation](docs/development/contributing/windows.md#Native-Windows-compilation) for more detailed
+> instructions.
+
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
 can `pip install polars` and `import polars`.
