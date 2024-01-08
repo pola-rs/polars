@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import re
 from datetime import datetime
+from functools import partial
 from typing import Any, Callable
 
 import numpy
@@ -406,3 +407,13 @@ def test_expr_exact_warning_message() -> None:
         df.select(pl.col("a").map_elements(lambda x: x + 1))
 
     assert len(warnings) == 1
+
+
+def test_partial_functions_13523() -> None:
+    def plus(value, amount: int):  # type: ignore[no-untyped-def]
+        return value + amount
+
+    data = {"a": [1, 2], "b": [3, 4]}
+    df = pl.DataFrame(data)
+    # should not warn
+    _ = df["a"].map_elements(partial(plus, amount=1))
