@@ -197,6 +197,20 @@ def cum_count(*names: str, reverse: bool = False) -> Expr:
     │ 2   │
     │ 2   │
     └─────┘
+
+    Add row numbers to a DataFrame.
+
+    >>> df.select(pl.cum_count().alias("row_number"), pl.all())
+    shape: (3, 3)
+    ┌────────────┬──────┬──────┐
+    │ row_number ┆ a    ┆ b    │
+    │ ---        ┆ ---  ┆ ---  │
+    │ u32        ┆ i64  ┆ i64  │
+    ╞════════════╪══════╪══════╡
+    │ 1          ┆ 1    ┆ 3    │
+    │ 2          ┆ 2    ┆ null │
+    │ 3          ┆ null ┆ null │
+    └────────────┴──────┴──────┘
     """
     if not names:
         return wrap_expr(plr.cum_count(reverse=reverse))

@@ -23,11 +23,12 @@ def test_cum_count_single_arg() -> None:
 
 def test_cum_count_multi_arg() -> None:
     df = pl.DataFrame({"a": [5, 5, None], "b": [None, None, None], "c": [1, 2, 3]})
-    result = df.select(pl.cum_count("a", "b"))
+    result = df.select(pl.cum_count("a", "b", "c"))
     expected = pl.DataFrame(
         [
             pl.Series("a", [1, 2, 2], dtype=pl.UInt32),
             pl.Series("b", [0, 0, 0], dtype=pl.UInt32),
+            pl.Series("c", [1, 2, 3], dtype=pl.UInt32),
         ]
     )
     assert_frame_equal(result, expected)
