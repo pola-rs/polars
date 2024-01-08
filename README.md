@@ -102,20 +102,18 @@ shape: (5, 8)
 ## SQL
 
 ```python
->>> # create a sql context
->>> context = pl.SQLContext()
->>> # register a table
->>> table = pl.scan_ipc("file.arrow")
->>> context.register("my_table", table)
->>> # the query we want to run
+>>> df = pl.scan_ipc("file.arrow")
+>>> # create a sql context, registering the frame as a table
+>>> sql = pl.SQLContext(my_table=df)
+>>> # create a sql query to execute
 >>> query = """
-... SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM my_table
-... WHERE id1 = 'id016'
-... LIMIT 10
+...   SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM my_table
+...   WHERE id1 = 'id016'
+...   LIMIT 10
 ... """
 >>> ## OPTION 1
->>> # run query to materialization
->>> context.query(query)
+>>> # run the query, materializing as a DataFrame
+>>> sql.execute(query, eager=True)
  shape: (1, 2)
  ┌────────┬────────┐
  │ sum_v1 ┆ min_v2 │
@@ -125,9 +123,9 @@ shape: (5, 8)
  │ 298268 ┆ 1      │
  └────────┴────────┘
 >>> ## OPTION 2
->>> # Don't materialize the query, but return as LazyFrame
->>> # and continue in Python
->>> lf = context.execute(query)
+>>> # run the query but don't immediately materialize the result.
+>>> # this returns a LazyFrame that you can continue to operate on.
+>>> lf = sql.execute(query)
 >>> (lf.join(other_table)
 ...      .group_by("foo")
 ...      .agg(
@@ -135,7 +133,7 @@ shape: (5, 8)
 ... ).collect())
 ```
 
-SQL commands can also be ran directly from your terminal using the Polars CLI:
+SQL commands can also be run directly from your terminal using the Polars CLI:
 
 ```bash
 # run an inline sql query
