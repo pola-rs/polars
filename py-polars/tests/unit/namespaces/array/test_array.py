@@ -139,3 +139,27 @@ def test_array_get() -> None:
         dtype=pl.Date,
     )
     assert_series_equal(out, expected)
+
+
+def test_arr_first_last() -> None:
+    s = pl.Series(
+        "a",
+        [[1, 2, 3], [None, 5, 6], [None, None, None]],
+        dtype=pl.Array(pl.Int64, 3),
+    )
+
+    first = s.arr.first()
+    expected_first = pl.Series(
+        "a",
+        [1, None, None],
+        dtype=pl.Int64,
+    )
+    assert_series_equal(first, expected_first)
+
+    last = s.arr.last()
+    expected_last = pl.Series(
+        "a",
+        [3, 6, None],
+        dtype=pl.Int64,
+    )
+    assert_series_equal(last, expected_last)
