@@ -498,6 +498,18 @@ macro_rules! apply_method_all_arrow_series {
 }
 
 #[macro_export]
+macro_rules! apply_amortized_generic_list_or_array {
+        ($self:expr, $method:ident, $($args:expr),*) => {
+        match $self.dtype() {
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => $self.array().unwrap().apply_amortized_generic($($args),*),
+            DataType::List(_) => $self.list().unwrap().apply_amortized_generic($($args),*),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! apply_method_physical_integer {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
