@@ -211,7 +211,7 @@ def scan_ipc(
     *,
     n_rows: int | None = None,
     cache: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     storage_options: dict[str, Any] | None = None,

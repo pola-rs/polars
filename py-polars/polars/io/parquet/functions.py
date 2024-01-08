@@ -216,7 +216,7 @@ def scan_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,

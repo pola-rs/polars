@@ -43,7 +43,7 @@ def read_csv(
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
-    rechunk: bool = True,
+    rechunk: bool = False,
     use_pyarrow: bool = False,
     storage_options: dict[str, Any] | None = None,
     skip_rows_after_header: int = 0,
