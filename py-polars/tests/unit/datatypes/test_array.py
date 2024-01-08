@@ -1,6 +1,7 @@
 import datetime
-from typing import Any
 from datetime import timedelta
+from typing import Any
+
 import pytest
 
 import polars as pl
