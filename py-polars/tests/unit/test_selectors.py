@@ -524,11 +524,11 @@ def test_selector_or() -> None:
             "float": [1.0, 2.0, 3.0],
             "str": ["x", "y", "z"],
         }
-    ).with_row_index("rn")
+    ).with_row_index("idx")
 
-    result = df.select(cs.by_name("rn") | ~cs.numeric())
+    result = df.select(cs.by_name("idx") | ~cs.numeric())
 
     expected = pl.DataFrame(
-        {"rn": [0, 1, 2], "str": ["x", "y", "z"]}, schema_overrides={"rn": pl.UInt32}
+        {"idx": [0, 1, 2], "str": ["x", "y", "z"]}, schema_overrides={"idx": pl.UInt32}
     )
     assert_frame_equal(result, expected)

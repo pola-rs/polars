@@ -275,11 +275,11 @@ def test_rolling_group_by_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True).reverse(),
         }
-    ).with_columns(pl.col("col1").reverse().alias("row_number"))
+    ).with_columns(pl.col("col1").reverse().alias("index"))
 
     assert (
         df.rolling(
-            index_column="row_number",
+            index_column="index",
             period="3i",
         )
         .agg(
@@ -314,11 +314,11 @@ def test_rolling_group_by_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True),
         }
-    ).with_columns(pl.col("col1").alias("row_number"))
+    ).with_columns(pl.col("col1").alias("index"))
 
     assert (
         df.rolling(
-            index_column="row_number",
+            index_column="index",
             period="3i",
         )
         .agg(
@@ -352,11 +352,11 @@ def test_rolling_group_by_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True).shuffle(1),
         }
-    ).with_columns(pl.col("col1").sort().alias("row_number"))
+    ).with_columns(pl.col("col1").sort().alias("index"))
 
     assert (
         df.rolling(
-            index_column="row_number",
+            index_column="index",
             period="3i",
         )
         .agg(
@@ -634,7 +634,7 @@ def test_rolling_aggregations_with_over_11225() -> None:
     df_temporal = df_temporal.sort("group", "date")
 
     result = df_temporal.with_columns(
-        rolling_row_mean=pl.col("row_number")
+        rolling_row_mean=pl.col("index")
         .rolling_mean(
             window_size="2d",
             by="date",
@@ -645,12 +645,12 @@ def test_rolling_aggregations_with_over_11225() -> None:
     )
     expected = pl.DataFrame(
         {
-            "row_number": [0, 1, 2, 3, 4],
+            "index": [0, 1, 2, 3, 4],
             "date": pl.datetime_range(date(2001, 1, 1), date(2001, 1, 5), eager=True),
             "group": ["A", "A", "B", "B", "B"],
             "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
         },
-        schema_overrides={"row_number": pl.UInt32},
+        schema_overrides={"index": pl.UInt32},
     )
     assert_frame_equal(result, expected)
 

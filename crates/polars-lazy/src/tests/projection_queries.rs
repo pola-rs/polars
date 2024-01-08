@@ -73,12 +73,12 @@ fn test_row_number_pd() -> PolarsResult<()> {
 
     let df = df
         .lazy()
-        .with_row_index("row_number", None)
-        .select([col("row_number"), col("x") * lit(3i32)])
+        .with_row_index("index", None)
+        .select([col("index"), col("x") * lit(3i32)])
         .collect()?;
 
     let expected = df![
-        "row_number" => [0 as IdxSize, 1, 2],
+        "index" => [0 as IdxSize, 1, 2],
         "x" => [3i32, 6, 9]
     ]?;
 

@@ -380,30 +380,30 @@ fn test_row_count_on_files() -> PolarsResult<()> {
 
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.collect()?;
-        let rn = df.column("index")?;
+        let idx = df.column("index")?;
         assert_eq!(
-            rn.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+            idx.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
         let lf = LazyFrame::scan_parquet(FOODS_PARQUET, Default::default())?
-            .with_row_index("rn", Some(offset));
+            .with_row_index("index", Some(offset));
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.collect()?;
-        let rn = df.column("rn")?;
+        let idx = df.column("index")?;
         assert_eq!(
-            rn.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+            idx.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf =
-            LazyFrame::scan_ipc(FOODS_IPC, Default::default())?.with_row_index("rn", Some(offset));
+        let lf = LazyFrame::scan_ipc(FOODS_IPC, Default::default())?
+            .with_row_index("index", Some(offset));
 
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.clone().collect()?;
-        let rn = df.column("rn")?;
+        let idx = df.column("index")?;
         assert_eq!(
-            rn.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+            idx.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 

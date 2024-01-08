@@ -5205,7 +5205,7 @@ class DataFrame:
         """
         return function(self, *args, **kwargs)
 
-    def with_row_index(self, name: str = "row_number", offset: int = 0) -> Self:
+    def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
 
@@ -5226,21 +5226,21 @@ class DataFrame:
         ... )
         >>> df.with_row_index()
         shape: (3, 3)
-        ┌────────────┬─────┬─────┐
-        │ row_number ┆ a   ┆ b   │
-        │ ---        ┆ --- ┆ --- │
-        │ u32        ┆ i64 ┆ i64 │
-        ╞════════════╪═════╪═════╡
-        │ 0          ┆ 1   ┆ 2   │
-        │ 1          ┆ 3   ┆ 4   │
-        │ 2          ┆ 5   ┆ 6   │
-        └────────────┴─────┴─────┘
+        ┌───────┬─────┬─────┐
+        │ index ┆ a   ┆ b   │
+        │ ---   ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   │
+        │ 1     ┆ 3   ┆ 4   │
+        │ 2     ┆ 5   ┆ 6   │
+        └───────┴─────┴─────┘
         """
         return self._from_pydf(self._df.with_row_index(name, offset))
 
     @deprecate_function(
         "Use `with_row_index` instead."
-        "Note that the default column name has changed from 'row_nr' to 'row_number'.",
+        "Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
@@ -5249,7 +5249,7 @@ class DataFrame:
 
         .. deprecated::
             Use `meth`:with_row_index` instead.
-            Note that the default column name has changed from 'row_nr' to 'row_number'.
+            Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
         ----------

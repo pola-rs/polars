@@ -4563,7 +4563,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.all().approx_n_unique())
 
-    def with_row_index(self, name: str = "row_number", offset: int = 0) -> Self:
+    def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
         """
         Add a column at index 0 with the row number.
 
@@ -4589,21 +4589,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.with_row_index().collect()
         shape: (3, 3)
-        ┌────────────┬─────┬─────┐
-        │ row_number ┆ a   ┆ b   │
-        │ ---        ┆ --- ┆ --- │
-        │ u32        ┆ i64 ┆ i64 │
-        ╞════════════╪═════╪═════╡
-        │ 0          ┆ 1   ┆ 2   │
-        │ 1          ┆ 3   ┆ 4   │
-        │ 2          ┆ 5   ┆ 6   │
-        └────────────┴─────┴─────┘
+        ┌───────┬─────┬─────┐
+        │ index ┆ a   ┆ b   │
+        │ ---   ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   │
+        │ 1     ┆ 3   ┆ 4   │
+        │ 2     ┆ 5   ┆ 6   │
+        └───────┴─────┴─────┘
         """
         return self._from_pyldf(self._ldf.with_row_index(name, offset))
 
     @deprecate_function(
         "Use `with_row_index` instead."
-        "Note that the default column name has changed from 'row_nr' to 'row_number'.",
+        "Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
@@ -4612,7 +4612,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         .. deprecated::
             Use `meth`:with_row_index` instead.
-            Note that the default column name has changed from 'row_nr' to 'row_number'.
+            Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
         ----------

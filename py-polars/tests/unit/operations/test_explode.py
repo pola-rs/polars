@@ -92,7 +92,7 @@ def test_explode_empty_list_4107() -> None:
     df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_index()
 
     assert_frame_equal(
-        df.explode(["b"]), df.explode(["b"]).drop("row_number").with_row_index()
+        df.explode(["b"]), df.explode(["b"]).drop("index").with_row_index()
     )
 
 
@@ -116,11 +116,11 @@ def test_explode_correct_for_slice() -> None:
     )
     expected = pl.DataFrame(
         {
-            "row_number": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
+            "index": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
             "group": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             "b": [1, 2, 3, 2, 3, 4, 1, 2, 3, 0, 1, 2, 3, 2, 3, 4, 1, 2, 3, 0],
         },
-        schema_overrides={"row_number": pl.UInt32},
+        schema_overrides={"index": pl.UInt32},
     )
     assert_frame_equal(df.slice(0, 10).explode(["b"]), expected)
 
@@ -217,10 +217,10 @@ def test_explode_in_agg_context() -> None:
     assert (
         df.with_row_index()
         .explode("idxs")
-        .group_by("row_number")
+        .group_by("index")
         .agg(pl.col("array").flatten())
     ).to_dict(as_series=False) == {
-        "row_number": [0, 1, 2],
+        "index": [0, 1, 2],
         "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
     }
 

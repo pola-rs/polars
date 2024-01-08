@@ -4527,7 +4527,7 @@ class Series:
         It is better to implement this as follows:
 
         >>> s.to_frame().with_row_index().select(
-        ...     pl.when(pl.col("row_number") == 1).then(10).otherwise(pl.col("a"))
+        ...     pl.when(pl.col("index") == 1).then(10).otherwise(pl.col("a"))
         ... )
         shape: (3, 1)
         ┌─────────┐

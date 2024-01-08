@@ -51,9 +51,7 @@ def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) ->
     df = pl.DataFrame({"country_code": ["FR", None, "ES", "DE"]})
 
     result = df.with_row_index().select(
-        replaced=pl.col("country_code").replace(
-            str_mapping, default=pl.col("row_number")
-        )
+        replaced=pl.col("country_code").replace(str_mapping, default=pl.col("index"))
     )
     expected = pl.DataFrame({"replaced": ["France", "Not specified", "2", "Germany"]})
     assert_frame_equal(result, expected)

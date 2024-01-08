@@ -240,13 +240,13 @@ def test_join_on_cast() -> None:
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
 
     assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(as_series=False) == {
-        "row_number": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
     ).collect().to_dict(as_series=False) == {
-        "row_number": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
 

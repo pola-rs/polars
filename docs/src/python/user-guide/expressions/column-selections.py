@@ -16,7 +16,7 @@ df = pl.DataFrame(
             datetime(2022, 12, 1), datetime(2022, 12, 1, 0, 0, 2), "1s", eager=True
         ),
     }
-).with_row_index("rn")
+).with_row_index("index")
 print(df)
 # --8<-- [end:selectors_df]
 
@@ -29,7 +29,7 @@ print(out)
 # --8<-- [end:all]
 
 # --8<-- [start:exclude]
-out = df.select(pl.col("*").exclude("logged_at", "rn"))
+out = df.select(pl.col("*").exclude("logged_at", "index"))
 print(out)
 # --8<-- [end:exclude]
 
@@ -61,12 +61,12 @@ print(out)
 # --8<-- [end:selectors_diff]
 
 # --8<-- [start:selectors_union]
-out = df.select(cs.by_name("rn") | ~cs.numeric())
+out = df.select(cs.by_name("index") | ~cs.numeric())
 print(out)
 # --8<-- [end:selectors_union]
 
 # --8<-- [start:selectors_by_name]
-out = df.select(cs.contains("rn"), cs.matches(".*_.*"))
+out = df.select(cs.contains("index"), cs.matches(".*_.*"))
 print(out)
 # --8<-- [end:selectors_by_name]
 

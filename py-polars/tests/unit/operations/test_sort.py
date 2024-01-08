@@ -122,7 +122,7 @@ def test_sort_by_exps_nulls_last() -> None:
     df = pl.DataFrame({"a": [1, 3, -2, None, 1]}).with_row_index()
 
     assert df.sort(pl.col("a") ** 2, nulls_last=True).to_dict(as_series=False) == {
-        "row_number": [0, 4, 2, 1, 3],
+        "index": [0, 4, 2, 1, 3],
         "a": [1, 1, -2, 3, None],
     }
 
@@ -188,11 +188,11 @@ def test_sorted_join_and_dtypes() -> None:
     )
 
     assert df_a.join(df_b, on="a", how="inner").to_dict(as_series=False) == {
-        "row_number": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
     assert df_a.join(df_b, on="a", how="left").to_dict(as_series=False) == {
-        "row_number": [0, 1, 2, 3, 4, 5],
+        "index": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
     }
 
@@ -446,12 +446,12 @@ def test_merge_sorted() -> None:
         )
         .to_frame("range")
         .with_row_index()
-        .with_columns(pl.col("row_number") * 10)
+        .with_columns(pl.col("index") * 10)
     )
     out = df_a.merge_sorted(df_b, key="range")
     assert out["range"].is_sorted()
     assert out.to_dict(as_series=False) == {
-        "row_number": [0, 0, 1, 2, 10, 3, 4, 20, 5, 6, 30, 7, 8, 40, 9, 10, 50, 11],
+        "index": [0, 0, 1, 2, 10, 3, 4, 20, 5, 6, 30, 7, 8, 40, 9, 10, 50, 11],
         "range": [
             datetime(2022, 1, 1, 0, 0),
             datetime(2022, 1, 1, 0, 0),
@@ -575,7 +575,7 @@ def test_limit_larger_than_sort() -> None:
 def test_sort_by_struct() -> None:
     df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_index()
     assert df.sort("st").to_dict(as_series=False) == {
-        "row_number": [1, 2, 0],
+        "index": [1, 2, 0],
         "st": [{"a": 20}, {"a": 55}, {"a": 300}],
     }
 

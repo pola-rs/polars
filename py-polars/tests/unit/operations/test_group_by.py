@@ -466,13 +466,13 @@ def test_unique_order() -> None:
     assert df.unique(keep="last", subset="a", maintain_order=True).to_dict(
         as_series=False
     ) == {
-        "row_number": [1, 2],
+        "index": [1, 2],
         "a": [2, 1],
     }
     assert df.unique(keep="first", subset="a", maintain_order=True).to_dict(
         as_series=False
     ) == {
-        "row_number": [0, 1],
+        "index": [0, 1],
         "a": [1, 2],
     }
 
