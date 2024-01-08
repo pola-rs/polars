@@ -10,6 +10,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_function,
     deprecate_saturating,
     issue_deprecation_warning,
@@ -923,9 +924,13 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_date())
 
+    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
     def datetime(self) -> Expr:
         """
         Return datetime.
+
+        .. deprecated:: 0.20.4
+            Use `dt.replace_time_zone(None)` instead.
 
         Applies to Datetime columns.
 
@@ -947,7 +952,7 @@ class ExprDateTimeNameSpace:
         ...     },
         ...     schema={"datetime UTC": pl.Datetime(time_zone="UTC")},
         ... )
-        >>> df.with_columns(
+        >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("datetime UTC").dt.datetime().alias("datetime (no timezone)"),
         ... )
         shape: (3, 2)
