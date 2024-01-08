@@ -257,13 +257,13 @@ impl SQLExprVisitor<'_> {
         if escape_char.is_some() {
             polars_bail!(InvalidOperation: "ESCAPE char for LIKE/ILIKE is not yet supported; found '{}'", escape_char.unwrap());
         }
-        let mut rx = match self.visit_expr(pattern) {
+        let pat = match self.visit_expr(pattern) {
             Ok(Expr::Literal(LiteralValue::String(s))) => s,
             _ => {
                 polars_bail!(InvalidOperation: "LIKE/ILIKE pattern must be a string literal; found {}", pattern)
             },
         };
-        if rx.is_empty() || (!case_insensitive && rx.chars().all(|c| !matches!(c, '%' | '_'))) {
+        if pat.is_empty() || (!case_insensitive && pat.chars().all(|c| !matches!(c, '%' | '_'))) {
             // empty string or other exact literal match (eg: no wildcard chars)
             let op = if negated {
                 BinaryOperator::NotEq
@@ -273,7 +273,10 @@ impl SQLExprVisitor<'_> {
             self.visit_binary_op(expr, &op, pattern)
         } else {
             // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.')
-            rx = regex::escape(rx.as_str()).replace('%', ".*").replace('_', ".");
+            let mut rx = regex::escape(pat.as_str())
+                .replace('%', ".*")
+                .replace('_', ".");
+
             rx = format!("^{}{}$", if case_insensitive { "(?i)" } else { "" }, rx);
 
             let expr = self.visit_expr(expr)?;
@@ -807,9 +810,7 @@ fn process_join_on(
                 {
                     collect_compound_identifiers(left, right, left_name, right_name)
                 } else {
-                    polars_bail!(
-                        InvalidOperation: 
-                        "SQL join clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
+                    polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
                 }
             },
             BinaryOperator::And => {
@@ -820,15 +821,11 @@ fn process_join_on(
                 Ok((left_i, right_i))
             },
             _ => {
-                polars_bail!(
-                    InvalidOperation: 
-                    "SQL join clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
+                polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
             },
         }
     } else {
-        polars_bail!(
-            InvalidOperation: 
-            "SQL join clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
+        polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
     }
 }
 
