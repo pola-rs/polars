@@ -509,6 +509,12 @@ impl ApplyExpr {
                     let min = st.to_min()?;
                     let max = st.to_max()?;
 
+                    if max.get(0).unwrap() == min.get(0).unwrap() {
+                        let one_equals =
+                            |value: &Series| Some(ChunkCompare::equal(input, value).ok()?.any());
+                        return one_equals(min);
+                    }
+
                     let all_smaller = || Some(ChunkCompare::lt(input, min).ok()?.all());
                     let all_bigger = || Some(ChunkCompare::gt(input, max).ok()?.all());
                     Some(!all_smaller()? && !all_bigger()?)
