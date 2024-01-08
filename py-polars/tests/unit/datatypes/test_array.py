@@ -1,6 +1,6 @@
 import datetime
 from typing import Any
-
+from datetime import timedelta
 import pytest
 
 import polars as pl
@@ -214,10 +214,12 @@ def data_dispersion() -> pl.DataFrame:
         {
             "int": [[1, 2, 3, 4, 5]],
             "float": [[1.0, 2.0, 3.0, 4.0, 5.0]],
+            "duration": [[1000, 2000, 3000, 4000, 5000]],
         },
         schema={
             "int": pl.Array(pl.Int64, 5),
             "float": pl.Array(pl.Float64, 5),
+            "duration": pl.Array(pl.Duration, 5),
         },
     )
 
@@ -228,12 +230,18 @@ def test_arr_var(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.var().name.suffix("_var"),
         pl.col("float").arr.var().name.suffix("_var"),
+        pl.col("duration").arr.var().name.suffix("_var"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_var", [2.5], dtype=pl.Float64),
             pl.Series("float_var", [2.5], dtype=pl.Float64),
+            pl.Series(
+                "duration_var",
+                [timedelta(microseconds=2000)],
+                dtype=pl.Duration(time_unit="ms"),
+            ),
         ]
     )
 
@@ -246,12 +254,18 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.std().name.suffix("_std"),
         pl.col("float").arr.std().name.suffix("_std"),
+        pl.col("duration").arr.std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
             pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series(
+                "duration_std",
+                [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
         ]
     )
 
@@ -264,12 +278,18 @@ def test_arr_median(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.median().name.suffix("_median"),
         pl.col("float").arr.median().name.suffix("_median"),
+        pl.col("duration").arr.median().name.suffix("_median"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_median", [3.0], dtype=pl.Float64),
             pl.Series("float_median", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_median",
+                [timedelta(microseconds=3000)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
         ]
     )
 
