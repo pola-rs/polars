@@ -91,7 +91,7 @@ pub(super) fn deserialize_decimal(
             .map(|(lhs, rhs)| lhs * 10i128.pow(scale as u32) + rhs),
         // No decimal separator was found; we have an integer / LHS only.
         None => {
-            if (lhs_s > precision) || lhs_b.is_empty() {
+            if (lhs_s + scale > precision) || lhs_b.is_empty() {
                 // Either the integer itself exceeds the precision, or we simply have
                 // no number at all / an empty string.
                 return None;
@@ -199,13 +199,13 @@ mod test {
         let val = b"1200.010";
         assert_eq!(deserialize_decimal(val, None, 0), None); // insufficient scale
         assert_eq!(deserialize_decimal(val, None, 3), Some(1200010)); // exact scale
-        assert_eq!(deserialize_decimal(val, None, 6), Some(1200010)); // excess scale
+        assert_eq!(deserialize_decimal(val, None, 6), Some(1200010000)); // excess scale
         assert_eq!(deserialize_decimal(val, Some(7), 0), None); // insufficient precision and scale
         assert_eq!(deserialize_decimal(val, Some(7), 3), Some(1200010)); // exact precision and scale
-        assert_eq!(deserialize_decimal(val, Some(7), 6), Some(1200010)); // exact precision, excess scale
+        assert_eq!(deserialize_decimal(val, Some(10), 6), Some(1200010000)); // exact precision, excess scale
         assert_eq!(deserialize_decimal(val, Some(5), 6), None); // insufficient precision, excess scale
         assert_eq!(deserialize_decimal(val, Some(5), 3), None); // insufficient precision, exact scale
-        assert_eq!(deserialize_decimal(val, Some(12), 5), None); // excess precision, excess scale
+        assert_eq!(deserialize_decimal(val, Some(12), 5), Some(120001000)); // excess precision, excess scale
         assert_eq!(deserialize_decimal(val, None, 35), None); // scale causes insufficient precision
     }
 }
