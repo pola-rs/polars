@@ -186,6 +186,33 @@ def read_csv(
     all data will be stored continuously in memory.
     Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
     an expensive operation.
+
+    Examples
+    --------
+    >>> pl.read_csv("data.csv", separator="|")  # doctest: +SKIP
+
+    Reproducible example using BytesIO object, parsing dates.
+
+    >>> import io  # doctest: +SKIP
+    >>> source = io.BytesIO(
+    ...     (
+    ...         "ID,Name,Birthday\n"
+    ...         "1,Alice,1995-07-12\n"
+    ...         "2,Bob,1990-09-20\n"
+    ...         "3,Charlie,2002-03-08"
+    ...     ).encode()
+    ... )  # doctest: +SKIP
+    >>> pl.read_csv(source, try_parse_dates=True)  # doctest: +SKIP
+    shape: (3, 3)
+    ┌─────┬─────────┬────────────┐
+    │ ID  ┆ Name    ┆ Birthday   │
+    │ --- ┆ ---     ┆ ---        │
+    │ i64 ┆ str     ┆ date       │
+    ╞═════╪═════════╪════════════╡
+    │ 1   ┆ Alice   ┆ 1995-07-12 │
+    │ 2   ┆ Bob     ┆ 1990-09-20 │
+    │ 3   ┆ Charlie ┆ 2002-03-08 │
+    └─────┴─────────┴────────────┘
     """
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
