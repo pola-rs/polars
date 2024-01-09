@@ -653,7 +653,7 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, _) => {
                 if !cheap {
-                    let mut buf: Vec<AnyValue<'_>> = vec![];
+                    let mut buf = vec![];
                     self._materialize_struct_av(&mut buf);
                     buf.hash(state)
                 }
