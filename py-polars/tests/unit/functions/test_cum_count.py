@@ -22,13 +22,46 @@ def test_cum_count_single_arg() -> None:
 
 
 def test_cum_count_multi_arg() -> None:
-    df = pl.DataFrame({"a": [5, 5, None], "b": [None, None, None], "c": [1, 2, 3]})
-    result = df.select(pl.cum_count("a", "b", "c"))
+    df = pl.DataFrame(
+        {
+            "a": [5, 5, 5],
+            "b": [None, 5, 5],
+            "c": [5, None, 5],
+            "d": [5, 5, None],
+            "e": [None, None, None],
+        }
+    )
+    result = df.select(pl.cum_count("a", "b", "c", "d", "e"))
     expected = pl.DataFrame(
         [
-            pl.Series("a", [1, 2, 2], dtype=pl.UInt32),
-            pl.Series("b", [0, 0, 0], dtype=pl.UInt32),
-            pl.Series("c", [1, 2, 3], dtype=pl.UInt32),
+            pl.Series("a", [1, 2, 3], dtype=pl.UInt32),
+            pl.Series("b", [0, 1, 2], dtype=pl.UInt32),
+            pl.Series("c", [1, 1, 2], dtype=pl.UInt32),
+            pl.Series("d", [1, 2, 2], dtype=pl.UInt32),
+            pl.Series("e", [0, 0, 0], dtype=pl.UInt32),
+        ]
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_cum_count_multi_arg_reverse() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [5, 5, 5],
+            "b": [None, 5, 5],
+            "c": [5, None, 5],
+            "d": [5, 5, None],
+            "e": [None, None, None],
+        }
+    )
+    result = df.select(pl.cum_count("a", "b", "c", "d", "e", reverse=True))
+    expected = pl.DataFrame(
+        [
+            pl.Series("a", [3, 2, 1], dtype=pl.UInt32),
+            pl.Series("b", [2, 2, 1], dtype=pl.UInt32),
+            pl.Series("c", [2, 1, 1], dtype=pl.UInt32),
+            pl.Series("d", [2, 1, 0], dtype=pl.UInt32),
+            pl.Series("e", [0, 0, 0], dtype=pl.UInt32),
         ]
     )
     assert_frame_equal(result, expected)
