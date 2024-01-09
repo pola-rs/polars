@@ -48,7 +48,7 @@ pub struct ParquetReader<R: Read + Seek> {
     projection: Option<Vec<usize>>,
     parallel: ParallelStrategy,
     schema: Option<ArrowSchemaRef>,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     low_memory: bool,
     metadata: Option<Arc<FileMetaData>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -91,8 +91,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
-        self.row_count = row_count;
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -158,7 +158,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
             self.predicate.clone(),
-            self.row_count,
+            self.row_index,
             chunk_size,
             self.use_statistics,
             self.hive_partition_columns,
@@ -176,7 +176,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             columns: None,
             projection: None,
             parallel: Default::default(),
-            row_count: None,
+            row_index: None,
             low_memory: false,
             metadata: None,
             predicate: None,
@@ -207,7 +207,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             Some(metadata),
             self.predicate.as_deref(),
             self.parallel,
-            self.row_count,
+            self.row_index,
             self.use_statistics,
             self.hive_partition_columns.as_deref(),
         )
@@ -229,7 +229,7 @@ pub struct ParquetAsyncReader {
     rechunk: bool,
     projection: Option<Vec<usize>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
     schema: Option<ArrowSchemaRef>,
@@ -248,7 +248,7 @@ impl ParquetAsyncReader {
             rechunk: false,
             n_rows: None,
             projection: None,
-            row_count: None,
+            row_index: None,
             predicate: None,
             use_statistics: true,
             hive_partition_columns: None,
@@ -271,8 +271,8 @@ impl ParquetAsyncReader {
         self
     }
 
-    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
-        self.row_count = row_count;
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -326,7 +326,7 @@ impl ParquetAsyncReader {
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
             self.predicate.clone(),
-            self.row_count,
+            self.row_index,
             chunk_size,
             self.use_statistics,
             self.hive_partition_columns,
@@ -341,7 +341,7 @@ impl ParquetAsyncReader {
         let rechunk = self.rechunk;
         let metadata = self.get_metadata().await?.clone();
         let reader_schema = self.schema().await?;
-        let row_count = self.row_count.clone();
+        let row_count = self.row_index.clone();
         let hive_partition_columns = self.hive_partition_columns.clone();
         let projection = self.projection.clone();
 

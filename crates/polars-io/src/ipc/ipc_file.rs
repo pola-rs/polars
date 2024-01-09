@@ -71,7 +71,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) n_rows: Option<usize>,
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
-    pub(super) row_count: Option<RowIndex>,
+    pub(super) row_index: Option<RowIndex>,
     memmap: bool,
     metadata: Option<read::FileMetadata>,
     schema: Option<ArrowSchemaRef>,
@@ -128,8 +128,8 @@ impl<R: MmapBytesReader> IpcReader<R> {
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
-        self.row_count = row_count;
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -173,7 +173,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
         let reader = read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
 
-        finish_reader(reader, rechunk, None, predicate, &schema, self.row_count)
+        finish_reader(reader, rechunk, None, predicate, &schema, self.row_index)
     }
 }
 
@@ -194,7 +194,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             n_rows: None,
             columns: None,
             projection: None,
-            row_count: None,
+            row_index: None,
             memmap: true,
             metadata: None,
             schema: None,
@@ -230,6 +230,6 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         let ipc_reader =
             read::FileReader::new(self.reader, metadata.clone(), self.projection, self.n_rows);
-        finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_count)
+        finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_index)
     }
 }

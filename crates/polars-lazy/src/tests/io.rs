@@ -201,7 +201,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             n_rows: None,
             cache: true,
             rechunk: false,
-            row_count: None,
+            row_index: None,
             memmap: true,
         },
     )?
@@ -372,7 +372,7 @@ fn test_row_count_on_files() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
-            .with_row_count(Some(RowIndex {
+            .with_row_index(Some(RowIndex {
                 name: "index".into(),
                 offset,
             }))

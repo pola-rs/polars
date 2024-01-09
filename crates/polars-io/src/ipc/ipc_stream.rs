@@ -69,7 +69,7 @@ pub struct IpcStreamReader<R> {
     n_rows: Option<usize>,
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     metadata: Option<StreamMetadata>,
 }
 
@@ -96,8 +96,8 @@ impl<R: Read> IpcStreamReader<R> {
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
-        self.row_count = row_count;
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -146,7 +146,7 @@ where
             n_rows: None,
             columns: None,
             projection: None,
-            row_count: None,
+            row_index: None,
             metadata: None,
         }
     }
@@ -177,7 +177,7 @@ where
             metadata.schema.clone()
         };
 
-        let include_row_count = self.row_count.is_some();
+        let include_row_count = self.row_index.is_some();
         let ipc_reader =
             read::StreamReader::new(&mut self.reader, metadata.clone(), sorted_projection);
         finish_reader(
@@ -186,7 +186,7 @@ where
             self.n_rows,
             None,
             &schema,
-            self.row_count,
+            self.row_index,
         )
         .map(|df| fix_column_order(df, self.projection, include_row_count))
     }

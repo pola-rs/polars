@@ -14,7 +14,7 @@ pub struct LazyJsonLineReader {
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
     pub(crate) schema: Option<SchemaRef>,
-    pub(crate) row_count: Option<RowIndex>,
+    pub(crate) row_index: Option<RowIndex>,
     pub(crate) infer_schema_length: Option<usize>,
     pub(crate) n_rows: Option<usize>,
 }
@@ -32,15 +32,15 @@ impl LazyJsonLineReader {
             low_memory: false,
             rechunk: false,
             schema: None,
-            row_count: None,
+            row_index: None,
             infer_schema_length: Some(100),
             n_rows: None,
         }
     }
     /// Add a `row_count` column.
     #[must_use]
-    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
-        self.row_count = row_count;
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
@@ -86,7 +86,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             name: "JSON SCAN",
             infer_schema_length: self.infer_schema_length,
             n_rows: self.n_rows,
-            row_count: self.row_count.clone(),
+            row_count: self.row_index.clone(),
             schema: self.schema.clone(),
             ..ScanArgsAnonymous::default()
         };
@@ -131,6 +131,6 @@ impl LazyFileListReader for LazyJsonLineReader {
 
     /// Add a `row_count` column.
     fn row_count(&self) -> Option<&RowIndex> {
-        self.row_count.as_ref()
+        self.row_index.as_ref()
     }
 }

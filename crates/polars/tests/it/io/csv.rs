@@ -948,9 +948,9 @@ foo,bar
 }
 
 #[test]
-fn test_with_row_count() -> PolarsResult<()> {
+fn test_with_row_index() -> PolarsResult<()> {
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowIndex {
+        .with_row_index(Some(RowIndex {
             name: "rc".into(),
             offset: 0,
         }))
@@ -961,7 +961,7 @@ fn test_with_row_count() -> PolarsResult<()> {
         (0 as IdxSize..27).collect::<Vec<_>>()
     );
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowIndex {
+        .with_row_index(Some(RowIndex {
             name: "rc_2".into(),
             offset: 10,
         }))

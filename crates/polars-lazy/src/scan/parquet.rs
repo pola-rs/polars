@@ -13,7 +13,7 @@ pub struct ScanArgsParquet {
     pub cache: bool,
     pub parallel: ParallelStrategy,
     pub rechunk: bool,
-    pub row_count: Option<RowIndex>,
+    pub row_index: Option<RowIndex>,
     pub low_memory: bool,
     pub cloud_options: Option<CloudOptions>,
     pub use_statistics: bool,
@@ -27,7 +27,7 @@ impl Default for ScanArgsParquet {
             cache: true,
             parallel: Default::default(),
             rechunk: false,
-            row_count: None,
+            row_index: None,
             low_memory: false,
             cloud_options: None,
             use_statistics: true,
@@ -66,7 +66,7 @@ impl LazyFileListReader for LazyParquetReader {
     }
 
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
-        let row_count = self.args.row_count;
+        let row_count = self.args.row_index;
 
         let paths = if self.paths.is_empty() {
             Arc::new([self.path]) as Arc<[PathBuf]>
@@ -133,7 +133,7 @@ impl LazyFileListReader for LazyParquetReader {
     }
 
     fn row_count(&self) -> Option<&RowIndex> {
-        self.args.row_count.as_ref()
+        self.args.row_index.as_ref()
     }
 }
 

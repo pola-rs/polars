@@ -130,7 +130,7 @@ impl ParquetExec {
 
                             reader
                                 .with_n_rows(remaining_rows_to_read)
-                                .with_row_count(row_count)
+                                .with_row_index(row_count)
                                 .with_predicate(predicate.clone())
                                 .with_projection(projection.clone())
                                 .finish()
@@ -284,7 +284,7 @@ impl ParquetExec {
 
                         reader
                             .with_n_rows(remaining_rows_to_read)
-                            .with_row_count(row_count)
+                            .with_row_index(row_count)
                             .with_projection(projection)
                             .use_statistics(use_statistics)
                             .with_predicate(predicate)

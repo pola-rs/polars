@@ -234,7 +234,7 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         let mut df = DataFrame::new_no_checks(columns);
         if let Some(rc) = &row_count {
-            df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
+            df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
 
         materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
@@ -317,7 +317,7 @@ fn rg_to_dfs_par_over_rg(
             let mut df = DataFrame::new_no_checks(columns);
 
             if let Some(rc) = &row_count {
-                df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
+                df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
 
             materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);

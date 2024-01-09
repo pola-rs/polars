@@ -619,7 +619,7 @@ impl<'a> CoreReader<'a> {
                             );
                             let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_count {
-                                local_df.with_row_count_mut(&rc.name, Some(rc.offset));
+                                local_df.with_row_index_mut(&rc.name, Some(rc.offset));
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
@@ -688,7 +688,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_count {
-                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
@@ -739,7 +739,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_count {
-                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         (df, n_read)

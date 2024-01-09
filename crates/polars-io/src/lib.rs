@@ -107,7 +107,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
 
         if let Some(rc) = &row_count {
-            df.with_row_count_mut(&rc.name, Some(current_num_rows + rc.offset));
+            df.with_row_index_mut(&rc.name, Some(current_num_rows + rc.offset));
         }
 
         if let Some(predicate) = &predicate {

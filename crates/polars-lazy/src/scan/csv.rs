@@ -33,7 +33,7 @@ pub struct LazyCsvReader<'a> {
     rechunk: bool,
     skip_rows_after_header: usize,
     encoding: CsvEncoding,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     try_parse_dates: bool,
     raise_if_empty: bool,
 }
@@ -66,7 +66,7 @@ impl<'a> LazyCsvReader<'a> {
             rechunk: false,
             skip_rows_after_header: 0,
             encoding: CsvEncoding::Utf8,
-            row_count: None,
+            row_index: None,
             try_parse_dates: false,
             raise_if_empty: true,
             truncate_ragged_lines: false,
@@ -82,8 +82,8 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Add a `row_count` column.
     #[must_use]
-    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
-        self.row_count = row_count;
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -299,7 +299,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.rechunk,
             self.skip_rows_after_header,
             self.encoding,
-            self.row_count,
+            self.row_index,
             self.try_parse_dates,
             self.raise_if_empty,
             self.truncate_ragged_lines,
@@ -347,7 +347,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
 
     /// Add a `row_count` column.
     fn row_count(&self) -> Option<&RowIndex> {
-        self.row_count.as_ref()
+        self.row_index.as_ref()
     }
 
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {

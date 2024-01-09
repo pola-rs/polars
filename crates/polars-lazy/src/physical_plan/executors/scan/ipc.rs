@@ -22,7 +22,7 @@ impl IpcExec {
         );
         IpcReader::new(file)
             .with_n_rows(self.file_options.n_rows)
-            .with_row_count(std::mem::take(&mut self.file_options.row_count))
+            .with_row_index(std::mem::take(&mut self.file_options.row_count))
             .set_rechunk(self.file_options.rechunk)
             .with_projection(projection)
             .memory_mapped(self.options.memmap)

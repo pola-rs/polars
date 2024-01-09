@@ -10,7 +10,7 @@ pub struct ScanArgsIpc {
     pub n_rows: Option<usize>,
     pub cache: bool,
     pub rechunk: bool,
-    pub row_count: Option<RowIndex>,
+    pub row_index: Option<RowIndex>,
     pub memmap: bool,
 }
 
@@ -20,7 +20,7 @@ impl Default for ScanArgsIpc {
             n_rows: None,
             cache: true,
             rechunk: false,
-            row_count: None,
+            row_index: None,
             memmap: true,
         }
     }
@@ -56,7 +56,7 @@ impl LazyFileListReader for LazyIpcReader {
             options,
             args.n_rows,
             args.cache,
-            args.row_count.clone(),
+            args.row_index.clone(),
             args.rechunk,
         )?
         .build()
@@ -64,7 +64,7 @@ impl LazyFileListReader for LazyIpcReader {
         lf.opt_state.file_caching = true;
 
         // it is a bit hacky, but this row_count function updates the schema
-        if let Some(row_count) = args.row_count {
+        if let Some(row_count) = args.row_index {
             lf = lf.with_row_index(&row_count.name, Some(row_count.offset))
         }
 
@@ -103,7 +103,7 @@ impl LazyFileListReader for LazyIpcReader {
     }
 
     fn row_count(&self) -> Option<&RowIndex> {
-        self.args.row_count.as_ref()
+        self.args.row_index.as_ref()
     }
 }
 

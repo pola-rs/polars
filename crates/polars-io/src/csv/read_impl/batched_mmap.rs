@@ -256,7 +256,7 @@ impl<'a> BatchedCsvReaderMmap<'a> {
 
                     update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_count {
-                        df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        df.with_row_index_mut(&rc.name, Some(rc.offset));
                     }
                     Ok(df)
                 })
