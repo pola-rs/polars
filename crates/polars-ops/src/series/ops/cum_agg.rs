@@ -232,9 +232,10 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
 
     let ca = s.is_not_null();
     let iter = ca.into_no_null_iter();
-    let out: NoNull<IdxCa> = match reverse {
-        false => iter.map(f).collect(),
-        true => iter.rev().map(f).collect_reversed(),
+    let out: NoNull<IdxCa> = if reverse {
+        iter.rev().map(f).collect_reversed()
+    } else {
+        iter.map(f).collect()
     };
     Ok(out.into_inner().into())
 }
@@ -242,9 +243,10 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
 fn cum_count_no_nulls(name: &str, len: usize, reverse: bool) -> Series {
     let start = 1 as IdxSize;
     let end = len as IdxSize + 1;
-    let ca: NoNull<IdxCa> = match reverse {
-        false => (start..end).collect(),
-        true => (start..end).rev().collect(),
+    let ca: NoNull<IdxCa> = if reverse {
+        (start..end).rev().collect()
+    } else {
+        (start..end).collect()
     };
     let mut ca = ca.into_inner();
     ca.rename(name);
