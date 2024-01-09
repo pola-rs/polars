@@ -1225,12 +1225,23 @@ impl LazyFrame {
 
         let left_on = left_on.as_ref().to_vec();
         let right_on = right_on.as_ref().to_vec();
-        self.join_builder()
+
+        let mut builder = self
+            .join_builder()
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
             .how(args.how)
-            .finish()
+            .validate(args.validation)
+            .join_nulls(args.join_nulls);
+
+        if let Some(suffix) = args.suffix {
+            builder = builder.suffix(suffix);
+        }
+
+        // Note: args.slice is currently ignored.
+
+        builder.finish()
     }
 
     /// Consume `self` and return a [`JoinBuilder`] to customize a join on this LazyFrame.
