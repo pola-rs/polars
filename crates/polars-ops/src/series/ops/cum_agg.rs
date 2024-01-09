@@ -222,19 +222,23 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
         return Ok(out);
     }
 
-    let mut count = 0 as IdxSize;
-    let f = |v: bool| {
-        if v {
-            count += 1
-        }
-        count
-    };
-
     let ca = s.is_not_null();
     let out: IdxCa = if reverse {
-        ca.reverse().apply_values_generic(f).reverse()
+        let mut count = (s.len() - s.null_count()) as IdxSize;
+        let mut decr: IdxSize = 0;
+        ca.apply_values_generic(|v: bool| {
+            count -= decr;
+            decr = v as IdxSize;
+            count
+        })
     } else {
-        ca.apply_values_generic(f)
+        let mut count = 0 as IdxSize;
+        ca.apply_values_generic(|v: bool| {
+            if v {
+                count += 1;
+            }
+            count
+        })
     };
     Ok(out.into())
 }
