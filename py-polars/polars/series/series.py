@@ -4522,23 +4522,8 @@ class Series:
 
     def scatter(
         self,
-        indices: Series | np.ndarray[Any, Any] | Sequence[int] | int,
-        values: (
-            int
-            | float
-            | str
-            | bool
-            | date
-            | datetime
-            | Sequence[int]
-            | Sequence[float]
-            | Sequence[bool]
-            | Sequence[str]
-            | Sequence[date]
-            | Sequence[datetime]
-            | Series
-            | None
-        ),
+        indices: Series | Iterable[int] | int | np.ndarray[Any, Any],
+        values: Series | Iterable[PythonLiteral] | PythonLiteral | None,
     ) -> Series:
         """
         Set values at the index locations.
@@ -4584,20 +4569,17 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        if isinstance(indices, int):
-            indices = [indices]
-        if len(indices) == 0:
+        if not isinstance(indices, Iterable):
+            indices = [indices]  # type: ignore[list-item]
+        indices = Series(values=indices)
+        if indices.is_empty():
             return self
 
-        indices = Series("", indices)
-        if isinstance(values, (int, float, bool, str)) or (values is None):
-            values = Series("", [values])
+        if not isinstance(values, Series):
+            if not isinstance(values, Iterable) or isinstance(values, str):
+                values = [values]
+            values = Series(values=values)
 
-            # if we need to set more than a single value, we extend it
-            if len(indices) > 0:
-                values = values.extend_constant(values[0], len(indices) - 1)
-        elif not isinstance(values, Series):
-            values = Series("", values)
         self._s.scatter(indices._s, values._s)
         return self
 

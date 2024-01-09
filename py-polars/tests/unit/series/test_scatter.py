@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 import pytest
 
@@ -56,4 +58,11 @@ def test_set_at_idx_deprecated() -> None:
     with pytest.deprecated_call():
         result = s.set_at_idx(1, 10)
     expected = pl.Series("s", [1, 10, 3])
+    assert_series_equal(result, expected)
+
+
+def test_scatter_datetime() -> None:
+    s = pl.Series("dt", [None, datetime(2024, 1, 31)])
+    result = s.scatter(0, datetime(2022, 2, 2))
+    expected = pl.Series("dt", [datetime(2022, 2, 2), datetime(2024, 1, 31)])
     assert_series_equal(result, expected)
