@@ -95,7 +95,7 @@ impl<R: Read> IpcStreamReader<R> {
         self
     }
 
-    /// Add a `row_count` column.
+    /// Add a row index column.
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
         self.row_index = row_index;
         self
@@ -177,7 +177,7 @@ where
             metadata.schema.clone()
         };
 
-        let include_row_count = self.row_index.is_some();
+        let include_row_index = self.row_index.is_some();
         let ipc_reader =
             read::StreamReader::new(&mut self.reader, metadata.clone(), sorted_projection);
         finish_reader(
@@ -188,13 +188,17 @@ where
             &schema,
             self.row_index,
         )
-        .map(|df| fix_column_order(df, self.projection, include_row_count))
+        .map(|df| fix_column_order(df, self.projection, include_row_index))
     }
 }
 
-fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bool) -> DataFrame {
+fn fix_column_order(
+    df: DataFrame,
+    projection: Option<Vec<usize>>,
+    include_row_index: bool,
+) -> DataFrame {
     if let Some(proj) = projection {
-        let offset = usize::from(row_count);
+        let offset = usize::from(include_row_index);
         let mut args = (0..proj.len()).zip(proj).collect::<Vec<_>>();
         // first el of tuple is argument index
         // second el is the projection index
@@ -202,7 +206,7 @@ fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bo
         let cols = df.get_columns();
 
         let iter = args.iter().map(|tpl| cols[tpl.0 + offset].clone());
-        let cols = if row_count {
+        let cols = if include_row_index {
             let mut new_cols = vec![df.get_columns()[0].clone()];
             new_cols.extend(iter);
             new_cols

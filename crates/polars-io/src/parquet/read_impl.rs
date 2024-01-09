@@ -121,7 +121,7 @@ fn rg_to_dfs(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
     use_statistics: bool,
@@ -137,7 +137,7 @@ fn rg_to_dfs(
             file_metadata,
             schema,
             predicate,
-            row_count,
+            row_index,
             parallel,
             projection,
             use_statistics,
@@ -153,7 +153,7 @@ fn rg_to_dfs(
             file_metadata,
             schema,
             predicate,
-            row_count,
+            row_index,
             projection,
             use_statistics,
             hive_partition_columns,
@@ -172,7 +172,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
     use_statistics: bool,
@@ -233,7 +233,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         *remaining_rows -= projection_height;
 
         let mut df = DataFrame::new_no_checks(columns);
-        if let Some(rc) = &row_count {
+        if let Some(rc) = &row_index {
             df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
 
@@ -261,7 +261,7 @@ fn rg_to_dfs_par_over_rg(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     projection: &[usize],
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
@@ -316,7 +316,7 @@ fn rg_to_dfs_par_over_rg(
 
             let mut df = DataFrame::new_no_checks(columns);
 
-            if let Some(rc) = &row_count {
+            if let Some(rc) = &row_index {
                 df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
 
@@ -338,7 +338,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     metadata: Option<FileMetaDataRef>,
     predicate: Option<&dyn PhysicalIoExpr>,
     mut parallel: ParallelStrategy,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
@@ -348,7 +348,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
-            row_count.as_ref(),
+            row_index.as_ref(),
         ));
     }
 
@@ -403,7 +403,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         &file_metadata,
         reader_schema,
         predicate,
-        row_count.clone(),
+        row_index.clone(),
         parallel,
         &materialized_projection,
         use_statistics,
@@ -415,7 +415,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
-            row_count.as_ref(),
+            row_index.as_ref(),
         ))
     } else {
         accumulate_dataframes_vertical(dfs)
@@ -502,7 +502,7 @@ pub struct BatchedParquetReader {
     schema: ArrowSchemaRef,
     metadata: FileMetaDataRef,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    row_count: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     rows_read: IdxSize,
     row_group_offset: usize,
     n_row_groups: usize,
@@ -524,7 +524,7 @@ impl BatchedParquetReader {
         limit: usize,
         projection: Option<Vec<usize>>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        row_count: Option<RowIndex>,
+        row_index: Option<RowIndex>,
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
@@ -545,7 +545,7 @@ impl BatchedParquetReader {
             projection,
             schema,
             metadata,
-            row_count,
+            row_index,
             rows_read: 0,
             predicate,
             row_group_offset: 0,
@@ -606,7 +606,7 @@ impl BatchedParquetReader {
                 &self.metadata,
                 &self.schema,
                 self.predicate.as_deref(),
-                self.row_count.clone(),
+                self.row_index.clone(),
                 self.parallel,
                 &self.projection,
                 self.use_statistics,
@@ -622,7 +622,7 @@ impl BatchedParquetReader {
                     Some(&self.projection),
                     self.schema.as_ref(),
                     self.hive_partition_columns.as_deref(),
-                    self.row_count.as_ref(),
+                    self.row_index.as_ref(),
                 )]));
             }
 
@@ -649,7 +649,7 @@ impl BatchedParquetReader {
                     Some(self.projection.as_slice()),
                     self.schema(),
                     self.hive_partition_columns.as_deref(),
-                    self.row_count.as_ref(),
+                    self.row_index.as_ref(),
                 )]))
             } else {
                 Ok(None)

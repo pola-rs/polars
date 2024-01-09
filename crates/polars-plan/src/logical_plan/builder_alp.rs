@@ -215,7 +215,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
     pub fn row_count(self, name: Arc<str>, offset: Option<IdxSize>) -> Self {
         let mut schema = self.schema().into_owned();
         let schema_mut = Arc::make_mut(&mut schema);
-        row_count_schema(schema_mut, name.as_ref());
+        row_index_schema(schema_mut, name.as_ref());
 
         let lp = ALogicalPlan::MapFunction {
             input: self.root,

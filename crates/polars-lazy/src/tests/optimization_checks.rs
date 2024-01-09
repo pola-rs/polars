@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(feature = "parquet")]
-pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
+pub(crate) fn row_index_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
@@ -11,7 +11,7 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
             lp,
             Scan {
                 file_options: FileScanOptions {
-                    row_count: Some(_),
+                    row_index: Some(_),
                     ..
                 },
                 ..

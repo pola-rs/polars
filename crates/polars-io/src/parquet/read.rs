@@ -90,7 +90,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    /// Add a `row_count` column.
+    /// Add a row index column.
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
         self.row_index = row_index;
         self
@@ -341,7 +341,7 @@ impl ParquetAsyncReader {
         let rechunk = self.rechunk;
         let metadata = self.get_metadata().await?.clone();
         let reader_schema = self.schema().await?;
-        let row_count = self.row_index.clone();
+        let row_index = self.row_index.clone();
         let hive_partition_columns = self.hive_partition_columns.clone();
         let projection = self.projection.clone();
 
@@ -359,7 +359,7 @@ impl ParquetAsyncReader {
                 projection.as_deref(),
                 reader_schema.as_ref(),
                 hive_partition_columns.as_deref(),
-                row_count.as_ref(),
+                row_index.as_ref(),
             ));
         }
         let mut df = accumulate_dataframes_vertical_unchecked(chunks);

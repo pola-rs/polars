@@ -308,11 +308,11 @@ impl<'a> PredicatePushDown<'a> {
                         // Disallow row-count pushdown of other scans as they may
                         // not update the row counts properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_count) = options.row_count {
-                            let row_count_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
-                                name.as_ref() == row_count.name
+                        if let Some(ref row_index) = options.row_index {
+                            let row_index_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
+                                name.as_ref() == row_index.name
                             });
-                            row_count_predicates
+                            row_index_predicates
                         } else {
                             vec![]
                         }

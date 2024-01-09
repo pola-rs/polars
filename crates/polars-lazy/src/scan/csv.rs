@@ -80,7 +80,7 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Add a `row_count` column.
+    /// Add a row index column.
     #[must_use]
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
         self.row_index = row_index;
@@ -345,8 +345,8 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         self.n_rows
     }
 
-    /// Add a `row_count` column.
-    fn row_count(&self) -> Option<&RowIndex> {
+    /// Return the row index settings.
+    fn row_index(&self) -> Option<&RowIndex> {
         self.row_index.as_ref()
     }
 

@@ -106,7 +106,7 @@ pub struct FileScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
-    pub row_count: Option<RowIndex>,
+    pub row_index: Option<RowIndex>,
     pub rechunk: bool,
     pub file_counter: FileCount,
     pub hive_partitioning: bool,

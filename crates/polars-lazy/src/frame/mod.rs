@@ -1643,14 +1643,14 @@ impl LazyFrame {
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
     pub fn with_row_index(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
-        let add_row_count_in_map = match &mut self.logical_plan {
+        let add_row_index_in_map = match &mut self.logical_plan {
             LogicalPlan::Scan {
                 file_options: options,
                 file_info,
                 scan_type,
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
-                options.row_count = Some(RowIndex {
+                options.row_index = Some(RowIndex {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
@@ -1665,7 +1665,7 @@ impl LazyFrame {
             _ => true,
         };
 
-        if add_row_count_in_map {
+        if add_row_index_in_map {
             let schema = fallible!(self.schema(), &self);
             let schema = schema
                 .new_inserting_at_index(0, name.into(), IDX_DTYPE)

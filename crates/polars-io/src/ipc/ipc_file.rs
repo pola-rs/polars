@@ -127,7 +127,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         self
     }
 
-    /// Add a `row_count` column.
+    /// Add a row index column.
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
         self.row_index = row_index;
         self

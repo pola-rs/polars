@@ -37,7 +37,7 @@ impl LazyJsonLineReader {
             n_rows: None,
         }
     }
-    /// Add a `row_count` column.
+    /// Add a row index column.
     #[must_use]
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
         self.row_index = row_index;
@@ -86,7 +86,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             name: "JSON SCAN",
             infer_schema_length: self.infer_schema_length,
             n_rows: self.n_rows,
-            row_count: self.row_index.clone(),
+            row_index: self.row_index.clone(),
             schema: self.schema.clone(),
             ..ScanArgsAnonymous::default()
         };
@@ -129,8 +129,8 @@ impl LazyFileListReader for LazyJsonLineReader {
         self.n_rows
     }
 
-    /// Add a `row_count` column.
-    fn row_count(&self) -> Option<&RowIndex> {
+    /// Add a row index column.
+    fn row_index(&self) -> Option<&RowIndex> {
         self.row_index.as_ref()
     }
 }

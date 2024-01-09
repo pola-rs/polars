@@ -41,7 +41,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
-    row_count: Option<&RowIndex>,
+    row_index: Option<&RowIndex>,
 ) -> Option<Arc<Vec<String>>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
@@ -50,7 +50,7 @@ fn get_scan_columns(
             for name in aexpr_to_leaf_names(*expr, expr_arena) {
                 // we shouldn't project the row-count column, as that is generated
                 // in the scan
-                let push = match row_count {
+                let push = match row_index {
                     Some(rc) if name.as_ref() != rc.name.as_str() => true,
                     None => true,
                     _ => false,
@@ -396,7 +396,7 @@ impl ProjectionPushDown {
                     file_options.with_columns = get_scan_columns(
                         &mut acc_projections,
                         expr_arena,
-                        file_options.row_count.as_ref(),
+                        file_options.row_index.as_ref(),
                     );
 
                     output_schema = if file_options.with_columns.is_none() {

@@ -9,7 +9,7 @@ pub struct ScanArgsAnonymous {
     pub schema: Option<SchemaRef>,
     pub skip_rows: Option<usize>,
     pub n_rows: Option<usize>,
-    pub row_count: Option<RowIndex>,
+    pub row_index: Option<RowIndex>,
     pub name: &'static str,
 }
 
@@ -20,7 +20,7 @@ impl Default for ScanArgsAnonymous {
             skip_rows: None,
             n_rows: None,
             schema: None,
-            row_count: None,
+            row_index: None,
             name: "ANONYMOUS SCAN",
         }
     }
@@ -41,7 +41,7 @@ impl LazyFrame {
         .build()
         .into();
 
-        if let Some(rc) = args.row_count {
+        if let Some(rc) = args.row_index {
             lf = lf.with_row_index(&rc.name, Some(rc.offset))
         };
 
