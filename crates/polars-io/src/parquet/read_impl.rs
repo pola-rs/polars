@@ -23,7 +23,7 @@ use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, FileMetaDataRef, ParallelStrategy};
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
-use crate::RowCount;
+use crate::RowIndex;
 
 fn enlarge_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
     match data_type {
@@ -121,7 +121,7 @@ fn rg_to_dfs(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
     use_statistics: bool,
@@ -172,7 +172,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
     use_statistics: bool,
@@ -261,7 +261,7 @@ fn rg_to_dfs_par_over_rg(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     projection: &[usize],
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
@@ -338,7 +338,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     metadata: Option<FileMetaDataRef>,
     predicate: Option<&dyn PhysicalIoExpr>,
     mut parallel: ParallelStrategy,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
@@ -502,7 +502,7 @@ pub struct BatchedParquetReader {
     schema: ArrowSchemaRef,
     metadata: FileMetaDataRef,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     rows_read: IdxSize,
     row_group_offset: usize,
     n_row_groups: usize,
@@ -524,7 +524,7 @@ impl BatchedParquetReader {
         limit: usize,
         projection: Option<Vec<usize>>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        row_count: Option<RowCount>,
+        row_count: Option<RowIndex>,
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,

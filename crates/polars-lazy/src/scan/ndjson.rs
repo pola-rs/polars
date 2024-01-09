@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use super::*;
 use crate::prelude::{LazyFrame, ScanArgsAnonymous};
@@ -14,7 +14,7 @@ pub struct LazyJsonLineReader {
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
     pub(crate) schema: Option<SchemaRef>,
-    pub(crate) row_count: Option<RowCount>,
+    pub(crate) row_count: Option<RowIndex>,
     pub(crate) infer_schema_length: Option<usize>,
     pub(crate) n_rows: Option<usize>,
 }
@@ -39,7 +39,7 @@ impl LazyJsonLineReader {
     }
     /// Add a `row_count` column.
     #[must_use]
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
         self.row_count = row_count;
         self
     }
@@ -130,7 +130,7 @@ impl LazyFileListReader for LazyJsonLineReader {
     }
 
     /// Add a `row_count` column.
-    fn row_count(&self) -> Option<&RowCount> {
+    fn row_count(&self) -> Option<&RowIndex> {
         self.row_count.as_ref()
     }
 }

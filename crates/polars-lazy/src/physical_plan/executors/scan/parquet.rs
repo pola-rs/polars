@@ -5,7 +5,7 @@ use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::FileMetaData;
-use polars_io::{is_cloud_url, RowCount};
+use polars_io::{is_cloud_url, RowIndex};
 
 use super::*;
 
@@ -123,7 +123,7 @@ impl ParquetExec {
                                 } else {
                                     Some(remaining_rows_to_read)
                                 };
-                            let row_count = base_row_count.as_ref().map(|rc| RowCount {
+                            let row_count = base_row_count.as_ref().map(|rc| RowIndex {
                                 name: rc.name.clone(),
                                 offset: rc.offset + *cumulative_read as IdxSize,
                             });
@@ -262,7 +262,7 @@ impl ParquetExec {
                         } else {
                             Some(remaining_rows_to_read)
                         };
-                        let row_count = base_row_count_ref.as_ref().map(|rc| RowCount {
+                        let row_count = base_row_count_ref.as_ref().map(|rc| RowIndex {
                             name: rc.name.clone(),
                             offset: rc.offset + *cumulative_read as IdxSize,
                         });

@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use polars::io::RowCount;
+use polars::io::RowIndex;
 
 use super::*;
 
@@ -950,7 +950,7 @@ foo,bar
 #[test]
 fn test_with_row_count() -> PolarsResult<()> {
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_count(Some(RowIndex {
             name: "rc".into(),
             offset: 0,
         }))
@@ -961,7 +961,7 @@ fn test_with_row_count() -> PolarsResult<()> {
         (0 as IdxSize..27).collect::<Vec<_>>()
     );
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_count(Some(RowIndex {
             name: "rc_2".into(),
             offset: 10,
         }))

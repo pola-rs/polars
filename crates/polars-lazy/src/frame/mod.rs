@@ -33,7 +33,7 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 #[cfg(any(
@@ -1650,7 +1650,7 @@ impl LazyFrame {
                 scan_type,
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
-                options.row_count = Some(RowCount {
+                options.row_count = Some(RowIndex {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });

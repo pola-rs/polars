@@ -26,7 +26,7 @@ use crate::csv::{CsvEncoding, NullValues};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
-use crate::RowCount;
+use crate::RowIndex;
 
 pub(crate) fn cast_columns(
     df: &mut DataFrame,
@@ -116,7 +116,7 @@ pub(crate) struct CoreReader<'a> {
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     truncate_ragged_lines: bool,
 }
 
@@ -206,7 +206,7 @@ impl<'a> CoreReader<'a> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
-        row_count: Option<RowCount>,
+        row_count: Option<RowIndex>,
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,

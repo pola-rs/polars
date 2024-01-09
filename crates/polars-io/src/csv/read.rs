@@ -151,7 +151,7 @@ where
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     try_parse_dates: bool,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
     raise_if_empty: bool,
@@ -174,7 +174,7 @@ where
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
+    pub fn with_row_count(mut self, rc: Option<RowIndex>) -> Self {
         self.row_count = rc;
         self
     }

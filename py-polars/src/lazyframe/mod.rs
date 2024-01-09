@@ -7,7 +7,7 @@ use std::path::PathBuf;
 pub use exitable::PyInProcessQuery;
 #[cfg(feature = "csv")]
 use polars::io::csv::SerializeOptions;
-use polars::io::RowCount;
+use polars::io::RowIndex;
 #[cfg(feature = "csv")]
 use polars::lazy::frame::LazyCsvReader;
 #[cfg(feature = "json")]
@@ -126,7 +126,7 @@ impl PyLazyFrame {
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
 
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
@@ -187,7 +187,7 @@ impl PyLazyFrame {
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let separator = separator.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
@@ -292,7 +292,7 @@ impl PyLazyFrame {
                         options
                     });
         }
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let args = ScanArgsParquet {
             n_rows,
             cache,
@@ -326,7 +326,7 @@ impl PyLazyFrame {
         row_index: Option<(String, IdxSize)>,
         memory_map: bool,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let args = ScanArgsIpc {
             n_rows,
             cache,

@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::prelude::*;
 
@@ -9,7 +9,7 @@ pub struct ScanArgsAnonymous {
     pub schema: Option<SchemaRef>,
     pub skip_rows: Option<usize>,
     pub n_rows: Option<usize>,
-    pub row_count: Option<RowCount>,
+    pub row_count: Option<RowIndex>,
     pub name: &'static str,
 }
 

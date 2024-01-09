@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use polars::io::mmap::MmapBytesReader;
-use polars::io::RowCount;
+use polars::io::RowIndex;
 use polars::prelude::*;
 use polars_rs::prelude::read_impl::OwnedBatchedCsvReader;
 use pyo3::prelude::*;
@@ -63,7 +63,7 @@ impl PyBatchedCsv {
     ) -> PyResult<PyBatchedCsv> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let quote_char = if let Some(s) = quote_char {
             if s.is_empty() {
                 None

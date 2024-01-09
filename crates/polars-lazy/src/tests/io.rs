@@ -1,4 +1,4 @@
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use super::*;
 
@@ -372,7 +372,7 @@ fn test_row_count_on_files() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
-            .with_row_count(Some(RowCount {
+            .with_row_count(Some(RowIndex {
                 name: "index".into(),
                 offset,
             }))

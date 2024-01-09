@@ -11,7 +11,7 @@ mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
 
@@ -41,7 +41,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
-    row_count: Option<&RowCount>,
+    row_count: Option<&RowIndex>,
 ) -> Option<Arc<Vec<String>>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {

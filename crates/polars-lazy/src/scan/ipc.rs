@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::prelude::*;
 
@@ -10,7 +10,7 @@ pub struct ScanArgsIpc {
     pub n_rows: Option<usize>,
     pub cache: bool,
     pub rechunk: bool,
-    pub row_count: Option<RowCount>,
+    pub row_count: Option<RowIndex>,
     pub memmap: bool,
 }
 
@@ -102,7 +102,7 @@ impl LazyFileListReader for LazyIpcReader {
         self.args.n_rows
     }
 
-    fn row_count(&self) -> Option<&RowCount> {
+    fn row_count(&self) -> Option<&RowIndex> {
         self.args.row_count.as_ref()
     }
 }

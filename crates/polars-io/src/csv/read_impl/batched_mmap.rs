@@ -181,7 +181,7 @@ pub struct BatchedCsvReaderMmap<'a> {
     str_columns: StringColumns,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,

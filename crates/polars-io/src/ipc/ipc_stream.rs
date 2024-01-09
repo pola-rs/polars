@@ -69,7 +69,7 @@ pub struct IpcStreamReader<R> {
     n_rows: Option<usize>,
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     metadata: Option<StreamMetadata>,
 }
 
@@ -96,7 +96,7 @@ impl<R: Read> IpcStreamReader<R> {
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
         self.row_count = row_count;
         self
     }
@@ -242,7 +242,7 @@ pub struct IpcStreamWriter<W> {
 
 use polars_core::frame::ArrowChunk;
 
-use crate::RowCount;
+use crate::RowIndex;
 
 impl<W> IpcStreamWriter<W> {
     /// Set the compression used. Defaults to None.

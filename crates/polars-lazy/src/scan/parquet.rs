@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::ParallelStrategy;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::prelude::*;
 
@@ -13,7 +13,7 @@ pub struct ScanArgsParquet {
     pub cache: bool,
     pub parallel: ParallelStrategy,
     pub rechunk: bool,
-    pub row_count: Option<RowCount>,
+    pub row_count: Option<RowIndex>,
     pub low_memory: bool,
     pub cloud_options: Option<CloudOptions>,
     pub use_statistics: bool,
@@ -132,7 +132,7 @@ impl LazyFileListReader for LazyParquetReader {
         self.args.n_rows
     }
 
-    fn row_count(&self) -> Option<&RowCount> {
+    fn row_count(&self) -> Option<&RowIndex> {
         self.args.row_count.as_ref()
     }
 }

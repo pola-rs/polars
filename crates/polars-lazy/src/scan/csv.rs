@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_io::csv::utils::infer_file_schema;
 use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 use polars_io::utils::get_reader_bytes;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
@@ -33,7 +33,7 @@ pub struct LazyCsvReader<'a> {
     rechunk: bool,
     skip_rows_after_header: usize,
     encoding: CsvEncoding,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     try_parse_dates: bool,
     raise_if_empty: bool,
 }
@@ -82,7 +82,7 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Add a `row_count` column.
     #[must_use]
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
         self.row_count = row_count;
         self
     }
@@ -346,7 +346,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
     }
 
     /// Add a `row_count` column.
-    fn row_count(&self) -> Option<&RowCount> {
+    fn row_count(&self) -> Option<&RowIndex> {
         self.row_count.as_ref()
     }
 

@@ -94,7 +94,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     n_rows: Option<usize>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     arrow_schema: &ArrowSchema,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
 ) -> PolarsResult<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
 

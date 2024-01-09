@@ -10,7 +10,7 @@ use polars::io::avro::AvroCompression;
 #[cfg(feature = "ipc")]
 use polars::io::ipc::IpcCompression;
 use polars::io::mmap::ReaderBytes;
-use polars::io::RowCount;
+use polars::io::RowIndex;
 use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
@@ -210,7 +210,7 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
@@ -281,7 +281,7 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = f.as_buffer();
@@ -321,7 +321,7 @@ impl PyDataFrame {
         row_index: Option<(String, IdxSize)>,
         memory_map: bool,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let df = IpcReader::new(mmap_bytes_r)
             .with_projection(projection)
@@ -345,7 +345,7 @@ impl PyDataFrame {
         row_index: Option<(String, IdxSize)>,
         rechunk: bool,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let df = IpcStreamReader::new(mmap_bytes_r)
             .with_projection(projection)

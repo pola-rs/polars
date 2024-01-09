@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::{is_cloud_url, RowCount};
+use polars_io::{is_cloud_url, RowIndex};
 
 use crate::prelude::*;
 
@@ -112,7 +112,7 @@ pub trait LazyFileListReader: Clone {
     fn n_rows(&self) -> Option<usize>;
 
     /// Add a `row_count` column.
-    fn row_count(&self) -> Option<&RowCount>;
+    fn row_count(&self) -> Option<&RowIndex>;
 
     /// [CloudOptions] used to list files.
     fn cloud_options(&self) -> Option<&CloudOptions> {

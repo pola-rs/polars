@@ -19,7 +19,7 @@ use polars_io::pl_async::get_runtime;
     feature = "csv",
     feature = "ipc"
 ))]
-use polars_io::RowCount;
+use polars_io::RowIndex;
 #[cfg(feature = "csv")]
 use polars_io::{
     csv::utils::{infer_file_schema, is_compressed},
@@ -86,7 +86,7 @@ macro_rules! try_delayed {
 }
 
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
-fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
+fn prepare_schema(mut schema: Schema, row_count: Option<&RowIndex>) -> SchemaRef {
     if let Some(rc) = row_count {
         let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
     }
@@ -141,7 +141,7 @@ impl LogicalPlanBuilder {
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::ParallelStrategy,
-        row_count: Option<RowCount>,
+        row_count: Option<RowIndex>,
         rechunk: bool,
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
@@ -235,7 +235,7 @@ impl LogicalPlanBuilder {
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
-        row_count: Option<RowCount>,
+        row_count: Option<RowIndex>,
         rechunk: bool,
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
@@ -294,7 +294,7 @@ impl LogicalPlanBuilder {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: CsvEncoding,
-        row_count: Option<RowCount>,
+        row_count: Option<RowIndex>,
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,

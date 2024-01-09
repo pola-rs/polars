@@ -21,7 +21,7 @@ use crate::parquet::async_impl::ParquetObjectStore;
 pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::RowCount;
+use crate::RowIndex;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -48,7 +48,7 @@ pub struct ParquetReader<R: Read + Seek> {
     projection: Option<Vec<usize>>,
     parallel: ParallelStrategy,
     schema: Option<ArrowSchemaRef>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     low_memory: bool,
     metadata: Option<Arc<FileMetaData>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -91,7 +91,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
         self.row_count = row_count;
         self
     }
@@ -229,7 +229,7 @@ pub struct ParquetAsyncReader {
     rechunk: bool,
     projection: Option<Vec<usize>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    row_count: Option<RowCount>,
+    row_count: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
     schema: Option<ArrowSchemaRef>,
@@ -271,7 +271,7 @@ impl ParquetAsyncReader {
         self
     }
 
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
         self.row_count = row_count;
         self
     }

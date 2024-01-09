@@ -44,7 +44,7 @@ use super::{finish_reader, ArrowReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::RowCount;
+use crate::RowIndex;
 
 /// Read Arrows IPC format into a DataFrame
 ///
@@ -71,7 +71,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) n_rows: Option<usize>,
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
-    pub(super) row_count: Option<RowCount>,
+    pub(super) row_count: Option<RowIndex>,
     memmap: bool,
     metadata: Option<read::FileMetadata>,
     schema: Option<ArrowSchemaRef>,
@@ -128,7 +128,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+    pub fn with_row_count(mut self, row_count: Option<RowIndex>) -> Self {
         self.row_count = row_count;
         self
     }

@@ -37,7 +37,7 @@ pub fn materialize_empty_df(
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
-    row_count: Option<&RowCount>,
+    row_count: Option<&RowIndex>,
 ) -> DataFrame {
     let schema = if let Some(projection) = projection {
         Cow::Owned(apply_projection(reader_schema, projection))
