@@ -998,6 +998,50 @@ fn test_empty_string_cols() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_empty_col_names() -> PolarsResult<()> {
+    let csv = "a,b,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish()?;
+    assert_eq!(df_result.shape(), (1, 4));
+
+    let csv = "a,b\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish();
+    assert!(df_result.is_err());
+    Ok(())
+}
+
+#[test]
 fn test_trailing_empty_string_cols() -> PolarsResult<()> {
     let csv = "colx\nabc\nxyz\n\"\"";
     let file = Cursor::new(csv);
