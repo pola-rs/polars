@@ -492,7 +492,7 @@ class StringNameSpace:
         """
         Return the index of the first substring in Series strings matching a pattern.
 
-        If the pattern is not present, returns None.
+        If the pattern is not found, returns None.
 
         Parameters
         ----------

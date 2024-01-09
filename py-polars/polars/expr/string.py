@@ -1026,7 +1026,7 @@ class ExprStringNameSpace:
         """
         Return the index position of the first substring matching a pattern.
 
-        If the pattern is not present, returns None.
+        If the pattern is not found, returns None.
 
         Parameters
         ----------
