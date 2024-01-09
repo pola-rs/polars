@@ -146,10 +146,12 @@ mod test {
 
         let scale = 20;
         let val = "0.01";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
         assert_eq!(
-            deserialize_decimal(val.as_bytes(), precision, scale),
+            deserialize_decimal(val.as_bytes(), None, scale),
             Some(1000000000000000000)
         );
+
         let scale = 5;
         let val = "12ABC.34";
         assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
