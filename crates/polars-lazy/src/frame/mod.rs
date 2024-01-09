@@ -1671,7 +1671,7 @@ impl LazyFrame {
                 .new_inserting_at_index(0, name.into(), IDX_DTYPE)
                 .unwrap();
 
-            self.map_private(FunctionNode::RowCount {
+            self.map_private(FunctionNode::RowIndex {
                 name: Arc::from(name),
                 offset,
                 schema: Arc::new(schema),

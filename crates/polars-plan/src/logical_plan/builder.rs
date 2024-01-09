@@ -842,7 +842,7 @@ impl LogicalPlanBuilder {
 
         LogicalPlan::MapFunction {
             input: Box::new(self.0),
-            function: FunctionNode::RowCount {
+            function: FunctionNode::RowIndex {
                 name: Arc::from(name),
                 offset,
                 schema,

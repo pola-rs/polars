@@ -219,7 +219,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         let lp = ALogicalPlan::MapFunction {
             input: self.root,
-            function: FunctionNode::RowCount {
+            function: FunctionNode::RowIndex {
                 name,
                 offset,
                 schema,
