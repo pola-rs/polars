@@ -3203,7 +3203,7 @@ class Series:
         n
             Gather every *n*-th row.
         offset
-            Start the row count at this offset.
+            Start the row index at this offset.
 
         Examples
         --------

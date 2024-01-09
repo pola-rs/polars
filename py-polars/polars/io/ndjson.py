@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT
+from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -53,6 +54,8 @@ def read_ndjson(
     )
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ndjson(
     source: str | Path | list[str] | list[Path],
     *,
@@ -61,8 +64,8 @@ def scan_ndjson(
     n_rows: int | None = None,
     low_memory: bool = False,
     rechunk: bool = True,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     schema: SchemaDefinition | None = None,
 ) -> LazyFrame:
     """
@@ -85,11 +88,11 @@ def scan_ndjson(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
-    row_count_name
-        If not None, this will insert a row count column with give name into the
+    row_index_name
+        If not None, this will insert a row index column with give name into the
         DataFrame
-    row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+    row_index_offset
+        Offset to start the row index column (only use if the name is set)
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -109,6 +112,6 @@ def scan_ndjson(
         n_rows=n_rows,
         low_memory=low_memory,
         rechunk=rechunk,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
     )

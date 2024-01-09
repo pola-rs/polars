@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 @deprecate_renamed_parameter(
     old_name="comment_char", new_name="comment_prefix", version="0.19.14"
 )
@@ -47,8 +49,8 @@ def read_csv(
     use_pyarrow: bool = False,
     storage_options: dict[str, Any] | None = None,
     skip_rows_after_header: int = 0,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
@@ -154,11 +156,12 @@ def read_csv(
         e.g. host, port, username, password, etc.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
-    row_count_name
-        If not None, this will insert a row count column with the given name into
-        the DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set).
+    row_index_name
+        Insert a row index column with the given name into the DataFrame as the first
+        column. If set to `None` (default), no row index column is created.
+    row_index_offset
+        Start the row index at this offset. Cannot be negative.
+        Only used if `row_index_name` is set.
     sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
@@ -414,8 +417,8 @@ def read_csv(
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
-            row_count_name=row_count_name,
-            row_count_offset=row_count_offset,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
@@ -427,6 +430,8 @@ def read_csv(
     return df
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 @deprecate_renamed_parameter(
     old_name="comment_char", new_name="comment_prefix", version="0.19.14"
 )
@@ -453,8 +458,8 @@ def read_csv_batched(
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
@@ -542,11 +547,12 @@ def read_csv_batched(
         aggregating the chunks into a single array.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
-    row_count_name
-        If not None, this will insert a row count column with the given name into
-        the DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set).
+    row_index_name
+        Insert a row index column with the given name into the DataFrame as the first
+        column. If set to `None` (default), no row index column is created.
+    row_index_offset
+        Start the row index at this offset. Cannot be negative.
+        Only used if `row_index_name` is set.
     sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
@@ -714,8 +720,8 @@ def read_csv_batched(
         low_memory=low_memory,
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         sample_size=sample_size,
         eol_char=eol_char,
         new_columns=new_columns,
@@ -723,6 +729,8 @@ def read_csv_batched(
     )
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 @deprecate_renamed_parameter(
     old_name="comment_char", new_name="comment_prefix", version="0.19.14"
 )
@@ -747,8 +755,8 @@ def scan_csv(
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     try_parse_dates: bool = False,
     eol_char: str = "\n",
     new_columns: Sequence[str] | None = None,
@@ -824,11 +832,11 @@ def scan_csv(
         Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
-    row_count_name
-        If not None, this will insert a row count column with the given name into
+    row_index_name
+        If not None, this will insert a row index column with the given name into
         the DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set).
+    row_index_offset
+        Offset to start the row index column (only used if the name is set).
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats
         can be inferred, as well as a handful of others. If this does not succeed,
@@ -958,8 +966,8 @@ def scan_csv(
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
         encoding=encoding,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         try_parse_dates=try_parse_dates,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
