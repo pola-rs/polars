@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
+from polars.testing import assert_frame_equal
 
 
 # TODO: Do not rely on I/O for these tests
@@ -172,6 +173,62 @@ def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
             if not_:
                 expected = [i for i in df["idx"] if i not in expected]
             assert res == expected
+
+
+def test_string_position() -> None:
+    df = pl.Series(
+        name="city",
+        values=["Dubai", "Abu Dhabi", "Sharjah", "Al Ain", "Ajman", "Ras Al Khaimah"],
+    ).to_frame()
+
+    with pl.SQLContext(cities=df, eager_execution=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              POSITION('a' IN city) AS a_lc1,
+              POSITION('A' IN city) AS a_uc1,
+              STRPOS(city,'a') AS a_lc2,
+              STRPOS(city,'A') AS a_uc2,
+            FROM cities
+            """
+        )
+        expected_lc = [4, 7, 3, 0, 4, 2]
+        expected_uc = [0, 1, 0, 1, 1, 5]
+
+        assert res.to_dict(as_series=False) == {
+            "a_lc1": expected_lc,
+            "a_uc1": expected_uc,
+            "a_lc2": expected_lc,
+            "a_uc2": expected_uc,
+        }
+
+    df = pl.DataFrame({"txt": ["AbCdEXz", "XyzFDkE"]})
+    with pl.SQLContext(txt=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              txt,
+              POSITION('E' IN txt) AS match_E,
+              STRPOS(txt,'X') AS match_X
+            FROM txt
+            """,
+            eager=True,
+        )
+        assert_frame_equal(
+            res,
+            pl.DataFrame(
+                data={
+                    "txt": ["AbCdEXz", "XyzFDkE"],
+                    "match_E": [5, 7],
+                    "match_X": [6, 1],
+                },
+                schema={
+                    "txt": pl.String,
+                    "match_E": pl.UInt32,
+                    "match_X": pl.UInt32,
+                },
+            ),
+        )
 
 
 def test_string_replace() -> None:

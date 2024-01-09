@@ -350,6 +350,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT column_2 from df WHERE STARTS_WITH(column_1, 'a');
     /// ```
     StartsWith,
+    /// SQL 'strpos' function
+    /// Returns the index of the given substring in the target string.
+    /// ```sql
+    /// SELECT STRPOS(column_1,'xyz') from df;
+    /// ```
+    StrPos,
     /// SQL 'substr' function
     /// Returns a portion of the data (first character = 0) in the range.
     ///   \[start, start + length]
@@ -673,6 +679,7 @@ impl PolarsSQLFunctions {
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
             "octet_length" => Self::OctetLength,
+            "strpos" => Self::StrPos,
             "regexp_like" => Self::RegexpLike,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
@@ -844,6 +851,10 @@ impl SQLFunctionVisitor<'_> {
                 _ => polars_bail!(InvalidOperation: "Invalid number of arguments for LTrim: {}", function.args.len()),
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
+            StrPos => {
+                // note: 1-indexed, not 0-indexed, and returns zero if match not found
+                self.visit_binary(|expr, substring| (expr.str().find(substring, true) + lit(1u32)).fill_null(0u32))
+            },
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
                 3 => self.try_visit_ternary(|e, pat, flags| {

@@ -139,6 +139,15 @@ impl SQLExprVisitor<'_> {
                 escape_char,
             } => self.visit_like(*negated, expr, pattern, escape_char, true),
             SQLExpr::Nested(expr) => self.visit_expr(expr),
+            SQLExpr::Position { expr, r#in } => Ok(
+                // note: SQL is 1-indexed, not 0-indexed
+                (self
+                    .visit_expr(r#in)?
+                    .str()
+                    .find(self.visit_expr(expr)?, true)
+                    + lit(1u32))
+                .fill_null(0u32),
+            ),
             SQLExpr::RLike {
                 // note: parses both RLIKE and REGEXP
                 negated,
@@ -178,8 +187,8 @@ impl SQLExprVisitor<'_> {
         }
 
         let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
-
         let schema = lf.schema()?;
+
         if restriction == SubqueryRestriction::SingleColumn {
             if schema.len() != 1 {
                 polars_bail!(InvalidOperation: "SQL subquery will return more than one column");
@@ -194,7 +203,6 @@ impl SQLExprVisitor<'_> {
             if let Some((old_name, _)) = schema_entry {
                 let new_name = String::from(old_name.as_str()) + rand_string.as_str();
                 lf = lf.rename([old_name.to_string()], [new_name.clone()]);
-
                 return Ok(Expr::SubPlan(
                     SpecialEq::new(Arc::new(lf.logical_plan)),
                     vec![new_name],
