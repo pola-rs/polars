@@ -306,6 +306,7 @@ impl DataFrame {
     /// Alias for `clone` allows calling `collect` on a materialized `DataFrame`.
     ///
     /// # Example
+    ///
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let df = df!("Fruit" => &["Apple", "Apple", "Pear"],
