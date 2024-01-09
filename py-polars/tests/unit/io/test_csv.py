@@ -1423,7 +1423,7 @@ def test_read_csv_chunked() -> None:
     """Check that row count is properly functioning."""
     N = 10_000
     csv = "1\n" * N
-    df = pl.read_csv(io.StringIO(csv), row_count_name="count")
+    df = pl.read_csv(io.StringIO(csv), row_index_name="count")
 
     # The next value should always be higher if monotonically increasing.
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
