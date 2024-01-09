@@ -326,12 +326,12 @@ class ExprStringNameSpace:
         """
         Convert a String column into a Decimal column.
 
-        This method infers the needed parameters `precision` and `scale`.
+        This method infers the needed parameter `scale`, using default precision.
 
         Parameters
         ----------
         inference_length
-            Number of elements to parse to determine the `precision` and `scale`.
+            Number of elements to parse to determine the `scale`.
 
         Examples
         --------

@@ -51,6 +51,15 @@ fn any_values_to_decimal(
             0 // integers are treated as decimals with scale of zero
         } else if let AnyValue::Decimal(_, scale) = av {
             *scale
+        } else if matches!(av, AnyValue::Float32(_) | AnyValue::Float64(_)) {
+            match scale {
+                Some(s) => s,
+                None => {
+                    polars_bail!(
+                        ComputeError: "conversion of any-value of dtype {} to decimal must specify scale", av.dtype(),
+                    );
+                }
+            }
         } else if matches!(av, AnyValue::Null) {
             continue;
         } else {
@@ -87,6 +96,11 @@ fn any_values_to_decimal(
             )
         } else if let AnyValue::Decimal(v, scale) = av {
             (*v, *scale)
+        } else if matches!(av, AnyValue::Float32(_) | AnyValue::Float64(_)) {
+            let vf = av.try_extract::<f64>().unwrap_or_else(|_| unreachable!());
+            let v = ((10f64.powi(scale as i32) * vf).round()) as i128;
+            // TODO: check
+            (v, scale)
         } else {
             // it has to be a null because we've already checked it
             builder.append_null();

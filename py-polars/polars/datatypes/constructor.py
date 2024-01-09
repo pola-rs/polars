@@ -32,7 +32,6 @@ if not _DOCUMENTING:
         dt.UInt16: PySeries.new_opt_u16,
         dt.UInt32: PySeries.new_opt_u32,
         dt.UInt64: PySeries.new_opt_u64,
-        dt.Decimal: PySeries.new_decimal,
         dt.Date: PySeries.new_opt_i32,
         dt.Datetime: PySeries.new_opt_i64,
         dt.Duration: PySeries.new_opt_i64,
@@ -57,6 +56,8 @@ def polars_type_to_constructor(
         # upon construction
         if base_type == dt.Array:
             return functools.partial(PySeries.new_array, dtype.width, dtype.inner)  # type: ignore[union-attr]
+        if base_type == dt.Decimal:
+            return functools.partial(PySeries.new_decimal, getattr(dtype, 'precision', None), getattr(dtype, 'scale', None))
 
         return _POLARS_TYPE_TO_CONSTRUCTOR[base_type]
     except KeyError:  # pragma: no cover
@@ -143,7 +144,7 @@ if not _DOCUMENTING:
         int: PySeries.new_opt_i64,
         str: PySeries.new_str,
         bool: PySeries.new_opt_bool,
-        PyDecimal: PySeries.new_decimal,
+        PyDecimal: functools.partial(PySeries.new_decimal, None, None),
     }
 
 

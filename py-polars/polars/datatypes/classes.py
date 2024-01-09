@@ -342,12 +342,12 @@ class Decimal(NumericType):
     """
 
     precision: int | None
-    scale: int
+    scale: int | None
 
     def __init__(
         self,
         precision: int | None = None,
-        scale: int = 0,
+        scale: int | None = None,
     ):
         self.precision = precision
         self.scale = scale
