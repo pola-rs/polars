@@ -421,7 +421,8 @@ impl Series {
     }
 
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
-    /// from `other` where the mask evaluates `false`
+    /// from `other` where the mask evaluates `false`. This function automatically broadcasts unit
+    /// length inputs.
     #[cfg(feature = "zip_with")]
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let (lhs, rhs) = coerce_lhs_rhs(self, other)?;

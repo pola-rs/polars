@@ -447,6 +447,21 @@ def test_replace_fast_path_one_to_one() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_replace_fast_path_one_null_to_one() -> None:
+    # https://github.com/pola-rs/polars/issues/13391
+    lf = pl.LazyFrame({"a": [1, None]})
+    result = lf.select(pl.col("a").replace(None, 100))
+    expected = pl.LazyFrame({"a": [1, 100]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_fast_path_many_with_null_to_one() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, None]})
+    result = lf.select(pl.col("a").replace([1, None], 100))
+    expected = pl.LazyFrame({"a": [100, 2, 100]})
+    assert_frame_equal(result, expected)
+
+
 def test_replace_fast_path_many_to_one() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
     result = lf.select(pl.col("a").replace([2, 3], 100))
