@@ -231,13 +231,12 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
     };
 
     let ca = s.is_not_null();
-    let iter = ca.into_no_null_iter();
-    let out: NoNull<IdxCa> = if reverse {
-        iter.rev().map(f).collect_reversed()
+    let out: IdxCa = if reverse {
+        ca.reverse().apply_values_generic(f).reverse()
     } else {
-        iter.map(f).collect()
+        ca.apply_values_generic(f)
     };
-    Ok(out.into_inner().into())
+    Ok(out.into())
 }
 
 fn cum_count_no_nulls(name: &str, len: usize, reverse: bool) -> Series {
