@@ -172,9 +172,11 @@ pub trait StringNameSpaceImpl: AsString {
             return Ok(UInt32Chunked::full_null(ca.name(), ca.len().max(pat.len())));
         }
         if literal {
-            Ok(broadcast_binary_elementwise_values(ca, pat, |src, pat| {
-                src.find(pat).map(|idx| idx as u32)
-            }))
+            Ok(broadcast_binary_elementwise(
+                ca,
+                pat,
+                |src: Option<&str>, pat: Option<&str>| src?.find(pat?).map(|idx| idx as u32),
+            ))
         } else {
             // note: sqrt(n) regex cache is not too small, not too large.
             let mut rx_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);

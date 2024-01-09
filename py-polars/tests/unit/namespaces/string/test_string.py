@@ -3,9 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import cast
 
-import pytest
-
 import polars as pl
+import pytest
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -166,8 +165,9 @@ def test_str_find(strict: bool) -> None:
             ("Al Ain", 846747, "[ai]n", ""),
             ("Ajman", 490035, "[ai]n", "ma"),
             ("Ras Al Khaimah", 191753, "a.+a", "Kha"),
-            ("Fujairah", 118933, "a.+a", "ai"),
+            ("Fujairah", 118933, "a.+a", None),
             ("Umm Al Quwain", 59098, "a.+a", "wa"),
+            (None, None, None, "n/a"),
         ],
         schema={
             "city": pl.String,
@@ -176,19 +176,21 @@ def test_str_find(strict: bool) -> None:
             "lit": pl.String,
         },
     )
+    city, pop, pat, lit = (pl.col(c) for c in ("city", "population", "pat", "lit"))
+
     res = df.select(
-        find_a_regex=pl.col("city").str.find("(?i)a", strict=strict),
-        find_a_lit=pl.col("city").str.find("a", literal=True),
-        find_00_lit=pl.col("population").cast(pl.String).str.find("00", literal=True),
-        find_col_pat=pl.col("city").str.find(pl.col("pat"), strict=strict),
-        find_col_lit=pl.col("city").str.find(pl.col("lit"), strict=strict),
+        find_a_regex=city.str.find("(?i)a", strict=strict),
+        find_a_lit=city.str.find("a", literal=True),
+        find_00_lit=pop.cast(pl.String).str.find("00", literal=True),
+        find_col_pat=city.str.find(pat, strict=strict),
+        find_col_lit=city.str.find(lit, strict=strict, literal=True),
     )
     assert res.to_dict(as_series=False) == {
-        "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4],
-        "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10],
-        "find_00_lit": [None, 4, 4, None, 2, None, None, None],
-        "find_col_pat": [2, 7, None, 4, 3, 1, 3, None],
-        "find_col_lit": [3, 3, None, 0, 2, 7, 3, 9],
+        "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4, None],
+        "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10, None],
+        "find_00_lit": [None, 4, 4, None, 2, None, None, None, None],
+        "find_col_pat": [2, 7, None, 4, 3, 1, 3, None, None],
+        "find_col_lit": [3, 3, None, 0, 2, 7, None, 9, None],
     }
 
 
