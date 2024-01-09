@@ -9,10 +9,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import threadpool_size as _threadpool_size
 
 if TYPE_CHECKING:
-    from polars.datatypes import DataTypeClass
+    from polars.datatypes import DataType
 
 
-def get_index_type() -> DataTypeClass:
+def get_index_type() -> DataType:
     """
     Get the datatype used for Polars indexing.
 
