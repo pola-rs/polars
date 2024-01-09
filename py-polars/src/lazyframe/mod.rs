@@ -141,7 +141,7 @@ impl PyLazyFrame {
             .low_memory(low_memory)
             .with_rechunk(rechunk)
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
-            .with_row_count(row_index)
+            .with_row_index(row_index)
             .finish()
             .map_err(PyPolarsErr::from)?;
 
@@ -219,7 +219,7 @@ impl PyLazyFrame {
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding.0)
-            .with_row_count(row_index)
+            .with_row_index(row_index)
             .with_try_parse_dates(try_parse_dates)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
@@ -298,7 +298,7 @@ impl PyLazyFrame {
             cache,
             parallel: parallel.0,
             rechunk,
-            row_count: row_index,
+            row_index,
             low_memory,
             cloud_options,
             use_statistics,
@@ -331,7 +331,7 @@ impl PyLazyFrame {
             n_rows,
             cache,
             rechunk,
-            row_count: row_index,
+            row_index,
             memmap: memory_map,
         };
 

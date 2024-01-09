@@ -115,7 +115,7 @@ impl PyBatchedCsv {
             .with_quote_char(quote_char)
             .with_end_of_line_char(eol_char)
             .with_skip_rows_after_header(skip_rows_after_header)
-            .with_row_count(row_index)
+            .with_row_index(row_index)
             .sample_size(sample_size)
             .truncate_ragged_lines(truncate_ragged_lines)
             .raise_if_empty(raise_if_empty);
