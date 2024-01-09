@@ -222,7 +222,6 @@ class DataFrame:
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
-        underlying data, the names given here will overwrite them.
 
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
@@ -4633,7 +4632,7 @@ class DataFrame:
         """
         Return the `k` largest elements.
 
-        If 'descending=True` the smallest elements will be given.
+        If `descending=True` the smallest elements will be given.
 
         Parameters
         ----------
@@ -4643,7 +4642,7 @@ class DataFrame:
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
+            Return the `k` smallest. Top-k by multiple columns can be specified
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
@@ -4724,7 +4723,7 @@ class DataFrame:
         """
         Return the `k` smallest elements.
 
-        If 'descending=True` the largest elements will be given.
+        If `descending=True` the largest elements will be given.
 
         Parameters
         ----------
@@ -4734,7 +4733,7 @@ class DataFrame:
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
+            Return the `k` largest. Bottom-k by multiple columns can be specified
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
@@ -5210,9 +5209,90 @@ class DataFrame:
         """
         return function(self, *args, **kwargs)
 
+    def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
+        """
+        Add a row index as the first column in the DataFrame.
+
+        Parameters
+        ----------
+        name
+            Name of the index column.
+        offset
+            Start the index at this offset. Cannot be negative.
+
+        Notes
+        -----
+        The resulting column does not have any special properties. It is a regular
+        column of type `UInt32` (or `UInt64` in `polars-u64-idx`).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.with_row_index()
+        shape: (3, 3)
+        ┌───────┬─────┬─────┐
+        │ index ┆ a   ┆ b   │
+        │ ---   ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   │
+        │ 1     ┆ 3   ┆ 4   │
+        │ 2     ┆ 5   ┆ 6   │
+        └───────┴─────┴─────┘
+        >>> df.with_row_index("id", offset=1000)
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ id   ┆ a   ┆ b   │
+        │ ---  ┆ --- ┆ --- │
+        │ u32  ┆ i64 ┆ i64 │
+        ╞══════╪═════╪═════╡
+        │ 1000 ┆ 1   ┆ 2   │
+        │ 1001 ┆ 3   ┆ 4   │
+        │ 1002 ┆ 5   ┆ 6   │
+        └──────┴─────┴─────┘
+
+        An index column can also be created using the expressions :func:`int_range`
+        and :func:`count`.
+
+        >>> df.select(
+        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.all(),
+        ... )
+        shape: (3, 3)
+        ┌───────┬─────┬─────┐
+        │ index ┆ a   ┆ b   │
+        │ ---   ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   │
+        │ 1     ┆ 3   ┆ 4   │
+        │ 2     ┆ 5   ┆ 6   │
+        └───────┴─────┴─────┘
+        """
+        try:
+            return self._from_pydf(self._df.with_row_index(name, offset))
+        except OverflowError:
+            issue = "negative" if offset < 0 else "greater than the maximum index value"
+            msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
+            raise ValueError(msg) from None
+
+    @deprecate_function(
+        "Use `with_row_index` instead."
+        "Note that the default column name has changed from 'row_nr' to 'index'.",
+        version="0.20.4",
+    )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
+
+        .. deprecated::
+            Use `meth`:with_row_index` instead.
+            Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
         ----------
@@ -5229,7 +5309,7 @@ class DataFrame:
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> df.with_row_count()
+        >>> df.with_row_count()  # doctest: +SKIP
         shape: (3, 3)
         ┌────────┬─────┬─────┐
         │ row_nr ┆ a   ┆ b   │
@@ -5241,7 +5321,7 @@ class DataFrame:
         │ 2      ┆ 5   ┆ 6   │
         └────────┴─────┴─────┘
         """
-        return self._from_pydf(self._df.with_row_count(name, offset))
+        return self.with_row_index(name, offset)
 
     def group_by(
         self,
@@ -5901,14 +5981,14 @@ class DataFrame:
         Parameters
         ----------
         time_column
-            time column will be used to determine a date_range.
+            Time column will be used to determine a date_range.
             Note that this column has to be sorted for the output to make sense.
         every
-            interval will start 'every' duration
+            Interval will start 'every' duration.
         offset
-            change the start of the date_range by this offset.
+            Change the start of the date_range by this offset.
         by
-            First group by these columns and then upsample for every group
+            First group by these columns and then upsample for every group.
         maintain_order
             Keep the ordering predictable. This is slower.
 
@@ -8003,7 +8083,7 @@ class DataFrame:
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
     ) -> DataFrame:
         """
-        Select columns from this LazyFrame.
+        Select columns from this DataFrame.
 
         This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
@@ -8197,8 +8277,8 @@ class DataFrame:
 
         Returns
         -------
-        LazyFrame
-            A new LazyFrame with the columns added.
+        DataFrame
+            A new DataFrame with the columns added.
 
         See Also
         --------

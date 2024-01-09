@@ -140,7 +140,7 @@ class LazyFrame:
         Two-dimensional data in various forms; dict input must contain Sequences,
         Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The DataFrame schema may be declared in several ways:
+        The LazyFrame schema may be declared in several ways:
 
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
@@ -152,7 +152,6 @@ class LazyFrame:
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
-        underlying data, the names given here will overwrite them.
 
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
@@ -442,7 +441,7 @@ class LazyFrame:
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
-                scan = scan.with_row_count(row_count_name, row_count_offset)
+                scan = scan.with_row_index(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
         if storage_options:
@@ -505,7 +504,7 @@ class LazyFrame:
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
-                scan = scan.with_row_count(row_count_name, row_count_offset)
+                scan = scan.with_row_index(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
@@ -1116,8 +1115,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Inspect a node in the computation graph.
 
-        Print the value that this node in the computation graph evaluates to and passes
-        on the value.
+        Print the value that this node in the computation graph evaluates to and pass on
+        the value.
 
         Examples
         --------
@@ -1147,7 +1146,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Sort the DataFrame by the given columns.
+        Sort the LazyFrame by the given columns.
 
         Parameters
         ----------
@@ -1261,7 +1260,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Return the `k` largest elements.
 
-        If 'descending=True` the smallest elements will be given.
+        If `descending=True` the smallest elements will be given.
 
         Parameters
         ----------
@@ -1271,7 +1270,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
+            Return the `k` smallest. Top-k by multiple columns can be specified
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
@@ -1346,7 +1345,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Return the `k` smallest elements.
 
-        If 'descending=True` the largest elements will be given.
+        If `descending=True` the largest elements will be given.
 
         Parameters
         ----------
@@ -1356,7 +1355,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
         descending
-            Return the 'k' smallest. Top-k by multiple columns can be specified
+            Return the `k` largest. Bottom-k by multiple columns can be specified
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
@@ -2205,7 +2204,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             File path to which the file should be written.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -3850,7 +3849,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **named_exprs: IntoExpr,
     ) -> Self:
         """
-        Add columns to this DataFrame.
+        Add columns to this LazyFrame.
 
         Added columns will replace existing columns with the same name.
 
@@ -4003,7 +4002,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **named_exprs: IntoExpr,
     ) -> Self:
         """
-        Add columns to this DataFrame.
+        Add columns to this LazyFrame.
 
         Added columns will replace existing columns with the same name.
 
@@ -4564,9 +4563,95 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.all().approx_n_unique())
 
+    def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
+        """
+        Add a row index as the first column in the LazyFrame.
+
+        Parameters
+        ----------
+        name
+            Name of the index column.
+        offset
+            Start the index at this offset. Cannot be negative.
+
+        Warnings
+        --------
+        Using this function can have a negative effect on query performance.
+        This may, for instance, block predicate pushdown optimization.
+
+        Notes
+        -----
+        The resulting column does not have any special properties. It is a regular
+        column of type `UInt32` (or `UInt64` in `polars-u64-idx`).
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> lf.with_row_index().collect()
+        shape: (3, 3)
+        ┌───────┬─────┬─────┐
+        │ index ┆ a   ┆ b   │
+        │ ---   ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   │
+        │ 1     ┆ 3   ┆ 4   │
+        │ 2     ┆ 5   ┆ 6   │
+        └───────┴─────┴─────┘
+        >>> lf.with_row_index("id", offset=1000).collect()
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ id   ┆ a   ┆ b   │
+        │ ---  ┆ --- ┆ --- │
+        │ u32  ┆ i64 ┆ i64 │
+        ╞══════╪═════╪═════╡
+        │ 1000 ┆ 1   ┆ 2   │
+        │ 1001 ┆ 3   ┆ 4   │
+        │ 1002 ┆ 5   ┆ 6   │
+        └──────┴─────┴─────┘
+
+        An index column can also be created using the expressions :func:`int_range`
+        and :func:`count`.
+
+        >>> lf.select(
+        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.all(),
+        ... ).collect()
+        shape: (3, 3)
+        ┌───────┬─────┬─────┐
+        │ index ┆ a   ┆ b   │
+        │ ---   ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   │
+        │ 1     ┆ 3   ┆ 4   │
+        │ 2     ┆ 5   ┆ 6   │
+        └───────┴─────┴─────┘
+        """
+        try:
+            return self._from_pyldf(self._ldf.with_row_index(name, offset))
+        except OverflowError:
+            issue = "negative" if offset < 0 else "greater than the maximum index value"
+            msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
+            raise ValueError(msg) from None
+
+    @deprecate_function(
+        "Use `with_row_index` instead."
+        "Note that the default column name has changed from 'row_nr' to 'index'.",
+        version="0.20.4",
+    )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
+
+        .. deprecated::
+            Use `meth`:with_row_index` instead.
+            Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
         ----------
@@ -4588,7 +4673,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.with_row_count().collect()
+        >>> lf.with_row_count().collect()  # doctest: +SKIP
         shape: (3, 3)
         ┌────────┬─────┬─────┐
         │ row_nr ┆ a   ┆ b   │
@@ -4600,7 +4685,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2      ┆ 5   ┆ 6   │
         └────────┴─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.with_row_count(name, offset))
+        return self.with_row_index(name, offset)
 
     def gather_every(self, n: int, offset: int = 0) -> Self:
         """
@@ -5785,8 +5870,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 # no keys provided--use row count
                 row_count_used = True
                 row_count_name = "__POLARS_ROW_COUNT"
-                self = self.with_row_count(row_count_name)
-                other = other.with_row_count(row_count_name)
+                self = self.with_row_index(row_count_name)
+                other = other.with_row_index(row_count_name)
                 left_on = right_on = [row_count_name]
             else:
                 # one of left or right is missing, raise error

@@ -1,3 +1,5 @@
+use std::ops::BitOr;
+
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
@@ -62,9 +64,18 @@ fn replace_by_single(
     new: &Series,
     default: &Series,
 ) -> PolarsResult<Series> {
-    let mask = is_in(s, old)?;
-    let new_broadcast = new.new_from_index(0, default.len());
-    new_broadcast.zip_with(&mask, default)
+    let mask = if old.null_count() == old.len() {
+        s.is_null()
+    } else {
+        let mask = is_in(s, old)?;
+
+        if old.null_count() == 0 {
+            mask
+        } else {
+            mask.bitor(s.is_null())
+        }
+    };
+    new.zip_with(&mask, default)
 }
 
 /// General case for replacing by multiple values

@@ -47,7 +47,17 @@ pub(super) fn coalesce_outer_join(
     keys_left: &[&str],
     keys_right: &[&str],
     suffix: Option<&str>,
+    df_left: &DataFrame,
 ) -> DataFrame {
+    // No need to allocate the schema because we already
+    // know for certain that the column name for left left is `name`
+    // and for right is `name + suffix`
+    let schema_left = if keys_left == keys_right {
+        Schema::default()
+    } else {
+        df_left.schema()
+    };
+
     let schema = df.schema();
     let mut to_remove = Vec::with_capacity(keys_right.len());
 
@@ -56,7 +66,7 @@ pub(super) fn coalesce_outer_join(
     for (&l, &r) in keys_left.iter().zip(keys_right.iter()) {
         let pos_l = schema.get_full(l).unwrap().0;
 
-        let r = if l == r {
+        let r = if l == r || schema_left.contains(r) {
             let suffix = get_suffix(suffix);
             Cow::Owned(_join_suffix_name(r, suffix))
         } else {

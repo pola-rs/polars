@@ -67,7 +67,7 @@ def test_row_count(foods_file_path: Path) -> None:
 
     df = (
         pl.scan_csv(foods_file_path, row_count_name="row_count")
-        .with_row_count("foo", 10)
+        .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
@@ -195,13 +195,13 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
 def test_lazy_row_count_no_push_down(foods_file_path: Path) -> None:
     plan = (
         pl.scan_csv(foods_file_path)
-        .with_row_count()
-        .filter(pl.col("row_nr") == 1)
+        .with_row_index()
+        .filter(pl.col("index") == 1)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .explain(predicate_pushdown=True)
     )
     # related to row count is not pushed.
-    assert 'FILTER [(col("row_nr")) == (1)] FROM' in plan
+    assert 'FILTER [(col("index")) == (1)] FROM' in plan
     # unrelated to row count is pushed.
     assert 'SELECTION: [(col("category")) == (String(vegetables))]' in plan
 
@@ -283,5 +283,5 @@ def test_scan_empty_csv_with_row_count(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": []})
     df.write_csv(file_path)
 
-    read = pl.scan_csv(file_path).with_row_count("idx")
+    read = pl.scan_csv(file_path).with_row_index("idx")
     assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.String)])

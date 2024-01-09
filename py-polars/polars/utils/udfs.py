@@ -836,8 +836,11 @@ class RewrittenInstructions:
 
 def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
     """Identify translatable calls that aren't wrapped inside a lambda/function."""
-    func_module = function.__class__.__module__
-    func_name = function.__name__
+    try:
+        func_module = function.__class__.__module__
+        func_name = function.__name__
+    except AttributeError:
+        return "", ""
 
     # numpy function calls
     if func_module == "numpy" and func_name in _NUMPY_FUNCTIONS:

@@ -248,6 +248,8 @@ That's all you need to know to get started. Take a look at this [repo](https://g
 
 Here is a curated (non-exhaustive) list of community implemented plugins.
 
-- [polars-business](https://github.com/MarcoGorelli/polars-business) Polars extension offering utilities for business day operations
+- [polars-xdt](https://github.com/pola-rs/polars-xdt) Polars plugin with extra datetime-related functionality
+  which isn't quite in-scope for the main library
+- [polars-distance](https://github.com/ion-elgreco/polars-distance) Polars plugin for pairwise distance functions
 - [polars-ds](https://github.com/abstractqqq/polars_ds_extension) Polars extension aiming to simplify common numerical/string data analysis procedures
 - [polars-hash](https://github.com/ion-elgreco/polars-hash) Stable non-cryptographic and cryptographic hashing functions for Polars

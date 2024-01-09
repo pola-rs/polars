@@ -126,11 +126,81 @@ def count(column: str | None = None) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
+
+    Generate an index column using `count` in conjunction with :func:`int_range`.
+
+    >>> df.select(
+    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+    ...     pl.all(),
+    ... )
+    shape: (3, 3)
+    ┌───────┬──────┬──────┐
+    │ index ┆ a    ┆ b    │
+    │ ---   ┆ ---  ┆ ---  │
+    │ u32   ┆ i64  ┆ i64  │
+    ╞═══════╪══════╪══════╡
+    │ 0     ┆ 1    ┆ 3    │
+    │ 1     ┆ 2    ┆ null │
+    │ 2     ┆ null ┆ null │
+    └───────┴──────┴──────┘
     """  # noqa: W505
     if column is None:
         return wrap_expr(plr.count())
 
     return F.col(column).count()
+
+
+def cum_count(*names: str, reverse: bool = False) -> Expr:
+    """
+    Return the cumulative count of the values in the column or of the context.
+
+    If no arguments are passed, returns the cumulative count of a context.
+    Rows containing null values count towards the result.
+
+    Otherwise, this function is syntactic sugar for `col(names).cum_count()`.
+
+    Parameters
+    ----------
+    *names
+        Name(s) of the columns to use.
+    reverse
+        Reverse the operation.
+
+    Examples
+    --------
+    Return the row numbers of a context. Note that rows containing null values are
+    counted towards the total.
+
+    >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
+    >>> df.select(pl.cum_count())
+    shape: (3, 1)
+    ┌───────────┐
+    │ cum_count │
+    │ ---       │
+    │ u32       │
+    ╞═══════════╡
+    │ 1         │
+    │ 2         │
+    │ 3         │
+    └───────────┘
+
+    Return the cumulative count of values in a column.
+
+    >>> df.select(pl.cum_count("a"))
+    shape: (3, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 0   │
+    │ 1   │
+    │ 2   │
+    └─────┘
+    """
+    if not names:
+        return wrap_expr(plr.cum_count(reverse=reverse))
+    return F.col(*names).cum_count(reverse=reverse)
 
 
 def implode(name: str) -> Expr:

@@ -545,12 +545,28 @@ class Series:
 
     @property
     def name(self) -> str:
-        """Get the name of this Series."""
+        """
+        Get the name of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.name
+        'a'
+        """
         return self._s.name()
 
     @property
     def shape(self) -> tuple[int]:
-        """Shape of this Series."""
+        """
+        Shape of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.shape
+        (3,)
+        """
         return (self._s.len(),)
 
     def __bool__(self) -> NoReturn:
@@ -1877,7 +1893,15 @@ class Series:
         return self._s.mean()
 
     def product(self) -> int | float:
-        """Reduce this Series to the product value."""
+        """
+        Reduce this Series to the product value.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.product()
+        6
+        """
         return self._s.product()
 
     def pow(self, exponent: int | float | None | Series) -> Series:
@@ -1940,6 +1964,16 @@ class Series:
 
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 3, 4])
+        >>> s.nan_max()
+        4
+
+        >>> s = pl.Series("a", [1, float("nan"), 4])
+        >>> s.nan_max()
+        nan
         """
         return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
@@ -1949,6 +1983,16 @@ class Series:
 
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 3, 4])
+        >>> s.nan_min()
+        1
+
+        >>> s = pl.Series("a", [1, float("nan"), 4])
+        >>> s.nan_min()
+        nan
         """
         return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
@@ -4526,8 +4570,8 @@ class Series:
 
         It is better to implement this as follows:
 
-        >>> s.to_frame().with_row_count("row_nr").select(
-        ...     pl.when(pl.col("row_nr") == 1).then(10).otherwise(pl.col("a"))
+        >>> s.to_frame().with_row_index().select(
+        ...     pl.when(pl.col("index") == 1).then(10).otherwise(pl.col("a"))
         ... )
         shape: (3, 1)
         ┌─────────┐
@@ -6887,7 +6931,19 @@ class Series:
         return self._s.get_chunks()
 
     def implode(self) -> Self:
-        """Aggregate values into a list."""
+        """
+        Aggregate values into a list.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.implode()
+        shape: (1,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 2, 3]
+        ]
+        """
 
     @deprecate_renamed_function("map_elements", version="0.19.0")
     def apply(

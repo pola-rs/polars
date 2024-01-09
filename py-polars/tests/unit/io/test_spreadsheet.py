@@ -32,6 +32,11 @@ def path_xlsx_empty(io_files_path: Path) -> Path:
 
 
 @pytest.fixture()
+def path_xlsx_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.xlsx"
+
+
+@pytest.fixture()
 def path_xlsb(io_files_path: Path) -> Path:
     return io_files_path / "example.xlsb"
 
@@ -42,6 +47,11 @@ def path_xlsb_empty(io_files_path: Path) -> Path:
 
 
 @pytest.fixture()
+def path_xlsb_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.xlsb"
+
+
+@pytest.fixture()
 def path_ods(io_files_path: Path) -> Path:
     return io_files_path / "example.ods"
 
@@ -49,6 +59,11 @@ def path_ods(io_files_path: Path) -> Path:
 @pytest.fixture()
 def path_ods_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.ods"
+
+
+@pytest.fixture()
+def path_ods_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.ods"
 
 
 @pytest.mark.parametrize(
@@ -225,6 +240,63 @@ def test_read_invalid_worksheet(
             )
 
 
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "additional_params"),
+    [
+        (pl.read_excel, "path_xlsx_mixed", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb_mixed", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods_mixed", {}),
+    ],
+)
+def test_read_mixed_dtype_columns(
+    read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
+    source: str,
+    additional_params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+    schema_overrides = {
+        "Employee ID": pl.Utf8,
+        "Employee Name": pl.Utf8,
+        "Date": pl.Date,
+        "Details": pl.Categorical,
+        "Asset ID": pl.Utf8,
+    }
+
+    df = read_spreadsheet(
+        spreadsheet_path,
+        sheet_id=0,
+        schema_overrides=schema_overrides,
+        **additional_params,
+    )["Sheet1"]
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "Employee ID": ["123456", "44333", "US00011", "135967", "IN86868"],
+                "Employee Name": ["Test1", "Test2", "Test4", "Test5", "Test6"],
+                "Date": [
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                ],
+                "Details": [
+                    "Healthcare",
+                    "Healthcare",
+                    "Healthcare",
+                    "Healthcare",
+                    "Something",
+                ],
+                "Asset ID": ["84444", "84444", "84444", "84444", "ABC123"],
+            },
+            schema_overrides=schema_overrides,
+        ),
+    )
+
+
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
 def test_write_excel_bytes(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> None:
     df = pl.DataFrame({"A": [1, 2, 3, 4, 5]})
@@ -242,22 +314,18 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name="test4",
         schema_overrides={"cardinality": pl.UInt16},
     ).drop_nulls()
-    assert df1.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float64,
-        "iter_groups": pl.Float64,
-    }
+    assert df1.schema["cardinality"] == pl.UInt16
+    assert df1.schema["rows_by_key"] == pl.Float64
+    assert df1.schema["iter_groups"] == pl.Float64
 
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
         read_csv_options={"dtypes": {"cardinality": pl.UInt16}},
     ).drop_nulls()
-    assert df2.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float64,
-        "iter_groups": pl.Float64,
-    }
+    assert df2.schema["cardinality"] == pl.UInt16
+    assert df2.schema["rows_by_key"] == pl.Float64
+    assert df2.schema["iter_groups"] == pl.Float64
 
     df3 = pl.read_excel(
         path_xlsx,
@@ -270,11 +338,9 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             },
         },
     ).drop_nulls()
-    assert df3.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float32,
-        "iter_groups": pl.Float32,
-    }
+    assert df3.schema["cardinality"] == pl.UInt16
+    assert df3.schema["rows_by_key"] == pl.Float32
+    assert df3.schema["iter_groups"] == pl.Float32
 
     for workbook_path in (path_xlsx, path_xlsb, path_ods):
         df4 = pl.read_excel(
@@ -320,7 +386,8 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name=["test4", "test4"],
         schema_overrides=overrides,
     )
-    assert df["test4"].schema == overrides
+    for col, dtype in overrides.items():
+        assert df["test4"].schema[col] == dtype
 
 
 def test_unsupported_engine() -> None:

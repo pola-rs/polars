@@ -7,6 +7,7 @@ pub mod agg_mean;
 pub mod atan2;
 pub mod concatenate;
 pub mod ewm;
+pub mod fixed_size_list;
 pub mod float;
 pub mod list;
 pub mod list_bytes_iter;

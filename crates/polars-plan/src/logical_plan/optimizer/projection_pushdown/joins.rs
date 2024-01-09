@@ -261,7 +261,16 @@ pub(super) fn process_join(
         // In outer joins both columns remain. So `add_local=true` also for the right table
         let add_local = matches!(options.args.how, JoinType::Outer { coalesce: false });
         for e in &right_on {
-            add_keys_to_accumulated_state(
+            // In case of outer joins we also add the columns.
+            // But before we do that we must check if the column wasn't already added by the lhs.
+            let add_local = if add_local {
+                let name = aexpr_to_leaf_name(*e, expr_arena);
+                !already_added_local_to_local_projected.contains(name.as_ref())
+            } else {
+                false
+            };
+
+            let local_name = add_keys_to_accumulated_state(
                 *e,
                 &mut pushdown_right,
                 &mut local_projection,
@@ -269,6 +278,10 @@ pub(super) fn process_join(
                 expr_arena,
                 add_local,
             );
+
+            if let Some(local_name) = local_name {
+                already_added_local_to_local_projected.insert(local_name);
+            }
         }
 
         for proj in acc_projections {

@@ -664,7 +664,7 @@ class StringNameSpace:
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
-            Group 0 means the whole pattern, the first group begin at index 1.
+            Group 0 means the whole pattern, the first group begins at index 1.
             Defaults to the first capture group.
 
         Returns

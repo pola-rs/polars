@@ -93,7 +93,7 @@ def read_ipc(
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_count_name is not None:
-                df = df.with_row_count(row_count_name, row_count_offset)
+                df = df.with_row_index(row_count_name, row_count_offset)
             if n_rows is not None:
                 df = df.slice(0, n_rows)
             return df
@@ -169,7 +169,7 @@ def read_ipc_stream(
                 tbl = reader.read_all()
                 df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
                 if row_count_name is not None:
-                    df = df.with_row_count(row_count_name, row_count_offset)
+                    df = df.with_row_index(row_count_name, row_count_offset)
                 if n_rows is not None:
                     df = df.slice(0, n_rows)
                 return df
@@ -211,7 +211,7 @@ def scan_ipc(
     *,
     n_rows: int | None = None,
     cache: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     storage_options: dict[str, Any] | None = None,

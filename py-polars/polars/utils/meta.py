@@ -5,14 +5,13 @@ import contextlib
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import get_index_type as _get_index_type
-    from polars.polars import threadpool_size as _threadpool_size
+    import polars.polars as plr
 
 if TYPE_CHECKING:
-    from polars.datatypes import DataTypeClass
+    from polars.datatypes import DataType
 
 
-def get_index_type() -> DataTypeClass:
+def get_index_type() -> DataType:
     """
     Get the datatype used for Polars indexing.
 
@@ -20,8 +19,13 @@ def get_index_type() -> DataTypeClass:
     -------
     DataType
         :class:`UInt32` in regular Polars, :class:`UInt64` in bigidx Polars.
+
+    Examples
+    --------
+    >>> pl.get_index_type()
+    UInt32
     """
-    return _get_index_type()
+    return plr.get_index_type()
 
 
 def threadpool_size() -> int:
@@ -36,5 +40,10 @@ def threadpool_size() -> int:
     be temporarily setting max threads to a low value before importing polars in a
     pyspark UDF or similar context. Otherwise, it is strongly recommended not to
     override this value as it will be set automatically by the engine.
+
+    Examples
+    --------
+    >>> pl.threadpool_size()  # doctest: +SKIP
+    24
     """
-    return _threadpool_size()
+    return plr.threadpool_size()

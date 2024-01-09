@@ -651,13 +651,15 @@ impl AnyValue<'_> {
             #[cfg(feature = "object")]
             ObjectOwned(_) => {},
             #[cfg(feature = "dtype-struct")]
-            Struct(_, _, _) | StructOwned(_) => {
+            Struct(_, _, _) => {
                 if !cheap {
                     let mut buf = vec![];
                     self._materialize_struct_av(&mut buf);
                     buf.hash(state)
                 }
             },
+            #[cfg(feature = "dtype-struct")]
+            StructOwned(v) => v.0.hash(state),
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, k) => {
                 v.hash(state);

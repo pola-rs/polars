@@ -65,7 +65,7 @@ fn test_cross_join_pd() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_row_count_pd() -> PolarsResult<()> {
+fn test_row_number_pd() -> PolarsResult<()> {
     let df = df![
         "x" => [1, 2, 3],
         "y" => [3, 2, 1],
@@ -73,12 +73,12 @@ fn test_row_count_pd() -> PolarsResult<()> {
 
     let df = df
         .lazy()
-        .with_row_count("row_count", None)
-        .select([col("row_count"), col("x") * lit(3i32)])
+        .with_row_index("index", None)
+        .select([col("index"), col("x") * lit(3i32)])
         .collect()?;
 
     let expected = df![
-        "row_count" => [0 as IdxSize, 1, 2],
+        "index" => [0 as IdxSize, 1, 2],
         "x" => [3i32, 6, 9]
     ]?;
 

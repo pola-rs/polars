@@ -79,4 +79,14 @@ impl ArrayNameSpace {
         self.0
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::ArgMax))
     }
+
+    /// Get items in every sub-array by index.
+    pub fn get(self, index: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Get),
+            &[index],
+            false,
+            false,
+        )
+    }
 }

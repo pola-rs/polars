@@ -50,8 +50,8 @@ def test_replace_str_to_str_default_null(str_mapping: dict[str | None, str]) -> 
 def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) -> None:
     df = pl.DataFrame({"country_code": ["FR", None, "ES", "DE"]})
 
-    result = df.with_row_count().select(
-        replaced=pl.col("country_code").replace(str_mapping, default=pl.col("row_nr"))
+    result = df.with_row_index().select(
+        replaced=pl.col("country_code").replace(str_mapping, default=pl.col("index"))
     )
     expected = pl.DataFrame({"replaced": ["France", "Not specified", "2", "Germany"]})
     assert_frame_equal(result, expected)
@@ -444,6 +444,21 @@ def test_replace_fast_path_one_to_one() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
     result = lf.select(pl.col("a").replace(2, 100))
     expected = pl.LazyFrame({"a": [1, 100, 100, 3]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_fast_path_one_null_to_one() -> None:
+    # https://github.com/pola-rs/polars/issues/13391
+    lf = pl.LazyFrame({"a": [1, None]})
+    result = lf.select(pl.col("a").replace(None, 100))
+    expected = pl.LazyFrame({"a": [1, 100]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_fast_path_many_with_null_to_one() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, None]})
+    result = lf.select(pl.col("a").replace([1, None], 100))
+    expected = pl.LazyFrame({"a": [100, 2, 100]})
     assert_frame_equal(result, expected)
 
 

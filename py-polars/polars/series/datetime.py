@@ -6,7 +6,7 @@ from polars.datatypes import Date, Datetime
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_datetime
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -504,9 +504,13 @@ class DateTimeNameSpace:
         ]
         """
 
+    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
     def datetime(self) -> Series:
         """
         Extract (local) datetime.
+
+        .. deprecated:: 0.20.4
+            Use `dt.replace_time_zone(None)` instead.
 
         Applies to Datetime columns.
 
@@ -527,7 +531,7 @@ class DateTimeNameSpace:
         [
                 2021-01-02 05:00:00 +0545
         ]
-        >>> ser.dt.datetime()
+        >>> ser.dt.datetime()  # doctest: +SKIP
         shape: (1,)
         Series: '' [datetime[μs]]
         [

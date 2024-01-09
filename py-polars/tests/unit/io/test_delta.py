@@ -340,6 +340,7 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     assert tbl.version() == 1
 
 
+@pytest.mark.write_disk()
 def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -347,6 +348,7 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize(
     "expr",
     [
@@ -382,6 +384,7 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.write_disk()
 def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 

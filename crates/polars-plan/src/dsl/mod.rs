@@ -1751,6 +1751,18 @@ pub fn count() -> Expr {
     Expr::Count
 }
 
+/// Return the cumulative count of the context.
+#[cfg(feature = "range")]
+pub fn cum_count(reverse: bool) -> Expr {
+    let start = lit(1 as IdxSize);
+    let end = count() + lit(1 as IdxSize);
+    let mut range = int_range(start, end, 1, IDX_DTYPE);
+    if reverse {
+        range = range.reverse()
+    }
+    range.alias("cum_count")
+}
+
 /// First column in DataFrame.
 pub fn first() -> Expr {
     Expr::Nth(0)

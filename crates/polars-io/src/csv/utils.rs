@@ -222,16 +222,10 @@ pub fn infer_file_schema_inner(
             }
             final_headers
         } else {
-            let mut column_names: Vec<String> = byterecord
+            byterecord
                 .enumerate()
                 .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect();
-            // needed because SplitLines does not return the \n char, so SplitFields does not catch
-            // the latest value if ending with a separator.
-            if header_line.ends_with(&[separator]) {
-                column_names.push(format!("column_{}", column_names.len() + 1))
-            }
-            column_names
+                .collect::<Vec<String>>()
         }
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one

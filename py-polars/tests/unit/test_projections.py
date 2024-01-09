@@ -23,13 +23,13 @@ def test_projection_on_semi_join_4789() -> None:
 def test_melt_projection_pd_block_4997() -> None:
     assert (
         pl.DataFrame({"col1": ["a"], "col2": ["b"]})
-        .with_row_count()
+        .with_row_index()
         .lazy()
-        .melt(id_vars="row_nr")
-        .group_by("row_nr")
+        .melt(id_vars="index")
+        .group_by("index")
         .agg(pl.col("variable").alias("result"))
         .collect()
-    ).to_dict(as_series=False) == {"row_nr": [0], "result": [["col1", "col2"]]}
+    ).to_dict(as_series=False) == {"index": [0], "result": [["col1", "col2"]]}
 
 
 def test_double_projection_pushdown() -> None:
@@ -368,3 +368,11 @@ def test_schema_outer_join_projection_pd_13287() -> None:
     ).with_columns(
         pl.col("a").fill_null(pl.col("c")),
     ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
+
+
+def test_projection_pushdown_outer_join_duplicates() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    assert (
+        df1.join(df2, on="a", how="outer").with_columns(c=0).select("a", "c").collect()
+    ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
