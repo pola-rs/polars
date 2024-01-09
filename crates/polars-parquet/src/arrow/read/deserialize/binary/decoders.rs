@@ -8,6 +8,7 @@ use super::utils::*;
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage};
+use crate::read::deserialize::utils::{page_is_filtered, page_is_optional};
 use crate::read::ParquetError;
 
 pub(crate) type BinaryDict = BinaryArray<i64>;
@@ -373,3 +374,53 @@ pub(crate) fn build_binary_state<'a>(
         _ => Err(utils::not_implemented(page)),
     }
 }
+
+#[derive(Debug)]
+pub(crate) enum BinaryNestedState<'a> {
+    Optional(BinaryIter<'a>),
+    Required(BinaryIter<'a>),
+    RequiredDictionary(ValuesDictionary<'a>),
+    OptionalDictionary(ValuesDictionary<'a>),
+}
+
+impl<'a> utils::PageState<'a> for BinaryNestedState<'a> {
+    fn len(&self) -> usize {
+        match self {
+            BinaryNestedState::Optional(validity) => validity.size_hint().0,
+            BinaryNestedState::Required(state) => state.size_hint().0,
+            BinaryNestedState::RequiredDictionary(required) => required.len(),
+            BinaryNestedState::OptionalDictionary(optional) => optional.len(),
+        }
+    }
+}
+
+pub(crate) fn build_nested_state<'a>(page: &'a DataPage, dict: Option<&'a BinaryDict>) -> PolarsResult<BinaryNestedState<'a>> {
+    let is_optional = page_is_optional(page);
+    let is_filtered = page_is_filtered(page);
+
+    match (page.encoding(), dict, is_optional, is_filtered) {
+        (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
+            ValuesDictionary::try_new(page, dict).map(BinaryNestedState::RequiredDictionary)
+        },
+        (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
+            ValuesDictionary::try_new(page, dict).map(BinaryNestedState::OptionalDictionary)
+        },
+        (Encoding::Plain, _, true, false) => {
+            let (_, _, values) = split_buffer(page)?;
+
+            let values = BinaryIter::new(values);
+
+            Ok(BinaryNestedState::Optional(values))
+        },
+        (Encoding::Plain, _, false, false) => {
+            let (_, _, values) = split_buffer(page)?;
+
+            let values = BinaryIter::new(values);
+
+            Ok(BinaryNestedState::Required(values))
+        },
+        _ => Err(utils::not_implemented(page)),
+    }
+
+}
+

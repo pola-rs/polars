@@ -623,6 +623,9 @@ fn array_to_page_nested(
             let array = array.as_any().downcast_ref().unwrap();
             binary::nested_array_to_page::<i64>(array, options, type_, nested)
         },
+        BinaryView => {
+            binview::n
+        }
         LargeBinary => {
             let array = array.as_any().downcast_ref().unwrap();
             binary::nested_array_to_page::<i64>(array, options, type_, nested)

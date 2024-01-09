@@ -11,6 +11,7 @@ use crate::parquet::schema::types::{
     PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
 use crate::parquet::types::int96_to_i64_ns;
+use crate::read::deserialize::binview;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
@@ -336,6 +337,9 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
                 pages, data_type, chunk_size, num_rows,
             ))
         },
+        (PhysicalType::ByteArray, BinaryView | Utf8View) => {
+            Box::new(binview::BinaryViewArrayIter::new(pages, data_type, chunk_size, num_rows))
+        }
 
         (_, Dictionary(key_type, _, _)) => {
             return match_integer_type!(key_type, |$K| {
