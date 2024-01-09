@@ -8,10 +8,10 @@ body:
     attributes:
       label: Checks
       options:
-        - label: >
+        - label:
             I have checked that this issue has not already been reported.
           required: true
-        - label: >
+        - label:
             I have confirmed this bug exists on the
             [latest version](https://pypi.org/project/polars/) of Polars.
           required: true
