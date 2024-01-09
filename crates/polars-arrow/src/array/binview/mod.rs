@@ -34,7 +34,7 @@ pub use mutable::MutableBinaryViewArray;
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 
-pub trait ViewType: Sealed + 'static + PartialEq {
+pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     const IS_UTF8: bool;
     const DATA_TYPE: ArrowDataType;
     type Owned: Debug + Clone + Sync + Send + AsRef<Self>;

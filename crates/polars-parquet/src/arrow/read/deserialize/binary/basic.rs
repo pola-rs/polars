@@ -35,8 +35,8 @@ struct BinaryDecoder<O: Offset> {
 }
 
 impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
-    type State = State<'a>;
-    type Dict = Dict;
+    type State = BinaryState<'a>;
+    type Dict = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
     fn build_state(
@@ -44,95 +44,12 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
         page: &'a DataPage,
         dict: Option<&'a Self::Dict>,
     ) -> PolarsResult<Self::State> {
-        let is_optional =
-            utils::page_is_optional(page);
-        let is_filtered = utils::page_is_filtered(page);
-
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
         self.check_utf8.set(is_string);
-
-        match (page.encoding(), dict, is_optional, is_filtered) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
-                if is_string {
-                    try_check_utf8(dict.offsets(), dict.values())?;
-                }
-                Ok(State::RequiredDictionary(RequiredDictionary::try_new(
-                    page, dict,
-                )?))
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
-                if is_string {
-                    try_check_utf8(dict.offsets(), dict.values())?;
-                }
-                Ok(State::OptionalDictionary(
-                    OptionalPageValidity::try_new(page)?,
-                    ValuesDictionary::try_new(page, dict)?,
-                ))
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, true) => {
-                if is_string {
-                    try_check_utf8(dict.offsets(), dict.values())?;
-                }
-                FilteredRequiredDictionary::try_new(page, dict)
-                    .map(State::FilteredRequiredDictionary)
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, true) => {
-                if is_string {
-                    try_check_utf8(dict.offsets(), dict.values())?;
-                }
-                Ok(State::FilteredOptionalDictionary(
-                    FilteredOptionalPageValidity::try_new(page)?,
-                    ValuesDictionary::try_new(page, dict)?,
-                ))
-            },
-            (Encoding::Plain, _, true, false) => {
-                let (_, _, values) = split_buffer(page)?;
-
-                let values = BinaryIter::new(values);
-
-                Ok(State::Optional(
-                    OptionalPageValidity::try_new(page)?,
-                    values,
-                ))
-            },
-            (Encoding::Plain, _, false, false) => Ok(State::Required(Required::try_new(page)?)),
-            (Encoding::Plain, _, false, true) => {
-                Ok(State::FilteredRequired(FilteredRequired::new(page)))
-            },
-            (Encoding::Plain, _, true, true) => {
-                let (_, _, values) = split_buffer(page)?;
-
-                Ok(State::FilteredOptional(
-                    FilteredOptionalPageValidity::try_new(page)?,
-                    BinaryIter::new(values),
-                ))
-            },
-            (Encoding::DeltaLengthByteArray, _, false, false) => {
-                Delta::try_new(page).map(State::Delta)
-            },
-            (Encoding::DeltaLengthByteArray, _, true, false) => Ok(State::OptionalDelta(
-                OptionalPageValidity::try_new(page)?,
-                Delta::try_new(page)?,
-            )),
-            (Encoding::DeltaLengthByteArray, _, false, true) => {
-                FilteredDelta::try_new(page).map(State::FilteredDelta)
-            },
-            (Encoding::DeltaLengthByteArray, _, true, true) => Ok(State::FilteredOptionalDelta(
-                FilteredOptionalPageValidity::try_new(page)?,
-                Delta::try_new(page)?,
-            )),
-            (Encoding::DeltaByteArray, _, true, false) => Ok(State::OptionalDeltaByteArray(
-                OptionalPageValidity::try_new(page)?,
-                DeltaBytes::try_new(page)?,
-            )),
-            (Encoding::DeltaByteArray, _, false, false) => {
-                Ok(State::DeltaByteArray(DeltaBytes::try_new(page)?))
-            },
-            _ => Err(utils::not_implemented(page)),
-        }
+        build_binary_state(page, dict, is_string)
     }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -152,22 +69,22 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
         let mut validate_utf8 = self.check_utf8.take();
         let len_before = values.offsets.len();
         match state {
-            State::Optional(page_validity, page_values) => extend_from_decoder(
+            BinaryState::Optional(page_validity, page_values) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
                 values,
                 page_values,
             ),
-            State::Required(page) => {
+            BinaryState::Required(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push(x)
                 }
             },
-            State::Delta(page) => {
+            BinaryState::Delta(page) => {
                 values.extend_lengths(page.lengths.by_ref().take(additional), &mut page.values);
             },
-            State::OptionalDelta(page_validity, page_values) => {
+            BinaryState::OptionalDelta(page_validity, page_values) => {
                 let Binary {
                     offsets,
                     values: values_,
@@ -188,21 +105,21 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 page_values.values = remaining;
                 values_.extend_from_slice(consumed);
             },
-            State::FilteredRequired(page) => {
+            BinaryState::FilteredRequired(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push(x)
                 }
             },
-            State::FilteredDelta(page) => {
+            BinaryState::FilteredDelta(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push(x)
                 }
             },
-            State::OptionalDictionary(page_validity, page_values) => {
+            BinaryState::OptionalDictionary(page_validity, page_values) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page_values.dict;
-                utils::extend_from_decoder(
+                extend_from_decoder(
                     validity,
                     page_validity,
                     Some(additional),
@@ -213,7 +130,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                         .map(|index| page_dict.value(index.unwrap() as usize)),
                 )
             },
-            State::RequiredDictionary(page) => {
+            BinaryState::RequiredDictionary(page) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;
@@ -227,8 +144,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     values.push(x)
                 }
             },
-            State::FilteredOptional(page_validity, page_values) => {
-                utils::extend_from_decoder(
+            BinaryState::FilteredOptional(page_validity, page_values) => {
+                extend_from_decoder(
                     validity,
                     page_validity,
                     Some(additional),
@@ -236,8 +153,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     page_values.by_ref(),
                 );
             },
-            State::FilteredOptionalDelta(page_validity, page_values) => {
-                utils::extend_from_decoder(
+            BinaryState::FilteredOptionalDelta(page_validity, page_values) => {
+                extend_from_decoder(
                     validity,
                     page_validity,
                     Some(additional),
@@ -245,7 +162,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     page_values.by_ref(),
                 );
             },
-            State::FilteredRequiredDictionary(page) => {
+            BinaryState::FilteredRequiredDictionary(page) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;
@@ -258,11 +175,11 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     values.push(x)
                 }
             },
-            State::FilteredOptionalDictionary(page_validity, page_values) => {
+            BinaryState::FilteredOptionalDictionary(page_validity, page_values) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page_values.dict;
-                utils::extend_from_decoder(
+                extend_from_decoder(
                     validity,
                     page_validity,
                     Some(additional),
@@ -273,8 +190,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                         .map(|index| page_dict.value(index.unwrap() as usize)),
                 )
             },
-            State::OptionalDeltaByteArray(page_validity, page_values) => {
-                utils::extend_from_decoder(
+            BinaryState::OptionalDeltaByteArray(page_validity, page_values) => {
+                extend_from_decoder(
                     validity,
                     page_validity,
                     Some(additional),
@@ -282,7 +199,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     page_values,
                 )
             },
-            State::DeltaByteArray(page_values) => {
+            BinaryState::DeltaByteArray(page_values) => {
                 for x in page_values.take(additional) {
                     values.push(x)
                 }
@@ -336,7 +253,7 @@ pub struct Iter<O: Offset, I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     items: VecDeque<(Binary<O>, MutableBitmap)>,
-    dict: Option<Dict>,
+    dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
 }

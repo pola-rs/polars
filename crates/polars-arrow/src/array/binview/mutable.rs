@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use polars_error::PolarsResult;
 
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
+use crate::array::binview::view::{validate_utf8_only_view, validate_utf8_view};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 
@@ -25,10 +27,7 @@ impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
 
 impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGeneric<T> {
     fn from(mut value: MutableBinaryViewArray<T>) -> Self {
-        value
-            .completed_buffers
-            .push(std::mem::take(&mut value.in_progress_buffer).into());
-
+        value.finish_in_progress();
         unsafe {
             Self::new_unchecked(
                 T::DATA_TYPE,
@@ -55,6 +54,14 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
+    pub fn views(&mut self) -> &mut Vec<u128> {
+        &mut self.views
+    }
+
+    pub fn validity(&mut self) -> Option<&mut MutableBitmap> {
+        self.validity.as_mut()
+    }
+
     /// Reserves `additional` elements and `additional_buffer` on the buffer.
     pub fn reserve(&mut self, additional: usize) {
         self.views.reserve(additional);
@@ -71,11 +78,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.validity = Some(validity);
     }
 
-    pub fn push_value<V: AsRef<T>>(&mut self, value: V) {
-        if let Some(validity) = &mut self.validity {
-            validity.push(true)
-        }
-
+    pub fn push_value_ignore_validity<V: AsRef<T>>(&mut self, value: V) {
         let value = value.as_ref();
         let bytes = value.to_bytes();
         let len: u32 = bytes.len().try_into().unwrap();
@@ -108,15 +111,26 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.views.push(value);
     }
 
+    pub fn push_value<V: AsRef<T>>(&mut self, value: V) {
+        if let Some(validity) = &mut self.validity {
+            validity.push(true)
+        }
+        self.push_value_ignore_validity(value)
+   }
+
     pub fn push<V: AsRef<T>>(&mut self, value: Option<V>) {
         if let Some(value) = value {
             self.push_value(value)
         } else {
-            self.views.push(0);
-            match &mut self.validity {
-                Some(validity) => validity.push(false),
-                None => self.init_validity(),
-            }
+            self.push_null()
+        }
+    }
+
+    pub fn push_null(&mut self) {
+        self.views.push(0);
+        match &mut self.validity {
+            Some(validity) => validity.push(false),
+            None => self.init_validity(),
         }
     }
 
@@ -168,6 +182,20 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
     pub fn from<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
         Self::from_iter(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()))
+    }
+
+    fn finish_in_progress(&mut self) {
+        if !self.in_progress_buffer.is_empty() {
+            self
+                .completed_buffers
+                .push(std::mem::take(&mut self.in_progress_buffer).into());
+        }
+    }
+}
+
+impl MutableBinaryViewArray<[u8]> {
+    pub fn validate_utf8(&mut self) -> PolarsResult<()> {
+        validate_utf8_only_view(&self.views, &self.completed_buffers)
     }
 }
 

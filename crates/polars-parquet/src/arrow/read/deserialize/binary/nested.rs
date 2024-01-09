@@ -43,7 +43,7 @@ struct BinaryDecoder<O: Offset> {
 
 impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     type State = State<'a>;
-    type Dictionary = Dict;
+    type Dictionary = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
     fn build_state(
@@ -142,7 +142,7 @@ pub struct NestedIter<O: Offset, I: PagesIter> {
     data_type: ArrowDataType,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (Binary<O>, MutableBitmap))>,
-    dict: Option<Dict>,
+    dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
 }

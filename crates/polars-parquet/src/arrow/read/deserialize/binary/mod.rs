@@ -2,7 +2,7 @@ mod basic;
 mod dictionary;
 mod nested;
 mod utils;
-mod decoders;
+pub(super) mod decoders;
 
 pub use basic::Iter;
 pub use dictionary::{DictIter, NestedDictIter};
