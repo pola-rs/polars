@@ -747,14 +747,6 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
     efficient method of conversion.
 
-    Polars currently relies on pyarrow's implementation of the dataframe interchange
-    protocol for `from_dataframe`. Therefore, pyarrow>=11.0.0 is required for this
-    function to work.
-
-    Because Polars can not currently guarantee zero-copy conversion from Arrow for
-    categorical columns, `allow_copy=False` will not work if the dataframe contains
-    categorical data.
-
     Examples
     --------
     Convert a pandas dataframe to Polars through the interchange protocol.

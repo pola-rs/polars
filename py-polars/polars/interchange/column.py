@@ -72,7 +72,8 @@ class PolarsColumn(Column):
             If the data type of the column is not categorical.
         """
         if self.dtype[0] != DtypeKind.CATEGORICAL:
-            raise TypeError("`describe_categorical` only works on categorical columns")
+            msg = "`describe_categorical` only works on categorical columns"
+            raise TypeError(msg)
 
         categories = self._col.cat.get_categories()
         return {
