@@ -214,6 +214,46 @@ def read_csv(
     │ 2   ┆ Bob     ┆ 1990-09-20 │
     │ 3   ┆ Charlie ┆ 2002-03-08 │
     └─────┴─────────┴────────────┘
+
+    Consider specifying `dtypes` or `schema` to avoid wrong schema inference.
+    Alternatively, `infer_schema_length` can be adapted.
+
+    >>> pl.read_csv("sparse_data.csv")  # doctest: +SKIP
+    shape: (102, 2)
+    ┌────────┬────────────┐
+    │ row_nr ┆ sparse_int │
+    │ ---    ┆ ---        │
+    │ i64    ┆ str        │
+    ╞════════╪════════════╡
+    │ 0      ┆ null       │
+    │ 1      ┆ null       │
+    │ 2      ┆ null       │
+    │ 3      ┆ null       │
+    │ …      ┆ …          │
+    │ 98     ┆ null       │
+    │ 99     ┆ null       │
+    │ 100    ┆ null       │
+    │ 101    ┆ 1          │
+    └────────┴────────────┘
+    >>> pl.read_csv(
+    ...     "sparse_data.csv", infer_schema_length=None, dtypes={"row_nr": pl.Int8}
+    ... )  # doctest: +SKIP
+    shape: (102, 2)
+    ┌────────┬────────────┐
+    │ row_nr ┆ sparse_int │
+    │ ---    ┆ ---        │
+    │ i8     ┆ i64        │
+    ╞════════╪════════════╡
+    │ 0      ┆ null       │
+    │ 1      ┆ null       │
+    │ 2      ┆ null       │
+    │ 3      ┆ null       │
+    │ …      ┆ …          │
+    │ 98     ┆ null       │
+    │ 99     ┆ null       │
+    │ 100    ┆ null       │
+    │ 101    ┆ 1          │
+    └────────┴────────────┘
     """
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
