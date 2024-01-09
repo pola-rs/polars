@@ -305,8 +305,8 @@ impl<'a> PredicatePushDown<'a> {
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc { .. } => vec![],
                     _ => {
-                        // Disallow row-count pushdown of other scans as they may
-                        // not update the row counts properly before applying the
+                        // Disallow row index pushdown of other scans as they may
+                        // not update the row index properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
                         if let Some(ref row_index) = options.row_index {
                             let row_index_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {

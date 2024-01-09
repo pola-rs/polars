@@ -384,7 +384,7 @@ impl DataFrame {
         DataFrame::new(columns)
     }
 
-    /// Add a row count in place.
+    /// Add a row index column in place.
     pub fn with_row_index_mut(&mut self, name: &str, offset: Option<IdxSize>) -> &mut Self {
         let offset = offset.unwrap_or(0);
         let mut ca = IdxCa::from_vec(

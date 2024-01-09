@@ -396,7 +396,7 @@ impl Display for FunctionNode {
             Rename { .. } => write!(f, "RENAME"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
-            RowIndex { .. } => write!(f, "WITH ROW COUNT"),
+            RowIndex { .. } => write!(f, "WITH ROW INDEX"),
         }
     }
 }

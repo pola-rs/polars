@@ -66,7 +66,7 @@ impl ParquetExec {
 
             // First initialize the readers, predicates and metadata.
             // This will be used to determine the slices. That way we can actually read all the
-            // files in parallel even when we add row counts or slices.
+            // files in parallel even if we add row index columns or slices.
             let readers_and_metadata = paths
                 .iter()
                 .map(|path| {
