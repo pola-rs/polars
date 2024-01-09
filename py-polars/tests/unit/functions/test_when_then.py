@@ -514,3 +514,14 @@ def test_when_predicates_kwargs() -> None:
         ),
         pl.DataFrame({"misc": ["?", "z in (a|b), y<0", "?", "y=1"]}),
     )
+
+
+def test_when_then_null_broadcast() -> None:
+    assert (
+        pl.select(
+            pl.when(pl.repeat(True, 2, dtype=pl.Boolean)).then(
+                pl.repeat(None, 1, dtype=pl.Null)
+            )
+        ).height
+        == 2
+    )
