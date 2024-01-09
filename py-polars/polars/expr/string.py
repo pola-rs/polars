@@ -1052,7 +1052,7 @@ class ExprStringNameSpace:
         ┌─────┬───────────────┬───────────────────┐
         │ s   ┆ default_match ┆ insensitive_match │
         │ --- ┆ ---           ┆ ---               │
-        │ str ┆ i64           ┆ i64               │
+        │ str ┆ u32           ┆ u32               │
         ╞═════╪═══════════════╪═══════════════════╡
         │ AAA ┆ null          ┆ 0                 │
         │ aAa ┆ 1             ┆ 0                 │
@@ -1087,7 +1087,7 @@ class ExprStringNameSpace:
         ┌────────────┬─────────────┬─────────┐
         │ txt        ┆ a|e (regex) ┆ e (lit) │
         │ ---        ┆ ---         ┆ ---     │
-        │ str        ┆ i64         ┆ i64     │
+        │ str        ┆ u32         ┆ u32     │
         ╞════════════╪═════════════╪═════════╡
         │ Crab       ┆ 2           ┆ null    │
         │ Lobster    ┆ 5           ┆ 5       │
@@ -1102,7 +1102,7 @@ class ExprStringNameSpace:
         ┌────────────┬───────────┬──────────┐
         │ txt        ┆ pat       ┆ find_pat │
         │ ---        ┆ ---       ┆ ---      │
-        │ str        ┆ str       ┆ i64      │
+        │ str        ┆ str       ┆ u32      │
         ╞════════════╪═══════════╪══════════╡
         │ Crab       ┆ a[bc]     ┆ 2        │
         │ Lobster    ┆ b.t       ┆ 2        │

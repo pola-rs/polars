@@ -538,7 +538,7 @@ class StringNameSpace:
 
         >>> s.str.find("a|e").rename("idx_rx")
         shape: (4,)
-        Series: 'idx_rx' [i64]
+        Series: 'idx_rx' [u32]
         [
             2
             5
@@ -550,9 +550,9 @@ class StringNameSpace:
 
         >>> s.str.find("e", literal=True).rename("idx_lit")
         shape: (4,)
-        Series: 'idx_lit' [i64]
+        Series: 'idx_lit' [u32]
         [
-            -1
+            null
             5
             null
             7
@@ -563,7 +563,7 @@ class StringNameSpace:
         >>> p = pl.Series("pat", ["a[bc]", "b.t", "[aeiuo]", "(?i)A[BC]"])
         >>> s.str.find(p).rename("idx")
         shape: (4,)
-        Series: 'idx' [i64]
+        Series: 'idx' [u32]
         [
             2
             2
