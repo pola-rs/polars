@@ -312,7 +312,7 @@ impl DataFrame {
     ///              "Color" => &["Red", "Yellow", "Green"])?;
     ///
     /// assert_eq!(df, df.collect());
-    ///
+    ///```
     pub fn collect(&self) -> DataFrame {
         self.clone()
     }
