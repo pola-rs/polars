@@ -1,7 +1,7 @@
 use polars_ops::chunked_array::array::*;
 
 use super::*;
-use crate::map;
+use crate::{map, map_as_slice};
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -19,6 +19,7 @@ pub enum ArrayFunction {
     Reverse,
     ArgMin,
     ArgMax,
+    Get,
 }
 
 impl ArrayFunction {
@@ -34,6 +35,7 @@ impl ArrayFunction {
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
+            Get => mapper.map_to_list_and_array_inner_dtype(),
         }
     }
 }
@@ -63,6 +65,7 @@ impl Display for ArrayFunction {
             Reverse => "reverse",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
+            Get => "get",
         };
         write!(f, "arr.{name}")
     }
@@ -85,6 +88,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Reverse => map!(reverse),
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
+            Get => map_as_slice!(get),
         }
     }
 }
@@ -140,4 +144,11 @@ pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
     Ok(s.array()?.array_arg_max().into_series())
+}
+
+pub(super) fn get(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].array()?;
+    let index = s[1].cast(&DataType::Int64)?;
+    let index = index.i64().unwrap();
+    ca.array_get(index)
 }

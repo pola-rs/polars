@@ -1,3 +1,5 @@
+import datetime
+
 import numpy as np
 import pytest
 
@@ -102,3 +104,62 @@ def test_array_arg_min_max() -> None:
     assert_series_equal(s.arr.arg_min(), expected)
     expected = pl.Series("a", [2, 0], dtype=pl.UInt32)
     assert_series_equal(s.arr.arg_max(), expected)
+
+
+def test_array_get() -> None:
+    # test index literal
+    s = pl.Series(
+        "a",
+        [[1, 2, 3, 4], [5, 6, None, None], [7, 8, 9, 10]],
+        dtype=pl.Array(pl.Int64, 4),
+    )
+    out = s.arr.get(1)
+    expected = pl.Series("a", [2, 6, 8], dtype=pl.Int64)
+    assert_series_equal(out, expected)
+
+    # test index expr
+    out = s.arr.get(pl.Series([1, -2, 4]))
+    expected = pl.Series("a", [2, None, None], dtype=pl.Int64)
+    assert_series_equal(out, expected)
+
+    # test logical type
+    s = pl.Series(
+        "a",
+        [
+            [datetime.date(1999, 1, 1), datetime.date(2000, 1, 1)],
+            [datetime.date(2001, 10, 1), None],
+            [None, None],
+        ],
+        dtype=pl.Array(pl.Date, 2),
+    )
+    out = s.arr.get(pl.Series([1, -2, 4]))
+    expected = pl.Series(
+        "a",
+        [datetime.date(2000, 1, 1), datetime.date(2001, 10, 1), None],
+        dtype=pl.Date,
+    )
+    assert_series_equal(out, expected)
+
+
+def test_arr_first_last() -> None:
+    s = pl.Series(
+        "a",
+        [[1, 2, 3], [None, 5, 6], [None, None, None]],
+        dtype=pl.Array(pl.Int64, 3),
+    )
+
+    first = s.arr.first()
+    expected_first = pl.Series(
+        "a",
+        [1, None, None],
+        dtype=pl.Int64,
+    )
+    assert_series_equal(first, expected_first)
+
+    last = s.arr.last()
+    expected_last = pl.Series(
+        "a",
+        [3, 6, None],
+        dtype=pl.Int64,
+    )
+    assert_series_equal(last, expected_last)

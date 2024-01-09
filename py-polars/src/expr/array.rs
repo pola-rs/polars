@@ -59,4 +59,8 @@ impl PyExpr {
     fn arr_arg_max(&self) -> Self {
         self.inner.clone().arr().arg_max().into()
     }
+
+    fn arr_get(&self, index: PyExpr) -> Self {
+        self.inner.clone().arr().get(index.inner).into()
+    }
 }
