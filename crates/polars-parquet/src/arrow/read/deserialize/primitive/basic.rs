@@ -163,8 +163,7 @@ where
         page: &'a DataPage,
         dict: Option<&'a Self::Dict>,
     ) -> PolarsResult<Self::State> {
-        let is_optional =
-            utils::page_is_optional(page);
+        let is_optional = utils::page_is_optional(page);
         let is_filtered = utils::page_is_filtered(page);
 
         match (page.encoding(), dict, is_optional, is_filtered) {

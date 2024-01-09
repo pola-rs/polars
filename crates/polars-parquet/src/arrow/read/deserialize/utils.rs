@@ -262,7 +262,6 @@ fn reserve_pushable_and_validity<'a, T: Default, P: Pushable<T>>(
     runs
 }
 
-
 // TODO! Check if we can monomorphisize this. This is all dynamic dispatch now.
 /// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
 pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item = T>>(
@@ -478,9 +477,8 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> PolarsResult<hybrid_rle::
         .map_err(to_compute_err)
 }
 
-
 pub(super) fn page_is_optional(page: &DataPage) -> bool {
-        page.descriptor.primitive_type.field_info.repetition == Repetition::Optional
+    page.descriptor.primitive_type.field_info.repetition == Repetition::Optional
 }
 
 pub(super) fn page_is_filtered(page: &DataPage) -> bool {

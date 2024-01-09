@@ -1,5 +1,6 @@
 //! APIs to read from Parquet format.
 mod binary;
+mod binview;
 mod boolean;
 mod dictionary;
 mod fixed_size_binary;
@@ -10,7 +11,6 @@ mod primitive;
 mod simple;
 mod struct_;
 mod utils;
-mod binview;
 
 use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
 use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};

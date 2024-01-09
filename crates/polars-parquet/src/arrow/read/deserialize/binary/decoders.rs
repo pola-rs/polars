@@ -1,18 +1,14 @@
-use arrow::array::{Array, BinaryArray, MutableBinaryValuesArray, };
 use arrow::array::specification::try_check_utf8;
+use arrow::array::{BinaryArray, MutableBinaryValuesArray};
 use polars_error::PolarsResult;
-use crate::parquet::encoding::{Encoding};
 
-use super::super::utils::{
-    get_selected_rows, DecodedState, FilteredOptionalPageValidity,
-    OptionalPageValidity,
-};
-use super::super::{utils};
+use super::super::utils;
+use super::super::utils::{get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity};
 use super::utils::*;
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle};
+use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage};
-use crate::read::{ParquetError};
+use crate::read::ParquetError;
 
 pub(crate) type BinaryDict = BinaryArray<i64>;
 
@@ -47,7 +43,7 @@ impl<'a> Delta<'a> {
         let mut lengths_iter = delta_length_byte_array::Decoder::try_new(values)?;
 
         #[allow(clippy::needless_collect)] // we need to consume it to get the values
-            let lengths = lengths_iter
+        let lengths = lengths_iter
             .by_ref()
             .map(|x| x.map(|x| x as usize))
             .collect::<Result<Vec<_>, ParquetError>>()?;
@@ -289,21 +285,22 @@ pub(crate) fn deserialize_plain(values: &[u8], num_values: usize) -> BinaryDict 
     dict_values.into()
 }
 
-
-pub(crate) fn build_binary_state<'a>(page: &'a DataPage, dict: Option<&'a BinaryDict>, is_string: bool) -> PolarsResult<BinaryState<'a>> {
-    let is_optional =
-        utils::page_is_optional(page);
+pub(crate) fn build_binary_state<'a>(
+    page: &'a DataPage,
+    dict: Option<&'a BinaryDict>,
+    is_string: bool,
+) -> PolarsResult<BinaryState<'a>> {
+    let is_optional = utils::page_is_optional(page);
     let is_filtered = utils::page_is_filtered(page);
-
 
     match (page.encoding(), dict, is_optional, is_filtered) {
         (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
             if is_string {
                 try_check_utf8(dict.offsets(), dict.values())?;
             }
-            Ok(BinaryState::RequiredDictionary(RequiredDictionary::try_new(
-                page, dict,
-            )?))
+            Ok(BinaryState::RequiredDictionary(
+                RequiredDictionary::try_new(page, dict)?,
+            ))
         },
         (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
             if is_string {
@@ -375,5 +372,4 @@ pub(crate) fn build_binary_state<'a>(page: &'a DataPage, dict: Option<&'a Binary
         },
         _ => Err(utils::not_implemented(page)),
     }
-
 }

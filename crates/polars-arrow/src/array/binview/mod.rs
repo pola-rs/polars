@@ -144,8 +144,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         }
     }
 
-    pub fn data_buffers(&self) -> &[Buffer<u8>] {
-        self.buffers.as_ref()
+    pub fn data_buffers(&self) -> &Arc<[Buffer<u8>]> {
+        &self.buffers
     }
 
     pub fn variadic_buffer_lengths(&self) -> Vec<i64> {

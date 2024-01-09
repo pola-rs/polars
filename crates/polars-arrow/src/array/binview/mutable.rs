@@ -4,7 +4,7 @@ use polars_error::PolarsResult;
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
-use crate::array::binview::view::{validate_utf8_only_view, validate_utf8_view};
+use crate::array::binview::view::{validate_utf8_only_view};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 

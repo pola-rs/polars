@@ -331,9 +331,11 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
             |x: f64| x,
         ))),
         // Don't compile this code with `i32` as we don't use this in polars
-        (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => Box::new(
-            binary::Iter::<i64, _>::new(pages, data_type, chunk_size, num_rows),
-        ),
+        (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
+            Box::new(binary::BinaryArrayIter::<i64, _>::new(
+                pages, data_type, chunk_size, num_rows,
+            ))
+        },
 
         (_, Dictionary(key_type, _, _)) => {
             return match_integer_type!(key_type, |$K| {

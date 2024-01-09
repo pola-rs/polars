@@ -113,8 +113,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
         page: &'a DataPage,
         _: Option<&'a Self::Dict>,
     ) -> PolarsResult<Self::State> {
-        let is_optional =
-            utils::page_is_optional(page);
+        let is_optional = utils::page_is_optional(page);
         let is_filtered = utils::page_is_filtered(page);
 
         match (page.encoding(), is_optional, is_filtered) {

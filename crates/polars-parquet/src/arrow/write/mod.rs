@@ -13,6 +13,7 @@
 //! The use of these arrow types will result in no logical type being stored within a parquet file.
 
 mod binary;
+mod binview;
 mod boolean;
 mod dictionary;
 mod file;
@@ -25,7 +26,6 @@ mod schema;
 #[cfg(feature = "async")]
 mod sink;
 mod utils;
-mod binview;
 
 use arrow::array::*;
 use arrow::datatypes::*;

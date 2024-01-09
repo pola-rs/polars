@@ -1,7 +1,7 @@
 use arrow::array::{Array, BinaryArray, ValueSize};
 use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::PolarsResult;
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
@@ -10,12 +10,12 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{
     serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
 };
-use crate::write::Page;
 use crate::write::utils::invalid_encoding;
+use crate::write::Page;
 
-pub(crate) fn encode_non_null_values<'a, I: Iterator<Item=&'a [u8]>>(
+pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(
     iter: I,
-    buffer: &mut Vec<u8>
+    buffer: &mut Vec<u8>,
 ) {
     iter.for_each(|x| {
         // BYTE_ARRAY: first 4 bytes denote length in littleendian.
@@ -25,10 +25,7 @@ pub(crate) fn encode_non_null_values<'a, I: Iterator<Item=&'a [u8]>>(
     })
 }
 
-pub(crate) fn encode_plain<O: Offset>(
-    array: &BinaryArray<O>,
-    buffer: &mut Vec<u8>,
-) {
+pub(crate) fn encode_plain<O: Offset>(array: &BinaryArray<O>, buffer: &mut Vec<u8>) {
     let len_before = buffer.len();
     let capacity =
         array.get_values_size() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
@@ -67,9 +64,7 @@ pub fn array_to_page<O: Offset>(
             is_optional,
             &mut buffer,
         ),
-        _ => {
-            return Err(invalid_encoding(encoding, array.data_type()))
-        },
+        _ => return Err(invalid_encoding(encoding, array.data_type())),
     }
 
     let statistics = if options.write_statistics {

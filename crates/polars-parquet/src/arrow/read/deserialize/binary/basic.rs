@@ -3,24 +3,18 @@ use std::collections::VecDeque;
 use std::default::Default;
 
 use arrow::array::specification::try_check_utf8;
-use arrow::array::{Array, BinaryArray, Utf8Array};
+use arrow::array::{Array, ArrayRef, BinaryArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
 
-use super::super::utils::{
-    extend_from_decoder, next, DecodedState, FilteredOptionalPageValidity,
-    MaybeNext, OptionalPageValidity,
-};
+use super::super::utils::{extend_from_decoder, next, DecodedState, MaybeNext};
 use super::super::{utils, PagesIter};
-use super::utils::*;
-use crate::parquet::encoding::{Encoding};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::{PrimitiveLogicalType};
-
 use super::decoders::*;
-
+use super::utils::*;
+use crate::parquet::page::{DataPage, DictPage};
+use crate::read::PrimitiveLogicalType;
 
 impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
     fn len(&self) -> usize {
@@ -190,15 +184,13 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                         .map(|index| page_dict.value(index.unwrap() as usize)),
                 )
             },
-            BinaryState::OptionalDeltaByteArray(page_validity, page_values) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    page_values,
-                )
-            },
+            BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
+                validity,
+                page_validity,
+                Some(additional),
+                values,
+                page_values,
+            ),
             BinaryState::DeltaByteArray(page_values) => {
                 for x in page_values.take(additional) {
                     values.push(x)
@@ -229,13 +221,15 @@ pub(super) fn finish<O: Offset>(
     validity.shrink_to_fit();
 
     match data_type.to_physical_type() {
-        PhysicalType::Binary | PhysicalType::LargeBinary => BinaryArray::<O>::try_new(
-            data_type.clone(),
-            values.offsets.into(),
-            values.values.into(),
-            validity.into(),
-        )
-        .map(|x| x.boxed()),
+        PhysicalType::Binary | PhysicalType::LargeBinary => unsafe {
+            Ok(BinaryArray::<O>::new_unchecked(
+                data_type.clone(),
+                values.offsets.into(),
+                values.values.into(),
+                validity.into(),
+            )
+            .boxed())
+        },
         PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
             Ok(Utf8Array::<O>::new_unchecked(
                 data_type.clone(),
@@ -249,7 +243,7 @@ pub(super) fn finish<O: Offset>(
     }
 }
 
-pub struct Iter<O: Offset, I: PagesIter> {
+pub struct BinaryArrayIter<O: Offset, I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     items: VecDeque<(Binary<O>, MutableBitmap)>,
@@ -258,7 +252,7 @@ pub struct Iter<O: Offset, I: PagesIter> {
     remaining: usize,
 }
 
-impl<O: Offset, I: PagesIter> Iter<O, I> {
+impl<O: Offset, I: PagesIter> BinaryArrayIter<O, I> {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
@@ -276,8 +270,8 @@ impl<O: Offset, I: PagesIter> Iter<O, I> {
     }
 }
 
-impl<O: Offset, I: PagesIter> Iterator for Iter<O, I> {
-    type Item = PolarsResult<Box<dyn Array>>;
+impl<O: Offset, I: PagesIter> Iterator for BinaryArrayIter<O, I> {
+    type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let decoder = BinaryDecoder::<O>::default();
@@ -301,4 +295,3 @@ impl<O: Offset, I: PagesIter> Iterator for Iter<O, I> {
         }
     }
 }
-
