@@ -169,16 +169,68 @@ class ListNameSpace:
         """
 
     def sum(self) -> Series:
-        """Sum all the arrays in the list."""
+        """
+        Sum all the arrays in the list.
+        
+        Examples
+        --------
+        >>> s = pl.Series([[1, 2], [3, 4]])
+        >>> s.list.sum()
+        shape: (2,)
+        Series: '' [i64]
+        [
+            3
+            7
+        ]
+        """
 
     def max(self) -> Series:
-        """Compute the max value of the arrays in the list."""
+        """
+        Compute the max value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series([[1, 2], [3, 4]])
+        >>> s.list.max()
+        shape: (2,)
+        Series: '' [i64]
+        [
+            2
+            4
+        ]
+        """
 
     def min(self) -> Series:
-        """Compute the min value of the arrays in the list."""
+        """
+        Compute the min value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series([[1, 2], [3, 4]])
+        >>> s.list.min()
+        shape: (2,)
+        Series: '' [i64]
+        [
+            1
+            3
+        ]
+        """
 
     def mean(self) -> Series:
-        """Compute the mean value of the arrays in the list."""
+        """
+        Compute the mean value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series([[1, 2], [3, 4]])
+        >>> s.list.mean()
+        shape: (2,)
+        Series: '' [f64]
+        [
+            1.5
+            3.5
+        ]
+        """
 
     def sort(self, *, descending: bool = False) -> Series:
         """
@@ -210,7 +262,20 @@ class ListNameSpace:
         """
 
     def reverse(self) -> Series:
-        """Reverse the arrays in the list."""
+        """
+        Reverse the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series([[1, 2, 3], [4, 5, 6]])
+        >>> s.list.reverse()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [3, 2, 1]
+            [6, 5, 4]
+        ]
+        """
 
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
@@ -221,6 +286,25 @@ class ListNameSpace:
         maintain_order
             Maintain order of data. This requires more work.
 
+        Examples
+        --------
+        >>> s = pl.Series([[2, 1, 2], [5, 4, 5]])
+        >>> s.list.unique()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [1, 2]
+            [4, 5]
+        ]
+
+        >>> s = pl.Series([[2, 1, 2], [5, 4, 5]])
+        >>> s.list.unique(maintain_order=True)
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [2, 1]
+            [5, 4]
+        ]
         """
 
     def concat(self, other: list[Series] | Series | list[Any]) -> Series:
@@ -305,10 +389,36 @@ class ListNameSpace:
         """
 
     def first(self) -> Series:
-        """Get the first value of the sublists."""
+        """
+        Get the first value of the sublists.
+
+        Examples
+        --------
+        >>> s = pl.Series([["foo", "bar"], ["hello", "world"]])
+        >>> s.list.first()
+        shape: (2,)
+        Series: '' [str]
+        [
+            "foo"
+            "hello"
+        ]
+        """
 
     def last(self) -> Series:
-        """Get the last value of the sublists."""
+        """
+        Get the last value of the sublists.
+
+        Examples
+        --------
+        >>> s = pl.Series([["foo", "bar"], ["hello", "world"]])
+        >>> s.list.last()
+        shape: (2,)
+        Series: '' [str]
+        [
+            "bar"
+            "world"
+        ]
+        """
 
     def contains(self, item: float | str | bool | int | date | datetime) -> Series:
         """
@@ -324,6 +434,17 @@ class ListNameSpace:
         Series
             Series of data type :class:`Boolean`.
 
+        Examples
+        --------
+        >>> s = pl.Series([["foo", "bar"], ["hello", "world"], ["foo", "world"]])
+        >>> s.list.contains("foo")
+        shape: (3,)
+        Series: '' [bool]
+        [
+            true
+            false
+            true
+        ]
         """
 
     def arg_min(self) -> Series:
