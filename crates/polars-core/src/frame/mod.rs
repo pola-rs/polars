@@ -303,6 +303,20 @@ impl DataFrame {
         })
     }
 
+    /// Alias for `clone` allows calling `collect` on a materialized `DataFrame`.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df = df!("Fruit" => &["Apple", "Apple", "Pear"],
+    ///              "Color" => &["Red", "Yellow", "Green"])?;
+    ///
+    /// assert_eq!(df, df.collect());
+    ///
+    pub fn collect(&self) -> DataFrame {
+        self.clone()
+    }
+
     /// Creates an empty `DataFrame` usable in a compile time context (such as static initializers).
     ///
     /// # Example
@@ -3093,6 +3107,12 @@ mod test {
         let s0 = Series::new("days", [0, 1, 2].as_ref());
         let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
         DataFrame::new(vec![s0, s1]).unwrap()
+    }
+
+    #[test]
+    fn test_collect() {
+        let df = create_frame();
+        assert_eq!(df, df.collect());
     }
 
     #[test]

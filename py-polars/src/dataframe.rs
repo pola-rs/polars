@@ -1252,6 +1252,10 @@ impl PyDataFrame {
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
     }
 
+    pub fn collect(&self) -> PyDataFrame {
+        PyDataFrame::new(self.df.collect())
+    }
+
     pub fn lazy(&self) -> PyLazyFrame {
         self.df.clone().lazy().into()
     }

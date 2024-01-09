@@ -7934,6 +7934,38 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
+    def collect(self) -> DataFrame:
+        """
+        Alias for `.clone()`. Returns a copy of this DataFrame.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 2, 3, 4],
+        ...         "b": [0.5, None, 2.5, 13],
+        ...         "c": [True, True, False, None],
+        ...     }
+        ... )
+        >>> df.collect()  # doctest: +ELLIPSIS
+        shape: (4, 3)
+        ┌──────┬──────┬───────┐
+        │ a    ┆ b    ┆ c     │
+        │ ---  ┆ ---  ┆ ---   │
+        │ i64  ┆ f64  ┆ bool  │
+        ╞══════╪══════╪═══════╡
+        │ null ┆ 0.5  ┆ true  │
+        │ 2    ┆ null ┆ true  │
+        │ 3    ┆ 2.5  ┆ false │
+        │ 4    ┆ 13.0 ┆ null  │
+        └──────┴──────┴───────┘
+        """
+        return self._from_pydf(self._df.collect())
+
     def lazy(self) -> LazyFrame:
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
