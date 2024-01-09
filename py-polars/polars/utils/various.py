@@ -185,12 +185,12 @@ def handle_projection_columns(
     return projection, new_columns
 
 
-def _prepare_row_count_args(
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+def _prepare_row_index_args(
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
 ) -> tuple[str, int] | None:
-    if row_count_name is not None:
-        return (row_count_name, row_count_offset)
+    if row_index_name is not None:
+        return (row_index_name, row_index_offset)
     else:
         return None
 

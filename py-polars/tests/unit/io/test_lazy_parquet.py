@@ -36,20 +36,20 @@ def test_scan_parquet_local_with_async(
     pl.scan_parquet(foods_parquet_path.relative_to(Path.cwd())).head(1).collect()
 
 
-def test_row_count(foods_parquet_path: Path) -> None:
-    df = pl.read_parquet(foods_parquet_path, row_count_name="row_count")
-    assert df["row_count"].to_list() == list(range(27))
+def test_row_index(foods_parquet_path: Path) -> None:
+    df = pl.read_parquet(foods_parquet_path, row_index_name="row_index")
+    assert df["row_index"].to_list() == list(range(27))
 
     df = (
-        pl.scan_parquet(foods_parquet_path, row_count_name="row_count")
+        pl.scan_parquet(foods_parquet_path, row_index_name="row_index")
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
 
-    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+    assert df["row_index"].to_list() == [0, 6, 11, 13, 14, 20, 25]
 
     df = (
-        pl.scan_parquet(foods_parquet_path, row_count_name="row_count")
+        pl.scan_parquet(foods_parquet_path, row_index_name="row_index")
         .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
@@ -193,9 +193,9 @@ def test_parquet_stats(tmp_path: Path) -> None:
     ).collect().shape == (8, 1)
 
 
-def test_row_count_schema_parquet(parquet_file_path: Path) -> None:
+def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
     assert (
-        pl.scan_parquet(str(parquet_file_path), row_count_name="id")
+        pl.scan_parquet(str(parquet_file_path), row_index_name="id")
         .select(["id", "b"])
         .collect()
     ).dtypes == [pl.UInt32, pl.String]
@@ -402,7 +402,7 @@ def test_parquet_many_row_groups_12297(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_row_count_empty_file(tmp_path: Path) -> None:
+def test_row_index_empty_file(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "test.parquet"
     df = pl.DataFrame({"a": []}, schema={"a": pl.Float32})

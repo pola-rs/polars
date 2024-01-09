@@ -9,7 +9,7 @@ use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
@@ -106,7 +106,7 @@ pub struct FileScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
-    pub row_count: Option<RowCount>,
+    pub row_index: Option<RowIndex>,
     pub rechunk: bool,
     pub file_counter: FileCount,
     pub hive_partitioning: bool,

@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_io::csv::utils::infer_file_schema;
 use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 use polars_io::utils::get_reader_bytes;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
@@ -33,7 +33,7 @@ pub struct LazyCsvReader<'a> {
     rechunk: bool,
     skip_rows_after_header: usize,
     encoding: CsvEncoding,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     try_parse_dates: bool,
     raise_if_empty: bool,
 }
@@ -66,7 +66,7 @@ impl<'a> LazyCsvReader<'a> {
             rechunk: false,
             skip_rows_after_header: 0,
             encoding: CsvEncoding::Utf8,
-            row_count: None,
+            row_index: None,
             try_parse_dates: false,
             raise_if_empty: true,
             truncate_ragged_lines: false,
@@ -80,10 +80,10 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Add a `row_count` column.
+    /// Add a row index column.
     #[must_use]
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
-        self.row_count = row_count;
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -299,7 +299,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.rechunk,
             self.skip_rows_after_header,
             self.encoding,
-            self.row_count,
+            self.row_index,
             self.try_parse_dates,
             self.raise_if_empty,
             self.truncate_ragged_lines,
@@ -345,9 +345,9 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         self.n_rows
     }
 
-    /// Add a `row_count` column.
-    fn row_count(&self) -> Option<&RowCount> {
-        self.row_count.as_ref()
+    /// Return the row index settings.
+    fn row_index(&self) -> Option<&RowIndex> {
+        self.row_index.as_ref()
     }
 
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {

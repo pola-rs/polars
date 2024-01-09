@@ -106,7 +106,7 @@ from polars.utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars.utils.various import (
-    _prepare_row_count_args,
+    _prepare_row_index_args,
     _process_null_values,
     _warn_null_comparison,
     handle_projection_columns,
@@ -691,8 +691,8 @@ class DataFrame:
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         sample_size: int = 1024,
         eol_char: str = "\n",
         raise_if_empty: bool = True,
@@ -765,8 +765,8 @@ class DataFrame:
                 low_memory=low_memory,
                 rechunk=rechunk,
                 skip_rows_after_header=skip_rows_after_header,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
+                row_index_name=row_index_name,
+                row_index_offset=row_index_offset,
                 eol_char=eol_char,
                 raise_if_empty=raise_if_empty,
                 truncate_ragged_lines=truncate_ragged_lines,
@@ -807,7 +807,7 @@ class DataFrame:
             missing_utf8_is_empty_string,
             try_parse_dates,
             skip_rows_after_header,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
@@ -824,8 +824,8 @@ class DataFrame:
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         parallel: ParallelStrategy = "auto",
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         low_memory: bool = False,
         use_statistics: bool = True,
         rechunk: bool = True,
@@ -852,8 +852,8 @@ class DataFrame:
                 n_rows=n_rows,
                 rechunk=True,
                 parallel=parallel,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
+                row_index_name=row_index_name,
+                row_index_offset=row_index_offset,
                 low_memory=low_memory,
             )
 
@@ -875,7 +875,7 @@ class DataFrame:
             projection,
             n_rows,
             parallel,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             low_memory=low_memory,
             use_statistics=use_statistics,
             rechunk=rechunk,
@@ -918,8 +918,8 @@ class DataFrame:
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         rechunk: bool = True,
         memory_map: bool = True,
     ) -> Self:
@@ -940,10 +940,10 @@ class DataFrame:
             list of column names.
         n_rows
             Stop reading from IPC file after reading `n_rows`.
-        row_count_name
-            Row count name.
-        row_count_offset
-            Row count offset.
+        row_index_name
+            Row index name.
+        row_index_offset
+            Row index offset.
         rechunk
             Make sure that all data is contiguous.
         memory_map
@@ -965,8 +965,8 @@ class DataFrame:
                 source,
                 n_rows=n_rows,
                 rechunk=rechunk,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
+                row_index_name=row_index_name,
+                row_index_offset=row_index_offset,
                 memory_map=memory_map,
             )
             if columns is None:
@@ -987,7 +987,7 @@ class DataFrame:
             columns,
             projection,
             n_rows,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             memory_map=memory_map,
         )
         return self
@@ -999,8 +999,8 @@ class DataFrame:
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         rechunk: bool = True,
     ) -> Self:
         """
@@ -1019,10 +1019,10 @@ class DataFrame:
             list of column names.
         n_rows
             Stop reading from IPC stream after reading `n_rows`.
-        row_count_name
-            Row count name.
-        row_count_offset
-            Row count offset.
+        row_index_name
+            Row index name.
+        row_index_offset
+            Row index offset.
         rechunk
             Make sure that all data is contiguous.
         """
@@ -1038,7 +1038,7 @@ class DataFrame:
             columns,
             projection,
             n_rows,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             rechunk,
         )
         return self
@@ -10316,8 +10316,8 @@ class DataFrame:
         other
             DataFrame that will be used to update the values
         on
-            Column names that will be joined on.
-            If none given the row count is used.
+            Column names that will be joined on. If set to `None` (default),
+            the implicit row index of each frame is used as a join key.
         how : {'left', 'inner', 'outer'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.

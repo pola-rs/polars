@@ -53,20 +53,20 @@ def test_invalid_utf8(tmp_path: Path) -> None:
     assert_frame_equal(a, b)
 
 
-def test_row_count(foods_file_path: Path) -> None:
-    df = pl.read_csv(foods_file_path, row_count_name="row_count")
-    assert df["row_count"].to_list() == list(range(27))
+def test_row_index(foods_file_path: Path) -> None:
+    df = pl.read_csv(foods_file_path, row_index_name="row_index")
+    assert df["row_index"].to_list() == list(range(27))
 
     df = (
-        pl.scan_csv(foods_file_path, row_count_name="row_count")
+        pl.scan_csv(foods_file_path, row_index_name="row_index")
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
 
-    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+    assert df["row_index"].to_list() == [0, 6, 11, 13, 14, 20, 25]
 
     df = (
-        pl.scan_csv(foods_file_path, row_count_name="row_count")
+        pl.scan_csv(foods_file_path, row_index_name="row_index")
         .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
@@ -179,7 +179,7 @@ def test_scan_csv_schema_new_columns_dtypes(
 
 def test_lazy_n_rows(foods_file_path: Path) -> None:
     df = (
-        pl.scan_csv(foods_file_path, n_rows=4, row_count_name="idx")
+        pl.scan_csv(foods_file_path, n_rows=4, row_index_name="idx")
         .filter(pl.col("idx") > 2)
         .collect()
     )
@@ -192,7 +192,7 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
     }
 
 
-def test_lazy_row_count_no_push_down(foods_file_path: Path) -> None:
+def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
     plan = (
         pl.scan_csv(foods_file_path)
         .with_row_index()
@@ -277,7 +277,7 @@ def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_empty_csv_with_row_count(tmp_path: Path) -> None:
+def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
     df = pl.DataFrame({"a": []})

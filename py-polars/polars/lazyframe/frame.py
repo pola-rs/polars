@@ -71,7 +71,7 @@ from polars.utils.deprecation import (
 )
 from polars.utils.various import (
     _in_notebook,
-    _prepare_row_count_args,
+    _prepare_row_index_args,
     _process_null_values,
     is_bool_sequence,
     is_sequence,
@@ -338,8 +338,8 @@ class LazyFrame:
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         try_parse_dates: bool = False,
         eol_char: str = "\n",
         raise_if_empty: bool = True,
@@ -388,7 +388,7 @@ class LazyFrame:
             rechunk,
             skip_rows_after_header,
             encoding,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             try_parse_dates,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
@@ -406,8 +406,8 @@ class LazyFrame:
         cache: bool = True,
         parallel: ParallelStrategy = "auto",
         rechunk: bool = True,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
         use_statistics: bool = True,
@@ -440,8 +440,8 @@ class LazyFrame:
             scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
-            if row_count_name is not None:
-                scan = scan.with_row_index(row_count_name, row_count_offset)
+            if row_index_name is not None:
+                scan = scan.with_row_index(row_index_name, row_index_offset)
             return scan  # type: ignore[return-value]
 
         if storage_options:
@@ -458,7 +458,7 @@ class LazyFrame:
             cache,
             parallel,
             rechunk,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             low_memory,
             cloud_options=storage_options,
             use_statistics=use_statistics,
@@ -475,8 +475,8 @@ class LazyFrame:
         n_rows: int | None = None,
         cache: bool = True,
         rechunk: bool = True,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         memory_map: bool = True,
     ) -> Self:
@@ -503,8 +503,8 @@ class LazyFrame:
             scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
-            if row_count_name is not None:
-                scan = scan.with_row_index(row_count_name, row_count_offset)
+            if row_index_name is not None:
+                scan = scan.with_row_index(row_index_name, row_index_offset)
             return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
@@ -514,7 +514,7 @@ class LazyFrame:
             n_rows,
             cache,
             rechunk,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             memory_map=memory_map,
         )
         return self
@@ -530,8 +530,8 @@ class LazyFrame:
         n_rows: int | None = None,
         low_memory: bool = False,
         rechunk: bool = True,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
     ) -> Self:
         """
         Lazily read from a newline delimited JSON file.
@@ -559,7 +559,7 @@ class LazyFrame:
             n_rows,
             low_memory,
             rechunk,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
         )
         return self
 
@@ -5743,8 +5743,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             LazyFrame that will be used to update the values
         on
-            Column names that will be joined on; if given `None` the implicit row
-            index is used as a join key instead.
+            Column names that will be joined on. If set to `None` (default),
+            the implicit row index of each frame is used as a join key.
         how : {'left', 'inner', 'outer'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
@@ -5864,15 +5864,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if how == "outer":
             how = "outer_coalesce"  # type: ignore[assignment]
 
-        row_count_used = False
+        row_index_used = False
         if on is None:
             if left_on is None and right_on is None:
-                # no keys provided--use row count
-                row_count_used = True
-                row_count_name = "__POLARS_ROW_COUNT"
-                self = self.with_row_index(row_count_name)
-                other = other.with_row_index(row_count_name)
-                left_on = right_on = [row_count_name]
+                # no keys provided--use row index
+                row_index_used = True
+                row_index_name = "__POLARS_ROW_INDEX"
+                self = self.with_row_index(row_index_name)
+                other = other.with_row_index(row_index_name)
+                left_on = right_on = [row_index_name]
             else:
                 # one of left or right is missing, raise error
                 if left_on is None:
@@ -5899,8 +5899,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # no need to join if *only* join columns are in other (inner/left update only)
         if how != "outer_coalesce" and len(other.columns) == len(right_on):  # type: ignore[comparison-overlap, redundant-expr]
-            if row_count_used:
-                return self.drop(row_count_name)
+            if row_index_used:
+                return self.drop(row_index_name)
             return self
 
         # only use non-idx right columns present in left frame
@@ -5939,8 +5939,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             .drop(drop_columns)
         )
-        if row_count_used:
-            result = result.drop(row_count_name)
+        if row_index_used:
+            result = result.drop(row_index_name)
 
         return self._from_pyldf(result._ldf)
 

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::ParallelStrategy;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::prelude::*;
 
@@ -13,7 +13,7 @@ pub struct ScanArgsParquet {
     pub cache: bool,
     pub parallel: ParallelStrategy,
     pub rechunk: bool,
-    pub row_count: Option<RowCount>,
+    pub row_index: Option<RowIndex>,
     pub low_memory: bool,
     pub cloud_options: Option<CloudOptions>,
     pub use_statistics: bool,
@@ -27,7 +27,7 @@ impl Default for ScanArgsParquet {
             cache: true,
             parallel: Default::default(),
             rechunk: false,
-            row_count: None,
+            row_index: None,
             low_memory: false,
             cloud_options: None,
             use_statistics: true,
@@ -66,7 +66,7 @@ impl LazyFileListReader for LazyParquetReader {
     }
 
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
-        let row_count = self.args.row_count;
+        let row_index = self.args.row_index;
 
         let paths = if self.paths.is_empty() {
             Arc::new([self.path]) as Arc<[PathBuf]>
@@ -89,8 +89,8 @@ impl LazyFileListReader for LazyParquetReader {
         .into();
 
         // it is a bit hacky, but this row_index function updates the schema
-        if let Some(row_count) = row_count {
-            lf = lf.with_row_index(&row_count.name, Some(row_count.offset))
+        if let Some(row_index) = row_index {
+            lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
         }
 
         lf.opt_state.file_caching = true;
@@ -132,8 +132,8 @@ impl LazyFileListReader for LazyParquetReader {
         self.args.n_rows
     }
 
-    fn row_count(&self) -> Option<&RowCount> {
-        self.args.row_count.as_ref()
+    fn row_index(&self) -> Option<&RowIndex> {
+        self.args.row_index.as_ref()
     }
 }
 
