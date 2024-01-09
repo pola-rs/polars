@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import cast
 
-import polars as pl
 import pytest
+
+import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -178,20 +180,21 @@ def test_str_find(strict: bool) -> None:
     )
     city, pop, pat, lit = (pl.col(c) for c in ("city", "population", "pat", "lit"))
 
-    res = df.select(
-        find_a_regex=city.str.find("(?i)a", strict=strict),
-        find_a_lit=city.str.find("a", literal=True),
-        find_00_lit=pop.cast(pl.String).str.find("00", literal=True),
-        find_col_pat=city.str.find(pat, strict=strict),
-        find_col_lit=city.str.find(lit, strict=strict, literal=True),
-    )
-    assert res.to_dict(as_series=False) == {
-        "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4, None],
-        "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10, None],
-        "find_00_lit": [None, 4, 4, None, 2, None, None, None, None],
-        "find_col_pat": [2, 7, None, 4, 3, 1, 3, None, None],
-        "find_col_lit": [3, 3, None, 0, 2, 7, None, 9, None],
-    }
+    for match_lit in (True, False):
+        res = df.select(
+            find_a_regex=city.str.find("(?i)a", strict=strict),
+            find_a_lit=city.str.find("a", literal=match_lit),
+            find_00_lit=pop.cast(pl.String).str.find("00", literal=match_lit),
+            find_col_lit=city.str.find(lit, strict=strict, literal=match_lit),
+            find_col_pat=city.str.find(pat, strict=strict),
+        )
+        assert res.to_dict(as_series=False) == {
+            "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4, None],
+            "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10, None],
+            "find_00_lit": [None, 4, 4, None, 2, None, None, None, None],
+            "find_col_lit": [3, 3, None, 0, 2, 7, None, 9, None],
+            "find_col_pat": [2, 7, None, 4, 3, 1, 3, None, None],
+        }
 
 
 def test_str_find_invalid_regex() -> None:
@@ -204,6 +207,38 @@ def test_str_find_invalid_regex() -> None:
 
     res = df.with_columns(pl.col("txt").str.find(rx_invalid, strict=False))
     assert res.item() is None
+
+
+def test_str_find_escaped_chars() -> None:
+    # test behaviour of 'literal=True' with special chars
+    df = pl.DataFrame({"txt": ["123.*465", "x(x?)x"]})
+
+    res = df.with_columns(
+        x1=pl.col("txt").str.find("(x?)", literal=True),
+        x2=pl.col("txt").str.find(".*4", literal=True),
+        x3=pl.col("txt").str.find("(x?)"),
+        x4=pl.col("txt").str.find(".*4"),
+    )
+    # ┌──────────┬──────┬──────┬─────┬──────┐
+    # │ txt      ┆ x1   ┆ x2   ┆ x3  ┆ x4   │
+    # │ ---      ┆ ---  ┆ ---  ┆ --- ┆ ---  │
+    # │ str      ┆ u32  ┆ u32  ┆ u32 ┆ u32  │
+    # ╞══════════╪══════╪══════╪═════╪══════╡
+    # │ 123.*465 ┆ null ┆ 3    ┆ 0   ┆ 0    │
+    # │ x(x?)x   ┆ 1    ┆ null ┆ 0   ┆ null │
+    # └──────────┴──────┴──────┴─────┴──────┘
+    assert_frame_equal(
+        pl.DataFrame(
+            {
+                "txt": ["123.*465", "x(x?)x"],
+                "x1": [None, 1],
+                "x2": [3, None],
+                "x3": [0, 0],
+                "x4": [0, None],
+            }
+        ).cast({cs.signed_integer(): pl.UInt32}),
+        res,
+    )
 
 
 def test_hex_decode_return_dtype() -> None:
