@@ -175,7 +175,7 @@ impl PyDataFrame {
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
         overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
-        row_count, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
+        row_index, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
     )]
     pub fn read_csv(
         py_f: &PyAny,
@@ -201,7 +201,7 @@ impl PyDataFrame {
         missing_utf8_is_empty_string: bool,
         try_parse_dates: bool,
         skip_rows_after_header: usize,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         sample_size: usize,
         eol_char: &str,
         raise_if_empty: bool,
@@ -210,7 +210,7 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
         let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
@@ -256,7 +256,7 @@ impl PyDataFrame {
             .with_quote_char(quote_char)
             .with_end_of_line_char(eol_char)
             .with_skip_rows_after_header(skip_rows_after_header)
-            .with_row_count(row_count)
+            .with_row_count(row_index)
             .sample_size(sample_size)
             .raise_if_empty(raise_if_empty)
             .truncate_ragged_lines(truncate_ragged_lines)
@@ -267,21 +267,21 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory, use_statistics, rechunk))]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_index, low_memory, use_statistics, rechunk))]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         parallel: Wrap<ParallelStrategy>,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         low_memory: bool,
         use_statistics: bool,
         rechunk: bool,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = f.as_buffer();
@@ -290,7 +290,7 @@ impl PyDataFrame {
                     .with_columns(columns)
                     .read_parallel(parallel.0)
                     .with_n_rows(n_rows)
-                    .with_row_count(row_count)
+                    .with_row_count(row_index)
                     .set_low_memory(low_memory)
                     .use_statistics(use_statistics)
                     .set_rechunk(rechunk)
@@ -301,7 +301,7 @@ impl PyDataFrame {
                 .with_columns(columns)
                 .read_parallel(parallel.0)
                 .with_n_rows(n_rows)
-                .with_row_count(row_count)
+                .with_row_count(row_index)
                 .use_statistics(use_statistics)
                 .set_rechunk(rechunk)
                 .finish(),
@@ -312,22 +312,22 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "ipc")]
-    #[pyo3(signature = (py_f, columns, projection, n_rows, row_count, memory_map))]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, memory_map))]
     pub fn read_ipc(
         py_f: &PyAny,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         memory_map: bool,
     ) -> PyResult<Self> {
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let df = IpcReader::new(mmap_bytes_r)
             .with_projection(projection)
             .with_columns(columns)
             .with_n_rows(n_rows)
-            .with_row_count(row_count)
+            .with_row_count(row_index)
             .memory_mapped(memory_map)
             .finish()
             .map_err(PyPolarsErr::from)?;
@@ -336,22 +336,22 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "ipc_streaming")]
-    #[pyo3(signature = (py_f, columns, projection, n_rows, row_count, rechunk))]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, rechunk))]
     pub fn read_ipc_stream(
         py_f: &PyAny,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         rechunk: bool,
     ) -> PyResult<Self> {
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let df = IpcStreamReader::new(mmap_bytes_r)
             .with_projection(projection)
             .with_columns(columns)
             .with_n_rows(n_rows)
-            .with_row_count(row_count)
+            .with_row_count(row_index)
             .set_rechunk(rechunk)
             .finish()
             .map_err(PyPolarsErr::from)?;

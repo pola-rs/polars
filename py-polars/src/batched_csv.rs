@@ -29,7 +29,7 @@ impl PyBatchedCsv {
         infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows,
         projection, separator, rechunk, columns, encoding, n_threads, path, overwrite_dtype,
         overwrite_dtype_slice, low_memory, comment_prefix, quote_char, null_values,
-        missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_count,
+        missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_index,
         sample_size, eol_char, raise_if_empty, truncate_ragged_lines)
     )]
     fn new(
@@ -55,7 +55,7 @@ impl PyBatchedCsv {
         missing_utf8_is_empty_string: bool,
         try_parse_dates: bool,
         skip_rows_after_header: usize,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         sample_size: usize,
         eol_char: &str,
         raise_if_empty: bool,
@@ -63,7 +63,7 @@ impl PyBatchedCsv {
     ) -> PyResult<PyBatchedCsv> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowCount { name, offset });
         let quote_char = if let Some(s) = quote_char {
             if s.is_empty() {
                 None
@@ -115,7 +115,7 @@ impl PyBatchedCsv {
             .with_quote_char(quote_char)
             .with_end_of_line_char(eol_char)
             .with_skip_rows_after_header(skip_rows_after_header)
-            .with_row_count(row_count)
+            .with_row_count(row_index)
             .sample_size(sample_size)
             .truncate_ragged_lines(truncate_ragged_lines)
             .raise_if_empty(raise_if_empty);
