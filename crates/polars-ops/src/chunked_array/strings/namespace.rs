@@ -151,6 +151,44 @@ pub trait StringNameSpaceImpl: AsString {
         }
     }
 
+    fn find_chunked(
+        &self,
+        pat: &StringChunked,
+        literal: bool,
+        strict: bool,
+    ) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_string();
+        if pat.len() == 1 {
+            return if let Some(pat) = pat.get(0) {
+                if literal {
+                    ca.find_literal(pat)
+                } else {
+                    ca.find(pat, strict)
+                }
+            } else {
+                Ok(UInt32Chunked::full_null(ca.name(), ca.len()))
+            };
+        } else if ca.len() == 1 && ca.null_count() == 1 {
+            return Ok(UInt32Chunked::full_null(ca.name(), ca.len().max(pat.len())));
+        }
+        if literal {
+            Ok(broadcast_binary_elementwise_values(ca, pat, |src, pat| {
+                src.find(pat).map(|idx| idx as u32)
+            }))
+        } else {
+            // note: sqrt(n) regex cache is not too small, not too large.
+            let mut rx_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
+            let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
+                if let (Some(src), Some(pat)) = (src, pat) {
+                    let rx = rx_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
+                    return Ok(rx.find(src).map(|m| m.start() as u32));
+                }
+                Ok(None)
+            };
+            broadcast_try_binary_elementwise(ca, pat, matcher)
+        }
+    }
+
     /// Get the length of the string values as number of chars.
     fn str_len_chars(&self) -> UInt32Chunked {
         let ca = self.as_string();
@@ -200,10 +238,8 @@ pub trait StringNameSpaceImpl: AsString {
     /// Check if strings contain a regex pattern.
     fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
-
         let res_reg = Regex::new(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
-
         let out: BooleanChunked = if let Some(reg) = opt_reg {
             ca.apply_values_generic(|s| reg.is_match(s))
         } else {
@@ -218,6 +254,27 @@ pub trait StringNameSpaceImpl: AsString {
         // faster at finding literal matches than str::contains.
         // ref: https://github.com/pola-rs/polars/pull/6811
         self.contains(regex::escape(lit).as_str(), true)
+    }
+
+    /// Return the index position of a literal substring in the target string.
+    fn find_literal(&self, lit: &str) -> PolarsResult<UInt32Chunked> {
+        self.find(regex::escape(lit).as_str(), true)
+    }
+
+    /// Return the index position of a regular expression substring in the target string.
+    fn find(&self, pat: &str, strict: bool) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_string();
+        match Regex::new(pat) {
+            Ok(rx) => {
+                Ok(ca.apply_generic(|opt_s| {
+                    opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
+                }))
+            },
+            Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name(), ca.len())),
+            Err(e) => Err(PolarsError::ComputeError(
+                format!("Invalid regular expression: {}", e).into(),
+            )),
+        }
     }
 
     /// Replace the leftmost regex-matched (sub)string with another string

@@ -130,6 +130,7 @@ def test_str_encode() -> None:
     s = pl.Series(["foo", "bar", None])
     hex_encoded = pl.Series(["666f6f", "626172", None])
     base64_encoded = pl.Series(["Zm9v", "YmFy", None])
+
     assert_series_equal(s.str.encode("hex"), hex_encoded)
     assert_series_equal(s.str.encode("base64"), base64_encoded)
     with pytest.raises(ValueError):
@@ -153,6 +154,54 @@ def test_str_decode_exception() -> None:
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("strict", [True, False])
+def test_str_find(strict: bool) -> None:
+    df = pl.DataFrame(
+        data=[
+            ("Dubai", 3564931, "b[ai]", "ai"),
+            ("Abu Dhabi", 1807000, "b[ai]", " "),
+            ("Sharjah", 1405000, "[ai]n", "s"),
+            ("Al Ain", 846747, "[ai]n", ""),
+            ("Ajman", 490035, "[ai]n", "ma"),
+            ("Ras Al Khaimah", 191753, "a.+a", "Kha"),
+            ("Fujairah", 118933, "a.+a", "ai"),
+            ("Umm Al Quwain", 59098, "a.+a", "wa"),
+        ],
+        schema={
+            "city": pl.String,
+            "population": pl.Int32,
+            "pat": pl.String,
+            "lit": pl.String,
+        },
+    )
+    res = df.select(
+        find_a_regex=pl.col("city").str.find("(?i)a", strict=strict),
+        find_a_lit=pl.col("city").str.find("a", literal=True),
+        find_00_lit=pl.col("population").cast(pl.String).str.find("00", literal=True),
+        find_col_pat=pl.col("city").str.find(pl.col("pat"), strict=strict),
+        find_col_lit=pl.col("city").str.find(pl.col("lit"), strict=strict),
+    )
+    assert res.to_dict(as_series=False) == {
+        "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4],
+        "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10],
+        "find_00_lit": [None, 4, 4, None, 2, None, None, None],
+        "find_col_pat": [2, 7, None, 4, 3, 1, 3, None],
+        "find_col_lit": [3, 3, None, 0, 2, 7, 3, 9],
+    }
+
+
+def test_str_find_invalid_regex() -> None:
+    # test behaviour of 'strict' with invalid regular expressions
+    df = pl.DataFrame({"txt": ["AbCdEfG"]})
+    rx_invalid = "(?i)AB.))"
+
+    with pytest.raises(pl.ComputeError):
+        df.with_columns(pl.col("txt").str.find(rx_invalid, strict=True))
+
+    res = df.with_columns(pl.col("txt").str.find(rx_invalid, strict=False))
+    assert res.item() is None
 
 
 def test_hex_decode_return_dtype() -> None:

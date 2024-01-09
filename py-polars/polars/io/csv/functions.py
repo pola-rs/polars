@@ -194,18 +194,16 @@ def read_csv(
     --------
     >>> pl.read_csv("data.csv", separator="|")  # doctest: +SKIP
 
-    Reproducible example using BytesIO object, parsing dates.
+    Demonstrate use against a BytesIO object, parsing string dates.
 
-    >>> import io  # doctest: +SKIP
-    >>> source = io.BytesIO(
-    ...     (
-    ...         "ID,Name,Birthday\n"
-    ...         "1,Alice,1995-07-12\n"
-    ...         "2,Bob,1990-09-20\n"
-    ...         "3,Charlie,2002-03-08"
-    ...     ).encode()
-    ... )  # doctest: +SKIP
-    >>> pl.read_csv(source, try_parse_dates=True)  # doctest: +SKIP
+    >>> from io import BytesIO
+    >>> data = BytesIO(
+    ...     b"ID,Name,Birthday\n"
+    ...     b"1,Alice,1995-07-12\n"
+    ...     b"2,Bob,1990-09-20\n"
+    ...     b"3,Charlie,2002-03-08\n"
+    ... )
+    >>> pl.read_csv(data, try_parse_dates=True)
     shape: (3, 3)
     ┌─────┬─────────┬────────────┐
     │ ID  ┆ Name    ┆ Birthday   │
