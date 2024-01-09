@@ -410,7 +410,7 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         Ok(dsl::lit(value.as_bytes()).into())
     } else if allow_object {
         let s = Python::with_gil(|py| {
-            PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
+            PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false).series
         });
         Ok(dsl::lit(s).into())
     } else {

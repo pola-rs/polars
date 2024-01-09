@@ -395,13 +395,15 @@ impl Series {
                         let converter = registry::get_object_converter();
                         let mut builder = registry::get_object_builder(name, av.len());
                         for av in av {
-                            if let AnyValue::Object(val) = av {
-                                builder.append_value(val.as_any())
-                            } else {
-                                // This is needed because in python people can send mixed types.
-                                // This only works if you set a global converter.
-                                let any = converter(av.as_borrowed());
-                                builder.append_value(&*any)
+                            match av {
+                                AnyValue::Object(val) => builder.append_value(val.as_any()),
+                                AnyValue::Null => builder.append_null(),
+                                _ => {
+                                    // This is needed because in python people can send mixed types.
+                                    // This only works if you set a global converter.
+                                    let any = converter(av.as_borrowed());
+                                    builder.append_value(&*any)
+                                },
                             }
                         }
                         return Ok(builder.to_series());
@@ -409,10 +411,12 @@ impl Series {
                     Some(registry) => {
                         let mut builder = (*registry.builder_constructor)(name, av.len());
                         for av in av {
-                            if let AnyValue::Object(val) = av {
-                                builder.append_value(val.as_any())
-                            } else {
-                                polars_bail!(ComputeError: "expected object");
+                            match av {
+                                AnyValue::Object(val) => builder.append_value(val.as_any()),
+                                AnyValue::Null => builder.append_null(),
+                                _ => {
+                                    polars_bail!(ComputeError: "expected object");
+                                },
                             }
                         }
                         return Ok(builder.to_series());

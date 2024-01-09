@@ -37,6 +37,37 @@ def test_object_in_struct() -> None:
     assert (arr == np_b).sum() == 3
 
 
+def test_nullable_object_13538() -> None:
+    df = pl.DataFrame(
+        data=[
+            ({"a": 1},),
+            ({"b": 3},),
+            (None,),
+        ],
+        schema=[
+            ("blob", pl.Object),
+        ],
+        orient="row",
+    )
+
+    df = df.select(
+        is_null=pl.col("blob").is_null(), is_not_null=pl.col("blob").is_not_null()
+    )
+    assert df.to_dict(as_series=False) == {
+        "is_null": [False, False, True],
+        "is_not_null": [True, True, False],
+    }
+
+    df = pl.DataFrame({"col": pl.Series([0, 1, 2, None], dtype=pl.Object)})
+    df = df.select(
+        is_null=pl.col("col").is_null(), is_not_null=pl.col("col").is_not_null()
+    )
+    assert df.to_dict(as_series=False) == {
+        "is_null": [False, False, False, True],
+        "is_not_null": [True, True, True, False],
+    }
+
+
 def test_empty_sort() -> None:
     df = pl.DataFrame(
         data=[
