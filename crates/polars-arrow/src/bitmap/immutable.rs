@@ -198,34 +198,33 @@ impl Bitmap {
         }
 
         // Fast path: we have no nulls or are full-null.
-        let unset_bit_count_cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
-        if unset_bit_count_cache == 0 || unset_bit_count_cache == self.length as u64 {
-            self.offset += offset;
-            self.length = length;
-            let new_count = if unset_bit_count_cache > 0 {
+        let unset_bit_count_cache = self.unset_bit_count_cache.get_mut();
+        if *unset_bit_count_cache == 0 || *unset_bit_count_cache == self.length as u64 {
+            let new_count = if *unset_bit_count_cache > 0 {
                 length as u64
             } else {
                 0
             };
-            self.unset_bit_count_cache
-                .store(new_count, Ordering::Relaxed);
+            *unset_bit_count_cache = new_count;
+            self.offset += offset;
+            self.length = length;
             return;
         }
 
-        if unset_bit_count_cache >> 63 == 0 {
+        if *unset_bit_count_cache >> 63 == 0 {
             // If we keep all but a small portion of the array it is worth
             // doing an eager re-count since we can reuse the old count via the
             // inclusion-exclusion principle.
             let small_portion = (self.length / 5).max(32);
             if length + small_portion >= self.length {
                 // Subtract the null count of the chunks we slice off.
-                let start_end = self.offset + offset + length;
+                let slice_end = self.offset + offset + length;
                 let head_count = count_zeros(&self.bytes, self.offset, offset);
-                let tail_count = count_zeros(&self.bytes, start_end, self.length - length - offset);
-                let new_count = unset_bit_count_cache - head_count as u64 - tail_count as u64;
-                self.unset_bit_count_cache = AtomicU64::new(new_count);
+                let tail_count = count_zeros(&self.bytes, slice_end, self.length - length - offset);
+                let new_count = *unset_bit_count_cache - head_count as u64 - tail_count as u64;
+                *unset_bit_count_cache = new_count;
             } else if length <= small_portion {
-                self.unset_bit_count_cache = AtomicU64::new(UNKNOWN_BIT_COUNT);
+                *unset_bit_count_cache = UNKNOWN_BIT_COUNT;
             }
         }
 
