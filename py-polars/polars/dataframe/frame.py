@@ -3926,7 +3926,7 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
         >>> df.transpose(include_header=True)
         shape: (2, 4)
         ┌────────┬──────────┬──────────┬──────────┐
@@ -3935,35 +3935,35 @@ class DataFrame:
         │ str    ┆ i64      ┆ i64      ┆ i64      │
         ╞════════╪══════════╪══════════╪══════════╡
         │ a      ┆ 1        ┆ 2        ┆ 3        │
-        │ b      ┆ 1        ┆ 2        ┆ 3        │
+        │ b      ┆ 4        ┆ 5        ┆ 6        │
         └────────┴──────────┴──────────┴──────────┘
 
         Replace the auto-generated column names with a list
 
-        >>> df.transpose(include_header=False, column_names=["a", "b", "c"])
+        >>> df.transpose(include_header=False, column_names=["x", "y", "z"])
         shape: (2, 3)
         ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
+        │ x   ┆ y   ┆ z   │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 2   ┆ 3   │
-        │ 1   ┆ 2   ┆ 3   │
+        │ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┘
 
         Include the header as a separate column
 
         >>> df.transpose(
-        ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
+        ...     include_header=True, header_name="foo", column_names=["x", "y", "z"]
         ... )
         shape: (2, 4)
         ┌─────┬─────┬─────┬─────┐
-        │ foo ┆ a   ┆ b   ┆ c   │
+        │ foo ┆ x   ┆ y   ┆ z   │
         │ --- ┆ --- ┆ --- ┆ --- │
         │ str ┆ i64 ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╪═════╡
         │ a   ┆ 1   ┆ 2   ┆ 3   │
-        │ b   ┆ 1   ┆ 2   ┆ 3   │
+        │ b   ┆ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┴─────┘
 
         Replace the auto-generated column with column names from a generator function
@@ -3982,31 +3982,31 @@ class DataFrame:
         │ i64         ┆ i64         ┆ i64         │
         ╞═════════════╪═════════════╪═════════════╡
         │ 1           ┆ 2           ┆ 3           │
-        │ 1           ┆ 2           ┆ 3           │
+        │ 4           ┆ 5           ┆ 6           │
         └─────────────┴─────────────┴─────────────┘
 
         Use an existing column as the new column names
 
-        >>> df = pl.DataFrame(dict(id=["a", "b", "c"], col1=[1, 3, 2], col2=[3, 4, 6]))
+        >>> df = pl.DataFrame(dict(id=["i", "j", "k"], a=[1, 2, 3], b=[4, 5, 6]))
         >>> df.transpose(column_names="id")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
+        │ i   ┆ j   ┆ k   │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 3   ┆ 2   │
-        │ 3   ┆ 4   ┆ 6   │
+        │ 1   ┆ 2   ┆ 3   │
+        │ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┘
         >>> df.transpose(include_header=True, header_name="new_id", column_names="id")
         shape: (2, 4)
         ┌────────┬─────┬─────┬─────┐
-        │ new_id ┆ a   ┆ b   ┆ c   │
+        │ new_id ┆ i   ┆ j   ┆ k   │
         │ ---    ┆ --- ┆ --- ┆ --- │
         │ str    ┆ i64 ┆ i64 ┆ i64 │
         ╞════════╪═════╪═════╪═════╡
-        │ col1   ┆ 1   ┆ 3   ┆ 2   │
-        │ col2   ┆ 3   ┆ 4   ┆ 6   │
+        │ a      ┆ 1   ┆ 2   ┆ 3   │
+        │ b      ┆ 4   ┆ 5   ┆ 6   │
         └────────┴─────┴─────┴─────┘
         """
         keep_names_as = header_name if include_header else None
