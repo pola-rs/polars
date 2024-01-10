@@ -1,5 +1,7 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg">
+  <a href="https://docs.pola.rs">
+    <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg">
+  </a>
   <br>
 </h1>
 
@@ -22,7 +24,11 @@
 </div>
 
 <p align="center">
-  <b>Documentation</b>:
+  <a href="https://docs.pola.rs">Homepage</a>
+  |
+  <a href="https://docs.pola.rs/user-guide">User Guide</a>
+  |
+  <b>API</b>:
   <a href="https://docs.pola.rs/py-polars/html/reference/index.html">Python</a>
   -
   <a href="https://docs.rs/polars/latest/polars/">Rust</a>
@@ -39,8 +45,6 @@
   <a href="https://stackoverflow.com/questions/tagged/nodejs-polars">Node.js</a>
   -
   <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
-  |
-  <a href="https://docs.pola.rs/">User Guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
