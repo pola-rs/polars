@@ -21,6 +21,8 @@ pub enum ArrayFunction {
     ArgMax,
     Get,
     Join,
+    #[cfg(feature = "is_in")]
+    Contains,
 }
 
 impl ArrayFunction {
@@ -38,6 +40,8 @@ impl ArrayFunction {
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
             Get => mapper.map_to_list_and_array_inner_dtype(),
             Join => mapper.with_dtype(DataType::String),
+            #[cfg(feature = "is_in")]
+            Contains => mapper.with_dtype(DataType::Boolean),
         }
     }
 }
@@ -69,6 +73,8 @@ impl Display for ArrayFunction {
             ArgMax => "arg_max",
             Get => "get",
             Join => "join",
+            #[cfg(feature = "is_in")]
+            Contains => "contains",
         };
         write!(f, "arr.{name}")
     }
@@ -93,6 +99,8 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ArgMax => map!(arg_max),
             Get => map_as_slice!(get),
             Join => map_as_slice!(join),
+            #[cfg(feature = "is_in")]
+            Contains => map_as_slice!(contains),
         }
     }
 }
@@ -161,4 +169,11 @@ pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].array()?;
     let separator = s[1].str()?;
     ca.array_join(separator)
+}
+
+#[cfg(feature = "is_in")]
+pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
+    let array = &s[0];
+    let item = &s[1];
+    Ok(is_in(item, array)?.with_name(array.name()).into_series())
 }

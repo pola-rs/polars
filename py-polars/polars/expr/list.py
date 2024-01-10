@@ -521,7 +521,7 @@ class ExprListNameSpace:
         return self.get(-1)
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | Expr
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
     ) -> Expr:
         """
         Check if sublists contain the given item.
