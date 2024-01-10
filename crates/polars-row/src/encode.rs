@@ -133,6 +133,13 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
                 .map(|opt_s| opt_s.map(|s| s.as_bytes()));
             crate::variable::encode_iter(iter, out, field)
         },
+        ArrowDataType::Decimal(_, _) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i128>>()
+                .unwrap();
+            encode_primitive(array, field, out);
+        },
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
                 let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -156,6 +163,7 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
+        Decimal(_, _) => i128::ENCODED_LEN,
         dt => unimplemented!("{dt:?}"),
     }
 }

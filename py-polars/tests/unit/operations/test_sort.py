@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal as D
 from typing import Any
 
 import pytest
@@ -547,23 +548,27 @@ def test_sort_by_logical() -> None:
         {
             "start": [date(2020, 5, 6), date(2020, 5, 13), date(2020, 5, 10)],
             "end": [date(2020, 12, 31), date(2020, 12, 31), date(2021, 1, 1)],
-            "num": [0, 1, 2],
+            "num": [D(0), D(1), D(2)],
         }
     )
+    assert test.select([pl.col("start").sort_by("num", descending=True).alias("s1")])[
+        "s1"
+    ].to_list() == [date(2020, 5, 10), date(2020, 5, 13), date(2020, 5, 6)]
     assert test.select([pl.col("num").sort_by(["start", "end"]).alias("n1")])[
         "n1"
-    ].to_list() == [0, 2, 1]
+    ].to_list() == [D(0), D(2), D(1)]
+
     df = pl.DataFrame(
         {
             "dt1": [date(2022, 2, 1), date(2022, 3, 1), date(2022, 4, 1)],
             "dt2": [date(2022, 2, 2), date(2022, 3, 2), date(2022, 4, 2)],
             "name": ["a", "b", "a"],
-            "num": [3, 4, 1],
+            "num": [D(3), D(4), D(1)],
         }
     )
     assert df.group_by("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
         "name"
-    ).to_dict(as_series=False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
+    ).to_dict(as_series=False) == {"name": ["a", "b"], "num": [[D(3), D(1)], [D(4)]]}
 
 
 def test_limit_larger_than_sort() -> None:

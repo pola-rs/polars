@@ -110,6 +110,7 @@ encode_signed!(1, i8);
 encode_signed!(2, i16);
 encode_signed!(4, i32);
 encode_signed!(8, i64);
+encode_signed!(16, i128);
 
 impl FixedLengthEncoding for f32 {
     type Encoded = [u8; 4];
