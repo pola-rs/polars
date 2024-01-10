@@ -239,6 +239,7 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> Bin
             continuation_token,
             field.descending,
         );
+        let values_offset = values.len();
 
         let mut to_read = str_len;
         // we start at one, as we skip the validity byte
@@ -258,7 +259,10 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> Bin
         offsets.push(values.len() as i64);
 
         if field.descending {
-            values.iter_mut().for_each(|o| *o = !*o)
+            values
+                .get_unchecked_release_mut(values_offset..)
+                .iter_mut()
+                .for_each(|o| *o = !*o)
         }
     }
 

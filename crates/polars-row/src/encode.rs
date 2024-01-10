@@ -307,6 +307,7 @@ mod test {
     use arrow::array::{Int32Array, Utf8Array};
 
     use super::*;
+    use crate::decode::decode_rows_from_binary;
     use crate::variable::{decode_binary, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
 
     #[test]
@@ -391,5 +392,26 @@ mod test {
         let mut rows = rows_encoded.iter().collect::<Vec<_>>();
         let decoded = unsafe { decode_binary(&mut rows, &field) };
         assert_eq!(decoded, arr);
+    }
+
+    #[test]
+    fn test_reverse_variable() {
+        let a = Utf8Array::<i64>::from_slice(&["one", "two", "three", "four", "five", "six"]);
+
+        let fields = &[SortField {
+            descending: true,
+            nulls_last: false,
+        }];
+
+        let dtypes = [ArrowDataType::LargeUtf8];
+
+        unsafe {
+            let encoded = convert_columns(&[Box::new(a.clone())], fields);
+            let out = decode_rows_from_binary(&encoded.into_array(), fields, &dtypes, &mut vec![]);
+
+            let arr = &out[0];
+            let decoded = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+            assert_eq!(decoded, &a);
+        }
     }
 }
