@@ -839,9 +839,8 @@ def corr(
     elif method == "spearman":
         return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
     else:
-        raise ValueError(
-            f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
-        )
+        msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
+        raise ValueError(msg)
 
 
 def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
@@ -1627,9 +1626,8 @@ def arg_sort_by(
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
     elif len(exprs) != len(descending):
-        raise ValueError(
-            f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
-        )
+        msg = f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
+        raise ValueError(msg)
     return wrap_expr(plr.arg_sort_by(exprs, descending))
 
 
@@ -1932,10 +1930,11 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     """
     if eager:
         if not isinstance(condition, pl.Series):
-            raise ValueError(
+            msg = (
                 "expected 'Series' in 'arg_where' if 'eager=True', got"
                 f" {type(condition).__name__!r}"
             )
+            raise ValueError(msg)
         return condition.to_frame().select(arg_where(F.col(condition.name))).to_series()
     else:
         condition = parse_as_expression(condition)
@@ -2062,9 +2061,8 @@ def from_epoch(
     elif time_unit in DTYPE_TEMPORAL_UNITS:
         return column.cast(Datetime(time_unit))
     else:
-        raise ValueError(
-            f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
-        )
+        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
+        raise ValueError(msg)
 
 
 def rolling_cov(

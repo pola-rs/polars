@@ -206,9 +206,8 @@ class ConnectionExecutor:
             # can execute directly (given cursor, sqlalchemy connection, etc)
             return conn  # type: ignore[return-value]
 
-        raise TypeError(
-            f"Unrecognised connection {conn!r}; unable to find 'execute' method"
-        )
+        msg = f"Unrecognised connection {conn!r}; unable to find 'execute' method"
+        raise TypeError(msg)
 
     @staticmethod
     def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
@@ -313,9 +312,8 @@ class ConnectionExecutor:
         if select_queries_only and isinstance(query, str):
             q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))
             if (query_type := "" if not q else q.group(0)) in _INVALID_QUERY_TYPES:
-                raise UnsuitableSQLError(
-                    f"{query_type} statements are not valid 'read' queries"
-                )
+                msg = f"{query_type} statements are not valid 'read' queries"
+                raise UnsuitableSQLError(msg)
 
         options = options or {}
         cursor_execute = self.cursor.execute
@@ -370,11 +368,13 @@ class ConnectionExecutor:
         fall back to initialising with row-level data if no other option.
         """
         if self.result is None:
-            raise RuntimeError("Cannot return a frame before executing a query")
+            msg = "Cannot return a frame before executing a query"
+            raise RuntimeError(msg)
         elif iter_batches and not batch_size:
-            raise ValueError(
+            msg = (
                 "Cannot set `iter_batches` without also setting a non-zero `batch_size`"
             )
+            raise ValueError(msg)
 
         for frame_init in (
             self._from_arrow,  # init from arrow-native data (where support exists)
@@ -388,9 +388,10 @@ class ConnectionExecutor:
             if frame is not None:
                 return frame
 
-        raise NotImplementedError(
+        msg = (
             f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )
+        raise NotImplementedError(msg)
 
 
 @overload
@@ -544,10 +545,11 @@ def read_database(  # noqa: D417
             try:
                 import arrow_odbc  # noqa: F401
             except ModuleNotFoundError:
-                raise ModuleNotFoundError(
+                msg = (
                     "use of an ODBC connection string requires the `arrow-odbc` package"
                     "\n\nPlease run: pip install arrow-odbc"
-                ) from None
+                )
+                raise ModuleNotFoundError(msg) from None
 
             connection = ODBCCursorProxy(connection)
         else:
@@ -557,13 +559,11 @@ def read_database(  # noqa: D417
                 version="0.19.0",
             )
             if iter_batches or batch_size:
-                raise InvalidOperationError(
-                    "Batch parameters are not supported for `read_database_uri`"
-                )
+                msg = "Batch parameters are not supported for `read_database_uri`"
+                raise InvalidOperationError(msg)
             if not isinstance(query, (list, str)):
-                raise TypeError(
-                    f"`read_database_uri` expects one or more string queries; found {type(query)}"
-                )
+                msg = f"`read_database_uri` expects one or more string queries; found {type(query)}"
+                raise TypeError(msg)
             return read_database_uri(
                 query,
                 uri=connection,
@@ -574,9 +574,8 @@ def read_database(  # noqa: D417
     # note: can remove this check (and **kwargs) once we drop the
     # pass-through deprecation support for read_database_uri
     if kwargs:
-        raise ValueError(
-            f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
-        )
+        msg = f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
+        raise ValueError(msg)
 
     # return frame from arbitrary connections using the executor abstraction
     with ConnectionExecutor(connection) as cx:
@@ -708,9 +707,8 @@ def read_database_uri(
     ... )  # doctest: +SKIP
     """
     if not isinstance(uri, str):
-        raise TypeError(
-            f"expected connection to be a URI string; found {type(uri).__name__!r}"
-        )
+        msg = f"expected connection to be a URI string; found {type(uri).__name__!r}"
+        raise TypeError(msg)
     elif engine is None:
         engine = "connectorx"
 
@@ -726,12 +724,12 @@ def read_database_uri(
         )
     elif engine == "adbc":
         if not isinstance(query, str):
-            raise ValueError("only a single SQL query string is accepted for adbc")
+            msg = "only a single SQL query string is accepted for adbc"
+            raise ValueError(msg)
         return _read_sql_adbc(query, uri, schema_overrides)
     else:
-        raise ValueError(
-            f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"
-        )
+        msg = f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"
+        raise ValueError(msg)
 
 
 def _read_sql_connectorx(
@@ -746,9 +744,8 @@ def _read_sql_connectorx(
     try:
         import connectorx as cx
     except ModuleNotFoundError:
-        raise ModuleNotFoundError(
-            "connectorx is not installed" "\n\nPlease run: pip install connectorx"
-        ) from None
+        msg = "connectorx is not installed" "\n\nPlease run: pip install connectorx"
+        raise ModuleNotFoundError(msg) from None
 
     try:
         tbl = cx.read_sql(
@@ -790,10 +787,11 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         import_module(module_name)
         adbc_driver = sys.modules[module_name]
     except ImportError:
-        raise ModuleNotFoundError(
+        msg = (
             f"ADBC {driver_name} driver not detected"
             f"\n\nIf ADBC supports this database, please run: pip install adbc-driver-{driver_name} pyarrow"
-        ) from None
+        )
+        raise ModuleNotFoundError(msg) from None
 
     # some backends require the driver name to be stripped from the URI
     if driver_name in ("sqlite", "snowflake"):

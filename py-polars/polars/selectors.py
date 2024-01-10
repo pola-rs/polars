@@ -223,9 +223,8 @@ def _combine_as_selector(
         elif is_column(item):
             names.append(item.meta.output_name())  # type: ignore[union-attr]
         else:
-            raise TypeError(
-                f"expected one or more `str`, `DataType` or selector; found {item!r} instead."
-            )
+            msg = f"expected one or more `str`, `DataType` or selector; found {item!r} instead."
+            raise TypeError(msg)
 
     selected = []
     if names:
@@ -591,10 +590,12 @@ def by_dtype(
         elif isinstance(tp, Collection):
             for t in tp:
                 if not is_polars_dtype(t):
-                    raise TypeError(f"invalid dtype: {t!r}")
+                    msg = f"invalid dtype: {t!r}"
+                    raise TypeError(msg)
                 all_dtypes.append(t)
         else:
-            raise TypeError(f"invalid dtype: {tp!r}")
+            msg = f"invalid dtype: {tp!r}"
+            raise TypeError(msg)
 
     return _selector_proxy_(
         F.col(*all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
@@ -659,7 +660,8 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
         elif isinstance(nm, Collection):
             for n in nm:
                 if not isinstance(n, str):
-                    raise TypeError(f"invalid name: {n!r}")
+                    msg = f"invalid name: {n!r}"
+                    raise TypeError(msg)
                 all_names.append(n)
         else:
             TypeError(f"Invalid name: {nm!r}")

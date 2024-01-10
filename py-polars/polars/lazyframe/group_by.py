@@ -135,11 +135,12 @@ class LazyGroupBy:
         └─────┴───────┴────────────────┘
         """
         if aggs and isinstance(aggs[0], dict):
-            raise TypeError(
+            msg = (
                 "specifying aggregations as a dictionary is not supported"
                 "\n\nTry unpacking the dictionary to take advantage of the keyword syntax"
                 " of the `agg` method."
             )
+            raise TypeError(msg)
 
         pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
         return wrap_ldf(self.lgb.agg(pyexprs))

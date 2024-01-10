@@ -165,7 +165,8 @@ def from_dicts(
     └─────┴─────┴──────┴──────┘
     """
     if not data and not (schema or schema_overrides):
-        raise NoDataError("no data, cannot infer schema")
+        msg = "no data, cannot infer schema"
+        raise NoDataError(msg)
 
     return pl.DataFrame(
         data,
@@ -294,9 +295,10 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
-            raise NotImplementedError(
+            msg = (
                 f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
+            raise NotImplementedError(msg)
 
     # construct DataFrame from string series and cast from repr to native dtype
     df = pl.DataFrame(data=data, orient="col", schema=list(schema))
@@ -441,7 +443,8 @@ def from_repr(tbl: str) -> DataFrame | Series:
     if m is not None:
         return _from_series_repr(m)
 
-    raise ValueError("input string does not contain DataFrame or Series")
+    msg = "input string does not contain DataFrame or Series"
+    raise ValueError(msg)
 
 
 def from_numpy(
@@ -617,9 +620,8 @@ def from_arrow(
             schema_overrides=schema_overrides,
         )
 
-    raise TypeError(
-        f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
-    )
+    msg = f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
+    raise TypeError(msg)
 
 
 @overload
@@ -721,9 +723,8 @@ def from_pandas(
             include_index=include_index,
         )
     else:
-        raise TypeError(
-            f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
-        )
+        msg = f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
+        raise TypeError(msg)
 
 
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:

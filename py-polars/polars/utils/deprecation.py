@@ -148,10 +148,11 @@ def _rename_keyword_argument(
     """Rename a keyword argument of a function."""
     if old_name in kwargs:
         if new_name in kwargs:
-            raise TypeError(
+            msg = (
                 f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments;"
                 f" `{old_name!r}` is deprecated, use `{new_name!r}` instead"
             )
+            raise TypeError(msg)
         issue_deprecation_warning(
             f"`the argument {old_name}` for `{func_name}` is deprecated."
             f" It has been renamed to `{new_name}`.",

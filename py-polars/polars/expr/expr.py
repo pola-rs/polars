@@ -146,11 +146,12 @@ class Expr:
         return self._pyexpr.to_str()
 
     def __bool__(self) -> NoReturn:
-        raise TypeError(
+        msg = (
             "the truth value of an Expr is ambiguous"
             "\n\nHint: use '&' or '|' to logically combine Expr, not 'and'/'or', and"
             " use `x.is_in([y,z])` instead of `x in [y,z]` to check membership."
         )
+        raise TypeError(msg)
 
     def __abs__(self) -> Self:
         return self.abs()
@@ -269,10 +270,11 @@ class Expr:
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         if num_expr > 1:
             if num_expr < len(inputs):
-                raise ValueError(
+                msg = (
                     "NumPy ufunc with more than one expression can only be used"
                     " if all non-expression inputs are provided as keyword arguments only"
                 )
+                raise ValueError(msg)
 
             exprs = parse_as_list_of_expressions(inputs)
             return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
@@ -918,15 +920,15 @@ class Expr:
             elif is_polars_dtype(item):
                 exclude_dtypes.append(item)
             else:
-                raise TypeError(
+                msg = (
                     "invalid input for `exclude`"
                     f"\n\nExpected one or more `str` or `DataType`; found {item!r} instead."
                 )
+                raise TypeError(msg)
 
         if exclude_cols and exclude_dtypes:
-            raise TypeError(
-                "cannot exclude by both column name and dtype; use a selector instead"
-            )
+            msg = "cannot exclude by both column name and dtype; use a selector instead"
+            raise TypeError(msg)
         elif exclude_dtypes:
             return self._from_pyexpr(self._pyexpr.exclude_dtype(exclude_dtypes))
         else:
@@ -2298,9 +2300,8 @@ class Expr:
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
-            raise ValueError(
-                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            )
+            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            raise ValueError(msg)
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def gather(
@@ -2562,13 +2563,14 @@ class Expr:
         └─────┴─────┘
         """
         if value is not None and strategy is not None:
-            raise ValueError("cannot specify both `value` and `strategy`")
+            msg = "cannot specify both `value` and `strategy`"
+            raise ValueError(msg)
         elif value is None and strategy is None:
-            raise ValueError("must specify either a fill `value` or `strategy`")
+            msg = "must specify either a fill `value` or `strategy`"
+            raise ValueError(msg)
         elif strategy not in ("forward", "backward") and limit is not None:
-            raise ValueError(
-                "can only specify `limit` when strategy is set to 'backward' or 'forward'"
-            )
+            msg = "can only specify `limit` when strategy is set to 'backward' or 'forward'"
+            raise ValueError(msg)
 
         if value is not None:
             value = parse_as_expression(value, str_as_lit=True)
@@ -5340,10 +5342,11 @@ class Expr:
         elif closed == "left":
             return (self >= lower_bound) & (self < upper_bound)
         else:
-            raise ValueError(
+            msg = (
                 "`closed` must be one of {'left', 'right', 'both', 'none'},"
                 f" got {closed!r}"
             )
+            raise ValueError(msg)
 
     def hash(
         self,
@@ -8349,7 +8352,8 @@ class Expr:
         └─────┘
         """
         if n is not None and fraction is not None:
-            raise ValueError("cannot specify both `n` and `fraction`")
+            msg = "cannot specify both `n` and `fraction`"
+            raise ValueError(msg)
 
         if fraction is not None:
             fraction = parse_as_expression(fraction)
@@ -8666,7 +8670,8 @@ class Expr:
         └────────┘
         """
         if isinstance(value, Expr):
-            raise TypeError(f"`value` must be a supported literal; found {value!r}")
+            msg = f"`value` must be a supported literal; found {value!r}"
+            raise TypeError(msg)
 
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
@@ -9805,29 +9810,35 @@ def _prepare_alpha(
 ) -> float:
     """Normalise EWM decay specification in terms of smoothing factor 'alpha'."""
     if sum((param is not None) for param in (com, span, half_life, alpha)) > 1:
-        raise ValueError(
+        msg = (
             "parameters `com`, `span`, `half_life`, and `alpha` are mutually exclusive"
         )
+        raise ValueError(msg)
     if com is not None:
         if com < 0.0:
-            raise ValueError(f"require `com` >= 0 (found {com!r})")
+            msg = f"require `com` >= 0 (found {com!r})"
+            raise ValueError(msg)
         alpha = 1.0 / (1.0 + com)
 
     elif span is not None:
         if span < 1.0:
-            raise ValueError(f"require `span` >= 1 (found {span!r})")
+            msg = f"require `span` >= 1 (found {span!r})"
+            raise ValueError(msg)
         alpha = 2.0 / (span + 1.0)
 
     elif half_life is not None:
         if half_life <= 0.0:
-            raise ValueError(f"require `half_life` > 0 (found {half_life!r})")
+            msg = f"require `half_life` > 0 (found {half_life!r})"
+            raise ValueError(msg)
         alpha = 1.0 - math.exp(-math.log(2.0) / half_life)
 
     elif alpha is None:
-        raise ValueError("one of `com`, `span`, `half_life`, or `alpha` must be set")
+        msg = "one of `com`, `span`, `half_life`, or `alpha` must be set"
+        raise ValueError(msg)
 
     elif not (0 < alpha <= 1):
-        raise ValueError(f"require 0 < `alpha` <= 1 (found {alpha!r})")
+        msg = f"require 0 < `alpha` <= 1 (found {alpha!r})"
+        raise ValueError(msg)
 
     return alpha
 
@@ -9838,7 +9849,8 @@ def _prepare_rolling_window_args(
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
         if window_size < 1:
-            raise ValueError("`window_size` must be positive")
+            msg = "`window_size` must be positive"
+            raise ValueError(msg)
 
         if min_periods is None:
             min_periods = window_size

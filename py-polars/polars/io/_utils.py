@@ -217,7 +217,8 @@ def _check_empty(
             if context in ("StringIO", "BytesIO") and read_position
             else ""
         )
-        raise NoDataError(f"empty CSV data from {context}{hint}")
+        msg = f"empty CSV data from {context}{hint}"
+        raise NoDataError(msg)
     return b
 
 

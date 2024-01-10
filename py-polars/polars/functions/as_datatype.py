@@ -564,7 +564,8 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     └─────────────┘
     """
     if f_string.count("{}") != len(args):
-        raise ValueError("number of placeholders should equal the number of arguments")
+        msg = "number of placeholders should equal the number of arguments"
+        raise ValueError(msg)
 
     exprs = []
 

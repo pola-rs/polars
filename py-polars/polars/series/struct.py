@@ -30,7 +30,8 @@ class StructNameSpace:
         elif isinstance(item, str):
             return self.field(item)
         else:
-            raise TypeError(f"expected type 'int | str', got {type(item).__name__!r}")
+            msg = f"expected type 'int | str', got {type(item).__name__!r}"
+            raise TypeError(msg)
 
     def _ipython_key_completions_(self) -> list[str]:
         return self.fields
