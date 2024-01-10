@@ -1,11 +1,10 @@
 use std::io::Cursor;
 
-use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
+use arrow::array::{ArrayRef, Utf8ViewArray};
 use arrow::chunk::Chunk;
 use arrow::datatypes::{ArrowSchema, Field};
 use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};
-use polars_parquet::parquet::read::read_column;
 use polars_parquet::read::read_metadata;
 use polars_parquet::write::{CompressionOptions, Encoding, RowGroupIterator, Version};
 
@@ -64,7 +63,7 @@ fn round_trip(
     let mut arrays = vec![];
     for chunk in chunks {
         let chunk = chunk?;
-        arrays.push(chunk.get(0).unwrap().clone())
+        arrays.push(chunk.first().unwrap().clone())
     }
     assert_eq!(arrays.len(), 1);
 
