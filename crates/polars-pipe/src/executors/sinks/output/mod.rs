@@ -1,3 +1,4 @@
+mod batch_sink;
 #[cfg(feature = "csv")]
 mod csv;
 #[cfg(any(
@@ -22,3 +23,5 @@ pub use ipc::*;
 pub use json::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
+
+pub use batch_sink::*;

@@ -203,6 +203,13 @@ impl ParquetExec {
                 );
             }
 
+            // Now read the actual data.
+            let file_info = &self.file_info;
+            let file_options = &self.file_options;
+            let use_statistics = self.options.use_statistics;
+            let predicate = &self.predicate;
+            let base_row_index_ref = &base_row_index;
+
             // First initialize the readers and get the metadata concurrently.
             let iter = paths.iter().enumerate().map(|(i, path)| async move {
                 let first_file = batch_start == 0 && i == 0;
@@ -212,6 +219,7 @@ impl ParquetExec {
                 } else {
                     (None, None)
                 };
+
                 let mut reader = ParquetAsyncReader::from_uri(
                     &path.to_string_lossy(),
                     cloud_options,
@@ -232,6 +240,7 @@ impl ParquetExec {
                 }
 
                 let num_rows = reader.num_rows().await?;
+
                 PolarsResult::Ok((num_rows, reader))
             });
             let readers_and_metadata = futures::future::try_join_all(iter).await?;
@@ -244,13 +253,6 @@ impl ParquetExec {
                 .copied();
 
             let rows_statistics = get_sequential_row_statistics(iter, remaining_rows_to_read);
-
-            // Now read the actual data.
-            let file_info = &self.file_info;
-            let file_options = &self.file_options;
-            let use_statistics = self.options.use_statistics;
-            let predicate = &self.predicate;
-            let base_row_index_ref = &base_row_index;
 
             if verbose {
                 eprintln!("reading of {}/{} file...", processed, self.paths.len());

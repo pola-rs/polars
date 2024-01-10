@@ -23,6 +23,7 @@ polars-stream = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
+crossbeam-channel = { workspace = true }
 ahash = { workspace = true }
 bitflags = { workspace = true }
 glob = { version = "0.3" }
