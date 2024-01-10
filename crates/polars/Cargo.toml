@@ -272,6 +272,7 @@ dtype-i16 = ["polars-core/dtype-i16", "polars-lazy?/dtype-i16", "polars-ops/dtyp
 dtype-decimal = [
   "polars-core/dtype-decimal",
   "polars-lazy?/dtype-decimal",
+  "polars-sql?/dtype-decimal",
   "polars-ops/dtype-decimal",
   "polars-io/dtype-decimal",
 ]
