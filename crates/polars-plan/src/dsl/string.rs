@@ -272,11 +272,7 @@ impl StringNameSpace {
         let time_unit = match (&options.format, time_unit) {
             (_, Some(time_unit)) => time_unit,
             (Some(format), None) => {
-                if format.contains("%.9f")
-                    || format.contains("%9f")
-                    || format.contains("%f")
-                    || format.contains("%.f")
-                {
+                if format.contains("%.9f") || format.contains("%9f") {
                     TimeUnit::Nanoseconds
                 } else if format.contains("%.3f") || format.contains("%3f") {
                     TimeUnit::Milliseconds
