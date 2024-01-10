@@ -162,9 +162,11 @@ impl Bitmap {
     /// Returns the number of unset bits on this [`Bitmap`].
     ///
     /// Guaranteed to be `<= self.len()`.
+    ///
     /// # Implementation
-    /// This function is `O(1)` - the number of unset bits is computed when the bitmap is
-    /// created
+    ///
+    /// This function counts the number of unset bits if it is not already
+    /// computed. Repeated calls use the cached bitcount.
     pub fn unset_bits(&self) -> usize {
         let cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
         if cache >> 63 != 0 {
