@@ -18,5 +18,13 @@ def set_random_seed(seed: int) -> None:
     seed
         A non-negative integer < 2\ :sup:`64` used to seed the internal global
         random number generator.
+
+    Examples
+    --------
+    >>> pl.set_random_seed(0)
+    >>> x = pl.Series([1, 2, 3]).shuffle()
+    >>> pl.set_random_seed(0)
+    >>> y = pl.Series([1, 2, 3]).shuffle()
+    >>> assert x.equals(y)
     """
     plr.set_random_seed(seed)

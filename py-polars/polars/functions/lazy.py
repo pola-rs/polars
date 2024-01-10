@@ -1560,6 +1560,55 @@ def quantile(
         Quantile between 0.0 and 1.0.
     interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
         Interpolation method.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": list(range(11))})
+    >>> df.select(pl.quantile("a", 0.125, interpolation="nearest"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 1.0 │
+    └─────┘
+    >>> df.select(pl.quantile("a", 0.125, interpolation="higher"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 2.0 │
+    └─────┘
+    >>> df.select(pl.quantile("a", 0.125, interpolation="lower"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 1.0 │
+    └─────┘
+    >>> df.select(pl.quantile("a", 0.125, interpolation="midpoint"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 1.5 │
+    └─────┘
+    >>> df.select(pl.quantile("a", 0.125, interpolation="linear"))
+    shape: (1, 1)
+    ┌──────┐
+    │ a    │
+    │ ---  │
+    │ f64  │
+    ╞══════╡
+    │ 1.25 │
+    └──────┘
     """
     return F.col(column).quantile(quantile, interpolation)
 
@@ -2094,6 +2143,65 @@ def rolling_cov(
     ddof
         Delta degrees of freedom.  The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
+
+    Examples
+    --------
+    >>> t = pl.Series(range(6))
+    >>> a = pl.Series([1] * 6)
+    >>> v = a * t
+    >>> x = a * t
+    >>> df = pl.DataFrame({"t": t, "x": x, "v": v, "a": a})
+    >>> df.with_columns(
+    ...     pl.rolling_cov("t", "a", window_size=4).alias("cov(t,a)"),
+    ...     pl.rolling_corr("t", "a", window_size=4).alias("corr(t,a)"),
+    ... )
+    shape: (6, 6)
+    ┌─────┬─────┬─────┬─────┬──────────┬───────────┐
+    │ t   ┆ x   ┆ v   ┆ a   ┆ cov(t,a) ┆ corr(t,a) │
+    │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ f64      ┆ f64       │
+    ╞═════╪═════╪═════╪═════╪══════════╪═══════════╡
+    │ 0   ┆ 0   ┆ 0   ┆ 1   ┆ null     ┆ null      │
+    │ 1   ┆ 1   ┆ 1   ┆ 1   ┆ null     ┆ null      │
+    │ 2   ┆ 2   ┆ 2   ┆ 1   ┆ null     ┆ null      │
+    │ 3   ┆ 3   ┆ 3   ┆ 1   ┆ 0.0      ┆ NaN       │
+    │ 4   ┆ 4   ┆ 4   ┆ 1   ┆ 0.0      ┆ NaN       │
+    │ 5   ┆ 5   ┆ 5   ┆ 1   ┆ 0.0      ┆ NaN       │
+    └─────┴─────┴─────┴─────┴──────────┴───────────┘
+    >>> df.with_columns(
+    ...     pl.rolling_cov("t", "v", window_size=4).alias("cov(t,v)"),
+    ...     pl.rolling_corr("t", "v", window_size=4).alias("corr(t,v)"),
+    ... )
+    shape: (6, 6)
+    ┌─────┬─────┬─────┬─────┬──────────┬───────────┐
+    │ t   ┆ x   ┆ v   ┆ a   ┆ cov(t,v) ┆ corr(t,v) │
+    │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ f64      ┆ f64       │
+    ╞═════╪═════╪═════╪═════╪══════════╪═══════════╡
+    │ 0   ┆ 0   ┆ 0   ┆ 1   ┆ null     ┆ null      │
+    │ 1   ┆ 1   ┆ 1   ┆ 1   ┆ null     ┆ null      │
+    │ 2   ┆ 2   ┆ 2   ┆ 1   ┆ null     ┆ null      │
+    │ 3   ┆ 3   ┆ 3   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 4   ┆ 4   ┆ 4   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 5   ┆ 5   ┆ 5   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    └─────┴─────┴─────┴─────┴──────────┴───────────┘
+    >>> df.with_columns(
+    ...     pl.rolling_cov("t", "x", window_size=4).alias("cov(t,x)"),
+    ...     pl.rolling_corr("t", "x", window_size=4).alias("corr(t,x)"),
+    ... )
+    shape: (6, 6)
+    ┌─────┬─────┬─────┬─────┬──────────┬───────────┐
+    │ t   ┆ x   ┆ v   ┆ a   ┆ cov(t,x) ┆ corr(t,x) │
+    │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ f64      ┆ f64       │
+    ╞═════╪═════╪═════╪═════╪══════════╪═══════════╡
+    │ 0   ┆ 0   ┆ 0   ┆ 1   ┆ null     ┆ null      │
+    │ 1   ┆ 1   ┆ 1   ┆ 1   ┆ null     ┆ null      │
+    │ 2   ┆ 2   ┆ 2   ┆ 1   ┆ null     ┆ null      │
+    │ 3   ┆ 3   ┆ 3   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 4   ┆ 4   ┆ 4   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 5   ┆ 5   ┆ 5   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    └─────┴─────┴─────┴─────┴──────────┴───────────┘
     """
     if min_periods is None:
         min_periods = window_size
@@ -2134,6 +2242,65 @@ def rolling_corr(
     ddof
         Delta degrees of freedom.  The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
+
+    Examples
+    --------
+    >>> t = pl.Series(range(6))
+    >>> a = pl.Series([1] * 6)
+    >>> v = a * t
+    >>> x = a * t
+    >>> df = pl.DataFrame({"t": t, "x": x, "v": v, "a": a})
+    >>> df.with_columns(
+    ...     pl.rolling_cov("t", "a", window_size=4).alias("cov(t,a)"),
+    ...     pl.rolling_corr("t", "a", window_size=4).alias("corr(t,a)"),
+    ... )
+    shape: (6, 6)
+    ┌─────┬─────┬─────┬─────┬──────────┬───────────┐
+    │ t   ┆ x   ┆ v   ┆ a   ┆ cov(t,a) ┆ corr(t,a) │
+    │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ f64      ┆ f64       │
+    ╞═════╪═════╪═════╪═════╪══════════╪═══════════╡
+    │ 0   ┆ 0   ┆ 0   ┆ 1   ┆ null     ┆ null      │
+    │ 1   ┆ 1   ┆ 1   ┆ 1   ┆ null     ┆ null      │
+    │ 2   ┆ 2   ┆ 2   ┆ 1   ┆ null     ┆ null      │
+    │ 3   ┆ 3   ┆ 3   ┆ 1   ┆ 0.0      ┆ NaN       │
+    │ 4   ┆ 4   ┆ 4   ┆ 1   ┆ 0.0      ┆ NaN       │
+    │ 5   ┆ 5   ┆ 5   ┆ 1   ┆ 0.0      ┆ NaN       │
+    └─────┴─────┴─────┴─────┴──────────┴───────────┘
+    >>> df.with_columns(
+    ...     pl.rolling_cov("t", "v", window_size=4).alias("cov(t,v)"),
+    ...     pl.rolling_corr("t", "v", window_size=4).alias("corr(t,v)"),
+    ... )
+    shape: (6, 6)
+    ┌─────┬─────┬─────┬─────┬──────────┬───────────┐
+    │ t   ┆ x   ┆ v   ┆ a   ┆ cov(t,v) ┆ corr(t,v) │
+    │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ f64      ┆ f64       │
+    ╞═════╪═════╪═════╪═════╪══════════╪═══════════╡
+    │ 0   ┆ 0   ┆ 0   ┆ 1   ┆ null     ┆ null      │
+    │ 1   ┆ 1   ┆ 1   ┆ 1   ┆ null     ┆ null      │
+    │ 2   ┆ 2   ┆ 2   ┆ 1   ┆ null     ┆ null      │
+    │ 3   ┆ 3   ┆ 3   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 4   ┆ 4   ┆ 4   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 5   ┆ 5   ┆ 5   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    └─────┴─────┴─────┴─────┴──────────┴───────────┘
+    >>> df.with_columns(
+    ...     pl.rolling_cov("t", "x", window_size=4).alias("cov(t,x)"),
+    ...     pl.rolling_corr("t", "x", window_size=4).alias("corr(t,x)"),
+    ... )
+    shape: (6, 6)
+    ┌─────┬─────┬─────┬─────┬──────────┬───────────┐
+    │ t   ┆ x   ┆ v   ┆ a   ┆ cov(t,x) ┆ corr(t,x) │
+    │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ f64      ┆ f64       │
+    ╞═════╪═════╪═════╪═════╪══════════╪═══════════╡
+    │ 0   ┆ 0   ┆ 0   ┆ 1   ┆ null     ┆ null      │
+    │ 1   ┆ 1   ┆ 1   ┆ 1   ┆ null     ┆ null      │
+    │ 2   ┆ 2   ┆ 2   ┆ 1   ┆ null     ┆ null      │
+    │ 3   ┆ 3   ┆ 3   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 4   ┆ 4   ┆ 4   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    │ 5   ┆ 5   ┆ 5   ┆ 1   ┆ 1.666667 ┆ 1.0       │
+    └─────┴─────┴─────┴─────┴──────────┴───────────┘
     """
     if min_periods is None:
         min_periods = window_size

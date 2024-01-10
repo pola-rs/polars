@@ -6330,6 +6330,21 @@ class Series:
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
             If False, the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [-1.83, -1.02, -0.87, -0.56, -0.31, -0.12, 0.26, 0.33, 0.79, 1.0, 1.95]
+        ... )
+        >>> s.mean(); s.std()  # sample distribution is close to standard normal
+        -0.03454545454545455
+        1.0564219198441844
+        >>> s.kurtosis()  # by default, estimates excess kurtosis from sample moments
+        -0.43454432240497054
+        >>> s.kurtosis(bias=False)  # computed using unbiased cumulant estimates
+        0.10909279599171562
+        >>> s.kurtosis(fisher=False)  # do not use the Fisher -3 adjustment
+        2.5654556775950295
         """
         return self._s.kurtosis(fisher, bias)
 
