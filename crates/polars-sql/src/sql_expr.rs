@@ -14,8 +14,8 @@ use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator,
-    Value as SQLValue,
+    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo, TrimWhereField,
+    UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -62,11 +62,30 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Int2(_) => DataType::Int16,
         SQLDataType::Int4(_) => DataType::Int32,
         SQLDataType::Int8(_) => DataType::Int64,
-        SQLDataType::Interval => DataType::Duration(TimeUnit::Milliseconds),
+        SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
         SQLDataType::Real => DataType::Float32,
         SQLDataType::SmallInt(_) => DataType::Int16,
-        SQLDataType::Time { .. } => DataType::Time,
-        SQLDataType::Timestamp { .. } => DataType::Datetime(TimeUnit::Milliseconds, None),
+        SQLDataType::Time(_, tz) => match tz {
+            TimezoneInfo::None => DataType::Time,
+            _ => polars_bail!(ComputeError: "Time with timezone is not supported; found tz={}", tz),
+        },
+        SQLDataType::Timestamp(prec, tz) => {
+            let tu = match prec {
+                None => TimeUnit::Microseconds,
+                Some(3) => TimeUnit::Milliseconds,
+                Some(6) => TimeUnit::Microseconds,
+                Some(9) => TimeUnit::Nanoseconds,
+                Some(n) => {
+                    polars_bail!(ComputeError: "Unsupported timestamp precision; expected 3, 6 or 9, found prec={}", n)
+                },
+            };
+            match tz {
+                TimezoneInfo::None => DataType::Datetime(tu, None),
+                _ => {
+                    polars_bail!(ComputeError: "Timestamp with timezone is not (yet) supported; found tz={}", tz)
+                },
+            }
+        },
         SQLDataType::TinyInt(_) => DataType::Int8,
         SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
