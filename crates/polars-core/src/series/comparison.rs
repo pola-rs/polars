@@ -67,6 +67,8 @@ macro_rules! impl_compare {
                 .struct_()
                 .unwrap()
                 .$method(rhs.struct_().unwrap().deref()),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => lhs.decimal().unwrap().0.$method(&rhs.decimal().unwrap().0),
 
             _ => unimplemented!(),
         };

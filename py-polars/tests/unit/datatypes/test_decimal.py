@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import io
 import itertools
+import operator
 from dataclasses import dataclass
 from decimal import Decimal as D
-from typing import Any, NamedTuple
+from typing import Any, Callable, NamedTuple
 
 import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.fixture(scope="module")
@@ -186,6 +187,24 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
         D("1.10"),
         D("0.01"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True, True, True])),
+        (operator.lt, pl.Series([None, False, False, False, True, True])),
+        (operator.ge, pl.Series([None, True, True, True, False, False])),
+        (operator.gt, pl.Series([None, False, False, False, False, False])),
+    ],
+)
+def test_decimal_compare(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")], dtype=pl.Decimal)
+    s2 = pl.Series([None, D("1.2"), D("2.13"), D("4.99"), D("4.99"), D("2.13")])
+
+    assert_series_equal(op(s, s2), expected)
 
 
 def test_decimal_arithmetic() -> None:
