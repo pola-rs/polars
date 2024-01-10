@@ -158,4 +158,3 @@ impl<T: ViewType + ?Sized> Pushable<&T> for MutableBinaryViewArray<T> {
         }
     }
 }
-

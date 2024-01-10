@@ -697,7 +697,9 @@ pub mod growable;
 mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
-pub use binview::{BinaryViewArray, BinaryViewArrayGeneric, Utf8ViewArray, ViewType, MutableBinaryViewArray};
+pub use binview::{
+    BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray, Utf8ViewArray, ViewType,
+};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use equal::equal;

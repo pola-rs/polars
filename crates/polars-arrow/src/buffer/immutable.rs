@@ -5,9 +5,9 @@ use std::usize;
 
 use either::Either;
 use num_traits::Zero;
-use crate::array::ArrayAccessor;
 
 use super::{Bytes, IntoIter};
+use crate::array::ArrayAccessor;
 
 /// [`Buffer`] is a contiguous memory region that can be shared across
 /// thread boundaries.

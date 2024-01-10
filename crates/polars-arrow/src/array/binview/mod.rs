@@ -23,13 +23,15 @@ mod private {
     impl Sealed for str {}
     impl Sealed for [u8] {}
 }
+pub use mutable::MutableBinaryViewArray;
 use private::Sealed;
 
 use crate::array::binview::iterator::BinaryViewValueIter;
-use crate::array::binview::view::{validate_binary_view, validate_utf8_view};
+use crate::array::binview::view::{
+    validate_binary_view, validate_utf8_only_view, validate_utf8_view,
+};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-pub use mutable::MutableBinaryViewArray;
 
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
@@ -268,6 +270,40 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 }
 
+impl BinaryViewArray {
+    pub fn validate_utf8(&self) -> PolarsResult<()> {
+        validate_utf8_only_view(&self.views, &self.buffers)
+    }
+
+    pub fn to_utf8view(&self) -> PolarsResult<Utf8ViewArray> {
+        self.validate_utf8()?;
+        unsafe { Ok(self.to_utf8view_unchecked()) }
+    }
+
+    pub unsafe fn to_utf8view_unchecked(&self) -> Utf8ViewArray {
+        Utf8ViewArray::new_unchecked(
+            ArrowDataType::Utf8View,
+            self.views.clone(),
+            self.buffers.clone(),
+            self.validity.clone(),
+        )
+    }
+}
+
+impl Utf8ViewArray {
+    pub fn to_binview(&self) -> BinaryViewArray {
+        // SAFETY: same invariants.
+        unsafe {
+            BinaryViewArray::new_unchecked(
+                ArrowDataType::BinaryView,
+                self.views.clone(),
+                self.buffers.clone(),
+                self.validity.clone(),
+            )
+        }
+    }
+}
+
 impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     fn as_any(&self) -> &dyn Any {
         self
@@ -295,7 +331,6 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
             "the offset of the new Buffer cannot exceed the existing length"
         );
         unsafe { self.slice_unchecked(offset, length) }
-        todo!()
     }
 
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {

@@ -85,7 +85,6 @@ pub(super) fn validate_utf8_view(views: &[u128], buffers: &[Buffer<u8>]) -> Pola
 }
 
 pub(super) fn validate_utf8_only_view(views: &[u128], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
-
     for view in views {
         let len = *view as u32;
         if len <= 12 {
@@ -96,8 +95,7 @@ pub(super) fn validate_utf8_only_view(views: &[u128], buffers: &[Buffer<u8>]) ->
 
             let start = view.offset as usize;
             let end = start + len as usize;
-            let b = &data
-                .as_slice()[start..end];
+            let b = &data.as_slice()[start..end];
             validate_utf8(b)?;
         };
     }

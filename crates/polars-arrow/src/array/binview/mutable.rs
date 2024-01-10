@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use polars_error::PolarsResult;
 
+use polars_error::PolarsResult;
 use polars_utils::slice::GetSaferUnchecked;
 
+use crate::array::binview::view::validate_utf8_only_view;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
-use crate::array::binview::view::{validate_utf8_only_view};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 
@@ -116,7 +116,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             validity.push(true)
         }
         self.push_value_ignore_validity(value)
-   }
+    }
 
     pub fn push<V: AsRef<T>>(&mut self, value: Option<V>) {
         if let Some(value) = value {
@@ -186,8 +186,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
     fn finish_in_progress(&mut self) {
         if !self.in_progress_buffer.is_empty() {
-            self
-                .completed_buffers
+            self.completed_buffers
                 .push(std::mem::take(&mut self.in_progress_buffer).into());
         }
     }
