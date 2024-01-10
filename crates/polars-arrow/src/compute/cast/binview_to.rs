@@ -1,7 +1,4 @@
-use polars_error::PolarsResult;
-
 use crate::array::*;
-use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 pub(super) fn view_to_binary<O: Offset>(array: &BinaryViewArray) -> BinaryArray<O> {
@@ -10,7 +7,7 @@ pub(super) fn view_to_binary<O: Offset>(array: &BinaryViewArray) -> BinaryArray<
     for slice in array.values_iter() {
         mutable.push(slice)
     }
-    let mut out: BinaryArray<O> = mutable.into();
+    let out: BinaryArray<O> = mutable.into();
     out.with_validity(array.validity().cloned())
 }
 

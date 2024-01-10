@@ -41,15 +41,6 @@ impl CastOptions {
     }
 }
 
-/// Returns true if this type is numeric: (UInt*, Unit*, or Float*).
-fn is_numeric(t: &ArrowDataType) -> bool {
-    use ArrowDataType::*;
-    matches!(
-        t,
-        UInt8 | UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64
-    )
-}
-
 macro_rules! primitive_dyn {
     ($from:expr, $expr:tt) => {{
         let from = $from.as_any().downcast_ref().unwrap();

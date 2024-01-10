@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter, Result, Write};
 use super::super::fmt::write_vec;
 use super::BinaryViewArrayGeneric;
 use crate::array::binview::ViewType;
-use crate::array::Array;
+use crate::array::{Array, BinaryViewArray, Utf8ViewArray};
 
 pub fn write_value<'a, T: ViewType + ?Sized, W: Write>(
     array: &'a BinaryViewArrayGeneric<T>,
@@ -19,19 +19,18 @@ where
     write_vec(f, writer, None, bytes.len(), "None", false)
 }
 
-impl<T: ViewType + ?Sized> Debug for BinaryViewArrayGeneric<T>
-where
-    for<'a> &'a T: Debug,
-{
+impl Debug for BinaryViewArray {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let writer = |f: &mut Formatter, index| write_value(self, index, f);
+        write!(f, "BinaryViewArray")?;
+        write_vec(f, writer, self.validity(), self.len(), "None", false)
+    }
+}
 
-        let head = if T::IS_UTF8 {
-            "Utf8ViewArray"
-        } else {
-            "BinaryViewArray"
-        };
-        write!(f, "{head}")?;
+impl Debug for Utf8ViewArray {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let writer = |f: &mut Formatter, index| write!(f, "{}", self.value(index));
+        write!(f, "Utf8ViewArray")?;
         write_vec(f, writer, self.validity(), self.len(), "None", false)
     }
 }

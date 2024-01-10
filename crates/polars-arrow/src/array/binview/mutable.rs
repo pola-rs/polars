@@ -170,7 +170,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
-    pub fn from_iter<I, P>(iterator: I) -> Self
+    pub fn from_iterator<I, P>(iterator: I) -> Self
     where
         I: Iterator<Item = Option<P>>,
         P: AsRef<T>,
@@ -191,7 +191,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     pub fn from<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
-        Self::from_iter(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()))
+        Self::from_iterator(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()))
     }
 
     fn finish_in_progress(&mut self) {
@@ -218,6 +218,6 @@ impl<T: ViewType + ?Sized, P: AsRef<T>> Extend<Option<P>> for MutableBinaryViewA
 impl<T: ViewType + ?Sized, P: AsRef<T>> FromIterator<Option<P>> for MutableBinaryViewArray<T> {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
-        Self::from_iter(iter.into_iter())
+        Self::from_iterator(iter.into_iter())
     }
 }

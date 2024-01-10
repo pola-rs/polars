@@ -101,22 +101,26 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        ArrowDataType::Binary | ArrowDataType::LargeBinary => Ok(ParquetType::try_from_primitive(
-            name,
-            PhysicalType::ByteArray,
-            repetition,
-            None,
-            None,
-            None,
-        )?),
-        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => Ok(ParquetType::try_from_primitive(
-            name,
-            PhysicalType::ByteArray,
-            repetition,
-            Some(PrimitiveConvertedType::Utf8),
-            Some(PrimitiveLogicalType::String),
-            None,
-        )?),
+        ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
+            Ok(ParquetType::try_from_primitive(
+                name,
+                PhysicalType::ByteArray,
+                repetition,
+                None,
+                None,
+                None,
+            )?)
+        },
+        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View => {
+            Ok(ParquetType::try_from_primitive(
+                name,
+                PhysicalType::ByteArray,
+                repetition,
+                Some(PrimitiveConvertedType::Utf8),
+                Some(PrimitiveLogicalType::String),
+                None,
+            )?)
+        },
         ArrowDataType::Date32 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,

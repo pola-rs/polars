@@ -156,6 +156,9 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         }
     }
 
+    /// Create a new BinaryViewArray but initialize a statistics compute.
+    /// # Safety
+    /// The caller must ensure the invariants
     pub unsafe fn new_unchecked_unknown_md(
         data_type: ArrowDataType,
         views: Buffer<u128>,
@@ -297,22 +300,39 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     impl_into_array!();
 
     pub fn from<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
-        let mutable =
-            MutableBinaryViewArray::from_iter(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()));
+        let mutable = MutableBinaryViewArray::from_iterator(
+            slice.as_ref().iter().map(|opt_v| opt_v.as_ref()),
+        );
         mutable.into()
+    }
+
+    /// Get the total length of bytes that it would take to concatenate all binary/str values in this array.
+    pub fn total_bytes_len(&self) -> usize {
+        self.total_bytes_len
+    }
+
+    /// Get the length of bytes that are stored in the variadic buffers.
+    pub fn total_buffer_len(&self) -> usize {
+        self.total_buffer_len
     }
 }
 
 impl BinaryViewArray {
+    /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
         validate_utf8_only_view(&self.views, &self.buffers)
     }
 
+    /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].
     pub fn to_utf8view(&self) -> PolarsResult<Utf8ViewArray> {
         self.validate_utf8()?;
         unsafe { Ok(self.to_utf8view_unchecked()) }
     }
 
+    /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`] without checking UTF-8.
+    ///
+    /// # Safety
+    /// The caller must ensure the underlying data is valid UTF-8.
     pub unsafe fn to_utf8view_unchecked(&self) -> Utf8ViewArray {
         Utf8ViewArray::new_unchecked(
             ArrowDataType::Utf8View,

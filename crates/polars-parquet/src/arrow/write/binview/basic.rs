@@ -1,5 +1,4 @@
 use arrow::array::{Array, BinaryViewArray};
-use arrow::compute::aggregate::estimated_bytes_size;
 use polars_error::PolarsResult;
 
 use crate::parquet::encoding::delta_bitpacked;
@@ -13,10 +12,10 @@ use crate::write::utils::invalid_encoding;
 use crate::write::{utils, Encoding, Page, WriteOptions};
 
 pub(crate) fn encode_plain(array: &BinaryViewArray, buffer: &mut Vec<u8>) {
+    let capacity =
+        array.total_bytes_len() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
+
     let len_before = buffer.len();
-    let capacity = estimated_bytes_size(array)
-        - array.validity().map(|b| b.as_slice().0.len()).unwrap_or(0)
-        + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
     buffer.reserve(capacity);
 
     encode_non_null_values(array.non_null_values_iter(), buffer);

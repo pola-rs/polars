@@ -268,6 +268,8 @@ pub(super) fn finish(
                 array.views().clone(),
                 array.data_buffers().clone(),
                 array.validity().cloned(),
+                array.total_bytes_len(),
+                array.total_buffer_len(),
             )
             .boxed())
         },
@@ -279,6 +281,8 @@ pub(super) fn finish(
                     array.views().clone(),
                     array.data_buffers().clone(),
                     array.validity().cloned(),
+                    array.total_bytes_len(),
+                    array.total_buffer_len(),
                 )
                 .boxed())
             }
