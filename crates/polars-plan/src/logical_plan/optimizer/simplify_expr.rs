@@ -556,6 +556,8 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
                     #[cfg(feature = "dtype-struct")]
                     (_, DataType::Struct(_)) => return Ok(None),
+                    #[cfg(feature = "dtype-decimal")]
+                    (_, DataType::Decimal(_, _)) => return Ok(None),
                     (av, _) => {
                         let out = {
                             match av.strict_cast(dtype) {
