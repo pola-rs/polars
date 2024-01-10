@@ -13,7 +13,6 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
 use super::mmap::ColumnStore;
-use super::predicates::read_this_row_group;
 use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
 };
@@ -26,6 +25,7 @@ type DownloadedRowGroup = Vec<(u64, Bytes)>;
 type QueuePayload = (usize, DownloadedRowGroup);
 type QueueSend = Arc<Sender<PolarsResult<QueuePayload>>>;
 
+#[derive(Debug, Clone)]
 pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
@@ -272,37 +272,8 @@ impl FetchRowGroupsFromObjectStore {
                 .collect()
         });
 
-        let mut prefetched: PlHashMap<usize, DownloadedRowGroup> = PlHashMap::new();
+        let mut row_groups = row_groups.iter().cloned().enumerate().collect::<Vec<_>>();
 
-        let mut row_groups = if let Some(pred) = predicate.as_deref() {
-            row_group_range
-                .filter_map(|i| {
-                    let rg = &row_groups[i];
-
-                    // TODO!
-                    // Optimize this. Now we partition the predicate columns twice. (later on reading as well)
-                    // I think we must add metadata context where we can cache and amortize the partitioning.
-                    let mut part_md = PartitionedColumnChunkMD::new(rg);
-                    let live = pred.live_variables();
-                    part_md.set_partitions(
-                        live.as_ref()
-                            .map(|vars| vars.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>())
-                            .as_ref(),
-                    );
-                    let should_be_read =
-                        matches!(read_this_row_group(Some(pred), &part_md, &schema), Ok(true));
-
-                    // Already add the row groups that will be skipped to the prefetched data.
-                    if !should_be_read {
-                        prefetched.insert(i, Default::default());
-                    }
-
-                    should_be_read.then(|| (i, rg.clone()))
-                })
-                .collect::<Vec<_>>()
-        } else {
-            row_groups.iter().cloned().enumerate().collect()
-        };
         let reader = Arc::new(reader);
         let msg_limit = get_rg_prefetch_size();
 

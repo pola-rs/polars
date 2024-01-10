@@ -37,6 +37,7 @@ pub struct ParquetSource {
     processed_rows: AtomicUsize,
     iter: Range<usize>,
     paths: Arc<Vec<PathBuf>>,
+    total_files_read: usize,
     options: ParquetOptions,
     file_options: FileScanOptions,
     #[allow(dead_code)]
@@ -48,6 +49,7 @@ pub struct ParquetSource {
     run_async: bool,
     prefetch_size: usize,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    rows_left_to_read: usize,
 }
 
 impl ParquetSource {
@@ -184,62 +186,69 @@ impl ParquetSource {
     /// requires `self.processed_rows` to be incremented in the correct order), as it does not
     /// coordinate to increment the row offset in a properly ordered manner.
     #[cfg(feature = "async")]
-    async fn init_reader_async(&self, index: usize) -> PolarsResult<BatchedParquetReader> {
-        use std::sync::atomic::Ordering;
-
-        let metadata = self.metadata.clone();
+    async fn init_reader_async(
+        &self,
+        index: usize,
+        n_rows: usize,
+    ) -> PolarsResult<(ParquetAsyncReader, usize)> {
+        let metadata: Option<Arc<polars_io::prelude::FileMetaData>> = self.metadata.clone();
         let predicate = self.predicate.clone();
         let cloud_options = self.cloud_options.clone();
         let (path, options, file_options, projection, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
-        let batched_reader = {
+        let reader = {
             let uri = path.to_string_lossy();
-
-            let mut async_reader =
-                ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
-                    .await?
-                    .with_row_index(file_options.row_index)
-                    .with_projection(projection)
-                    .check_schema(
-                        self.file_info
-                            .reader_schema
-                            .as_ref()
-                            .unwrap()
-                            .as_ref()
-                            .unwrap_left(),
-                    )
-                    .await?
-                    .with_predicate(predicate.clone())
-                    .use_statistics(options.use_statistics)
-                    .with_hive_partition_columns(hive_partitions)
-                    .with_include_file_path(
-                        self.file_options
-                            .include_file_paths
-                            .as_ref()
-                            .map(|x| (x.clone(), Arc::from(path.to_str().unwrap()))),
-                    );
-
-            let n_rows_this_file = async_reader.num_rows().await?;
-            let current_row_offset = self
-                .processed_rows
-                .fetch_add(n_rows_this_file, Ordering::Relaxed);
-
-            let slice = file_options.slice.map(|slice| {
-                assert!(slice.0 >= 0);
-                let slice_start = slice.0 as usize;
-                let slice_end = slice_start + slice.1;
-                split_slice_at_file(
-                    &mut current_row_offset.clone(),
-                    n_rows_this_file,
-                    slice_start,
-                    slice_end,
+            ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
+                .await?
+                .read_parallel(options.parallel)
+                .with_row_index(file_options.row_index)
+                .with_projection(projection)
+                .with_predicate(predicate.clone())
+                .with_hive_partition_columns(hive_partitions)
+                .use_statistics(options.use_statistics)
+                .with_slice(Some((0, n_rows)))
+                .with_include_file_path(
+                    self.file_options
+                        .include_file_paths
+                        .as_ref()
+                        .map(|x| (x.clone(), Arc::from(path.to_str().unwrap()))),
                 )
-            });
-
-            async_reader.with_slice(slice).batched(chunk_size).await?
         };
+        Ok((reader, chunk_size))
+    }
+
+    #[cfg(feature = "async")]
+    async fn init_batch_reader(
+        &self,
+        reader: ParquetAsyncReader,
+        chunk_size: usize,
+    ) -> PolarsResult<BatchedParquetReader> {
+        let batched_reader = reader
+            .check_schema(
+                self.file_info
+                    .reader_schema
+                    .as_ref()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap_left(),
+            )
+            .await?
+            .batched(chunk_size)
+            .await?;
         Ok(batched_reader)
+    }
+
+    #[cfg(feature = "async")]
+    async fn num_rows_per_reader(&self, reader: &mut ParquetAsyncReader) -> PolarsResult<usize> {
+        let predicate = self.predicate.clone();
+        let num_rows;
+        if predicate.is_some() {
+            num_rows = reader.num_rows_with_predicate().await;
+        } else {
+            num_rows = reader.num_rows().await;
+        }
+        num_rows
     }
 
     #[allow(unused_variables)]
@@ -264,6 +273,7 @@ impl ParquetSource {
             eprintln!("POLARS PREFETCH_SIZE: {}", prefetch_size)
         }
         let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
+        let rows_left_to_read = file_options.slice.unwrap_or((0, usize::MAX)).1;
 
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
@@ -274,6 +284,7 @@ impl ParquetSource {
             file_options,
             iter,
             paths,
+            total_files_read: 0,
             cloud_options,
             metadata,
             file_info,
@@ -282,6 +293,7 @@ impl ParquetSource {
             run_async,
             prefetch_size,
             predicate,
+            rows_left_to_read,
         };
         // Already start downloading when we deal with cloud urls.
         if run_async {
@@ -297,41 +309,66 @@ impl ParquetSource {
         //
         // It is important we do this for a reasonable batch size, that's why we start this when we
         // have just 2 readers left.
-        if self.run_async {
-            #[cfg(not(feature = "async"))]
-            panic!("activate 'async' feature");
+        if self.batched_readers.is_empty()
+            && self.rows_left_to_read != 0
+            && self.total_files_read != self.paths.len()
+        {
+            if self.run_async {
+                let range = 0..self.prefetch_size - self.batched_readers.len();
 
-            #[cfg(feature = "async")]
-            {
-                if self.batched_readers.len() <= 2 || self.batched_readers.is_empty() {
-                    let range = 0..self.prefetch_size - self.batched_readers.len();
-                    let range = range
-                        .zip(&mut self.iter)
-                        .map(|(_, index)| index)
-                        .collect::<Vec<_>>();
-                    let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
+                let range = range
+                    .zip(&mut self.iter)
+                    .map(|(_, index)| index)
+                    .collect::<Vec<_>>();
 
-                    let batched_readers = if self.file_options.slice.is_some() {
-                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
-                            futures::stream::iter(init_iter)
-                                .then(|x| x)
-                                .try_collect()
-                                .await
-                        })?
-                    } else {
-                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
-                            futures::future::try_join_all(init_iter).await
-                        })?
-                    };
+                let readers = range
+                    .clone()
+                    .into_iter()
+                    .map(|index| self.init_reader_async(index, self.rows_left_to_read));
+                let mut readers = polars_io::pl_async::get_runtime()
+                    .block_on(async { futures::future::try_join_all(readers).await })?;
 
-                    for r in batched_readers {
-                        self.finish_init_reader(r)?;
-                    }
+                let num_rows_to_read = readers
+                    .iter_mut()
+                    .map(|(reader, _chunk_size)| self.num_rows_per_reader(reader));
+
+                let num_rows_to_read = polars_io::pl_async::get_runtime()
+                    .block_on(async { futures::future::try_join_all(num_rows_to_read).await })?;
+
+                let num_rows_to_read = num_rows_to_read
+                    .into_iter()
+                    .zip(readers)
+                    .map(|(rows_per_reader, (reader, chunk_size))| {
+                        self.total_files_read += 1;
+                        if self.rows_left_to_read == 0 {
+                            return (reader, chunk_size, 0);
+                        }
+                        self.rows_left_to_read =
+                            self.rows_left_to_read.saturating_sub(rows_per_reader);
+                        (reader, chunk_size, rows_per_reader)
+                    })
+                    .filter(|(_reader, _chunk_size, rows_per_reader)| *rows_per_reader != 0)
+                    .collect::<Vec<_>>();
+
+                let init_iter =
+                    num_rows_to_read
+                        .into_iter()
+                        .map(|(reader, chunk_size, _num_rows)| {
+                            self.init_batch_reader(reader, chunk_size)
+                        });
+
+                let batched_readers =
+                    polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                        futures::future::try_join_all(init_iter).await
+                    })?;
+
+                for r in batched_readers {
+                    self.finish_init_reader(r)?;
                 }
-            }
-        } else {
-            for _ in 0..self.prefetch_size - self.batched_readers.len() {
-                self.init_next_reader_sync()?
+            } else {
+                for _ in 0..self.prefetch_size - self.batched_readers.len() {
+                    self.init_next_reader_sync()?
+                }
             }
         }
         Ok(())
@@ -343,7 +380,9 @@ impl Source for ParquetSource {
         self.prefetch_files()?;
 
         let Some(mut reader) = self.batched_readers.pop_front() else {
-            // If there was no new reader, we depleted all of them and are finished.
+            if self.total_files_read != self.paths.len() && self.rows_left_to_read != 0 {
+                return self.get_batches(_context);
+            }
             return Ok(SourceResult::Finished);
         };
 

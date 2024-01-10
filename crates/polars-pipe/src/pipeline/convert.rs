@@ -138,6 +138,18 @@ where
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
                                     self.p.as_stats_evaluator()
                                 }
+                                fn columns(&self) -> Vec<PlSmallStr> {
+                                    let mut arena: Arena<AExpr> = Arena::new();
+                                    let _ = to_aexpr(self.p.expression(), &mut arena);
+                                    let mut columns = vec![];
+                                    for _ in 0..arena.len() {
+                                        let node = arena.pop().unwrap();
+                                        if let AExpr::Column(s) = node {
+                                            columns.push(s)
+                                        }
+                                    }
+                                    columns
+                                }
                             }
 
                             PolarsResult::Ok(Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>)
@@ -180,6 +192,9 @@ where
             match payload {
                 SinkType::Memory => {
                     Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
+                },
+                SinkType::Batch { sender } => {
+                    Box::new(BatchSink::new(sender.sender.clone())?) as Box<dyn SinkTrait>
                 },
                 #[allow(unused_variables)]
                 SinkType::File {

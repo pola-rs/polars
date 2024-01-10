@@ -367,6 +367,7 @@ impl<'a> IRDisplay<'a> {
             Sink { input, payload, .. } => {
                 let name = match payload {
                     SinkType::Memory => "SINK (memory)",
+                    SinkType::Batch { .. } => "SINK (batch)",
                     SinkType::File { .. } => "SINK (file)",
                     #[cfg(feature = "cloud")]
                     SinkType::Cloud { .. } => "SINK (cloud)",

@@ -33,6 +33,19 @@ impl PhysicalIoExpr for Wrap {
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         self.0.as_stats_evaluator()
     }
+
+    fn columns(&self) -> Vec<PlSmallStr> {
+        let mut arena: Arena<AExpr> = Arena::new();
+        let _ = to_aexpr(self.0.as_expression().unwrap().clone(), &mut arena);
+        let mut columns = vec![];
+        for _ in 0..arena.len() {
+            let node = arena.pop().unwrap();
+            if let AExpr::Column(s) = node {
+                columns.push(s)
+            }
+        }
+        columns
+    }
 }
 impl PhysicalPipedExpr for Wrap {
     fn evaluate(&self, chunk: &DataChunk, state: &ExecutionState) -> PolarsResult<Series> {

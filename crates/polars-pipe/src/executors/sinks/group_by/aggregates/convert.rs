@@ -35,6 +35,10 @@ impl PhysicalIoExpr for Len {
     fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
         Some(vec![])
     }
+
+    fn columns(&self) -> Vec<PlSmallStr> {
+        unimplemented!()
+    }
 }
 impl PhysicalPipedExpr for Len {
     fn evaluate(&self, chunk: &DataChunk, _lazy_state: &ExecutionState) -> PolarsResult<Series> {

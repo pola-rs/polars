@@ -3225,7 +3225,9 @@ version = "0.42.0"
 dependencies = [
  "ahash",
  "bitflags",
+ "crossbeam-channel",
  "futures",
+ "glob",
  "memchr",
  "once_cell",
  "polars-arrow",
@@ -3368,6 +3370,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "ciborium",
+ "crossbeam-channel",
  "either",
  "futures",
  "hashbrown",

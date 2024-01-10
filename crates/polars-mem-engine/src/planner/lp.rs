@@ -217,6 +217,9 @@ fn create_physical_plan_impl(
             SinkType::Cloud { .. } => {
                 polars_bail!(InvalidOperation: "cloud sink not supported in standard engine.")
             },
+            SinkType::Batch { .. } => {
+                polars_bail!(InvalidOperation: "batch sink not supported in the standard engine")
+            },
         },
         Union { inputs, options } => {
             let inputs = inputs

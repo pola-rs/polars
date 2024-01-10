@@ -248,7 +248,7 @@ where
         );
 
         ipc_stream_writer.start(&df.schema().to_arrow(self.compat_level), None)?;
-        let df = chunk_df_for_writing(df, 512 * 512)?;
+        let df = chunk_df_for_writing(df, 10)?;
         let iter = df.iter_chunks(self.compat_level, true);
 
         for batch in iter {

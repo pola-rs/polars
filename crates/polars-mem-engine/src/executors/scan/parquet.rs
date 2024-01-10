@@ -343,6 +343,7 @@ impl ParquetExec {
                         .await?;
 
                 let num_rows = reader.num_rows().await?;
+
                 PolarsResult::Ok((num_rows, reader))
             });
             let readers_and_metadata = futures::future::try_join_all(iter).await?;

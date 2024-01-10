@@ -623,6 +623,19 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         self.expr.as_stats_evaluator()
     }
+
+    fn columns(&self) -> Vec<PlSmallStr> {
+        let mut arena: Arena<AExpr> = Arena::new();
+        let _ = to_aexpr(self.expr.as_expression().unwrap().clone(), &mut arena);
+        let mut columns = vec![];
+        for _ in 0..arena.len() {
+            let node = arena.pop().unwrap();
+            if let AExpr::Column(s) = node {
+                columns.push(s)
+            }
+        }
+        columns
+    }
 }
 
 pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
