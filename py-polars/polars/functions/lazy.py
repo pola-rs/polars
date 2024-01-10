@@ -181,7 +181,7 @@ def count(*columns: str) -> Expr:
 
 def cum_count(*columns: str, reverse: bool = False) -> Expr:
     """
-    Return the cumulative count of the values in the column or of the context.
+    Return the cumulative count of the non-null values in the column or of the context.
 
     If no arguments are passed, returns the cumulative count of a context.
     Rows containing null values count towards the result.
@@ -213,7 +213,7 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     │ 3         │
     └───────────┘
 
-    Return the cumulative count of values in a column.
+    Return the cumulative count of non-null values in a column.
 
     >>> df.select(pl.cum_count("a"))
     shape: (3, 1)
@@ -222,10 +222,24 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     │ --- │
     │ u32 │
     ╞═════╡
-    │ 0   │
     │ 1   │
     │ 2   │
+    │ 2   │
     └─────┘
+
+    Add row numbers to a DataFrame.
+
+    >>> df.select(pl.cum_count().alias("row_number"), pl.all())
+    shape: (3, 3)
+    ┌────────────┬──────┬──────┐
+    │ row_number ┆ a    ┆ b    │
+    │ ---        ┆ ---  ┆ ---  │
+    │ u32        ┆ i64  ┆ i64  │
+    ╞════════════╪══════╪══════╡
+    │ 1          ┆ 1    ┆ 3    │
+    │ 2          ┆ 2    ┆ null │
+    │ 3          ┆ null ┆ null │
+    └────────────┴──────┴──────┘
     """
     if not columns:
         return wrap_expr(plr.cum_count(reverse=reverse))
