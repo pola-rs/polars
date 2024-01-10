@@ -25,6 +25,7 @@ type DownloadedRowGroup = Vec<(u64, Bytes)>;
 type QueuePayload = (usize, DownloadedRowGroup);
 type QueueSend = Arc<Sender<PolarsResult<QueuePayload>>>;
 
+#[derive(Clone)]
 pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
@@ -266,7 +267,7 @@ pub struct FetchRowGroupsFromObjectStore {
 
 impl FetchRowGroupsFromObjectStore {
     pub fn new(
-        reader: ParquetObjectStore,
+        reader: Arc<ParquetObjectStore>,
         schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -304,7 +305,6 @@ impl FetchRowGroupsFromObjectStore {
         } else {
             row_groups.iter().cloned().enumerate().collect()
         };
-        let reader = Arc::new(reader);
         let msg_limit = get_rg_prefetch_size();
 
         if verbose() {

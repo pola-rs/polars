@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -784,3 +784,19 @@ def test_parquet_array_statistics() -> None:
     assert pl.scan_parquet("test.parquet").filter(
         pl.col("a") != [1, 2, 3]
     ).collect().to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
+
+
+def test_skip_full_load_of_rgs_using_predicate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: Any
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    df = pl.DataFrame(
+        {"a": pl.arange(0, 10, eager=True), "b": pl.arange(0, 10, eager=True)}
+    )
+    root = tmp_path / "test_rg_skip.parquet"
+    df.write_parquet(root, use_pyarrow=True, row_group_size=2)
+
+    q = pl.scan_parquet(root, parallel="row_groups")
+    assert q.filter(pl.col("a").gt(6)).collect().shape == (3, 2)
+    assert "reduced the number of row groups in pruning by 3" in capfd.readouterr().err

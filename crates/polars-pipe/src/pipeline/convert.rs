@@ -135,6 +135,18 @@ where
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
                                     self.p.as_stats_evaluator()
                                 }
+                                fn columns(&self) -> Vec<String> {
+                                    let mut arena: Arena<AExpr> = Arena::new();
+                                    to_aexpr(self.p.expression(), &mut arena);
+                                    let mut columns = vec![];
+                                    for _ in 0..arena.len() {
+                                        let node = arena.pop().unwrap();
+                                        if let AExpr::Column(s) = node {
+                                            columns.push(s.as_ref().to_string())
+                                        }
+                                    }
+                                    columns
+                                }
                             }
 
                             PolarsResult::Ok(Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>)

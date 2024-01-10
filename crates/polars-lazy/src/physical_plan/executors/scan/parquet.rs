@@ -201,6 +201,7 @@ impl ParquetExec {
                 } else {
                     (None, None)
                 };
+
                 let mut reader = ParquetAsyncReader::from_uri(
                     &path.to_string_lossy(),
                     cloud_options,
@@ -221,6 +222,7 @@ impl ParquetExec {
                 }
 
                 let num_rows = reader.num_rows().await?;
+
                 PolarsResult::Ok((num_rows, reader))
             });
             let readers_and_metadata = futures::future::try_join_all(iter).await?;
@@ -240,7 +242,6 @@ impl ParquetExec {
             let use_statistics = self.options.use_statistics;
             let predicate = &self.predicate;
             let base_row_index_ref = &base_row_index;
-
             if verbose {
                 eprintln!("reading of {}/{} file...", processed, self.paths.len());
             }
