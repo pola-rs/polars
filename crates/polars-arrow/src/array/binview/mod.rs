@@ -99,6 +99,10 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     raw_buffers: Arc<[(*const u8, usize)]>,
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
+    /// Total bytes length if we would concatenate them all.
+    total_bytes_len: usize,
+    /// Total bytes in the buffer (excluding remaining capacity)
+    total_buffer_len: usize,
 }
 
 impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
@@ -110,6 +114,8 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
             raw_buffers: self.raw_buffers.clone(),
             validity: self.validity.clone(),
             phantom: Default::default(),
+            total_bytes_len: self.total_bytes_len,
+            total_buffer_len: self.total_buffer_len,
         }
     }
 }
@@ -134,6 +140,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         views: Buffer<u128>,
         buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
+        total_bytes_len: usize,
+        total_buffer_len: usize,
     ) -> Self {
         let raw_buffers = buffers_into_raw(&buffers);
         Self {
@@ -143,7 +151,27 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             raw_buffers,
             validity,
             phantom: Default::default(),
+            total_bytes_len,
+            total_buffer_len,
         }
+    }
+
+    pub unsafe fn new_unchecked_unknown_md(
+        data_type: ArrowDataType,
+        views: Buffer<u128>,
+        buffers: Arc<[Buffer<u8>]>,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        let total_bytes_len = views.iter().map(|v| (*v as u32) as usize).sum();
+        let total_buffer_len = buffers.iter().map(|b| b.len()).sum();
+        Self::new_unchecked(
+            data_type,
+            views,
+            buffers,
+            validity,
+            total_bytes_len,
+            total_buffer_len,
+        )
     }
 
     pub fn data_buffers(&self) -> &Arc<[Buffer<u8>]> {
@@ -174,28 +202,33 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             polars_ensure!(validity.len()== views.len(), ComputeError: "validity mask length must match the number of values" )
         }
 
-        let raw_buffers = buffers_into_raw(&buffers);
-        Ok(Self {
-            data_type,
-            views,
-            buffers,
-            raw_buffers,
-            validity,
-            phantom: Default::default(),
-        })
+        unsafe {
+            Ok(Self::new_unchecked_unknown_md(
+                data_type, views, buffers, validity,
+            ))
+        }
     }
 
     /// Creates an empty [`BinaryViewArrayGeneric`], i.e. whose `.len` is zero.
     #[inline]
     pub fn new_empty(data_type: ArrowDataType) -> Self {
-        unsafe { Self::new_unchecked(data_type, Buffer::new(), Arc::from([]), None) }
+        unsafe { Self::new_unchecked(data_type, Buffer::new(), Arc::from([]), None, 0, 0) }
     }
 
     /// Returns a new null [`BinaryViewArrayGeneric`] of `length`.
     #[inline]
     pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         let validity = Some(Bitmap::new_zeroed(length));
-        unsafe { Self::new_unchecked(data_type, Buffer::zeroed(length), Arc::from([]), validity) }
+        unsafe {
+            Self::new_unchecked(
+                data_type,
+                Buffer::zeroed(length),
+                Arc::from([]),
+                validity,
+                0,
+                0,
+            )
+        }
     }
 
     /// Returns the element at index `i`
@@ -286,6 +319,8 @@ impl BinaryViewArray {
             self.views.clone(),
             self.buffers.clone(),
             self.validity.clone(),
+            self.total_bytes_len,
+            self.total_buffer_len,
         )
     }
 }
@@ -299,6 +334,8 @@ impl Utf8ViewArray {
                 self.views.clone(),
                 self.buffers.clone(),
                 self.validity.clone(),
+                self.total_bytes_len,
+                self.total_buffer_len,
             )
         }
     }

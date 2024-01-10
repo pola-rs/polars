@@ -48,6 +48,8 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
             buffers: self.buffers.clone(),
             raw_buffers: self.raw_buffers.clone(),
             phantom: Default::default(),
+            total_bytes_len: self.total_bytes_len,
+            total_buffer_len: self.total_buffer_len,
         }
     }
 }
@@ -67,7 +69,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             buffers.push(values);
         }
 
-        Ok(Self::new_unchecked(
+        Ok(Self::new_unchecked_unknown_md(
             data_type,
             views,
             Arc::from(buffers),

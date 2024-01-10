@@ -17,6 +17,10 @@ pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     in_progress_buffer: Vec<u8>,
     validity: Option<MutableBitmap>,
     phantom: std::marker::PhantomData<T>,
+    /// Total bytes length if we would concatenate them all.
+    total_bytes_len: usize,
+    /// Total bytes in the buffer (excluding remaining capacity)
+    total_buffer_len: usize,
 }
 
 impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
@@ -34,6 +38,8 @@ impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGe
                 value.views.into(),
                 Arc::from(value.completed_buffers),
                 value.validity.map(|b| b.into()),
+                value.total_bytes_len,
+                value.total_buffer_len,
             )
         }
     }
@@ -51,6 +57,8 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             in_progress_buffer: vec![],
             validity: None,
             phantom: Default::default(),
+            total_buffer_len: 0,
+            total_bytes_len: 0,
         }
     }
 
@@ -81,6 +89,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub fn push_value_ignore_validity<V: AsRef<T>>(&mut self, value: V) {
         let value = value.as_ref();
         let bytes = value.to_bytes();
+        self.total_bytes_len += bytes.len();
         let len: u32 = bytes.len().try_into().unwrap();
         let mut payload = [0; 16];
         payload[0..4].copy_from_slice(&len.to_le_bytes());
@@ -88,6 +97,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         if len <= 12 {
             payload[4..4 + bytes.len()].copy_from_slice(bytes);
         } else {
+            self.total_buffer_len += bytes.len();
             let required_cap = self.in_progress_buffer.len() + bytes.len();
             if self.in_progress_buffer.capacity() < required_cap {
                 let new_capacity = (self.in_progress_buffer.capacity() * 2)

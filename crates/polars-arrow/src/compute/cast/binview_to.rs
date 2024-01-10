@@ -1,8 +1,7 @@
-use chrono::Datelike;
 use polars_error::PolarsResult;
 
 use crate::array::*;
-use crate::datatypes::{ArrowDataType, TimeUnit};
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 pub(super) fn view_to_binary<O: Offset>(array: &BinaryViewArray) -> BinaryArray<O> {
