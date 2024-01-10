@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.testing import assert_frame_equal
 
 
 def test_cast() -> None:
@@ -65,3 +66,31 @@ def test_cast() -> None:
         pl.SQLContext(df=df, eager_execution=True).execute(
             "SELECT CAST(a AS STRING FORMAT 'HEX') FROM df"
         )
+
+
+def test_cast_json() -> None:
+    df = pl.DataFrame({"txt": ['{"a":[1,2,3],"b":["x","y","z"],"c":5.0}']})
+
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        for json_cast in ("txt::json", "CAST(txt AS JSON)"):
+            res = ctx.execute(f"SELECT {json_cast} AS j FROM df")
+
+            assert res.schema == {
+                "j": pl.Struct(
+                    {
+                        "a": pl.List(pl.Int64),
+                        "b": pl.List(pl.String),
+                        "c": pl.Float64,
+                    },
+                )
+            }
+            assert_frame_equal(
+                res.unnest("j"),
+                pl.DataFrame(
+                    {
+                        "a": [[1, 2, 3]],
+                        "b": [["x", "y", "z"]],
+                        "c": [5.0],
+                    }
+                ),
+            )
