@@ -224,8 +224,7 @@ def _combine_as_selector(
             names.append(item.meta.output_name())  # type: ignore[union-attr]
         else:
             raise TypeError(
-                "invalid input for `exclude`"
-                f"\n\nExpected one or more `str`, `DataType` or selector; found {item!r} instead."
+                f"expected one or more `str`, `DataType` or selector; found {item!r} instead."
             )
 
     selected = []
