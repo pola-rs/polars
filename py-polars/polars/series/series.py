@@ -6336,9 +6336,9 @@ class Series:
         >>> s = pl.Series(
         ...     [-1.83, -1.02, -0.87, -0.56, -0.31, -0.12, 0.26, 0.33, 0.79, 1.0, 1.95]
         ... )
-        >>> s.mean() # sample distribution is close to standard normal
+        >>> s.mean()  # sample distribution is close to standard normal
         -0.03454545454545455
-        >>> s.std()  
+        >>> s.std()
         1.0564219198441844
         >>> s.kurtosis()  # by default, estimates excess kurtosis from sample moments
         -0.43454432240497054
