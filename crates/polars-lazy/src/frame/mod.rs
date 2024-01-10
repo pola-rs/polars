@@ -1239,7 +1239,7 @@ impl LazyFrame {
             builder = builder.suffix(suffix);
         }
 
-        // Note: args.slice is currently ignored.
+        // Note: args.slice is set by the optimizer
 
         builder.finish()
     }
