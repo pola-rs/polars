@@ -914,6 +914,12 @@ impl AnyValue<'_> {
                 let avs = struct_to_avs_static(*idx, arr, fields);
                 fields_right == avs
             },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(v_l, scale_l), Decimal(v_r, scale_r)) => {
+                // Decimal equality here requires that both value and scale be equal, eg
+                // 1.2 at scale 1, and 1.20 at scale 2, are not equal.
+                *v_l == *v_r && *scale_l == *scale_r
+            },
             _ => false,
         }
     }
