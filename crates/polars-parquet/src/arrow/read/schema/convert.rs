@@ -151,14 +151,14 @@ fn from_byte_array(
 ) -> ArrowDataType {
     match (logical_type, converted_type) {
         (Some(PrimitiveLogicalType::String), _) => ArrowDataType::LargeUtf8,
-        (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::Binary,
-        (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::Binary,
-        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::Binary,
-        (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::Binary,
-        (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::Binary,
-        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::Binary,
+        (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::LargeBinary,
+        (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::LargeBinary,
+        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::LargeBinary,
+        (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::LargeBinary,
+        (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::LargeBinary,
+        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::LargeBinary,
         (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::LargeUtf8,
-        (_, _) => ArrowDataType::Binary,
+        (_, _) => ArrowDataType::LargeBinary,
     }
 }
 
@@ -460,7 +460,7 @@ mod tests {
         }
         ";
         let expected = vec![
-            Field::new("binary", ArrowDataType::Binary, false),
+            Field::new("binary", ArrowDataType::LargeBinary, false),
             Field::new("fixed_binary", ArrowDataType::FixedSizeBinary(20), false),
         ];
 
@@ -556,7 +556,11 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Utf8, true))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::Utf8,
+                    true,
+                ))),
                 false,
             ));
         }
@@ -570,7 +574,11 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::Utf8,
+                    false,
+                ))),
                 true,
             ));
         }
@@ -588,8 +596,11 @@ mod tests {
         //   }
         // }
         {
-            let arrow_inner_list =
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Int32, false)));
+            let arrow_inner_list = ArrowDataType::LargeList(Box::new(Field::new(
+                "element",
+                ArrowDataType::Int32,
+                false,
+            )));
             arrow_fields.push(Field::new(
                 "array_of_arrays",
                 ArrowDataType::LargeList(Box::new(Field::new("element", arrow_inner_list, false))),
@@ -606,7 +617,11 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::Utf8,
+                    false,
+                ))),
                 true,
             ));
         }
@@ -618,7 +633,11 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Int32, false))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::Int32,
+                    false,
+                ))),
                 true,
             ));
         }
@@ -671,7 +690,11 @@ mod tests {
                 ArrowDataType::Struct(vec![Field::new("str", ArrowDataType::Utf8, false)]);
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::LargeList(Box::new(Field::new("my_list_tuple", arrow_struct, false))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "my_list_tuple",
+                    arrow_struct,
+                    false,
+                ))),
                 true,
             ));
         }
@@ -768,7 +791,11 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list1",
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::LargeUtf8, true))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::LargeUtf8,
+                    true,
+                ))),
                 false,
             ));
         }
@@ -782,7 +809,11 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list2",
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::LargeUtf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::LargeUtf8,
+                    false,
+                ))),
                 true,
             ));
         }
@@ -796,7 +827,11 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list3",
-                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::LargeUtf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::LargeUtf8,
+                    false,
+                ))),
                 false,
             ));
         }
@@ -1113,7 +1148,11 @@ mod tests {
                 Field::new("int96_field", coerced_to.clone(), false),
                 Field::new(
                     "int96_list",
-                    ArrowDataType::LargeList(Box::new(Field::new("element", coerced_to.clone(), true))),
+                    ArrowDataType::LargeList(Box::new(Field::new(
+                        "element",
+                        coerced_to.clone(),
+                        true,
+                    ))),
                     true,
                 ),
                 Field::new(
