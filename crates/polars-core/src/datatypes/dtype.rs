@@ -206,7 +206,7 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
-    /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
+    /// Check if this [`DataType`] is a boolean
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
     }
