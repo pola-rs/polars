@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import datetime
+from typing import Any
 
 import numpy as np
 import pytest
@@ -163,3 +166,27 @@ def test_arr_first_last() -> None:
         dtype=pl.Int64,
     )
     assert_series_equal(last, expected_last)
+
+
+@pytest.mark.parametrize(
+    ("data", "set", "dtype"),
+    [
+        ([1, 2], [[1, 2], [3, 4]], pl.Int64),
+        ([True, False], [[True, False], [True, True]], pl.Boolean),
+        (["a", "b"], [["a", "b"], ["c", "d"]], pl.String),
+        ([b"a", b"b"], [[b"a", b"b"], [b"c", b"d"]], pl.Binary),
+        (
+            [{"a": 1}, {"a": 2}],
+            [[{"a": 1}, {"a": 2}], [{"b": 1}, {"a": 3}]],
+            pl.Struct([pl.Field("a", pl.Int64)]),
+        ),
+    ],
+)
+def test_is_in_array(data: list[Any], set: list[list[Any]], dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {"a": data, "arr": set},
+        schema={"a": dtype, "arr": pl.Array(dtype, 2)},
+    )
+    out = df.select(is_in=pl.col("a").is_in(pl.col("arr"))).to_series()
+    expected = pl.Series("is_in", [True, False])
+    assert_series_equal(out, expected)
