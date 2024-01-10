@@ -157,3 +157,12 @@ def test_df_describe_empty() -> None:
         TypeError, match="cannot describe a DataFrame without any columns"
     ):
         df.describe()
+
+
+def test_df_describe_quantile_precision() -> None:
+    df = pl.DataFrame({"a": range(10)})
+    result = df.describe(percentiles=[0.99, 0.999, 0.9999])
+    result_metrics = result.get_column("describe").to_list()
+    expected_metrics = ["99%", "99.9%", "99.99%"]
+    for m in expected_metrics:
+        assert m in result_metrics

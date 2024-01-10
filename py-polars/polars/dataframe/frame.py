@@ -4404,7 +4404,7 @@ class DataFrame:
                 expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
                 expr = expr.alias(f"{p}:{c}")
                 percentile_exprs.append(expr)
-            metrics.append(f"{p:.0%}")
+            metrics.append(f"{p*100:g}%")
         metrics.append("max")
 
         mean_exprs = [
