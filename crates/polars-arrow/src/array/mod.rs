@@ -275,8 +275,8 @@ impl std::fmt::Debug for dyn Array + '_ {
             Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
                 fmt_dyn!(self, PrimitiveArray<$T>, f)
             }),
-            BinaryView => fmt_dyn!(self, Utf8ViewArray, f),
-            Utf8View => fmt_dyn!(self, BinaryViewArray, f),
+            BinaryView => fmt_dyn!(self, BinaryViewArray, f),
+            Utf8View => fmt_dyn!(self, Utf8ViewArray, f),
             Binary => fmt_dyn!(self, BinaryArray<i32>, f),
             LargeBinary => fmt_dyn!(self, BinaryArray<i64>, f),
             FixedSizeBinary => fmt_dyn!(self, FixedSizeBinaryArray, f),
@@ -697,7 +697,9 @@ pub mod growable;
 mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
-pub use binview::{BinaryViewArray, BinaryViewArrayGeneric, Utf8ViewArray, ViewType};
+pub use binview::{
+    BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray, Utf8ViewArray, ViewType,
+};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use equal::equal;

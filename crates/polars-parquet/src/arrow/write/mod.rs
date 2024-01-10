@@ -13,6 +13,7 @@
 //! The use of these arrow types will result in no logical type being stored within a parquet file.
 
 mod binary;
+mod binview;
 mod boolean;
 mod dictionary;
 mod file;
@@ -383,6 +384,25 @@ pub fn array_to_page_simple(
                 encoding,
             )
         },
+        ArrowDataType::BinaryView => {
+            return binview::array_to_page(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
+        ArrowDataType::Utf8View => {
+            let array =
+                arrow::compute::cast::cast(array, &ArrowDataType::BinaryView, Default::default())
+                    .unwrap();
+            return binview::array_to_page(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            );
+        },
         ArrowDataType::Null => {
             let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::array_to_page_plain::<i32, i32>(&array, options, type_)
@@ -626,6 +646,15 @@ fn array_to_page_nested(
             let array = array.as_any().downcast_ref().unwrap();
             binary::nested_array_to_page::<i64>(array, options, type_, nested)
         },
+        BinaryView => {
+            let array = array.as_any().downcast_ref().unwrap();
+            binview::nested_array_to_page(array, options, type_, nested)
+        },
+        Utf8View => {
+            let array = arrow::compute::cast::cast(array, &BinaryView, Default::default()).unwrap();
+            let array = array.as_any().downcast_ref().unwrap();
+            binview::nested_array_to_page(array, options, type_, nested)
+        },
         UInt8 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<u8, i32>(array, options, type_, nested)
@@ -865,19 +894,6 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
 /// Transverses the `data_type` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
-/// # Example
-/// ```
-/// use polars_arrow::io::parquet::write::{transverse, Encoding};
-/// use polars_arrow::datatypes::{ArrowDataType, Field};
-///
-/// let dt = ArrowDataType::Struct(vec![
-///     Field::new("a", ArrowDataType::Int64, true),
-///     Field::new("b", ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))), true),
-/// ]);
-///
-/// let encodings = transverse(&dt, |dt| Encoding::Plain);
-/// assert_eq!(encodings, vec![Encoding::Plain, Encoding::Plain]);
-/// ```
 pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(
     data_type: &ArrowDataType,
     map: F,

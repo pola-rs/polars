@@ -7,6 +7,7 @@ use either::Either;
 use num_traits::Zero;
 
 use super::{Bytes, IntoIter};
+use crate::array::ArrayAccessor;
 
 /// [`Buffer`] is a contiguous memory region that can be shared across
 /// thread boundaries.
@@ -335,5 +336,17 @@ impl<T: crate::types::NativeType> From<Buffer<T>> for arrow_buffer::Buffer {
             value.offset * std::mem::size_of::<T>(),
             value.length * std::mem::size_of::<T>(),
         )
+    }
+}
+
+unsafe impl<'a, T: 'a> ArrayAccessor<'a> for Buffer<T> {
+    type Item = &'a T;
+
+    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
+        self.as_slice().get_unchecked(index)
+    }
+
+    fn len(&self) -> usize {
+        Buffer::len(self)
     }
 }

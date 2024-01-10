@@ -1,28 +1,28 @@
 use std::collections::VecDeque;
 
-use arrow::array::Array;
+use arrow::array::{ArrayRef, MutableBinaryViewArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-use arrow::offset::Offset;
 use polars_error::PolarsResult;
 
-use super::super::nested_utils::*;
-use super::super::utils::MaybeNext;
-use super::basic::finish;
-use super::decoders::*;
-use super::utils::*;
-use crate::arrow::read::PagesIter;
 use crate::parquet::page::{DataPage, DictPage};
+use crate::read::deserialize::binary::decoders::{
+    build_nested_state, deserialize_plain, BinaryDict, BinaryNestedState,
+};
+use crate::read::deserialize::binview::basic::finish;
+use crate::read::deserialize::nested_utils::{next, NestedDecoder};
+use crate::read::deserialize::utils::MaybeNext;
+use crate::read::{InitNested, NestedState, PagesIter};
 
 #[derive(Debug, Default)]
-struct BinaryDecoder<O: Offset> {
-    phantom_o: std::marker::PhantomData<O>,
-}
+struct BinViewDecoder {}
 
-impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
+type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
+
+impl<'a> NestedDecoder<'a> for BinViewDecoder {
     type State = BinaryNestedState<'a>;
     type Dictionary = BinaryDict;
-    type DecodedState = (Binary<O>, MutableBitmap);
+    type DecodedState = DecodedStateTuple;
 
     fn build_state(
         &self,
@@ -34,7 +34,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
-            Binary::<O>::with_capacity(capacity),
+            MutableBinaryViewArray::with_capacity(capacity),
             MutableBitmap::with_capacity(capacity),
         )
     }
@@ -48,12 +48,12 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         match state {
             BinaryNestedState::Optional(page) => {
                 let value = page.next().unwrap_or_default();
-                values.push(value);
+                values.push_value_ignore_validity(value);
                 validity.push(true);
             },
             BinaryNestedState::Required(page) => {
                 let value = page.next().unwrap_or_default();
-                values.push(value);
+                values.push_value_ignore_validity(value);
             },
             BinaryNestedState::RequiredDictionary(page) => {
                 let dict_values = &page.dict;
@@ -62,7 +62,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                     .next()
                     .map(|index| dict_values.value(index.unwrap() as usize))
                     .unwrap_or_default();
-                values.push(item);
+                values.push_value_ignore_validity(item);
             },
             BinaryNestedState::OptionalDictionary(page) => {
                 let dict_values = &page.dict;
@@ -71,7 +71,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                     .next()
                     .map(|index| dict_values.value(index.unwrap() as usize))
                     .unwrap_or_default();
-                values.push(item);
+                values.push_value_ignore_validity(item);
                 validity.push(true);
             },
         }
@@ -80,7 +80,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
 
     fn push_null(&self, decoded: &mut Self::DecodedState) {
         let (values, validity) = decoded;
-        values.push(&[]);
+        values.push_null();
         validity.push(false);
     }
 
@@ -89,17 +89,17 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     }
 }
 
-pub struct NestedIter<O: Offset, I: PagesIter> {
+pub struct NestedIter<I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     init: Vec<InitNested>,
-    items: VecDeque<(NestedState, (Binary<O>, MutableBitmap))>,
+    items: VecDeque<(NestedState, DecodedStateTuple)>,
     dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
 }
 
-impl<O: Offset, I: PagesIter> NestedIter<O, I> {
+impl<I: PagesIter> NestedIter<I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
@@ -119,8 +119,8 @@ impl<O: Offset, I: PagesIter> NestedIter<O, I> {
     }
 }
 
-impl<O: Offset, I: PagesIter> Iterator for NestedIter<O, I> {
-    type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
+impl<I: PagesIter> Iterator for NestedIter<I> {
+    type Item = PolarsResult<(NestedState, ArrayRef)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -131,7 +131,7 @@ impl<O: Offset, I: PagesIter> Iterator for NestedIter<O, I> {
                 &mut self.remaining,
                 &self.init,
                 self.chunk_size,
-                &BinaryDecoder::<O>::default(),
+                &BinViewDecoder::default(),
             );
             match maybe_state {
                 MaybeNext::Some(Ok((nested, decoded))) => {

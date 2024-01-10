@@ -210,6 +210,17 @@ where
                 |x: f64| x,
             ))
         },
+        BinaryView | Utf8View => {
+            init.push(InitNested::Primitive(field.is_nullable));
+            types.pop();
+            remove_nested(binview::NestedIter::new(
+                columns.pop().unwrap(),
+                init,
+                field.data_type().clone(),
+                num_rows,
+                chunk_size,
+            ))
+        },
         Binary | Utf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();

@@ -7,7 +7,7 @@ use crate::parquet::error::Error;
 /// This struct does not allocate on the heap.
 /// # Example
 /// ```
-/// use crate::parquet::parquet::encoding::delta_length_byte_array::Decoder;
+/// use polars_parquet::parquet::encoding::delta_length_byte_array::Decoder;
 ///
 /// let expected = &["Hello", "World"];
 /// let expected_lengths = expected.iter().map(|x| x.len() as i32).collect::<Vec<_>>();
