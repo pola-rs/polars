@@ -163,6 +163,27 @@ where
         }
     }
 
+    pub fn new_from_vec_and_validity(name: &str, v: Vec<T>, validity: Bitmap) -> Self {
+        let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
+        let len = v.len();
+        let null_count = validity.unset_bits();
+        let arr = Box::new(ObjectArray {
+            values: Arc::new(v),
+            null_bitmap: Some(validity),
+            offset: 0,
+            len,
+        });
+
+        ObjectChunked {
+            field,
+            chunks: vec![arr],
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: len as IdxSize,
+            null_count: null_count as IdxSize,
+        }
+    }
+
     pub fn new_empty(name: &str) -> Self {
         Self::new_from_vec(name, vec![])
     }

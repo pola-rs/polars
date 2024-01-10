@@ -277,10 +277,7 @@ impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
     }
 
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        match self.get_object(index) {
-            None => Err(polars_err!(ComputeError: "index is out of bounds")),
-            Some(v) => Ok(AnyValue::Object(v)),
-        }
+        get_any_value!(self, index)
     }
 }
 
