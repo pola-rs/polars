@@ -223,7 +223,7 @@ impl Bitmap {
                 let tail_count = count_zeros(&self.bytes, slice_end, self.length - length - offset);
                 let new_count = *unset_bit_count_cache - head_count as u64 - tail_count as u64;
                 *unset_bit_count_cache = new_count;
-            } else if length <= small_portion {
+            } else {
                 *unset_bit_count_cache = UNKNOWN_BIT_COUNT;
             }
         }
