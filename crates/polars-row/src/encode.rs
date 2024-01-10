@@ -396,7 +396,7 @@ mod test {
 
     #[test]
     fn test_reverse_variable() {
-        let a = Utf8Array::<i64>::from_slice(&["one", "two", "three", "four", "five", "six"]);
+        let a = Utf8Array::<i64>::from_slice(["one", "two", "three", "four", "five", "six"]);
 
         let fields = &[SortField {
             descending: true,
