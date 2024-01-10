@@ -169,19 +169,16 @@ def handle_projection_columns(
         elif is_int_sequence(columns):
             projection = list(columns)
         elif not is_str_sequence(columns):
-            raise TypeError(
-                "`columns` arg should contain a list of all integers or all strings values"
-            )
+            msg = "`columns` arg should contain a list of all integers or all strings values"
+            raise TypeError(msg)
         else:
             new_columns = columns
         if columns and len(set(columns)) != len(columns):
-            raise ValueError(
-                f"`columns` arg should only have unique values, got {columns!r}"
-            )
+            msg = f"`columns` arg should only have unique values, got {columns!r}"
+            raise ValueError(msg)
         if projection and len(set(projection)) != len(projection):
-            raise ValueError(
-                f"`columns` arg should only have unique values, got {projection!r}"
-            )
+            msg = f"`columns` arg should only have unique values, got {projection!r}"
+            raise ValueError(msg)
     return projection, new_columns
 
 
@@ -225,7 +222,8 @@ def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) ->
         and os.path.exists(path)  # noqa: PTH110
         and os.path.isdir(path)  # noqa: PTH112
     ):
-        raise IsADirectoryError(f"expected a file path; {path!r} is a directory")
+        msg = f"expected a file path; {path!r} is a directory"
+        raise IsADirectoryError(msg)
     return path
 
 
@@ -256,9 +254,8 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
     elif unit in {"tb", "terabytes"}:
         return sz / 1024**4
     else:
-        raise ValueError(
-            f"`unit` must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
-        )
+        msg = f"`unit` must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
+        raise ValueError(msg)
 
 
 def _cast_repr_strings_with_schema(
@@ -283,9 +280,8 @@ def _cast_repr_strings_with_schema(
     if not df.is_empty():
         for tp in df.schema.values():
             if tp != String:
-                raise TypeError(
-                    f"DataFrame should contain only String repr data; found {tp!r}"
-                )
+                msg = f"DataFrame should contain only String repr data; found {tp!r}"
+                raise TypeError(msg)
 
     # duration string scaling
     ns_sec = 1_000_000_000
@@ -550,7 +546,8 @@ def parse_percentiles(
     elif percentiles is None:
         percentiles = []
     if not all((0 <= p <= 1) for p in percentiles):
-        raise ValueError("`percentiles` must all be in the range [0, 1]")
+        msg = "`percentiles` must all be in the range [0, 1]"
+        raise ValueError(msg)
 
     sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
     at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)

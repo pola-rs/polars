@@ -139,7 +139,8 @@ def time_range(
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)
@@ -277,7 +278,8 @@ def time_ranges(
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)

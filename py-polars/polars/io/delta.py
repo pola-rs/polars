@@ -310,9 +310,8 @@ def _get_delta_lake_table(
 
 def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
-        raise ModuleNotFoundError(
-            "deltalake is not installed" "\n\nPlease run: pip install deltalake"
-        )
+        msg = "deltalake is not installed" "\n\nPlease run: pip install deltalake"
+        raise ModuleNotFoundError(msg)
 
 
 def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
@@ -321,4 +320,5 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
-        raise TypeError(f"dataframe contains unsupported data types: {overlap!r}")
+        msg = f"dataframe contains unsupported data types: {overlap!r}"
+        raise TypeError(msg)

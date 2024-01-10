@@ -78,18 +78,16 @@ def read_ipc(
     E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
     """
     if use_pyarrow and n_rows and not memory_map:
-        raise ValueError(
-            "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
-        )
+        msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
+        raise ValueError(msg)
 
     with _prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ModuleNotFoundError(
-                    "pyarrow is required when using `read_ipc(..., use_pyarrow=True)`"
-                )
+                msg = "pyarrow is required when using `read_ipc(..., use_pyarrow=True)`"
+                raise ModuleNotFoundError(msg)
 
             import pyarrow as pa
             import pyarrow.feather
@@ -165,10 +163,11 @@ def read_ipc_stream(
     ) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ModuleNotFoundError(
+                msg = (
                     "'pyarrow' is required when using"
                     " 'read_ipc_stream(..., use_pyarrow=True)'"
                 )
+                raise ModuleNotFoundError(msg)
 
             import pyarrow as pa
 

@@ -713,15 +713,15 @@ class LazyFrame:
         return self._ldf.width()
 
     def __bool__(self) -> NoReturn:
-        raise TypeError(
+        msg = (
             "the truth value of a LazyFrame is ambiguous"
             "\n\nLazyFrames cannot be used in boolean context with and/or/not operators."
         )
+        raise TypeError(msg)
 
     def _comparison_error(self, operator: str) -> NoReturn:
-        raise TypeError(
-            f'"{operator!r}" comparison not supported for LazyFrame objects'
-        )
+        msg = f'"{operator!r}" comparison not supported for LazyFrame objects'
+        raise TypeError(msg)
 
     def __eq__(self, other: Any) -> NoReturn:
         self._comparison_error("==")
@@ -752,10 +752,11 @@ class LazyFrame:
 
     def __getitem__(self, item: int | range | slice) -> LazyFrame:
         if not isinstance(item, slice):
-            raise TypeError(
+            msg = (
                 "'LazyFrame' object is not subscriptable (aside from slicing)"
                 "\n\nUse `select()` or `filter()` instead."
             )
+            raise TypeError(msg)
         return LazyPolarsSlice(self).apply(item)
 
     def __str__(self) -> str:
@@ -1085,7 +1086,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
             )
         except (ImportError, FileNotFoundError):
-            raise ImportError("Graphviz dot binary should be on your PATH") from None
+            msg = "Graphviz dot binary should be on your PATH"
+            raise ImportError(msg) from None
 
         if output_path:
             Path(output_path).write_bytes(graph)
@@ -1102,9 +1104,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 import matplotlib.image as mpimg
                 import matplotlib.pyplot as plt
             except ImportError:
-                raise ModuleNotFoundError(
-                    "matplotlib should be installed to show graph"
-                ) from None
+                msg = "matplotlib should be installed to show graph"
+                raise ModuleNotFoundError(msg) from None
             plt.figure(figsize=figsize)
             img = mpimg.imread(BytesIO(graph))
             plt.imshow(img)
@@ -1241,9 +1242,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
-            raise ValueError(
-                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            )
+            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            raise ValueError(msg)
         return self._from_pyldf(
             self._ldf.sort_by_exprs(by, descending, nulls_last, maintain_order)
         )
@@ -1326,9 +1326,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
-            raise ValueError(
-                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            )
+            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            raise ValueError(msg)
         return self._from_pyldf(
             self._ldf.top_k(k, by, descending, nulls_last, maintain_order)
         )
@@ -1557,9 +1556,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 plt.show()
 
             except ImportError:
-                raise ModuleNotFoundError(
-                    "matplotlib should be installed to show profiling plot"
-                ) from None
+                msg = "matplotlib should be installed to show profiling plot"
+                raise ModuleNotFoundError(msg) from None
 
         return df, timings
 
@@ -2670,7 +2668,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     if isinstance(p, pl.Series)
                     else repr(p)
                 )
-                raise TypeError(f"invalid predicate for `filter`: {err}")
+                msg = f"invalid predicate for `filter`: {err}"
+                raise TypeError(msg)
             else:
                 all_predicates.extend(
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
@@ -2699,7 +2698,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             F.col(name).eq_missing(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
-            raise TypeError("at least one predicate or constraint must be provided")
+            msg = "at least one predicate or constraint must be provided"
+            raise TypeError(msg)
 
         # if multiple predicates, combine as 'horizontal' expression
         combined_predicate = (
@@ -3599,16 +3599,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, LazyFrame):
-            raise TypeError(
-                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
-            )
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
 
         if isinstance(on, (str, pl.Expr)):
             left_on = on
             right_on = on
 
         if left_on is None or right_on is None:
-            raise ValueError("you should pass the column to join on as an argument")
+            msg = "you should pass the column to join on as an argument"
+            raise ValueError(msg)
 
         if by is not None:
             by_left_ = [by] if isinstance(by, str) else by
@@ -3800,9 +3800,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         if not isinstance(other, LazyFrame):
-            raise TypeError(
-                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
-            )
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
 
         if how == "cross":
             return self._from_pyldf(
@@ -3827,7 +3826,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             pyexprs_left = parse_as_list_of_expressions(left_on)
             pyexprs_right = parse_as_list_of_expressions(right_on)
         else:
-            raise ValueError("must specify `on` OR `left_on` and `right_on`")
+            msg = "must specify `on` OR `left_on` and `right_on`"
+            raise ValueError(msg)
 
         return self._from_pyldf(
             self._ldf.join(
@@ -4341,9 +4341,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         if length and length < 0:
-            raise ValueError(
-                f"negative slice lengths ({length!r}) are invalid for LazyFrame"
-            )
+            msg = f"negative slice lengths ({length!r}) are invalid for LazyFrame"
+            raise ValueError(msg)
         return self._from_pyldf(self._ldf.slice(offset, length))
 
     def limit(self, n: int = 5) -> Self:
@@ -5858,9 +5857,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┘
         """
         if how not in ("left", "inner", "outer"):
-            raise ValueError(
-                f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
-            )
+            msg = f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
+            raise ValueError(msg)
         if how == "outer":
             how = "outer_coalesce"  # type: ignore[assignment]
 
@@ -5876,9 +5874,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 # one of left or right is missing, raise error
                 if left_on is None:
-                    raise ValueError("missing join columns for left frame")
+                    msg = "missing join columns for left frame"
+                    raise ValueError(msg)
                 if right_on is None:
-                    raise ValueError("missing join columns for right frame")
+                    msg = "missing join columns for right frame"
+                    raise ValueError(msg)
         else:
             # move on into left/right_on to simplify logic
             left_on = right_on = on
@@ -5891,11 +5891,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         left_names = self.columns
         for name in left_on:
             if name not in left_names:
-                raise ValueError(f"left join column {name!r} not found")
+                msg = f"left join column {name!r} not found"
+                raise ValueError(msg)
         right_names = other.columns
         for name in right_on:
             if name not in right_names:
-                raise ValueError(f"right join column {name!r} not found")
+                msg = f"right join column {name!r} not found"
+                raise ValueError(msg)
 
         # no need to join if *only* join columns are in other (inner/left update only)
         if how != "outer_coalesce" and len(other.columns) == len(right_on):  # type: ignore[comparison-overlap, redundant-expr]

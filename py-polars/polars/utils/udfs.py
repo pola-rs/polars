@@ -315,7 +315,8 @@ class BytecodeParser:
                         self._map_target_name = name
                         return name
 
-        raise NotImplementedError(f"TODO: map_target = {self._map_target!r}")
+        msg = f"TODO: map_target = {self._map_target!r}"
+        raise NotImplementedError(msg)
 
     @property
     def map_target(self) -> MapTarget:
@@ -510,12 +511,13 @@ class InstructionTranslator:
         elif inst.opname == "BINARY_SUBSCR":
             return "replace"
         else:
-            raise AssertionError(
+            msg = (
                 "unrecognized opname"
                 "\n\nPlease report a bug to https://github.com/pola-rs/polars/issues"
                 " with the content of function you were passing to `map` and the"
                 f" following instruction object:\n{inst!r}"
             )
+            raise AssertionError(msg)
 
     def _expr(self, value: StackEntry, col: str, param_name: str, depth: int) -> str:
         """Take stack entry value and convert to polars expression string."""
@@ -552,7 +554,8 @@ class InstructionTranslator:
                     if not self._caller_variables:
                         self._caller_variables.update(_get_all_caller_variables())
                         if not isinstance(self._caller_variables.get(e1, None), dict):
-                            raise NotImplementedError("require dict mapping")
+                            msg = "require dict mapping"
+                            raise NotImplementedError(msg)
                     return f"{e2}.{op}({e1})"
                 elif op == "<<":
                     # Result of 2**e2 might be float is e2 was negative.
@@ -604,7 +607,8 @@ class InstructionTranslator:
             return stack[0]
 
         # TODO: dataframe.apply(...)
-        raise NotImplementedError(f"TODO: {map_target!r} apply")
+        msg = f"TODO: {map_target!r} apply"
+        raise NotImplementedError(msg)
 
 
 class RewrittenInstructions:
@@ -877,7 +881,8 @@ def warn_on_inefficient_map(
         or `"series"`.
     """
     if map_target == "frame":
-        raise NotImplementedError("TODO: 'frame' map-function parsing")
+        msg = "TODO: 'frame' map-function parsing"
+        raise NotImplementedError(msg)
 
     # note: we only consider simple functions with a single col/param
     if not (col := columns and columns[0]):

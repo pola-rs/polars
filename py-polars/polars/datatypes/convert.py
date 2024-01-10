@@ -135,7 +135,8 @@ def _map_py_type_to_dtype(
                 dtype if nested is None else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
             )
 
-    raise TypeError("invalid type")
+    msg = "invalid type"
+    raise TypeError(msg)
 
 
 def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
@@ -340,9 +341,8 @@ def dtype_to_ctype(dtype: PolarsDataType) -> Any:
         dtype = dtype.base_type()
         return DataTypeMappings.DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError(
-            f"conversion of polars data type {dtype!r} to C-type not implemented"
-        ) from None
+        msg = f"conversion of polars data type {dtype!r} to C-type not implemented"
+        raise NotImplementedError(msg) from None
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
@@ -351,9 +351,8 @@ def dtype_to_ffiname(dtype: PolarsDataType) -> str:
         dtype = dtype.base_type()
         return DataTypeMappings.DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError(
-            f"conversion of polars data type {dtype!r} to FFI not implemented"
-        ) from None
+        msg = f"conversion of polars data type {dtype!r} to FFI not implemented"
+        raise NotImplementedError(msg) from None
 
 
 def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
@@ -362,9 +361,8 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
         dtype = dtype.base_type()
         return DataTypeMappings.DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError(
-            f"conversion of polars data type {dtype!r} to Python type not implemented"
-        ) from None
+        msg = f"conversion of polars data type {dtype!r} to Python type not implemented"
+        raise NotImplementedError(msg) from None
 
 
 @overload
@@ -419,9 +417,8 @@ def py_type_to_dtype(
     except (KeyError, TypeError):  # pragma: no cover
         if not raise_unmatched:
             return None
-        raise ValueError(
-            f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
-        ) from None
+        msg = f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
+        raise ValueError(msg) from None
 
 
 def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
@@ -429,9 +426,8 @@ def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
     try:
         return DataTypeMappings.PY_TYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise ValueError(
-            f"cannot parse Python data type {dtype!r} into Arrow data type"
-        ) from None
+        msg = f"cannot parse Python data type {dtype!r} into Arrow data type"
+        raise ValueError(msg) from None
 
 
 def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None:
@@ -478,9 +474,8 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
             (dtype.kind, dtype.itemsize)
         ]
     except KeyError:  # pragma: no cover
-        raise ValueError(
-            f"cannot parse numpy data type {dtype!r} into Polars data type"
-        ) from None
+        msg = f"cannot parse numpy data type {dtype!r} into Polars data type"
+        raise ValueError(msg) from None
 
 
 def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
@@ -502,7 +497,6 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
         try:
             el = py_type(el)  # type: ignore[call-arg, misc]
         except Exception:
-            raise TypeError(
-                f"cannot convert Python type {type(el).__name__!r} to {dtype!r}"
-            ) from None
+            msg = f"cannot convert Python type {type(el).__name__!r} to {dtype!r}"
+            raise TypeError(msg) from None
     return el

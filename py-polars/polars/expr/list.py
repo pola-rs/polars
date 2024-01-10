@@ -179,7 +179,8 @@ class ExprListNameSpace:
         └───────────┴─────┴───────────┘
         """
         if n is not None and fraction is not None:
-            raise ValueError("cannot specify both `n` and `fraction`")
+            msg = "cannot specify both `n` and `fraction`"
+            raise ValueError(msg)
 
         if fraction is not None:
             fraction = parse_as_expression(fraction)

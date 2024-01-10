@@ -232,7 +232,8 @@ def _xl_inject_dummy_table_columns(
 
     for col, definition in options.items():
         if col in df_original_columns:
-            raise DuplicateError(f"cannot create a second {col!r} column")
+            msg = f"cannot create a second {col!r} column"
+            raise DuplicateError(msg)
         elif not isinstance(definition, dict):
             df_select_cols.append(col)
         else:
@@ -284,9 +285,11 @@ def _xl_inject_sparklines(
     m: dict[str, Any] = {}
     data_cols = params.get("columns") if isinstance(params, dict) else params
     if not data_cols:
-        raise ValueError("supplying 'columns' param value is mandatory for sparklines")
+        msg = "supplying 'columns' param value is mandatory for sparklines"
+        raise ValueError(msg)
     elif not _adjacent_cols(df, data_cols, min_max=m):
-        raise RuntimeError("sparkline data range/cols must all be adjacent")
+        msg = "sparkline data range/cols must all be adjacent"
+        raise RuntimeError(msg)
 
     spk_row, spk_col, _, _ = _xl_column_range(
         df, table_start, col, include_header=include_header, as_range=False
@@ -410,9 +413,8 @@ def _xl_setup_table_columns(
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
     for fmt in dtype_formats.values():
         if not isinstance(fmt, str):
-            raise TypeError(
-                f"invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt).__name__!r})"
-            )
+            msg = f"invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt).__name__!r})"
+            raise TypeError(msg)
 
     # inject sparkline/row-total placeholder(s)
     if sparklines:
@@ -508,7 +510,8 @@ def _xl_setup_table_options(
         )
         for key in table_style:
             if key not in valid_options:
-                raise ValueError(f"invalid table style key: {key!r}")
+                msg = f"invalid table style key: {key!r}"
+                raise ValueError(msg)
 
         table_options = table_style.copy()
         table_style = table_options.pop("style", None)

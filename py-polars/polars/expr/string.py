@@ -317,7 +317,8 @@ class ExprStringNameSpace:
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
         else:
-            raise ValueError("`dtype` must be of type {Date, Datetime, Time}")
+            msg = "`dtype` must be of type {Date, Datetime, Time}"
+            raise ValueError(msg)
 
     def to_decimal(
         self,
@@ -1343,9 +1344,8 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)
 
     def encode(self, encoding: TransferEncoding) -> Expr:
         """
@@ -1381,9 +1381,8 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""

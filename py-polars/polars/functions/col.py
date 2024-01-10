@@ -32,10 +32,11 @@ def _create_col(
             dtypes.extend(more_names)
             return wrap_expr(plr.dtype_cols(dtypes))
         else:
-            raise TypeError(
+            msg = (
                 "invalid input for `col`"
                 f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
             )
+            raise TypeError(msg)
 
     if isinstance(name, str):
         return wrap_expr(plr.col(name))
@@ -52,16 +53,18 @@ def _create_col(
         elif is_polars_dtype(item):
             return wrap_expr(plr.dtype_cols(names))
         else:
-            raise TypeError(
+            msg = (
                 "invalid input for `col`"
                 "\n\nExpected iterable of type `str` or `DataType`,"
                 f" got iterable of type {type(item).__name__!r}."
             )
+            raise TypeError(msg)
     else:
-        raise TypeError(
+        msg = (
             "invalid input for `col`"
             f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
         )
+        raise TypeError(msg)
 
 
 # appease lint by casting `col` with a protocol that conforms to the factory interface

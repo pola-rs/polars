@@ -125,11 +125,13 @@ def read_parquet(
     # Dispatch to pyarrow if requested
     if use_pyarrow:
         if not _PYARROW_AVAILABLE:
-            raise ModuleNotFoundError(
+            msg = (
                 "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
             )
+            raise ModuleNotFoundError(msg)
         if n_rows is not None:
-            raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
+            msg = "`n_rows` cannot be used with `use_pyarrow=True`"
+            raise ValueError(msg)
 
         import pyarrow as pa
         import pyarrow.parquet

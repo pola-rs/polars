@@ -14,9 +14,8 @@ if _HYPOTHESIS_AVAILABLE:
 else:
 
     def __getattr__(*args: Any, **kwargs: Any) -> Any:
-        raise ModuleNotFoundError(
-            f"polars.testing.parametric.{args[0]} requires the 'hypothesis' module"
-        ) from None
+        msg = f"polars.testing.parametric.{args[0]} requires the 'hypothesis' module"
+        raise ModuleNotFoundError(msg) from None
 
 
 __all__ = [

@@ -59,9 +59,8 @@ def polars_dtype_to_dtype(dtype: PolarsDataType) -> Dtype:
     try:
         result = polars_dtype_to_dtype_map[dtype.base_type()]
     except KeyError as exc:
-        raise ValueError(
-            f"data type {dtype!r} not supported by the interchange protocol"
-        ) from exc
+        msg = f"data type {dtype!r} not supported by the interchange protocol"
+        raise ValueError(msg) from exc
 
     # Handle instantiated data types
     if isinstance(dtype, Datetime):
@@ -151,7 +150,8 @@ def get_buffer_length_in_elements(buffer_size: int, dtype: Dtype) -> int:
     bits_per_element = dtype[1]
     bytes_per_element, rest = divmod(bits_per_element, 8)
     if rest > 0:
-        raise ValueError(f"cannot get buffer length for buffer with dtype {dtype!r}")
+        msg = f"cannot get buffer length for buffer with dtype {dtype!r}"
+        raise ValueError(msg)
     return buffer_size // bytes_per_element
 
 
@@ -166,4 +166,5 @@ def polars_dtype_to_data_buffer_dtype(dtype: PolarsDataType) -> PolarsDataType:
     elif dtype in (Enum, Categorical):
         return UInt32
 
-    raise NotImplementedError(f"unsupported data type: {dtype}")
+    msg = f"unsupported data type: {dtype}"
+    raise NotImplementedError(msg)

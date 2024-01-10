@@ -37,9 +37,8 @@ class PolarsColumn(Column):
     def __init__(self, column: Series, *, allow_copy: bool = True):
         if column.dtype == Categorical and not column.cat.is_local():
             if not allow_copy:
-                raise CopyNotAllowedError(
-                    f"column {column.name!r} must be converted to a local categorical"
-                )
+                msg = f"column {column.name!r} must be converted to a local categorical"
+                raise CopyNotAllowedError(msg)
             column = column.cat.to_local()
 
         self._col = column
@@ -129,10 +128,11 @@ class PolarsColumn(Column):
                 yield PolarsColumn(chunk, allow_copy=self._allow_copy)
 
         elif (n_chunks <= 0) or (n_chunks % total_n_chunks != 0):
-            raise ValueError(
+            msg = (
                 "`n_chunks` must be a multiple of the number of chunks of this column"
                 f" ({total_n_chunks})"
             )
+            raise ValueError(msg)
 
         else:
             subchunks_per_chunk = n_chunks // total_n_chunks
