@@ -337,9 +337,9 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
                 pages, data_type, chunk_size, num_rows,
             ))
         },
-        (PhysicalType::ByteArray, BinaryView | Utf8View) => {
-            Box::new(binview::BinaryViewArrayIter::new(pages, data_type, chunk_size, num_rows))
-        }
+        (PhysicalType::ByteArray, BinaryView | Utf8View) => Box::new(
+            binview::BinaryViewArrayIter::new(pages, data_type, chunk_size, num_rows),
+        ),
 
         (_, Dictionary(key_type, _, _)) => {
             return match_integer_type!(key_type, |$K| {

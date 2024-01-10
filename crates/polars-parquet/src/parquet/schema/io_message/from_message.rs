@@ -22,7 +22,7 @@
 //! # Example
 //!
 //! ```rust
-//! use crate::parquet::parquet::schema::io_message::from_message;
+//! use polars_parquet::parquet::schema::io_message::from_message;
 //!
 //! let message_type = "
 //!   message spark_schema {

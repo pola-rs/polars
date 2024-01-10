@@ -220,7 +220,7 @@ where
                 num_rows,
                 chunk_size,
             ))
-        }
+        },
         Binary | Utf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();

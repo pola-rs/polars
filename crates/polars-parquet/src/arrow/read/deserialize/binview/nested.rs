@@ -1,18 +1,21 @@
 use std::collections::VecDeque;
+
 use arrow::array::{ArrayRef, MutableBinaryViewArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
+
 use crate::parquet::page::{DataPage, DictPage};
-use crate::read::deserialize::binary::decoders::{BinaryDict, BinaryNestedState, build_nested_state, deserialize_plain};
-use crate::read::deserialize::nested_utils::{NestedDecoder, next};
-use crate::read::{InitNested, NestedState, PagesIter};
+use crate::read::deserialize::binary::decoders::{
+    build_nested_state, deserialize_plain, BinaryDict, BinaryNestedState,
+};
 use crate::read::deserialize::binview::basic::finish;
+use crate::read::deserialize::nested_utils::{next, NestedDecoder};
 use crate::read::deserialize::utils::MaybeNext;
+use crate::read::{InitNested, NestedState, PagesIter};
 
 #[derive(Debug, Default)]
-struct BinViewDecoder {
-}
+struct BinViewDecoder {}
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
@@ -36,7 +39,11 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
+    fn push_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             BinaryNestedState::Optional(page) => {

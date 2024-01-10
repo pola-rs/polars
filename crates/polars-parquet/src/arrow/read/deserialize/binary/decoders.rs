@@ -394,7 +394,10 @@ impl<'a> utils::PageState<'a> for BinaryNestedState<'a> {
     }
 }
 
-pub(crate) fn build_nested_state<'a>(page: &'a DataPage, dict: Option<&'a BinaryDict>) -> PolarsResult<BinaryNestedState<'a>> {
+pub(crate) fn build_nested_state<'a>(
+    page: &'a DataPage,
+    dict: Option<&'a BinaryDict>,
+) -> PolarsResult<BinaryNestedState<'a>> {
     let is_optional = page_is_optional(page);
     let is_filtered = page_is_filtered(page);
 
@@ -421,6 +424,4 @@ pub(crate) fn build_nested_state<'a>(page: &'a DataPage, dict: Option<&'a Binary
         },
         _ => Err(utils::not_implemented(page)),
     }
-
 }
-
