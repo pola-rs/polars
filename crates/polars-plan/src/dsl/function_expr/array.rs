@@ -20,6 +20,7 @@ pub enum ArrayFunction {
     ArgMin,
     ArgMax,
     Get,
+    Join,
 }
 
 impl ArrayFunction {
@@ -36,6 +37,7 @@ impl ArrayFunction {
             Reverse => mapper.with_same_dtype(),
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
             Get => mapper.map_to_list_and_array_inner_dtype(),
+            Join => mapper.with_dtype(DataType::String),
         }
     }
 }
@@ -66,6 +68,7 @@ impl Display for ArrayFunction {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             Get => "get",
+            Join => "join",
         };
         write!(f, "arr.{name}")
     }
@@ -89,6 +92,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
             Get => map_as_slice!(get),
+            Join => map_as_slice!(join),
         }
     }
 }
@@ -151,4 +155,10 @@ pub(super) fn get(s: &[Series]) -> PolarsResult<Series> {
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
     ca.array_get(index)
+}
+
+pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].array()?;
+    let separator = s[1].str()?;
+    ca.array_join(separator)
 }

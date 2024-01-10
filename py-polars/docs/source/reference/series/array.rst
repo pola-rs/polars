@@ -23,3 +23,4 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.get
     Series.arr.first
     Series.arr.last
+    Series.arr.join
