@@ -64,6 +64,7 @@ from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_parameter_as_positional,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
@@ -4094,20 +4095,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
+    @deprecate_parameter_as_positional("columns", version="0.20.4")
     def drop(
-        self,
-        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
-        *more_columns: ColumnNameOrSelector,
+        self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
     ) -> Self:
         """
         Remove columns from the DataFrame.
 
         Parameters
         ----------
-        columns
-            Name of the column(s) that should be removed from the DataFrame.
-        *more_columns
-            Additional columns to drop, specified as positional arguments.
+        *columns
+            Names of the columns that should be removed from the dataframe.
+            Accepts column selector input.
 
         Examples
         --------
@@ -4161,7 +4160,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = _expand_selectors(self, columns, *more_columns)
+        drop_cols = _expand_selectors(self, *columns)
         return self._from_pyldf(self._ldf.drop(drop_cols))
 
     def rename(self, mapping: dict[str, str]) -> Self:
