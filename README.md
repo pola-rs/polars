@@ -59,6 +59,50 @@ Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Ru
 - Rust | Python | NodeJS | R | ...
 
 To learn more, read the [User Guide](https://docs.pola.rs/).
+## WINDOWS
+Windows Operating System (OS) is a graphical user interface (GUI) based operating system developed by Microsoft Corporation. It is designed to provide users with a user-friendly interface to interact with their computers. The first version of the Windows Operating System was introduced in 1985, and since then, it has undergone many updates and upgrades. Windows Operating System is compatible with a wide range of hardware and software applications, making it a popular choice for both personal and business computing. It has a built-in security system to protect the computer from malware and viruses and provides a comprehensive file management system that makes it easy for users to organize and access their files. Windows Operating System also allows users to run multiple applications simultaneously, making it easy to work on multiple tasks at the same time.
+
+Features of Windows Operating System
+Here are some features of the Windows Operating System:
+
+Control Panel: The control Panel is a centralized location within Windows where users can manage various system settings, including security and privacy, display, hardware and sound, and programs. It provides users with access to a range of tools and settings, making it easy to customize the Windows experience.
+Internet Browser: An Internet Browser is a software application that allows users to access and browse the Internet. Windows provides a built-in internet browser called Microsoft Edge, which includes features such as tabbed browsing, search suggestions, and web notes.
+File Explorer: File Explorer is a file management tool that allows users to browse, open, and manage files and folders on their computers. It provides a user-friendly interface for users to view and manage files and includes features such as search, copy, move, and delete.
+Taskbar: Taskbar is a horizontal bar that appears at the bottom of the Windows desktop. It provides quick access to frequently used applications and displays open windows and programs. The taskbar also includes system icons such as volume, network, and battery status.
+Microsoft Paint: Microsoft Paint is a graphics editing software that allows users to create and edit images. It provides users with basic drawing tools such as a pencil, brush, and eraser, and allows users to add shapes, text, and images to their designs.
+Start Menu: Start Menu is a menu that appears when users click the Start button on the Windows taskbar. It provides access to frequently used applications, settings, and files, and includes a search bar that allows users to quickly find files and applications.
+Task Manager: Task Manager is a system tool that allows users to view and manage running applications and processes. It provides users with information about CPU and memory usage and allows users to end unresponsive programs and processes.
+Disk Cleanup: Disk Cleanup is a system tool that allows users to free up space on their hard drives by removing unnecessary files and data. It scans the system for temporary files, cache, and other unnecessary data, and provides users with the option to remove them.
+Cortana: Cortana is a virtual assistant software that allows users to interact with their computers using voice commands. It provides users with access to information, and reminders, and can perform tasks such as sending emails and setting reminders.
+ 
+## CONTRIBUTING GUIDE TO USE WSL FOR DEVELOPMENT
+
+WSL
+Windows Subsystem for Linux (WSL) is a lightweight virtual machine alternative for Windows 10 that allows us to build and debug POLARIS on Linux without having to clone the repository to another directory.
+
+WSL is easier to configure at Argonne, but you can install POLARIS on a virtual machine or any other Linux installation. We will use Ubuntu here as it is the easiest and most common distro.
+
+Installing WSL
+Full instructions here: https://docs.microsoft.com/en-us/windows/wsl/install-win10
+
+Make sure your Windows system meets the minimum requirements:
+
+For x64 systems: Version 1903 or higher, with Build 18362 or higher.
+
+For ARM64 systems: Version 2004 or higher, with Build 19041 or higher. To check your version and build number, select Windows logo key + R, type winver, select OK.
+
+Before installing the WSL program itself, we need to configure windows to use it:
+
+dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+You should restart at this point.
+
+Next, download and install the Linux kernel update package for windows: https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi
+
+Set WSL2 as your default version:
+
+wsl --set-default-version 2
+Finally, install from the Image file in our Box drive or from scratch with the linux distribution of your choice (Ubuntu 20.04 recommended). The easiest way to do this is to search for “Microsoft Store” in the Windows 10 help bar and search for the distribution you want. The full instructions above have direct links to available distributions.
 
 ## Python
 
