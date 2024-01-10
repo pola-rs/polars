@@ -5,7 +5,9 @@ This page contains some recommendations for configuring popular IDEs.
 
 ## Visual Studio Code
 
-The following extensions are recommended.
+Make sure to configure VSCode to use the virtual environment created by the Makefile.
+
+In addition, the extensions below are recommended.
 
 ### rust-analyzer
 
@@ -22,13 +24,13 @@ For it to work well for the Polars code base, add the following settings to your
 ### Ruff
 
 The Ruff extension will help you conform to the formatting requirements of the Python code.
-We use both the Ruff linter and formatter. The project's `polars/py-polars/pyproject.toml` file has the format and lint settings required for PRs. It might be necessary to point your IDE's "ruff.format.args" settings to that file. In VSCode that would look like
+We use both the Ruff linter and formatter.
+It is recommended to configure the extension to use the Ruff installed in your environment.
+This will make it use the correct Ruff version and configuration.
 
 ```json
 {
-        "ruff.format.args": [
-        "\"args\": [\"--config=/polars/py-polars/pyproject.toml\"]"
-    ]
+    "ruff.importStrategy": "fromEnvironment",
 }
 ```
 
