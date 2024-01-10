@@ -100,6 +100,7 @@ from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
+    deprecate_parameter_as_positional,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
@@ -6665,21 +6666,18 @@ class DataFrame:
                 raise
         return self
 
+    @deprecate_parameter_as_positional("columns", version="0.20.4")
     def drop(
-        self,
-        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
-        *more_columns: ColumnNameOrSelector,
+        self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
     ) -> DataFrame:
         """
         Remove columns from the dataframe.
 
         Parameters
         ----------
-        columns
-            Names of the columns that should be removed from the dataframe, or
-            a selector that determines the columns to drop.
-        *more_columns
-            Additional columns to drop, specified as positional arguments.
+        *columns
+            Names of the columns that should be removed from the dataframe.
+            Accepts column selector input.
 
         Examples
         --------
@@ -6747,7 +6745,7 @@ class DataFrame:
         │ 8.0 │
         └─────┘
         """
-        return self.lazy().drop(columns, *more_columns).collect(_eager=True)
+        return self.lazy().drop(*columns).collect(_eager=True)
 
     def drop_in_place(self, name: str) -> Series:
         """

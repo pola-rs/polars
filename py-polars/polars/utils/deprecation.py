@@ -94,7 +94,7 @@ def deprecate_parameter_as_positional(
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             if param_args := kwargs.pop(old_name, []):
                 issue_deprecation_warning(
-                    f"`named {old_name}` param is deprecated; use positional `*args` instead.",
+                    f"named `{old_name}` param is deprecated; use positional `*args` instead.",
                     version=version,
                 )
             if param_args:
