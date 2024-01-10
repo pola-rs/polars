@@ -1202,6 +1202,8 @@ impl LazyFrame {
     /// over how columns are renamed and parallelization options, use
     /// [`join_builder`](LazyFrame::join_builder).
     ///
+    /// Any provided `args.slice` parameter is not considered, but set by the internal optimizer.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -1225,12 +1227,23 @@ impl LazyFrame {
 
         let left_on = left_on.as_ref().to_vec();
         let right_on = right_on.as_ref().to_vec();
-        self.join_builder()
+
+        let mut builder = self
+            .join_builder()
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
             .how(args.how)
-            .finish()
+            .validate(args.validation)
+            .join_nulls(args.join_nulls);
+
+        if let Some(suffix) = args.suffix {
+            builder = builder.suffix(suffix);
+        }
+
+        // Note: args.slice is set by the optimizer
+
+        builder.finish()
     }
 
     /// Consume `self` and return a [`JoinBuilder`] to customize a join on this LazyFrame.
