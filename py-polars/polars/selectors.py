@@ -27,6 +27,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
+from polars.utils._parse_expr_input import _parse_inputs_as_iterable
 from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import is_column
 
@@ -124,9 +125,7 @@ def expand_selector(
     return tuple(target.select(selector).columns)
 
 
-def _expand_selectors(
-    frame: DataFrame | LazyFrame, items: Any, *more_items: Any
-) -> list[Any]:
+def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.
 
@@ -149,15 +148,10 @@ def _expand_selectors(
     >>> _expand_selectors(df, cs.string(), cs.float())
     ['colw', 'colx', 'colz']
     """
+    items_iter = _parse_inputs_as_iterable(items)
+
     expanded: list[Any] = []
-    for item in (
-        *(
-            items
-            if isinstance(items, Collection) and not isinstance(items, str)
-            else [items]
-        ),
-        *more_items,
-    ):
+    for item in items_iter:
         if is_selector(item):
             selector_cols = expand_selector(frame, item)
             expanded.extend(selector_cols)
