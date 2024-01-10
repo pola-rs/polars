@@ -7,7 +7,7 @@ use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
-use polars_parquet::read::{self, ArrayIter, FileMetaData, PhysicalType, RowGroupMetaData};
+use polars_parquet::read::{self, ArrayIter, PhysicalType, RowGroupMetaData};
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
@@ -50,7 +50,7 @@ fn assert_dtypes(data_type: &ArrowDataType) {
     }
 }
 
-fn column_idx_to_series(
+pub fn column_idx_to_series(
     column_i: usize,
     md: &RowGroupMetaData,
     remaining_rows: usize,
@@ -157,7 +157,7 @@ fn rg_to_dfs(
     row_group_start: usize,
     row_group_end: usize,
     remaining_rows: &mut usize,
-    file_metadata: &FileMetaData,
+    row_group_metadata: &[RowGroupMetaData],
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
@@ -173,7 +173,7 @@ fn rg_to_dfs(
             row_group_start,
             row_group_end,
             remaining_rows,
-            file_metadata,
+            row_group_metadata,
             schema,
             predicate,
             row_index,
@@ -189,7 +189,7 @@ fn rg_to_dfs(
             row_group_end,
             previous_row_count,
             remaining_rows,
-            file_metadata,
+            row_group_metadata,
             schema,
             predicate,
             row_index,
@@ -208,7 +208,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     row_group_start: usize,
     row_group_end: usize,
     remaining_rows: &mut usize,
-    file_metadata: &FileMetaData,
+    row_group_metadata: &[RowGroupMetaData],
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
@@ -219,13 +219,14 @@ fn rg_to_dfs_optionally_par_over_columns(
 ) -> PolarsResult<Vec<DataFrame>> {
     let mut dfs = Vec::with_capacity(row_group_end - row_group_start);
 
-    for rg_idx in row_group_start..row_group_end {
-        let md = &file_metadata.row_groups[rg_idx];
+    for md in row_group_metadata
+        .iter()
+        .take(row_group_end)
+        .skip(row_group_start)
+    {
         let current_row_count = md.num_rows() as IdxSize;
 
-        if use_statistics
-            && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
-        {
+        if use_statistics && !read_this_row_group(predicate, md, schema)? {
             *previous_row_count += current_row_count;
             continue;
         }
@@ -302,7 +303,7 @@ fn rg_to_dfs_par_over_rg(
     row_group_end: usize,
     previous_row_count: &mut IdxSize,
     remaining_rows: &mut usize,
-    file_metadata: &FileMetaData,
+    row_group_metadata: &[RowGroupMetaData],
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
@@ -311,8 +312,7 @@ fn rg_to_dfs_par_over_rg(
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
     // compute the limits per row group and the row count offsets
-    let row_groups = file_metadata
-        .row_groups
+    let row_groups = row_group_metadata
         .iter()
         .enumerate()
         .skip(row_group_start)
@@ -334,11 +334,7 @@ fn rg_to_dfs_par_over_rg(
             .map(|(rg_idx, md, projection_height, row_count_start)| {
                 if projection_height == 0
                     || use_statistics
-                        && !read_this_row_group(
-                            predicate,
-                            &file_metadata.row_groups[rg_idx],
-                            schema,
-                        )?
+                        && !read_this_row_group(predicate, &row_group_metadata[rg_idx], schema)?
                 {
                     return Ok(None);
                 }
@@ -455,7 +451,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         0,
         n_row_groups,
         &mut limit,
-        &file_metadata,
+        &file_metadata.row_groups,
         reader_schema,
         predicate,
         row_index.clone(),
@@ -555,7 +551,7 @@ pub struct BatchedParquetReader {
     limit: usize,
     projection: Arc<[usize]>,
     schema: ArrowSchemaRef,
-    metadata: FileMetaDataRef,
+    row_group_metadata: Vec<RowGroupMetaData>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     row_index: Option<RowIndex>,
     rows_read: IdxSize,
@@ -574,7 +570,7 @@ impl BatchedParquetReader {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         row_group_fetcher: RowGroupFetcher,
-        metadata: FileMetaDataRef,
+        row_group_metadata: Vec<RowGroupMetaData>,
         schema: ArrowSchemaRef,
         limit: usize,
         projection: Option<Vec<usize>>,
@@ -585,7 +581,7 @@ impl BatchedParquetReader {
         hive_partition_columns: Option<Vec<Series>>,
         mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
-        let n_row_groups = metadata.row_groups.len();
+        let n_row_groups = row_group_metadata.len();
         let projection = projection
             .map(Arc::from)
             .unwrap_or_else(|| (0usize..schema.len()).collect::<Arc<[_]>>());
@@ -610,7 +606,7 @@ impl BatchedParquetReader {
             limit,
             projection,
             schema,
-            metadata,
+            row_group_metadata,
             row_index,
             rows_read: 0,
             predicate,
@@ -627,6 +623,10 @@ impl BatchedParquetReader {
 
     pub fn limit_reached(&self) -> bool {
         self.limit == 0
+    }
+
+    pub fn num_row_groups(&self) -> usize {
+        self.row_group_metadata.len()
     }
 
     pub fn schema(&self) -> &ArrowSchemaRef {
@@ -661,7 +661,7 @@ impl BatchedParquetReader {
                 row_group_start,
                 row_group_start + n,
                 self.limit,
-                &self.metadata.row_groups,
+                &self.row_group_metadata,
             );
 
             let store = self
@@ -676,7 +676,7 @@ impl BatchedParquetReader {
                     row_group_start,
                     row_group_end,
                     &mut self.limit,
-                    &self.metadata,
+                    &self.row_group_metadata,
                     &self.schema,
                     self.predicate.as_deref(),
                     self.row_index.clone(),
@@ -700,7 +700,7 @@ impl BatchedParquetReader {
                     let row_index = self.row_index.clone();
                     let predicate = self.predicate.clone();
                     let schema = self.schema.clone();
-                    let metadata = self.metadata.clone();
+                    let metadata = self.row_group_metadata.clone();
                     let parallel = self.parallel;
                     let projection = self.projection.clone();
                     let use_statistics = self.use_statistics;

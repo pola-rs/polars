@@ -13,6 +13,8 @@ pub trait PhysicalIoExpr: Send + Sync {
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         None
     }
+
+    fn columns(&self) -> Vec<String>;
 }
 
 pub trait StatsEvaluator {

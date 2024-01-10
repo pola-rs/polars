@@ -13,19 +13,18 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
 use super::mmap::ColumnStore;
-use super::predicates::read_this_row_group;
 use super::read_impl::compute_row_group_range;
 use crate::cloud::{
     build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
 };
 use crate::parquet::metadata::FileMetaDataRef;
 use crate::pl_async::get_runtime;
-use crate::predicates::PhysicalIoExpr;
 
 type DownloadedRowGroup = Vec<(u64, Bytes)>;
 type QueuePayload = (usize, DownloadedRowGroup);
 type QueueSend = Arc<Sender<PolarsResult<QueuePayload>>>;
 
+#[derive(Clone)]
 pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
@@ -267,10 +266,9 @@ pub struct FetchRowGroupsFromObjectStore {
 
 impl FetchRowGroupsFromObjectStore {
     pub fn new(
-        reader: ParquetObjectStore,
+        reader: Arc<ParquetObjectStore>,
         schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
         row_groups: &[RowGroupMetaData],
         limit: usize,
     ) -> PolarsResult<Self> {
@@ -284,28 +282,7 @@ impl FetchRowGroupsFromObjectStore {
         let row_groups_end = compute_row_group_range(0, row_groups.len(), limit, row_groups);
         let row_groups = &row_groups[0..row_groups_end];
 
-        let mut prefetched: PlHashMap<usize, DownloadedRowGroup> = PlHashMap::new();
-
-        let mut row_groups = if let Some(pred) = predicate.as_deref() {
-            row_groups
-                .iter()
-                .enumerate()
-                .filter(|(i, rg)| {
-                    let should_be_read =
-                        matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
-
-                    // Already add the row groups that will be skipped to the prefetched data.
-                    if !should_be_read {
-                        prefetched.insert(*i, Default::default());
-                    }
-                    should_be_read
-                })
-                .map(|(i, rg)| (i, rg.clone()))
-                .collect::<Vec<_>>()
-        } else {
-            row_groups.iter().cloned().enumerate().collect()
-        };
-        let reader = Arc::new(reader);
+        let mut row_groups = row_groups.iter().cloned().enumerate().collect::<Vec<_>>();
         let msg_limit = get_rg_prefetch_size();
 
         if verbose() {
