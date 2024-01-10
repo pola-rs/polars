@@ -37,10 +37,7 @@ pub enum StringFunction {
     CountMatches(bool),
     EndsWith,
     Explode,
-    Extract {
-        pat: String,
-        group_index: usize,
-    },
+    Extract(usize),
     ExtractAll,
     #[cfg(feature = "extract_groups")]
     ExtractGroups {
@@ -133,7 +130,7 @@ impl StringFunction {
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
-            Extract { .. } => mapper.with_same_dtype(),
+            Extract(_) => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
@@ -201,7 +198,7 @@ impl Display for StringFunction {
             Contains { .. } => "contains",
             CountMatches(_) => "count_matches",
             EndsWith { .. } => "ends_with",
-            Extract { .. } => "extract",
+            Extract(_) => "extract",
             #[cfg(feature = "concat_str")]
             ConcatHorizontal(_) => "concat_horizontal",
             #[cfg(feature = "concat_str")]
@@ -287,9 +284,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
-            Extract { pat, group_index } => {
-                map!(strings::extract, &pat, group_index)
-            },
+            Extract(group_index) => map_as_slice!(strings::extract, group_index),
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
             },
@@ -457,11 +452,10 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
 }
 
 /// Extract a regex pattern from the a string value.
-pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult<Series> {
-    let pat = pat.to_string();
-
-    let ca = s.str()?;
-    ca.extract(&pat, group_index).map(|ca| ca.into_series())
+pub(super) fn extract(s: &[Series], group_index: usize) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    ca.extract(pat, group_index).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "extract_groups")]
