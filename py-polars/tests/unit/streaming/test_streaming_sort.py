@@ -232,3 +232,15 @@ def test_streaming_sort_fixed_reverse() -> None:
     assert_df_sorted_by(
         df, q.collect(streaming=False), ["a", "b"], descending=descending
     )
+
+
+def test_reverse_variable_sort_13573() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["one", "two", "three"],
+            "b": ["four", "five", "six"],
+        }
+    ).lazy()
+    assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
+        as_series=False
+    ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}
