@@ -87,6 +87,7 @@ def element() -> Expr:
     return F.col("")
 
 
+@deprecate_parameter_as_positional("column", version="0.20.4")
 def count(*columns: str) -> Expr:
     """
     Either return the number of rows in the context, or return the number of non-null values in the column.
