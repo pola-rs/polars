@@ -150,14 +150,14 @@ fn from_byte_array(
     converted_type: &Option<PrimitiveConvertedType>,
 ) -> ArrowDataType {
     match (logical_type, converted_type) {
-        (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8,
+        (Some(PrimitiveLogicalType::String), _) => ArrowDataType::LargeUtf8,
         (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::Binary,
         (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::Binary,
         (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::Binary,
         (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::Binary,
         (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::Binary,
         (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::Binary,
-        (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::Utf8,
+        (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::LargeUtf8,
         (_, _) => ArrowDataType::Binary,
     }
 }
@@ -221,7 +221,7 @@ fn to_primitive_type(
     let base_type = to_primitive_type_inner(primitive_type, options);
 
     if primitive_type.field_info.repetition == Repetition::Repeated {
-        ArrowDataType::List(Box::new(Field::new(
+        ArrowDataType::LargeList(Box::new(Field::new(
             &primitive_type.field_info.name,
             base_type,
             is_nullable(&primitive_type.field_info),
@@ -284,7 +284,7 @@ fn to_group_type(
 ) -> Option<ArrowDataType> {
     debug_assert!(!fields.is_empty());
     if field_info.repetition == Repetition::Repeated {
-        Some(ArrowDataType::List(Box::new(Field::new(
+        Some(ArrowDataType::LargeList(Box::new(Field::new(
             &field_info.name,
             to_struct(fields, options)?,
             is_nullable(field_info),
@@ -361,7 +361,7 @@ fn to_list(
         ),
     };
 
-    Some(ArrowDataType::List(Box::new(Field::new(
+    Some(ArrowDataType::LargeList(Box::new(Field::new(
         list_item_name,
         item_type,
         item_is_optional,
@@ -440,8 +440,8 @@ mod tests {
             Field::new("int64", ArrowDataType::Int64, false),
             Field::new("double", ArrowDataType::Float64, true),
             Field::new("float", ArrowDataType::Float32, true),
-            Field::new("string", ArrowDataType::Utf8, true),
-            Field::new("string_2", ArrowDataType::Utf8, true),
+            Field::new("string", ArrowDataType::LargeUtf8, true),
+            Field::new("string_2", ArrowDataType::LargeUtf8, true),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
@@ -556,7 +556,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, true))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Utf8, true))),
                 false,
             ));
         }
@@ -570,7 +570,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
                 true,
             ));
         }
@@ -589,10 +589,10 @@ mod tests {
         // }
         {
             let arrow_inner_list =
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Int32, false)));
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Int32, false)));
             arrow_fields.push(Field::new(
                 "array_of_arrays",
-                ArrowDataType::List(Box::new(Field::new("element", arrow_inner_list, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", arrow_inner_list, false))),
                 true,
             ));
         }
@@ -606,7 +606,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
                 true,
             ));
         }
@@ -618,7 +618,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Int32, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::Int32, false))),
                 true,
             ));
         }
@@ -637,7 +637,7 @@ mod tests {
             ]);
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::List(Box::new(Field::new("element", arrow_struct, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", arrow_struct, false))),
                 true,
             ));
         }
@@ -654,7 +654,7 @@ mod tests {
                 ArrowDataType::Struct(vec![Field::new("str", ArrowDataType::Utf8, false)]);
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::List(Box::new(Field::new("array", arrow_struct, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("array", arrow_struct, false))),
                 true,
             ));
         }
@@ -671,7 +671,7 @@ mod tests {
                 ArrowDataType::Struct(vec![Field::new("str", ArrowDataType::Utf8, false)]);
             arrow_fields.push(Field::new(
                 "my_list",
-                ArrowDataType::List(Box::new(Field::new("my_list_tuple", arrow_struct, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("my_list_tuple", arrow_struct, false))),
                 true,
             ));
         }
@@ -681,7 +681,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "name",
-                ArrowDataType::List(Box::new(Field::new("name", ArrowDataType::Int32, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("name", ArrowDataType::Int32, false))),
                 false,
             ));
         }
@@ -710,7 +710,7 @@ mod tests {
 
         {
             let struct_fields = vec![
-                Field::new("event_name", ArrowDataType::Utf8, false),
+                Field::new("event_name", ArrowDataType::LargeUtf8, false),
                 Field::new(
                     "event_time",
                     ArrowDataType::Timestamp(TimeUnit::Millisecond, Some("+00:00".into())),
@@ -719,7 +719,7 @@ mod tests {
             ];
             arrow_fields.push(Field::new(
                 "events",
-                ArrowDataType::List(Box::new(Field::new(
+                ArrowDataType::LargeList(Box::new(Field::new(
                     "array",
                     ArrowDataType::Struct(struct_fields),
                     false,
@@ -768,7 +768,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list1",
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, true))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::LargeUtf8, true))),
                 false,
             ));
         }
@@ -782,7 +782,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list2",
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::LargeUtf8, false))),
                 true,
             ));
         }
@@ -796,7 +796,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list3",
-                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
+                ArrowDataType::LargeList(Box::new(Field::new("element", ArrowDataType::LargeUtf8, false))),
                 false,
             ));
         }
@@ -1020,10 +1020,10 @@ mod tests {
             Field::new("int64", ArrowDataType::Int64, false),
             Field::new("double", ArrowDataType::Float64, true),
             Field::new("float", ArrowDataType::Float32, true),
-            Field::new("string", ArrowDataType::Utf8, true),
+            Field::new("string", ArrowDataType::LargeUtf8, true),
             Field::new(
                 "bools",
-                ArrowDataType::List(Box::new(Field::new(
+                ArrowDataType::LargeList(Box::new(Field::new(
                     "element",
                     ArrowDataType::Boolean,
                     true,
@@ -1032,7 +1032,7 @@ mod tests {
             ),
             Field::new(
                 "bools_non_null",
-                ArrowDataType::List(Box::new(Field::new(
+                ArrowDataType::LargeList(Box::new(Field::new(
                     "element",
                     ArrowDataType::Boolean,
                     false,
@@ -1067,7 +1067,7 @@ mod tests {
                     Field::new("uint32", ArrowDataType::UInt32, false),
                     Field::new(
                         "int32",
-                        ArrowDataType::List(Box::new(Field::new(
+                        ArrowDataType::LargeList(Box::new(Field::new(
                             "element",
                             ArrowDataType::Int32,
                             true,
@@ -1077,7 +1077,7 @@ mod tests {
                 ]),
                 false,
             ),
-            Field::new("dictionary_strings", ArrowDataType::Utf8, false),
+            Field::new("dictionary_strings", ArrowDataType::LargeUtf8, false),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
@@ -1113,7 +1113,7 @@ mod tests {
                 Field::new("int96_field", coerced_to.clone(), false),
                 Field::new(
                     "int96_list",
-                    ArrowDataType::List(Box::new(Field::new("element", coerced_to.clone(), true))),
+                    ArrowDataType::LargeList(Box::new(Field::new("element", coerced_to.clone(), true))),
                     true,
                 ),
                 Field::new(
