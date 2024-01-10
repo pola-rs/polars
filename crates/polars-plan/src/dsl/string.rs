@@ -192,6 +192,34 @@ impl StringNameSpace {
         self.0.map_private(StringFunction::ZFill(length).into())
     }
 
+    /// Find the index of a literal substring within another string value.
+    #[cfg(feature = "regex")]
+    pub fn find_literal(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Find {
+                literal: true,
+                strict: false,
+            }),
+            &[pat],
+            false,
+            true,
+        )
+    }
+
+    /// Find the index of a substring defined by a regular expressons within another string value.
+    #[cfg(feature = "regex")]
+    pub fn find(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Find {
+                literal: false,
+                strict,
+            }),
+            &[pat],
+            false,
+            true,
+        )
+    }
+
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: Expr) -> Expr {
         self.0

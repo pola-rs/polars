@@ -47,6 +47,10 @@ pub enum StringFunction {
         dtype: DataType,
         pat: String,
     },
+    Find {
+        literal: bool,
+        strict: bool,
+    },
     #[cfg(feature = "string_to_integer")]
     ToInteger(u32, bool),
     LenBytes,
@@ -135,6 +139,7 @@ impl StringFunction {
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => mapper.with_dtype(DataType::Int64),
+            Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             LenBytes => mapper.with_dtype(DataType::UInt32),
@@ -207,6 +212,7 @@ impl Display for StringFunction {
             ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => "to_integer",
+            Find { .. } => "find",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
             LenBytes => "len_bytes",
@@ -291,6 +297,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractGroups { pat, dtype } => {
                 map!(strings::extract_groups, &pat, &dtype)
             },
+            Find { literal, strict } => map_as_slice!(strings::find, literal, strict),
             LenBytes => map!(strings::len_bytes),
             LenChars => map!(strings::len_chars),
             #[cfg(feature = "string_pad")]
@@ -424,6 +431,14 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
     let ca = s[0].str()?;
     let pat = s[1].str()?;
     ca.contains_chunked(pat, literal, strict)
+        .map(|ok| ok.into_series())
+}
+
+#[cfg(feature = "regex")]
+pub(super) fn find(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    ca.find_chunked(pat, literal, strict)
         .map(|ok| ok.into_series())
 }
 
@@ -845,7 +860,6 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
     let column = &s[0];
     let pat = &s[1];
     let val = &s[2];
-
     let all = n < 0;
 
     let column = column.str()?;

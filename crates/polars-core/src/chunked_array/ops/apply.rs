@@ -14,7 +14,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    // Applies a function to all elements , regardless of whether they
+    // Applies a function to all elements, regardless of whether they
     // are null or not, after which the null mask is copied from the
     // original array.
     pub fn apply_values_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
