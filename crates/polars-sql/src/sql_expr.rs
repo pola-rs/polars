@@ -1,3 +1,5 @@
+use std::ops::Div;
+
 use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
@@ -9,8 +11,9 @@ use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
-    DataType as SQLDataType, Expr as SQLExpr, Function as SQLFunction, Ident, JoinConstraint,
-    OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator, Value as SQLValue,
+    DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
+    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator,
+    Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -101,6 +104,7 @@ impl SQLExprVisitor<'_> {
             } => self.visit_cast(expr, data_type, format),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
+            SQLExpr::Extract { field, expr } => parse_extract(self.visit_expr(expr)?, field),
             SQLExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
             SQLExpr::Function(function) => self.visit_function(function),
             SQLExpr::Identifier(ident) => self.visit_identifier(ident),
@@ -759,11 +763,6 @@ impl SQLExprVisitor<'_> {
     }
 }
 
-pub(crate) fn parse_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Expr> {
-    let mut visitor = SQLExprVisitor { ctx };
-    visitor.visit_expr(expr)
-}
-
 pub(super) fn process_join(
     left_tbl: LazyFrame,
     right_tbl: LazyFrame,
@@ -911,4 +910,83 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx)?,
         _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
     })
+}
+
+pub(crate) fn parse_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Expr> {
+    let mut visitor = SQLExprVisitor { ctx };
+    visitor.visit_expr(expr)
+}
+
+fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
+    Ok(match field {
+        DateTimeField::Decade => expr.dt().year() / lit(10),
+        DateTimeField::Isoyear => expr.dt().iso_year(),
+        DateTimeField::Year => expr.dt().year(),
+        DateTimeField::Quarter => expr.dt().quarter(),
+        DateTimeField::Month => expr.dt().month(),
+        DateTimeField::Week => expr.dt().week(),
+        DateTimeField::IsoWeek => expr.dt().week(),
+        DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
+        DateTimeField::DayOfWeek | DateTimeField::Dow => {
+            let w = expr.dt().weekday();
+            when(w.clone().eq(lit(7i8))).then(lit(0i8)).otherwise(w)
+        },
+        DateTimeField::Isodow => expr.dt().weekday(),
+        DateTimeField::Day => expr.dt().day(),
+        DateTimeField::Hour => expr.dt().hour(),
+        DateTimeField::Minute => expr.dt().minute(),
+        DateTimeField::Second => expr.dt().second(),
+        DateTimeField::Millisecond | DateTimeField::Milliseconds => {
+            (expr.clone().dt().second() * lit(1_000))
+                + expr.dt().nanosecond().div(lit(1_000_000f64))
+        },
+        DateTimeField::Microsecond | DateTimeField::Microseconds => {
+            (expr.clone().dt().second() * lit(1_000_000))
+                + expr.dt().nanosecond().div(lit(1_000f64))
+        },
+        DateTimeField::Nanosecond | DateTimeField::Nanoseconds => {
+            (expr.clone().dt().second() * lit(1_000_000_000f64)) + expr.dt().nanosecond()
+        },
+        DateTimeField::Time => expr.dt().time(),
+        DateTimeField::Epoch => {
+            expr.clone()
+                .dt()
+                .timestamp(TimeUnit::Nanoseconds)
+                .div(lit(1_000_000_000i64))
+                + expr.dt().nanosecond().div(lit(1_000_000_000f64))
+        },
+        _ => {
+            polars_bail!(ComputeError: "Extract function does not yet support {}", field)
+        },
+    })
+}
+
+pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
+    let part = part.to_ascii_lowercase();
+    parse_extract(
+        expr,
+        match part.as_str() {
+            "decade" => &DateTimeField::Decade,
+            "isoyear" => &DateTimeField::Isoyear,
+            "year" => &DateTimeField::Year,
+            "quarter" => &DateTimeField::Quarter,
+            "month" => &DateTimeField::Month,
+            "dayofyear" | "doy" => &DateTimeField::DayOfYear,
+            "dayofweek" | "dow" => &DateTimeField::DayOfWeek,
+            "isoweek" | "week" => &DateTimeField::IsoWeek,
+            "isodow" => &DateTimeField::Isodow,
+            "day" => &DateTimeField::Day,
+            "hour" => &DateTimeField::Hour,
+            "minute" => &DateTimeField::Minute,
+            "second" => &DateTimeField::Second,
+            "millisecond" | "milliseconds" => &DateTimeField::Millisecond,
+            "microsecond" | "microseconds" => &DateTimeField::Microsecond,
+            "nanosecond" | "nanoseconds" => &DateTimeField::Nanosecond,
+            "time" => &DateTimeField::Time,
+            "epoch" => &DateTimeField::Epoch,
+            _ => {
+                polars_bail!(ComputeError: "Date part '{}' not supported", part)
+            },
+        },
+    )
 }
