@@ -1202,6 +1202,8 @@ impl LazyFrame {
     /// over how columns are renamed and parallelization options, use
     /// [`join_builder`](LazyFrame::join_builder).
     ///
+    /// Any provided `args.slice` parameter is not considered, but set by the internal optimizer.
+    ///
     /// # Example
     ///
     /// ```rust
