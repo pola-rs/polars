@@ -84,6 +84,12 @@ where
         self.low_memory = toggle;
         self
     }
+
+    /// Set values as `Null` if parsing fails because of schema mismatches.
+    pub fn with_ignore_errors(mut self, ignore_errors: bool) -> Self {
+        self.ignore_errors = ignore_errors;
+        self
+    }
 }
 
 impl<'a> JsonLineReader<'a, File> {
