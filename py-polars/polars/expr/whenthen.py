@@ -35,7 +35,8 @@ class When:
         ----------
         statement
             The statement to apply if the corresponding condition is true.
-            Accepts expression input. Non-expression inputs are parsed as literals.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
         """
         statement_pyexpr = parse_as_expression(statement)
         return Then(self._when.then(statement_pyexpr))
@@ -74,7 +75,7 @@ class Then(Expr):
             Accepts one or more boolean expressions, which are implicitly combined with
             `&`. String input is parsed as a column name.
         constraints
-            Apply conditions as `colname = value` keyword arguments that are treated as
+            Apply conditions as `col_name = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
         """
@@ -89,7 +90,8 @@ class Then(Expr):
         ----------
         statement
             The statement to apply if all conditions are false.
-            Accepts expression input. Non-expression inputs are parsed as literals.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
         """
         statement_pyexpr = parse_as_expression(statement)
         return wrap_expr(self._then.otherwise(statement_pyexpr))
@@ -115,7 +117,8 @@ class ChainedWhen(Expr):
         ----------
         statement
             The statement to apply if the corresponding condition is true.
-            Accepts expression input. Non-expression inputs are parsed as literals.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
         """
         statement_pyexpr = parse_as_expression(statement)
         return ChainedThen(self._chained_when.then(statement_pyexpr))
@@ -154,7 +157,7 @@ class ChainedThen(Expr):
             Accepts one or more boolean expressions, which are implicitly combined with
             `&`. String input is parsed as a column name.
         constraints
-            Apply conditions as `colname = value` keyword arguments that are treated as
+            Apply conditions as `col_name = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
         """
@@ -169,7 +172,8 @@ class ChainedThen(Expr):
         ----------
         statement
             The statement to apply if all conditions are false.
-            Accepts expression input. Non-expression inputs are parsed as literals.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
         """
         statement_pyexpr = parse_as_expression(statement)
         return wrap_expr(self._chained_then.otherwise(statement_pyexpr))
