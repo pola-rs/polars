@@ -24,8 +24,9 @@ def when(
     `pl.when(<condition>).then(<value if condition>)`., and optionally followed by
     chaining one or more `.when(<condition>).then(<value>)` statements.
 
-    Chained `when, then`s should be read as Python `if, elif, ... elif` blocks, not as
-    `if, if, ... if`, i.e. the first condition that evaluates to True will be picked.
+    Chained when-then operations should be read as Python `if, elif, ... elif` blocks,
+    not as `if, if, ... if`, i.e. the first condition that evaluates to True will be
+    picked.
 
     If none of the conditions are `True`, an optional `.otherwise(<value if all
     statements are false>)` can be appended at the end. If not appended, and none
@@ -66,7 +67,7 @@ def when(
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
 
-    Or with multiple `when, then`s chained:
+    Or with multiple when-then operations chained:
 
     >>> df.with_columns(
     ...     pl.when(pl.col("foo") > 2)
