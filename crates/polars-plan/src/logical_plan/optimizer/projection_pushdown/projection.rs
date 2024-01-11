@@ -16,14 +16,17 @@ fn add_rolling_key(
     acc_projections: &mut Vec<Node>,
     projected_names: &mut PlHashSet<Arc<str>>,
 ) {
-    if let AExpr::Window {
-        options: WindowType::Rolling(options),
-        ..
-    } = expr_arena.get(node)
-    {
-        let node = expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
-        add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
-    }
+    let arena = expr_arena.clone();
+    (&arena).iter(node).for_each(|(_, e)| {
+        if let AExpr::Window {
+            options: WindowType::Rolling(options),
+            ..
+        } = e
+        {
+            let node = expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
+            add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
+        }
+    });
 }
 
 /// In this function we check a double projection case
