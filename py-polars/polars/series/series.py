@@ -782,13 +782,37 @@ class Series:
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
 
+    @overload
+    def le(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def le(self, other: Any) -> Series:
+        ...
+
     def le(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression `series <= other`."""
         return self.__le__(other)
 
+    @overload
+    def lt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def lt(self, other: Any) -> Series:
+        ...
+
     def lt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression `series < other`."""
         return self.__lt__(other)
+
+    @overload
+    def eq(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def eq(self, other: Any) -> Series:
+        ...
 
     def eq(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression `series == other`."""
@@ -840,6 +864,14 @@ class Series:
         ]
         """
 
+    @overload
+    def ne(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def ne(self, other: Any) -> Series:
+        ...
+
     def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression `series != other`."""
         return self.__ne__(other)
@@ -890,9 +922,25 @@ class Series:
         ]
         """
 
+    @overload
+    def ge(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def ge(self, other: Any) -> Series:
+        ...
+
     def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression `series >= other`."""
         return self.__ge__(other)
+
+    @overload
+    def gt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def gt(self, other: Any) -> Series:
+        ...
 
     def gt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression `series > other`."""
