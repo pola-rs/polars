@@ -127,7 +127,8 @@ def is_column(obj: Any) -> bool:
     return isinstance(obj, Expr) and obj.meta.is_column()
 
 
-def _warn_null_comparison(obj: Any) -> None:
+def warn_null_comparison(obj: Any) -> None:
+    """Warn for possibly unintentional comparisons with None."""
     if obj is None:
         warnings.warn(
             "Comparisons with None always result in null. Consider using `.is_null()` or `.is_not_null()`.",
