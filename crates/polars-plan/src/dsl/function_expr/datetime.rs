@@ -13,6 +13,8 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum TemporalFunction {
+    Millennium,
+    Century,
     Year,
     IsLeapYear,
     IsoYear,
@@ -32,6 +34,13 @@ pub enum TemporalFunction {
     Millisecond,
     Microsecond,
     Nanosecond,
+    TotalDays,
+    TotalHours,
+    TotalMinutes,
+    TotalSeconds,
+    TotalMilliseconds,
+    TotalMicroseconds,
+    TotalNanoseconds,
     ToString(String),
     CastTimeUnit(TimeUnit),
     WithTimeUnit(TimeUnit),
@@ -61,12 +70,15 @@ impl TemporalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use TemporalFunction::*;
         match self {
+            Millennium | Century => mapper.with_dtype(DataType::Int8),
             Year | IsoYear => mapper.with_dtype(DataType::Int32),
             OrdinalDay => mapper.with_dtype(DataType::Int16),
             Month | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
                 mapper.with_dtype(DataType::Int8)
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
+            TotalDays | TotalHours | TotalMinutes | TotalSeconds | TotalMilliseconds
+            | TotalMicroseconds | TotalNanoseconds => mapper.with_dtype(DataType::Int64),
             ToString(_) => mapper.with_dtype(DataType::String),
             WithTimeUnit(_) => mapper.with_same_dtype(),
             CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
@@ -122,6 +134,8 @@ impl Display for TemporalFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use TemporalFunction::*;
         let s = match self {
+            Millennium => "millennium",
+            Century => "century",
             Year => "year",
             IsLeapYear => "is_leap_year",
             IsoYear => "iso_year",
@@ -141,6 +155,13 @@ impl Display for TemporalFunction {
             Millisecond => "millisecond",
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
+            TotalDays => "total_days",
+            TotalHours => "total_hours",
+            TotalMinutes => "total_minutes",
+            TotalSeconds => "total_seconds",
+            TotalMilliseconds => "total_milliseconds",
+            TotalMicroseconds => "total_microseconds",
+            TotalNanoseconds => "total_nanoseconds",
             ToString(_) => "to_string",
             #[cfg(feature = "timezones")]
             ConvertTimeZone(_) => "convert_time_zone",
@@ -166,6 +187,12 @@ impl Display for TemporalFunction {
     }
 }
 
+pub(super) fn millennium(s: &Series) -> PolarsResult<Series> {
+    s.millennium().map(|ca| ca.into_series())
+}
+pub(super) fn century(s: &Series) -> PolarsResult<Series> {
+    s.century().map(|ca| ca.into_series())
+}
 pub(super) fn year(s: &Series) -> PolarsResult<Series> {
     s.year().map(|ca| ca.into_series())
 }
@@ -271,12 +298,34 @@ pub(super) fn microsecond(s: &Series) -> PolarsResult<Series> {
 pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
     s.nanosecond().map(|ca| ca.into_series())
 }
+pub(super) fn total_days(s: &Series) -> PolarsResult<Series> {
+    s.duration().map(|ca| ca.days().into_series())
+}
+pub(super) fn total_hours(s: &Series) -> PolarsResult<Series> {
+    s.duration().map(|ca| ca.hours().into_series())
+}
+pub(super) fn total_minutes(s: &Series) -> PolarsResult<Series> {
+    s.duration().map(|ca| ca.minutes().into_series())
+}
+pub(super) fn total_seconds(s: &Series) -> PolarsResult<Series> {
+    s.duration().map(|ca| ca.seconds().into_series())
+}
+pub(super) fn total_milliseconds(s: &Series) -> PolarsResult<Series> {
+    s.duration().map(|ca| ca.milliseconds().into_series())
+}
+pub(super) fn total_microseconds(s: &Series) -> PolarsResult<Series> {
+    s.duration().map(|ca| ca.microseconds().into_series())
+}
+pub(super) fn total_nanoseconds(s: &Series) -> PolarsResult<Series> {
+    s.duration().map(|ca| ca.nanoseconds().into_series())
+}
 pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
 }
 pub(super) fn to_string(s: &Series, format: &str) -> PolarsResult<Series> {
     TemporalMethods::to_string(s, format)
 }
+
 #[cfg(feature = "timezones")]
 pub(super) fn convert_time_zone(s: &Series, time_zone: &TimeZone) -> PolarsResult<Series> {
     match s.dtype() {
