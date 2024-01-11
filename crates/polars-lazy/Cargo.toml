@@ -81,7 +81,7 @@ sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
 list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
-
+array_count = ["polars-ops/array_count", "polars-plan/array_count", "dtype-array"]
 true_div = ["polars-plan/true_div"]
 extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
 

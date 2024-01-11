@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        IntoExpr,
         IntoExprColumn,
         NullBehavior,
         ToStructStrategy,
@@ -692,9 +693,7 @@ class ListNameSpace:
         ]
         """
 
-    def count_matches(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_matches(self, element: IntoExpr) -> Series:
         """
         Count how often the value produced by `element` occurs.
 

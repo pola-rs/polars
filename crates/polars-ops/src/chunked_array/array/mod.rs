@@ -1,5 +1,7 @@
 #[cfg(feature = "array_any_all")]
 mod any_all;
+#[cfg(feature = "array_count")]
+mod count;
 mod get;
 mod join;
 mod min_max;
