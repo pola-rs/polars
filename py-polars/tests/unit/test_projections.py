@@ -376,3 +376,12 @@ def test_projection_pushdown_outer_join_duplicates() -> None:
     assert (
         df1.join(df2, on="a", how="outer").with_columns(c=0).select("a", "c").collect()
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
+
+
+def test_rolling_key_projected_13617() -> None:
+    df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
+    ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
+    plan = ldf.explain(projection_pushdown=True)
+    assert r'DF ["idx", "value"]; PROJECT 2/2 COLUMNS' in plan
+    out = ldf.collect(projection_pushdown=True)
+    assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
