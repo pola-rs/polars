@@ -46,7 +46,7 @@ pub trait PolarsUpsample {
         offset: Duration,
     ) -> PolarsResult<DataFrame>;
 
-    /// Similar to [`upsample`], but order of the DataFrame is maintained when `by` is specified.
+    /// Similar to `upsample`, but order of the DataFrame is maintained when `by` is specified.
     ///
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
