@@ -1,4 +1,4 @@
-use arrow::datatypes::{ArrowSchema, Metadata};
+use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, Metadata};
 use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;
@@ -17,6 +17,42 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option
         .transpose()
 }
 
+fn convert_field(field: Field) -> Field {
+    Field {
+        name: field.name,
+        data_type: convert_data_type(field.data_type),
+        is_nullable: field.is_nullable,
+        metadata: field.metadata,
+    }
+}
+
+fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
+    use ArrowDataType::*;
+    match data_type {
+        List(field) => LargeList(Box::new(convert_field(*field))),
+        LargeList(field) => LargeList(Box::new(convert_field(*field))),
+        Struct(mut fields) => {
+            for field in &mut fields {
+                *field = convert_field(std::mem::take(field))
+            }
+            Struct(fields)
+        },
+        Binary => LargeBinary,
+        Utf8 => LargeUtf8,
+        Extension(name, data_type, metatadata) => {
+            let data_type = convert_data_type(*data_type);
+            Extension(name, Box::new(data_type), metatadata)
+        },
+        Map(field, _ordered) => {
+            // Polars doesn't support Map.
+            // A map is physically a `List<Struct<K, V>>`
+            // So we read as list.
+            LargeList(field)
+        },
+        dt => dt,
+    }
+}
+
 /// Try to convert Arrow schema metadata into a schema
 fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchema> {
     let decoded = general_purpose::STANDARD.decode(encoded_meta);
@@ -27,7 +63,12 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchem
             } else {
                 bytes.as_slice()
             };
-            deserialize_schema(slice).map(|x| x.0)
+            let mut schema = deserialize_schema(slice).map(|x| x.0)?;
+            // Convert the data types to the data types we support.
+            for field in schema.fields.iter_mut() {
+                field.data_type = convert_data_type(std::mem::take(&mut field.data_type))
+            }
+            Ok(schema)
         },
         Err(err) => {
             // The C++ implementation returns an error if the schema can't be parsed.

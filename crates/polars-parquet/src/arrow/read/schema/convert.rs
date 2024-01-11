@@ -884,7 +884,7 @@ mod tests {
 
             let inner_group_list = Field::new(
                 "innerGroup",
-                ArrowDataType::List(Box::new(Field::new(
+                ArrowDataType::LargeList(Box::new(Field::new(
                     "innerGroup",
                     ArrowDataType::Struct(vec![Field::new("leaf3", ArrowDataType::Int32, true)]),
                     false,
@@ -894,7 +894,7 @@ mod tests {
 
             let outer_group_list = Field::new(
                 "outerGroup",
-                ArrowDataType::List(Box::new(Field::new(
+                ArrowDataType::LargeList(Box::new(Field::new(
                     "outerGroup",
                     ArrowDataType::Struct(vec![
                         Field::new("leaf2", ArrowDataType::Int32, true),
@@ -964,7 +964,11 @@ mod tests {
             Field::new("string", ArrowDataType::Utf8, true),
             Field::new(
                 "bools",
-                ArrowDataType::List(Box::new(Field::new("bools", ArrowDataType::Boolean, false))),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "bools",
+                    ArrowDataType::Boolean,
+                    false,
+                ))),
                 false,
             ),
             Field::new("date", ArrowDataType::Date32, true),

@@ -262,7 +262,6 @@ fn reserve_pushable_and_validity<'a, T: Default, P: Pushable<T>>(
     runs
 }
 
-// TODO! Check if we can monomorphisize this. This is all dynamic dispatch now.
 /// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
 pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item = T>>(
     validity: &mut MutableBitmap,

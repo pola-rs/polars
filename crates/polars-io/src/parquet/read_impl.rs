@@ -28,7 +28,7 @@ use crate::RowIndex;
 #[cfg(debug_assertions)]
 // Ensure we get the proper polars types from schema inference
 // This saves unneeded casts.
-fn check_dtypes(data_type: &ArrowDataType) {
+fn assert_dtypes(data_type: &ArrowDataType) {
     match data_type {
         ArrowDataType::Utf8 => {
             unreachable!()
@@ -40,11 +40,11 @@ fn check_dtypes(data_type: &ArrowDataType) {
             unreachable!()
         },
         ArrowDataType::LargeList(inner) => {
-            check_dtypes(&inner.data_type);
+            assert_dtypes(&inner.data_type);
         },
         ArrowDataType::Struct(fields) => {
             for fld in fields {
-                check_dtypes(fld.data_type())
+                assert_dtypes(fld.data_type())
             }
         },
         _ => {},
@@ -63,7 +63,7 @@ fn column_idx_to_series(
 
     #[cfg(debug_assertions)]
     {
-        check_dtypes(field.data_type())
+        assert_dtypes(field.data_type())
     }
 
     let columns = mmap_columns(store, md.columns(), &field.name);
