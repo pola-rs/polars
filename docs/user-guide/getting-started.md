@@ -1,4 +1,5 @@
 # Getting started
+
 This chapter is here to help you get started with Polars. It covers all the fundamental features and functionalities of the library, making it easy for new users to familiarise themselves with the basics from initial installation and setup to core functionalities. If you're already an advanced user or familiar with Dataframes, feel free to skip ahead to the [next chapter about installation options](installation.md).
 
 ## Installing Polars
@@ -64,7 +65,6 @@ As we can see above, Polars made the datetimes a `string`. We can tell Polars to
 ```
 
 To see more examples and other data formats go to the [User Guide](io/csv.md), section IO.
-
 
 ## Expressions
 
