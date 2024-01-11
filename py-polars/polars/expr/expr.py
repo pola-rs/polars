@@ -151,41 +151,41 @@ class Expr:
         return self.abs()
 
     # operators
-    def __add__(self, other: Any) -> Self:
+    def __add__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr + other)
 
-    def __radd__(self, other: Any) -> Self:
+    def __radd__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(other + self._pyexpr)
 
-    def __and__(self, other: Expr | int | bool) -> Self:
+    def __and__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr._and(other))
 
-    def __rand__(self, other: Any) -> Self:
-        other = parse_as_expression(other)
-        return self._from_pyexpr(other._and(self._pyexpr))
+    def __rand__(self, other: IntoExprColumn | int | bool) -> Self:
+        other_expr = parse_as_expression(other)
+        return self._from_pyexpr(other_expr._and(self._pyexpr))
 
-    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+    def __eq__(self, other: IntoExpr) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.eq(other))
 
-    def __floordiv__(self, other: Any) -> Self:
+    def __floordiv__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr // other)
 
-    def __rfloordiv__(self, other: Any) -> Self:
+    def __rfloordiv__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(other // self._pyexpr)
 
-    def __ge__(self, other: Any) -> Self:
+    def __ge__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.gt_eq(other))
 
-    def __gt__(self, other: Any) -> Self:
+    def __gt__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.gt(other))
@@ -193,33 +193,33 @@ class Expr:
     def __invert__(self) -> Self:
         return self.not_()
 
-    def __le__(self, other: Any) -> Self:
+    def __le__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.lt_eq(other))
 
-    def __lt__(self, other: Any) -> Self:
+    def __lt__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.lt(other))
 
-    def __mod__(self, other: Any) -> Self:
+    def __mod__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr % other)
 
-    def __rmod__(self, other: Any) -> Self:
+    def __rmod__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(other % self._pyexpr)
 
-    def __mul__(self, other: Any) -> Self:
+    def __mul__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr * other)
 
-    def __rmul__(self, other: Any) -> Self:
+    def __rmul__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(other * self._pyexpr)
 
-    def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+    def __ne__(self, other: IntoExpr) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq(other))
@@ -230,13 +230,13 @@ class Expr:
             neg_expr = neg_expr.alias(name)
         return neg_expr
 
-    def __or__(self, other: Expr | int | bool) -> Self:
+    def __or__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr._or(other))
 
-    def __ror__(self, other: Any) -> Self:
-        other = parse_as_expression(other)
-        return self._from_pyexpr(other._or(self._pyexpr))
+    def __ror__(self, other: IntoExprColumn | int | bool) -> Self:
+        other_expr = parse_as_expression(other)
+        return self._from_pyexpr(other_expr._or(self._pyexpr))
 
     def __pos__(self) -> Expr:
         pos_expr = F.lit(0) + self
@@ -244,37 +244,37 @@ class Expr:
             pos_expr = pos_expr.alias(name)
         return pos_expr
 
-    def __pow__(self, exponent: int | float | Series | Expr) -> Self:
+    def __pow__(self, exponent: IntoExprColumn | int | float) -> Self:
         exponent = parse_as_expression(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent))
 
-    def __rpow__(self, base: int | float | Expr) -> Expr:
+    def __rpow__(self, base: IntoExprColumn | int | float) -> Expr:
         base = parse_as_expression(base)
         return self._from_pyexpr(base) ** self
 
-    def __sub__(self, other: Any) -> Self:
+    def __sub__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr - other)
 
-    def __rsub__(self, other: Any) -> Self:
+    def __rsub__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(other - self._pyexpr)
 
-    def __truediv__(self, other: Any) -> Self:
+    def __truediv__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr / other)
 
-    def __rtruediv__(self, other: Any) -> Self:
+    def __rtruediv__(self, other: IntoExpr) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(other / self._pyexpr)
 
-    def __xor__(self, other: Expr | int | bool) -> Self:
+    def __xor__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr._xor(other))
 
-    def __rxor__(self, other: Any) -> Self:
-        other = parse_as_expression(other)
-        return self._from_pyexpr(other._xor(self._pyexpr))
+    def __rxor__(self, other: IntoExprColumn | int | bool) -> Self:
+        other_expr = parse_as_expression(other)
+        return self._from_pyexpr(other_expr._xor(self._pyexpr))
 
     def __getstate__(self) -> bytes:
         return self._pyexpr.__getstate__()
@@ -5100,7 +5100,7 @@ class Expr:
         """
         return self.__truediv__(other)
 
-    def pow(self, exponent: int | float | None | Series | Expr) -> Self:
+    def pow(self, exponent: IntoExprColumn | int | float) -> Self:
         """
         Method equivalent of exponentiation operator `expr ** exponent`.
 
