@@ -24,7 +24,7 @@ def when(
     `pl.when(<condition>).then(<value if condition>)`., and optionally followed by
     chaining one or more `.when(<condition>).then(<value>)` statements.
 
-    Chained `when, thens` should be read as Python `if, elif, ... elif` blocks, not as
+    Chained `when, then`s should be read as Python `if, elif, ... elif` blocks, not as
     `if, if, ... if`, i.e. the first condition that evaluates to True will be picked.
 
     If none of the conditions are `True`, an optional `.otherwise(<value if all
@@ -38,7 +38,7 @@ def when(
         Accepts one or more boolean expressions, which are implicitly combined with
         `&`. String input is parsed as a column name.
     constraints
-        Apply conditions as `colname = value` keyword arguments that are treated as
+        Apply conditions as `col_name = value` keyword arguments that are treated as
         equality matches, such as `x = 123`. As with the predicates parameter, multiple
         conditions are implicitly combined using `&`.
 
@@ -66,7 +66,7 @@ def when(
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
 
-    Or with multiple `when, thens` chained:
+    Or with multiple `when, then`s chained:
 
     >>> df.with_columns(
     ...     pl.when(pl.col("foo") > 2)
