@@ -53,8 +53,8 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
-    InvalidOperationError, NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError,
-    SchemaFieldNotFoundError, StructFieldNotFoundError,
+    InvalidOperationError, NoDataError, OutOfBoundsError, PolarsBaseError, PolarsBaseWarning,
+    PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
@@ -249,7 +249,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
         .unwrap();
 
-    // Exceptions
+    // Exceptions - Errors
+    m.add("PolarsError", py.get_type::<PolarsBaseError>())
+        .unwrap();
     m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
         .unwrap();
     m.add("ComputeError", py.get_type::<ComputeError>())
@@ -262,11 +264,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
     m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
-    m.add(
-        "CategoricalRemappingWarning",
-        py.get_type::<CategoricalRemappingWarning>(),
-    )
-    .unwrap();
     m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
         .unwrap();
     m.add("PolarsPanicError", py.get_type::<PanicException>())
@@ -287,6 +284,15 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add(
         "StructFieldNotFoundError",
         py.get_type::<StructFieldNotFoundError>(),
+    )
+    .unwrap();
+
+    // Exceptions - Warnings
+    m.add("PolarsWarning", py.get_type::<PolarsBaseWarning>())
+        .unwrap();
+    m.add(
+        "CategoricalRemappingWarning",
+        py.get_type::<CategoricalRemappingWarning>(),
     )
     .unwrap();
 
