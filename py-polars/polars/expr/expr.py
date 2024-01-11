@@ -128,12 +128,6 @@ class Expr:
         expr._pyexpr = pyexpr
         return expr
 
-    def _to_pyexpr(self, other: Any) -> PyExpr:
-        if isinstance(other, Expr):
-            return other._pyexpr
-        else:
-            return F.lit(other)._pyexpr
-
     def _repr_html_(self) -> str:
         return self._pyexpr.to_str()
 
@@ -158,61 +152,77 @@ class Expr:
 
     # operators
     def __add__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr + other)
 
     def __radd__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(other + self._pyexpr)
 
     def __and__(self, other: Expr | int | bool) -> Self:
-        return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr._and(other))
 
     def __rand__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
-        return self._from_pyexpr(self._pyexpr.eq(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.eq(other))
 
     def __floordiv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr // self._to_pyexpr(other))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr // other)
 
     def __rfloordiv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other // self._pyexpr)
 
     def __ge__(self, other: Any) -> Self:
         warn_null_comparison(other)
-        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.gt_eq(other))
 
     def __gt__(self, other: Any) -> Self:
         warn_null_comparison(other)
-        return self._from_pyexpr(self._pyexpr.gt(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.gt(other))
 
     def __invert__(self) -> Self:
         return self.not_()
 
     def __le__(self, other: Any) -> Self:
         warn_null_comparison(other)
-        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.lt_eq(other))
 
     def __lt__(self, other: Any) -> Self:
         warn_null_comparison(other)
-        return self._from_pyexpr(self._pyexpr.lt(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.lt(other))
 
     def __mod__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr % self._to_pyexpr(other))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr % other)
 
     def __rmod__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) % self._pyexpr)
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other % self._pyexpr)
 
     def __mul__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr * self._to_pyexpr(other))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr * other)
 
     def __rmul__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
-        return self._from_pyexpr(self._pyexpr.neq(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.neq(other))
 
     def __neg__(self) -> Expr:
         neg_expr = F.lit(0) - self
@@ -221,10 +231,12 @@ class Expr:
         return neg_expr
 
     def __or__(self, other: Expr | int | bool) -> Self:
-        return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr._or(other))
 
     def __ror__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other._or(self._pyexpr))
 
     def __pos__(self) -> Expr:
         pos_expr = F.lit(0) + self
@@ -232,29 +244,37 @@ class Expr:
             pos_expr = pos_expr.alias(name)
         return pos_expr
 
-    def __pow__(self, power: int | float | Series | Expr) -> Self:
-        return self.pow(power)
+    def __pow__(self, exponent: int | float | Series | Expr) -> Self:
+        exponent = parse_as_expression(exponent)
+        return self._from_pyexpr(self._pyexpr.pow(exponent))
 
     def __rpow__(self, base: int | float | Expr) -> Expr:
-        return self._from_pyexpr(parse_as_expression(base)) ** self
+        base = parse_as_expression(base)
+        return self._from_pyexpr(base) ** self
 
     def __sub__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr - other)
 
     def __rsub__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) - self._pyexpr)
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other - self._pyexpr)
 
     def __truediv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr / self._to_pyexpr(other))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr / other)
 
     def __rtruediv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) / self._pyexpr)
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other / self._pyexpr)
 
     def __xor__(self, other: Expr | int | bool) -> Self:
-        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr._xor(other))
 
     def __rxor__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other)._xor(self._pyexpr))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(other._xor(self._pyexpr))
 
     def __getstate__(self) -> bytes:
         return self._pyexpr.__getstate__()
@@ -4537,7 +4557,7 @@ class Expr:
         │ false │
         └───────┘
         """
-        return reduce(operator.and_, (self,) + others)
+        return reduce(operator.and_, (self, *others))
 
     def or_(self, *others: Any) -> Self:
         """
@@ -4652,7 +4672,8 @@ class Expr:
         │ null ┆ null ┆ null   ┆ true           │
         └──────┴──────┴────────┴────────────────┘
         """
-        return self._from_pyexpr(self._pyexpr.eq_missing(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.eq_missing(other))
 
     def ge(self, other: Any) -> Self:
         """
@@ -4861,7 +4882,8 @@ class Expr:
         │ null ┆ null ┆ null   ┆ false          │
         └──────┴──────┴────────┴────────────────┘
         """
-        return self._from_pyexpr(self._pyexpr.neq_missing(self._to_pyexpr(other)))
+        other = parse_as_expression(other, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.neq_missing(other))
 
     def add(self, other: Any) -> Self:
         """
@@ -5106,8 +5128,7 @@ class Expr:
         │ 8   ┆ 512.0 ┆ 512.0      │
         └─────┴───────┴────────────┘
         """
-        exponent = parse_as_expression(exponent)
-        return self._from_pyexpr(self._pyexpr.pow(exponent))
+        return self.__pow__(exponent)
 
     def xor(self, other: Any) -> Self:
         """
