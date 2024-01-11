@@ -2,23 +2,16 @@
 
 # Project information
 site_name: Polars
-site_url: https://docs.pola.rs
+site_url: https://docs.pola.rs/
 repo_url: https://github.com/pola-rs/polars
 repo_name: pola-rs/polars
 
 # Documentation layout
 nav:
-  - Home: index.md
-
   - User guide:
     - user-guide/overview.md
     - user-guide/getting-started.md
     - user-guide/installation.md
-    # - Basics:
-    #   - user-guide/basics/index.md
-    #   - user-guide/basics/reading-writing.md
-    #   - user-guide/basics/expressions.md
-    #   - user-guide/basics/joins.md
     - Concepts:
       - Data types:
         - user-guide/concepts/data-types/overview.md
