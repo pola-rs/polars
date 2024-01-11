@@ -790,7 +790,7 @@ class Series:
     def le(self, other: Any) -> Series:
         ...
 
-    def le(self, other: Any) -> Self | Expr:
+    def le(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series <= other`."""
         return self.__le__(other)
 
@@ -802,7 +802,7 @@ class Series:
     def lt(self, other: Any) -> Series:
         ...
 
-    def lt(self, other: Any) -> Self | Expr:
+    def lt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series < other`."""
         return self.__lt__(other)
 
@@ -814,7 +814,7 @@ class Series:
     def eq(self, other: Any) -> Series:
         ...
 
-    def eq(self, other: Any) -> Self | Expr:
+    def eq(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series == other`."""
         return self.__eq__(other)
 
@@ -823,10 +823,10 @@ class Series:
         ...
 
     @overload
-    def eq_missing(self, other: Any) -> Self:
+    def eq_missing(self, other: Any) -> Series:
         ...
 
-    def eq_missing(self, other: Any) -> Self | Expr:
+    def eq_missing(self, other: Any) -> Series | Expr:
         """
         Method equivalent of equality operator `series == other` where `None == None`.
 
@@ -872,7 +872,7 @@ class Series:
     def ne(self, other: Any) -> Series:
         ...
 
-    def ne(self, other: Any) -> Self | Expr:
+    def ne(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series != other`."""
         return self.__ne__(other)
 
@@ -881,10 +881,10 @@ class Series:
         ...
 
     @overload
-    def ne_missing(self, other: Any) -> Self:
+    def ne_missing(self, other: Any) -> Series:
         ...
 
-    def ne_missing(self, other: Any) -> Self | Expr:
+    def ne_missing(self, other: Any) -> Series | Expr:
         """
         Method equivalent of equality operator `series != other` where `None == None`.
 
@@ -930,7 +930,7 @@ class Series:
     def ge(self, other: Any) -> Series:
         ...
 
-    def ge(self, other: Any) -> Self | Expr:
+    def ge(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series >= other`."""
         return self.__ge__(other)
 
@@ -942,7 +942,7 @@ class Series:
     def gt(self, other: Any) -> Series:
         ...
 
-    def gt(self, other: Any) -> Self | Expr:
+    def gt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series > other`."""
         return self.__gt__(other)
 
