@@ -1,3 +1,4 @@
+#[cfg(feature = "pivot")]
 use chrono::NaiveDate;
 use polars_ops::prelude::ListNameSpaceImpl;
 use polars_utils::idxvec;
@@ -575,6 +576,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "pivot")]
 fn test_describe() -> PolarsResult<()> {
     std::env::set_var("POLARS_FMT_MAX_COLS", "100"); //FMT_MAX_COLS is pub(crate) in polars_core :(
     std::env::set_var("POLARS_FMT_MAX_ROWS", "100");
@@ -796,6 +798,7 @@ fn test_describe_nan() -> PolarsResult<()> {
     Ok(())
 }
 
+#[cfg(feature = "pivot")]
 fn all_types_df() -> DataFrame {
     df![
         "float" => [Some(1.0), Some(2.8), Some(3.0)],

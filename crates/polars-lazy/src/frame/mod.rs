@@ -9,6 +9,7 @@ mod exitable;
 pub mod pivot;
 
 use std::borrow::Cow;
+#[cfg(feature = "pivot")]
 use std::iter::once;
 #[cfg(any(
     feature = "parquet",
@@ -23,6 +24,7 @@ pub use anonymous_scan::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "csv")]
 pub use csv::*;
+#[cfg(feature = "pivot")]
 use either::Either;
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::*;
@@ -96,9 +98,9 @@ impl From<LogicalPlan> for LazyFrame {
 
 #[cfg(feature = "pivot")]
 type DescribeAggParam = (
-    String, //name
-    Box<dyn Fn(&DataType) -> bool>,//when applicable
-    Box<dyn Fn(&String) -> Expr>,//aggregation expression
+    String,                         //name
+    Box<dyn Fn(&DataType) -> bool>, //when applicable
+    Box<dyn Fn(&String) -> Expr>,   //aggregation expression
 );
 
 impl LazyFrame {
