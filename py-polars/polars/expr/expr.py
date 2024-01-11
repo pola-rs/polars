@@ -3991,7 +3991,10 @@ class Expr:
             If set to true this can run in the streaming engine, but may yield
             incorrect results in group-by. Ensure you know what you are doing!
         agg_list
-            Aggregate list.
+            Collect groups to a list and then apply. This parameter only works for
+            group-by context.
+            If set to true, the function is invoked only once on a list of groups.
+            Otherwise, the function is invoked per-group.
 
         Warnings
         --------
@@ -4020,6 +4023,46 @@ class Expr:
         ╞══════╪════════╡
         │ 1    ┆ 0      │
         └──────┴────────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [0, 1, 0, 1],
+        ...         "b": [1, 2, 3, 4],
+        ...     }
+        ... )
+
+        The function is applied per-group, and the input of the function is a
+        Series[i64].
+        >>> (
+        ...     df.group_by("a").agg(
+        ...         pl.col("b").map_batches(lambda x: x.max(), agg_list=False)
+        ...     )
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ i64 ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ 1   ┆ [4]       │
+        │ 0   ┆ [3]       │
+        └─────┴───────────┘
+        The function is applied only once on a list of groups, and the input of
+        the function is a Series[list[i64]].
+        >>> (
+        ...     df.group_by("a").agg(
+        ...         pl.col("b").map_batches(lambda x: x.list.max(), agg_list=True)
+        ...     )
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 3   │
+        │ 1   ┆ 4   │
+        └─────┴─────┘
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
