@@ -1133,7 +1133,7 @@ class Series:
             raise TypeError(msg)
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, exponent: int | float | None | Series) -> Series:
+    def __pow__(self, exponent: int | float | Series) -> Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
@@ -1969,7 +1969,7 @@ class Series:
         """
         return self._s.product()
 
-    def pow(self, exponent: int | float | None | Series) -> Series:
+    def pow(self, exponent: int | float | Series) -> Series:
         """
         Raise to the power of the given exponent.
 

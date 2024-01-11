@@ -460,7 +460,7 @@ def test_power() -> None:
     assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
-    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
+    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))  # type: ignore[operator]
     assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt8))
     assert_series_equal(e**d, pl.Series([1, 4], dtype=Int8))
     assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt16))
