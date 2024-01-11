@@ -2189,8 +2189,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        no_optimization: bool = False,
         slice_pushdown: bool = True,
+        no_optimization: bool = False,
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
@@ -2212,10 +2212,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Do projection pushdown optimization.
         simplify_expression
             Run simplify expressions optimization.
-        no_optimization
-            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        no_optimization
+            Turn off (certain) optimizations.
 
         Returns
         -------
@@ -2231,8 +2231,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
-            no_optimization=no_optimization,
             slice_pushdown=slice_pushdown,
+            no_optimization=no_optimization,
         )
 
         return lf.sink_json(path=path, maintain_order=maintain_order)
