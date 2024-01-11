@@ -190,3 +190,24 @@ def test_is_in_array(data: list[Any], set: list[list[Any]], dtype: pl.DataType) 
     out = df.select(is_in=pl.col("a").is_in(pl.col("arr"))).to_series()
     expected = pl.Series("is_in", [True, False])
     assert_series_equal(out, expected)
+
+
+def test_array_join() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["ab", "c", "d"], ["e", "f", "g"], [None, None, None], None],
+            "separator": ["&", None, "*", "_"],
+        },
+        schema={
+            "a": pl.Array(pl.String, 3),
+            "separator": pl.String,
+        },
+    )
+    out = df.select(pl.col("a").arr.join("-"))
+    assert out.to_dict(as_series=False) == {
+        "a": ["ab-c-d", "e-f-g", "null-null-null", None]
+    }
+    out = df.select(pl.col("a").arr.join(pl.col("separator")))
+    assert out.to_dict(as_series=False) == {
+        "a": ["ab&c&d", None, "null*null*null", None]
+    }
