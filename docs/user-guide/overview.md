@@ -21,6 +21,7 @@
 Polars is a blazingly fast DataFrame library for manipulating structured data. The core is written in Rust, and available for Python, R and NodeJS.
 
 ## Key features
+
 - **Fast**: Written from scratch in Rust, designed close to the machine and without external dependencies.
 - **I/O**: First class support for all common data storage layers: local, cloud storage & databases.
 - **Intuitive API**: Write your queries the way they were intended. Polars, internally, will determine the most efficient way to execute using its query optimizer.
@@ -28,10 +29,8 @@ Polars is a blazingly fast DataFrame library for manipulating structured data. T
 - **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU cores without any additional configuration.
 - **Vectorized Query Engine**: Using [Apache Arrow](https://arrow.apache.org/), a columnar data format, to process your queries in a vectorized manner and SIMD to optimize CPU usage.
 
-
 !!! info "Users new to Dataframes"
-    A DataFrame is a 2-dimensional data structure that is useful for data manipulation and analysis. With labeled axes for rows and columns, each column can contain different data types, making complex data operations such as merging and aggregation much easier. Due to their flexibility and intuitive way of storing and working with data, DataFrames have become increasingly popular in modern data analytics and engineering.
-
+A DataFrame is a 2-dimensional data structure that is useful for data manipulation and analysis. With labeled axes for rows and columns, each column can contain different data types, making complex data operations such as merging and aggregation much easier. Due to their flexibility and intuitive way of storing and working with data, DataFrames have become increasingly popular in modern data analytics and engineering.
 
 ## Philosophy
 
