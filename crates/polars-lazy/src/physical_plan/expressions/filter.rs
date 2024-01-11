@@ -54,7 +54,7 @@ impl PhysicalExpr for FilterExpr {
             let preds = unsafe { ac_predicate.iter_groups(false) };
             let s = ac_s.aggregated();
             let ca = s.list()?;
-            let out = if ca.len() == 0 {
+            let out = if ca.is_empty() {
                 // return an empty list if ca is empty.
                 ListChunked::full_null_with_dtype(ca.name(), 0, &ca.inner_dtype())
             } else {
