@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
 use polars_core::prelude::*;
 use polars_io::RowIndex;
@@ -13,10 +14,11 @@ pub struct LazyJsonLineReader {
     pub(crate) batch_size: Option<usize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
-    pub(crate) schema: Option<SchemaRef>,
+    pub(crate) schema: Arc<RwLock<Option<SchemaRef>>>,
     pub(crate) row_index: Option<RowIndex>,
     pub(crate) infer_schema_length: Option<usize>,
     pub(crate) n_rows: Option<usize>,
+    pub(crate) ignore_errors: bool,
 }
 
 impl LazyJsonLineReader {
@@ -31,9 +33,10 @@ impl LazyJsonLineReader {
             batch_size: None,
             low_memory: false,
             rechunk: false,
-            schema: None,
+            schema: Arc::new(Default::default()),
             row_index: None,
             infer_schema_length: Some(100),
+            ignore_errors: false,
             n_rows: None,
         }
     }
@@ -41,6 +44,13 @@ impl LazyJsonLineReader {
     #[must_use]
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
         self.row_index = row_index;
+        self
+    }
+
+    /// Set values as `Null` if parsing fails because of schema mismatches.
+    #[must_use]
+    pub fn with_ignore_errors(mut self, ignore_errors: bool) -> Self {
+        self.ignore_errors = ignore_errors;
         self
     }
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
@@ -62,7 +72,7 @@ impl LazyJsonLineReader {
     /// Set the JSON file's schema
     #[must_use]
     pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
-        self.schema = schema;
+        self.schema = Arc::new(RwLock::new(schema));
         self
     }
 
@@ -87,7 +97,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             infer_schema_length: self.infer_schema_length,
             n_rows: self.n_rows,
             row_index: self.row_index.clone(),
-            schema: self.schema.clone(),
+            schema: self.schema.read().unwrap().clone(),
             ..ScanArgsAnonymous::default()
         };
 
