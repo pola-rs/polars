@@ -22,7 +22,6 @@ Descriptive
     Series.is_integer
     Series.is_last
     Series.is_last_distinct
-    Series.is_between
     Series.is_nan
     Series.is_not_nan
     Series.is_not_null

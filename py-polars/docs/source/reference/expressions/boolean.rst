@@ -17,7 +17,6 @@ Boolean
     Expr.is_infinite
     Expr.is_last
     Expr.is_last_distinct
-    Expr.is_between
     Expr.is_nan
     Expr.is_not
     Expr.is_not_nan
