@@ -22,7 +22,12 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import Ambiguous, PolarsTemporalType, TimeUnit
+    from polars.type_aliases import (
+        Ambiguous,
+        FillNullStrategy,
+        PolarsTemporalType,
+        TimeUnit,
+    )
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -758,6 +763,70 @@ def test_upsample_time_zones(
     expected = expected.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
     result = df.upsample(time_column="time", every="60m").fill_null(strategy="forward")
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("every", "offset", "fill", "expected"),
+    [
+        (
+            "1i",
+            "0i",
+            "forward",
+            pl.DataFrame(
+                {
+                    "index": [1, 2, 3, 4] + [5, 6, 7],
+                    "groups": ["a"] * 4 + ["b"] * 3,
+                }
+            ),
+        ),
+        (
+            "1i",
+            "1i",
+            "backward",
+            pl.DataFrame(
+                {
+                    "index": [2, 3, 4] + [6, 7],
+                    "groups": ["a"] * 3 + ["b"] * 2,
+                }
+            ),
+        ),
+        (
+            "1i",
+            "1h",
+            "forward",
+            None,
+        ),
+    ],
+)
+def test_upsample_index(
+    every: str,
+    offset: str,
+    fill: FillNullStrategy | None,
+    expected: pl.DataFrame | None,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "index": [1, 2, 4] + [5, 7],
+            "groups": ["a"] * 3 + ["b"] * 2,
+        }
+    ).set_sorted("index")
+
+    if expected is not None:
+        for dtype in [pl.Int32, pl.Int64]:
+            _df = df.with_columns(pl.col("index").cast(dtype))
+            _expected = expected.with_columns(pl.col("index").cast(dtype))
+            result = (
+                _df.upsample(
+                    time_column="index", by="groups", every=every, offset=offset
+                )
+                .fill_null(strategy=fill)
+                .sort(["groups", "index"])
+            )
+            print(result)
+            assert_frame_equal(result, _expected)
+    else:
+        with pytest.raises(ComputeError):
+            df.upsample(time_column="index", every=every, offset=offset)
 
 
 def test_microseconds_accuracy() -> None:

@@ -119,6 +119,13 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
+    if offset.parsed_int || every.parsed_int {
+        polars_ensure!(
+            ((offset.parsed_int || offset.is_zero())
+             && (every.parsed_int || every.is_zero())),
+            ComputeError: "you cannot combine time durations like '2h' with integer durations like '3i'"
+        )
+    }
     ensure_sorted_arg(s, "upsample")?;
     if matches!(s.dtype(), DataType::Date) {
         let mut df = source.clone();
@@ -128,6 +135,29 @@ fn upsample_impl(
         .unwrap();
         let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
         out.try_apply(index_column, |s| s.cast(&DataType::Date))
+            .unwrap();
+        Ok(out)
+    } else if matches!(s.dtype(), DataType::Int32) {
+        let mut df = source.clone();
+
+        df.try_apply(index_column, |s| {
+            s.cast(&DataType::Int64)
+                .unwrap()
+                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+        })
+        .unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
+        out.try_apply(index_column, |s| s.cast(&DataType::Int32))
+            .unwrap();
+        Ok(out)
+    } else if matches!(s.dtype(), DataType::Int64) {
+        let mut df = source.clone();
+        df.try_apply(index_column, |s| {
+            s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+        })
+        .unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
+        out.try_apply(index_column, |s| s.cast(&DataType::Int64))
             .unwrap();
         Ok(out)
     } else if by.is_empty() {
