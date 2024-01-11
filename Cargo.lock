@@ -2806,6 +2806,8 @@ version = "0.36.2"
 dependencies = [
  "ahash",
  "bitflags 2.4.1",
+ "chrono",
+ "either",
  "futures",
  "glob",
  "once_cell",

@@ -9,6 +9,7 @@ mod exitable;
 pub mod pivot;
 
 use std::borrow::Cow;
+use std::iter::once;
 #[cfg(any(
     feature = "parquet",
     feature = "ipc",
@@ -22,6 +23,7 @@ pub use anonymous_scan::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "csv")]
 pub use csv::*;
+use either::Either;
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::*;
 pub use file_list_reader::*;
@@ -45,6 +47,7 @@ use polars_plan::global::FETCH_ROWS;
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
 use polars_plan::utils::expr_output_name;
+use polars_utils::index::Bounded;
 use smartstring::alias::String as SmartString;
 
 use crate::fallible;
@@ -1726,6 +1729,209 @@ impl LazyFrame {
         Ok(q.map_private(FunctionNode::MergeSorted {
             column: Arc::from(key),
         }))
+    }
+
+    pub fn describe(&self) -> PolarsResult<DataFrame> {
+        self.describe_with_params(
+            true,
+            vec![
+                (
+                    "count".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_ord()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(|name: &String| {
+                        col(name).count().alias(format!("{} count", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "null_count".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_ord()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(|name: &String| {
+                        col(name)
+                            .null_count()
+                            .alias(format!("{} null_count", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "mean".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_numeric()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(|name: &String| {
+                        col(name).mean().alias(format!("{} mean", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "std".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_numeric()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(|name: &String| {
+                        col(name).std(1).alias(format!("{} std", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "min".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_ord()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(|name: &String| {
+                        col(name).min().alias(format!("{} min", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "25%".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_numeric()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(move |name: &String| {
+                        col(name)
+                            .quantile(lit(0.25), QuantileInterpolOptions::Nearest)
+                            .alias(format!("0.25 {}", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "50%".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_numeric()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(move |name: &String| {
+                        col(name)
+                            .quantile(lit(0.5), QuantileInterpolOptions::Nearest)
+                            .alias(format!("0.5 {}", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "75%".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_numeric()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(move |name: &String| {
+                        col(name)
+                            .quantile(lit(0.75), QuantileInterpolOptions::Nearest)
+                            .alias(format!("0.75 {}", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+                (
+                    "max".to_owned(),
+                    Box::new(|dt: &DataType| dt.is_ord()) as Box<dyn Fn(&DataType) -> bool>,
+                    Box::new(|name: &String| {
+                        col(name).max().alias(format!("{} max", name).as_str())
+                    }) as Box<dyn Fn(&String) -> Expr>,
+                ),
+            ],
+            None,
+        )
+    }
+
+    pub fn describe_with_params(
+        &self,
+        fields_to_header: bool,
+        aggs: Vec<(
+            String,
+            Box<dyn Fn(&DataType) -> bool>,
+            Box<dyn Fn(&String) -> Expr>,
+        )>,
+        only_columns: Option<Vec<&str>>,
+    ) -> PolarsResult<DataFrame> {
+        let mut exprs = self
+            .schema()?
+            .iter()
+            .map(|(name, dt)| (name.to_string(), dt))
+            .filter(|(name, _)| {
+                only_columns
+                    .as_ref()
+                    .map_or(true, |v| v.contains(&name.as_str()))
+            })
+            .enumerate()
+            .flat_map(|(i, (name, dt))| {
+                once(Expr::Literal(LiteralValue::String(name.to_string())).alias(name.as_str()))
+                    .chain(aggs.iter().enumerate().map(|(ai, a)| {
+                        if a.1(dt) {
+                            a.2(&name)
+                        } else {
+                            lit(NULL)
+                                .cast(dt.clone())
+                                .alias(format!("{} {}", i, ai).as_str()) //i and ai to keep names unique
+                        }
+                    }))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let columns_len = exprs.len();
+
+        let mut summary_df = self.clone().select(exprs).collect()?;
+
+        let aggs_len = aggs.len() + 1;
+        let index = (0..columns_len / aggs_len)
+            .flat_map(|i| std::iter::repeat(i as i32).take(aggs_len))
+            .collect::<Vec<i32>>();
+
+        summary_df = summary_df.transpose(None, None)?;
+
+        summary_df.insert_column(
+            0,
+            Series::new(
+                "columns",
+                once("name".to_owned())
+                    .chain(aggs.iter().map(|agg| agg.0.clone()))
+                    .cycle()
+                    .take(columns_len)
+                    .collect::<Vec<String>>(),
+            ),
+        )?;
+        summary_df.insert_column(0, Series::new("index", index))?;
+
+        summary_df = pivot::pivot(
+            &summary_df,
+            ["column_0"],
+            ["index"],
+            ["columns"],
+            false,
+            None,
+            None,
+        )?;
+
+        if !fields_to_header {
+            summary_df = summary_df
+                .clone()
+                .lazy()
+                .select(
+                    once("name")
+                        .chain(aggs.iter().map(|agg| agg.0.as_str()))
+                        .enumerate()
+                        .map(|(i, name)| {
+                            if i > 0 {
+                                col(name).cast(DataType::Float64)
+                            } else {
+                                col(name)
+                            }
+                        })
+                        .collect::<Vec<Expr>>(),
+                )
+                .collect()?;
+
+            Ok(summary_df)
+        } else {
+            summary_df = summary_df.drop("index")?;
+
+            summary_df = summary_df.transpose(None, Some(Either::Left("name".to_owned())))?;
+
+            summary_df = summary_df
+                .clone()
+                .lazy()
+                .select(
+                    self.schema()?
+                        .iter()
+                        .map(|(name, dt)| {
+                            if dt.is_numeric() {
+                                col(name.as_str()).cast(DataType::Float64)
+                            } else {
+                                col(name.as_str())
+                            }
+                        })
+                        .collect::<Vec<Expr>>(),
+                )
+                .collect()?;
+
+            summary_df.insert_column(
+                0,
+                Series::new(
+                    "describe",
+                    aggs.iter().map(|q| q.0.clone()).collect::<Vec<String>>(),
+                ),
+            )?;
+
+            Ok(summary_df)
+        }
     }
 }
 
