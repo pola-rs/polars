@@ -13,7 +13,7 @@ pub fn commutative<F>(
 where
     F: Fn(i128, i128) -> i128,
 {
-    let (precision, _) = get_parameters(lhs.data_type(), rhs.data_type()).unwrap();
+    let (precision, _) = get_parameters(lhs.data_type(), rhs.data_type())?;
 
     let max = max_value(precision);
     let mut overflow = false;
@@ -36,7 +36,7 @@ pub fn commutative_scalar<F>(
 where
     F: Fn(i128, i128) -> i128,
 {
-    let (precision, _) = get_parameters(lhs.data_type(), rhs_dtype).unwrap();
+    let (precision, _) = get_parameters(lhs.data_type(), rhs_dtype)?;
 
     let max = max_value(precision);
     let mut overflow = false;
