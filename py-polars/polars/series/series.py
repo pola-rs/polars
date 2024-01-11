@@ -863,6 +863,9 @@ class Series:
             true
         ]
         """
+        if isinstance(other, pl.Expr):
+            return F.lit(self).eq_missing(other)
+        return self.to_frame().select(F.col(self.name).eq_missing(other)).to_series()
 
     @overload
     def ne(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
@@ -921,6 +924,9 @@ class Series:
             false
         ]
         """
+        if isinstance(other, pl.Expr):
+            return F.lit(self).ne_missing(other)
+        return self.to_frame().select(F.col(self.name).ne_missing(other)).to_series()
 
     @overload
     def ge(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
