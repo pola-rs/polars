@@ -400,6 +400,13 @@ impl PyExpr {
         self.inner.clone().is_unique().into()
     }
 
+    fn is_between(&self, lower: Self, upper: Self, closed: Wrap<ClosedInterval>) -> Self {
+        self.inner
+            .clone()
+            .is_between(lower.inner, upper.inner, closed.0)
+            .into()
+    }
+
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
     }
