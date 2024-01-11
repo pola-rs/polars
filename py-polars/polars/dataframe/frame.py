@@ -7662,8 +7662,9 @@ class DataFrame:
         include_key
             Include the columns used to partition the DataFrame in the output.
         as_dict
-            Return a dictionary instead of a list. The dictionary keys are the distinct
-            group values that identify that group.
+            Return a dictionary instead of a list. The dictionary keys are tuples of
+            the distinct group values that identify each group. If a single string
+            was passed to `by`, the keys are a single value instead of a tuple.
 
         Examples
         --------
@@ -7746,7 +7747,7 @@ class DataFrame:
 
         >>> import polars.selectors as cs
         >>> df.partition_by(cs.string(), as_dict=True)  # doctest: +IGNORE_RESULT
-        {'a': shape: (2, 3)
+        {('a',): shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -7755,7 +7756,7 @@ class DataFrame:
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
         └─────┴─────┴─────┘,
-        'b': shape: (2, 3)
+        ('b',): shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -7764,7 +7765,7 @@ class DataFrame:
         │ b   ┆ 2   ┆ 4   │
         │ b   ┆ 3   ┆ 2   │
         └─────┴─────┴─────┘,
-        'c': shape: (1, 3)
+        ('c',): shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -7773,24 +7774,28 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘}
         """
-        by = _expand_selectors(self, by, *more_by)
+        by_parsed = _expand_selectors(self, by, *more_by)
+
         partitions = [
             self._from_pydf(_df)
-            for _df in self._df.partition_by(by, maintain_order, include_key)
+            for _df in self._df.partition_by(by_parsed, maintain_order, include_key)
         ]
 
         if as_dict:
-            df = self._from_pydf(self._df)
+            key_as_single_value = isinstance(by, str) and not more_by
             if include_key:
-                if len(by) == 1:
-                    names = [p[by[0]][0] for p in partitions]
+                if key_as_single_value:
+                    names = [p.get_column(by)[0] for p in partitions]  # type: ignore[arg-type]
                 else:
-                    names = [p.select(by).row(0) for p in partitions]
+                    names = [p.select(by_parsed).row(0) for p in partitions]
             else:
-                if len(by) == 1:
-                    names = df[by[0]].unique(maintain_order=True).to_list()
+                if not maintain_order:  # Group keys cannot be matched to partitions
+                    msg = "cannot use `partition_by` with `maintain_order=False, include_key=False, as_dict=True`"
+                    raise ValueError(msg)
+                if key_as_single_value:
+                    names = self.get_column(by).unique(maintain_order=True).to_list()  # type: ignore[arg-type]
                 else:
-                    names = df.select(by).unique(maintain_order=True).rows()
+                    names = self.select(by_parsed).unique(maintain_order=True).rows()
 
             return dict(zip(names, partitions))
 
