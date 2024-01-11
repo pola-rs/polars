@@ -29,8 +29,8 @@ Polars is a blazingly fast DataFrame library for manipulating structured data. T
 - **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU cores without any additional configuration.
 - **Vectorized Query Engine**: Using [Apache Arrow](https://arrow.apache.org/), a columnar data format, to process your queries in a vectorized manner and SIMD to optimize CPU usage.
 
-!!! info "Users new to Dataframes"
-A DataFrame is a 2-dimensional data structure that is useful for data manipulation and analysis. With labeled axes for rows and columns, each column can contain different data types, making complex data operations such as merging and aggregation much easier. Due to their flexibility and intuitive way of storing and working with data, DataFrames have become increasingly popular in modern data analytics and engineering.
+!!! info "Users new to DataFrames"
+    A DataFrame is a 2-dimensional data structure that is useful for data manipulation and analysis. With labeled axes for rows and columns, each column can contain different data types, making complex data operations such as merging and aggregation much easier. Due to their flexibility and intuitive way of storing and working with data, DataFrames have become increasingly popular in modern data analytics and engineering.
 
 ## Philosophy
 
