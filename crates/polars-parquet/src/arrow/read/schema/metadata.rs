@@ -39,9 +39,9 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
         },
         Binary => LargeBinary,
         Utf8 => LargeUtf8,
-        Extension(name, data_type, metatadata) => {
+        Extension(name, data_type, metadata) => {
             let data_type = convert_data_type(*data_type);
-            Extension(name, Box::new(data_type), metatadata)
+            Extension(name, Box::new(data_type), metadata)
         },
         Map(field, _ordered) => {
             // Polars doesn't support Map.
