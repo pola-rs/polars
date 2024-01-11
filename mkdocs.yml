@@ -11,13 +11,14 @@ nav:
   - Home: index.md
 
   - User guide:
-    - user-guide/index.md
+    - user-guide/overview.md
+    - user-guide/getting-started.md
     - user-guide/installation.md
-    - Basics:
-      - user-guide/basics/index.md
-      - user-guide/basics/reading-writing.md
-      - user-guide/basics/expressions.md
-      - user-guide/basics/joins.md
+    # - Basics:
+    #   - user-guide/basics/index.md
+    #   - user-guide/basics/reading-writing.md
+    #   - user-guide/basics/expressions.md
+    #   - user-guide/basics/joins.md
     - Concepts:
       - Data types:
         - user-guide/concepts/data-types/overview.md
