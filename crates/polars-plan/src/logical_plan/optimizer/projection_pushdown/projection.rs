@@ -8,6 +8,24 @@ fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     }
 }
 
+/// Make sure that the rolling key is projected
+#[cfg(feature = "dynamic_group_by")]
+fn add_rolling_key(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    acc_projections: &mut Vec<Node>,
+    projected_names: &mut PlHashSet<Arc<str>>,
+) {
+    if let AExpr::Window {
+        options: WindowType::Rolling(options),
+        ..
+    } = expr_arena.get(node)
+    {
+        let node = expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
+        add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
+    }
+}
+
 /// In this function we check a double projection case
 /// df
 ///   .select(col("foo").alias("bar"))
@@ -75,6 +93,11 @@ pub(super) fn process_projection(
         // set this flag outside the loop as we modify within the loop
         let has_pushed_down = !acc_projections.is_empty();
         for e in &exprs {
+            // rolling key is not an expression, but we must take it as projected.
+            // Otherwise downstream might remove that column.
+            #[cfg(feature = "dynamic_group_by")]
+            add_rolling_key(*e, expr_arena, &mut acc_projections, &mut projected_names);
+
             if has_pushed_down {
                 // remove projections that are not used upstream
                 if !expr_is_projected_upstream(e, input, lp_arena, expr_arena, &projected_names) {
