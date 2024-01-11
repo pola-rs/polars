@@ -138,7 +138,7 @@ extra:
   analytics:
     provider: plausible
     domain: guide.pola.rs,combined.pola.rs
-  homepage: https://docs.pola.rs/user-guide/overview/
+  homepage: /user-guide/overview/
 
 # Preview controls
 strict: true
