@@ -819,11 +819,11 @@ class Series:
         return self.__eq__(other)
 
     @overload
-    def eq_missing(self, other: Any) -> Self:
+    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def eq_missing(self, other: Any) -> Self:
         ...
 
     def eq_missing(self, other: Any) -> Self | Expr:
