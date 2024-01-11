@@ -103,6 +103,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         let rhs = rhs.decimal()?;
         ((&self.0) / rhs).map(|ca| ca.into_series())
     }
+    #[cfg(feature = "algorithm_group_by")]
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        self.0.group_tuples(multithreaded, sorted)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {

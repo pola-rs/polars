@@ -175,6 +175,14 @@ where
                 let ca = self.bit_repr_small();
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                // Safety: DecimalChunked's first field is ChunkedArray<Int128Type>
+                let ca: &Int128Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int128Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
             #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
             DataType::Int8 => {
                 // convince the compiler that we are this type.
