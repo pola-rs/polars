@@ -1,4 +1,4 @@
-# Polars
+# Overview
 
 ![logo](https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg)
 
@@ -46,7 +46,7 @@ Polars has a very active community with frequent releases (approximately weekly)
 
 ## Contributing
 
-We appreciate all contributions, from reporting bugs to implementing new features. Read our [contributing guide](development/contributing/index.md) to learn more.
+We appreciate all contributions, from reporting bugs to implementing new features. Read our [contributing guide](../development/contributing/index.md) to learn more.
 
 ## License
 
