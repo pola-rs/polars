@@ -240,8 +240,12 @@ impl PyExpr {
             .into()
     }
 
-    fn str_extract(&self, pat: &str, group_index: usize) -> Self {
-        self.inner.clone().str().extract(pat, group_index).into()
+    fn str_extract(&self, pat: Self, group_index: usize) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .extract(pat.inner, group_index)
+            .into()
     }
 
     fn str_extract_all(&self, pat: Self) -> Self {

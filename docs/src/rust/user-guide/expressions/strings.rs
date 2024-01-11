@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = df
         .clone()
         .lazy()
-        .select([col("a").str().extract(r"candidate=(\w+)", 1)])
+        .select([col("a").str().extract(lit(r"candidate=(\w+)"), 1)])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:extract]
