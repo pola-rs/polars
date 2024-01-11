@@ -651,13 +651,15 @@ impl AnyValue<'_> {
             #[cfg(feature = "object")]
             ObjectOwned(_) => {},
             #[cfg(feature = "dtype-struct")]
-            Struct(_, _, _) | StructOwned(_) => {
+            Struct(_, _, _) => {
                 if !cheap {
                     let mut buf = vec![];
                     self._materialize_struct_av(&mut buf);
                     buf.hash(state)
                 }
             },
+            #[cfg(feature = "dtype-struct")]
+            StructOwned(v) => v.0.hash(state),
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, k) => {
                 v.hash(state);
@@ -911,6 +913,12 @@ impl AnyValue<'_> {
                 let fields_right = &*r.0;
                 let avs = struct_to_avs_static(*idx, arr, fields);
                 fields_right == avs
+            },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(v_l, scale_l), Decimal(v_r, scale_r)) => {
+                // Decimal equality here requires that both value and scale be equal, eg
+                // 1.2 at scale 1, and 1.20 at scale 2, are not equal.
+                *v_l == *v_r && *scale_l == *scale_r
             },
             _ => false,
         }

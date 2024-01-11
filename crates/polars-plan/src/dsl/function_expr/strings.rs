@@ -37,15 +37,16 @@ pub enum StringFunction {
     CountMatches(bool),
     EndsWith,
     Explode,
-    Extract {
-        pat: String,
-        group_index: usize,
-    },
+    Extract(usize),
     ExtractAll,
     #[cfg(feature = "extract_groups")]
     ExtractGroups {
         dtype: DataType,
         pat: String,
+    },
+    Find {
+        literal: bool,
+        strict: bool,
     },
     #[cfg(feature = "string_to_integer")]
     ToInteger(u32, bool),
@@ -129,12 +130,13 @@ impl StringFunction {
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
-            Extract { .. } => mapper.with_same_dtype(),
+            Extract(_) => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => mapper.with_dtype(DataType::Int64),
+            Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             LenBytes => mapper.with_dtype(DataType::UInt32),
@@ -196,7 +198,7 @@ impl Display for StringFunction {
             Contains { .. } => "contains",
             CountMatches(_) => "count_matches",
             EndsWith { .. } => "ends_with",
-            Extract { .. } => "extract",
+            Extract(_) => "extract",
             #[cfg(feature = "concat_str")]
             ConcatHorizontal(_) => "concat_horizontal",
             #[cfg(feature = "concat_str")]
@@ -207,6 +209,7 @@ impl Display for StringFunction {
             ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => "to_integer",
+            Find { .. } => "find",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
             LenBytes => "len_bytes",
@@ -281,9 +284,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
-            Extract { pat, group_index } => {
-                map!(strings::extract, &pat, group_index)
-            },
+            Extract(group_index) => map_as_slice!(strings::extract, group_index),
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
             },
@@ -291,6 +292,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractGroups { pat, dtype } => {
                 map!(strings::extract_groups, &pat, &dtype)
             },
+            Find { literal, strict } => map_as_slice!(strings::find, literal, strict),
             LenBytes => map!(strings::len_bytes),
             LenChars => map!(strings::len_chars),
             #[cfg(feature = "string_pad")]
@@ -427,6 +429,14 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
         .map(|ok| ok.into_series())
 }
 
+#[cfg(feature = "regex")]
+pub(super) fn find(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    ca.find_chunked(pat, literal, strict)
+        .map(|ok| ok.into_series())
+}
+
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = &s[0].str()?.as_binary();
     let suffix = &s[1].str()?.as_binary();
@@ -442,11 +452,10 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
 }
 
 /// Extract a regex pattern from the a string value.
-pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult<Series> {
-    let pat = pat.to_string();
-
-    let ca = s.str()?;
-    ca.extract(&pat, group_index).map(|ca| ca.into_series())
+pub(super) fn extract(s: &[Series], group_index: usize) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    ca.extract(pat, group_index).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "extract_groups")]
@@ -845,7 +854,6 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
     let column = &s[0];
     let pat = &s[1];
     let val = &s[2];
-
     let all = n < 0;
 
     let column = column.str()?;

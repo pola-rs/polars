@@ -17,19 +17,19 @@ def foods_ndjson_path(io_files_path: Path) -> Path:
 
 
 def test_scan_ndjson(foods_ndjson_path: Path) -> None:
-    df = pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count").collect()
-    assert df["row_count"].to_list() == list(range(27))
+    df = pl.scan_ndjson(foods_ndjson_path, row_index_name="row_index").collect()
+    assert df["row_index"].to_list() == list(range(27))
 
     df = (
-        pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count")
+        pl.scan_ndjson(foods_ndjson_path, row_index_name="row_index")
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
 
-    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+    assert df["row_index"].to_list() == [0, 6, 11, 13, 14, 20, 25]
 
     df = (
-        pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count")
+        pl.scan_ndjson(foods_ndjson_path, row_index_name="row_index")
         .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()

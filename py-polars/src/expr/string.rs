@@ -166,6 +166,15 @@ impl PyExpr {
         }
     }
 
+    #[pyo3(signature = (pat, literal, strict))]
+    #[cfg(feature = "lazy_regex")]
+    fn str_find(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
+        match literal {
+            Some(true) => self.inner.clone().str().find_literal(pat.inner).into(),
+            _ => self.inner.clone().str().find(pat.inner, strict).into(),
+        }
+    }
+
     fn str_ends_with(&self, sub: Self) -> Self {
         self.inner.clone().str().ends_with(sub.inner).into()
     }
@@ -231,8 +240,12 @@ impl PyExpr {
             .into()
     }
 
-    fn str_extract(&self, pat: &str, group_index: usize) -> Self {
-        self.inner.clone().str().extract(pat, group_index).into()
+    fn str_extract(&self, pat: Self, group_index: usize) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .extract(pat.inner, group_index)
+            .into()
     }
 
     fn str_extract_all(&self, pat: Self) -> Self {

@@ -2,9 +2,10 @@ use std::error::Error;
 
 use arrow::array::Array;
 use arrow::compute::utils::combine_validities_and;
+use polars_error::PolarsResult;
 
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
-use crate::prelude::{ChunkedArray, PolarsDataType};
+use crate::prelude::{ChunkedArray, PolarsDataType, Series};
 use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
 // We need this helper because for<'a> notation can't yet be applied properly
@@ -141,6 +142,21 @@ where
     F: FnMut(&T::Array) -> Arr,
 {
     ChunkedArray::from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
+}
+
+#[inline]
+pub fn try_unary_mut_with_options<T, V, F, Arr, E>(
+    ca: &ChunkedArray<T>,
+    op: F,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array + StaticArray,
+    F: FnMut(&T::Array) -> Result<Arr, E>,
+    E: Error,
+{
+    ChunkedArray::try_from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
 }
 
 #[inline]
@@ -380,6 +396,29 @@ where
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
+#[inline]
+pub fn try_binary_mut_with_options<T, U, V, F, Arr, E>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: &str,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
+    E: Error,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
+    ChunkedArray::try_from_chunk_iter(name, iter)
+}
+
 /// Applies a kernel that produces `Array` types.
 pub fn binary<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
@@ -442,6 +481,26 @@ where
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect();
     lhs.copy_with_chunks(chunks, keep_sorted, keep_fast_explode)
+}
+
+#[inline]
+pub fn binary_to_series<T, U, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: FnMut(&T::Array, &U::Array) -> Box<dyn Array>,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let chunks = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
+        .collect::<Vec<_>>();
+    Series::try_from((lhs.name(), chunks))
 }
 
 /// Applies a kernel that produces `ArrayRef` of the same type.

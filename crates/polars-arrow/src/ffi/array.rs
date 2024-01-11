@@ -5,7 +5,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::ArrowArray;
 use crate::array::*;
-use crate::bitmap::utils::{bytes_for, count_zeros};
+use crate::bitmap::utils::bytes_for;
 use crate::bitmap::Bitmap;
 use crate::buffer::{Buffer, Bytes, BytesAllocator};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -278,12 +278,17 @@ unsafe fn create_bitmap(
     let bytes_len = bytes_for(offset + len);
     let bytes = Bytes::from_foreign(ptr, bytes_len, BytesAllocator::InternalArrowArray(owner));
 
-    let null_count: usize = if is_validity {
-        array.null_count()
+    let null_count = if is_validity {
+        Some(array.null_count())
     } else {
-        count_zeros(bytes.as_ref(), offset, len)
+        None
     };
-    Bitmap::from_inner(Arc::new(bytes), offset, len, null_count)
+    Ok(Bitmap::from_inner_unchecked(
+        Arc::new(bytes),
+        offset,
+        len,
+        null_count,
+    ))
 }
 
 fn buffer_offset(array: &ArrowArray, data_type: &ArrowDataType, i: usize) -> usize {

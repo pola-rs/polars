@@ -22,9 +22,8 @@ class ExprStructNameSpace:
         elif isinstance(item, int):
             return wrap_expr(self._pyexpr.struct_field_by_index(item))
         else:
-            raise TypeError(
-                f"expected type 'int | str', got {type(item).__name__!r} ({item!r})"
-            )
+            msg = f"expected type 'int | str', got {type(item).__name__!r} ({item!r})"
+            raise TypeError(msg)
 
     def field(self, name: str) -> Expr:
         """

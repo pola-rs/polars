@@ -60,10 +60,22 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.length as usize
     }
 
-    /// Count the null values.
+    /// Return the number of null values in the ChunkedArray.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.null_count as usize
+    }
+
+    /// Set the null count directly.
+    ///
+    /// This can be useful after mutably adjusting the validity of the
+    /// underlying arrays.
+    ///
+    /// # Safety
+    /// The new null count must match the total null count of the underlying
+    /// arrays.
+    pub unsafe fn set_null_count(&mut self, null_count: IdxSize) {
+        self.null_count = null_count;
     }
 
     /// Check if ChunkedArray is empty.

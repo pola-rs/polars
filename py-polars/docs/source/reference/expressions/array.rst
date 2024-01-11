@@ -23,3 +23,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.reverse
     Expr.arr.arg_min
     Expr.arr.arg_max
+    Expr.arr.get
+    Expr.arr.first
+    Expr.arr.last
+    Expr.arr.join

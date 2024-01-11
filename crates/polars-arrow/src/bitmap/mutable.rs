@@ -348,14 +348,13 @@ impl From<MutableBitmap> for Option<Bitmap> {
     fn from(buffer: MutableBitmap) -> Self {
         let unset_bits = buffer.unset_bits();
         if unset_bits > 0 {
-            // safety:
-            // invariants of the `MutableBitmap` equal that of `Bitmap`
+            // SAFETY: invariants of the `MutableBitmap` equal that of `Bitmap`.
             let bitmap = unsafe {
                 Bitmap::from_inner_unchecked(
                     Arc::new(buffer.buffer.into()),
                     0,
                     buffer.length,
-                    unset_bits,
+                    Some(unset_bits),
                 )
             };
             Some(bitmap)

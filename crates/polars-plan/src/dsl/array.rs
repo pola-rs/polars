@@ -97,4 +97,26 @@ impl ArrayNameSpace {
         self.0
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::ArgMax))
     }
+
+    /// Get items in every sub-array by index.
+    pub fn get(self, index: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Get),
+            &[index],
+            false,
+            false,
+        )
+    }
+
+    /// Join all string items in a sub-array and place a separator between them.
+    /// # Error
+    /// Raise if inner type of array is not `DataType::String`.
+    pub fn join(self, separator: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Join),
+            &[separator],
+            false,
+            false,
+        )
+    }
 }

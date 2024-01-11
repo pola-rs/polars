@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use polars::io::RowCount;
+use polars::io::RowIndex;
 
 use super::*;
 
@@ -948,9 +948,9 @@ foo,bar
 }
 
 #[test]
-fn test_with_row_count() -> PolarsResult<()> {
+fn test_with_row_index() -> PolarsResult<()> {
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_index(Some(RowIndex {
             name: "rc".into(),
             offset: 0,
         }))
@@ -961,7 +961,7 @@ fn test_with_row_count() -> PolarsResult<()> {
         (0 as IdxSize..27).collect::<Vec<_>>()
     );
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_index(Some(RowIndex {
             name: "rc_2".into(),
             offset: 10,
         }))
@@ -994,6 +994,50 @@ fn test_empty_string_cols() -> PolarsResult<()> {
         "column_2" => [None, Some(333i64), Some(666), Some(999)]
     ]?;
     assert!(df.equals_missing(&expected));
+    Ok(())
+}
+
+#[test]
+fn test_empty_col_names() -> PolarsResult<()> {
+    let csv = "a,b,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish()?;
+    assert_eq!(df_result.shape(), (1, 4));
+
+    let csv = "a,b\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish();
+    assert!(df_result.is_err());
     Ok(())
 }
 

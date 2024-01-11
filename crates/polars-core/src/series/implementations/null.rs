@@ -64,8 +64,18 @@ impl PrivateSeries for NullChunked {
     }
 
     #[cfg(feature = "zip_with")]
-    fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> PolarsResult<Series> {
-        Ok(self.clone().into_series())
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
+        let len = match (self.len(), mask.len(), other.len()) {
+            (a, b, c) if a == b && b == c => a,
+            (1, a, b) | (a, 1, b) | (a, b, 1) if a == b => a,
+            (a, 1, 1) | (1, a, 1) | (1, 1, a) => a,
+            (_, 0, _) => 0,
+            _ => {
+                polars_bail!(ShapeMismatch: "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation")
+            },
+        };
+
+        Ok(Self::new(self.name().into(), len).into_series())
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         ExplodeByOffsets::explode_by_offsets(self, offsets)

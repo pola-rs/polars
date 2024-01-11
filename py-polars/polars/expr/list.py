@@ -179,7 +179,8 @@ class ExprListNameSpace:
         └───────────┴─────┴───────────┘
         """
         if n is not None and fraction is not None:
-            raise ValueError("cannot specify both `n` and `fraction`")
+            msg = "cannot specify both `n` and `fraction`"
+            raise ValueError(msg)
 
         if fraction is not None:
             fraction = parse_as_expression(fraction)
@@ -627,7 +628,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: IntoExpr) -> Expr:
+    def join(self, separator: IntoExprColumn) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 

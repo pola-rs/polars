@@ -400,9 +400,8 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴─────────────────────────┴─────────────────────┘
         """
         if not isinstance(time, (dt.time, pl.Expr)):
-            raise TypeError(
-                f"expected 'time' to be a Python time or Polars expression, found {type(time).__name__!r}"
-            )
+            msg = f"expected 'time' to be a Python time or Polars expression, found {type(time).__name__!r}"
+            raise TypeError(msg)
         time = parse_as_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
 
@@ -1291,9 +1290,8 @@ class ExprDateTimeNameSpace:
         elif time_unit == "d":
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
-            raise ValueError(
-                f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
-            )
+            msg = f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
+            raise ValueError(msg)
 
     def timestamp(self, time_unit: TimeUnit = "us") -> Expr:
         """

@@ -26,10 +26,11 @@ pub(crate) type Extension = Option<(String, Option<String>)>;
 /// which declares the in-memory representation of data.
 /// The [`ArrowDataType::Extension`] is special in that it augments a [`ArrowDataType`] with metadata to support custom types.
 /// Use `to_logical_type` to desugar such type and return its corresponding logical type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrowDataType {
     /// Null type
+    #[default]
     Null,
     /// `true` and `false`.
     Boolean,
@@ -134,6 +135,8 @@ pub enum ArrowDataType {
     /// The metadata is structured so that Arrow systems without special handling
     /// for Map can make Map an alias for List. The "layout" attribute for the Map
     /// field must have the same contents as a List.
+    /// - Field
+    /// - ordered
     Map(Box<Field>, bool),
     /// A dictionary encoded array (`key_type`, `value_type`), where
     /// each array element is an index of `key_type` into an

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import warnings
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 
 from polars.utils.various import find_stacklevel
 
@@ -76,6 +76,41 @@ def deprecate_renamed_function(
     )
 
 
+def deprecate_parameter_as_positional(
+    old_name: str, *, version: str
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Decorator to mark a function argument as deprecated due to being made positinoal.
+
+    Use as follows::
+
+        @deprecate_parameter_as_positional("column", version="0.20.4")
+        def myfunc(new_name):
+            ...
+    """
+
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            if param_args := kwargs.pop(old_name, []):
+                issue_deprecation_warning(
+                    f"named `{old_name}` param is deprecated; use positional `*args` instead.",
+                    version=version,
+                )
+            if param_args:
+                if not isinstance(param_args, Sequence) or isinstance(param_args, str):
+                    param_args = (param_args,)
+                elif not isinstance(param_args, tuple):
+                    param_args = tuple(param_args)
+                args = args + param_args  # type: ignore[assignment]
+            return function(*args, **kwargs)
+
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate
+
+
 def deprecate_renamed_parameter(
     old_name: str, new_name: str, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
@@ -84,7 +119,7 @@ def deprecate_renamed_parameter(
 
     Use as follows::
 
-        @deprecate_renamed_parameter("old_name", "new_name", version="0.1.2")
+        @deprecate_renamed_parameter("old_name", "new_name", version="0.20.4")
         def myfunc(new_name):
             ...
     """
@@ -113,10 +148,11 @@ def _rename_keyword_argument(
     """Rename a keyword argument of a function."""
     if old_name in kwargs:
         if new_name in kwargs:
-            raise TypeError(
+            msg = (
                 f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments;"
                 f" `{old_name!r}` is deprecated, use `{new_name!r}` instead"
             )
+            raise TypeError(msg)
         issue_deprecation_warning(
             f"`the argument {old_name}` for `{func_name}` is deprecated."
             f" It has been renamed to `{new_name}`.",

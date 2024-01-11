@@ -7,7 +7,7 @@ use std::path::PathBuf;
 pub use exitable::PyInProcessQuery;
 #[cfg(feature = "csv")]
 use polars::io::csv::SerializeOptions;
-use polars::io::RowCount;
+use polars::io::RowIndex;
 #[cfg(feature = "csv")]
 use polars::lazy::frame::LazyCsvReader;
 #[cfg(feature = "json")]
@@ -114,7 +114,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "json")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (path, paths, infer_schema_length, schema, batch_size, n_rows, low_memory, rechunk, row_count))]
+    #[pyo3(signature = (path, paths, infer_schema_length, schema, batch_size, n_rows, low_memory, rechunk, row_index))]
     fn new_from_ndjson(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -124,9 +124,9 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         low_memory: bool,
         rechunk: bool,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
 
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
@@ -141,7 +141,7 @@ impl PyLazyFrame {
             .low_memory(low_memory)
             .with_rechunk(rechunk)
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
-            .with_row_count(row_count)
+            .with_row_index(row_index)
             .finish()
             .map_err(PyPolarsErr::from)?;
 
@@ -153,7 +153,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
+        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
     )
     )]
     fn new_from_csv(
@@ -176,7 +176,7 @@ impl PyLazyFrame {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: Wrap<CsvEncoding>,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         try_parse_dates: bool,
         eol_char: &str,
         raise_if_empty: bool,
@@ -187,7 +187,7 @@ impl PyLazyFrame {
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let separator = separator.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
@@ -219,7 +219,7 @@ impl PyLazyFrame {
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding.0)
-            .with_row_count(row_count)
+            .with_row_index(row_index)
             .with_try_parse_dates(try_parse_dates)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
@@ -254,7 +254,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_count,
+    #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_index,
         low_memory, cloud_options, use_statistics, hive_partitioning, retries)
     )]
     fn new_from_parquet(
@@ -264,7 +264,7 @@ impl PyLazyFrame {
         cache: bool,
         parallel: Wrap<ParallelStrategy>,
         rechunk: bool,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
@@ -292,13 +292,13 @@ impl PyLazyFrame {
                         options
                     });
         }
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let args = ScanArgsParquet {
             n_rows,
             cache,
             parallel: parallel.0,
             rechunk,
-            row_count,
+            row_index,
             low_memory,
             cloud_options,
             use_statistics,
@@ -316,22 +316,22 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_count, memory_map))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map))]
     fn new_from_ipc(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
-        row_count: Option<(String, IdxSize)>,
+        row_index: Option<(String, IdxSize)>,
         memory_map: bool,
     ) -> PyResult<Self> {
-        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
         let args = ScanArgsIpc {
             n_rows,
             cache,
             rechunk,
-            row_count,
+            row_index,
             memmap: memory_map,
         };
 

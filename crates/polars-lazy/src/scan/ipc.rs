@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::prelude::*;
 
@@ -10,7 +10,7 @@ pub struct ScanArgsIpc {
     pub n_rows: Option<usize>,
     pub cache: bool,
     pub rechunk: bool,
-    pub row_count: Option<RowCount>,
+    pub row_index: Option<RowIndex>,
     pub memmap: bool,
 }
 
@@ -20,7 +20,7 @@ impl Default for ScanArgsIpc {
             n_rows: None,
             cache: true,
             rechunk: false,
-            row_count: None,
+            row_index: None,
             memmap: true,
         }
     }
@@ -56,16 +56,16 @@ impl LazyFileListReader for LazyIpcReader {
             options,
             args.n_rows,
             args.cache,
-            args.row_count.clone(),
+            args.row_index.clone(),
             args.rechunk,
         )?
         .build()
         .into();
         lf.opt_state.file_caching = true;
 
-        // it is a bit hacky, but this row_count function updates the schema
-        if let Some(row_count) = args.row_count {
-            lf = lf.with_row_index(&row_count.name, Some(row_count.offset))
+        // it is a bit hacky, but this `with_row_index` function updates the schema
+        if let Some(row_index) = args.row_index {
+            lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
         }
 
         Ok(lf)
@@ -102,8 +102,8 @@ impl LazyFileListReader for LazyIpcReader {
         self.args.n_rows
     }
 
-    fn row_count(&self) -> Option<&RowCount> {
-        self.args.row_count.as_ref()
+    fn row_index(&self) -> Option<&RowIndex> {
+        self.args.row_index.as_ref()
     }
 }
 

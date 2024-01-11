@@ -9,7 +9,7 @@ use sqlparser::ast::{
     WindowSpec, WindowType,
 };
 
-use crate::sql_expr::parse_sql_expr;
+use crate::sql_expr::{parse_date_part, parse_sql_expr};
 use crate::SQLContext;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
@@ -247,6 +247,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT DATE('2021-03', '%Y-%m') from df;
     /// ```
     Date,
+    /// SQL 'date_part' function.
+    /// Extracts a part of a date (or datetime) such as 'year', 'month', etc.
+    /// ```sql
+    /// SELECT DATE_PART('year', column_1) from df;
+    /// SELECT DATE_PART('day', column_1) from df;
+    DatePart,
 
     // ----
     // String functions
@@ -350,6 +356,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT column_2 from df WHERE STARTS_WITH(column_1, 'a');
     /// ```
     StartsWith,
+    /// SQL 'strpos' function
+    /// Returns the index of the given substring in the target string.
+    /// ```sql
+    /// SELECT STRPOS(column_1,'xyz') from df;
+    /// ```
+    StrPos,
     /// SQL 'substr' function
     /// Returns a portion of the data (first character = 0) in the range.
     ///   \[start, start + length]
@@ -658,6 +670,7 @@ impl PolarsSQLFunctions {
             // Date functions
             // ----
             "date" => Self::Date,
+            "date_part" => Self::DatePart,
 
             // ----
             // String functions
@@ -673,6 +686,7 @@ impl PolarsSQLFunctions {
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
             "octet_length" => Self::OctetLength,
+            "strpos" => Self::StrPos,
             "regexp_like" => Self::RegexpLike,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
@@ -802,6 +816,23 @@ impl SQLFunctionVisitor<'_> {
             NullIf => self.visit_binary(|l: Expr, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
 
             // ----
+            // Date functions
+            // ----
+            Date => match function.args.len() {
+                1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
+                2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
+                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for Date: {}", function.args.len()),
+            },
+            DatePart => self.try_visit_binary(|e, part| {
+                match part {
+                    Expr::Literal(LiteralValue::String(p)) => parse_date_part(e, &p),
+                    _ => {
+                        polars_bail!(InvalidOperation: "Invalid 'part' for DatePart: {}", function.args[1]);
+                    }
+                }
+            }),
+
+            // ----
             // String functions
             // ----
             BitLength => self.visit_unary(|e| e.str().len_bytes() * lit(8)),
@@ -819,11 +850,6 @@ impl SQLFunctionVisitor<'_> {
                         _ => polars_bail!(InvalidOperation: "ConcatWS 'separator' must be a literal string; found {:?}", exprs[0]),
                     }
                 })
-            },
-            Date => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
-                2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for Date: {}", function.args.len()),
             },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             #[cfg(feature = "nightly")]
@@ -844,6 +870,10 @@ impl SQLFunctionVisitor<'_> {
                 _ => polars_bail!(InvalidOperation: "Invalid number of arguments for LTrim: {}", function.args.len()),
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
+            StrPos => {
+                // note: 1-indexed, not 0-indexed, and returns zero if match not found
+                self.visit_binary(|expr, substring| (expr.str().find(substring, true) + lit(1u32)).fill_null(0u32))
+            },
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
                 3 => self.try_visit_ternary(|e, pat, flags| {

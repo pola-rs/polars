@@ -377,7 +377,8 @@ def create_list_strategy(
     [(59, 176), (149, 149)]
     """
     if select_from and inner_dtype is None:
-        raise ValueError("if specifying `select_from`, must also specify `inner_dtype`")
+        msg = "if specifying `select_from`, must also specify `inner_dtype`"
+        raise ValueError(msg)
 
     if inner_dtype is None:
         strats = list(_get_strategy_dtypes(base_type=True))

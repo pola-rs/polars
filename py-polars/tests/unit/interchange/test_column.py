@@ -14,9 +14,13 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import Dtype
 
 
-def test_init_global_categorical_zero_copy_fails() -> None:
+def test_init_global_categorical() -> None:
     with pl.StringCache():
         s = pl.Series("a", ["x"], dtype=pl.Categorical)
+
+    col = PolarsColumn(s)
+    expected = pl.Series("a", ["x"], dtype=pl.Categorical)
+    assert_series_equal(col._col, expected)
 
     with pytest.raises(
         CopyNotAllowedError, match="column 'a' must be converted to a local categorical"
@@ -202,7 +206,7 @@ def test_get_buffers_with_validity_and_offsets() -> None:
     data_buffer, data_dtype = out["data"]
     expected = pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8)
     assert_series_equal(data_buffer._data, expected)
-    assert data_dtype == (DtypeKind.STRING, 8, "U", "=")
+    assert data_dtype == (DtypeKind.UINT, 8, "C", "=")
 
     validity = out["validity"]
     assert validity is not None
@@ -256,14 +260,14 @@ def test_get_buffers_chunked_zero_copy_fails() -> None:
         (
             pl.Series(["a", "bc", None, "éâç"], dtype=pl.String),
             pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8),
-            (DtypeKind.STRING, 8, "U", "="),
+            (DtypeKind.UINT, 8, "C", "="),
         ),
         (
             pl.Series(
                 [datetime(1988, 1, 2), None, datetime(2022, 12, 3)], dtype=pl.Datetime
             ),
             pl.Series([568080000000000, 0, 1670025600000000], dtype=pl.Int64),
-            (DtypeKind.DATETIME, 64, "tsu:", "="),
+            (DtypeKind.INT, 64, "l", "="),
         ),
         (
             pl.Series(["a", "b", None, "a"], dtype=pl.Categorical),

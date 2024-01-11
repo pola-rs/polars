@@ -37,9 +37,8 @@ class PolarsColumn(Column):
     def __init__(self, column: Series, *, allow_copy: bool = True):
         if column.dtype == Categorical and not column.cat.is_local():
             if not allow_copy:
-                raise CopyNotAllowedError(
-                    f"column {column.name!r} must be converted to a local categorical"
-                )
+                msg = f"column {column.name!r} must be converted to a local categorical"
+                raise CopyNotAllowedError(msg)
             column = column.cat.to_local()
 
         self._col = column
@@ -72,7 +71,8 @@ class PolarsColumn(Column):
             If the data type of the column is not categorical.
         """
         if self.dtype[0] != DtypeKind.CATEGORICAL:
-            raise TypeError("`describe_categorical` only works on categorical columns")
+            msg = "`describe_categorical` only works on categorical columns"
+            raise TypeError(msg)
 
         categories = self._col.cat.get_categories()
         return {
@@ -128,10 +128,11 @@ class PolarsColumn(Column):
                 yield PolarsColumn(chunk, allow_copy=self._allow_copy)
 
         elif (n_chunks <= 0) or (n_chunks % total_n_chunks != 0):
-            raise ValueError(
+            msg = (
                 "`n_chunks` must be a multiple of the number of chunks of this column"
                 f" ({total_n_chunks})"
             )
+            raise ValueError(msg)
 
         else:
             subchunks_per_chunk = n_chunks // total_n_chunks
@@ -156,11 +157,7 @@ class PolarsColumn(Column):
     def _get_data_buffer(self) -> tuple[PolarsBuffer, Dtype]:
         s = self._col._get_buffer(0)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
-
-        dtype = self.dtype
-        if dtype[0] == DtypeKind.CATEGORICAL:
-            dtype = (DtypeKind.UINT, 32, "I", Endianness.NATIVE)
-
+        dtype = polars_dtype_to_dtype(s.dtype)
         return buffer, dtype
 
     def _get_validity_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:

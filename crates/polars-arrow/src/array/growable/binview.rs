@@ -15,6 +15,8 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     validity: Option<MutableBitmap>,
     views: Vec<u128>,
     buffers: Vec<Buffer<u8>>,
+    total_bytes_len: usize,
+    total_buffer_len: usize,
 }
 
 impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
@@ -45,6 +47,8 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             validity: prepare_validity(use_validity, capacity),
             views: Vec::with_capacity(capacity),
             buffers: Vec::with_capacity(n_buffers),
+            total_bytes_len: 0,
+            total_buffer_len: 0,
         }
     }
 
@@ -58,6 +62,8 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                 views.into(),
                 Arc::from(buffers),
                 validity.map(|v| v.into()),
+                self.total_bytes_len,
+                self.total_buffer_len,
             )
         }
     }
@@ -72,9 +78,16 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
         let buffer_offset = (buffer_offset as u128) << 64;
 
         let range = start..start + len;
-        self.buffers
-            .extend_from_slice(&array.data_buffers()[range.clone()]);
+        let buffers_range = &array.data_buffers()[range.clone()];
+        self.buffers.extend_from_slice(buffers_range);
+
+        for b in buffers_range {
+            self.total_buffer_len += b.len();
+        }
+
         self.views.extend(array.views()[range].iter().map(|&view| {
+            self.total_bytes_len += (view as u32) as usize;
+
             // If null the buffer index is ignored because the length is 0,
             // so we can just do this
             view + buffer_offset
@@ -110,6 +123,8 @@ impl<'a, T: ViewType + ?Sized> From<GrowableBinaryViewArray<'a, T>> for BinaryVi
                 val.views.into(),
                 Arc::from(val.buffers),
                 val.validity.map(|v| v.into()),
+                val.total_bytes_len,
+                val.total_buffer_len,
             )
         }
     }

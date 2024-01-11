@@ -23,3 +23,7 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.reverse
     Series.arr.arg_min
     Series.arr.arg_max
+    Series.arr.get
+    Series.arr.first
+    Series.arr.last
+    Series.arr.join

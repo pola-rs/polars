@@ -129,7 +129,7 @@ impl ParquetSource {
             ParquetReader::new(file)
                 .with_schema(reader_schema)
                 .with_n_rows(file_options.n_rows)
-                .with_row_count(file_options.row_count)
+                .with_row_index(file_options.row_index)
                 .with_predicate(predicate.clone())
                 .with_projection(projection)
                 .use_statistics(options.use_statistics)
@@ -172,7 +172,7 @@ impl ParquetSource {
             ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), reader_schema, metadata)
                 .await?
                 .with_n_rows(file_options.n_rows)
-                .with_row_count(file_options.row_count)
+                .with_row_index(file_options.row_index)
                 .with_projection(projection)
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)

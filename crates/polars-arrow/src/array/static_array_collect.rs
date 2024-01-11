@@ -227,7 +227,12 @@ macro_rules! impl_collect_vec_validity {
         let arrow_bitmap = if null_count > 0 {
             unsafe {
                 // SAFETY: we made sure the null_count is correct.
-                Some(Bitmap::from_inner(Arc::new(bitmap.into()), 0, buf.len(), null_count).unwrap())
+                Some(Bitmap::from_inner_unchecked(
+                    Arc::new(bitmap.into()),
+                    0,
+                    buf.len(),
+                    Some(null_count),
+                ))
             }
         } else {
             None
@@ -283,7 +288,12 @@ macro_rules! impl_trusted_collect_vec_validity {
         let arrow_bitmap = if null_count > 0 {
             unsafe {
                 // SAFETY: we made sure the null_count is correct.
-                Some(Bitmap::from_inner(Arc::new(bitmap.into()), 0, buf.len(), null_count).unwrap())
+                Some(Bitmap::from_inner_unchecked(
+                    Arc::new(bitmap.into()),
+                    0,
+                    buf.len(),
+                    Some(null_count),
+                ))
             }
         } else {
             None
@@ -613,14 +623,20 @@ macro_rules! impl_collect_bool_validity {
         }
 
         let false_count = len - true_count;
-        let values =
-            unsafe { Bitmap::from_inner(Arc::new(buf.into()), 0, len, false_count).unwrap() };
+        let values = unsafe {
+            Bitmap::from_inner_unchecked(Arc::new(buf.into()), 0, len, Some(false_count))
+        };
 
         let null_count = len - nonnull_count;
         let validity_bitmap = if $with_valid && null_count > 0 {
             unsafe {
                 // SAFETY: we made sure the null_count is correct.
-                Some(Bitmap::from_inner(Arc::new(validity.into()), 0, len, null_count).unwrap())
+                Some(Bitmap::from_inner_unchecked(
+                    Arc::new(validity.into()),
+                    0,
+                    len,
+                    Some(null_count),
+                ))
             }
         } else {
             None

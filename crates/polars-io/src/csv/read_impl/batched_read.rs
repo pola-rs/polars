@@ -236,7 +236,7 @@ impl<'a> CoreReader<'a> {
             str_columns,
             projection,
             starting_point_offset,
-            row_count: self.row_count,
+            row_index: self.row_index,
             comment_prefix: self.comment_prefix,
             quote_char: self.quote_char,
             eol_char: self.eol_char,
@@ -264,7 +264,7 @@ pub struct BatchedCsvReaderRead<'a> {
     str_columns: StringColumns,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -352,8 +352,8 @@ impl<'a> BatchedCsvReaderRead<'a> {
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
-                    if let Some(rc) = &self.row_count {
-                        df.with_row_count_mut(&rc.name, Some(rc.offset));
+                    if let Some(rc) = &self.row_index {
+                        df.with_row_index_mut(&rc.name, Some(rc.offset));
                     }
                     Ok(df)
                 })
@@ -361,7 +361,7 @@ impl<'a> BatchedCsvReaderRead<'a> {
         })?;
         self.file_chunks.clear();
 
-        if self.row_count.is_some() {
+        if self.row_index.is_some() {
             update_row_counts2(&mut chunks, self.rows_read)
         }
         for df in &chunks {

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
+    from polars.type_aliases import IntoExprColumn
 
 
 class ExprArrayNameSpace:
@@ -409,3 +411,128 @@ class ExprArrayNameSpace:
 
         """
         return wrap_expr(self._pyexpr.arr_arg_max())
+
+    def get(self, index: int | IntoExprColumn) -> Expr:
+        """
+        Get the value by index in the sub-arrays.
+
+        So index `0` would return the first item of every sublist
+        and index `-1` would return the last item of every sublist
+        if an index is out of bounds, it will return a `None`.
+
+        Parameters
+        ----------
+        index
+            Index to return per sub-array
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"arr": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "idx": [1, -2, 4]},
+        ...     schema={"arr": pl.Array(pl.Int32, 3), "idx": pl.Int32},
+        ... )
+        >>> df.with_columns(get=pl.col("arr").arr.get("idx"))
+        shape: (3, 3)
+        ┌───────────────┬─────┬──────┐
+        │ arr           ┆ idx ┆ get  │
+        │ ---           ┆ --- ┆ ---  │
+        │ array[i32, 3] ┆ i32 ┆ i32  │
+        ╞═══════════════╪═════╪══════╡
+        │ [1, 2, 3]     ┆ 1   ┆ 2    │
+        │ [4, 5, 6]     ┆ -2  ┆ 5    │
+        │ [7, 8, 9]     ┆ 4   ┆ null │
+        └───────────────┴─────┴──────┘
+
+        """
+        index = parse_as_expression(index)
+        return wrap_expr(self._pyexpr.arr_get(index))
+
+    def first(self) -> Expr:
+        """
+        Get the first value of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]},
+        ...     schema={"a": pl.Array(pl.Int32, 3)},
+        ... )
+        >>> df.with_columns(first=pl.col("a").arr.first())
+        shape: (3, 2)
+        ┌───────────────┬───────┐
+        │ a             ┆ first │
+        │ ---           ┆ ---   │
+        │ array[i32, 3] ┆ i32   │
+        ╞═══════════════╪═══════╡
+        │ [1, 2, 3]     ┆ 1     │
+        │ [4, 5, 6]     ┆ 4     │
+        │ [7, 8, 9]     ┆ 7     │
+        └───────────────┴───────┘
+
+        """
+        return self.get(0)
+
+    def last(self) -> Expr:
+        """
+        Get the last value of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]},
+        ...     schema={"a": pl.Array(pl.Int32, 3)},
+        ... )
+        >>> df.with_columns(last=pl.col("a").arr.last())
+        shape: (3, 2)
+        ┌───────────────┬──────┐
+        │ a             ┆ last │
+        │ ---           ┆ ---  │
+        │ array[i32, 3] ┆ i32  │
+        ╞═══════════════╪══════╡
+        │ [1, 2, 3]     ┆ 3    │
+        │ [4, 5, 6]     ┆ 6    │
+        │ [7, 8, 9]     ┆ 9    │
+        └───────────────┴──────┘
+
+        """
+        return self.get(-1)
+
+    def join(self, separator: IntoExprColumn) -> Expr:
+        """
+        Join all string items in a sub-array and place a separator between them.
+
+        This errors if inner type of array `!= String`.
+
+        Parameters
+        ----------
+        separator
+            string to separate the items with
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"s": [["a", "b"], ["x", "y"]], "separator": ["*", "_"]},
+        ...     schema={
+        ...         "s": pl.Array(pl.String, 2),
+        ...         "separator": pl.String,
+        ...     },
+        ... )
+        >>> df.with_columns(join=pl.col("s").arr.join(pl.col("separator")))
+        shape: (2, 3)
+        ┌───────────────┬───────────┬──────┐
+        │ s             ┆ separator ┆ join │
+        │ ---           ┆ ---       ┆ ---  │
+        │ array[str, 2] ┆ str       ┆ str  │
+        ╞═══════════════╪═══════════╪══════╡
+        │ ["a", "b"]    ┆ *         ┆ a*b  │
+        │ ["x", "y"]    ┆ _         ┆ x_y  │
+        └───────────────┴───────────┴──────┘
+
+        """
+        separator = parse_as_expression(separator, str_as_lit=True)
+        return wrap_expr(self._pyexpr.arr_join(separator))

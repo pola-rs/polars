@@ -455,3 +455,122 @@ def test_cast_temporal(
     else:
         assert out.item() == expected_value
         assert out.dtype == to_dtype
+
+
+@pytest.mark.parametrize(
+    (
+        "value",
+        "from_dtype",
+        "to_dtype",
+        "expected_value",
+    ),
+    [
+        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, 2**7 - 1),
+        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, 2**15 - 1),
+        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, 2**31 - 1),
+        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, 2**63 - 1),
+        (b"1.0", pl.Binary, pl.Float32, 1.0),
+        (b"1.0", pl.Binary, pl.Float64, 1.0),
+        (str(2**7 - 1), pl.String, pl.Int8, 2**7 - 1),
+        (str(2**15 - 1), pl.String, pl.Int16, 2**15 - 1),
+        (str(2**31 - 1), pl.String, pl.Int32, 2**31 - 1),
+        (str(2**63 - 1), pl.String, pl.Int64, 2**63 - 1),
+        ("1.0", pl.String, pl.Float32, 1.0),
+        ("1.0", pl.String, pl.Float64, 1.0),
+        # overflow
+        (str(2**7), pl.String, pl.Int8, None),
+        (str(2**15), pl.String, pl.Int16, None),
+        (str(2**31), pl.String, pl.Int32, None),
+        (str(2**63), pl.String, pl.Int64, None),
+        (str(2**7).encode(), pl.Binary, pl.Int8, None),
+        (str(2**15).encode(), pl.Binary, pl.Int16, None),
+        (str(2**31).encode(), pl.Binary, pl.Int32, None),
+        (str(2**63).encode(), pl.Binary, pl.Int64, None),
+    ],
+)
+def test_cast_string_and_binary(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, False]
+    out = _cast_series_t(*args)  # type: ignore[arg-type]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+    out = _cast_expr_t(*args)  # type: ignore[arg-type]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+    out = _cast_lit_t(*args)  # type: ignore[arg-type]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+
+@pytest.mark.parametrize(
+    (
+        "value",
+        "from_dtype",
+        "to_dtype",
+        "should_succeed",
+        "expected_value",
+    ),
+    [
+        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, True, 2**7 - 1),
+        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, True, 2**15 - 1),
+        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, True, 2**31 - 1),
+        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, True, 2**63 - 1),
+        (b"1.0", pl.Binary, pl.Float32, True, 1.0),
+        (b"1.0", pl.Binary, pl.Float64, True, 1.0),
+        (str(2**7 - 1), pl.String, pl.Int8, True, 2**7 - 1),
+        (str(2**15 - 1), pl.String, pl.Int16, True, 2**15 - 1),
+        (str(2**31 - 1), pl.String, pl.Int32, True, 2**31 - 1),
+        (str(2**63 - 1), pl.String, pl.Int64, True, 2**63 - 1),
+        ("1.0", pl.String, pl.Float32, True, 1.0),
+        ("1.0", pl.String, pl.Float64, True, 1.0),
+        # overflow
+        (str(2**7), pl.String, pl.Int8, False, None),
+        (str(2**15), pl.String, pl.Int16, False, None),
+        (str(2**31), pl.String, pl.Int32, False, None),
+        (str(2**63), pl.String, pl.Int64, False, None),
+        (str(2**7).encode(), pl.Binary, pl.Int8, False, None),
+        (str(2**15).encode(), pl.Binary, pl.Int16, False, None),
+        (str(2**31).encode(), pl.Binary, pl.Int32, False, None),
+        (str(2**63).encode(), pl.Binary, pl.Int64, False, None),
+    ],
+)
+def test_strict_cast_string_and_binary(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    should_succeed: bool,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, True]
+    if should_succeed:
+        out = _cast_series_t(*args)  # type: ignore[arg-type]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+        out = _cast_expr_t(*args)  # type: ignore[arg-type]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+        out = _cast_lit_t(*args)  # type: ignore[arg-type]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+    else:
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_series_t(*args)  # type: ignore[arg-type]
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_expr_t(*args)  # type: ignore[arg-type]
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_lit_t(*args)  # type: ignore[arg-type]

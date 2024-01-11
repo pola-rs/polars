@@ -151,7 +151,7 @@ where
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     try_parse_dates: bool,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
     raise_if_empty: bool,
@@ -173,9 +173,9 @@ where
         self
     }
 
-    /// Add a `row_count` column.
-    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
-        self.row_count = rc;
+    /// Add a row index column.
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -417,7 +417,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.predicate),
             to_cast,
             self.skip_rows_after_header,
-            std::mem::take(&mut self.row_count),
+            std::mem::take(&mut self.row_index),
             self.try_parse_dates,
             self.raise_if_empty,
             self.truncate_ragged_lines,
@@ -603,7 +603,7 @@ where
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,
             try_parse_dates: false,
-            row_count: None,
+            row_index: None,
             raise_if_empty: true,
             truncate_ragged_lines: false,
         }

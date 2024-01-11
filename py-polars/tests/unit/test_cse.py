@@ -136,7 +136,7 @@ def test_cse_9630() -> None:
 
 
 @pytest.mark.write_disk()
-def test_schema_row_count_cse() -> None:
+def test_schema_row_index_cse() -> None:
     csv_a = NamedTemporaryFile()
     csv_a.write(
         b"""

@@ -180,7 +180,8 @@ def _parse_constraints(constraints: dict[str, IntoExpr]) -> Iterable[PyExpr]:
 
 def _combine_predicates(predicates: list[PyExpr]) -> PyExpr:
     if not predicates:
-        raise TypeError("at least one predicate or constraint must be provided")
+        msg = "at least one predicate or constraint must be provided"
+        raise TypeError(msg)
 
     if len(predicates) == 1:
         return predicates[0]

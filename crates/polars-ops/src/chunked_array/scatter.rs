@@ -125,6 +125,11 @@ where
                 arr.set_values(new_values.into());
             },
         };
+
+        // The null count may have changed - make sure to update the ChunkedArray
+        let new_null_count = arr.null_count();
+        unsafe { ca.set_null_count(new_null_count.try_into().unwrap()) };
+
         Ok(ca.into_series())
     }
 }

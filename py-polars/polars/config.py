@@ -157,7 +157,8 @@ class Config(contextlib.ContextDecorator):
             if not hasattr(self, opt) and not opt.startswith("set_"):
                 opt = f"set_{opt}"
             if not hasattr(self, opt):
-                raise AttributeError(f"`Config` has no option {opt!r}")
+                msg = f"`Config` has no option {opt!r}"
+                raise AttributeError(msg)
             getattr(self, opt)(value)
 
     def __enter__(self) -> Config:
@@ -193,9 +194,8 @@ class Config(contextlib.ContextDecorator):
         try:
             options = json.loads(cfg)
         except json.JSONDecodeError as err:
-            raise ValueError(
-                "invalid Config string (did you mean to use `load_from_file`?)"
-            ) from err
+            msg = "invalid Config string (did you mean to use `load_from_file`?)"
+            raise ValueError(msg) from err
 
         os.environ.update(options.get("environment", {}))
         for cfg_methodname, value in options.get("direct", {}).items():
@@ -221,9 +221,8 @@ class Config(contextlib.ContextDecorator):
         try:
             options = Path(normalize_filepath(file)).read_text()
         except OSError as err:
-            raise ValueError(
-                f"invalid Config file (did you mean to use `load`?)\n{err}"
-            ) from err
+            msg = f"invalid Config file (did you mean to use `load`?)\n{err}"
+            raise ValueError(msg) from err
 
         return cls.load(options)
 
@@ -456,9 +455,8 @@ class Config(contextlib.ContextDecorator):
         └───────────────┘
         """
         if isinstance(separator, str) and len(separator) != 1:
-            raise ValueError(
-                f"`separator` must be a single character; found {separator!r}"
-            )
+            msg = f"`separator` must be a single character; found {separator!r}"
+            raise ValueError(msg)
         plr.set_decimal_separator(sep=separator)
         return cls
 
@@ -526,9 +524,8 @@ class Config(contextlib.ContextDecorator):
             plr.set_thousands_separator(sep=",")
         else:
             if isinstance(separator, str) and len(separator) > 1:
-                raise ValueError(
-                    f"`separator` must be a single character; found {separator!r}"
-                )
+                msg = f"`separator` must be a single character; found {separator!r}"
+                raise ValueError(msg)
             plr.set_thousands_separator(sep=separator or None)
         return cls
 
@@ -689,7 +686,8 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_STR_LEN", None)
         else:
             if n <= 0:
-                raise ValueError("number of characters must be > 0")
+                msg = "number of characters must be > 0"
+                raise ValueError(msg)
 
             os.environ["POLARS_FMT_STR_LEN"] = str(n)
         return cls
@@ -763,7 +761,8 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_STREAMING_CHUNK_SIZE", None)
         else:
             if size < 1:
-                raise ValueError("number of rows per chunk must be >= 1")
+                msg = "number of rows per chunk must be >= 1"
+                raise ValueError(msg)
 
             os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
         return cls
@@ -807,7 +806,8 @@ class Config(contextlib.ContextDecorator):
         if format is None:
             os.environ.pop("POLARS_FMT_TABLE_CELL_ALIGNMENT", None)
         elif format not in {"LEFT", "CENTER", "RIGHT"}:
-            raise ValueError(f"invalid alignment: {format!r}")
+            msg = f"invalid alignment: {format!r}"
+            raise ValueError(msg)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
         return cls
@@ -856,7 +856,8 @@ class Config(contextlib.ContextDecorator):
         if format is None:
             os.environ.pop("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", None)
         elif format not in {"LEFT", "CENTER", "RIGHT"}:
-            raise ValueError(f"invalid alignment: {format!r}")
+            msg = f"invalid alignment: {format!r}"
+            raise ValueError(msg)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
         return cls
@@ -1024,9 +1025,8 @@ class Config(contextlib.ContextDecorator):
         else:
             valid_format_names = get_args(TableFormatNames)
             if format not in valid_format_names:
-                raise ValueError(
-                    f"invalid table format name: {format!r}\nExpected one of: {', '.join(valid_format_names)}"
-                )
+                msg = f"invalid table format name: {format!r}\nExpected one of: {', '.join(valid_format_names)}"
+                raise ValueError(msg)
             os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
 
         if rounded_corners is None:

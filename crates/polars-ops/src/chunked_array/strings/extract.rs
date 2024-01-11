@@ -1,7 +1,10 @@
+use std::iter::zip;
+
 #[cfg(feature = "extract_groups")]
 use arrow::array::{Array, StructArray};
 use arrow::array::{MutableArray, MutableUtf8Array, Utf8Array};
 use polars_core::export::regex::Regex;
+use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
 
 use super::*;
 
@@ -72,7 +75,7 @@ pub(super) fn extract_groups(
     Series::try_from((ca.name(), chunks))
 }
 
-fn extract_group_array(
+fn extract_group_reg_lit(
     arr: &Utf8Array<i64>,
     reg: &Regex,
     group_index: usize,
@@ -95,14 +98,85 @@ fn extract_group_array(
     Ok(builder.into())
 }
 
+fn extract_group_array_lit(
+    s: &str,
+    pat: &Utf8Array<i64>,
+    group_index: usize,
+) -> PolarsResult<Utf8Array<i64>> {
+    let mut builder = MutableUtf8Array::<i64>::with_capacity(pat.len());
+
+    for opt_pat in pat {
+        if let Some(pat) = opt_pat {
+            let reg = Regex::new(pat)?;
+            let mut locs = reg.capture_locations();
+            if reg.captures_read(&mut locs, s).is_some() {
+                builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
+                continue;
+            }
+        }
+
+        // Push null if either the pat is null or there was no match.
+        builder.push_null();
+    }
+
+    Ok(builder.into())
+}
+
+fn extract_group_binary(
+    arr: &Utf8Array<i64>,
+    pat: &Utf8Array<i64>,
+    group_index: usize,
+) -> PolarsResult<Utf8Array<i64>> {
+    let mut builder = MutableUtf8Array::<i64>::with_capacity(arr.len());
+
+    for (opt_s, opt_pat) in zip(arr, pat) {
+        match (opt_s, opt_pat) {
+            (Some(s), Some(pat)) => {
+                let reg = Regex::new(pat)?;
+                let mut locs = reg.capture_locations();
+                if reg.captures_read(&mut locs, s).is_some() {
+                    builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
+                    continue;
+                }
+                // Push null if there was no match.
+                builder.push_null()
+            },
+            _ => builder.push_null(),
+        }
+    }
+
+    Ok(builder.into())
+}
+
 pub(super) fn extract_group(
     ca: &StringChunked,
-    pat: &str,
+    pat: &StringChunked,
     group_index: usize,
 ) -> PolarsResult<StringChunked> {
-    let reg = Regex::new(pat)?;
-    let chunks = ca
-        .downcast_iter()
-        .map(|array| extract_group_array(array, &reg, group_index));
-    ChunkedArray::try_from_chunk_iter(ca.name(), chunks)
+    match (ca.len(), pat.len()) {
+        (_, 1) => {
+            if let Some(pat) = pat.get(0) {
+                let reg = Regex::new(pat)?;
+                try_unary_mut_with_options(ca, |arr| extract_group_reg_lit(arr, &reg, group_index))
+            } else {
+                Ok(StringChunked::full_null(ca.name(), ca.len()))
+            }
+        },
+        (1, _) => {
+            if let Some(s) = ca.get(0) {
+                try_unary_mut_with_options(pat, |pat| extract_group_array_lit(s, pat, group_index))
+            } else {
+                Ok(StringChunked::full_null(ca.name(), pat.len()))
+            }
+        },
+        (len_ca, len_pat) if len_ca == len_pat => try_binary_mut_with_options(
+            ca,
+            pat,
+            |ca, pat| extract_group_binary(ca, pat, group_index),
+            ca.name(),
+        ),
+        _ => {
+            polars_bail!(ComputeError: "ca(len: {}) and pat(len: {}) should either broadcast or have the same length", ca.len(), pat.len())
+        },
+    }
 }

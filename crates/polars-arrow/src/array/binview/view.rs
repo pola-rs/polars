@@ -73,9 +73,32 @@ pub(super) fn validate_binary_view(views: &[u128], buffers: &[Buffer<u8>]) -> Po
     validate_view(views, buffers, |_| Ok(()))
 }
 
-pub(super) fn validate_utf8_view(views: &[u128], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
-    validate_view(views, buffers, |b| match simdutf8::basic::from_utf8(b) {
+fn validate_utf8(b: &[u8]) -> PolarsResult<()> {
+    match simdutf8::basic::from_utf8(b) {
         Ok(_) => Ok(()),
         Err(_) => Err(polars_err!(ComputeError: "invalid utf8")),
-    })
+    }
+}
+
+pub(super) fn validate_utf8_view(views: &[u128], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
+    validate_view(views, buffers, validate_utf8)
+}
+
+pub(super) fn validate_utf8_only_view(views: &[u128], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
+    for view in views {
+        let len = *view as u32;
+        if len <= 12 {
+            validate_utf8(&view.to_le_bytes()[4..4 + len as usize])?;
+        } else {
+            let view = View::from(*view);
+            let data = &buffers[view.buffer_idx as usize];
+
+            let start = view.offset as usize;
+            let end = start + len as usize;
+            let b = &data.as_slice()[start..end];
+            validate_utf8(b)?;
+        };
+    }
+
+    Ok(())
 }

@@ -60,7 +60,8 @@ def polars_type_to_constructor(
 
         return _POLARS_TYPE_TO_CONSTRUCTOR[base_type]
     except KeyError:  # pragma: no cover
-        raise ValueError(f"cannot construct PySeries for type {dtype!r}") from None
+        msg = f"cannot construct PySeries for type {dtype!r}"
+        raise ValueError(msg) from None
 
 
 _NUMPY_TYPE_TO_CONSTRUCTOR = None
@@ -102,11 +103,12 @@ def _normalise_numpy_dtype(dtype: Any) -> tuple[Any, Any]:
         ):
             cast_as = np.int64
         else:
-            raise ValueError(
+            msg = (
                 "incorrect NumPy datetime resolution"
                 "\n\n'D' (datetime only), 'ms', 'us', and 'ns' resolutions are supported when converting from numpy.{datetime64,timedelta64}."
                 " Please cast to the closest supported unit before converting."
             )
+            raise ValueError(msg)
     return normalised_dtype, cast_as
 
 
@@ -132,9 +134,8 @@ def numpy_type_to_constructor(dtype: type[np.dtype[Any]]) -> Callable[..., PySer
     except KeyError:
         return PySeries.new_object
     except NameError:  # pragma: no cover
-        raise ModuleNotFoundError(
-            f"'numpy' is required to convert numpy dtype {dtype!r}"
-        ) from None
+        msg = f"'numpy' is required to convert numpy dtype {dtype!r}"
+        raise ModuleNotFoundError(msg) from None
 
 
 if not _DOCUMENTING:

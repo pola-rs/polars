@@ -181,9 +181,8 @@ def _scan_pyarrow_dataset_impl(
             expr_ast = _to_ast(predicate)
             pyiceberg_expr = _convert_predicate(expr_ast)
         except ValueError as e:
-            raise ValueError(
-                f"Could not convert predicate to PyIceberg: {predicate}"
-            ) from e
+            msg = f"Could not convert predicate to PyIceberg: {predicate}"
+            raise ValueError(msg) from e
 
         scan = scan.filter(pyiceberg_expr)
 
@@ -217,7 +216,8 @@ def _to_ast(expr: str) -> ast.expr:
 @singledispatch
 def _convert_predicate(a: Any) -> Any:
     """Walks the AST to  convert the  PyArrow expression to a PyIceberg expression."""
-    raise ValueError(f"Unexpected symbol: {a}")
+    msg = f"Unexpected symbol: {a}"
+    raise ValueError(msg)
 
 
 @_convert_predicate.register(Constant)
@@ -235,7 +235,8 @@ def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
         return pyiceberg.expressions.Not(_convert_predicate(a.operand))
     else:
-        raise TypeError(f"Unexpected UnaryOp: {a}")
+        msg = f"Unexpected UnaryOp: {a}"
+        raise TypeError(msg)
 
 
 @_convert_predicate.register(Call)
@@ -256,7 +257,8 @@ def _(a: Call) -> Any:
         elif f == "is_nan":
             return pyiceberg.expressions.IsNaN(ref)
 
-    raise ValueError(f"Unknown call: {f!r}")
+    msg = f"Unknown call: {f!r}"
+    raise ValueError(msg)
 
 
 @_convert_predicate.register(Attribute)
@@ -275,7 +277,8 @@ def _(a: BinOp) -> Any:
     if isinstance(op, BitOr):
         return pyiceberg.expressions.Or(lhs, rhs)
     else:
-        raise TypeError(f"Unknown: {lhs} {op} {rhs}")
+        msg = f"Unknown: {lhs} {op} {rhs}"
+        raise TypeError(msg)
 
 
 @_convert_predicate.register(Compare)
@@ -295,7 +298,8 @@ def _(a: Compare) -> Any:
     if isinstance(op, LtE):
         return pyiceberg.expressions.LessThanOrEqual(lhs, rhs)
     else:
-        raise TypeError(f"Unknown comparison: {op}")
+        msg = f"Unknown comparison: {op}"
+        raise TypeError(msg)
 
 
 @_convert_predicate.register(List)

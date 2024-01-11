@@ -232,13 +232,11 @@ def read_excel(
     """
     if engine and engine != "xlsx2csv":
         if xlsx2csv_options:
-            raise ValueError(
-                f"cannot specify `xlsx2csv_options` when engine={engine!r}"
-            )
+            msg = f"cannot specify `xlsx2csv_options` when engine={engine!r}"
+            raise ValueError(msg)
         if read_csv_options:
-            raise ValueError(
-                f"cannot specify `read_csv_options` when engine={engine!r}"
-            )
+            msg = f"cannot specify `read_csv_options` when engine={engine!r}"
+            raise ValueError(msg)
 
     return _read_spreadsheet(
         sheet_id,
@@ -433,7 +431,8 @@ def _read_spreadsheet(
 
     if not parsed_sheets:
         param, value = ("id", sheet_id) if sheet_name is None else ("name", sheet_name)
-        raise ValueError(f"no matching sheets found when `sheet_{param}` is {value!r}")
+        msg = f"no matching sheets found when `sheet_{param}` is {value!r}"
+        raise ValueError(msg)
 
     if return_multi:
         return parsed_sheets
@@ -447,9 +446,8 @@ def _get_sheet_names(
 ) -> tuple[list[str], bool]:
     """Establish sheets to read; indicate if we are returning a dict frames."""
     if sheet_id is not None and sheet_name is not None:
-        raise ValueError(
-            f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
-        )
+        msg = f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
+        raise ValueError(msg)
     sheet_names = []
     if sheet_id is None and sheet_name is None:
         sheet_names.append(worksheets[0]["name"])
@@ -469,9 +467,8 @@ def _get_sheet_names(
             known_sheet_names = {ws["name"] for ws in worksheets}
             for name in names:
                 if name not in known_sheet_names:
-                    raise ValueError(
-                        f"no matching sheet found when `sheet_name` is {name!r}"
-                    )
+                    msg = f"no matching sheet found when `sheet_name` is {name!r}"
+                    raise ValueError(msg)
                 sheet_names.append(name)
         else:
             ids = (sheet_id,) if isinstance(sheet_id, int) else sheet_id or ()
@@ -482,9 +479,8 @@ def _get_sheet_names(
             }
             for idx in ids:
                 if (name := sheet_names_by_idx.get(idx)) is None:  # type: ignore[assignment]
-                    raise ValueError(
-                        f"no matching sheet found when `sheet_id` is {idx}"
-                    )
+                    msg = f"no matching sheet found when `sheet_id` is {idx}"
+                    raise ValueError(msg)
                 sheet_names.append(name)
     return sheet_names, return_multi
 
@@ -499,9 +495,10 @@ def _initialise_spreadsheet_parser(
         try:
             import xlsx2csv
         except ImportError:
-            raise ModuleNotFoundError(
+            msg = (
                 "required package not installed" "\n\nPlease run: pip install xlsx2csv"
-            ) from None
+            )
+            raise ModuleNotFoundError(msg) from None
 
         # establish sensible defaults for unset options
         for option, value in {
@@ -520,9 +517,10 @@ def _initialise_spreadsheet_parser(
         try:
             import openpyxl
         except ImportError:
-            raise ImportError(
+            msg = (
                 "required package not installed" "\n\nPlease run: pip install openpyxl"
-            ) from None
+            )
+            raise ImportError(msg) from None
         parser = openpyxl.load_workbook(source, data_only=True, **engine_options)
         sheets = [{"index": i + 1, "name": ws.title} for i, ws in enumerate(parser)]
         return _read_spreadsheet_openpyxl, parser, sheets
@@ -531,14 +529,14 @@ def _initialise_spreadsheet_parser(
         try:
             import pyxlsb
         except ImportError:
-            raise ImportError(
-                "required package not installed" "\n\nPlease run: pip install pyxlsb"
-            ) from None
+            msg = "required package not installed" "\n\nPlease run: pip install pyxlsb"
+            raise ImportError(msg) from None
         try:
             parser = pyxlsb.open_workbook(source, **engine_options)
         except KeyError as err:
             if "no item named 'xl/_rels/workbook.bin.rels'" in str(err):
-                raise TypeError(f"invalid Excel Binary Workbook: {source!r}") from None
+                msg = f"invalid Excel Binary Workbook: {source!r}"
+                raise TypeError(msg) from None
             raise
         sheets = [
             {"index": i + 1, "name": name} for i, name in enumerate(parser.sheets)
@@ -549,17 +547,19 @@ def _initialise_spreadsheet_parser(
         try:
             import ezodf
         except ImportError:
-            raise ImportError(
+            msg = (
                 "required package not installed"
                 "\n\nPlease run: pip install ezodf lxml"
-            ) from None
+            )
+            raise ImportError(msg) from None
         parser = ezodf.opendoc(source, **engine_options)
         sheets = [
             {"index": i + 1, "name": ws.name} for i, ws in enumerate(parser.sheets)
         ]
         return _read_spreadsheet_ods, parser, sheets
 
-    raise NotImplementedError(f"unrecognized engine: {engine!r}")
+    msg = f"unrecognized engine: {engine!r}"
+    raise NotImplementedError(msg)
 
 
 def _csv_buffer_to_frame(
@@ -574,10 +574,11 @@ def _csv_buffer_to_frame(
     # handle (completely) empty sheet data
     if csv.tell() == 0:
         if raise_if_empty:
-            raise NoDataError(
+            msg = (
                 "empty Excel sheet"
                 "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
             )
+            raise NoDataError(msg)
         return pl.DataFrame()
 
     if read_csv_options is None:
@@ -586,9 +587,8 @@ def _csv_buffer_to_frame(
         if (csv_dtypes := read_csv_options.get("dtypes", {})) and set(
             csv_dtypes
         ).intersection(schema_overrides):
-            raise ParameterCollisionError(
-                "cannot specify columns in both `schema_overrides` and `read_csv_options['dtypes']`"
-            )
+            msg = "cannot specify columns in both `schema_overrides` and `read_csv_options['dtypes']`"
+            raise ParameterCollisionError(msg)
         read_csv_options = read_csv_options.copy()
         read_csv_options["dtypes"] = {**csv_dtypes, **schema_overrides}
 
@@ -629,7 +629,8 @@ def _read_spreadsheet_ods(
     if sheet_name is not None:
         ws = next((s for s in sheets if s.name == sheet_name), None)
         if ws is None:
-            raise ValueError(f"sheet {sheet_name!r} not found")
+            msg = f"sheet {sheet_name!r} not found"
+            raise ValueError(msg)
     else:
         ws = sheets[0]
 
@@ -668,10 +669,11 @@ def _read_spreadsheet_ods(
         )
 
     if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
-        raise NoDataError(
+        msg = (
             "empty Excel sheet"
             "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
         )
+        raise NoDataError(msg)
 
     if strptime_cols:
         df = df.with_columns(
@@ -734,10 +736,11 @@ def _read_spreadsheet_openpyxl(
         schema_overrides=schema_overrides,
     )
     if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
-        raise NoDataError(
+        msg = (
             "empty Excel sheet"
             "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
         )
+        raise NoDataError(msg)
     return _drop_unnamed_null_columns(df)
 
 
@@ -794,10 +797,11 @@ def _read_spreadsheet_pyxlsb(
         schema_overrides=schema_overrides,
     )
     if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
-        raise NoDataError(
+        msg = (
             "empty Excel sheet"
             "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
         )
+        raise NoDataError(msg)
     return _drop_unnamed_null_columns(df)
 
 

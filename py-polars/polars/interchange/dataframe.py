@@ -56,11 +56,12 @@ class PolarsDataFrame(InterchangeDataFrame):
             causes conversions that are not zero-copy to fail.
         """
         if nan_as_null:
-            raise NotImplementedError(
+            msg = (
                 "functionality for `nan_as_null` has not been implemented and the"
                 " parameter will be removed in a future version"
                 "\n\nUse the default `nan_as_null=False`."
             )
+            raise NotImplementedError(msg)
         return PolarsDataFrame(self._df, allow_copy=allow_copy)
 
     @property
@@ -133,7 +134,8 @@ class PolarsDataFrame(InterchangeDataFrame):
             Column indices
         """
         if not isinstance(indices, Sequence):
-            raise TypeError("`indices` is not a sequence")
+            msg = "`indices` is not a sequence"
+            raise TypeError(msg)
         if not isinstance(indices, list):
             indices = list(indices)
 
@@ -152,7 +154,8 @@ class PolarsDataFrame(InterchangeDataFrame):
             Column names.
         """
         if not isinstance(names, Sequence):
-            raise TypeError("`names` is not a sequence")
+            msg = "`names` is not a sequence"
+            raise TypeError(msg)
 
         return PolarsDataFrame(
             self._df.select(names),
@@ -184,10 +187,11 @@ class PolarsDataFrame(InterchangeDataFrame):
                 yield PolarsDataFrame(chunk, allow_copy=self._allow_copy)
 
         elif (n_chunks <= 0) or (n_chunks % total_n_chunks != 0):
-            raise ValueError(
+            msg = (
                 "`n_chunks` must be a multiple of the number of chunks of this"
                 f" dataframe ({total_n_chunks})"
             )
+            raise ValueError(msg)
 
         else:
             subchunks_per_chunk = n_chunks // total_n_chunks
@@ -219,9 +223,8 @@ class PolarsDataFrame(InterchangeDataFrame):
 
             if not all(x == 1 for x in chunk.n_chunks("all")):
                 if not self._allow_copy:
-                    raise CopyNotAllowedError(
-                        "unevenly chunked columns must be rechunked"
-                    )
+                    msg = "unevenly chunked columns must be rechunked"
+                    raise CopyNotAllowedError(msg)
                 chunk = chunk.rechunk()
 
             yield chunk

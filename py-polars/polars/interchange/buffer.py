@@ -32,9 +32,8 @@ class PolarsBuffer(Buffer):
     def __init__(self, data: Series, *, allow_copy: bool = True):
         if data.n_chunks() > 1:
             if not allow_copy:
-                raise CopyNotAllowedError(
-                    "non-contiguous buffer must be made contiguous"
-                )
+                msg = "non-contiguous buffer must be made contiguous"
+                raise CopyNotAllowedError(msg)
             data = data.rechunk()
 
         self._data = data
@@ -66,7 +65,8 @@ class PolarsBuffer(Buffer):
 
     def __dlpack__(self) -> NoReturn:
         """Represent this structure as DLPack interface."""
-        raise NotImplementedError("__dlpack__")
+        msg = "__dlpack__"
+        raise NotImplementedError(msg)
 
     def __dlpack_device__(self) -> tuple[DlpackDeviceType, None]:
         """Device type and device ID for where the data in the buffer resides."""

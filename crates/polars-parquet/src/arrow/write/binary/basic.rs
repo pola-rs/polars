@@ -1,7 +1,7 @@
 use arrow::array::{Array, BinaryArray, ValueSize};
 use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::PolarsResult;
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
@@ -10,35 +10,27 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{
     serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
 };
+use crate::write::utils::invalid_encoding;
 use crate::write::Page;
 
-pub(crate) fn encode_plain<O: Offset>(
-    array: &BinaryArray<O>,
-    is_optional: bool,
+pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(
+    iter: I,
     buffer: &mut Vec<u8>,
 ) {
+    iter.for_each(|x| {
+        // BYTE_ARRAY: first 4 bytes denote length in littleendian.
+        let len = (x.len() as u32).to_le_bytes();
+        buffer.extend_from_slice(&len);
+        buffer.extend_from_slice(x);
+    })
+}
+
+pub(crate) fn encode_plain<O: Offset>(array: &BinaryArray<O>, buffer: &mut Vec<u8>) {
     let len_before = buffer.len();
     let capacity =
         array.get_values_size() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
     buffer.reserve(capacity);
-    // append the non-null values
-    if is_optional {
-        array.iter().for_each(|x| {
-            if let Some(x) = x {
-                // BYTE_ARRAY: first 4 bytes denote length in littleendian.
-                let len = (x.len() as u32).to_le_bytes();
-                buffer.extend_from_slice(&len);
-                buffer.extend_from_slice(x);
-            }
-        })
-    } else {
-        array.values_iter().for_each(|x| {
-            // BYTE_ARRAY: first 4 bytes denote length in littleendian.
-            let len = (x.len() as u32).to_le_bytes();
-            buffer.extend_from_slice(&len);
-            buffer.extend_from_slice(x);
-        })
-    }
+    encode_non_null_values(array.non_null_values_iter(), buffer);
     // Ensure we allocated properly.
     debug_assert_eq!(buffer.len() - len_before, capacity);
 }
@@ -64,7 +56,7 @@ pub fn array_to_page<O: Offset>(
     let definition_levels_byte_length = buffer.len();
 
     match encoding {
-        Encoding::Plain => encode_plain(array, is_optional, &mut buffer),
+        Encoding::Plain => encode_plain(array, &mut buffer),
         Encoding::DeltaLengthByteArray => encode_delta(
             array.values(),
             array.offsets().buffer(),
@@ -72,13 +64,7 @@ pub fn array_to_page<O: Offset>(
             is_optional,
             &mut buffer,
         ),
-        _ => {
-            polars_bail!(InvalidOperation:
-                "Datatype {:?} cannot be encoded by {:?} encoding",
-                array.data_type(),
-                encoding
-            )
-        },
+        _ => return Err(invalid_encoding(encoding, array.data_type())),
     }
 
     let statistics = if options.write_statistics {

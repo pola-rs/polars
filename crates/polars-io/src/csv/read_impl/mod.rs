@@ -26,7 +26,7 @@ use crate::csv::{CsvEncoding, NullValues};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
-use crate::RowCount;
+use crate::RowIndex;
 
 pub(crate) fn cast_columns(
     df: &mut DataFrame,
@@ -116,7 +116,7 @@ pub(crate) struct CoreReader<'a> {
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     truncate_ragged_lines: bool,
 }
 
@@ -206,7 +206,7 @@ impl<'a> CoreReader<'a> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
-        row_count: Option<RowCount>,
+        row_index: Option<RowIndex>,
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
@@ -306,7 +306,7 @@ impl<'a> CoreReader<'a> {
             missing_is_null,
             predicate,
             to_cast,
-            row_count,
+            row_index,
             truncate_ragged_lines,
         })
     }
@@ -552,8 +552,8 @@ impl<'a> CoreReader<'a> {
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             let mut df = DataFrame::from(self.schema.as_ref());
-            if let Some(ref row_count) = self.row_count {
-                df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
+            if let Some(ref row_index) = self.row_index {
+                df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
             }
             return Ok(df);
         }
@@ -618,8 +618,8 @@ impl<'a> CoreReader<'a> {
                                     .collect::<PolarsResult<_>>()?,
                             );
                             let current_row_count = local_df.height() as IdxSize;
-                            if let Some(rc) = &self.row_count {
-                                local_df.with_row_count_mut(&rc.name, Some(rc.offset));
+                            if let Some(rc) = &self.row_index {
+                                local_df.with_row_index_mut(&rc.name, Some(rc.offset));
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
@@ -638,7 +638,7 @@ impl<'a> CoreReader<'a> {
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
             let mut dfs = flatten(&dfs, None);
-            if self.row_count.is_some() {
+            if self.row_index.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
             accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
@@ -687,8 +687,8 @@ impl<'a> CoreReader<'a> {
                         }
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
-                        if let Some(rc) = &self.row_count {
-                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        if let Some(rc) = &self.row_index {
+                            df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
@@ -738,15 +738,15 @@ impl<'a> CoreReader<'a> {
                         };
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
-                        if let Some(rc) = &self.row_count {
-                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        if let Some(rc) = &self.row_index {
+                            df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         (df, n_read)
                     });
                 }
             }
-            if self.row_count.is_some() {
+            if self.row_index.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
             accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
