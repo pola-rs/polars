@@ -5,10 +5,10 @@
 <h1 style="text-align:center">Blazingly Fast DataFrame Library </h1>
 <div align="center">
   <a href="https://docs.rs/polars/latest/polars/">
-    <img src="https://docs.rs/polars/badge.svg" alt="rust docs"/>
+    <img src="https://docs.rs/polars/badge.svg" alt="Rust docs latest"/>
   </a>
   <a href="https://crates.io/crates/polars">
-    <img src="https://img.shields.io/crates/v/polars.svg"/>
+    <img src="https://img.shields.io/crates/v/polars.svg" alt="Rust crates Latest Release"/>
   </a>
   <a href="https://pypi.org/project/polars/">
     <img src="https://img.shields.io/pypi/v/polars.svg" alt="PyPI Latest Release"/>
