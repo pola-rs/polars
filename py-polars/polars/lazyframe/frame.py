@@ -2193,7 +2193,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Evaluate the query in streaming mode and write to an NDJSON file.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
