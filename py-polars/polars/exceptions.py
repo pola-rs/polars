@@ -81,7 +81,7 @@ class TooManyRowsReturnedError(RowsError):
     """Exception raised when more rows than expected are returned."""
 
 
-class ModuleUpgradeRequired(PolarsError):  # type: ignore[misc]
+class ModuleUpgradeRequired(ModuleNotFoundError):
     """Exception raised when the module is installed but needs to be upgraded."""
 
 
