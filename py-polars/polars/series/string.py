@@ -739,7 +739,7 @@ class StringNameSpace:
         ]
         """
 
-    def extract(self, pattern: str, group_index: int = 1) -> Series:
+    def extract(self, pattern: IntoExprColumn, group_index: int = 1) -> Series:
         r"""
         Extract the target capture group from provided patterns.
 

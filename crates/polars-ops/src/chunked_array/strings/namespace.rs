@@ -399,7 +399,7 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Extract the nth capture group from pattern.
-    fn extract(&self, pat: &str, group_index: usize) -> PolarsResult<StringChunked> {
+    fn extract(&self, pat: &StringChunked, group_index: usize) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         super::extract::extract_group(ca, pat, group_index)
     }

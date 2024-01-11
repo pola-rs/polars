@@ -1384,7 +1384,7 @@ class ExprStringNameSpace:
             msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             raise ValueError(msg)
 
-    def extract(self, pattern: str, group_index: int = 1) -> Expr:
+    def extract(self, pattern: IntoExprColumn, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.
 
@@ -1464,6 +1464,7 @@ class ExprStringNameSpace:
         │ ronaldo   ┆ polars  ┆ null  │
         └───────────┴─────────┴───────┘
         """
+        pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:

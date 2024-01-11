@@ -638,6 +638,29 @@ def test_extract_regex() -> None:
     assert_series_equal(s.str.extract(r"candidate=(\w+)", 1), expected)
 
 
+def test_extract() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["aron123", "12butler", "charly*", "~david", None],
+            "pat": [r"^([a-zA-Z]+)", r"^(\d+)", None, "^(da)", r"(.*)"],
+        }
+    )
+
+    out = df.select(
+        all_expr=pl.col("s").str.extract(pl.col("pat"), 1),
+        str_expr=pl.col("s").str.extract("^([a-zA-Z]+)", 1),
+        pat_expr=pl.lit("aron123").str.extract(pl.col("pat")),
+    )
+    expected = pl.DataFrame(
+        {
+            "all_expr": ["aron", "12", None, None, None],
+            "str_expr": ["aron", None, "charly", None, None],
+            "pat_expr": ["aron", None, None, None, "aron123"],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_extract_binary() -> None:
     df = pl.DataFrame({"foo": ["aron", "butler", "charly", "david"]})
     out = df.filter(pl.col("foo").str.extract("^(a)", 1) == "a").to_series()
