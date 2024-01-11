@@ -713,6 +713,7 @@ fn test_describe() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "pivot")]
 fn test_describe_with_extra_aggs() -> PolarsResult<()> {
     std::env::set_var("POLARS_FMT_MAX_COLS", "100");
     std::env::set_var("POLARS_FMT_MAX_ROWS", "100");
@@ -764,6 +765,7 @@ fn test_describe_with_extra_aggs() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "pivot")]
 fn test_describe_nan() -> PolarsResult<()> {
     std::env::set_var("POLARS_FMT_MAX_COLS", "100");
     std::env::set_var("POLARS_FMT_MAX_ROWS", "100");

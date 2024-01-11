@@ -47,7 +47,6 @@ use polars_plan::global::FETCH_ROWS;
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
 use polars_plan::utils::expr_output_name;
-use polars_utils::index::Bounded;
 use smartstring::alias::String as SmartString;
 
 use crate::fallible;
@@ -94,6 +93,13 @@ impl From<LogicalPlan> for LazyFrame {
         }
     }
 }
+
+#[cfg(feature = "pivot")]
+type DescribeAggParam = (
+    String, //name
+    Box<dyn Fn(&DataType) -> bool>,//when applicable
+    Box<dyn Fn(&String) -> Expr>,//aggregation expression
+);
 
 impl LazyFrame {
     /// Get a handle to the schema — a map from column names to data types — of the current
@@ -1731,6 +1737,7 @@ impl LazyFrame {
         }))
     }
 
+    #[cfg(feature = "pivot")]
     pub fn describe(&self) -> PolarsResult<DataFrame> {
         self.describe_with_params(
             true,
@@ -1811,17 +1818,14 @@ impl LazyFrame {
         )
     }
 
+    #[cfg(feature = "pivot")]
     pub fn describe_with_params(
         &self,
         fields_to_header: bool,
-        aggs: Vec<(
-            String,
-            Box<dyn Fn(&DataType) -> bool>,
-            Box<dyn Fn(&String) -> Expr>,
-        )>,
+        aggs: Vec<DescribeAggParam>,
         only_columns: Option<Vec<&str>>,
     ) -> PolarsResult<DataFrame> {
-        let mut exprs = self
+        let exprs = self
             .schema()?
             .iter()
             .map(|(name, dt)| (name.to_string(), dt))
