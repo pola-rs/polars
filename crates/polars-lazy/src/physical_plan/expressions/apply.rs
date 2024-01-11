@@ -228,7 +228,6 @@ impl ApplyExpr {
         let len = iters[0].size_hint().0;
 
         if len == 0 {
-            let out = Series::new_empty(field.name(), &field.dtype);
             drop(iters);
 
             // Take the first aggregation context that as that is the input series.
@@ -236,13 +235,16 @@ impl ApplyExpr {
             ac.with_update_groups(UpdateGroups::No);
 
             let agg_state = if self.returns_scalar {
-                AggState::AggregatedScalar(out)
+                AggState::AggregatedScalar(Series::new_empty(field.name(), &field.dtype))
             } else {
                 match self.collect_groups {
-                    ApplyOptions::ElementWise | ApplyOptions::ApplyList => {
-                        ac.agg_state().map(|_| out)
-                    },
-                    ApplyOptions::GroupWise => AggState::AggregatedList(out),
+                    ApplyOptions::ElementWise | ApplyOptions::ApplyList => ac
+                        .agg_state()
+                        .map(|_| Series::new_empty(field.name(), &field.dtype)),
+                    ApplyOptions::GroupWise => AggState::AggregatedList(Series::new_empty(
+                        field.name(),
+                        &DataType::List(Box::new(field.dtype.clone())),
+                    )),
                 }
             };
 
