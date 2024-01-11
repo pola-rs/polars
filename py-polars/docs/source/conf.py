@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path("../..").resolve()))
 
 project = "Polars"
 author = "Ritchie Vink"
-copyright = f"2020, {author}"
+copyright = f"2024, {author}"
 
 # -- General configuration ---------------------------------------------------
 
