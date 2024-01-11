@@ -114,7 +114,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "json")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (path, paths, infer_schema_length, schema, batch_size, n_rows, low_memory, rechunk, row_index))]
+    #[pyo3(signature = (path, paths, infer_schema_length, schema, batch_size, n_rows, low_memory, rechunk, row_index, ignore_errors))]
     fn new_from_ndjson(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -125,6 +125,7 @@ impl PyLazyFrame {
         low_memory: bool,
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
+        ignore_errors: bool,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
 
@@ -142,6 +143,7 @@ impl PyLazyFrame {
             .with_rechunk(rechunk)
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .with_row_index(row_index)
+            .with_ignore_errors(ignore_errors)
             .finish()
             .map_err(PyPolarsErr::from)?;
 

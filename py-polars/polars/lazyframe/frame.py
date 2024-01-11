@@ -530,9 +530,10 @@ class LazyFrame:
         batch_size: int | None = None,
         n_rows: int | None = None,
         low_memory: bool = False,
-        rechunk: bool = True,
+        rechunk: bool = False,
         row_index_name: str | None = None,
         row_index_offset: int = 0,
+        ignore_errors: bool = False,
     ) -> Self:
         """
         Lazily read from a newline delimited JSON file.
@@ -561,6 +562,7 @@ class LazyFrame:
             low_memory,
             rechunk,
             _prepare_row_index_args(row_index_name, row_index_offset),
+            ignore_errors,
         )
         return self
 
