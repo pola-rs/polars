@@ -39,6 +39,10 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
         },
         Binary => LargeBinary,
         Utf8 => LargeUtf8,
+        Dictionary(it, data_type, sorted) => {
+            let dtype = convert_data_type(*data_type);
+            Dictionary(it, Box::new(dtype), sorted)
+        },
         Extension(name, data_type, metadata) => {
             let data_type = convert_data_type(*data_type);
             Extension(name, Box::new(data_type), metadata)
