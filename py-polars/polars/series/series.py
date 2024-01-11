@@ -4188,7 +4188,7 @@ class Series:
         closed: ClosedInterval = "both",
     ) -> Series:
         """
-        Get a boolean mask of the values that fall between the given start/end values.
+        Get a boolean mask of the values that are between the given lower/upper bounds.
 
         Parameters
         ----------
