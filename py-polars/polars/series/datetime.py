@@ -898,6 +898,9 @@ class DateTimeNameSpace:
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
 
+        .. deprecated:: 0.20.4
+            Use ``cast(pl.Int64).cast(pl.Datetime(time_unit, time_zone))`` instead.
+
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
@@ -911,7 +914,7 @@ class DateTimeNameSpace:
         ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)],
         ...     dtype=pl.Datetime(time_unit="ns"),
         ... )
-        >>> s.dt.with_time_unit("us")
+        >>> s.dt.with_time_unit("us")  # doctest: +SKIP
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
