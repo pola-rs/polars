@@ -166,3 +166,17 @@ def test_df_describe_quantile_precision() -> None:
     expected_metrics = ["99%", "99.9%", "99.99%"]
     for m in expected_metrics:
         assert m in result_metrics
+
+
+# https://github.com/pola-rs/polars/issues/9830
+def test_df_describe_object() -> None:
+    df = pl.Series(
+        "object",
+        [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}],
+        dtype=pl.Object,
+    ).to_frame()
+
+    result = df.describe(percentiles=(0.05, 0.25, 0.5, 0.75, 0.95))
+
+    expected = pl.DataFrame({"describe": ["count", "null_count"], "object": ["3", "0"]})
+    assert_frame_equal(result.head(2), expected)
