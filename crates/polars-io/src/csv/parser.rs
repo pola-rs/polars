@@ -174,15 +174,14 @@ pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
 }
 
 #[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(crate) fn skip_whitespace_line_ending_exclude(
-    input: &[u8],
-    exclude: u8,
-    eol_char: u8,
-) -> &[u8] {
-    skip_condition(input, |b| {
-        b != exclude && (is_whitespace(b) || is_line_ending(b, eol_char))
-    })
+/// Can be used to skip empty lines but leave leading whitespaces
+pub(crate) fn find_non_empty_position(input: &[u8], exclude: u8, eol_char: u8) -> usize {
+    let non_empty_position = input
+        .iter()
+        .position(|b| !((*b != exclude && is_whitespace(*b)) || is_line_ending(*b, eol_char)))
+        .unwrap_or(input.len());
+
+    non_empty_position
 }
 
 #[inline]
@@ -398,10 +397,19 @@ pub(super) fn parse_lines(
 
         // only when we have one column \n should not be skipped
         // other widths should have commas.
-        bytes = if schema_len > 1 {
-            skip_whitespace_line_ending_exclude(bytes, separator, eol_char)
+        if schema_len > 1 {
+            let non_empty_position = find_non_empty_position(bytes, separator, eol_char);
+            if non_empty_position == bytes.len() {
+                return Ok(original_bytes_len); // entire sequence is blank lines
+            } else {
+                bytes = if non_empty_position > 0 && bytes[non_empty_position - 1] == eol_char {
+                    &bytes[non_empty_position..] // skip blank lines
+                } else {
+                    bytes
+                };
+            };
         } else {
-            skip_whitespace_exclude(bytes, separator)
+            bytes = skip_whitespace_exclude(bytes, separator);
         };
         if bytes.is_empty() {
             return Ok(original_bytes_len);

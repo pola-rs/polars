@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import textwrap
 from dataclasses import dataclass
 from decimal import Decimal as D
 from typing import Any, NamedTuple
@@ -174,11 +175,14 @@ def test_string_to_decimal() -> None:
 
 def test_read_csv_decimal(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
-    csv = """a,b
-    123.12,a
-    1.1,a
-    0.01,a"""
-
+    csv = textwrap.dedent(
+        """\
+        a,b
+        123.12,a
+        1.1,a
+        0.01,a
+        """
+    )
     df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal(scale=2)})
     assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.String]
     assert df["a"].to_list() == [

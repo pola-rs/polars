@@ -104,6 +104,13 @@ def test_normalize_filepath(io_files_path: Path) -> None:
     )
 
 
+def test_leading_whitespaces() -> None:
+    csv = "a,b,c\n a,b,c \n , b ,  c\n\n"
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, null_values="na")
+    assert df.rows() == [(" a", "b", "c "), (" ", " b ", "  c")]
+
+
 def test_csv_null_values() -> None:
     csv = textwrap.dedent(
         """\
@@ -573,6 +580,31 @@ def test_empty_line_with_multiple_columns() -> None:
     assert_frame_equal(df, expected)
 
 
+def test_blank_lines() -> None:
+    df = pl.read_csv(
+        b"a,b\n  \t  \nc,d\n",
+        new_columns=["A", "B"],
+        has_header=False,
+        comment_prefix="#",
+        use_pyarrow=False,
+    )
+    expected = pl.DataFrame({"A": ["a", "c"], "B": ["b", "d"]})
+    assert_frame_equal(df, expected)
+
+
+def test_blank_lines_with_separator() -> None:
+    df = pl.read_csv(
+        b"a\tb\n  \t  \nc\td\n",
+        new_columns=["A", "B"],
+        has_header=False,
+        comment_prefix="#",
+        use_pyarrow=False,
+        separator="\t",
+    )
+    expected = pl.DataFrame({"A": ["a", "  ", "c"], "B": ["b", "  ", "d"]})
+    assert_frame_equal(df, expected)
+
+
 def test_csv_multi_char_comment() -> None:
     csv = textwrap.dedent(
         """\
@@ -1039,7 +1071,7 @@ def test_skip_new_line_embedded_lines() -> None:
             missing_utf8_is_empty_string=empty_string,
         )
         assert df.to_dict(as_series=False) == {
-            "a": ["4", "7"],
+            "a": ["        4", "        7"],
             "b": ["5", "8"],
             "c": ["6", missing_value],
             "d": ["Test A", "Test B \\n"],
