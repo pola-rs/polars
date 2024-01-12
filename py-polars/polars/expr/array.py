@@ -524,7 +524,7 @@ class ExprArrayNameSpace:
         ... )
         >>> df.with_columns(number_of_twos=pl.col("a").arr.count_matches(2))
         shape: (3, 2)
-         ┌───────────────┬────────────────┐
+        ┌───────────────┬────────────────┐
         │ a             ┆ number_of_twos │
         │ ---           ┆ ---            │
         │ array[i64, 2] ┆ u32            │
