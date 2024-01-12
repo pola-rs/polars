@@ -530,9 +530,10 @@ class LazyFrame:
         batch_size: int | None = None,
         n_rows: int | None = None,
         low_memory: bool = False,
-        rechunk: bool = True,
+        rechunk: bool = False,
         row_index_name: str | None = None,
         row_index_offset: int = 0,
+        ignore_errors: bool = False,
     ) -> Self:
         """
         Lazily read from a newline delimited JSON file.
@@ -561,6 +562,7 @@ class LazyFrame:
             low_memory,
             rechunk,
             _prepare_row_index_args(row_index_name, row_index_offset),
+            ignore_errors,
         )
         return self
 
@@ -2189,11 +2191,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        no_optimization: bool = False,
         slice_pushdown: bool = True,
+        no_optimization: bool = False,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Evaluate the query in streaming mode and write to an NDJSON file.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2212,10 +2214,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Do projection pushdown optimization.
         simplify_expression
             Run simplify expressions optimization.
-        no_optimization
-            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        no_optimization
+            Turn off (certain) optimizations.
 
         Returns
         -------
@@ -2224,15 +2226,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Examples
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
-        >>> lf.sink_json("out.json")  # doctest: +SKIP
+        >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
-            no_optimization=no_optimization,
             slice_pushdown=slice_pushdown,
+            no_optimization=no_optimization,
         )
 
         return lf.sink_json(path=path, maintain_order=maintain_order)

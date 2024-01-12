@@ -439,9 +439,13 @@ impl SQLExprVisitor<'_> {
         if format.is_some() {
             return Err(polars_err!(ComputeError: "unsupported use of FORMAT in CAST expression"));
         }
-        let polars_type = map_sql_polars_datatype(data_type)?;
         let expr = self.visit_expr(expr)?;
 
+        #[cfg(feature = "json")]
+        if data_type == &SQLDataType::JSON {
+            return Ok(expr.str().json_decode(None, None));
+        }
+        let polars_type = map_sql_polars_datatype(data_type)?;
         Ok(expr.cast(polars_type))
     }
 

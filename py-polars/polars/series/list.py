@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
-        IntoExpr,
         IntoExprColumn,
         NullBehavior,
         ToStructStrategy,
@@ -384,7 +383,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: IntoExpr) -> Series:
+    def join(self, separator: IntoExprColumn) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -446,7 +445,9 @@ class ListNameSpace:
         ]
         """
 
-    def contains(self, item: float | str | bool | int | date | datetime) -> Series:
+    def contains(
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
+    ) -> Series:
         """
         Check if sublists contain the given item.
 

@@ -21,6 +21,38 @@ pub(super) fn profile_name(
 
 type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
 
+#[cfg(feature = "dynamic_group_by")]
+fn rolling_evaluate(
+    df: &DataFrame,
+    state: &ExecutionState,
+    rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>>,
+) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
+    POOL.install(|| {
+        rolling
+            .par_iter()
+            .map(|(options, partition)| {
+                // clear the cache for every partitioned group
+                let state = state.split();
+
+                let (_time_key, _keys, groups) = df.group_by_rolling(vec![], options)?;
+
+                let groups_key = format!("{:?}", options);
+                // Set the groups so all expressions in partition can use it.
+                // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
+                // rolling expression try to get read access.
+                {
+                    let mut groups_map = state.group_tuples.write().unwrap();
+                    groups_map.insert(groups_key, groups);
+                }
+                partition
+                    .par_iter()
+                    .map(|(idx, expr)| expr.evaluate(df, &state).map(|s| (*idx, s)))
+                    .collect::<PolarsResult<Vec<_>>>()
+            })
+            .collect()
+    })
+}
+
 fn execute_projection_cached_window_fns(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
@@ -83,25 +115,11 @@ fn execute_projection_cached_window_fns(
     // Per partition we run in parallel. We compute the groups before and store them once per partition.
     // The rolling expression knows how to fetch the groups.
     #[cfg(feature = "dynamic_group_by")]
-    for (options, partition) in rolling {
-        // clear the cache for every partitioned group
-        let state = state.split();
-        let (_time_key, _keys, groups) = df.group_by_rolling(vec![], options)?;
-        // Set the groups so all expressions in partition can use it.
-        // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
-        // rolling expression try to get read access.
-        {
-            let mut groups_map = state.group_tuples.write().unwrap();
-            groups_map.insert(options.index_column.to_string(), groups);
+    {
+        let partitions = rolling_evaluate(df, state, rolling)?;
+        for part in partitions {
+            selected_columns.extend_from_slice(&part)
         }
-
-        let results = POOL.install(|| {
-            partition
-                .par_iter()
-                .map(|(idx, expr)| expr.evaluate(df, &state).map(|s| (*idx, s)))
-                .collect::<PolarsResult<Vec<_>>>()
-        })?;
-        selected_columns.extend_from_slice(&results);
     }
 
     for partition in windows {

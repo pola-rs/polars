@@ -914,9 +914,12 @@ impl Expr {
 
     #[cfg(feature = "dynamic_group_by")]
     pub fn rolling(self, options: RollingGroupOptions) -> Self {
+        // We add the index column as `partition expr` so that the optimizer will
+        // not ignore it.
+        let index_col = col(options.index_column.as_str());
         Expr::Window {
             function: Box::new(self),
-            partition_by: vec![],
+            partition_by: vec![index_col],
             options: WindowType::Rolling(options),
         }
     }
@@ -969,6 +972,17 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_duplicated(self) -> Self {
         self.apply_private(BooleanFunction::IsDuplicated.into())
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_between")]
+    pub fn is_between<E: Into<Expr>>(self, lower: E, upper: E, closed: ClosedInterval) -> Self {
+        self.map_many_private(
+            BooleanFunction::IsBetween { closed }.into(),
+            &[lower.into(), upper.into()],
+            false,
+            true,
+        )
     }
 
     /// Get a mask of unique values.

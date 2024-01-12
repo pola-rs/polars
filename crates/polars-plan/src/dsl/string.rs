@@ -120,10 +120,13 @@ impl StringNameSpace {
     }
 
     /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
-    pub fn extract(self, pat: &str, group_index: usize) -> Expr {
-        let pat = pat.to_string();
-        self.0
-            .map_private(StringFunction::Extract { pat, group_index }.into())
+    pub fn extract(self, pat: Expr, group_index: usize) -> Expr {
+        self.0.map_many_private(
+            StringFunction::Extract(group_index).into(),
+            &[pat],
+            false,
+            true,
+        )
     }
 
     #[cfg(feature = "extract_groups")]

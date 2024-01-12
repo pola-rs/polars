@@ -99,7 +99,6 @@ from polars.utils.deprecation import (
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
-    _warn_null_comparison,
     no_default,
     parse_percentiles,
     parse_version,
@@ -107,6 +106,7 @@ from polars.utils.various import (
     range_to_slice,
     scale_bytes,
     sphinx_accessor,
+    warn_null_comparison,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -707,7 +707,7 @@ class Series:
         ...
 
     def __eq__(self, other: Any) -> Series | Expr:
-        _warn_null_comparison(other)
+        warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
@@ -721,7 +721,7 @@ class Series:
         ...
 
     def __ne__(self, other: Any) -> Series | Expr:
-        _warn_null_comparison(other)
+        warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
@@ -735,7 +735,7 @@ class Series:
         ...
 
     def __gt__(self, other: Any) -> Series | Expr:
-        _warn_null_comparison(other)
+        warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
@@ -749,7 +749,7 @@ class Series:
         ...
 
     def __lt__(self, other: Any) -> Series | Expr:
-        _warn_null_comparison(other)
+        warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
@@ -763,7 +763,7 @@ class Series:
         ...
 
     def __ge__(self, other: Any) -> Series | Expr:
-        _warn_null_comparison(other)
+        warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
@@ -777,32 +777,56 @@ class Series:
         ...
 
     def __le__(self, other: Any) -> Series | Expr:
-        _warn_null_comparison(other)
+        warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
 
-    def le(self, other: Any) -> Self | Expr:
+    @overload
+    def le(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def le(self, other: Any) -> Series:
+        ...
+
+    def le(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series <= other`."""
         return self.__le__(other)
 
-    def lt(self, other: Any) -> Self | Expr:
+    @overload
+    def lt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def lt(self, other: Any) -> Series:
+        ...
+
+    def lt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series < other`."""
         return self.__lt__(other)
 
-    def eq(self, other: Any) -> Self | Expr:
+    @overload
+    def eq(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def eq(self, other: Any) -> Series:
+        ...
+
+    def eq(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series == other`."""
         return self.__eq__(other)
 
     @overload
-    def eq_missing(self, other: Any) -> Self:
+    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def eq_missing(self, other: Any) -> Series:
         ...
 
-    def eq_missing(self, other: Any) -> Self | Expr:
+    def eq_missing(self, other: Any) -> Series | Expr:
         """
         Method equivalent of equality operator `series == other` where `None == None`.
 
@@ -839,8 +863,19 @@ class Series:
             true
         ]
         """
+        if isinstance(other, pl.Expr):
+            return F.lit(self).eq_missing(other)
+        return self.to_frame().select(F.col(self.name).eq_missing(other)).to_series()
 
-    def ne(self, other: Any) -> Self | Expr:
+    @overload
+    def ne(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def ne(self, other: Any) -> Series:
+        ...
+
+    def ne(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series != other`."""
         return self.__ne__(other)
 
@@ -849,10 +884,10 @@ class Series:
         ...
 
     @overload
-    def ne_missing(self, other: Any) -> Self:
+    def ne_missing(self, other: Any) -> Series:
         ...
 
-    def ne_missing(self, other: Any) -> Self | Expr:
+    def ne_missing(self, other: Any) -> Series | Expr:
         """
         Method equivalent of equality operator `series != other` where `None == None`.
 
@@ -889,12 +924,31 @@ class Series:
             false
         ]
         """
+        if isinstance(other, pl.Expr):
+            return F.lit(self).ne_missing(other)
+        return self.to_frame().select(F.col(self.name).ne_missing(other)).to_series()
 
-    def ge(self, other: Any) -> Self | Expr:
+    @overload
+    def ge(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def ge(self, other: Any) -> Series:
+        ...
+
+    def ge(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series >= other`."""
         return self.__ge__(other)
 
-    def gt(self, other: Any) -> Self | Expr:
+    @overload
+    def gt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
+        ...
+
+    @overload
+    def gt(self, other: Any) -> Series:
+        ...
+
+    def gt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series > other`."""
         return self.__gt__(other)
 
@@ -1079,7 +1133,7 @@ class Series:
             raise TypeError(msg)
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, exponent: int | float | None | Series) -> Series:
+    def __pow__(self, exponent: int | float | Series) -> Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
@@ -1915,7 +1969,7 @@ class Series:
         """
         return self._s.product()
 
-    def pow(self, exponent: int | float | None | Series) -> Series:
+    def pow(self, exponent: int | float | Series) -> Series:
         """
         Raise to the power of the given exponent.
 
@@ -4134,7 +4188,7 @@ class Series:
         closed: ClosedInterval = "both",
     ) -> Series:
         """
-        Get a boolean mask of the values that fall between the given start/end values.
+        Get a boolean mask of the values that are between the given lower/upper bounds.
 
         Parameters
         ----------

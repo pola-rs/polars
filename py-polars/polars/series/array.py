@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from datetime import date, datetime, time
+
     from polars import Series
     from polars.polars import PySeries
     from polars.type_aliases import IntoExprColumn
@@ -338,6 +340,67 @@ class ArrayNameSpace:
             3
             6
             9
+        ]
+
+        """
+
+    def join(self, separator: IntoExprColumn) -> Series:
+        """
+        Join all string items in a sub-array and place a separator between them.
+
+        This errors if inner type of array `!= String`.
+
+        Parameters
+        ----------
+        separator
+            string to separate the items with
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Examples
+        --------
+        >>> s = pl.Series([["x", "y"], ["a", "b"]], dtype=pl.Array(pl.String, 2))
+        >>> s.arr.join(separator="-")
+        shape: (2,)
+        Series: '' [str]
+        [
+            "x-y"
+            "a-b"
+        ]
+
+        """
+
+    def contains(
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
+    ) -> Series:
+        """
+        Check if sub-arrays contain the given item.
+
+        Parameters
+        ----------
+        item
+            Item that will be checked for membership
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "a", [[3, 2, 1], [1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int32, 3)
+        ... )
+        >>> s.arr.contains(1)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            true
+            true
+            false
         ]
 
         """

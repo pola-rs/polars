@@ -89,4 +89,29 @@ impl ArrayNameSpace {
             false,
         )
     }
+
+    /// Join all string items in a sub-array and place a separator between them.
+    /// # Error
+    /// Raise if inner type of array is not `DataType::String`.
+    pub fn join(self, separator: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Join),
+            &[separator],
+            false,
+            false,
+        )
+    }
+
+    #[cfg(feature = "is_in")]
+    /// Check if the sub-array contains specific element
+    pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Contains),
+            &[other],
+            false,
+            false,
+        )
+    }
 }

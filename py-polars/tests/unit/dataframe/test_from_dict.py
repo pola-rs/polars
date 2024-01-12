@@ -198,3 +198,29 @@ def test_from_dict_duration_subseconds() -> None:
     result = pl.from_dict(d)
     expected = pl.select(pl.duration(seconds=1, microseconds=1000))
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "data"),
+    [
+        (pl.Date, date(2099, 12, 31)),
+        (pl.Datetime("ms"), datetime(1998, 10, 1, 10, 30)),
+        (pl.Duration("us"), timedelta(days=1)),
+        (pl.Time, time(2, 30, 10)),
+    ],
+)
+def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
+    schema = {"data": dtype}
+    df = pl.DataFrame({"data": [data]}, schema=schema)
+    physical_dict = df.cast(pl.Int64).to_dict()
+
+    df_from_dicts = pl.from_dicts(
+        [
+            {
+                "data": physical_dict["data"][0],
+            }
+        ],
+        schema=schema,
+    )
+
+    assert_frame_equal(df_from_dicts, df)

@@ -109,7 +109,6 @@ from polars.utils.deprecation import (
 from polars.utils.various import (
     _prepare_row_index_args,
     _process_null_values,
-    _warn_null_comparison,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -119,6 +118,7 @@ from polars.utils.various import (
     parse_version,
     range_to_slice,
     scale_bytes,
+    warn_null_comparison,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -1440,7 +1440,7 @@ class DataFrame:
         op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
-        _warn_null_comparison(other)
+        warn_null_comparison(other)
         if op == "eq":
             return self.select(F.all() == other)
         elif op == "neq":

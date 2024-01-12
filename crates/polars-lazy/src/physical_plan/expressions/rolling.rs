@@ -18,11 +18,33 @@ pub(crate) struct RollingExpr {
 
 impl PhysicalExpr for RollingExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let groups_map = state.group_tuples.read().unwrap();
+        let groups_key = format!("{:?}", &self.options);
+
+        let mut groups_map = state.group_tuples.read().unwrap();
         // Groups must be set by expression runner.
-        let groups = groups_map
-            .get(self.options.index_column.as_str())
-            .expect("impl error");
+        let groups = groups_map.get(&groups_key);
+
+        let mut groups_map_write;
+
+        // There can be multiple rolling expressions in a single expr.
+        // E.g. `min().rolling() + max().rolling()`
+        // So if we hit that we will compute them here.
+        let groups = match groups {
+            Some(groups) => groups,
+            None => {
+                drop(groups_map);
+                let (_time_key, _keys, groups) = df.group_by_rolling(vec![], &self.options)?;
+                groups_map_write = state.group_tuples.write().unwrap();
+                groups_map_write.entry_ref(&groups_key).or_insert(groups);
+
+                drop(groups_map_write);
+
+                // Get a reference to the read guard so that other threads
+                // can continue
+                groups_map = state.group_tuples.read().unwrap();
+                groups_map.get(&groups_key).expect("impl error")
+            },
+        };
 
         let mut out = self
             .phys_function

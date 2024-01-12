@@ -521,7 +521,7 @@ class ExprListNameSpace:
         return self.get(-1)
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | Expr
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
     ) -> Expr:
         """
         Check if sublists contain the given item.
@@ -554,7 +554,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: IntoExpr) -> Expr:
+    def join(self, separator: IntoExprColumn) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 

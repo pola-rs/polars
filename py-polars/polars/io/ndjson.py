@@ -63,10 +63,11 @@ def scan_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = True,
+    rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     schema: SchemaDefinition | None = None,
+    ignore_errors: bool = False,
 ) -> LazyFrame:
     """
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
@@ -103,6 +104,8 @@ def scan_ndjson(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+    ignore_errors
+        Return `Null` if parsing fails because of schema mismatches.
     """
     return pl.LazyFrame._scan_ndjson(
         source,
@@ -114,4 +117,5 @@ def scan_ndjson(
         rechunk=rechunk,
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
+        ignore_errors=ignore_errors,
     )

@@ -221,17 +221,6 @@ where
                 chunk_size,
             ))
         },
-        Binary | Utf8 => {
-            init.push(InitNested::Primitive(field.is_nullable));
-            types.pop();
-            remove_nested(binary::NestedIter::<i32, _>::new(
-                columns.pop().unwrap(),
-                init,
-                field.data_type().clone(),
-                num_rows,
-                chunk_size,
-            ))
-        },
         LargeBinary | LargeUtf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -569,9 +558,6 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             num_rows,
             chunk_size,
             |x: f64| x,
-        )),
-        Utf8 | Binary => primitive(binary::NestedDictIter::<K, i32, _>::new(
-            iter, init, data_type, num_rows, chunk_size,
         )),
         LargeUtf8 | LargeBinary => primitive(binary::NestedDictIter::<K, i64, _>::new(
             iter, init, data_type, num_rows, chunk_size,

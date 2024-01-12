@@ -109,10 +109,10 @@ pub(crate) fn create_physical_expr(
             let function_expr = node_to_expr(function, expr_arena);
             let expr = node_to_expr(expression, expr_arena);
 
+            // set again as the state can be reset
+            state.set_window();
             match options {
                 WindowType::Over(mapping) => {
-                    // set again as the state can be reset
-                    state.set_window();
                     // TODO! Order by
                     let group_by = create_physical_expressions(
                         &partition_by,

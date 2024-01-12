@@ -25,21 +25,30 @@ use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
 use crate::RowIndex;
 
-fn enlarge_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
+#[cfg(debug_assertions)]
+// Ensure we get the proper polars types from schema inference
+// This saves unneeded casts.
+fn assert_dtypes(data_type: &ArrowDataType) {
     match data_type {
         ArrowDataType::Utf8 => {
-            data_type = ArrowDataType::LargeUtf8;
+            unreachable!()
         },
         ArrowDataType::Binary => {
-            data_type = ArrowDataType::LargeBinary;
+            unreachable!()
         },
-        ArrowDataType::List(mut inner_field) => {
-            inner_field.data_type = enlarge_data_type(inner_field.data_type);
-            data_type = ArrowDataType::LargeList(inner_field);
+        ArrowDataType::List(_) => {
+            unreachable!()
+        },
+        ArrowDataType::LargeList(inner) => {
+            assert_dtypes(&inner.data_type);
+        },
+        ArrowDataType::Struct(fields) => {
+            for fld in fields {
+                assert_dtypes(fld.data_type())
+            }
         },
         _ => {},
     }
-    data_type
 }
 
 fn column_idx_to_series(
@@ -50,16 +59,20 @@ fn column_idx_to_series(
     store: &mmap::ColumnStore,
     chunk_size: usize,
 ) -> PolarsResult<Series> {
-    let mut field = file_schema.fields[column_i].clone();
-    field.data_type = enlarge_data_type(field.data_type);
+    let field = &file_schema.fields[column_i];
+
+    #[cfg(debug_assertions)]
+    {
+        assert_dtypes(field.data_type())
+    }
 
     let columns = mmap_columns(store, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
 
     if remaining_rows < md.num_rows() {
-        array_iter_to_series(iter, &field, Some(remaining_rows))
+        array_iter_to_series(iter, field, Some(remaining_rows))
     } else {
-        array_iter_to_series(iter, &field, None)
+        array_iter_to_series(iter, field, None)
     }
 }
 
