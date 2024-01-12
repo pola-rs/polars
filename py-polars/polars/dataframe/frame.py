@@ -41,6 +41,7 @@ from polars.datatypes import (
     Boolean,
     Categorical,
     Date,
+    Datetime,
     Enum,
     Float64,
     Null,
@@ -4397,7 +4398,9 @@ class DataFrame:
         # Determine which columns should get std/mean/percentile statistics
         stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
         mean_cols = {
-            c for c, dt in self.schema.items() if dt.is_numeric() or dt == Date
+            c
+            for c, dt in self.schema.items()
+            if dt.is_numeric() or dt in (Date, Datetime)
         }
 
         # Determine metrics and optional/additional percentiles
