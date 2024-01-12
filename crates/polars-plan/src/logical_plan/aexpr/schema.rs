@@ -110,7 +110,6 @@ impl AExpr {
                     Median(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        float_type(&mut field);
                         if field.dtype == DataType::Date {
                             field.coerce(DataType::Datetime(TimeUnit::Milliseconds, None));
                         } else {
@@ -121,7 +120,6 @@ impl AExpr {
                     Mean(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        float_type(&mut field);
                         if field.dtype == DataType::Date {
                             field.coerce(DataType::Datetime(TimeUnit::Milliseconds, None));
                         } else {
