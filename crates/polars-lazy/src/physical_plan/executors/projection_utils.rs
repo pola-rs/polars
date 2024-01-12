@@ -33,13 +33,16 @@ fn rolling_evaluate(
             .map(|(options, partition)| {
                 // clear the cache for every partitioned group
                 let state = state.split();
+
                 let (_time_key, _keys, groups) = df.group_by_rolling(vec![], options)?;
+
+                let groups_key = format!("{:?}", options);
                 // Set the groups so all expressions in partition can use it.
                 // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
                 // rolling expression try to get read access.
                 {
                     let mut groups_map = state.group_tuples.write().unwrap();
-                    groups_map.insert(options.index_column.to_string(), groups);
+                    groups_map.insert(groups_key, groups);
                 }
                 partition
                     .par_iter()
