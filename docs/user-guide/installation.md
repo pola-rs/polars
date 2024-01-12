@@ -6,6 +6,9 @@ Polars is a library and installation is as simple as invoking the package manage
 
     ``` bash
     pip install polars
+
+    # Or for legacy CPUs without AVX2 support
+    pip install polars-ltc-cpu
     ```
 
 === ":fontawesome-brands-rust: Rust"
