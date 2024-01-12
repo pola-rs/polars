@@ -35,6 +35,7 @@ from polars.datatypes.classes import (
 )
 from polars.datatypes.constants import (
     DATETIME_DTYPES,
+    DATETIME_DTYPES_NO_WILDCARDS,
     DTYPE_TEMPORAL_UNITS,
     DURATION_DTYPES,
     FLOAT_DTYPES,
@@ -44,6 +45,7 @@ from polars.datatypes.constants import (
     NUMERIC_DTYPES,
     SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
+    TEMPORAL_DTYPES_NO_WILDCARDS,
     UNSIGNED_INTEGER_DTYPES,
 )
 from polars.datatypes.constructor import (
@@ -110,6 +112,7 @@ __all__ = [
     "Utf8",
     # constants
     "DATETIME_DTYPES",
+    "DATETIME_DTYPES_NO_WILDCARDS",
     "DTYPE_TEMPORAL_UNITS",
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
@@ -119,6 +122,7 @@ __all__ = [
     "N_INFER_DEFAULT",
     "SIGNED_INTEGER_DTYPES",
     "TEMPORAL_DTYPES",
+    "TEMPORAL_DTYPES_NO_WILDCARDS",
     "UNSIGNED_INTEGER_DTYPES",
     # constructor
     "numpy_type_to_constructor",

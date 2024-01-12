@@ -36,6 +36,17 @@ DATETIME_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
         Datetime("ms"),
         Datetime("us"),
         Datetime("ns"),
+        Datetime("ms", "*"),
+        Datetime("us", "*"),
+        Datetime("ns", "*"),
+    ]
+)
+DATETIME_DTYPES_NO_WILDCARDS: frozenset[PolarsDataType] = DataTypeGroup(
+    [
+        Datetime,
+        Datetime("ms"),
+        Datetime("us"),
+        Datetime("ns"),
     ]
 )
 DURATION_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
@@ -48,6 +59,9 @@ DURATION_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
 )
 TEMPORAL_DTYPES: frozenset[PolarsTemporalType] = DataTypeGroup(
     frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES
+)
+TEMPORAL_DTYPES_NO_WILDCARDS: frozenset[PolarsTemporalType] = DataTypeGroup(
+    frozenset([Date, Time]) | DATETIME_DTYPES_NO_WILDCARDS | DURATION_DTYPES
 )
 SIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
     [

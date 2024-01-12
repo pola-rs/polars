@@ -6,6 +6,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.datatypes.constants import TEMPORAL_DTYPES_NO_WILDCARDS
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
@@ -34,7 +35,7 @@ def test_series_from_buffers_numeric(s: pl.Series) -> None:
     assert_series_equal(s, result)
 
 
-@given(s=series(allowed_dtypes=pl.TEMPORAL_DTYPES, chunked=False))
+@given(s=series(allowed_dtypes=TEMPORAL_DTYPES_NO_WILDCARDS, chunked=False))
 def test_series_from_buffers_temporal_with_validity(s: pl.Series) -> None:
     validity = s.is_not_null()
     physical = pl.Int32 if s.dtype == pl.Date else pl.Int64
