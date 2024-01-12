@@ -504,6 +504,56 @@ fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usi
     std::mem::swap(thread_offsets, &mut new);
 }
 
+#[allow(clippy::too_many_arguments)]
+fn group_by_values_iter_lookbehind_collected(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+    start_offset: usize,
+    upper_bound: Option<usize>,
+) -> PolarsResult<Vec<[IdxSize; 2]>> {
+    let iter = group_by_values_iter_lookbehind(
+        period,
+        offset,
+        time,
+        closed_window,
+        tu,
+        tz,
+        start_offset,
+        upper_bound,
+    )?;
+    iter.map(|result| result.map(|(offset, len)| [offset, len]))
+        .collect::<PolarsResult<Vec<_>>>()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn group_by_values_iter_lookahead_collected(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+    start_offset: usize,
+    upper_bound: Option<usize>,
+) -> PolarsResult<Vec<[IdxSize; 2]>> {
+    let iter = group_by_values_iter_lookahead(
+        period,
+        offset,
+        time,
+        closed_window,
+        tu,
+        tz,
+        start_offset,
+        upper_bound,
+    );
+    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
+        .collect::<PolarsResult<Vec<_>>>()
+}
+
 /// Different from `group_by_windows`, where define window buckets and search which values fit that
 /// pre-defined bucket, this function defines every window based on the:
 ///     - timestamp (lower bound)
@@ -521,6 +571,9 @@ pub fn group_by_values(
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);
 
+    // If we start from within parallel work we will do this single threaded.
+    let run_parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
+
     // we have a (partial) lookbehind window
     if offset.negative {
         // lookbehind
@@ -528,13 +581,27 @@ pub fn group_by_values(
             // t is right at the end of the window
             // ------t---
             // [------]
+            if !run_parallel {
+                let vecs = group_by_values_iter_lookbehind_collected(
+                    period,
+                    offset,
+                    time,
+                    closed_window,
+                    tu,
+                    tz,
+                    0,
+                    None,
+                )?;
+                return Ok(GroupsSlice::from(vecs));
+            }
+
             POOL.install(|| {
                 let vals = thread_offsets
                     .par_iter()
                     .copied()
                     .map(|(base_offset, len)| {
                         let upper_bound = base_offset + len;
-                        let iter = group_by_values_iter_lookbehind(
+                        group_by_values_iter_lookbehind_collected(
                             period,
                             offset,
                             time,
@@ -543,9 +610,7 @@ pub fn group_by_values(
                             tz,
                             base_offset,
                             Some(upper_bound),
-                        )?;
-                        iter.map(|result| result.map(|(offset, len)| [offset, len]))
-                            .collect::<PolarsResult<Vec<_>>>()
+                        )
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(flatten_par(&vals))
@@ -588,6 +653,21 @@ pub fn group_by_values(
         // window is completely ahead of t and t itself is not a member
         // --t-----------
         //        [---]
+
+        if !run_parallel {
+            let vecs = group_by_values_iter_lookahead_collected(
+                period,
+                offset,
+                time,
+                closed_window,
+                tu,
+                tz,
+                0,
+                None,
+            )?;
+            return Ok(GroupsSlice::from(vecs));
+        }
+
         POOL.install(|| {
             let vals = thread_offsets
                 .par_iter()
@@ -595,7 +675,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_lookahead(
+                    group_by_values_iter_lookahead_collected(
                         period,
                         offset,
                         time,
@@ -604,14 +684,26 @@ pub fn group_by_values(
                         tz,
                         lower_bound,
                         Some(upper_bound),
-                    );
-                    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
-                        .collect::<PolarsResult<Vec<_>>>()
+                    )
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(flatten_par(&vals))
         })
     } else {
+        if !run_parallel {
+            let vecs = group_by_values_iter_lookahead_collected(
+                period,
+                offset,
+                time,
+                closed_window,
+                tu,
+                tz,
+                0,
+                None,
+            )?;
+            return Ok(GroupsSlice::from(vecs));
+        }
+
         // Offset is 0 and window is closed on the left:
         // it must be that the window starts at t and t is a member
         // --t-----------
@@ -623,7 +715,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_lookahead(
+                    group_by_values_iter_lookahead_collected(
                         period,
                         offset,
                         time,
@@ -632,9 +724,7 @@ pub fn group_by_values(
                         tz,
                         lower_bound,
                         Some(upper_bound),
-                    );
-                    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
-                        .collect::<PolarsResult<Vec<_>>>()
+                    )
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(flatten_par(&vals))
