@@ -1,6 +1,6 @@
 name: '🐞 Bug report - Rust'
 description: Report an issue with Rust Polars.
-labels: [bug, rust]
+labels: [bug, needs triage, rust]
 
 body:
   - type: checkboxes
