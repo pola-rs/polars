@@ -243,12 +243,12 @@ where
         } => {
             // slice pushdown optimization should not set this one in a streaming query.
             assert!(options.args.slice.is_none());
+            let swapped = swap_join_order(options);
 
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
-                JoinType::Cross => {
-                    Box::new(CrossJoin::new(options.args.suffix().into())) as Box<dyn SinkTrait>
-                },
+                JoinType::Cross => Box::new(CrossJoin::new(options.args.suffix().into(), swapped))
+                    as Box<dyn SinkTrait>,
                 join_type @ JoinType::Inner | join_type @ JoinType::Left => {
                     let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
                     let join_columns_left = Arc::new(exprs_to_physical(
@@ -264,8 +264,6 @@ where
                         to_physical,
                         Some(input_schema_right.as_ref()),
                     )?);
-
-                    let swapped = swap_join_order(options);
 
                     let (join_columns_left, join_columns_right) = if swapped {
                         (join_columns_right, join_columns_left)

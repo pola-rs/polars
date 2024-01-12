@@ -182,3 +182,13 @@ def test_scan_empty_csv_10818(io_files_path: Path) -> None:
     empty_file_path = io_files_path / "empty.csv"
     df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(streaming=True)
     assert df.is_empty()
+
+
+@pytest.mark.write_disk()
+def test_streaming_cross_join_schema(tmp_path: Path) -> None:
+    file_path = tmp_path / "temp.parquet"
+    a = pl.DataFrame({"a": [1, 2]}).lazy()
+    b = pl.DataFrame({"b": ["b"]}).lazy()
+    a.join(b, how="cross").sink_parquet(file_path)
+    read = pl.read_parquet(file_path, parallel="none")
+    assert read.to_dict(as_series=False) == {"a": [1, 2], "b": ["b", "b"]}
