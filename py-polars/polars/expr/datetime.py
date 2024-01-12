@@ -446,6 +446,24 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> df.with_columns(
+        ...     day_name=pl.col("datetime").dt.to_string("%A"),
+        ...     month_name=pl.col("datetime").dt.to_string("%B"),
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬───────────┬────────────┐
+        │ datetime            ┆ day_name  ┆ month_name │
+        │ ---                 ┆ ---       ┆ ---        │
+        │ datetime[μs]        ┆ str       ┆ str        │
+        ╞═════════════════════╪═══════════╪════════════╡
+        │ 2020-03-01 00:00:00 ┆ Sunday    ┆ March      │
+        │ 2020-04-01 00:00:00 ┆ Wednesday ┆ April      │
+        │ 2020-05-01 00:00:00 ┆ Friday    ┆ May        │
+        └─────────────────────┴───────────┴────────────┘
         """
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
@@ -496,6 +514,24 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> df.with_columns(
+        ...     day_name=pl.col("datetime").dt.strftime("%A"),
+        ...     month_name=pl.col("datetime").dt.strftime("%B"),
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬───────────┬────────────┐
+        │ datetime            ┆ day_name  ┆ month_name │
+        │ ---                 ┆ ---       ┆ ---        │
+        │ datetime[μs]        ┆ str       ┆ str        │
+        ╞═════════════════════╪═══════════╪════════════╡
+        │ 2020-03-01 00:00:00 ┆ Sunday    ┆ March      │
+        │ 2020-04-01 00:00:00 ┆ Wednesday ┆ April      │
+        │ 2020-05-01 00:00:00 ┆ Friday    ┆ May        │
+        └─────────────────────┴───────────┴────────────┘
         """
         return self.to_string(format)
 
