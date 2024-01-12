@@ -101,4 +101,17 @@ impl ArrayNameSpace {
             false,
         )
     }
+
+    #[cfg(feature = "is_in")]
+    /// Check if the sub-array contains specific element
+    pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Contains),
+            &[other],
+            false,
+            false,
+        )
+    }
 }
