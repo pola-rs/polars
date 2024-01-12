@@ -376,20 +376,21 @@ def test_selector_temporal_13665() -> None:
         tokyo=pl.col("utc").dt.convert_time_zone("Asia/Tokyo"),
         hawaii=pl.col("utc").dt.convert_time_zone("US/Hawaii"),
     )
-    assert df.select(cs.temporal()).to_dict(as_series=False) == {
-        "utc": [
-            datetime(1950, 7, 5, 0, 0),
-            datetime(2099, 12, 31, 0, 0),
-        ],
-        "tokyo": [
-            datetime(1950, 7, 5, 10, 0, tzinfo=ZoneInfo(key="Asia/Tokyo")),
-            datetime(2099, 12, 31, 9, 0, tzinfo=ZoneInfo(key="Asia/Tokyo")),
-        ],
-        "hawaii": [
-            datetime(1950, 7, 4, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
-            datetime(2099, 12, 30, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
-        ],
-    }
+    for selector in (cs.datetime(), cs.datetime("us"), cs.temporal()):
+        assert df.select(selector).to_dict(as_series=False) == {
+            "utc": [
+                datetime(1950, 7, 5, 0, 0),
+                datetime(2099, 12, 31, 0, 0),
+            ],
+            "tokyo": [
+                datetime(1950, 7, 5, 10, 0, tzinfo=ZoneInfo(key="Asia/Tokyo")),
+                datetime(2099, 12, 31, 9, 0, tzinfo=ZoneInfo(key="Asia/Tokyo")),
+            ],
+            "hawaii": [
+                datetime(1950, 7, 4, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
+                datetime(2099, 12, 30, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
+            ],
+        }
 
 
 def test_selector_expansion() -> None:

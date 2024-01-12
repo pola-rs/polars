@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.datatypes.constants import TEMPORAL_DTYPES_NO_WILDCARDS
+from polars.datatypes import TEMPORAL_DTYPES_NO_WILDCARDS
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
