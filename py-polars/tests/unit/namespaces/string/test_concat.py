@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_series_equal
 
@@ -66,3 +68,11 @@ def test_str_concat_datetime() -> None:
     assert out.item() == "2020-01-01 00:00:00.000000|2022-01-01 00:00:00.000000"
     out = df.select(pl.col("d").str.concat("|", ignore_nulls=False))
     assert out.item() is None
+
+
+def test_str_concat_delimiter_deprecated() -> None:
+    s = pl.Series(["1", None, "2", None])
+    with pytest.deprecated_call():
+        result = s.str.concat()
+    expected = pl.Series(["1-2"])
+    assert_series_equal(result, expected)
