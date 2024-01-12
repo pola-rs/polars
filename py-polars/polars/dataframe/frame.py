@@ -9617,7 +9617,7 @@ class DataFrame:
         Returns DataFrame data as a keyed dictionary of python-native values.
 
         Note that this method should not be used in place of native operations, due to
-        the high cost of materialising all frame data out into a dictionary; it should
+        the high cost of materializing all frame data out into a dictionary; it should
         be used only when you need to move the values out into a Python data structure
         or other object that cannot operate directly with Polars/Arrow.
 
@@ -9647,8 +9647,8 @@ class DataFrame:
 
         See Also
         --------
-        rows : Materialise all frame data as a list of rows (potentially expensive).
-        iter_rows : Row iterator over frame data (does not materialise all rows).
+        rows : Materialize all frame data as a list of rows (potentially expensive).
+        iter_rows : Row iterator over frame data (does not materialize all rows).
 
         Examples
         --------

@@ -93,7 +93,8 @@ def test_rows_by_key() -> None:
         "b": [("b", "q", 2.5, 8), ("b", "q", 3.0, 7)],
     }
     assert df.rows_by_key("w", include_key=True) == {
-        key: grp.rows() for key, grp in df.group_by("w")
+        key[0]: grp.rows()  # type: ignore[index]
+        for key, grp in df.group_by(["w"])
     }
     assert df.rows_by_key("w", include_key=True, unique=True) == {
         "a": ("a", "k", 4.5, 6),
@@ -135,7 +136,8 @@ def test_rows_by_key() -> None:
         ],
     }
     assert df.rows_by_key("w", named=True, include_key=True) == {
-        key: grp.rows(named=True) for key, grp in df.group_by("w")
+        key[0]: grp.rows(named=True)  # type: ignore[index]
+        for key, grp in df.group_by(["w"])
     }
     assert df.rows_by_key("w", named=True, include_key=True, unique=True) == {
         "a": {"w": "a", "x": "k", "y": 4.5, "z": 6},

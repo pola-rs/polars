@@ -60,7 +60,8 @@ def test_partition_by_as_dict() -> None:
     result_first = result[("one",)]
     assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
-    result = df.partition_by("a", as_dict=True)
+    with pytest.deprecated_call():
+        result = df.partition_by("a", as_dict=True)
     result_first = result["one"]
     assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
@@ -72,7 +73,8 @@ def test_partition_by_as_dict_include_keys_false() -> None:
     result_first = result[("one",)]
     assert result_first.to_dict(as_series=False) == {"b": [1, 3]}
 
-    result = df.partition_by("a", include_key=False, as_dict=True)
+    with pytest.deprecated_call():
+        result = df.partition_by("a", include_key=False, as_dict=True)
     result_first = result["one"]
     assert result_first.to_dict(as_series=False) == {"b": [1, 3]}
 
