@@ -460,48 +460,48 @@ pub(crate) fn group_by_values_iter(
 /// Checks if the boundary elements don't split on duplicates.
 /// If they do we remove them
 fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usize)>) {
-    if time.is_empty() {
-        return;
-    }
-    let mut valid = true;
-    for window in thread_offsets.windows(2) {
+    let is_valid = |window: &[(usize, usize)]| -> bool {
+        debug_assert_eq!(window.len(), 2);
         let left_block_end = window[0].0 + window[0].1.saturating_sub(1);
         let right_block_start = window[1].0;
-        valid &= time[left_block_end] != time[right_block_start];
-    }
-    if valid {
+        time[left_block_end] != time[right_block_start]
+    };
+
+    if time.is_empty() || thread_offsets.len() <= 1 || thread_offsets.windows(2).all(is_valid) {
         return;
     }
 
     let mut new = vec![];
     for window in thread_offsets.windows(2) {
-        let left_block_end = window[0].0 + window[0].1.saturating_sub(1);
-        let right_block_start = window[1].0;
-        let this_block_is_valid = time[left_block_end] != time[right_block_start];
+        let this_block_is_valid = is_valid(window);
         if this_block_is_valid {
             // Only push left block
             new.push(window[0])
         }
     }
-    // We pruned invalid blocks, now we must correct the lengths.
-    if !valid {
-        if new.len() <= 1 {
-            new = vec![(0, time.len())];
-        } else {
-            let mut previous_start = time.len();
-            for window in new.iter_mut().rev() {
-                window.1 = previous_start - window.0;
-                previous_start = window.0;
-            }
-            if previous_start > 0 {
-                new.insert(0, (0, previous_start))
-            }
-            debug_assert_eq!(new.iter().map(|w| w.1).sum::<usize>(), time.len());
-            // Call again to check.
-            prune_splits_on_duplicates(time, &mut new)
+    // Check last block
+    if thread_offsets.len() % 2 == 0 {
+        let window = &thread_offsets[thread_offsets.len() - 2..];
+        if is_valid(window) {
+            new.push(thread_offsets[thread_offsets.len() - 1])
         }
-        std::mem::swap(thread_offsets, &mut new);
     }
+    // We pruned invalid blocks, now we must correct the lengths.
+    if new.len() <= 1 {
+        new = vec![(0, time.len())];
+    } else {
+        let mut previous_start = time.len();
+        for window in new.iter_mut().rev() {
+            window.1 = previous_start - window.0;
+            previous_start = window.0;
+        }
+        new[0].0 = 0;
+        new[0].1 = new[1].0;
+        debug_assert_eq!(new.iter().map(|w| w.1).sum::<usize>(), time.len());
+        // Call again to check.
+        prune_splits_on_duplicates(time, &mut new)
+    }
+    std::mem::swap(thread_offsets, &mut new);
 }
 
 /// Different from `group_by_windows`, where define window buckets and search which values fit that
@@ -653,6 +653,6 @@ mod test {
         let time = &[0, 1, 1, 2, 2, 2, 3, 4, 5, 6, 5];
         let mut splits = vec![(0, 2), (2, 4), (6, 2), (8, 3)];
         prune_splits_on_duplicates(time, &mut splits);
-        assert_eq!(splits, &[(0, 2), (2, 4), (6, 5)]);
+        assert_eq!(splits, &[(0, 6), (6, 2), (8, 3)]);
     }
 }
