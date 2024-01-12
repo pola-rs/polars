@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
-import polars._reexport as pl
 from polars import functions as F
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import deprecate_renamed_function
@@ -64,7 +63,9 @@ class GroupBy:
         """
         Allows iteration over the groups of the group by operation.
 
-        Each group is represented by a tuple of (name, data).
+        Each group is represented by a tuple of `(name, data)`. The group names are
+        tuples of the distinct group values that identify each group. If a single string
+        was passed to `by`, the keys are a single value instead of a tuple.
 
         Examples
         --------
@@ -102,10 +103,9 @@ class GroupBy:
 
         group_names = groups_df.select(F.all().exclude(temp_col))
 
-        # When grouping by a single column, group name is a single value
-        # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if isinstance(self.by, (str, pl.Expr)) and not self.more_by:
+        key_as_single_value = isinstance(self.by, str) and not self.more_by
+        if key_as_single_value:
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
