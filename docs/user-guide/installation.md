@@ -21,6 +21,36 @@ Polars is a library and installation is as simple as invoking the package manage
     polars = { version = "x", features = ["lazy", ...]}
     ```
 
+### Big Index
+
+By default, polars is limited to 2^32 (~4.2 billion rows). To increase this limit 2^64 (~18 quintillion) by enabling big index:
+
+=== ":fontawesome-brands-python: Python"
+
+    ``` bash
+    pip install polars-u64-idx
+    ```
+
+=== ":fontawesome-brands-rust: Rust"
+
+    ``` shell
+    cargo add polars -F bigidx
+
+    # Or Cargo.toml
+    [dependencies]
+    polars = { version = "x", features = ["bigidx", ...] }
+    ```
+
+### Legacy CPU
+
+To install polars on an old CPU without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support:
+
+=== ":fontawesome-brands-python: Python"
+
+    ``` bash
+    pip install polars-lts-cpu
+    ```
+
 ## Importing
 
 To use the library import it into your project
