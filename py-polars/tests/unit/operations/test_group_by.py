@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -327,7 +328,9 @@ def test_group_by_iteration() -> None:
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    for i, (group, data) in enumerate(df.group_by("foo", maintain_order=True)):
+    with pytest.deprecated_call():
+        gb_iter = enumerate(df.group_by("foo", maintain_order=True))
+    for i, (group, data) in gb_iter:
         assert group == expected_names[i]
         assert data.rows() == expected_rows[i]
 
@@ -339,12 +342,24 @@ def test_group_by_iteration() -> None:
     result2 = list(df.group_by(["foo", pl.col("bar") * pl.col("baz")]))
     assert len(result2) == 5
 
-    # Single column, alias in group_by
+    # Single expression, alias in group_by
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6]})
     gb = df.group_by((pl.col("foo") // 2).alias("bar"), maintain_order=True)
     result3 = [(group, df.rows()) for group, df in gb]
-    expected3 = [(0, [(1,)]), (1, [(2,), (3,)]), (2, [(4,), (5,)]), (3, [(6,)])]
+    expected3 = [
+        ((0,), [(1,)]),
+        ((1,), [(2,), (3,)]),
+        ((2,), [(4,), (5,)]),
+        ((3,), [(6,)]),
+    ]
     assert result3 == expected3
+
+
+def test_group_by_iteration_selector() -> None:
+    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+    result = dict(df.group_by(cs.string()))
+    result_first = result[("one",)]
+    assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])

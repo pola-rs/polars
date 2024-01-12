@@ -73,9 +73,8 @@ def test_array_in_group_by() -> None:
         ]
     )
 
-    assert next(iter(df.group_by("id", maintain_order=True)))[1]["list"].to_list() == [
-        [1, 2]
-    ]
+    result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
+    assert result.to_list() == [[1, 2]]
 
     df = pl.DataFrame(
         {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
