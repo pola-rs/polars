@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -253,3 +253,36 @@ def test_rolling_duplicates_11281() -> None:
     result = df.rolling("ts", period="1d", closed="left").agg(pl.col("val"))
     expected = df.with_columns(val=pl.Series([[], [1], [1], [1], [2, 2, 2], [3]]))
     assert_frame_equal(result, expected)
+
+
+def test_multiple_rolling_in_single_expression() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                datetime(2024, 1, 12),
+                datetime(2024, 1, 12, 0, 0, 0, 150_000),
+                "10ms",
+                eager=True,
+                closed="left",
+            ),
+            "price": [0] * 15,
+        }
+    )
+
+    front_count = (
+        pl.col("price")
+        .count()
+        .rolling("timestamp", period=timedelta(milliseconds=100))
+        .cast(pl.Int64)
+    )
+    back_count = (
+        pl.col("price")
+        .count()
+        .rolling("timestamp", period=timedelta(milliseconds=200))
+        .cast(pl.Int64)
+    )
+    assert df.with_columns(
+        back_count.alias("back"),
+        front_count.alias("front"),
+        (back_count - front_count).alias("back - front"),
+    )["back - front"].to_list() == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5]
