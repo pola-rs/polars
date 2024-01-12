@@ -1,6 +1,6 @@
 name: '🐞 Bug report - Python'
 description: Report an issue with Python Polars.
-labels: [bug, python]
+labels: [bug, needs triage, python]
 
 body:
   - type: checkboxes
