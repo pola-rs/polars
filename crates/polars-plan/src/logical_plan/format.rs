@@ -256,6 +256,7 @@ impl Debug for Expr {
                 partition_by,
                 options,
             } => match options {
+                #[cfg(feature = "dynamic_group_by")]
                 WindowType::Rolling(options) => {
                     write!(
                         f,
