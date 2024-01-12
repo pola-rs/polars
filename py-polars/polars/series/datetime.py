@@ -140,6 +140,27 @@ class DateTimeNameSpace:
             "2020/04/01"
             "2020/05/01"
         ]
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.to_string("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.to_string("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
+        ]
         """
 
     def strftime(self, format: str) -> Series:
@@ -176,6 +197,27 @@ class DateTimeNameSpace:
             "2020/03/01"
             "2020/04/01"
             "2020/05/01"
+        ]
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.strftime("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.strftime("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
         ]
         """
         return self.to_string(format)
