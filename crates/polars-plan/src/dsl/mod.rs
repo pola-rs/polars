@@ -914,9 +914,12 @@ impl Expr {
 
     #[cfg(feature = "dynamic_group_by")]
     pub fn rolling(self, options: RollingGroupOptions) -> Self {
+        // We add the index column as `partition expr` so that the optimizer will
+        // not ignore it.
+        let index_col = col(options.index_column.as_str());
         Expr::Window {
             function: Box::new(self),
-            partition_by: vec![],
+            partition_by: vec![index_col],
             options: WindowType::Rolling(options),
         }
     }
