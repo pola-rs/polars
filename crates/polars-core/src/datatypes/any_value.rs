@@ -433,6 +433,10 @@ impl<'a> AnyValue<'a> {
         matches!(self, AnyValue::Boolean(_))
     }
 
+    pub fn is_numeric(&self) -> bool {
+        self.is_signed_integer() || self.is_unsigned_integer() || self.is_float()
+    }
+
     pub fn is_float(&self) -> bool {
         matches!(self, AnyValue::Float32(_) | AnyValue::Float64(_))
     }
