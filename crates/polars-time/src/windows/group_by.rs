@@ -496,7 +496,9 @@ fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usi
             if previous_start > 0 {
                 new.insert(0, (0, previous_start))
             }
-            debug_assert_eq!(new.iter().map(|w| w.1).sum::<usize>(), time.len())
+            debug_assert_eq!(new.iter().map(|w| w.1).sum::<usize>(), time.len());
+            // Call again to check.
+            prune_splits_on_duplicates(time, &mut new)
         }
         std::mem::swap(thread_offsets, &mut new);
     }
