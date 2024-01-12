@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
@@ -185,3 +187,71 @@ impl_lt_eq_num!(lt_eq_i64, i64);
 impl_lt_eq_num!(lt_eq_f32, f32);
 impl_lt_eq_num!(lt_eq_f64, f64);
 impl_lt_eq_num!(lt_eq_str, &str);
+
+struct PyDecimal(i128, usize);
+
+impl<'source> FromPyObject<'source> for PyDecimal {
+    fn extract(obj: &'source PyAny) -> PyResult<Self> {
+        if let Ok(val) = obj.extract() {
+            return Ok(PyDecimal(val, 0));
+        }
+
+        let (sign, digits, exponent) = obj
+            .call_method0("as_tuple")?
+            .extract::<(i8, Vec<u8>, i8)>()?;
+        let mut val = 0_i128;
+        for d in digits {
+            if let Some(v) = val.checked_mul(10).and_then(|val| val.checked_add(d as _)) {
+                val = v;
+            } else {
+                return Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow")).into());
+            }
+        }
+        let exponent = if exponent > 0 {
+            if let Some(v) = val.checked_mul(10_i128.pow((-exponent) as u32)) {
+                val = v;
+            } else {
+                return Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow")).into());
+            };
+            0_usize
+        } else {
+            -exponent as _
+        };
+        if sign == 1 {
+            val = -val
+        };
+        Ok(PyDecimal(val, exponent))
+    }
+}
+
+macro_rules! impl_decimal {
+    ($name:ident, $method:ident) => {
+        #[pymethods]
+        impl PySeries {
+            fn $name(&self, rhs: PyDecimal) -> PyResult<Self> {
+                let series = self.series.decimal().map_err(PyPolarsErr::from)?;
+                let scale = (series.scale() as i32) - (rhs.1 as i32);
+                let (chunked, rhs) = match scale.cmp(&0) {
+                    std::cmp::Ordering::Less => (
+                        Cow::Owned(series.0.clone() * 10_i128.pow(-scale as _)),
+                        rhs.0,
+                    ),
+                    std::cmp::Ordering::Equal => (Cow::Borrowed(&series.0), rhs.0),
+                    std::cmp::Ordering::Greater => (
+                        Cow::Borrowed(&series.0),
+                        rhs.0.wrapping_mul(10_i128.pow(scale as _)),
+                    ),
+                };
+                let s = chunked.$method(rhs);
+                Ok(s.into_series().into())
+            }
+        }
+    };
+}
+
+impl_decimal!(eq_decimal, equal);
+impl_decimal!(neq_decimal, not_equal);
+impl_decimal!(gt_decimal, gt);
+impl_decimal!(gt_eq_decimal, gt_eq);
+impl_decimal!(lt_decimal, lt);
+impl_decimal!(lt_eq_decimal, lt_eq);
