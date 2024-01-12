@@ -4,7 +4,10 @@ from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from polars import functions as F
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    issue_deprecation_warning,
+)
 
 if TYPE_CHECKING:
     import sys
@@ -70,10 +73,10 @@ class GroupBy:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
-        >>> for name, data in df.group_by("foo"):  # doctest: +SKIP
+        >>> for name, data in df.group_by(["foo"]):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        a
+        (a,)
         shape: (2, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -83,7 +86,7 @@ class GroupBy:
         │ a   ┆ 1   │
         │ a   ┆ 2   │
         └─────┴─────┘
-        b
+        (b,)
         shape: (1, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -106,6 +109,11 @@ class GroupBy:
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
         key_as_single_value = isinstance(self.by, str) and not self.more_by
         if key_as_single_value:
+            issue_deprecation_warning(
+                "`group_by` iteration will change to always return group identifiers as tuples."
+                f" Pass `by` as a list to silence this warning, e.g. `group_by([{self.by!r}])`.",
+                version="0.20.4",
+            )
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
