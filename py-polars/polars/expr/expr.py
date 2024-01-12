@@ -3991,10 +3991,10 @@ class Expr:
             If set to true this can run in the streaming engine, but may yield
             incorrect results in group-by. Ensure you know what you are doing!
         agg_list
-            Collect groups to a list and then apply. This parameter only works for
-            group-by context.
-            If set to true, the function is invoked only once on a list of groups.
-            Otherwise, the function is invoked per-group.
+            Aggregate the values of the expression into a list before applying the
+            function. This parameter only works in a group-by context.
+            The function will be invoked only once on a list of groups, rather than
+            once per group.
 
         Warnings
         --------
@@ -4024,19 +4024,19 @@ class Expr:
         │ 1    ┆ 0      │
         └──────┴────────┘
 
+        In a group-by context, the `agg_list` parameter can improve performance if used
+        correctly. The following example has `agg_list` set to `False`, which causes
+        the function to be applied once per group. The input of the function is a
+        Series of type `Int64`. This is less efficient.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [0, 1, 0, 1],
         ...         "b": [1, 2, 3, 4],
         ...     }
         ... )
-
-        The function is applied per-group, and the input of the function is a
-        Series[i64].
-        >>> (
-        ...     df.group_by("a").agg(
-        ...         pl.col("b").map_batches(lambda x: x.max(), agg_list=False)
-        ...     )
+        >>> df.group_by("a").agg(
+        ...     pl.col("b").map_batches(lambda x: x.max(), agg_list=False)
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬───────────┐
@@ -4047,12 +4047,12 @@ class Expr:
         │ 1   ┆ [4]       │
         │ 0   ┆ [3]       │
         └─────┴───────────┘
-        The function is applied only once on a list of groups, and the input of
-        the function is a Series[list[i64]].
-        >>> (
-        ...     df.group_by("a").agg(
-        ...         pl.col("b").map_batches(lambda x: x.list.max(), agg_list=True)
-        ...     )
+
+        Using `agg_list=True` would be more efficient. In this example, the input of
+        the function is a Series of type `List(Int64)`.
+
+        >>> df.group_by("a").agg(
+        ...     pl.col("b").map_batches(lambda x: x.list.max(), agg_list=True)
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
