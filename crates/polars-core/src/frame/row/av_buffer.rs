@@ -89,6 +89,8 @@ impl<'a> AnyValueBuffer<'a> {
             (Date(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Date(v)) => builder.append_value(v),
+            #[cfg(feature = "dtype-date")]
+            (Date(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
@@ -98,6 +100,10 @@ impl<'a> AnyValueBuffer<'a> {
                 let v = convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(builder, _, _), val) if val.is_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-duration")]
             (Duration(builder, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-duration")]
@@ -105,10 +111,14 @@ impl<'a> AnyValueBuffer<'a> {
                 let v = convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
+            #[cfg(feature = "dtype-duration")]
+            (Duration(builder, _), val) if val.is_numeric() => builder.append_value(val.extract()?),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Null) => builder.append_null(),
+            #[cfg(feature = "dtype-time")]
+            (Time(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
             (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
             (All(_, vals), v) => vals.push(v),
