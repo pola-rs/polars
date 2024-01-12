@@ -104,6 +104,24 @@ def test_list_join() -> None:
     out = df.select(pl.col("a").list.join(pl.col("separator")))
     assert out.to_dict(as_series=False) == {"a": ["ab&c&d", None, "g", "", None]}
 
+    # test ignore_nulls argument
+    df = pl.DataFrame(
+        {
+            "a": [["a", None, "b", None], None, [None, None], ["c", "d"], []],
+            "separator": ["-", "&", " ", "@", "/"],
+        }
+    )
+    # ignore nulls
+    out = df.select(pl.col("a").list.join("-", ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c-d", ""]}
+    out = df.select(pl.col("a").list.join(pl.col("separator"), ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c@d", ""]}
+    # propagate nulls
+    out = df.select(pl.col("a").list.join("-", ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c-d", ""]}
+    out = df.select(pl.col("a").list.join(pl.col("separator"), ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c@d", ""]}
+
 
 def test_list_arr_empty() -> None:
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
