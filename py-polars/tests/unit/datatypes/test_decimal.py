@@ -187,6 +187,14 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
     ]
 
 
+def test_decimal_eq_number() -> None:
+    a = pl.Series([D("1.5"), D("22.25"), D("10.0")], dtype=pl.Decimal)
+    assert_series_equal(a == 1, pl.Series([False, False, False]))
+    assert_series_equal(a == 1.5, pl.Series([True, False, False]))
+    assert_series_equal(a == D("1.5"), pl.Series([True, False, False]))
+    assert_series_equal(a == pl.Series([D("1.5")]), pl.Series([True, False, False]))
+
+
 @pytest.mark.parametrize(
     ("op", "expected"),
     [
