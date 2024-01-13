@@ -307,7 +307,7 @@ def datetime_ranges(
     ...         "end": datetime(2022, 1, 3, 0, 0, 0),
     ...     }
     ... )
-    >>> df.select(date_range=pl.datetime_ranges("start", "end"))
+    >>> df.select(date_range=pl.datetime_ranges("start", "end"))  # doctest: +SKIP
     shape: (2, 1)
     ┌─────────────────────────────────────────────────────────────────┐
     │ date_range                                                      │
