@@ -297,7 +297,28 @@ def datetime_ranges(
     -------
     Expr or Series
         Column of data type `List(Datetime)`.
+
+    Examples
+    --------
+    >>> from datetime import datetime
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [datetime(2022, 1, 1, 0, 0, 0), datetime(2022, 1, 2, 0, 0, 0)],
+    ...         "end": datetime(2022, 1, 3, 0, 0, 0),
+    ...     }
+    ... )
+    >>> df.with_columns(date_range=pl.datetime_ranges("start", "end"))
+    shape: (2, 3)
+    ┌─────────────────────┬─────────────────────┬────────────────────────────────────────────┐
+    │ start               ┆ end                 ┆ date_range                                 │
+    │ ---                 ┆ ---                 ┆ ---                                        │
+    │ datetime[μs]        ┆ datetime[μs]        ┆ list[datetime[μs]]                         │
+    ╞═════════════════════╪═════════════════════╪════════════════════════════════════════════╡
+    │ 2022-01-01 00:00:00 ┆ 2022-01-03 00:00:00 ┆ [2022-01-01 00:00:00, 2022-01-02 00:00:00] │
+    │ 2022-01-02 00:00:00 ┆ 2022-01-03 00:00:00 ┆ [2022-01-02 00:00:00, 2022-01-03 00:00:00] │
+    └─────────────────────┴─────────────────────┴────────────────────────────────────────────┘
     """
+
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
