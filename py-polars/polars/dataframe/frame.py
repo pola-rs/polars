@@ -7321,8 +7321,8 @@ class DataFrame:
               `'median'`, `'last'`, `'count'`}, to perform predefined types of
               aggregation.
             - An expression that performs a custom aggregation, where
-              :func:`pl.element()` represents the multiple `values` in each "group" with
-              the same `index` and `columns`. For example, `aggregate_function='mean'`
+              :func:`polars.element()` represents the multiple `values` in each "group"
+              with the same `index` and `columns`. For example, `aggregate_function='mean'`
               is short for `aggregate_function=pl.element().mean()`.
 
         maintain_order
@@ -7348,13 +7348,15 @@ class DataFrame:
 
         Examples
         --------
-        >>> df_long = pl.DataFrame({
-        ...     'First': ['Amy', 'Bo', 'Cam', 'Amy', 'Bo'],
-        ...     'Last': ['Wu', 'Xi', 'Yu', 'Wu', 'Xi'],
-        ...     'Subject': ['Math', 'Math', 'Math', 'Art', 'Art'],
-        ...     'Grade': [90, 85, 78, 88, 92]
-        ... }
-        >>> df_long.pivot(index=['First', 'Last'], columns='Subject', values='Grade')
+        >>> df_long = pl.DataFrame(
+        ...     {
+        ...         "First": ["Amy", "Bo", "Cam", "Amy", "Bo"],
+        ...         "Last": ["Wu", "Xi", "Yu", "Wu", "Xi"],
+        ...         "Subject": ["Math", "Math", "Math", "Art", "Art"],
+        ...         "Grade": [90, 85, 78, 88, 92],
+        ...     }
+        ... )
+        >>> df_long.pivot(index=["First", "Last"], columns="Subject", values="Grade")
         shape: (3, 4)
         ┌───────┬──────┬──────┬──────┐
         │ First ┆ Last ┆ Math ┆ Art  │
@@ -7369,10 +7371,14 @@ class DataFrame:
         Pivot using an expression as the `aggregate_function` (this particular example
         can be expressed more simply with `aggregate_function='mean'`):
 
-        >>> df_long\
-        ...     .vstack(df_long.with_columns(pl.col.Grade + 10))\
-        ...     .pivot(index=['First', 'Last'], columns='Subject', values='Grade',
-        ...            aggregate_function=pl.element().mean())
+        >>> (
+        ...     df_long.vstack(df_long.with_columns(pl.col.Grade + 10)).pivot(
+        ...         index=["First", "Last"],
+        ...         columns="Subject",
+        ...         values="Grade",
+        ...         aggregate_function=pl.element().mean(),
+        ...     )
+        ... )
         shape: (3, 4)
         ┌───────┬──────┬──────┬──────┐
         │ First ┆ Last ┆ Math ┆ Art  │
@@ -7388,8 +7394,12 @@ class DataFrame:
         alphabetically order the non-index columns (`'Art'` and `'Math'`):
 
         >>> import polars.selectors as cs
-        >>> df_long.pivot(index=['First', 'Last'], columns='Subject',
-        ...               values=cs.integer(), sort_columns=True)
+        >>> df_long.pivot(
+        ...     index=["First", "Last"],
+        ...     columns="Subject",
+        ...     values=cs.integer(),
+        ...     sort_columns=True,
+        ... )
         shape: (3, 4)
         ┌───────┬──────┬──────┬──────┐
         │ First ┆ Last ┆ Art  ┆ Math │
@@ -7406,16 +7416,22 @@ class DataFrame:
         perform a "lazy pivot" using :func:`LazyFrame.groupby` to get the same result as
         above in lazy mode:
 
-        >>> index = 'First', 'Last'
-        >>> columns = 'Subject'
+        >>> index = "First", "Last"
+        >>> columns = "Subject"
         >>> values = cs.integer()
         >>> unique_columns = df_long[columns].unique()
-        >>> df_long\
-        ...     .lazy()\
-        ...     .group_by(index, maintain_order=True)\
-        ...     .agg(pl.col(values).filter(pl.col(columns).eq(column))
-        ...          .first().alias(column) for column in unique_columns)\
+        >>> (
+        ...     df_long.lazy()
+        ...     .group_by(index, maintain_order=True)
+        ...     .agg(
+        ...         pl.col(values)
+        ...         .filter(pl.col(columns).eq(column))
+        ...         .first()
+        ...         .alias(column)
+        ...         for column in unique_columns
+        ...     )
         ...     .collect()
+        ... )
         shape: (3, 4)
         ┌───────┬──────┬──────┬──────┐
         │ First ┆ Last ┆ Art  ┆ Math │
