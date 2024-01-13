@@ -7435,7 +7435,7 @@ class DataFrame:
         ...     )
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
-        
+
         shape: (3, 4)
         ┌───────┬──────┬──────┬──────┐
         │ First ┆ Last ┆ Art  ┆ Math │
