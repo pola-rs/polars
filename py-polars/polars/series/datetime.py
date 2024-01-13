@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class DateTimeNameSpace:
-    """Series.dt namespace."""
+    """A namespace for temporal `Series`."""
 
     _accessor = "dt"
 
@@ -113,7 +113,7 @@ class DateTimeNameSpace:
 
     def to_string(self, format: str) -> Series:
         """
-        Convert a Date/Time/Datetime column into a String column with the given format.
+        Cast :class:`Date`/:class:`Time`/:class:`Datetime` `Series` to :class:`String`.
 
         Similar to `cast(pl.String)`, but this method allows you to customize the
         formatting of the resulting string.
@@ -121,7 +121,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
+            The string format to use. Refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: `"%y-%m-%d"`.
 
@@ -145,7 +145,7 @@ class DateTimeNameSpace:
 
     def strftime(self, format: str) -> Series:
         """
-        Convert a Date/Time/Datetime column into a String column with the given format.
+        Cast :class:`Date`/:class:`Time`/:class:`Datetime` `Series` to :class:`String`.
 
         Similar to `cast(pl.String)`, but this method allows you to customize the
         formatting of the resulting string.
@@ -155,13 +155,13 @@ class DateTimeNameSpace:
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
+            The string format to use. Refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: `"%y-%m-%d"`.
 
         See Also
         --------
-        to_string : The identical Series method for which `strftime` is an alias.
+        to_string : The identical `Series` method for which `strftime` is an alias.
 
         Examples
         --------
@@ -184,16 +184,12 @@ class DateTimeNameSpace:
 
     def year(self) -> Series:
         """
-        Extract the year from the underlying date representation.
-
-        Applies to Date and Datetime columns.
-
-        Returns the year number in the calendar date.
+        Get calendar years from a :class:`Date`/:class:`Datetime` `Series`.
 
         Returns
         -------
-        Series
-            Series of data type :class:`Int32`.
+        Expr
+            A :class:`Int32` `Series`.
 
         Examples
         --------
@@ -211,14 +207,12 @@ class DateTimeNameSpace:
 
     def is_leap_year(self) -> Series:
         """
-        Determine whether the year of the underlying date representation is a leap year.
-
-        Applies to Date and Datetime columns.
+        Get which years in a :class:`Date`/:class:`Datetime` `Series` are leap years.
 
         Returns
         -------
-        Series
-            Series of data type :class:`Boolean`.
+        Expr
+            A :class:`Boolean` `Series`.
 
         Examples
         --------
@@ -239,17 +233,14 @@ class DateTimeNameSpace:
 
     def iso_year(self) -> Series:
         """
-        Extract ISO year from underlying Date representation.
+        Get ISO years from a :class:`Date`/:class:`Datetime` `Series`.
 
-        Applies to Date and Datetime columns.
-
-        Returns the year number according to the ISO standard.
-        This may not correspond with the calendar year.
+        ISO years may differ slightly from calendar years.
 
         Returns
         -------
-        Series
-            Series of data type :class:`Int32`.
+        Expr
+            A :class:`Int32` `Series`.
 
         Examples
         --------
@@ -266,16 +257,12 @@ class DateTimeNameSpace:
 
     def quarter(self) -> Series:
         """
-        Extract quarter from underlying Date representation.
-
-        Applies to Date and Datetime columns.
-
-        Returns the quarter ranging from 1 to 4.
+        Get quarters (1-4) from a :class:`Date`/:class:`Datetime` `Series`.
 
         Returns
         -------
-        Series
-            Series of data type :class:`Int8`.
+        Expr
+            A :class:`Int8` `Series`.
 
         Examples
         --------
@@ -297,17 +284,12 @@ class DateTimeNameSpace:
 
     def month(self) -> Series:
         """
-        Extract the month from the underlying date representation.
-
-        Applies to Date and Datetime columns.
-
-        Returns the month number starting from 1.
-        The return value ranges from 1 to 12.
+        Get months (1-12) from a :class:`Date`/:class:`Datetime` `Series`.
 
         Returns
         -------
-        Series
-            Series of data type :class:`Int8`.
+        Expr
+            A :class:`Int8` `Series`.
 
         Examples
         --------
@@ -329,17 +311,14 @@ class DateTimeNameSpace:
 
     def week(self) -> Series:
         """
-        Extract the week from the underlying date representation.
+        Get ISO weeks (1-53) from a :class:`Date`/:class:`Datetime` `Series`.
 
-        Applies to Date and Datetime columns.
-
-        Returns the ISO week number starting from 1.
-        The return value ranges from 1 to 53. (The last week of year differs by years.)
+        (Some years do not have a 53rd ISO week.)
 
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            A :class:`Int8` `Series`.
 
         Examples
         --------
@@ -361,16 +340,14 @@ class DateTimeNameSpace:
 
     def weekday(self) -> Series:
         """
-        Extract the week day from the underlying date representation.
+        Get ISO weekdays (1-7) from a :class:`Date`/:class:`Datetime` `Series`.
 
-        Applies to Date and Datetime columns.
-
-        Returns the ISO weekday number where monday = 1 and sunday = 7
+        Monday is weekday number 1; Sunday is weekday number 7.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            A :class:`Int8` `Series`.
 
         Examples
         --------
@@ -395,17 +372,12 @@ class DateTimeNameSpace:
 
     def day(self) -> Series:
         """
-        Extract the day from the underlying date representation.
-
-        Applies to Date and Datetime columns.
-
-        Returns the day of month starting from 1.
-        The return value ranges from 1 to 31. (The last day of month differs by months.)
+        Get days of the month (1-31) from a :class:`Date`/:class:`Datetime` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            A :class:`Int8` `Series`.
 
         Examples
         --------
@@ -428,17 +400,14 @@ class DateTimeNameSpace:
 
     def ordinal_day(self) -> Series:
         """
-        Extract ordinal day from underlying date representation.
+        Get days of the year (1-366) from a :class:`Date`/:class:`Datetime` `Series`.
 
-        Applies to Date and Datetime columns.
-
-        Returns the day of year starting from 1.
-        The return value ranges from 1 to 366. (The last day of year differs by years.)
+        Only leap years have a 366th day.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int16`.
+            A :class:`Int16` `Series`.
 
         Examples
         --------
@@ -459,14 +428,12 @@ class DateTimeNameSpace:
 
     def time(self) -> Series:
         """
-        Extract (local) time.
-
-        Applies to Date/Datetime/Time columns.
+        Get the time component of a :class:`Datetime` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Time`.
+            A :class:`Time` `Series`.
 
         Examples
         --------
@@ -490,14 +457,12 @@ class DateTimeNameSpace:
 
     def date(self) -> Series:
         """
-        Extract (local) date.
-
-        Applies to Date/Datetime columns.
+        Get the date component of a :class:`Date`/:class:`Datetime` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Date`.
+            A :class:`Date` `Series`.
 
         Examples
         --------
@@ -528,7 +493,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Datetime`.
+            A :class:`Datetime` `Series`.
 
         Examples
         --------
@@ -552,16 +517,14 @@ class DateTimeNameSpace:
 
     def hour(self) -> Series:
         """
-        Extract the hour from the underlying DateTime representation.
+        Get hour numbers (0-23) from a class:`Datetime`/:class:`Time` `Series`.
 
-        Applies to Datetime columns.
-
-        Returns the hour number from 0 to 23.
+        Hour numbers start at midnight.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            A :class:`Int8` `Series`.
 
         Examples
         --------
@@ -594,16 +557,12 @@ class DateTimeNameSpace:
 
     def minute(self) -> Series:
         """
-        Extract the minutes from the underlying DateTime representation.
-
-        Applies to Datetime columns.
-
-        Returns the minute number from 0 to 59.
+        Get minute numbers (0-59) from a class:`Datetime`/:class:`Time` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            A :class:`Int8` `Series`.
 
         Examples
         --------
@@ -634,23 +593,20 @@ class DateTimeNameSpace:
 
     def second(self, *, fractional: bool = False) -> Series:
         """
-        Extract seconds from underlying DateTime representation.
+        Get second numbers (0-59) from a class:`Datetime`/:class:`Time` `Series`.
 
-        Applies to Datetime columns.
-
-        Returns the integer second number from 0 to 59, or a floating
-        point number from 0 < 60 if `fractional=True` that includes
-        any milli/micro/nanosecond component.
+        If `fractional=True`, return a floating-point number in the range `[0, 60)`
+        that includes any milli/micro/nanosecond component.
 
         Parameters
         ----------
         fractional
-            Whether to include the fractional component of the second.
+            Whether to include the fractional component of the second number.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int8` or :class:`Float64`.
+            A :class:`Int8` `Series`, or :class:`Float64` if `fractional=True`.
 
         Examples
         --------
@@ -684,14 +640,12 @@ class DateTimeNameSpace:
 
     def millisecond(self) -> Series:
         """
-        Extract the milliseconds from the underlying DateTime representation.
-
-        Applies to Datetime columns.
+        Get millisecond numbers (0-999) from a class:`Datetime`/:class:`Time` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            A :class:`Int32` `Series`.
 
         Examples
         --------
@@ -720,14 +674,12 @@ class DateTimeNameSpace:
 
     def microsecond(self) -> Series:
         """
-        Extract the microseconds from the underlying DateTime representation.
-
-        Applies to Datetime columns.
+        Get microsecond numbers (0-999999) from class:`Datetime`/:class:`Time` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            A :class:`Int32` `Series`.
 
         Examples
         --------
@@ -770,14 +722,12 @@ class DateTimeNameSpace:
 
     def nanosecond(self) -> Series:
         """
-        Extract the nanoseconds from the underlying DateTime representation.
-
-        Applies to Datetime columns.
+        Get nanosecond numbers (0-999999999) of class:`Datetime`/:class:`Time` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            A :class:`Int32` `Series`.
 
         Examples
         --------
@@ -824,8 +774,8 @@ class DateTimeNameSpace:
 
         Parameters
         ----------
-        time_unit : {'us', 'ns', 'ms'}
-            Time unit.
+        time_unit : {'ns', 'us', 'ms'}
+            The time unit.
 
         Examples
         --------
@@ -864,12 +814,14 @@ class DateTimeNameSpace:
 
     def epoch(self, time_unit: EpochTimeUnit = "us") -> Series:
         """
-        Get the time passed since the Unix EPOCH in the give time unit.
+        Get the time elapsed since the Unix epoch in the given time unit.
+
+        The Unix epoch is 00:00:00 UTC on 1 January 1970.
 
         Parameters
         ----------
-        time_unit : {'us', 'ns', 'ms', 's', 'd'}
-            Unit of time.
+        time_unit : {'ns', 'us', 'ms', 's', 'd'}
+            The time unit.
 
         Examples
         --------
@@ -908,15 +860,21 @@ class DateTimeNameSpace:
 
     def with_time_unit(self, time_unit: TimeUnit) -> Series:
         """
-        Set time unit a Series of dtype Datetime or Duration.
-
-        This does not modify underlying data, and should be used to fix an incorrect
-        time unit.
+        Reinterpret the time unit of a :class:`Datetime`/:class:`Duration` `Series`.
 
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the :class:`Datetime` Series.
+            The time unit to reinterpret the :class:`Datetime`/:class:`Duration`
+            `Series` as.
+
+        Warnings
+        --------
+        This does not modify the underlying data, and should be only used to fix
+        `Series` with incorrect time units; otherwise, the result will be incorrect. In
+        the more common scenario where you want to cast a
+        :class:`Datetime`/:class:`Duration` to a different time unit, use
+        :func:`cast_time_unit`.
 
         Examples
         --------
@@ -939,12 +897,14 @@ class DateTimeNameSpace:
 
     def cast_time_unit(self, time_unit: TimeUnit) -> Series:
         """
-        Cast the underlying data to another time unit. This may lose precision.
+        Cast a :class:`Datetime`/:class:`Duration` `Series` to another time unit.
+
+        This may lose precision.
 
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the :class:`Datetime` Series.
+            The time unit to cast :class:`Datetime`/:class:`Duration` columns to.
 
         Examples
         --------
@@ -981,12 +941,15 @@ class DateTimeNameSpace:
 
     def convert_time_zone(self, time_zone: str) -> Series:
         """
-        Convert to given time zone for a Series of type Datetime.
+        Convert a class:`Datetime` `Series` to the specified time zone.
+
+        Unlike :func:`replace_time_zone`, this function does not change the underlying
+        timestamps, only which time zone they are interpreted as.
 
         Parameters
         ----------
         time_zone
-            Time zone for the :class:`Datetime` Series.
+            The time zone to convert to.
 
         Examples
         --------
@@ -1023,15 +986,16 @@ class DateTimeNameSpace:
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
-        Replace time zone for a Series of type Datetime.
+        Replace the time zone of a class:`Datetime` `Series`.
 
-        Different from `convert_time_zone`, this will also modify
-        the underlying timestamp and will ignore the original time zone.
+        Unlike :func:`convert_time_zone`, this function changes the underlying
+        timestamps.
 
         Parameters
         ----------
         time_zone
-            Time zone for the :class:`Datetime` Series. Pass `None` to unset time zone.
+            The time zone to replace with. If `time_zone=None`, the time zone will be
+            unset.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -1120,12 +1084,12 @@ class DateTimeNameSpace:
 
     def total_days(self) -> Series:
         """
-        Extract the total days from a Duration type.
+        Get the total number of days from a :class:`Duration` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1154,12 +1118,12 @@ class DateTimeNameSpace:
 
     def total_hours(self) -> Series:
         """
-        Extract the total hours from a Duration type.
+        Get the total number of hours from a :class:`Duration` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1190,12 +1154,12 @@ class DateTimeNameSpace:
 
     def total_minutes(self) -> Series:
         """
-        Extract the total minutes from a Duration type.
+        Get the total number of minutes from a :class:`Duration` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1226,12 +1190,12 @@ class DateTimeNameSpace:
 
     def total_seconds(self) -> Series:
         """
-        Extract the total seconds from a Duration type.
+        Get the total number of seconds from a :class:`Duration` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1264,12 +1228,12 @@ class DateTimeNameSpace:
 
     def total_milliseconds(self) -> Series:
         """
-        Extract the total milliseconds from a Duration type.
+        Get the total number of milliseconds from a :class:`Duration` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1301,12 +1265,12 @@ class DateTimeNameSpace:
 
     def total_microseconds(self) -> Series:
         """
-        Extract the total microseconds from a Duration type.
+        Get the total number of microseconds from a :class:`Duration` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1338,12 +1302,12 @@ class DateTimeNameSpace:
 
     def total_nanoseconds(self) -> Series:
         """
-        Extract the total nanoseconds from a Duration type.
+        Get the total number of nanoseconds from a :class:`Duration` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1375,29 +1339,33 @@ class DateTimeNameSpace:
 
     def offset_by(self, by: str | Expr) -> Series:
         """
-        Offset this date by a relative time offset.
+        Offset :class:`Date`/:class:`Datetime` columns by a relative time offset.
 
-        This differs from `pl.col("foo") + timedelta` in that it can
-        take months and leap years into account. Note that only a single minus
-        sign is allowed in the `by` string, as the first character.
+        This differs from `self + timedelta` in that it can take months and leap years
+        into account. Note that only a single minus sign is allowed in the `by` string,
+        as the first character.
 
         Parameters
         ----------
         by
-            The offset is dictated by the following string language:
+            The offset is created according to the following string language:
 
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
+            * `"1ns"`   (1 nanosecond)
+            * `"1us"`   (1 microsecond)
+            * `"1ms"`   (1 millisecond)
+            * `"1s"`    (1 second)
+            * `"1m"`    (1 minute)
+            * `"1h"`    (1 hour)
+            * `"1d"`    (1 calendar day)
+            * `"1w"`    (1 calendar week)
+            * `"1mo"`   (1 calendar month)
+            * `"1q"`    (1 calendar quarter)
+            * `"1y"`    (1 calendar year)
+            * `"1i"`    (1 index count)
+
+            These strings can be combined:
+
+            - `"3d12h4m25s"`   (3 days, 12 hours, 4 minutes, and 25 seconds)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -1407,7 +1375,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Date` or :class:`Datetime`.
+            A :class:`Date` or :class:`Datetime` `Series`.
 
         Examples
         --------
@@ -1459,10 +1427,11 @@ class DateTimeNameSpace:
         ambiguous: Ambiguous | Series | None = None,
     ) -> Series:
         """
-        Divide the date/ datetime range into buckets.
+        Round down each :class:`Date`/:class:`Datetime` to the nearest bucket edge.
 
-        Each date/datetime is mapped to the start of its bucket using the corresponding
-        local datetime. Note that weekly buckets start on Monday.
+        Each :class:`Date`/:class:`Datetime` is mapped to the start of its bucket using
+        the corresponding local datetime. Note that weekly buckets start on Monday.
+
         Ambiguous results are localised using the DST offset of the original timestamp -
         for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
@@ -1471,9 +1440,9 @@ class DateTimeNameSpace:
         Parameters
         ----------
         every
-            Every interval start and period length
+            The width of the buckets.
         offset
-            Offset the window
+            The offset of the buckets.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -1498,22 +1467,22 @@ class DateTimeNameSpace:
         The `every` and `offset` argument are created with the
         the following string language:
 
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
+        * `"1ns"`   (1 nanosecond)
+        * `"1us"`   (1 microsecond)
+        * `"1ms"`   (1 millisecond)
+        * `"1s"`    (1 second)
+        * `"1m"`    (1 minute)
+        * `"1h"`    (1 hour)
+        * `"1d"`    (1 calendar day)
+        * `"1w"`    (1 calendar week)
+        * `"1mo"`   (1 calendar month)
+        * `"1q"`    (1 calendar quarter)
+        * `"1y"`    (1 calendar year)
+        * `"1i"`    (1 index count)
 
         These strings can be combined:
 
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
+        - `"3d12h4m25s"`   (3 days, 12 hours, 4 minutes, and 25 seconds)
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -1522,7 +1491,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Date` or :class:`Datetime`.
+            A :class:`Date` or :class:`Datetime` `Series`.
 
         Examples
         --------
@@ -1600,47 +1569,23 @@ class DateTimeNameSpace:
         ambiguous: Ambiguous | Series | None = None,
     ) -> Series:
         """
-        Divide the date/ datetime range into buckets.
+        Round each :class:`Date`/:class:`Datetime` to the nearest bucket edge.
 
-        Each date/datetime in the first half of the interval
-        is mapped to the start of its bucket.
-        Each date/datetime in the second half of the interval
-        is mapped to the end of its bucket.
+        Each :class:`Date`/:class:`Datetime` in the first half of its bucket is mapped
+        to the start of the bucket using the corresponding local datetime; each one in
+        the second half is mapped to the end. Note that weekly buckets start on Monday.
+
         Ambiguous results are localised using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
         `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
 
-        The `every` and `offset` argument are created with the
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
-
         Parameters
         ----------
         every
-            Every interval start and period length
+            The width of the buckets.
         offset
-            Offset the window
+            The offset of the buckets.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -1648,13 +1593,39 @@ class DateTimeNameSpace:
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
 
-            .. deprecated:: 0.19.3
+            .. deprecated: 0.19.3
                 This is now auto-inferred, you can safely remove this argument.
+
+        Notes
+        -----
+        The `every` and `offset` arguments are created with the following string
+        language:
+
+        * `"1ns"`   (1 nanosecond)
+        * `"1us"`   (1 microsecond)
+        * `"1ms"`   (1 millisecond)
+        * `"1s"`    (1 second)
+        * `"1m"`    (1 minute)
+        * `"1h"`    (1 hour)
+        * `"1d"`    (1 calendar day)
+        * `"1w"`    (1 calendar week)
+        * `"1mo"`   (1 calendar month)
+        * `"1q"`    (1 calendar quarter)
+        * `"1y"`    (1 calendar year)
+        * `"1i"`    (1 index count)
+
+        These strings can be combined:
+
+        - `"3d12h4m25s"`   (3 days, 12 hours, 4 minutes, and 25 seconds)
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
         Series
-            Series of data type :class:`Date` or :class:`Datetime`.
+            A :class:`Date` or :class:`Datetime` `Series`.
 
         Warnings
         --------
@@ -1722,17 +1693,23 @@ class DateTimeNameSpace:
 
     def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Expr:
         """
-        Create a naive Datetime from an existing Date/Datetime expression and a Time.
+        Combine this :class:`Date`/:class:`Datetime` `Series` with a time.
 
-        If the underlying expression is a Datetime then its time component is replaced,
-        and if it is a Date then a new Datetime is created by combining the two values.
+        If `self` is a :class:`Datetime`, its time component is replaced with `time`.
+        If `self` is a :class:`Date`, it is combined with `time` to make a
+        :class:`Datetime` `Series`.
 
         Parameters
         ----------
         time
-            A python time literal or Series of the same length as this Series.
+            A :class:`Time`: `Series` or Python `datetime.time` literal.
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time.
+            A time unit for the output :class:`Datetime` `Series`.
+
+        Returns
+        -------
+        Series
+            A :class:`Datetime` `Series`.
 
         Examples
         --------
@@ -1753,12 +1730,12 @@ class DateTimeNameSpace:
 
     def month_start(self) -> Series:
         """
-        Roll backward to the first day of the month.
+        Roll :class:`Date`/:class:`Datetime` columns backward to the month's first day.
 
         Returns
         -------
         Series
-            Series of data type :class:`Date` or :class:`Datetime`.
+            A :class:`Date` or :class:`Datetime` `Series`.
 
         Notes
         -----
@@ -1784,12 +1761,12 @@ class DateTimeNameSpace:
 
     def month_end(self) -> Series:
         """
-        Roll forward to the last day of the month.
+        Roll :class:`Date`/:class:`Datetime` columns forward to the month's last day.
 
         Returns
         -------
         Series
-            Series of data type :class:`Date` or :class:`Datetime`.
+            A :class:`Date` or :class:`Datetime` `Series`.
 
         Notes
         -----
@@ -1815,20 +1792,21 @@ class DateTimeNameSpace:
 
     def base_utc_offset(self) -> Series:
         """
-        Base offset from UTC.
+        Get the offset of each element of a :class:`Datetime` `Series` from UTC.
 
-        This is usually constant for all datetimes in a given time zone, but
-        may vary in the rare case that a country switches time zone, like
-        Samoa (Apia) did at the end of 2011.
+        This is usually constant for all datetimes in a given time zone, but may vary in
+        the rare case that a region switches time zone, like Samoa (Apia) did at the end
+        of 2011.
 
         Returns
         -------
-        Series
-            Series of data type :class:`Duration`.
+        Expr
+            A :class:`Duration` `Series`.
 
         See Also
         --------
-        Series.dt.dst_offset : Additional offset currently in effect.
+        Series.dt.dst_offset : Get the additional daylight savings time offset of
+                               a :class:`Datetime` `Series`.
 
         Examples
         --------
@@ -1858,16 +1836,19 @@ class DateTimeNameSpace:
 
     def dst_offset(self) -> Series:
         """
-        Additional offset currently in effect (typically due to daylight saving time).
+        Get the additional daylight savings time offset of :class:`Datetime` columns.
+
+        Offsets for reasons other than daylight savings time are also included here.
 
         Returns
         -------
         Series
-            Series of data type :class:`Duration`.
+            A :class:`Duration` `Series`.
 
         See Also
         --------
-        Series.dt.base_utc_offset : Base offset from UTC.
+        Series.dt.base_utc_offset : Get the offset of a :class:`Datetime` `Series` from
+                                    UTC.
 
         Examples
         --------

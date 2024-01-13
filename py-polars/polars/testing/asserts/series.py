@@ -33,33 +33,33 @@ def assert_series_equal(
     categorical_as_str: bool = False,
 ) -> None:
     """
-    Assert that the left and right Series are equal.
+    Assert that the left and right `Series` are equal.
 
-    Raises a detailed `AssertionError` if the Series differ.
+    Raises a detailed `AssertionError` if the `Series` differ.
     This function is intended for use in unit tests.
 
     Parameters
     ----------
     left
-        The first Series to compare.
+        The first `Series` to compare.
     right
-        The second Series to compare.
+        The second `Series` to compare.
     check_dtype
-        Require data types to match.
+        Whether to require the data types to match.
     check_names
-        Require names to match.
+        Whether to require the names to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
-        Only affects columns with a Float data type.
+        Whether to require float values to match exactly. If `check_exact=False`, values
+        are considered equal when within a specified tolerance of each other (see `rtol`
+        and `atol`). Only relevant for :class:`Float32` or :class:`Float64` `Series`.
     rtol
-        Relative tolerance for inexact checking, given as a fraction of the values in
+        The relative tolerance for inexact checking, as a fraction of the values in
         `right`.
     atol
-        Absolute tolerance for inexact checking.
+        The absolute tolerance for inexact checking.
     categorical_as_str
-        Cast categorical columns to string before comparing. Enabling this helps
-        compare columns that do not share the same string cache.
+        Whether to cast categorical columns to string before comparing. Enabling this
+        helps compare columns that do not share the same string cache.
 
     See Also
     --------
@@ -122,7 +122,7 @@ def _assert_series_values_equal(
     atol: float,
     categorical_as_str: bool,
 ) -> None:
-    """Assert that the values in both Series are equal."""
+    """Assert that the values in both `Series` are equal."""
     # Handle categoricals
     if categorical_as_str:
         if left.dtype == Categorical:
@@ -308,32 +308,32 @@ def assert_series_not_equal(
     categorical_as_str: bool = False,
 ) -> None:
     """
-    Assert that the left and right Series are **not** equal.
+    Assert that the left and right `Series` are **not** equal.
 
     This function is intended for use in unit tests.
 
     Parameters
     ----------
     left
-        The first Series to compare.
+        The first `Series` to compare.
     right
-        The second Series to compare.
+        The second `Series` to compare.
     check_dtype
-        Require data types to match.
+        Whether to require the data types to match.
     check_names
-        Require names to match.
+        Whether to require the names to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
-        Only affects columns with a Float data type.
+        Whether to require float values to match exactly. If `check_exact=False`, values
+        are considered equal when within a specified tolerance of each other (see `rtol`
+        and `atol`). Only relevant for :class:`Float32` or :class:`Float64` `Series`.
     rtol
-        Relative tolerance for inexact checking, given as a fraction of the values in
+        The relative tolerance for inexact checking, as a fraction of the values in
         `right`.
     atol
-        Absolute tolerance for inexact checking.
+        The absolute tolerance for inexact checking.
     categorical_as_str
-        Cast categorical columns to string before comparing. Enabling this helps
-        compare columns that do not share the same string cache.
+        Whether to cast categorical columns to string before comparing. Enabling this
+        helps compare columns that do not share the same string cache.
 
     See Also
     --------

@@ -241,7 +241,7 @@ class BytecodeParser:
         try:
             original_instructions = get_instructions(function)
         except TypeError:
-            # in case we hit something that can't be disassembled (eg: code object
+            # in case we hit something that can't be disassembled (e.g. code object
             # unavailable, like a bare numpy ufunc that isn't in a lambda/function)
             original_instructions = iter([])
 
@@ -319,7 +319,7 @@ class BytecodeParser:
 
     @property
     def map_target(self) -> MapTarget:
-        """The map target, eg: one of 'expr', 'frame', or 'series'."""
+        """The map target, e.g. one of 'expr', 'frame', or 'series'."""
         return self._map_target
 
     def can_attempt_rewrite(self) -> bool:
@@ -867,7 +867,7 @@ def warn_on_inefficient_map(
     function
         The function passed to `map`.
     columns
-        The column names of the original object; in the case of an :class:`Expr` this
+        The column names of the original object; in the case of an `Expr` this
         will be a list of length 1 containing the expression's root name.
     map_target
         The target of the `map` call. One of `"expr"`, `"frame"`,

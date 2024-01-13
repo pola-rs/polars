@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class ListNameSpace:
-    """Namespace for list related methods."""
+    """A namespace for :class:`List` `Series`."""
 
     _accessor = "list"
 
@@ -34,12 +34,12 @@ class ListNameSpace:
 
     def all(self) -> Series:
         """
-        Evaluate whether all :class:`Boolean` values in a list are `true`.
+        Evaluate whether all :class:`Boolean` values in each list are `true`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            A :class:`Boolean` `Series`.
 
         Examples
         --------
@@ -63,12 +63,12 @@ class ListNameSpace:
 
     def any(self) -> Series:
         """
-        Evaluate whether any :class:`Boolean` value in a list is `true`.
+        Evaluate whether any :class:`Boolean` value in each list is `true`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            A :class:`Boolean` `Series`.
 
         Examples
         --------
@@ -92,14 +92,12 @@ class ListNameSpace:
 
     def len(self) -> Series:
         """
-        Return the number of elements in each list.
-
-        `null` values count towards the total.
+        Get the number of elements in each list, including `null` elements.
 
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            A :class:`UInt32` `Series`.
 
         Examples
         --------
@@ -116,9 +114,9 @@ class ListNameSpace:
 
     def drop_nulls(self) -> Series:
         """
-        Drop all `null` values in the list.
+        Remove all `null` values in each list.
 
-        The original order of the remaining elements is preserved.
+        The original order of the remaining list elements is preserved.
 
         Examples
         --------
@@ -144,22 +142,29 @@ class ListNameSpace:
         seed: int | None = None,
     ) -> Series:
         """
-        Sample from this list.
+        Randomly sample elements from each list.
 
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
-            `fraction` is None.
+            The number of elements to return. Cannot be used with `fraction`. Defaults
+            to `1` if `fraction` is `None`.
         fraction
-            Fraction of items to return. Cannot be used with `n`.
+            The fraction of elements to return. Cannot be used with `n`.
         with_replacement
-            Allow values to be sampled more than once.
+            Whether to allow elements to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Whether to shuffle the order of the sampled elements. If `shuffle=False`
+            (the default), the order will be neither stable nor fully random.
         seed
-            Seed for the random number generator. If set to None (default), a
-            random seed is generated for each sample operation.
+            The seed for the random number generator. If `seed=None` (the default), a
+            random seed is generated anew for each `sample` operation. Set to an integer
+            (e.g. `seed=0`) for fully reproducible results.
+
+        Warnings
+        --------
+        `sample(fraction=1)` returns the expression as-is! To properly shuffle the
+        values, add `shuffle=True`.
 
         Examples
         --------
@@ -175,25 +180,77 @@ class ListNameSpace:
         """
 
     def sum(self) -> Series:
-        """Sum all the arrays in the list."""
+        """
+        Get the sum of the elements in each list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[1], [2, 3]])
+        >>> s.list.sum()
+        shape: (2,)
+        Series: 'values' [i64]
+        [
+                1
+                5
+        ]
+        """
 
     def max(self) -> Series:
-        """Compute the max value of the arrays in the list."""
+        """
+        Get the maximum value of the elements in each list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[1], [2, 3]])
+        >>> s.list.max()
+        shape: (2,)
+        Series: 'values' [i64]
+        [
+                1
+                3
+        ]
+        """
 
     def min(self) -> Series:
-        """Compute the min value of the arrays in the list."""
+        """
+        Get the minimum value of the elements in each list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[1], [2, 3]])
+        >>> s.list.min()
+        shape: (2,)
+        Series: 'values' [i64]
+        [
+                1
+                2
+        ]
+        """
 
     def mean(self) -> Series:
-        """Compute the mean value of the arrays in the list."""
+        """
+        Get the mean of the elements in each list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[1], [2, 3]])
+        >>> s.list.mean()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                1.0
+                2.5
+        ]
+        """
 
     def sort(self, *, descending: bool = False) -> Series:
         """
-        Sort the arrays in this column.
+        Sort each list.
 
         Parameters
         ----------
         descending
-            Sort in descending order.
+            Whether to sort in descending instead of ascending order.
 
         Examples
         --------
@@ -216,42 +273,95 @@ class ListNameSpace:
         """
 
     def reverse(self) -> Series:
-        """Reverse the arrays in the list."""
+        """
+        Reverse the order of the elements in each list.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]])
+        >>> s.list.reverse()
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [1, 2, 3]
+                [2, 1, 9]
+        ]
+        """
 
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
-        Get the unique/distinct values in the list.
+        Get the unique values that appear in each list, removing duplicates.
 
         Parameters
         ----------
         maintain_order
-            Maintain order of data. This requires more work.
+            Whether to keep the unique elements in the same order as in the input data.
+            This is slower.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 1, 2]])
+        >>> s.list.unique()
+        shape: (1,)
+        Series: 'a' [list[i64]]
+        [
+                [1, 2]
+        ]
 
         """
 
     def concat(self, other: list[Series] | Series | list[Any]) -> Series:
         """
-        Concat the arrays in a Series dtype List in linear time.
+        Concatenate the list elements in two or more :class:`List` `Series`.
 
         Parameters
         ----------
         other
-            Columns to concat into a List Series
+            The other `Series`.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [["a"], ["x"]])
+        >>> b = pl.Series("b", [["b", "c"], ["y", "z"]])
+        >>> a.list.concat(b)
+        shape: (2,)
+        Series: '' [list[str]]
+        [
+                ["a", "b", "c"]
+                ["x", "y", "z"]
+        ]
 
         """
 
     def get(self, index: int | Series | list[int]) -> Series:
         """
-        Get the value by index in the sublists.
+        Get a single element from each list by index.
 
-        So index `0` would return the first item of every sublist
-        and index `-1` would return the last item of every sublist
-        if an index is out of bounds, it will return a `None`.
+        For instance, `list.get(0)` would return the first item of each list,
+        and `list.get(-1)` would return the last item.
+
+        If an index is out of bounds, the resulting element will be `null`.
 
         Parameters
         ----------
         index
-            Index to return per sublist
+            The index of the element to return from each list.
+
+        See Also
+        --------
+        gather : Get multiple list elements by index.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.get(0)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                3
+                null
+                1
+        ]
 
         """
 
@@ -262,20 +372,31 @@ class ListNameSpace:
         null_on_oob: bool = False,
     ) -> Series:
         """
-        Take sublists by multiple indices.
+        Get multiple elements from each list by index.
 
-        The indices may be defined in a single column, or by sublists in another
-        column of dtype :class:`List`.
+        The indices may be defined in a single Python list, by lists in another
+        :class:`List` `Series`, or by a Python list of Python lists.
 
         Parameters
         ----------
         indices
-            Indices to return per sublist
+            The indices of the elements to return from each list.
         null_on_oob
-            Behavior if an index is out of bounds:
-            `True` -> set to `null`
-            `False` -> raise an error
-            Note that defaulting to raising an error is much cheaper.
+            Whether to set elements for out-of-bounds indices to `null`,
+            rather than raising an error. The latter is much faster.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2, 3, 4, 5]])
+        >>> s.list.gather([0, 4], null_on_oob=True)
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+                [3, null]
+                [null, null]
+                [1, 5]
+        ]
+
         """
 
     def __getitem__(self, item: int) -> Series:
@@ -283,19 +404,20 @@ class ListNameSpace:
 
     def join(self, separator: IntoExpr) -> Series:
         """
-        Join all string items in a sublist and place a separator between them.
+        Join all string items in a list and place a separator between them.
 
-        This errors if inner type of list `!= String`.
+        Raises an error if the inner dtype of the :class:`List` `Series` is not
+        :class:`String`.
 
         Parameters
         ----------
         separator
-            string to separate the items with
+            A string to separate the items with.
 
         Returns
         -------
         Series
-            Series of data type :class:`String`.
+            A :class:`String` `Series`.
 
         Examples
         --------
@@ -311,59 +433,119 @@ class ListNameSpace:
         """
 
     def first(self) -> Series:
-        """Get the first value of the sublists."""
+        """
+        Get the first element of each list.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.first()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                3
+                null
+                1
+        ]
+        """
 
     def last(self) -> Series:
-        """Get the last value of the sublists."""
+        """
+        Get the last element of each list.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.first()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                null
+                2
+        ]
+        """
 
     def contains(self, item: float | str | bool | int | date | datetime) -> Series:
         """
-        Check if sublists contain the given item.
+        Check if each list contains the given item.
 
         Parameters
         ----------
         item
-            Item that will be checked for membership
+            The item that will be checked for membership.
 
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            A :class:`Boolean` `Series`.
+
+        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s.list.contains(1)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+                true
+                false
+                true
+        ]
 
         """
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Get the index of the minimum value in each list.
 
         Returns
         -------
         Series
-            Series of data type :class:`UInt32` or :class:`UInt64`
-            (depending on compilation).
+            A :class:`UInt32` or :class:`UInt64` `Series` (depending on whether polars
+            is compiled in `bigidx` mode).
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [2, 1]])
+        >>> s.list.arg_min()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+                0
+                1
+        ]
 
         """
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Get the index of the maximum value in each list.
 
         Returns
         -------
         Series
-            Series of data type :class:`UInt32` or :class:`UInt64`
-            (depending on compilation).
+            A :class:`UInt32` or :class:`UInt64` `Series` (depending on whether polars
+            is compiled in `bigidx` mode).
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [2, 1]])
+        >>> s.list.arg_max()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+                1
+                0
+        ]
 
         """
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
-        Calculate the first discrete difference between shifted items of every sublist.
+        Get the first discrete difference between shifted elements of each list.
 
         Parameters
         ----------
         n
-            Number of slots to shift.
+            The number of elements to shift by when calculating the difference.
         null_behavior : {'ignore', 'drop'}
             How to handle `null` values.
 
@@ -399,13 +581,13 @@ class ListNameSpace:
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """
-        Shift list values by the given number of indices.
+        Shift list elements by the given number of indices.
 
         Parameters
         ----------
         n
-            Number of indices to shift forward. If a negative value is passed, values
-            are shifted in the opposite direction instead.
+            The number of indices to shift forward by. If negative, elements are shifted
+            backward instead.
 
         Notes
         -----
@@ -414,7 +596,7 @@ class ListNameSpace:
 
         Examples
         --------
-        By default, list values are shifted forward by one index.
+        By default, list elements are shifted forward by one index:
 
         >>> s = pl.Series([[1, 2, 3], [4, 5]])
         >>> s.list.shift()
@@ -425,7 +607,7 @@ class ListNameSpace:
                 [null, 4]
         ]
 
-        Pass a negative value to shift in the opposite direction instead.
+        Pass a negative value to shift backwards instead:
 
         >>> s.list.shift(-2)
         shape: (2,)
@@ -439,15 +621,15 @@ class ListNameSpace:
 
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Series:
         """
-        Slice every sublist.
+        Get a contiguous set of elements from each list.
 
         Parameters
         ----------
         offset
-            Start index. Negative indexing is supported.
+            The start index. Negative indexing is supported.
         length
-            Length of the slice. If set to `None` (default), the slice is taken to the
-            end of the list.
+            The length of the slice. If `length=None`, all elements starting from the
+            `offset` will be selected.
 
         Examples
         --------
@@ -464,12 +646,12 @@ class ListNameSpace:
 
     def head(self, n: int | Expr = 5) -> Series:
         """
-        Slice the first `n` values of every sublist.
+        Get the first `n` elements of each list.
 
         Parameters
         ----------
         n
-            Number of values to return for each sublist.
+            The number of elements to return. Negative values are not supported.
 
         Examples
         --------
@@ -486,12 +668,12 @@ class ListNameSpace:
 
     def tail(self, n: int | Expr = 5) -> Series:
         """
-        Slice the last `n` values of every sublist.
+        Get the last `n` elements of each list.
 
         Parameters
         ----------
         n
-            Number of values to return for each sublist.
+            The number of elements to return. Negative values are not supported.
 
         Examples
         --------
@@ -508,16 +690,20 @@ class ListNameSpace:
 
     def explode(self) -> Series:
         """
-        Returns a column with a separate row for every list element.
+        Put every element of every list on its own row.
 
         Returns
         -------
         Series
-            Series with the data type of the list elements.
+            A `Series` with the same data type as the inner data type of the list
+            elements.
 
         See Also
         --------
-        Series.reshape : Reshape this Series to a flat Series or a Series of Lists.
+        Series.explode : Explode a :class:`List` `Series`.
+        Series.str.explode : Explode a :class:`String` `Series`.
+        Series.reshape : Reshape a `Series` to a flat `Series` or a :class:`List`
+                         `Series`.
 
         Examples
         --------
@@ -540,28 +726,43 @@ class ListNameSpace:
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
-        Count how often the value produced by `element` occurs.
+        Count the number of occurrences of `element` in each list.
 
         Parameters
         ----------
         element
-            An expression that produces a single value
+            A scalar value.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]])
+        >>> number_of_twos = s.list.count_matches(2)
+        >>> number_of_twos
+        shape: (5,)
+        Series: 'a' [u32]
+        [
+                0
+                0
+                2
+                1
+                0
+        ]
 
         """
 
     def to_array(self, width: int) -> Series:
         """
-        Convert a List column into an Array column with the same inner data type.
+        Convert a :class:`List` `Series` to an :class:`Array` `Series`.
 
         Parameters
         ----------
         width
-            Width of the resulting Array column.
+            The width of the resulting :class:`Array` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Array`.
+            An :class:`Array` `Series`.
 
         Examples
         --------
@@ -582,26 +783,30 @@ class ListNameSpace:
         fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """
-        Convert the series of type :class:`List` to a series of type :class:`Struct`.
+        Convert a :class:`List` `Series` to a :class:`Struct` `Series`.
 
         Parameters
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
-            Strategy to determine the number of fields of the struct.
+            Whether to set the number of :class:`Struct` fields to:
 
-            * `"first_non_null"`: set number of fields equal to the length of the
-              first non zero-length sublist.
-            * `"max_width"`: set number of fields as max length of all sublists.
+            * `"first_non_null"`: the length of the first non zero-length list.
+            * `"max_width"`: the maximum length of all lists.
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.
             Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0`, `field_1`, ...,
-            `field_n`.
+            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+
+        Notes
+        -----
+        For performance reasons, the length of the first non-`null` list is used to
+        determine the number of output fields. If the list can be of different lengths,
+        then `n_field_strategy="max_width"` must be used to obtain the expected result.
 
         Examples
         --------
-        Convert list to struct with default field name assignment:
+        Convert :class:`List` to :class:`Struct` with default field name assignment:
 
         >>> s1 = pl.Series("n", [[0, 1, 2], [0, 1]])
         >>> s2 = s1.list.to_struct()
@@ -615,13 +820,15 @@ class ListNameSpace:
         >>> s2.struct.fields
         ['field_0', 'field_1', 'field_2']
 
-        Convert list to struct with field name assignment by function/index:
+        Convert :class:`List` to :class:`Struct` with field name assignment by
+        function/index:
 
         >>> s3 = s1.list.to_struct(fields=lambda idx: f"n{idx:02}")
         >>> s3.struct.fields
         ['n00', 'n01', 'n02']
 
-        Convert list to struct with field name assignment by index from a list of names:
+        Convert :class:`List` to :class:`Struct` with field name assignment by index
+        from a list of names:
 
         >>> s1.list.to_struct(fields=["one", "two", "three"]).struct.unnest()
         shape: (2, 3)
@@ -652,19 +859,21 @@ class ListNameSpace:
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Series:
         """
-        Run any polars expression against the lists' elements.
+        Evaluate any polars expression across each list's elements.
+
+        Use :func:`polars.element()` to refer to the list element, similar to how
+        you usually would use `pl.col()` to refer to a column in an expression.
 
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.first()`, or
-            `pl.col()`
+            The expression to evaluate.
         parallel
-            Run all expression parallel. Don't activate this blindly.
-            Parallelism is worth it if there is enough work to do per thread.
+            Whether to execute the computation in parallel.
 
-            This likely should not be use in the group by context, because we already
-            parallel execution per group
+            .. note::
+                This option should likely not be enabled in an aggregation context,
+                as the computation is already parallelized per group.
 
         Examples
         --------
@@ -687,12 +896,12 @@ class ListNameSpace:
 
     def set_union(self, other: Series) -> Series:
         """
-        Compute the SET UNION between the elements in this list and the elements of `other`.
+        Compute set unions between elements in two :class:`List` `Series`.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other `Series`.
 
         Examples
         --------
@@ -708,20 +917,21 @@ class ListNameSpace:
                 [5, 6, 7, 8]
         ]
 
-        """  # noqa: W505
+        """
 
     def set_difference(self, other: Series) -> Series:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
+        Compute set differences between elements in two :class:`List` `Series`.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other `Series`.
 
         See Also
         --------
-        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
+        polars.Series.list.diff: Get the first discrete difference between shifted
+                                 elements of each list.
 
         Examples
         --------
@@ -737,16 +947,16 @@ class ListNameSpace:
                 [5, 7]
         ]
 
-        """  # noqa: W505
+        """
 
     def set_intersection(self, other: Series) -> Series:
         """
-        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
+        Compute set intersections between elements in two :class:`List` `Series`.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other `Series`.
 
         Examples
         --------
@@ -762,16 +972,30 @@ class ListNameSpace:
                 [6]
         ]
 
-        """  # noqa: W505
+        """
 
     def set_symmetric_difference(self, other: Series) -> Series:
         """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
+        Compute set symmetric differences between elements in two :class:`List` `Series`.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other `Series`.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.set_symmetric_difference(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [1, 4]
+                [3]
+                [4]
+                [5, 7, 8]
+        ]
 
         """  # noqa: W505
 

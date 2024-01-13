@@ -79,7 +79,7 @@ def expand_selector(
     Parameters
     ----------
     target
-        A polars DataFrame, LazyFrame or schema.
+        A polars `DataFrame`, `LazyFrame` or schema.
     selector
         An arbitrary polars selector (or compound selector).
 
@@ -94,19 +94,19 @@ def expand_selector(
     ...     }
     ... )
 
-    Expand selector with respect to an existing `DataFrame`:
+    Expand a selector with respect to an existing `DataFrame`:
 
     >>> cs.expand_selector(df, cs.numeric())
     ('coly', 'colz')
     >>> cs.expand_selector(df, cs.first() | cs.last())
     ('colx', 'colz')
 
-    This also works with `LazyFrame`:
+    This also works with a `LazyFrame`:
 
     >>> cs.expand_selector(df.lazy(), ~(cs.first() | cs.last()))
     ('coly',)
 
-    Expand selector with respect to a standalone schema:
+    Expand a selector with respect to a standalone schema:
 
     >>> schema = {
     ...     "colx": pl.Float32,
@@ -129,7 +129,7 @@ def _expand_selectors(
     frame: DataFrame | LazyFrame, items: Any, *more_items: Any
 ) -> list[Any]:
     """
-    Internal function that expands any selectors to column names in the given input.
+    An internal function that expands any selectors to column names in the given input.
 
     Non-selector values are left as-is.
 
@@ -357,10 +357,10 @@ class _selector_proxy_(Expr):
 
     def as_expr(self) -> Expr:
         """
-        Materialize the `selector` into a normal expression.
+        Materialize the `selector` into an expression.
 
-        This ensures that the operators `|`, `&`, `~` and `-`
-        are applied on the data and not on the selector sets.
+        This ensures that the operators `|`, `&`, `~` and `-` are applied to the data
+        itself, rather than to the selected column sets.
         """
         return Expr._from_pyexpr(self._pyexpr)
 
@@ -386,8 +386,8 @@ def all() -> SelectorType:
 
     See Also
     --------
-    first : Select the first column in the current scope.
-    last : Select the last column in the current scope.
+    first : Select the first column.
+    last : Select the last column.
 
     Examples
     --------
@@ -401,7 +401,7 @@ def all() -> SelectorType:
     ...     schema_overrides={"value": pl.Int32},
     ... )
 
-    Select all columns, casting them to string:
+    Select all columns, casting them to :class:`String`:
 
     >>> df.select(cs.all().cast(pl.String))
     shape: (2, 2)
@@ -433,7 +433,7 @@ def all() -> SelectorType:
 
 def binary() -> SelectorType:
     """
-    Select all binary columns.
+    Select all :class:`Binary` columns.
 
     See Also
     --------
@@ -454,12 +454,12 @@ def binary() -> SelectorType:
     │ [binary data] ┆ world ┆ [binary data] ┆ :)  │
     └───────────────┴───────┴───────────────┴─────┘
 
-    Select binary columns and export as a dict:
+    Select :class:`Binary` columns and export as a dict:
 
     >>> df.select(cs.binary()).to_dict(as_series=False)
     {'a': [b'hello'], 'c': [b'!']}
 
-    Select all columns *except* for those that are binary:
+    Select all columns *except* for those that are :class:`Binary`:
 
     >>> df.select(~cs.binary()).to_dict(as_series=False)
     {'b': ['world'], 'd': [':)']}
@@ -470,7 +470,7 @@ def binary() -> SelectorType:
 
 def boolean() -> SelectorType:
     """
-    Select all boolean columns.
+    Select all :class:`Boolean` columns.
 
     See Also
     --------
@@ -493,7 +493,7 @@ def boolean() -> SelectorType:
     │ 4   ┆ true   │
     └─────┴────────┘
 
-    Select and invert boolean columns:
+    Select and invert :class:`Boolean` columns:
 
     >>> df.with_columns(is_odd=cs.boolean().not_())
     shape: (4, 3)
@@ -508,7 +508,7 @@ def boolean() -> SelectorType:
     │ 4   ┆ true   ┆ false  │
     └─────┴────────┴────────┘
 
-    Select all columns *except* for those that are boolean:
+    Select all columns *except* for those that are :class:`Boolean`:
 
     >>> df.select(~cs.boolean())
     shape: (4, 1)
@@ -549,7 +549,7 @@ def by_dtype(
     ...     }
     ... )
 
-    Select all columns with date or integer dtypes:
+    Select all columns with :class:`Date` or integer dtypes:
 
     >>> df.select(cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
     shape: (3, 2)
@@ -563,7 +563,7 @@ def by_dtype(
     │ 2010-07-05 ┆ -4500000 │
     └────────────┴──────────┘
 
-    Select all columns that are not of date or integer dtype:
+    Select all columns that are not of :class:`Date` or integer dtype:
 
     >>> df.select(~cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
     shape: (3, 1)
@@ -577,7 +577,7 @@ def by_dtype(
     │ foo   │
     └───────┘
 
-    Group by string columns and sum the numeric columns:
+    Group by :class:`String` columns and sum the numeric columns:
 
     >>> df.group_by(cs.string()).agg(cs.numeric().sum()).sort(by="other")
     shape: (2, 2)
@@ -646,7 +646,7 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     │ y   ┆ 456 │
     └─────┴─────┘
 
-    Match all columns *except* for those given:
+    Select all columns *except* for those given:
 
     >>> df.select(~cs.by_name("foo", "bar"))
     shape: (2, 2)
@@ -679,7 +679,7 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
 
 def categorical() -> SelectorType:
     """
-    Select all categorical columns.
+    Select all :class:`Categorical` and :class:`Enum` columns.
 
     See Also
     --------
@@ -698,7 +698,7 @@ def categorical() -> SelectorType:
     ...     schema_overrides={"foo": pl.Categorical},
     ... )
 
-    Select all categorical columns:
+    Select all :class:`Categorical` and :class:`Enum` columns:
 
     >>> df.select(cs.categorical())
     shape: (2, 1)
@@ -711,7 +711,8 @@ def categorical() -> SelectorType:
     │ yy  │
     └─────┘
 
-    Select all columns *except* for those that are categorical:
+    Select all columns *except* for those that are :class:`Categorical` or
+    :class:`Enum`:
 
     >>> df.select(~cs.categorical())
     shape: (2, 2)
@@ -755,7 +756,7 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     ...     }
     ... )
 
-    Select columns that contain the substring 'ba':
+    Select columns that contain the substring `'ba'`:
 
     >>> df.select(cs.contains("ba"))
     shape: (2, 2)
@@ -768,7 +769,7 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     │ 456 ┆ 5.5 │
     └─────┴─────┘
 
-    Select columns that contain the substring 'ba' or the letter 'z':
+    Select columns that contain the substring `'ba'` or the letter `'z'`:
 
     >>> df.select(cs.contains(("ba", "z")))
     shape: (2, 3)
@@ -781,7 +782,7 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     │ 456 ┆ 5.5 ┆ true  │
     └─────┴─────┴───────┘
 
-    Select all columns *except* for those that contain the substring 'ba':
+    Select all columns *except* for those that contain the substring `'ba'`:
 
     >>> df.select(~cs.contains("ba"))
     shape: (2, 2)
@@ -807,14 +808,15 @@ def contains(substring: str | Collection[str]) -> SelectorType:
 
 def date() -> SelectorType:
     """
-    Select all date columns.
+    Select all :class:`Date` columns.
 
     See Also
     --------
-    datetime : Select all datetime columns, optionally filtering by time unit/zone.
-    duration : Select all duration columns, optionally filtering by time unit.
+    datetime : Select all :class:`Datetime` columns, optionally filtering by time
+               unit/zone.
+    duration : Select all :class:`Duration` columns, optionally filtering by time unit.
     temporal : Select all temporal columns.
-    time : Select all time columns.
+    time : Select all :class:`Time` columns.
 
     Examples
     --------
@@ -828,7 +830,7 @@ def date() -> SelectorType:
     ...     },
     ... )
 
-    Select all date columns:
+    Select all :class:`Date` columns:
 
     >>> df.select(cs.date())
     shape: (2, 1)
@@ -841,7 +843,7 @@ def date() -> SelectorType:
     │ 2024-08-09 │
     └────────────┘
 
-    Select all columns *except* for those that are dates:
+    Select all columns *except* for :class:`Date` columns:
 
     >>> df.select(~cs.date())
     shape: (2, 2)
@@ -866,13 +868,13 @@ def datetime(
     ),
 ) -> SelectorType:
     """
-    Select all datetime columns, optionally filtering by time unit/zone.
+    Select all :class:`Datetime` columns, optionally filtering by time unit/zone.
 
     Parameters
     ----------
     time_unit
-        One (or more) of the allowed timeunit precision strings, "ms", "us", and "ns".
-        Omit to select columns with any valid timeunit.
+        One (or more) of the allowed time unit precision strings, `"ms"`, `"us"`, and
+        `"ns"`. Omit to select columns with any valid time unit.
     time_zone
         * One or more timezone strings, as defined in zoneinfo (to see valid options
           run `import zoneinfo; zoneinfo.available_timezones()` for a full list).
@@ -881,10 +883,10 @@ def datetime(
 
     See Also
     --------
-    date : Select all date columns.
-    duration : Select all duration columns, optionally filtering by time unit.
+    date : Select all :class:`Date` columns.
+    duration : Select all :class:`Duration` columns, optionally filtering by time unit.
     temporal : Select all temporal columns.
-    time : Select all time columns.
+    time : Select all :class:`Time` columns.
 
     Examples
     --------
@@ -912,7 +914,7 @@ def datetime(
     ...     },
     ... )
 
-    Select all datetime columns:
+    Select all :class:`Datetime` columns:
 
     >>> df.select(cs.datetime())
     shape: (2, 3)
@@ -925,7 +927,7 @@ def datetime(
     │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 │
     └────────────────────────────────┴─────────────────────────────┴─────────────────────────┘
 
-    Select all datetime columns that have 'us' precision:
+    Select all :class:`Datetime` columns with `'us'` precision:
 
     >>> df.select(cs.datetime("us"))
     shape: (2, 2)
@@ -938,7 +940,7 @@ def datetime(
     │ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 │
     └─────────────────────────────┴─────────────────────────┘
 
-    Select all datetime columns that have *any* timezone:
+    Select all :class:`Datetime` columns with non-missing timezones:
 
     >>> df.select(cs.datetime(time_zone="*"))
     shape: (2, 2)
@@ -951,7 +953,7 @@ def datetime(
     │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC │
     └────────────────────────────────┴─────────────────────────────┘
 
-    Select all datetime columns that have a *specific* timezone:
+    Select all :class:`Datetime` columns with a *specific* timezone:
 
     >>> df.select(cs.datetime(time_zone="UTC"))
     shape: (2, 1)
@@ -964,7 +966,7 @@ def datetime(
     │ 2025-08-25 14:18:22.666 UTC │
     └─────────────────────────────┘
 
-    Select all datetime columns that have NO timezone:
+    Select all :class:`Datetime` columns with missing timezones:
 
     >>> df.select(cs.datetime(time_zone=None))
     shape: (2, 1)
@@ -977,7 +979,7 @@ def datetime(
     │ 2020-10-30 10:20:25.123 │
     └─────────────────────────┘
 
-    Select all columns *except* for datetime columns:
+    Select all columns *except* for :class:`Datetime` columns:
 
     >>> df.select(~cs.datetime())
     shape: (2, 1)
@@ -1014,7 +1016,7 @@ def datetime(
 
 def decimal() -> SelectorType:
     """
-    Select all decimal columns.
+    Select all :class:`Decimal` columns.
 
     See Also
     --------
@@ -1035,7 +1037,7 @@ def decimal() -> SelectorType:
     ...     schema_overrides={"baz": pl.Decimal(scale=5, precision=10)},
     ... )
 
-    Select all decimal columns:
+    Select all :class:`Decimal` columns:
 
     >>> df.select(cs.decimal())
     shape: (2, 2)
@@ -1048,7 +1050,7 @@ def decimal() -> SelectorType:
     │ 456          ┆ -50.55550     │
     └──────────────┴───────────────┘
 
-    Select all columns *except* the decimal ones:
+    Select all columns *except* for :class:`Decimal` columns:
 
     >>> df.select(~cs.decimal())
     shape: (2, 1)
@@ -1070,20 +1072,21 @@ def duration(
     time_unit: TimeUnit | Collection[TimeUnit] | None = None,
 ) -> SelectorType:
     """
-    Select all duration columns, optionally filtering by time unit.
+    Select all :class:`Duration` columns, optionally filtering by time unit.
 
     Parameters
     ----------
     time_unit
-        One (or more) of the allowed timeunit precision strings, "ms", "us", and "ns".
-        Omit to select columns with any valid timeunit.
+        One (or more) of the allowed time unit precision strings, `"ms"`, `"us"`, and
+        `"ns"`. Omit to select columns with any valid time unit.
 
     See Also
     --------
-    date : Select all date columns.
-    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    date : Select all :class:`Date` columns.
+    datetime : Select all :class:`Datetime` columns, optionally filtering by time
+               unit/zone.
     temporal : Select all temporal columns.
-    time : Select all time columns.
+    time : Select all :class:`Time` columns.
 
     Examples
     --------
@@ -1112,7 +1115,7 @@ def duration(
     ...     },
     ... )
 
-    Select all duration columns:
+    Select all :class:`Duration` columns:
 
     >>> df.select(cs.duration())
     shape: (2, 3)
@@ -1125,7 +1128,7 @@ def duration(
     │ 1d 23h 987ms   ┆ 14d 16h 39m 59s ┆ 21d 2m 3s 456001µs │
     └────────────────┴─────────────────┴────────────────────┘
 
-    Select all duration columns that have 'ms' precision:
+    Select all :class:`Duration` columns with `'ms'` precision:
 
     >>> df.select(cs.duration("ms"))
     shape: (2, 1)
@@ -1205,7 +1208,7 @@ def ends_with(*suffix: str) -> SelectorType:
     ...     }
     ... )
 
-    Select columns that end with the substring 'z':
+    Select columns that end with the substring `'z'`:
 
     >>> df.select(cs.ends_with("z"))
     shape: (2, 1)
@@ -1218,7 +1221,7 @@ def ends_with(*suffix: str) -> SelectorType:
     │ 5.5 │
     └─────┘
 
-    Select columns that end with *either* the letter 'z' or 'r':
+    Select columns that end with *either* the letter `'z'` or `'r'`:
 
     >>> df.select(cs.ends_with("z", "r"))
     shape: (2, 2)
@@ -1231,7 +1234,7 @@ def ends_with(*suffix: str) -> SelectorType:
     │ 456 ┆ 5.5 │
     └─────┴─────┘
 
-    Select all columns *except* for those that end with the substring 'z':
+    Select all columns *except* for those that end with the substring `'z'`:
 
     >>> df.select(~cs.ends_with("z"))
     shape: (2, 3)
@@ -1279,7 +1282,7 @@ def exclude(
 
     Notes
     -----
-    If excluding a single selector it is simpler to write as `~selector` instead.
+    If excluding a single selector it is simpler to write this as `~selector` instead.
 
     Examples
     --------
@@ -1325,12 +1328,12 @@ def exclude(
 
 def first() -> SelectorType:
     """
-    Select the first column in the current scope.
+    Select the first column.
 
     See Also
     --------
     all : Select all columns.
-    last : Select the last column in the current scope.
+    last : Select the last column.
 
     Examples
     --------
@@ -1357,7 +1360,7 @@ def first() -> SelectorType:
     │ y   │
     └─────┘
 
-    Select everything  *except* for the first column:
+    Select everything *except* for the first column:
 
     >>> df.select(~cs.first())
     shape: (2, 3)
@@ -1465,7 +1468,7 @@ def integer() -> SelectorType:
     │ 456 ┆ 1   │
     └─────┴─────┘
 
-    Select all columns *except* for those that are integer :
+    Select all columns *except* for those that are integer:
 
     >>> df.select(~cs.integer())
     shape: (2, 2)
@@ -1618,12 +1621,12 @@ def unsigned_integer() -> SelectorType:
 
 def last() -> SelectorType:
     """
-    Select the last column in the current scope.
+    Select the last column.
 
     See Also
     --------
     all : Select all columns.
-    first : Select the first column in the current scope.
+    first : Select the first column.
 
     Examples
     --------
@@ -1650,7 +1653,7 @@ def last() -> SelectorType:
     │ 1   │
     └─────┘
 
-    Select everything  *except* for the last column:
+    Select everything *except* for the last column:
 
     >>> df.select(~cs.last())
     shape: (2, 3)
@@ -1695,7 +1698,7 @@ def matches(pattern: str) -> SelectorType:
     ...     }
     ... )
 
-    Match column names containing an 'a', preceded by a character that is not 'z':
+    Select columns containing an `'a'`, preceded by a character that is not `'z'`:
 
     >>> df.select(cs.matches("[^z]a"))
     shape: (2, 2)
@@ -1708,7 +1711,7 @@ def matches(pattern: str) -> SelectorType:
     │ 456 ┆ 5.5 │
     └─────┴─────┘
 
-    Do not match column names ending in 'R' or 'z' (case-insensitively):
+    Select column names not ending in `'R'` or `'z'` (case-insensitively):
 
     >>> df.select(~cs.matches(r"(?i)R|z$"))
     shape: (2, 2)
@@ -1766,7 +1769,7 @@ def numeric() -> SelectorType:
     ...     schema_overrides={"bar": pl.Int16, "baz": pl.Float32, "zap": pl.UInt8},
     ... )
 
-    Match all numeric columns:
+    Select all numeric columns:
 
     >>> df.select(cs.numeric())
     shape: (2, 3)
@@ -1779,7 +1782,7 @@ def numeric() -> SelectorType:
     │ 456 ┆ 5.5 ┆ 0   │
     └─────┴─────┴─────┘
 
-    Match all columns *except* for those that are numeric:
+    Select all columns *except* for those that are numeric:
 
     >>> df.select(~cs.numeric())
     shape: (2, 1)
@@ -1798,7 +1801,7 @@ def numeric() -> SelectorType:
 
 def object() -> SelectorType:
     """
-    Select all object columns.
+    Select all :class:`Object` columns.
 
     See Also
     --------
@@ -1828,7 +1831,7 @@ def object() -> SelectorType:
     │ 1   ┆ 7849d8f9-2cac-48e7-96d3-63cf81c14869 ┆ 28c65415-8b7d-4857-a4ce-300dca14b12b │
     └─────┴──────────────────────────────────────┴──────────────────────────────────────┘
 
-    Select object columns and export as a dict:
+    Select :class:`Object` columns and export as a dict:
 
     >>> df.select(cs.object()).to_dict(as_series=False)  # doctest: +IGNORE_RESULT
     {
@@ -1838,7 +1841,7 @@ def object() -> SelectorType:
         ]
     }
 
-    Select all columns *except* for those that are object and export as dict:
+    Select all columns *except* for those that are :class:`Object` and export as dict:
 
     >>> df.select(~cs.object())  # doctest: +IGNORE_RESULT
     {
@@ -1880,7 +1883,7 @@ def starts_with(*prefix: str) -> SelectorType:
     ...     }
     ... )
 
-    Match columns starting with a 'b':
+    Select columns starting with a `'b'`:
 
     >>> df.select(cs.starts_with("b"))
     shape: (2, 2)
@@ -1893,7 +1896,7 @@ def starts_with(*prefix: str) -> SelectorType:
     │ 4.0 ┆ 6   │
     └─────┴─────┘
 
-    Match columns starting with *either* the letter 'b' or 'z':
+    Select columns starting with *either* the letter `'b'` or `'z'`:
 
     >>> df.select(cs.starts_with("b", "z"))
     shape: (2, 3)
@@ -1906,7 +1909,7 @@ def starts_with(*prefix: str) -> SelectorType:
     │ 4.0 ┆ 6   ┆ 8   │
     └─────┴─────┴─────┘
 
-    Match all columns *except* for those starting with 'b':
+    Select all columns *except* for those starting with `'b'`:
 
     >>> df.select(~cs.starts_with("b"))
     shape: (2, 2)
@@ -1933,7 +1936,12 @@ def starts_with(*prefix: str) -> SelectorType:
 @deprecate_nonkeyword_arguments(version="0.19.3")
 def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     """
-    Select all String (and, optionally, Categorical) string columns .
+    Select all :class:`String` columns.
+
+    Parameters
+    ----------
+    include_categorical
+        Whether to also select :class:`Categorical` and :class:`Enum` columns.
 
     See Also
     --------
@@ -1955,7 +1963,8 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     ...     z=pl.col("z").cast(pl.Categorical("lexical")),
     ... )
 
-    Group by all string columns, sum the numeric columns, then sort by the string cols:
+    Group by all :class:`String` columns, sum the numeric columns, then sort by the
+    :class:`String` columns:
 
     >>> df.group_by(cs.string()).agg(cs.numeric().sum()).sort(by=cs.string())
     shape: (2, 3)
@@ -1968,7 +1977,7 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     │ yy  ┆ 6   ┆ 7.0 │
     └─────┴─────┴─────┘
 
-    Group by all string *and* categorical columns:
+    Group by all :class:`String`, :class:`Categorical` and :class:`Enum` columns:
 
     >>> df.group_by(cs.string(include_categorical=True)).agg(cs.numeric().sum()).sort(
     ...     by=cs.string(include_categorical=True)
@@ -1998,15 +2007,16 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
 
 def temporal() -> SelectorType:
     """
-    Select all temporal columns.
+    Select all :class:`Date`/:class:`Datetime`/:class:`Duration`/class:`Time` columns.
 
     See Also
     --------
     by_dtype : Select all columns matching the given dtype(s).
-    date : Select all date columns.
-    datetime : Select all datetime columns, optionally filtering by time unit/zone.
-    duration : Select all duration columns, optionally filtering by time unit.
-    time : Select all time columns.
+    date : Select all :class:`Date` columns.
+    datetime : Select all :class:`Datetime` columns, optionally filtering by time
+               unit/zone.
+    duration : Select all :class:`Duration` columns, optionally filtering by time unit.
+    time : Select all :class:`Time` columns.
 
     Examples
     --------
@@ -2020,7 +2030,7 @@ def temporal() -> SelectorType:
     ...     }
     ... )
 
-    Match all temporal columns:
+    Select all temporal columns:
 
     >>> df.select(cs.temporal())
     shape: (2, 2)
@@ -2033,7 +2043,7 @@ def temporal() -> SelectorType:
     │ 2021-01-02 ┆ 20:30:45 │
     └────────────┴──────────┘
 
-    Match all temporal columns *except* for time columns:
+    Select all temporal columns *except* for :class:`Time` columns:
 
     >>> df.select(cs.temporal() - cs.time())
     shape: (2, 1)
@@ -2046,7 +2056,7 @@ def temporal() -> SelectorType:
     │ 2021-01-02 │
     └────────────┘
 
-    Match all columns *except* for temporal columns:
+    Select all columns *except* for temporal columns:
 
     >>> df.select(~cs.temporal())
     shape: (2, 1)
@@ -2065,13 +2075,14 @@ def temporal() -> SelectorType:
 
 def time() -> SelectorType:
     """
-    Select all time columns.
+    Select all :class:`Time` columns.
 
     See Also
     --------
-    date : Select all date columns.
-    datetime : Select all datetime columns, optionally filtering by time unit/zone.
-    duration : Select all duration columns, optionally filtering by time unit.
+    date : Select all :class:`Date` columns.
+    datetime : Select all :class:`Datetime` columns, optionally filtering by time
+               unit/zone.
+    duration : Select all :class:`Duration` columns, optionally filtering by time unit.
     temporal : Select all temporal columns.
 
     Examples
@@ -2086,7 +2097,7 @@ def time() -> SelectorType:
     ...     },
     ... )
 
-    Select all time columns:
+    Select all :class:`Time` columns:
 
     >>> df.select(cs.time())
     shape: (2, 1)
@@ -2099,7 +2110,7 @@ def time() -> SelectorType:
     │ 23:59:59 │
     └──────────┘
 
-    Select all columns *except* for those that are times:
+    Select all columns *except* for :class:`Time` columns:
 
     >>> df.select(~cs.time())
     shape: (2, 2)

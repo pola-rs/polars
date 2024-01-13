@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class ExprBinaryNameSpace:
-    """Namespace for bin related expressions."""
+    """A namespace for :class:`Binary` expressions."""
 
     _accessor = "bin"
 
@@ -20,22 +20,22 @@ class ExprBinaryNameSpace:
 
     def contains(self, literal: IntoExpr) -> Expr:
         r"""
-        Check if binaries in Series contain a binary substring.
+        Check if each binary element contains a binary substring.
 
         Parameters
         ----------
         literal
-            The binary substring to look for
+            The binary substring to search for.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Boolean`.
+            A :class:`Boolean` expression.
 
         See Also
         --------
-        starts_with : Check if the binary substring exists at the start
-        ends_with : Check if the binary substring exists at the end
+        starts_with : Check if the binary substring exists at the start.
+        ends_with : Check if the binary substring exists at the end.
 
         Examples
         --------
@@ -67,17 +67,17 @@ class ExprBinaryNameSpace:
 
     def ends_with(self, suffix: IntoExpr) -> Expr:
         r"""
-        Check if string values end with a binary substring.
+        Check if each binary element ends with a binary substring.
 
         Parameters
         ----------
         suffix
-            Suffix substring.
+            The binary substring to search for.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Boolean`.
+            A :class:`Boolean` expression.
 
         See Also
         --------
@@ -114,22 +114,22 @@ class ExprBinaryNameSpace:
 
     def starts_with(self, prefix: IntoExpr) -> Expr:
         r"""
-        Check if values start with a binary substring.
+        Check if each binary element starts with a binary substring.
 
         Parameters
         ----------
         prefix
-            Prefix substring.
+            The binary substring to search for.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Boolean`.
+            A :class:`Boolean` expression.
 
         See Also
         --------
-        ends_with : Check if the binary substring exists at the end
-        contains : Check if the binary substring exists anywhere
+        ends_with : Check if the binary substring exists at the end.
+        contains : Check if the binary substring exists anywhere.
 
         Examples
         --------
@@ -163,15 +163,15 @@ class ExprBinaryNameSpace:
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """
-        Decode a value using the provided encoding.
+        Decode binary values using the provided encoding.
 
         Parameters
         ----------
         encoding : {'hex', 'base64'}
             The encoding to use.
         strict
-            Raise an error if the underlying value cannot be decoded,
-            otherwise mask out with a null value.
+            Whether to raise an error if the underlying value cannot be decoded,
+            instead of replacing it with `null`.
 
         """
         if encoding == "hex":
@@ -185,7 +185,7 @@ class ExprBinaryNameSpace:
 
     def encode(self, encoding: TransferEncoding) -> Expr:
         r"""
-        Encode a value using the provided encoding.
+        Encode binary values using the provided encoding.
 
         Parameters
         ----------
@@ -195,7 +195,7 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String` with values encoded using provided
+            A :class:`String` expression with values encoded using the specified
             encoding.
 
         Examples

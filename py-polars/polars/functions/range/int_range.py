@@ -70,21 +70,21 @@ def arange(
     Parameters
     ----------
     start
-        Lower bound of the range (inclusive).
+        The lower bound of the range (inclusive).
     end
-        Upper bound of the range (exclusive).
+        The upper bound of the range (exclusive).
     step
-        Step size of the range.
+        The step size of the range.
     dtype
-        Data type of the range. Defaults to :class:`Int64`.
+        The data type of the range. Defaults to :class:`Int64`.
     eager
-        Evaluate immediately and return a `Series`.
-        If set to `False` (default), return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Returns
     -------
     Expr or Series
-        Column of integer data type `dtype`.
+        A column of integer data type `dtype`.
 
     See Also
     --------
@@ -155,21 +155,21 @@ def int_range(
     Parameters
     ----------
     start
-        Lower bound of the range (inclusive).
+        The lower bound of the range (inclusive).
     end
-        Upper bound of the range (exclusive).
+        The upper bound of the range (exclusive).
     step
-        Step size of the range.
+        The step size of the range.
     dtype
-        Data type of the range.
+        The data type of the range.
     eager
-        Evaluate immediately and return a `Series`.
-        If set to `False` (default), return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Returns
     -------
     Expr or Series
-        Column of integer data type `dtype`.
+        A column of integer data type `dtype`.
 
     See Also
     --------
@@ -241,26 +241,27 @@ def int_ranges(
     eager: bool = False,
 ) -> Expr | Series:
     """
-    Generate a range of integers for each row of the input columns.
+    Get an integer range for each row of the input columns, as a :class:`List` column.
 
     Parameters
     ----------
     start
-        Lower bound of the range (inclusive).
+        The lower bound of the ranges (inclusive).
     end
-        Upper bound of the range (exclusive).
+        The upper bound of the ranges (exclusive).
     step
-        Step size of the range.
+        The step size of the ranges.
     dtype
-        Integer data type of the ranges. Defaults to :class:`Int64`.
+        The integer data type of the ranges, i.e. the inner data type of the resulting
+        :class:`List` column. Defaults to :class:`Int64`.
     eager
-        Evaluate immediately and return a `Series`.
-        If set to `False` (default), return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Returns
     -------
     Expr or Series
-        Column of data type `List(dtype)`.
+        A column of data type `List(dtype)`.
 
     See Also
     --------

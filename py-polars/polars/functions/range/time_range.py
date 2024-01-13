@@ -71,43 +71,46 @@ def time_range(
     Parameters
     ----------
     start
-        Lower bound of the time range.
+        The lower bound of the time range.
         If omitted, defaults to `time(0,0,0,0)`.
     end
-        Upper bound of the time range.
+        The upper bound of the time range.
         If omitted, defaults to `time(23,59,59,999999)`.
     interval
-        Interval of the range periods, specified as a Python `timedelta` object
+        The interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
-        Define which sides of the range are closed (inclusive).
+        Whether to include both endpoints, only the left or right endpoint, or
+        neither endpoint.
     eager
-        Evaluate immediately and return a `Series`.
-        If set to `False` (default), return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Returns
     -------
     Expr or Series
-        Column of data type `:class:Time`.
+        A column of data type `:class:Time`.
 
     Notes
     -----
     `interval` is created according to the following string language:
 
-    - 1ns   (1 nanosecond)
-    - 1us   (1 microsecond)
-    - 1ms   (1 millisecond)
-    - 1s    (1 second)
-    - 1m    (1 minute)
-    - 1h    (1 hour)
-    - 1d    (1 calendar day)
-    - 1w    (1 calendar week)
-    - 1mo   (1 calendar month)
-    - 1q    (1 calendar quarter)
-    - 1y    (1 calendar year)
+    * `"1ns"`   (1 nanosecond)
+    * `"1us"`   (1 microsecond)
+    * `"1ms"`   (1 millisecond)
+    * `"1s"`    (1 second)
+    * `"1m"`    (1 minute)
+    * `"1h"`    (1 hour)
+    * `"1d"`    (1 calendar day)
+    * `"1w"`    (1 calendar week)
+    * `"1mo"`   (1 calendar month)
+    * `"1q"`    (1 calendar quarter)
+    * `"1y"`    (1 calendar year)
+    * `"1i"`    (1 index count)
 
-    Or combine them:
-    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    These strings can be combined:
+
+    - `"3d12h4m25s"`   (3 days, 12 hours, 4 minutes, and 25 seconds)
 
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -203,48 +206,51 @@ def time_ranges(
     eager: bool = False,
 ) -> Series | Expr:
     """
-    Create a column of time ranges.
+    Get a time range for each row of the input columns, as a :class:`List` column.
 
     Parameters
     ----------
     start
-        Lower bound of the time range.
+        The lower bound of the time ranges.
         If omitted, defaults to `time(0, 0, 0, 0)`.
     end
-        Upper bound of the time range.
+        The upper bound of the time ranges.
         If omitted, defaults to `time(23, 59, 59, 999999)`.
     interval
-        Interval of the range periods, specified as a Python `timedelta` object
-        or using the Polars duration string language (see "Notes" section below).
+        The interval of the range periods, specified as a Python `timedelta` object
+        or using the Polars duration string language (see the "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
-        Define which sides of the range are closed (inclusive).
+        Whether to include both endpoints, only the left or right endpoint, or
+        neither endpoint.
     eager
-        Evaluate immediately and return a `Series`.
-        If set to `False` (default), return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Returns
     -------
     Expr or Series
-        Column of data type `List(Time)`.
+        A column of data type `List(Time)`.
 
     Notes
     -----
     `interval` is created according to the following string language:
 
-    - 1ns   (1 nanosecond)
-    - 1us   (1 microsecond)
-    - 1ms   (1 millisecond)
-    - 1s    (1 second)
-    - 1m    (1 minute)
-    - 1h    (1 hour)
-    - 1d    (1 calendar day)
-    - 1w    (1 calendar week)
-    - 1mo   (1 calendar month)
-    - 1q    (1 calendar quarter)
-    - 1y    (1 calendar year)
+    * `"1ns"`   (1 nanosecond)
+    * `"1us"`   (1 microsecond)
+    * `"1ms"`   (1 millisecond)
+    * `"1s"`    (1 second)
+    * `"1m"`    (1 minute)
+    * `"1h"`    (1 hour)
+    * `"1d"`    (1 calendar day)
+    * `"1w"`    (1 calendar week)
+    * `"1mo"`   (1 calendar month)
+    * `"1q"`    (1 calendar quarter)
+    * `"1y"`    (1 calendar year)
+    * `"1i"`    (1 index count)
 
-    Or combine them:
-    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    These strings can be combined:
+
+    - `"3d12h4m25s"`   (3 days, 12 hours, 4 minutes, and 25 seconds)
 
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",

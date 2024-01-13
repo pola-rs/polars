@@ -38,38 +38,39 @@ def read_parquet(
     memory_map: bool = True,
 ) -> DataFrame:
     """
-    Read into a DataFrame from a parquet file.
+    Read into a `DataFrame` from an Apache Parquet file.
 
     Parameters
     ----------
     source
-        Path to a file, or a file-like object. If the path is a directory, files in that
-        directory will all be read.
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. via the builtin `open`
+        function) or `BytesIO <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
+        If the path is a directory, all files in that directory will be read.
     columns
-        Columns to select. Accepts a list of column indices (starting at zero) or a list
-        of column names.
+        A list of column indices (starting at zero) or column names to read.
     n_rows
-        Stop reading from parquet file after reading `n_rows`.
-        Only valid when `use_pyarrow=False`.
+        The number of rows to read from the Parquet file.
+        Only used when `use_pyarrow=False`.
     row_count_name
-        If not None, this will insert a row count column with give name into the
-        DataFrame.
+        If not `None`, add a row count column with this name as the first column.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set).
+        An integer offset to start the row count at; only used when `row_count_name`
+        is not `None`.
     parallel : {'auto', 'columns', 'row_groups', 'none'}
-        This determines the direction of parallelism. 'auto' will try to determine the
-        optimal direction.
+        The direction of parallelism. `'auto'` will try to determine the optimal
+        direction.
     use_statistics
-        Use statistics in the parquet to determine if pages
-        can be skipped from reading.
+        Whether to use statistics in the parquet to determine if pages can be skipped
+        from reading.
     hive_partitioning
-        Infer statistics and schema from hive partitioned URL and use them
+        Whether to infer statistics and schema from hive partitioned URL and use them
         to prune reads.
     rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
+        Whether to ensure each column of the result is stored contiguously in
+        memory; see :func:`DataFrame.rechunk` for details.
     low_memory
-        Reduce memory pressure at the expense of performance.
+        Whether to reduce memory usage at the expense of speed.
     storage_options
         Options that indicate how to connect to a cloud provider.
         If the cloud provider is not supported by Polars, the storage options
@@ -86,15 +87,16 @@ def read_parquet(
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
     retries
-        Number of retries if accessing a cloud instance fails.
+        The number of times to retry if accessing a cloud instance fails.
     use_pyarrow
-        Use pyarrow instead of the Rust native parquet reader. The pyarrow reader is
-        more stable.
+        Whether to use the parquet reader from :mod:`pyarrow` instead of polars's.
+        The PyArrow reader is more stable.
     pyarrow_options
         Keyword arguments for `pyarrow.parquet.read_table
         <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
     memory_map
-        Memory map underlying file. This will likely increase performance.
+        Whether to memory-map the underlying file. This can greatly improve performance
+        on repeated queries as the operating system may cache pages.
         Only used when `use_pyarrow=True`.
 
     Returns
@@ -112,10 +114,10 @@ def read_parquet(
         If you have a directory-nested (hive-style) partitioned dataset, you should
         use the :func:`scan_pyarrow_dataset` method instead.
     * When benchmarking:
-        This operation defaults to a `rechunk` operation at the end, meaning that all
-        data will be stored continuously in memory. Set `rechunk=False` if you are
-        benchmarking the parquet-reader as `rechunk` can be an expensive operation
-        that should not contribute to the timings.
+        This operation defaults to a :func:`DataFrame.rechunk` operation at the end,
+        meaning that each column will be stored continuously in memory. Set
+        `rechunk=False` if you are benchmarking the parquet reader, as rechunking can be
+        an expensive operation that should not contribute to the timings.
     """
     # Dispatch to pyarrow if requested
     if use_pyarrow:
@@ -191,15 +193,15 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
 
     Returns
     -------
     dict
-        Dictionary mapping column names to datatypes
+        A dictionary mapping column names to datatypes.
 
     """
     if isinstance(source, (str, Path)):
@@ -224,7 +226,7 @@ def scan_parquet(
     retries: int = 0,
 ) -> LazyFrame:
     """
-    Lazily read from a local or cloud-hosted parquet file (or files).
+    Lazily read from an Apache Parquet file, or multiple files via glob patterns.
 
     This function allows the query optimizer to push down predicates and projections to
     the scan level, typically increasing performance and reducing memory overhead.
@@ -232,31 +234,30 @@ def scan_parquet(
     Parameters
     ----------
     source
-        Path(s) to a file
-        If a single path is given, it can be a globbing pattern.
+        A path to an Apache Parquet file, or a glob pattern matching multiple files.
     n_rows
-        Stop reading from parquet file after reading `n_rows`.
+        The number of rows to read from the Parquet file.
     row_count_name
-        If not None, this will insert a row count column with the given name into the
-        DataFrame
+        If not `None`, add a row count column with this name as the first column.
     row_count_offset
-        Offset to start the row_count column (only used if the name is set)
+        An integer offset to start the row count at; only used when `row_count_name`
+        is not `None`.
     parallel : {'auto', 'columns', 'row_groups', 'none'}
-        This determines the direction of parallelism. 'auto' will try to determine the
-        optimal direction.
+        The direction of parallelism. `'auto'` will try to determine the optimal
+        direction.
     use_statistics
-        Use statistics in the parquet to determine if pages
-        can be skipped from reading.
+        Whether to use statistics in the parquet to determine if pages can be skipped
+        from reading.
     hive_partitioning
-        Infer statistics and schema from hive partitioned URL and use them
+        Whether to infer statistics and schema from hive partitioned URL and use them
         to prune reads.
     rechunk
-        In case of reading multiple files via a glob pattern rechunk the final DataFrame
-        into contiguous memory chunks.
+        Whether to ensure each column of the result is stored contiguously in
+        memory; see :func:`DataFrame.rechunk` for details.
     low_memory
-        Reduce memory pressure at the expense of performance.
+        Whether to reduce memory usage at the expense of speed.
     cache
-        Cache the result after reading.
+        Whether to cache the result after reading.
     storage_options
         Options that indicate how to connect to a cloud provider.
         If the cloud provider is not supported by Polars, the storage options
@@ -273,7 +274,7 @@ def scan_parquet(
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
     retries
-        Number of retries if accessing a cloud instance fails.
+        The number of times to retry if accessing a cloud instance fails.
 
     See Also
     --------

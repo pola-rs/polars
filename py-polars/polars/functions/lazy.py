@@ -34,11 +34,14 @@ if TYPE_CHECKING:
 
 def element() -> Expr:
     """
-    Alias for an element being evaluated in an `eval` expression.
+    An alias/placeholder for an element being evaluated in an `eval` expression.
+
+    Also used to represent group elements when passing a custom `aggregate_function`
+    to :func:`DataFrame.pivot`.
 
     Examples
     --------
-    A horizontal rank computation by taking the elements of a list
+    A horizontal rank computation by taking the elements of a list:
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
     >>> df.with_columns(
@@ -55,7 +58,7 @@ def element() -> Expr:
     │ 3   ┆ 2   ┆ [2.0, 1.0] │
     └─────┴─────┴────────────┘
 
-    A mathematical operation on array elements
+    A mathematical operation on list elements:
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
     >>> df.with_columns(
@@ -72,16 +75,21 @@ def element() -> Expr:
     │ 3   ┆ 2   ┆ [6, 4]      │
     └─────┴─────┴─────────────┘
 
+    See Also
+    --------
+    polars.Expr.list.eval
+    polars.DataFrame.pivot
+
     """
     return F.col("")
 
 
 def count(column: str | None = None) -> Expr:
     """
-    Either return the number of rows in the context, or return the number of non-null values in the column.
+    Either return the number of rows in the context, or return the number of non-`null` values in the column.
 
     If no arguments are passed, returns the number of rows in the context.
-    Rows containing null values count towards the total.
+    Rows containing `null` values count towards the total.
     This is similar to `COUNT(*)` in SQL.
 
     Otherwise, this function is syntactic sugar for `col(column).count()`.
@@ -89,12 +97,12 @@ def count(column: str | None = None) -> Expr:
     Parameters
     ----------
     column
-        Column name.
+        An optional column name.
 
     Returns
     -------
     Expr
-        Expression of data type :class:`UInt32`.
+        A :class:`UInt32` expression.
 
     See Also
     --------
@@ -102,8 +110,8 @@ def count(column: str | None = None) -> Expr:
 
     Examples
     --------
-    Return the number of rows in a context. Note that rows containing null values are
-    counted towards the total.
+    Return the number of rows in a context. Note that rows containing `null` values are
+    counted towards the total:
 
     >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
     >>> df.select(pl.count())
@@ -116,7 +124,7 @@ def count(column: str | None = None) -> Expr:
     │ 3     │
     └───────┘
 
-    Return the number of non-null values in a column.
+    Return the number of non-`null` values in a column:
 
     >>> df.select(pl.count("a"))
     shape: (1, 1)
@@ -136,14 +144,14 @@ def count(column: str | None = None) -> Expr:
 
 def implode(name: str) -> Expr:
     """
-    Aggregate all column values into a list.
+    Aggregate all of a column's values into a length-1 :class:`List` column.
 
     This function is syntactic sugar for `pl.col(name).implode()`.
 
     Parameters
     ----------
     name
-        Column name.
+        The column name.
 
     """
     return F.col(name).implode()
@@ -151,18 +159,18 @@ def implode(name: str) -> Expr:
 
 def std(column: str, ddof: int = 1) -> Expr:
     """
-    Get the standard deviation.
+    Get the standard deviation of the elements in a column.
 
     This function is syntactic sugar for `pl.col(column).std(ddof)`.
 
     Parameters
     ----------
     column
-        Column name.
+        The column name.
     ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        "Delta Degrees of Freedom": the divisor used in the calculation is
+        `N - ddof`, where `N` represents the number of elements.
+        By default, `ddof` is 1.
 
     Examples
     --------
@@ -185,18 +193,18 @@ def std(column: str, ddof: int = 1) -> Expr:
 
 def var(column: str, ddof: int = 1) -> Expr:
     """
-    Get the variance.
+    Get the variance of the elements in a column.
 
     This function is syntactic sugar for `pl.col(column).var(ddof)`.
 
     Parameters
     ----------
     column
-        Column name.
+        The column name.
     ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        "Delta Degrees of Freedom": the divisor used in the calculation is
+        `N - ddof`, where `N` represents the number of elements.
+        By default, `ddof` is 1.
 
     Examples
     --------
@@ -219,14 +227,14 @@ def var(column: str, ddof: int = 1) -> Expr:
 
 def mean(column: str) -> Expr:
     """
-    Get the mean value.
+    Get the mean of the elements in a column.
 
     This function is syntactic sugar for `pl.col(column).mean()`.
 
     Parameters
     ----------
     column
-        Column name.
+        The column name.
 
     Examples
     --------
@@ -247,7 +255,7 @@ def mean(column: str) -> Expr:
 
 def median(column: str) -> Expr:
     """
-    Get the median value.
+    Get the median of the elements in a column.
 
     This function is syntactic sugar for `pl.col(column).median()`.
 
@@ -270,14 +278,14 @@ def median(column: str) -> Expr:
 
 def n_unique(column: str) -> Expr:
     """
-    Count unique values.
+    Get the number of unique values in a column.
 
     This function is syntactic sugar for `pl.col(column).n_unique()`.
 
     Parameters
     ----------
     column
-        Column name.
+        The column name.
 
     Examples
     --------
@@ -298,14 +306,14 @@ def n_unique(column: str) -> Expr:
 
 def approx_n_unique(column: str | Expr) -> Expr:
     """
-    Approximate count of unique values.
+    Get a fast approximation of the number of unique values in a column.
 
     This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
     Parameters
     ----------
     column
-        Column name.
+        The column name.
 
     Examples
     --------
@@ -338,8 +346,7 @@ def first(column: str | None = None) -> Expr:
     Parameters
     ----------
     column
-        Column name. If set to `None` (default), returns an expression to take the first
-        column of the context instead.
+        An optional column name.
 
     Examples
     --------
@@ -384,8 +391,7 @@ def last(column: str | None = None) -> Expr:
     Parameters
     ----------
     column
-        Column name. If set to `None` (default), returns an expression to take the last
-        column of the context instead.
+        An optional column name.
 
     Examples
     --------
@@ -420,16 +426,16 @@ def last(column: str | None = None) -> Expr:
 
 def head(column: str, n: int = 10) -> Expr:
     """
-    Get the first `n` rows.
+    Get the first `n` elements of a column.
 
     This function is syntactic sugar for `pl.col(column).head(n)`.
 
     Parameters
     ----------
     column
-        Column name.
+        The column name.
     n
-        Number of rows to return.
+        The number of elements to return.
 
     Examples
     --------
@@ -462,16 +468,16 @@ def head(column: str, n: int = 10) -> Expr:
 
 def tail(column: str, n: int = 10) -> Expr:
     """
-    Get the last `n` rows.
+    Get the last `n` elements of a column.
 
     This function is syntactic sugar for `pl.col(column).tail(n)`.
 
     Parameters
     ----------
     column
-        Column name.
+        The column name.
     n
-        Number of rows to return.
+        The number of elements to return.
 
     Examples
     --------
@@ -511,28 +517,28 @@ def corr(
     propagate_nans: bool = False,
 ) -> Expr:
     """
-    Compute the Pearson's or Spearman rank correlation correlation between two columns.
+    Compute the Pearson or Spearman rank correlation correlation between two columns.
 
     Parameters
     ----------
     a
-        Column name or Expression.
+        A column name or expression.
     b
-        Column name or Expression.
+        Another column name or expression.
     ddof
-        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        "Delta Degrees of Freedom": the divisor used in the calculation is
+        `N - ddof`, where `N` represents the number of elements.
+        By default, `ddof` is 1.
     method : {'pearson', 'spearman'}
-        Correlation method.
+        The correlation method.
     propagate_nans
-        If `True` any `NaN` encountered will lead to `NaN` in the output.
-        Defaults to `False` where `NaN` are regarded as larger than any finite number
-        and thus lead to the highest rank.
+        If `propagate_nans=True`, any `NaN` encountered will lead to `NaN` in the
+        output. If `propagate_nans=False` (the default), `NaN` is considered larger than
+        any finite number and will thus lead to the highest rank.
 
     Examples
     --------
-    Pearson's correlation:
+    Pearson correlation:
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.corr("a", "b"))
@@ -573,18 +579,18 @@ def corr(
 
 def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     """
-    Compute the covariance between two columns/ expressions.
+    Compute the covariance between two columns.
 
     Parameters
     ----------
     a
-        Column name or Expression.
+        A column name or expression.
     b
-        Column name or Expression.
+        Another column name or expression.
     ddof
-        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        "Delta Degrees of Freedom": the divisor used in the calculation is
+        `N - ddof`, where `N` represents the number of elements.
+        By default, `ddof` is 1.
 
     Examples
     --------
@@ -611,23 +617,31 @@ def map_batches(
     return_dtype: PolarsDataType | None = None,
 ) -> Expr:
     """
-    Map a custom function over multiple columns/expressions.
+    Apply a custom Python function to a sequence of `Series` to form a single `Series`.
 
-    Produces a single Series result.
+    Unlike :func:`DataFrame.map_batches`, which maps a single `Series` to a
+    single `Series`, here the custom function must map multiple `Series` to a single
+    `Series`.
+
+    If you want to apply a custom function elementwise over single values, see
+    :func:`DataFrame.map_elements`. A reasonable use case for `map_batches` is
+    transforming the values represented by an expression using a third-party library
+    like :mod:`numpy`.
 
     Parameters
     ----------
     exprs
-        Expression(s) representing the input Series to the function.
+        A sequence of column names or expressions to input to the custom function.
     function
-        Function to apply over the input.
+        The function or `Callable` to apply; must take multiple `Series` (as a Python
+        `list`) and return a single `Series`.
     return_dtype
-        dtype of the output Series.
+        The data type of the output `Series`. If not set, will be auto-inferred.
 
     Returns
     -------
     Expr
-        Expression with the data type given by `return_dtype`.
+        An expression of the data type given by `return_dtype`.
 
     Examples
     --------
@@ -675,7 +689,7 @@ def map(
     return_dtype: PolarsDataType | None = None,
 ) -> Expr:
     """
-    Map a custom function over multiple columns/expressions.
+    Map a custom function over multiple columns.
 
     .. deprecated:: 0.19.0
         This function has been renamed to :func:`map_batches`.
@@ -708,25 +722,47 @@ def map_groups(
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
 
+    Unlike :func:`DataFrame.map_groups`, which maps a single `Series` to a
+    single `Series`, here the custom function must map multiple `Series` to a single
+    `Series`.
+
     .. warning::
         This method is much slower than the native expressions API.
         Only use it if you cannot implement your logic otherwise.
 
+    Implementing logic using a Python function is almost always *significantly*
+    slower and more memory intensive than implementing the same logic using
+    the native expression API because:
+
+    - The native expression engine runs in Rust; UDFs run in Python.
+    - Use of Python UDFs forces the DataFrame to be materialized in memory.
+    - Polars-native expressions can be parallelised (UDFs cannot).
+    - Polars-native expressions can be logically optimised (UDFs cannot).
+
+    Wherever possible you should strongly prefer the native expression API
+    to achieve the best performance.
+
+    The idiomatic way to apply custom functions over multiple columns is via:
+
+    `pl.struct([my_columns]).map_elements(lambda struct_series: ...)`
+
     Parameters
     ----------
     exprs
-        Expression(s) representing the input Series to the function.
+        A sequence of column names or expressions to input to the custom function.
     function
-        Function to apply over the input; should be of type Callable[[Series], Series].
+        The function or `Callable` to apply; must take multiple `Series` (as a Python
+        `list`) and return a single `Series`.
     return_dtype
-        dtype of the output Series.
+        The data type of the output `Series`. If not set, will be auto-inferred.
     returns_scalar
-        If the function returns a single scalar as output.
+        Whether to force the output to be a :class:`List` column (of length-1 lists)
+        even when `function` returns a non-:class:`List` `Series`.
 
     Returns
     -------
     Expr
-        Expression with the data type given by `return_dtype`.
+        An expression with the data type given by `return_dtype`.
 
     Examples
     --------
@@ -770,8 +806,8 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
-    - applying the function to those lists of Series, one gets the output
+    - group `1` contains two `Series`: `'a': [1, 3]` and `'b': [4, 5]`
+    - applying the function to those lists of `Series`, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
     exprs = parse_as_list_of_expressions(exprs)
@@ -826,23 +862,24 @@ def fold(
     exprs: Sequence[Expr | str] | Expr,
 ) -> Expr:
     """
-    Accumulate over multiple columns horizontally/ row wise with a left fold.
+    Accumulate over multiple columns horizontally/row-wise with a left fold.
 
     Parameters
     ----------
     acc
-        Accumulator Expression. This is the value that will be initialized when the fold
-        starts. For a sum this could for instance be lit(0).
+        An accumulator expression. This is the value that will be initialized when the
+        `fold` starts. For a sum, this could for instance be `lit(0)`.
     function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
+        A function that takes two `Series` as arguments - the accumulated value so far,
+        and the new value to accumulate with it - and returns a single `Series` with the
+        new accumulated value: `function(acc, value) -> new_value`.
     exprs
-        Expressions to aggregate over. May also be a wildcard expression.
+        The expressions to aggregate over.
 
     Notes
     -----
-    If you simply want the first encountered expression as accumulator,
-    consider using `reduce`.
+    If you simply want the first encountered expression as the initial value, use
+    :func:`reduce`.
 
     Examples
     --------
@@ -865,7 +902,7 @@ def fold(
     │ 3   ┆ 5   ┆ 7   │
     └─────┴─────┴─────┘
 
-    Horizontally sum over all columns and add 1.
+    Horizontally sum over all columns and add 1:
 
     >>> df.select(
     ...     pl.fold(
@@ -933,19 +970,21 @@ def reduce(
     exprs: Sequence[Expr | str] | Expr,
 ) -> Expr:
     """
-    Accumulate over multiple columns horizontally/ row wise with a left fold.
+    Accumulate over multiple columns horizontally/row-wise with a left fold.
 
     Parameters
     ----------
     function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
+        A function that takes two `Series` as arguments - the accumulated value so far,
+        and the new value to accumulate with it - and returns a single `Series` with the
+        new accumulated value: `function(acc, value) -> new_value`.
     exprs
-        Expressions to aggregate over. May also be a wildcard expression.
+        The expressions to aggregate over.
 
     Notes
     -----
-    See `fold` for the version with an explicit accumulator.
+    If you want to explicitly specify an initial value for the accumulation, rather than
+    using the first encountered expression as the initial value, use :func:`reduce`.
 
     Examples
     --------
@@ -967,7 +1006,7 @@ def reduce(
     │ 3   ┆ 2   │
     └─────┴─────┘
 
-    Horizontally sum over all columns.
+    Horizontally sum over all columns:
 
     >>> df.select(
     ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum")
@@ -1000,27 +1039,29 @@ def cum_fold(
     include_init: bool = False,
 ) -> Expr:
     """
-    Cumulatively fold horizontally across columns with a left fold.
+    Accumulate over multiple columns horizontally/row-wise with a left fold.
 
-    Every cumulative result is added as a separate field in a Struct column.
+    Every cumulative result is added as a separate field in a :class:`Struct` column.
 
     Parameters
     ----------
     acc
-        Accumulator expression. This is the value that will be initialized when the fold
-        starts. For a sum this could for instance be lit(0).
+        An accumulator expression. This is the value that will be initialized when the
+        `fold` starts. For a sum, this could for instance be `lit(0)`.
     function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
+        A function that takes two `Series` as arguments - the accumulated value so far,
+        and the new value to accumulate with it - and returns a single `Series` with the
+        new accumulated value: `function(acc, value) -> new_value`.
     exprs
-        Expressions to aggregate over. May also be a wildcard expression.
+        The expressions to aggregate over.
     include_init
-        Include the initial accumulator state as struct field.
+        Whether to also include the initial accumulator state as a :class:`Struct`
+        field.
 
     Notes
     -----
-    If you simply want the first encountered expression as accumulator,
-    consider using :func:`cum_reduce`.
+    If you simply want the first encountered expression as the initial value, use
+    :func:`cum_reduce`.
 
     Examples
     --------
@@ -1060,17 +1101,23 @@ def cum_reduce(
     exprs: Sequence[Expr | str] | Expr,
 ) -> Expr:
     """
-    Cumulatively reduce horizontally across columns with a left fold.
+    Accumulate over multiple columns horizontally/row-wise with a left fold.
 
-    Every cumulative result is added as a separate field in a Struct column.
+    Every cumulative result is added as a separate field in a :class:`Struct` column.
 
     Parameters
     ----------
     function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
+        A function that takes two `Series` as arguments - the accumulated value so far,
+        and the new value to accumulate with it - and returns a single `Series` with the
+        new accumulated value: `function(acc, value) -> new_value`.
     exprs
-        Expressions to aggregate over. May also be a wildcard expression.
+        The expressions to aggregate over.
+
+    Notes
+    -----
+    If you want to explicitly specify an initial value for the accumulation, rather than
+    using the first encountered expression as the initial value, use :func:`cum_fold`.
 
     Examples
     --------
@@ -1103,17 +1150,17 @@ def cum_reduce(
 
 def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     """
-    Compute two argument arctan in radians.
+    Compute the two-argument inverse tangent in radians.
 
     Returns the angle (in radians) in the plane between the
-    positive x-axis and the ray from the origin to (x,y).
+    positive x-axis and the ray from the origin to `(x, y)`.
 
     Parameters
     ----------
     y
-        Column name or Expression.
+        A column name or expression.
     x
-        Column name or Expression.
+        Another column name or expression.
 
     Examples
     --------
@@ -1150,17 +1197,17 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
 
 def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     """
-    Compute two argument arctan in degrees.
+    Compute the two-argument inverse tangent in degrees.
 
     Returns the angle (in degrees) in the plane between the positive x-axis
-    and the ray from the origin to (x,y).
+    and the ray from the origin to `(x, y)`.
 
     Parameters
     ----------
     y
-        Column name or Expression.
+        A column name or expression.
     x
-        Column name or Expression.
+        Another column name or expression.
 
     Examples
     --------
@@ -1214,8 +1261,8 @@ def exclude(
     Parameters
     ----------
     columns
-        One or more columns (col or name), datatypes, columns, or selectors representing
-        the columns to exclude.
+        One or more columns, datatypes, or selectors representing the columns to
+        exclude.
     *more_columns
         Additional columns, datatypes, or selectors to exclude, specified as positional
         arguments.
@@ -1243,7 +1290,8 @@ def exclude(
     │ 3   ┆ 1.5  │
     └─────┴──────┘
 
-    Exclude by regex, e.g. removing all columns whose names end with the letter "a":
+    Exclude by regex, e.g. removing all columns whose names end with the letter
+    `"a"`:
 
     >>> df.select(pl.exclude("^.*a$"))
     shape: (3, 1)
@@ -1257,7 +1305,8 @@ def exclude(
     │ 1.5  │
     └──────┘
 
-    Exclude by dtype(s), e.g. removing all columns of type Int64 or Float64:
+    Exclude by dtype(s), e.g. removing all columns of type :class:`Int64` or
+    :class:`Float64`:
 
     >>> df.select(pl.exclude(pl.Int64, pl.Float64))
     shape: (3, 1)
@@ -1293,7 +1342,14 @@ def exclude(
 
 
 def groups(column: str) -> Expr:
-    """Syntactic sugar for `pl.col("foo").agg_groups()`."""
+    """
+    Syntactic sugar for `pl.col(column).agg_groups()`.
+
+    Parameters
+    ----------
+    column
+        A column name.
+    """
     return F.col(column).agg_groups()
 
 
@@ -1303,16 +1359,17 @@ def quantile(
     interpolation: RollingInterpolationMethod = "nearest",
 ) -> Expr:
     """
-    Syntactic sugar for `pl.col("foo").quantile(..)`.
+    Syntactic sugar for `pl.col(column).quantile(..)`.
 
     Parameters
     ----------
     column
-        Column name.
+        A column name.
     quantile
-        Quantile between 0.0 and 1.0.
+        A quantile between 0.0 and 1.0.
     interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
-        Interpolation method.
+        The interpolation method to use when the specified quantile falls between two
+        values.
 
     """
     return F.col(column).quantile(quantile, interpolation)
@@ -1334,12 +1391,12 @@ def arg_sort_by(
     *more_exprs
         Additional columns to arg sort by, specified as positional arguments.
     descending
-        Sort in descending order. When sorting by multiple columns, can be specified
-        per column by passing a sequence of booleans.
+        Whether to arg sort in descending instead of ascending order. When sorting by
+        multiple columns, can be specified per column by passing a sequence of booleans.
 
     Examples
     --------
-    Pass a single column name to compute the arg sort by that column.
+    Pass a single column name to arg sort by that column:
 
     >>> df = pl.DataFrame(
     ...     {
@@ -1360,8 +1417,8 @@ def arg_sort_by(
     │ 2   │
     └─────┘
 
-    Compute the arg sort by multiple columns by either passing a list of columns, or by
-    specifying each column as a positional argument.
+    Arg sort by multiple columns by either passing a list of columns, or by specifying
+    each column as a positional argument:
 
     >>> df.select(pl.arg_sort_by(["a", "b"], descending=True))
     shape: (4, 1)
@@ -1402,37 +1459,40 @@ def collect_all(
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
-    Collect multiple LazyFrames at the same time.
+    Collect multiple lazyframes at the same time.
 
     This runs all the computation graphs in parallel on the Polars threadpool.
 
     Parameters
     ----------
     lazy_frames
-        A list of LazyFrames to collect.
+        A list of lazyframes to collect.
     type_coercion
-        Do type coercion optimization.
+        Whether to perform type coercion optimization.
     predicate_pushdown
-        Do predicate pushdown optimization.
+        Whether to perform predicate pushdown optimization.
     projection_pushdown
-        Do projection pushdown optimization.
+        Whether to perform projection pushdown optimization.
     simplify_expression
-        Run simplify expressions optimization.
+        Whether to perform expression simplification optimization.
     no_optimization
-        Turn off optimizations.
+        Whether to turn off (certain) optimizations.
     slice_pushdown
-        Slice pushdown optimization.
+        Whether to perform slice pushdown optimization.
     comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
+        Whether to try to cache branching subplans that occur on self-joins or
+        unions.
     comm_subexpr_elim
-        Common subexpressions will be cached and reused.
+        Whether to cache and reuse common subexpressions.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Whether to run parts of the query in a streaming fashion (this is in an
+        alpha state).
 
     Returns
     -------
     list of DataFrames
-        The collected DataFrames, returned in the same order as the input LazyFrames.
+        The collected dataframes, returned in the same order as the input
+        lazyframes.
 
     """
     if no_optimization:
@@ -1517,39 +1577,42 @@ def collect_all_async(
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
-    Collect multiple LazyFrames at the same time asynchronously in thread pool.
+    Collect multiple lazyframes at the same time, asynchronously.
 
-    Collects into a list of DataFrame (like :func:`polars.collect_all`),
+    Collects into a list of dataframes (like :func:`polars.collect_all`),
     but instead of returning them directly, they are scheduled to be collected
-    inside thread pool, while this method returns almost instantly.
+    inside the thread pool, while this method returns almost instantly.
 
-    May be useful if you use gevent or asyncio and want to release control to other
-    greenlets/tasks while LazyFrames are being collected.
+    May be useful if you use `gevent <https://www.gevent.org>`_ or `asyncio
+    <https://docs.python.org/3/library/asyncio.html>`_ and want to release control
+    to other greenlets/tasks while lazyframes are being collected.
 
     Parameters
     ----------
     lazy_frames
-        A list of LazyFrames to collect.
+        A list of lazyframes to collect.
     gevent
-        Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
+        Whether to return a wrapper to `gevent.event.AsyncResult` instead of an
+        `Awaitable`.
     type_coercion
-        Do type coercion optimization.
+        Whether to perform type coercion optimization.
     predicate_pushdown
-        Do predicate pushdown optimization.
+        Whether to perform predicate pushdown optimization.
     projection_pushdown
-        Do projection pushdown optimization.
+        Whether to perform projection pushdown optimization.
     simplify_expression
-        Run simplify expressions optimization.
+        Whether to perform expression simplification optimization.
     no_optimization
-        Turn off (certain) optimizations.
+        Whether to turn off (certain) optimizations.
     slice_pushdown
-        Slice pushdown optimization.
+        Whether to perform slice pushdown optimization.
     comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
+        Whether to try to cache branching subplans that occur on self-joins or unions.
     comm_subexpr_elim
-        Common subexpressions will be cached and reused.
+        Whether to cache and reuse common subexpressions.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Whether to run parts of the query in a streaming fashion (this is in an alpha
+        state).
 
     Notes
     -----
@@ -1563,14 +1626,14 @@ def collect_all_async(
 
     See Also
     --------
-    polars.collect_all : Collect multiple LazyFrames at the same time.
+    polars.collect_all : Collect multiple lazyframes at the same time.
     LazyFrame.collect_async: To collect single frame.
 
     Returns
     -------
-    If `gevent=False` (default) then returns awaitable.
+    If `gevent=False` (the default), returns `Awaitable`.
 
-    If `gevent=True` then returns wrapper that has
+    If `gevent=True`, returns a wrapper that has a
     `.get(block=True, timeout=None)` method.
     """
     if no_optimization:
@@ -1605,7 +1668,7 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running `df.select` on an empty DataFrame.
+    This is syntactic sugar for running `df.select` on an empty `DataFrame`.
 
     Parameters
     ----------
@@ -1658,15 +1721,15 @@ def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series:
 
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
     """
-    Return indices where `condition` evaluates `True`.
+    Return indices where `condition` evaluates to `True`.
 
     Parameters
     ----------
     condition
-        :class:`Boolean` expression to evaluate
+        A :class:`Boolean` expression to evaluate.
     eager
-        Evaluate immediately and return a `Series`. If set to `False` (default),
-        return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     See Also
     --------
@@ -1702,7 +1765,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
 
 def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
-    Folds the columns from left to right, keeping the first non-`null` value.
+    Fold columns from left to right, keeping the first non-`null` value.
 
     Parameters
     ----------
@@ -1767,22 +1830,23 @@ def from_epoch(
     column: str | Expr | Series | Sequence[int], time_unit: EpochTimeUnit = "s"
 ) -> Expr | Series:
     """
-    Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
+    Parse an epoch timestamp (or Unix time) to a Polars :class:`Date`/:class`Datetime`.
 
     Depending on the `time_unit` provided, this function will return a different dtype:
 
-    - time_unit="d" returns pl.Date
-    - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
-    - time_unit="ms" returns pl.Datetime["ms"]
-    - time_unit="us" returns pl.Datetime["us"]
-    - time_unit="ns" returns pl.Datetime["ns"]
+    - `time_unit="d"` returns :class:`pl.Date`
+    - `time_unit="s"` returns `pl.Datetime["us"]` (the default for :class:`pl.Datetime`)
+    - `time_unit="ms"` returns `pl.Datetime["ms"]`
+    - `time_unit="us"` returns `pl.Datetime["us"]`
+    - `time_unit="ns"` returns `pl.Datetime["ns"]`
 
     Parameters
     ----------
     column
-        Series or expression to parse integers to pl.Datetime.
+        A `Series`, expression, or sequence of integers to interpret as timestamps.
     time_unit
-        The unit of time of the timesteps since epoch time.
+        The unit of time of the timesteps since epoch time (00:00:00 UTC on 1 January
+        1970).
 
     Examples
     --------
@@ -1798,7 +1862,7 @@ def from_epoch(
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
 
-    The function can also be used in an eager context by passing a Series.
+    The function can also be used in an eager context by passing a `Series`:
 
     >>> s = pl.Series([12345, 12346])
     >>> pl.from_epoch(s, time_unit="d")
@@ -1836,25 +1900,28 @@ def rolling_cov(
     ddof: int = 1,
 ) -> Expr:
     """
-    Compute the rolling covariance between two columns/ expressions.
+    Get the rolling (moving) covariance between two columns.
 
-    The window at a given row includes the row itself and the
-    `window_size - 1` elements before it.
+    A window of length `window_size` will traverse the pair of columns. The covariance
+    of the values that fill this window will become one element of the output.
+
+    The window corresponding to a given row of the output will include the
+    corresponding row of the input and the `window_size - 1` rows before it. This means
+    that the first `window_size - 1` rows of the output will be `null`.
 
     Parameters
     ----------
     a
-        Column name or Expression.
+        A column name or expression.
     b
-        Column name or Expression.
+        Another column name or expression.
     window_size
         The length of the window.
     min_periods
-        The number of values in the window that should be non-`null` before computing
-        a result. If None, it will be set equal to window size.
+        The number of values in the window that should be non-`null` before computing a
+        result. If `None`, it will be set equal to `window_size`.
     ddof
-        Delta degrees of freedom.  The divisor used in calculations
-        is `N - ddof`, where `N` represents the number of elements.
+        "Delta Degrees of Freedom": the divisor for a length-`N` window is `N - ddof`.
 
     """
     if min_periods is None:
@@ -1877,25 +1944,28 @@ def rolling_corr(
     ddof: int = 1,
 ) -> Expr:
     """
-    Compute the rolling correlation between two columns/ expressions.
+    Get the rolling (moving) correlation between two columns.
 
-    The window at a given row includes the row itself and the
-    `window_size - 1` elements before it.
+    A window of length `window_size` will traverse the pair of columns. The correlation
+    of the values that fill this window will become one element of the output.
+
+    The window corresponding to a given row of the output will include the
+    corresponding row of the input and the `window_size - 1` rows before it. This means
+    that the first `window_size - 1` rows of the output will be `null`.
 
     Parameters
     ----------
     a
-        Column name or Expression.
+        A column name or expression.
     b
-        Column name or Expression.
+        Another column name or expression.
     window_size
         The length of the window.
     min_periods
-        The number of values in the window that should be non-`null` before computing
-        a result. If None, it will be set equal to window size.
+        The number of values in the window that should be non-`null` before computing a
+        result. If `None`, it will be set equal to `window_size`.
     ddof
-        Delta degrees of freedom.  The divisor used in calculations
-        is `N - ddof`, where `N` represents the number of elements.
+        "Delta Degrees of Freedom": the divisor for a length-`N` window is `N - ddof`.
 
     """
     if min_periods is None:

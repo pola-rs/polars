@@ -100,7 +100,7 @@ if version_info >= (3, 10):
             # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
             return get_type_hints(obj)
         except TypeError:
-            # fallback on edge-cases (eg: InitVar inference on python 3.10).
+            # fallback on edge-cases (e.g. InitVar inference on python 3.10).
             return _get_annotations(obj)
 
 else:
@@ -357,7 +357,7 @@ def _construct_series_with_fallbacks(
     *,
     strict: bool,
 ) -> PySeries:
-    """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
+    """Construct Series, with fallbacks for basic type mismatch (e.g. bool/int)."""
     while True:
         try:
             return constructor(name, values, strict)
@@ -612,11 +612,11 @@ def _pandas_series_to_arrow(
     Parameters
     ----------
     values : :class:`pandas.Series` or :class:`pandas.Index`.
-        Series to convert to arrow
+        The `Series` to convert to arrow.
     nan_to_null : bool, default = True
-        Interpret `NaN` as missing values.
+        Whether to set floating-point `NaN` values to `null`.
     length : int, optional
-        in case all values are null, create a null array of this length.
+        in case all values are `null`, create a `null` array of this length.
         if unset, length is inferred from values.
 
     Returns

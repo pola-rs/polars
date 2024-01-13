@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 
 class ExprNameNameSpace:
-    """Namespace for expressions that operate on expression names."""
+    """A namespace for expressions that operate on expression names."""
 
     _accessor = "name"
 
@@ -31,7 +31,7 @@ class ExprNameNameSpace:
 
         Examples
         --------
-        Prevent errors due to potential duplicate column names.
+        Prevent errors due to potential duplicate column names:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -50,7 +50,7 @@ class ExprNameNameSpace:
         │ 5.0  ┆ 2.5      │
         └──────┴──────────┘
 
-        Undo an alias operation.
+        Undo an alias operation:
 
         >>> df.with_columns((pl.col("a") * 9).alias("c").name.keep())
         shape: (2, 2)
@@ -73,7 +73,7 @@ class ExprNameNameSpace:
         Parameters
         ----------
         function
-            Function that maps a root name to a new name.
+            A function or `Callable` that maps a root name to a new name.
 
         See Also
         --------
@@ -83,7 +83,7 @@ class ExprNameNameSpace:
 
         Examples
         --------
-        Remove a common suffix and convert to lower case.
+        Remove a common suffix and convert to lower case:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -115,7 +115,7 @@ class ExprNameNameSpace:
         Parameters
         ----------
         prefix
-            Prefix to add to the root column name.
+            The prefix to add to the root column name.
 
         Notes
         -----
@@ -158,7 +158,7 @@ class ExprNameNameSpace:
         Parameters
         ----------
         suffix
-            Suffix to add to the root column name.
+            The suffix to add to the root column name.
 
         Notes
         -----

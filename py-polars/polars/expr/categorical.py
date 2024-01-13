@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class ExprCatNameSpace:
-    """Namespace for categorical related expressions."""
+    """A namespace for :class:`Categorical` and :class:`Enum` expressions."""
 
     _accessor = "cat"
 
@@ -26,16 +26,16 @@ class ExprCatNameSpace:
     )
     def set_ordering(self, ordering: CategoricalOrdering) -> Expr:
         """
-        Determine how this categorical series should be sorted.
+        Determine how this categorical column should be sorted.
 
         Parameters
         ----------
         ordering : {'physical', 'lexical'}
-            Ordering type:
+            The ordering type:
 
-            - 'physical' -> Use the physical representation of the categories to
-                determine the order (default).
-            - 'lexical' -> Use the string values to determine the ordering.
+            - `'physical'`: use the physical representation of the categories to
+               determine the order (the default).
+            - `'lexical'`: use the string values to determine the ordering.
         """
         return wrap_expr(self._pyexpr.cat_set_ordering(ordering))
 

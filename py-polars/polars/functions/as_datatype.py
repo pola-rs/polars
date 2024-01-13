@@ -38,28 +38,28 @@ def datetime_(
     ambiguous: Ambiguous | Expr = "raise",
 ) -> Expr:
     """
-    Create a Polars literal expression of type Datetime.
+    Create a Polars literal expression of type :class:`Datetime`.
 
     Parameters
     ----------
     year
-        Column or literal.
+        A column or literal.
     month
-        Column or literal, ranging from 1-12.
+        A column or literal, ranging from 1-12.
     day
-        Column or literal, ranging from 1-31.
+        A column or literal, ranging from 1-31.
     hour
-        Column or literal, ranging from 0-23.
+        A column or literal, ranging from 0-23.
     minute
-        Column or literal, ranging from 0-59.
+        A column or literal, ranging from 0-59.
     second
-        Column or literal, ranging from 0-59.
+        A column or literal, ranging from 0-59.
     microsecond
-        Column or literal, ranging from 0-999999.
+        A column or literal, ranging from 0-999999.
     time_unit : {'us', 'ms', 'ns'}
-        Time unit of the resulting expression.
+        The time unit of the resulting expression.
     time_zone
-        Time zone of the resulting expression.
+        The time zone of the resulting expression.
     use_earliest
         Determine how to deal with ambiguous datetimes:
 
@@ -80,7 +80,7 @@ def datetime_(
     Returns
     -------
     Expr
-        Expression of data type :class:`Datetime`.
+        A :class:`Datetime` expression.
 
     """
     ambiguous = parse_as_expression(
@@ -121,21 +121,21 @@ def date_(
     day: Expr | str | int,
 ) -> Expr:
     """
-    Create a Polars literal expression of type Date.
+    Create a Polars literal expression of type :class:`Date`.
 
     Parameters
     ----------
     year
-        column or literal.
+        A column or literal.
     month
-        column or literal, ranging from 1-12.
+        A column or literal, ranging from 1-12.
     day
-        column or literal, ranging from 1-31.
+        A column or literal, ranging from 1-31.
 
     Returns
     -------
     Expr
-        Expression of data type :class:`Date`.
+        A :class:`Date` expression.
 
     """
     return datetime_(year, month, day).cast(Date).alias("date")
@@ -148,7 +148,7 @@ def time_(
     microsecond: Expr | str | int | None = None,
 ) -> Expr:
     """
-    Create a Polars literal expression of type Time.
+    Create a Polars literal expression of type :class:`Time`.
 
     Parameters
     ----------
@@ -164,7 +164,7 @@ def time_(
     Returns
     -------
     Expr
-        Expression of data type :class:`Date`.
+        A :class:`Time` expression.
 
     """
     epoch_start = (1970, 1, 1)
@@ -188,37 +188,37 @@ def duration(
     time_unit: TimeUnit = "us",
 ) -> Expr:
     """
-    Create polars :class:`Duration` from distinct time components.
+    Create a polars literal expression of type :class:`Duration`.
 
     Parameters
     ----------
     weeks
-        Number of weeks.
+        The number of weeks.
     days
-        Number of days.
+        The number of days.
     hours
-        Number of hours.
+        The number of hours.
     minutes
-        Number of minutes.
+        The number of minutes.
     seconds
-        Number of seconds.
+        The number of seconds.
     milliseconds
-        Number of milliseconds.
+        The number of milliseconds.
     microseconds
-        Number of microseconds.
+        The number of microseconds.
     nanoseconds
-        Number of nanoseconds.
+        The number of nanoseconds.
     time_unit : {'us', 'ms', 'ns'}
-        Time unit of the resulting expression.
+        The time unit of the resulting expression.
 
     Returns
     -------
     Expr
-        Expression of data type :class:`Duration`.
+        A :class:`Duration` expression.
 
     Notes
     -----
-    A `duration` represents a fixed amount of time. For example,
+    A :class:`Duration` represents a fixed amount of time. For example,
     `pl.duration(days=1)` means "exactly 24 hours". By contrast,
     `Expr.dt.offset_by('1d')` means "1 calendar day", which could sometimes be
     23 hours or 25 hours depending on Daylight Savings Time.
@@ -321,23 +321,24 @@ def duration(
 
 def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
-    Horizontally concatenate columns into a single list column.
+    Horizontally concatenate columns into a single :class:`List` column.
 
     Operates in linear time.
 
     Parameters
     ----------
     exprs
-        Columns to concatenate into a single list column. Accepts expression input.
-        Strings are parsed as column names, other non-expression inputs are parsed as
-        literals.
+        Column(s) to concatenate into a single :class:`List` column. Accepts expression
+        input. Strings are parsed as column names, other non-expression inputs are
+        parsed as literals.
     *more_exprs
-        Additional columns to concatenate into a single list column, specified as
-        positional arguments.
+        Additional columns to concatenate into a single :class:`List` column, specified
+        as positional arguments.
 
     Examples
     --------
-    Create lagged columns and collect them into a list. This mimics a rolling window.
+    Create lagged columns and collect them into a :class:`List`. This mimics a rolling
+    window:
 
     >>> df = pl.DataFrame({"A": [1.0, 2.0, 9.0, 2.0, 13.0]})
     >>> df = df.select([pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)])
@@ -399,27 +400,27 @@ def struct(
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     """
-    Collect columns into a struct column.
+    Collect columns into a :class:`Struct` column.
 
     Parameters
     ----------
     *exprs
-        Column(s) to collect into a struct column, specified as positional arguments.
-        Accepts expression input. Strings are parsed as column names,
+        Column(s) to collect into a :class:`Struct` column, specified as positional
+        arguments. Accepts expression input. Strings are parsed as column names,
         other non-expression inputs are parsed as literals.
     schema
-        Optional schema that explicitly defines the struct field dtypes. If no columns
-        or expressions are provided, schema keys are used to define columns.
+        An optional schema that explicitly defines the :class:`Struct` field dtypes. If
+        no columns or expressions are provided, schema keys are used to define columns.
     eager
-        Evaluate immediately and return a `Series`. If set to `False` (default),
-        return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
     **named_exprs
-        Additional columns to collect into the struct column, specified as keyword
-        arguments. The columns will be renamed to the keyword used.
+        Additional columns to collect into the :class:`Struct` column, specified as
+        keyword arguments. The columns will be renamed to the keyword used.
 
     Examples
     --------
-    Collect all columns of a dataframe into a struct by passing `pl.all()`.
+    Collect all columns of a `DataFrame` into a :class:`Struct` by passing `pl.all()`:
 
     >>> df = pl.DataFrame(
     ...     {
@@ -440,8 +441,8 @@ def struct(
     │ {2,"b",null,[3]}    │
     └─────────────────────┘
 
-    Collect selected columns into a struct by either passing a list of columns, or by
-    specifying each column as a positional argument.
+    Collect selected columns into a :class:`Struct` by either passing a list of columns,
+    or by specifying each column as a positional argument:
 
     >>> df.select(pl.struct("int", False).alias("my_struct"))
     shape: (2, 1)
@@ -454,7 +455,7 @@ def struct(
     │ {2,false} │
     └───────────┘
 
-    Use keyword arguments to easily name each struct field.
+    Use keyword arguments to easily name each :class:`Struct` field:
 
     >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
     OrderedDict({'my_struct': Struct({'p': Int64, 'q': Boolean})})
@@ -483,21 +484,22 @@ def concat_str(
     separator: str = "",
 ) -> Expr:
     """
-    Horizontally concatenate columns into a single string column.
+    Horizontally concatenate columns into a single :class:`String` column.
 
     Operates in linear time.
 
     Parameters
     ----------
     exprs
-        Columns to concatenate into a single string column. Accepts expression input.
-        Strings are parsed as column names, other non-expression inputs are parsed as
-        literals. Non-:class:`String` columns are cast to :class:`String`.
+        Column(s) to concatenate into a single :class:`String` column. Accepts
+        expression input.Strings are parsed as column names, other non-expression inputs
+        are parsed as literals. Non-:class:`String` columns are automatically cast to
+        :class:`String`.
     *more_exprs
         Additional columns to concatenate into a single string column, specified as
         positional arguments.
     separator
-        String that will be used to separate the values of each column.
+        A string that will be used to join the values in each column.
 
     Examples
     --------
@@ -536,15 +538,14 @@ def concat_str(
 
 def format(f_string: str, *args: Expr | str) -> Expr:
     """
-    Format expressions as a string.
+    Format expressions as a string. Python string formatting is not supported.
 
     Parameters
     ----------
     f_string
-        A string that with placeholders.
-        For example: "hello_{}" or "{}_world
+        A string that with placeholders, e.g. `"hello_{}"` or `"{}_world"`.
     args
-        Expression(s) that fill the placeholders
+        Expression(s) that fill the placeholders.
 
     Examples
     --------

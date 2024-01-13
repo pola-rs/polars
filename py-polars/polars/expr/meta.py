@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class ExprMetaNameSpace:
-    """Namespace for expressions on a meta level."""
+    """A namespace for operating on expressions on a meta level."""
 
     _accessor = "meta"
 
@@ -122,7 +122,7 @@ class ExprMetaNameSpace:
 
         It may not always be possible to determine the output name as that can depend
         on the schema of the context; in that case this will raise `ComputeError` if
-        `raise_if_undetermined` is True (the default), or `None` otherwise.
+        `raise_if_undetermined=True` (the default), or `None` otherwise.
 
         Examples
         --------
@@ -157,8 +157,8 @@ class ExprMetaNameSpace:
         -------
         list of Expr
             A list of expressions which in most cases will have a unit length.
-            This is not the case when an expression has multiple inputs.
-            For instance in a `fold` expression.
+            This is not the case when an expression has multiple inputs, such as in a
+            :func:`DataFrame.fold` expression.
 
         Examples
         --------
@@ -211,7 +211,7 @@ class ExprMetaNameSpace:
         return wrap_expr(self._pyexpr.meta_undo_aliases())
 
     def _as_selector(self) -> Expr:
-        """Turn this expression in a selector."""
+        """Turn this expression into a selector."""
         return wrap_expr(self._pyexpr._meta_as_selector())
 
     def _selector_add(self, other: Expr) -> Expr:
@@ -235,7 +235,7 @@ class ExprMetaNameSpace:
         ...
 
     def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """Write expression to json."""
+        """Write an expression to a JSON file or string (if `file=None`)."""
         if isinstance(file, (str, Path)):
             file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
@@ -269,7 +269,7 @@ class ExprMetaNameSpace:
         Parameters
         ----------
         return_as_string:
-            If True, return as string rather than printing to stdout.
+            Whether to return the tree as a string rather than printing to stdout.
 
         Examples
         --------

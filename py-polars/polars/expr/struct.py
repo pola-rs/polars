@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 class ExprStructNameSpace:
-    """Namespace for struct related expressions."""
+    """A namespace for :class:`Struct` expressions."""
 
     _accessor = "struct"
 
@@ -28,12 +28,12 @@ class ExprStructNameSpace:
 
     def field(self, name: str) -> Expr:
         """
-        Retrieve a :class:`Struct` field as a new :class:`Series`.
+        Get a :class:`Struct` field as a new expression.
 
         Parameters
         ----------
         name
-            Name of the struct field to retrieve.
+            The name of the :class:`Struct` field to get.
 
         Examples
         --------
@@ -56,7 +56,7 @@ class ExprStructNameSpace:
         │ {2,"cd",null,[3]}    │
         └──────────────────────┘
 
-        Retrieve struct field(s) as Series:
+        Retrieve :class:`Struct` field(s) as `Series`:
 
         >>> df.select(pl.col("struct_col").struct.field("bbb"))
         shape: (2, 1)
@@ -88,12 +88,12 @@ class ExprStructNameSpace:
 
     def rename_fields(self, names: Sequence[str]) -> Expr:
         """
-        Rename the fields of the struct.
+        Rename the fields of the :class:`Struct`.
 
         Parameters
         ----------
         names
-            New names, given in the same order as the struct's fields.
+            The new field names, given in the same order as the struct's fields.
 
         Examples
         --------
@@ -153,7 +153,7 @@ class ExprStructNameSpace:
 
     def json_encode(self) -> Expr:
         """
-        Convert this struct to a string column with json values.
+        Convert :class:`Struct` columns to JSON string columns.
 
         Examples
         --------

@@ -96,16 +96,17 @@ def repeat(
     Parameters
     ----------
     value
-        Value to repeat.
+        The value to repeat.
     n
-        Length of the resulting column.
+        The length of the resulting column.
     dtype
-        Data type of the resulting column. If set to `None` (default), data type is
-        inferred from the given value. Defaults to Int32 for integer values, unless
-        Int64 is required to fit the given value. Defaults to Float64 for float values.
+        The data type of the resulting column. If `dtype=None` (default), the data type
+        is inferred from the given value. Defaults to :class:`Int32` for integer values,
+        unless :class:`Int64` is required to fit the given value. Defaults to
+        :class:`Float64` for float values.
     eager
-        Evaluate immediately and return a `Series`. If set to `False` (default),
-        return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Notes
     -----
@@ -118,7 +119,7 @@ def repeat(
 
     Examples
     --------
-    Construct a column with a repeated value in a lazy context.
+    Construct a column with a repeated value in a lazy context:
 
     >>> pl.select(pl.repeat("z", n=3)).to_series()
     shape: (3,)
@@ -129,7 +130,7 @@ def repeat(
             "z"
     ]
 
-    Generate a Series directly by setting `eager=True`.
+    Generate a `Series` directly by setting `eager=True`:
 
     >>> pl.repeat(3, n=3, dtype=pl.Int8, eager=True)
     shape: (3,)
@@ -189,17 +190,17 @@ def ones(
     """
     Construct a column of length `n` filled with ones.
 
-    This is syntactic sugar for the `repeat` function.
+    This is syntactic sugar for the :func:`repeat` function.
 
     Parameters
     ----------
     n
-        Length of the resulting column.
+        The length of the resulting column.
     dtype
-        Data type of the resulting column. Defaults to Float64.
+        The data type of the resulting column. Defaults to :class:`Float64`.
     eager
-        Evaluate immediately and return a `Series`. If set to `False`,
-        return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Notes
     -----
@@ -273,12 +274,12 @@ def zeros(
     Parameters
     ----------
     n
-        Length of the resulting column.
+        The length of the resulting column.
     dtype
-        Data type of the resulting column. Defaults to Float64.
+        The data type of the resulting column. Defaults to :class:`Float64`.
     eager
-        Evaluate immediately and return a `Series`. If set to `False`,
-        return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Notes
     -----

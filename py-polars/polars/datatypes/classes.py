@@ -86,7 +86,7 @@ class DataTypeClass(type):
 
 
 class DataType(metaclass=DataTypeClass):
-    """Base class for all Polars data types."""
+    """The The base class for all Polars data types."""
 
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
@@ -133,7 +133,7 @@ class DataType(metaclass=DataTypeClass):
         Parameters
         ----------
         other
-            the other polars dtype to compare with.
+            The other polars dtype to compare with.
 
         Examples
         --------
@@ -159,7 +159,7 @@ class DataType(metaclass=DataTypeClass):
         Parameters
         ----------
         other
-            the other polars dtype to compare with.
+            The other polars dtype to compare with.
 
         Examples
         --------
@@ -233,7 +233,7 @@ def _custom_reconstruct(
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
-    """Group of data types."""
+    """A group of data types."""
 
     _match_base_type: bool
 
@@ -246,9 +246,9 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
         Parameters
         ----------
         items :
-            iterable of data types
+            An iterable of data types.
         match_base_type:
-            match the base type
+            Whether to match the base type.
 
         """
         for it in items:
@@ -267,76 +267,76 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
 
 
 class NumericType(DataType):
-    """Base class for numeric data types."""
+    """The base class for numeric data types."""
 
 
 class IntegerType(NumericType):
-    """Base class for integer data types."""
+    """The base class for integer data types."""
 
 
 class SignedIntegerType(IntegerType):
-    """Base class for signed integer data types."""
+    """The base class for signed integer data types."""
 
 
 class UnsignedIntegerType(IntegerType):
-    """Base class for unsigned integer data types."""
+    """The base class for unsigned integer data types."""
 
 
 class FloatType(NumericType):
-    """Base class for float data types."""
+    """The base class for float data types."""
 
 
 class TemporalType(DataType):
-    """Base class for temporal data types."""
+    """The base class for temporal data types."""
 
 
 class NestedType(DataType):
-    """Base class for nested data types."""
+    """The base class for nested data types."""
 
 
 class Int8(SignedIntegerType):
-    """8-bit signed integer type."""
+    """An 8-bit signed integer type."""
 
 
 class Int16(SignedIntegerType):
-    """16-bit signed integer type."""
+    """A 16-bit signed integer type."""
 
 
 class Int32(SignedIntegerType):
-    """32-bit signed integer type."""
+    """A 32-bit signed integer type."""
 
 
 class Int64(SignedIntegerType):
-    """64-bit signed integer type."""
+    """A 64-bit signed integer type."""
 
 
 class UInt8(UnsignedIntegerType):
-    """8-bit unsigned integer type."""
+    """An 8-bit unsigned integer type."""
 
 
 class UInt16(UnsignedIntegerType):
-    """16-bit unsigned integer type."""
+    """A 16-bit unsigned integer type."""
 
 
 class UInt32(UnsignedIntegerType):
-    """32-bit unsigned integer type."""
+    """A 32-bit unsigned integer type."""
 
 
 class UInt64(UnsignedIntegerType):
-    """64-bit unsigned integer type."""
+    """A 64-bit unsigned integer type."""
 
 
 class Float32(FloatType):
-    """32-bit floating point type."""
+    """A 32-bit floating point type."""
 
 
 class Float64(FloatType):
-    """64-bit floating point type."""
+    """A 64-bit floating point type."""
 
 
 class Decimal(NumericType):
     """
-    Decimal 128-bit type with an optional precision and non-negative scale.
+    A Decimal 128-bit type with an optional precision and non-negative scale.
 
     .. warning::
         This is an experimental work-in-progress feature and may not work as expected.
@@ -373,11 +373,11 @@ class Decimal(NumericType):
 
 
 class Boolean(DataType):
-    """Boolean type."""
+    """A boolean (`True`/`False`) type."""
 
 
 class String(DataType):
-    """UTF-8 encoded string type."""
+    """A UTF-8 encoded string type."""
 
 
 # Allow Utf8 as an alias for String
@@ -385,19 +385,19 @@ Utf8 = String
 
 
 class Binary(DataType):
-    """Binary type."""
+    """A binary type, analogous to Python's built-in `bytes` type."""
 
 
 class Date(TemporalType):
-    """Calendar date type."""
+    """A calendar date typem, analogous to Python's `datetime.date` type."""
 
 
 class Time(TemporalType):
-    """Time of day type."""
+    """A time-of-day type, analogous to Python's `datetime.time` type."""
 
 
 class Datetime(TemporalType):
-    """Calendar date and time type."""
+    """A calendar date and time type, analogous to Python's `datetime.datetime` type."""
 
     time_unit: TimeUnit | None = None
     time_zone: str | None = None
@@ -406,17 +406,19 @@ class Datetime(TemporalType):
         self, time_unit: TimeUnit | None = "us", time_zone: str | timezone | None = None
     ):
         """
-        Calendar date and time type.
+        A calendar date and time type, analogous to Python's `datetime.datetime` type.
 
         Parameters
         ----------
-        time_unit : {'us', 'ns', 'ms'}
-            Unit of time / precision.
+        time_unit : {'ns', 'us', 'ms'}
+            The time unit (precision).
         time_zone
-            Time zone string, as defined in zoneinfo (to see valid strings run
-            `import zoneinfo; zoneinfo.available_timezones()` for a full list).
-            When using to match dtypes, can use "*" to check for Datetime columns
-            that have any timezone.
+            A time zone string, as defined in `zoneinfo
+            <https://docs.python.org/3/library/zoneinfo.html>_. (Run
+            `import zoneinfo; zoneinfo.available_timezones()` for the full list of valid
+            strings. When instantiating a `Datetime` object for the purpose of matching
+            dtypes, you can use "*" to check for `Datetime` columns that have any
+            timezone.
 
         """
         if isinstance(time_zone, timezone):
@@ -453,18 +455,18 @@ class Datetime(TemporalType):
 
 
 class Duration(TemporalType):
-    """Time duration/delta type."""
+    """A time duration type, analogous to Python's `datetime.timedelta` type."""
 
     time_unit: TimeUnit | None = None
 
     def __init__(self, time_unit: TimeUnit = "us"):
         """
-        Time duration/delta type.
+        A time duration type, analogous to Python's `datetime.timedelta` type.
 
         Parameters
         ----------
-        time_unit : {'us', 'ns', 'ms'}
-            Unit of time.
+        time_unit : {'ns', 'us', 'ms'}
+            The time unit (precision).
 
         """
         self.time_unit = time_unit
@@ -498,8 +500,8 @@ class Categorical(DataType):
     Parameters
     ----------
         ordering : {'lexical', 'physical'}
-            Ordering by order of appearance (physical, default)
-            or string value (lexical).
+            Whether the ordering is by order of appearance (`'physical'`, the default)
+            or alphabetical (`'lexical'`).
 
     """
 
@@ -529,7 +531,7 @@ class Categorical(DataType):
 
 class Enum(DataType):
     """
-    A fixed set categorical encoding of a set of strings.
+    A categorical encoding of a fixed set of strings with a user-specified ordering.
 
     .. warning::
         This is an experimental work-in-progress feature and may not work as expected.
@@ -540,12 +542,12 @@ class Enum(DataType):
 
     def __init__(self, categories: Iterable[str]):
         """
-        A fixed set categorical encoding of a set of strings.
+        A categorical encoding of a fixed set of strings with a user-specified ordering.
 
         Parameters
         ----------
         categories
-            Valid categories in the dataset.
+            The strings forming the `Enum`, in order.
 
         """
         if not isinstance(categories, list):
@@ -583,25 +585,25 @@ class Enum(DataType):
 
 
 class Object(DataType):
-    """Type for wrapping arbitrary Python objects."""
+    """A type for wrapping arbitrary Python objects."""
 
 
 class Null(DataType):
-    """Type representing Null / None values."""
+    """A type representing `null` / `None` values."""
 
 
 class Unknown(DataType):
-    """Type representing Datatype values that could not be determined statically."""
+    """A type representing dtypes that could not be determined statically."""
 
 
 class List(NestedType):
-    """Variable length list type."""
+    """A variable-length list type."""
 
     inner: PolarsDataType | None = None
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         """
-        Variable length list type.
+        A variable-length list type.
 
         Parameters
         ----------
@@ -657,21 +659,21 @@ class List(NestedType):
 
 
 class Array(NestedType):
-    """Fixed length list type."""
+    """A fixed-length list type."""
 
     inner: PolarsDataType | None = None
     width: int
 
     def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
         """
-        Fixed length list type.
+        A fixed-length list type.
 
         Parameters
         ----------
         inner
             The `DataType` of the values within each array.
         width
-            The length of the arrays.
+            The length of the lists.
 
         Examples
         --------
@@ -717,18 +719,18 @@ class Array(NestedType):
 
 
 class Field:
-    """Definition of a single field within a :class:`Struct` DataType."""
+    """A single field within a :class:`Struct` `DataType`."""
 
     def __init__(self, name: str, dtype: PolarsDataType):
         """
-        Definition of a single field within a :class:`Struct` DataType.
+        A single field within a :class:`Struct` `DataType`.
 
         Parameters
         ----------
         name
-            The name of the field within its parent :class:`Struct`
+            The name of the field within its parent :class:`Struct`.
         dtype
-            The `DataType` of the field's values
+            The `DataType` of the field's values.
 
         """
         self.name = name
@@ -746,19 +748,19 @@ class Field:
 
 
 class Struct(NestedType):
-    """Struct composite type."""
+    """A structured composite type with keys and values."""
 
     fields: list[Field]
 
     def __init__(self, fields: Sequence[Field] | SchemaDict):
         """
-        Struct composite type.
+        A structured composite type with keys and values.
 
         Parameters
         ----------
         fields
-            The fields that make up the struct. Can be either a sequence of Field
-            objects or a mapping of column names to data types.
+            The fields that make up the struct. Can be either a sequence of
+            :class:`Field` objects or a mapping of column names to data types.
 
         Examples
         --------
@@ -768,7 +770,7 @@ class Struct(NestedType):
         >>> dtype
         Struct({'a': Int8, 'b': List(String)})
 
-        Initialize using a list of Field objects:
+        Initialize using a list of `Field` objects:
 
         >>> dtype = pl.Struct(
         ...     [pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.String))]
@@ -776,7 +778,7 @@ class Struct(NestedType):
         >>> dtype
         Struct({'a': Int8, 'b': List(String)})
 
-        When initializing a Series, Polars can infer a struct data type from the data.
+        When initializing a `Series`, Polars can infer the fields' dtypes from the data.
 
         >>> s = pl.Series([{"a": 1, "b": ["x", "y"]}, {"a": 2, "b": ["z"]}])
         >>> s
@@ -796,7 +798,7 @@ class Struct(NestedType):
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes, and specific
-        # inner types to those without (eg: inner=None). if one of the
+        # inner types to those without (e.g. inner=None). if one of the
         # arguments is not specific about its inner type we infer it
         # as being equal. (See the List type for more info).
         if isclass(other) and issubclass(other, Struct):

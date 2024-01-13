@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 class InProcessQuery:
     """
-    A placeholder for an in process query.
+    A placeholder for an in-process query.
 
     This can be used to do something else while a query is running.
     The queries can be cancelled. You can peek if the query is finished,
@@ -29,8 +29,8 @@ class InProcessQuery:
         """
         Fetch the result.
 
-        If it is ready, a materialized DataFrame is returned.
-        If it is not ready it will return `None`.
+        If it is ready, a materialized `DataFrame` is returned.
+        If it is not ready, it will return `None`.
         """
         out = self.ipq.fetch()
         if out is not None:

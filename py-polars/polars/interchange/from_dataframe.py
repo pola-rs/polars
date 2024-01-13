@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
     """
-    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+    Build a Polars `DataFrame` from any dataframe supporting the interchange protocol.
 
     Parameters
     ----------
@@ -24,8 +24,8 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
         Object supporting the dataframe interchange protocol, i.e. must have implemented
         the `__dataframe__` method.
     allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, causes
-        conversions that are not zero-copy to fail.
+        Whether to allow memory to be copied to perform the conversion.
+        If `allow_copy=False`, non-zero-copy conversions will fail.
     """
     if isinstance(df, pl.DataFrame):
         return df

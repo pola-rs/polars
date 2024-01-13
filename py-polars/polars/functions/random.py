@@ -10,8 +10,8 @@ def set_random_seed(seed: int) -> None:
     r"""
     Set the global random seed for Polars.
 
-    This random seed is used to determine things such as shuffle ordering.
-
+    This random seed is used to determine the result of operations like shuffling and
+    sampling.
 
     Parameters
     ----------

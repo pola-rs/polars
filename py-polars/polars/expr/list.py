@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 class ExprListNameSpace:
-    """Namespace for list related expressions."""
+    """A namespace for :class:`List` expressions."""
 
     _accessor = "list"
 
@@ -37,7 +37,7 @@ class ExprListNameSpace:
 
     def all(self) -> Expr:
         """
-        Evaluate whether all :class:`Boolean` values in a list are true.
+        Evaluate whether all :class:`Boolean` values in each list are true.
 
         Examples
         --------
@@ -64,7 +64,7 @@ class ExprListNameSpace:
 
     def any(self) -> Expr:
         """
-        Evaluate whether any :class:`Boolean` value in a list is true.
+        Evaluate whether any :class:`Boolean` value in each list is true.
 
         Examples
         --------
@@ -91,14 +91,12 @@ class ExprListNameSpace:
 
     def len(self) -> Expr:
         """
-        Return the number of elements in each list.
-
-        Null values count towards the total.
+        Get the number of elements in each list, including `null` elements.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            A :class:`UInt32` expression.
 
         Examples
         --------
@@ -119,9 +117,9 @@ class ExprListNameSpace:
 
     def drop_nulls(self) -> Expr:
         """
-        Drop all null values in the list.
+        Remove all `null` values in each list.
 
-        The original order of the remaining elements is preserved.
+        The original order of the remaining list elements is preserved.
 
         Examples
         --------
@@ -151,22 +149,29 @@ class ExprListNameSpace:
         seed: int | None = None,
     ) -> Expr:
         """
-        Sample from this list.
+        Randomly sample elements from each list.
 
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
-            `fraction` is None.
+            The number of elements to return. Cannot be used with `fraction`. Defaults
+            to `1` if `fraction` is `None`.
         fraction
-            Fraction of items to return. Cannot be used with `n`.
+            The fraction of elements to return. Cannot be used with `n`.
         with_replacement
-            Allow values to be sampled more than once.
+            Whether to allow elements to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Whether to shuffle the order of the sampled elements. If `shuffle=False`
+            (the default), the order will be neither stable nor fully random.
         seed
-            Seed for the random number generator. If set to None (default), a
-            random seed is generated for each sample operation.
+            The seed for the random number generator. If `seed=None` (the default), a
+            random seed is generated anew for each `sample` operation. Set to an integer
+            (e.g. `seed=0`) for fully reproducible results.
+
+        Warnings
+        --------
+        `sample(fraction=1)` returns the expression as-is! To properly shuffle the
+        values, add `shuffle=True`.
 
         Examples
         --------
@@ -201,7 +206,7 @@ class ExprListNameSpace:
 
     def sum(self) -> Expr:
         """
-        Sum all the lists in the array.
+        Get the sum of the elements in each list.
 
         Examples
         --------
@@ -222,7 +227,7 @@ class ExprListNameSpace:
 
     def max(self) -> Expr:
         """
-        Compute the max value of the lists in the array.
+        Get the maximum value of the elements in each list.
 
         Examples
         --------
@@ -243,7 +248,7 @@ class ExprListNameSpace:
 
     def min(self) -> Expr:
         """
-        Compute the min value of the lists in the array.
+        Get the minimum value of the elements in each list.
 
         Examples
         --------
@@ -264,7 +269,7 @@ class ExprListNameSpace:
 
     def mean(self) -> Expr:
         """
-        Compute the mean value of the lists in the array.
+        Get the mean of the elements in each list.
 
         Examples
         --------
@@ -285,12 +290,12 @@ class ExprListNameSpace:
 
     def sort(self, *, descending: bool = False) -> Expr:
         """
-        Sort the lists in this column.
+        Sort each list.
 
         Parameters
         ----------
         descending
-            Sort in descending order.
+            Whether to sort in descending instead of ascending order.
 
         Examples
         --------
@@ -325,7 +330,7 @@ class ExprListNameSpace:
 
     def reverse(self) -> Expr:
         """
-        Reverse the arrays in the list.
+        Reverse the order of the elements in each list.
 
         Examples
         --------
@@ -350,12 +355,13 @@ class ExprListNameSpace:
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the list.
+        Get the unique values that appear in each list, removing duplicates.
 
         Parameters
         ----------
         maintain_order
-            Maintain order of data. This requires more work.
+            Whether to keep the unique elements in the same order as in the input data.
+            This is slower.
 
         Examples
         --------
@@ -379,12 +385,12 @@ class ExprListNameSpace:
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
-        Concat the arrays in a Series dtype List in linear time.
+        Concatenate the list elements in two or more :class:`List` columns.
 
         Parameters
         ----------
         other
-            Columns to concat into a List Series
+            The other column(s).
 
         Examples
         --------
@@ -419,16 +425,21 @@ class ExprListNameSpace:
 
     def get(self, index: int | Expr | str) -> Expr:
         """
-        Get the value by index in the sublists.
+        Get a single element from each list by index.
 
-        So index `0` would return the first item of every sublist
-        and index `-1` would return the last item of every sublist
-        if an index is out of bounds, it will return a `None`.
+        For instance, `list.get(0)` would return the first item of each list,
+        and `list.get(-1)` would return the last item.
+
+        If an index is out of bounds, the resulting element will be `null`.
 
         Parameters
         ----------
         index
-            Index to return per sublist
+            The index of the element to return from each list.
+
+        See Also
+        --------
+        gather : Get multiple list elements by index.
 
         Examples
         --------
@@ -456,20 +467,18 @@ class ExprListNameSpace:
         null_on_oob: bool = False,
     ) -> Expr:
         """
-        Take sublists by multiple indices.
+        Get multiple elements from each list by index.
 
-        The indices may be defined in a single column, or by sublists in another
-        column of dtype :class:`List`.
+        The indices may be defined in a single Python list, by lists in another
+        :class:`List` column, or by a Python list of Python lists.
 
         Parameters
         ----------
         indices
-            Indices to return per sublist
+            The indices of the elements to return from each list.
         null_on_oob
-            Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
-            Note that defaulting to raising an error is much cheaper
+            Whether to set elements for out-of-bounds indices to `null`,
+            rather than raising an error. The latter is much faster.
 
         Examples
         --------
@@ -493,7 +502,7 @@ class ExprListNameSpace:
 
     def first(self) -> Expr:
         """
-        Get the first value of the sublists.
+        Get the first element of each list.
 
         Examples
         --------
@@ -515,7 +524,7 @@ class ExprListNameSpace:
 
     def last(self) -> Expr:
         """
-        Get the last value of the sublists.
+        Get the last element of each list.
 
         Examples
         --------
@@ -539,17 +548,17 @@ class ExprListNameSpace:
         self, item: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
-        Check if sublists contain the given item.
+        Check if each list contains the given item.
 
         Parameters
         ----------
         item
-            Item that will be checked for membership
+            The item that will be checked for membership.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Boolean`.
+            A :class:`Boolean` expression.
 
         Examples
         --------
@@ -572,19 +581,20 @@ class ExprListNameSpace:
 
     def join(self, separator: IntoExpr) -> Expr:
         """
-        Join all string items in a sublist and place a separator between them.
+        Join all string items in a list and place a separator between them.
 
-        This errors if inner type of list `!= String`.
+        Raises an error if the inner dtype of the :class:`List` column is not
+        :class:`String`.
 
         Parameters
         ----------
         separator
-            string to separate the items with
+            A string to separate the items with.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`String`.
+            A :class:`String` expression.
 
         Examples
         --------
@@ -620,13 +630,13 @@ class ExprListNameSpace:
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Get the index of the minimum value in each list.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32` or :class:`UInt64`
-            (depending on compilation).
+            A :class:`UInt32` or :class:`UInt64` expression (depending on whether polars
+            is compiled in `bigidx` mode).
 
         Examples
         --------
@@ -651,13 +661,13 @@ class ExprListNameSpace:
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Get the index of the maximum value in each list.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32` or :class:`UInt64`
-            (depending on compilation).
+            A :class:`UInt32` or :class:`UInt64` expression (depending on whether polars
+            is compiled in `bigidx` mode).
 
         Examples
         --------
@@ -682,14 +692,14 @@ class ExprListNameSpace:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
-        Calculate the first discrete difference between shifted items of every sublist.
+        Get the first discrete difference between shifted elements of each list.
 
         Parameters
         ----------
         n
-            Number of slots to shift.
+            The number of elements to shift by when calculating the difference.
         null_behavior : {'ignore', 'drop'}
-            How to handle null values.
+            How to handle `null` values.
 
         Examples
         --------
@@ -733,13 +743,13 @@ class ExprListNameSpace:
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
-        Shift list values by the given number of indices.
+        Shift list elements by the given number of indices.
 
         Parameters
         ----------
         n
-            Number of indices to shift forward. If a negative value is passed, values
-            are shifted in the opposite direction instead.
+            The number of indices to shift forward by. If negative, elements are shifted
+            backward instead.
 
         Notes
         -----
@@ -748,7 +758,7 @@ class ExprListNameSpace:
 
         Examples
         --------
-        By default, list values are shifted forward by one index.
+        By default, list elements are shifted forward by one index:
 
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5]]})
         >>> df.with_columns(shift=pl.col("a").list.shift())
@@ -762,7 +772,7 @@ class ExprListNameSpace:
         │ [4, 5]    ┆ [null, 4]    │
         └───────────┴──────────────┘
 
-        Pass a negative value to shift in the opposite direction instead.
+        Pass a negative value to shift backwards instead:
 
         >>> df.with_columns(shift=pl.col("a").list.shift(-2))
         shape: (2, 2)
@@ -783,15 +793,15 @@ class ExprListNameSpace:
         self, offset: int | str | Expr, length: int | str | Expr | None = None
     ) -> Expr:
         """
-        Slice every sublist.
+        Get a contiguous set of elements from each list.
 
         Parameters
         ----------
         offset
-            Start index. Negative indexing is supported.
+            The start index. Negative indexing is supported.
         length
-            Length of the slice. If set to `None` (default), the slice is taken to the
-            end of the list.
+            The length of the slice. If `length=None`, all elements starting from the
+            `offset` will be selected.
 
         Examples
         --------
@@ -814,12 +824,12 @@ class ExprListNameSpace:
 
     def head(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the first `n` values of every sublist.
+        Get the first `n` elements of each list.
 
         Parameters
         ----------
         n
-            Number of values to return for each sublist.
+            The number of elements to return. Negative values are not supported.
 
         Examples
         --------
@@ -840,12 +850,12 @@ class ExprListNameSpace:
 
     def tail(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the last `n` values of every sublist.
+        Get the last `n` elements of each list.
 
         Parameters
         ----------
         n
-            Number of values to return for each sublist.
+            The number of elements to return. Negative values are not supported.
 
         Examples
         --------
@@ -867,16 +877,20 @@ class ExprListNameSpace:
 
     def explode(self) -> Expr:
         """
-        Returns a column with a separate row for every list element.
+        Put every element of every list on its own row.
 
         Returns
         -------
         Expr
-            Expression with the data type of the list elements.
+            An expression with the same data type as the inner data type of the list
+            elements.
 
         See Also
         --------
-        ExprNameSpace.reshape: Reshape this Expr to a flat Series or a Series of Lists.
+        Expr.explode : Explode a :class:`List` column.
+        Expr.str.explode : Explode a :class:`String` column.
+        ExprNameSpace.reshape: Reshape each column to a flat `Series` or a :class:`List`
+                               `Series`.
 
         Examples
         --------
@@ -901,12 +915,12 @@ class ExprListNameSpace:
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """
-        Count how often the value produced by `element` occurs.
+        Count the number of occurrences of `element` in each list.
 
         Parameters
         ----------
         element
-            An expression that produces a single value
+            An expression that evaluates to a single, scalar value.
 
         Examples
         --------
@@ -931,17 +945,17 @@ class ExprListNameSpace:
 
     def to_array(self, width: int) -> Expr:
         """
-        Convert a List column into an Array column with the same inner data type.
+        Convert :class:`List` columns to :class:`Array` columns.
 
         Parameters
         ----------
         width
-            Width of the resulting Array column.
+            The widths of the resulting :class:`Array` columns.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Array`.
+            An :class:`Array` expression.
 
         Examples
         --------
@@ -970,42 +984,40 @@ class ExprListNameSpace:
         upper_bound: int = 0,
     ) -> Expr:
         """
-        Convert the Series of type :class:`List` to a Series of type :class:`Struct`.
+        Convert :class:`List` columns to :class:`Struct` columns.
 
         Parameters
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
-            Strategy to determine the number of fields of the struct.
+            Whether to set the number of :class:`Struct` fields to:
 
-            * "first_non_null": set number of fields equal to the length of the
-              first non zero-length sublist.
-            * "max_width": set number of fields as max length of all sublists.
+            * `"first_non_null"`: the length of the first non zero-length list.
+            * `"max_width"`: the maximum length of all lists.
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.
             Otherwise, to dynamically assign field names, a custom function can be
             used; if neither are set, fields will be `field_0, field_1 .. field_n`.
         upper_bound
-            A polars :class:`LazyFrame` needs to know the schema at all times, so the
-            caller must provide an upper bound of the number of struct fields that
-            will be created; if set incorrectly, subsequent operations may fail.
+            A polars `LazyFrame` needs to know the schema at all times, so the
+            caller must provide an upper bound of the number of :class:`Struct` fields
+            that will be created; if set incorrectly, subsequent operations may fail.
             (For example, an `all().sum()` expression will look in the current
             schema to determine which columns to select).
 
-            When operating on a :class:`DataFrame`, the schema does not need to be
+            When operating on a `DataFrame`, the schema does not need to be
             tracked or pre-determined, as the result will be eagerly evaluated,
             so you can leave this parameter unset.
 
         Notes
         -----
-        For performance reasons, the length of the first non-`null` sublist is used
-        to determine the number of output fields. If the sublists can be of different
-        lengths then `n_field_strategy="max_width"` must be used to obtain the expected
-        result.
+        For performance reasons, the length of the first non-`null` list is used to
+        determine the number of output fields. If the list can be of different lengths,
+        then `n_field_strategy="max_width"` must be used to obtain the expected result.
 
         Examples
         --------
-        Convert list to struct with default field name assignment:
+        Convert :class:`List` to :class:`Struct` with default field name assignment:
 
         >>> df = pl.DataFrame({"n": [[0, 1], [0, 1, 2]]})
         >>> df.with_columns(
@@ -1021,7 +1033,7 @@ class ExprListNameSpace:
         │ [0, 1, 2] ┆ {0,1}     │ # NOT OK - last value missing
         └───────────┴───────────┘
 
-        As the shorter sublist comes first, we must use the `max_width`
+        As the shorter list comes first, we must use the `max_width`
         strategy to force a search for the longest.
 
         >>> df.with_columns(
@@ -1037,7 +1049,8 @@ class ExprListNameSpace:
         │ [0, 1, 2] ┆ {0,1,2}    │ # OK
         └───────────┴────────────┘
 
-        Convert list to struct with field name assignment by function/index:
+        Convert :class:`List` to :class:`Struct` with field name assignment by
+        function/index:
 
         >>> df = pl.DataFrame({"n": [[0, 1], [2, 3]]})
         >>> df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
@@ -1045,7 +1058,8 @@ class ExprListNameSpace:
         ... )
         [{'n': {'n0': 0, 'n1': 1}}, {'n': {'n0': 2, 'n1': 3}}]
 
-        Convert list to struct with field name assignment by index from a list of names:
+        Convert :class:`List` to :class:`Struct` with field name assignment by index
+        from a list of names:
 
         >>> df.select(pl.col("n").list.to_struct(fields=["one", "two"])).rows(
         ...     named=True
@@ -1063,19 +1077,21 @@ class ExprListNameSpace:
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """
-        Run any polars expression against the lists' elements.
+        Evaluate any polars expression across each list's elements.
+
+        Use :func:`polars.element()` to refer to the list element, similar to how
+        you usually would use `pl.col()` to refer to a column in an expression.
 
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.first()`, or
-            `pl.col()`
+            The expression to evaluate.
         parallel
-            Run all expression parallel. Don't activate this blindly.
-            Parallelism is worth it if there is enough work to do per thread.
+            Whether to execute the computation in parallel.
 
-            This likely should not be used in the group by context, because we already
-            parallel execution per group
+            .. note::
+                This option should likely not be enabled in an aggregation context,
+                as the computation is already parallelized per group.
 
         Examples
         --------
@@ -1099,12 +1115,12 @@ class ExprListNameSpace:
 
     def set_union(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET UNION between the elements in this list and the elements of `other`.
+        Compute set unions between elements in two :class:`List` columns.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other column.
 
         Examples
         --------
@@ -1129,18 +1145,18 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [5, 6, 7, 8]  │
         └───────────┴──────────────┴───────────────┘
 
-        """  # noqa: W505.
+        """  # .
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
 
     def set_difference(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
+        Compute set differences between elements in two :class:`List` columns.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other column.
 
         Examples
         --------
@@ -1165,20 +1181,21 @@ class ExprListNameSpace:
 
         See Also
         --------
-        polars.Expr.list.diff: Calculates the n-th discrete difference of every sublist.
+        polars.Expr.list.diff: Get the first discrete difference between shifted
+                               elements of each list.
 
-        """  # noqa: W505.
+        """  # .
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
 
     def set_intersection(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
+        Compute set intersections between elements in two :class:`List` columns.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other column.
 
         Examples
         --------
@@ -1201,18 +1218,18 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [6]          │
         └───────────┴──────────────┴──────────────┘
 
-        """  # noqa: W505.
+        """  # .
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
 
     def set_symmetric_difference(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
+        Compute set symmetric differences between elements in two :class:`List` columns.
 
         Parameters
         ----------
         other
-            Right hand side of the set operation.
+            The other column.
 
         Examples
         --------
@@ -1234,7 +1251,7 @@ class ExprListNameSpace:
         │ [null, 3] ┆ [3, 4, null] ┆ [4]       │
         │ [5, 6, 7] ┆ [6, 8]       ┆ [8, 5, 7] │
         └───────────┴──────────────┴───────────┘
-        """  # noqa: W505.
+        """  # .
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 

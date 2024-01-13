@@ -21,19 +21,19 @@ def read_ndjson(
     ignore_errors: bool = False,
 ) -> DataFrame:
     """
-    Read into a DataFrame from a newline delimited JSON file.
+    Read into a `DataFrame` from a newline-delimited JSON file.
 
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
     schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
-        The DataFrame schema may be declared in several ways:
+        The schema of the `DataFrame`. It may be declared in several ways:
 
-        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+        * As a dict of `{name: dtype}` pairs; if type is `None`, it will be
           auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.
@@ -42,11 +42,12 @@ def read_ndjson(
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
-        Support type specification or override of one or more columns; note that
-        any dtypes inferred from the schema parameter will be overridden.
-        underlying data, the names given here will overwrite them.
+        A dict of `{name: dtype}` pairs to override the dtypes of specific columns,
+        instead of automatically inferring them or using the dtypes specified in
+        the schema.
     ignore_errors
-        Return `null` if parsing fails because of schema mismatches.
+        Whether to return `null` if parsing fails because of schema mismatches,
+        instead of raising an error.
 
     """
     return pl.DataFrame._read_ndjson(
@@ -70,7 +71,7 @@ def scan_ndjson(
     schema: SchemaDefinition | None = None,
 ) -> LazyFrame:
     """
-    Lazily read from a newline delimited JSON file or multiple files via glob patterns.
+    Lazily read from a newline-delimited JSON file, or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
@@ -78,26 +79,31 @@ def scan_ndjson(
     Parameters
     ----------
     source
-        Path to a file.
+        A path to a newline-delimited JSON file, or a glob pattern matching multiple
+        files.
     infer_schema_length
-        Infer the schema from the first `infer_schema_length` rows.
+        The number of rows to read when inferring the `schema`. If dtypes are inferred
+        wrongly (e.g. as :class:`Int64` instead of :class:`Float64`), try to increase
+        `infer_schema_length` or specify `schema`.
     batch_size
-        Number of rows to read in each batch.
+        The number of rows at a time to read into an intermediate buffer during JSON
+        file reading. Modify this to change performance.
     n_rows
-        Stop reading from JSON file after reading `n_rows`.
+        The number of rows to read from the JSON file.
     low_memory
-        Reduce memory pressure at the expense of performance.
+        Whether to reduce memory usage at the expense of speed.
     rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
+        Whether to ensure each column of the result is stored contiguously in
+        memory; see :func:`DataFrame.rechunk` for details.
     row_count_name
-        If not None, this will insert a row count column with give name into the
-        DataFrame
+        If not `None`, add a row count column with this name as the first column.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+        An integer offset to start the row count at; only used when `row_count_name`
+        is not `None`.
     schema : Sequence of `str`, `(str, DataType)` pairs, or a `{str: DataType}` dict.
-        The DataFrame schema may be declared in several ways:
+        The schema of the `DataFrame`. It may be declared in several ways:
 
-        * As a dict of `{name: type}` pairs; if type is `None`, it will be
+        * As a dict of `{name: dtype}` pairs; if type is `None`, it will be
           auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of `(name, type)` pairs; this is equivalent to the dictionary form.

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class BinaryNameSpace:
-    """Series.bin namespace."""
+    """A namespace for :class:`Binary` `Series`."""
 
     _accessor = "bin"
 
@@ -21,59 +21,69 @@ class BinaryNameSpace:
 
     def contains(self, literal: IntoExpr) -> Series:
         """
-        Check if binaries in this :class:`Series` contain a binary substring.
+        Check if each binary element contains a binary substring.
 
         Parameters
         ----------
         literal
-            The binary substring to look for
+            The binary substring to search for.
 
         Returns
         -------
-        Series
-            Series of data type :class:`Boolean`.
+        Expr
+            A :class:`Boolean` `Series`.
 
         """
 
     def ends_with(self, suffix: IntoExpr) -> Series:
         """
-        Check if string values end with a binary substring.
+        Check if each binary element ends with a binary substring.
 
         Parameters
         ----------
         suffix
-            Suffix substring.
+            The binary substring to search for.
+
+        Returns
+        -------
+        Expr
+            A :class:`Boolean` `Series`.
 
         """
 
     def starts_with(self, prefix: IntoExpr) -> Series:
         """
-        Check if values start with a binary substring.
+        Check if each binary element starts with a binary substring.
 
         Parameters
         ----------
         prefix
-            Prefix substring.
+            The binary substring to search for.
+
+        Returns
+        -------
+        Expr
+            A :class:`Boolean` `Series`.
 
         """
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
         """
-        Decode a value using the provided encoding.
+        Decode binary values using the provided encoding.
 
         Parameters
         ----------
         encoding : {'hex', 'base64'}
             The encoding to use.
         strict
-            Raise an error if the underlying value cannot be decoded,
-            otherwise mask out with a null value.
+            Whether to raise an error if the underlying value cannot be decoded,
+            instead of replacing it with `null`.
 
         """
 
     def encode(self, encoding: TransferEncoding) -> Series:
         """
-        Encode a value using the provided encoding.
+        Encode binary values using the provided encoding.
 
         Parameters
         ----------
@@ -82,7 +92,7 @@ class BinaryNameSpace:
 
         Returns
         -------
-        Series
-            Series of data type :class:`Boolean`.
+        Expr
+            A :class:`String` `Series` with values encoded using the specified encoding.
 
         """

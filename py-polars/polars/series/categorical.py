@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class CatNameSpace:
-    """Namespace for categorical related series."""
+    """A namespace for :class:`Categorical` and :class:`Enum` `Series`."""
 
     _accessor = "cat"
 
@@ -29,16 +29,16 @@ class CatNameSpace:
     )
     def set_ordering(self, ordering: CategoricalOrdering) -> Series:
         """
-        Determine how this categorical series should be sorted.
+        Determine how this categorical `Series` should be sorted.
 
         Parameters
         ----------
         ordering : {'physical', 'lexical'}
-            Ordering type:
+            The ordering type:
 
-            - 'physical' -> Use the physical representation of the categories to
-                determine the order (default).
-            - 'lexical' -> Use the string values to determine the ordering.
+            - `'physical'`: use the physical representation of the categories to
+               determine the order (the default).
+            - `'lexical'`: use the string values to determine the ordering.
         """
 
     def get_categories(self) -> Series:
@@ -61,17 +61,20 @@ class CatNameSpace:
 
     def is_local(self) -> bool:
         """
-        Return whether or not the column is a local categorical.
+        Return whether the column is a local categorical.
+
+        See the documentation of :class:`StringCache` for more information on the
+        difference between local and global categoricals.
 
         Examples
         --------
-        Categoricals constructed without a string cache are considered local.
+        Categoricals constructed without a string cache are considered local:
 
         >>> s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
         >>> s.cat.is_local()
         True
 
-        Categoricals constructed with a string cache are considered global.
+        Categoricals constructed with a string cache are considered global:
 
         >>> with pl.StringCache():
         ...     s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
@@ -87,12 +90,12 @@ class CatNameSpace:
 
         This may change the underlying physical representation of the column.
 
-        See the documentation of :func:`StringCache` for more information on the
+        See the documentation of :class:`StringCache` for more information on the
         difference between local and global categoricals.
 
         Examples
         --------
-        Compare the global and local representations of a categorical.
+        Compare the global and local representations of a categorical:
 
         >>> with pl.StringCache():
         ...     _ = pl.Series("x", ["a", "b", "a"], dtype=pl.Categorical)
@@ -119,7 +122,7 @@ class CatNameSpace:
 
     def uses_lexical_ordering(self) -> bool:
         """
-        Return whether or not the series uses lexical ordering.
+        Return whether the `Series` uses lexical ordering.
 
         This can be set using :func:`set_ordering`.
 

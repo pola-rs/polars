@@ -82,34 +82,35 @@ def date_range(
     Parameters
     ----------
     start
-        Lower bound of the date range.
+        The lower bound of the date range.
     end
-        Upper bound of the date range.
+        The upper bound of the date range.
     interval
-        Interval of the range periods, specified as a Python `timedelta` object
-        or using the Polars duration string language (see "Notes" section below).
+        The interval of the range periods, specified as a Python `timedelta` object
+        or using the Polars duration string language (see the "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
-        Define which sides of the range are closed (inclusive).
+        Whether to include both endpoints, only the left or right endpoint, or
+        neither endpoint.
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting :class:`Datetime` data type.
-        Only takes effect if the output column is of type :class:`Datetime`.
+        The time unit of the resulting :class:`Datetime` data type.
+        Only used when the output column is of type :class:`Datetime`.
     time_zone
-        Time zone of the resulting :class:`Datetime` data type.
-        Only takes effect if the output column is of type :class:`Datetime`.
+        The time zone of the resulting :class:`Datetime` data type.
+        Only used when the output column is of type :class:`Datetime`.
     eager
-        Evaluate immediately and return a `Series`.
-        If set to `False` (default), return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Returns
     -------
     Expr or Series
-        Column of data type :class:`Date` or :class:`Datetime`.
+        A column of data type :class:`Date` or :class:`Datetime`.
 
     Notes
     -----
-    1) If both `start` and `end` are passed as date types (not datetime), and the
-       interval granularity is no finer than 1d, the returned range is also of
-       type date. All other permutations return a datetime Series.
+    1) If both `start` and `end` are passed as `date` types (not `datetime`), and the
+       interval granularity is no finer than `"1d"`, the returned range is also of
+       type :class:`Date`. All other permutations return a :class:`Datetime` `Series`.
 
        .. deprecated:: 0.19.3
            In a future version of Polars, `date_range` will always return a
@@ -118,20 +119,22 @@ def date_range(
 
     2) `interval` is created according to the following string language:
 
-       - 1ns   (1 nanosecond)
-       - 1us   (1 microsecond)
-       - 1ms   (1 millisecond)
-       - 1s    (1 second)
-       - 1m    (1 minute)
-       - 1h    (1 hour)
-       - 1d    (1 calendar day)
-       - 1w    (1 calendar week)
-       - 1mo   (1 calendar month)
-       - 1q    (1 calendar quarter)
-       - 1y    (1 calendar year)
+        * `"1ns"`   (1 nanosecond)
+        * `"1us"`   (1 microsecond)
+        * `"1ms"`   (1 millisecond)
+        * `"1s"`    (1 second)
+        * `"1m"`    (1 minute)
+        * `"1h"`    (1 hour)
+        * `"1d"`    (1 calendar day)
+        * `"1w"`    (1 calendar week)
+        * `"1mo"`   (1 calendar month)
+        * `"1q"`    (1 calendar quarter)
+        * `"1y"`    (1 calendar year)
+        * `"1i"`    (1 index count)
 
-       Or combine them:
-       "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+        These strings can be combined:
+
+        - `"3d12h4m25s"`   (3 days, 12 hours, 4 minutes, and 25 seconds)
 
        By "calendar day", we mean the corresponding time on the next day (which may
        not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -139,7 +142,7 @@ def date_range(
 
     Examples
     --------
-    Using Polars duration string to specify the interval:
+    Using a Polars duration string to specify the interval:
 
     >>> from datetime import date
     >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True).alias(
@@ -153,7 +156,7 @@ def date_range(
         2022-03-01
     ]
 
-    Using `timedelta` object to specify the interval:
+    Using a `timedelta` object to specify the interval:
 
     >>> from datetime import timedelta
     >>> pl.date_range(
@@ -246,52 +249,55 @@ def date_ranges(
     eager: bool = False,
 ) -> Series | Expr:
     """
-    Create a column of date ranges.
+    Get a date range for each row of the input columns, as a :class:`List` column.
 
     Parameters
     ----------
     start
-        Lower bound of the date range.
+        The lower bound of the date ranges.
     end
-        Upper bound of the date range.
+        The upper bound of the date ranges.
     interval
-        Interval of the range periods, specified as a Python `timedelta` object
-        or using the Polars duration string language (see "Notes" section below).
+        The interval of the range periods, specified as a Python `timedelta` object
+        or using the Polars duration string language (see the "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
-        Define which sides of the range are closed (inclusive).
+        Whether to include both endpoints, only the left or right endpoint, or
+        neither endpoint.
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting :class:`Datetime` data type.
-        Only takes effect if the output column is of type :class:`Datetime`.
+        The time unit of the resulting :class:`Datetime` data type.
+        Only used when the output column is of type :class:`Datetime`.
     time_zone
-        Time zone of the resulting :class:`Datetime` data type.
-        Only takes effect if the output column is of type :class:`Datetime`.
+        The time zone of the resulting :class:`Datetime` data type.
+        Only used when the output column is of type :class:`Datetime`.
     eager
-        Evaluate immediately and return a `Series`.
-        If set to `False` (default), return an expression instead.
+        Whether to evaluate immediately and return a `Series`, rather than returning an
+        expression.
 
     Returns
     -------
     Expr or Series
-        Column of data type `List(Date)` or `List(Datetime)`.
+        A column of data type `List(Date)` or `List(Datetime)`.
 
     Notes
     -----
     `interval` is created according to the following string language:
 
-    - 1ns   (1 nanosecond)
-    - 1us   (1 microsecond)
-    - 1ms   (1 millisecond)
-    - 1s    (1 second)
-    - 1m    (1 minute)
-    - 1h    (1 hour)
-    - 1d    (1 calendar day)
-    - 1w    (1 calendar week)
-    - 1mo   (1 calendar month)
-    - 1q    (1 calendar quarter)
-    - 1y    (1 calendar year)
+    * `"1ns"`   (1 nanosecond)
+    * `"1us"`   (1 microsecond)
+    * `"1ms"`   (1 millisecond)
+    * `"1s"`    (1 second)
+    * `"1m"`    (1 minute)
+    * `"1h"`    (1 hour)
+    * `"1d"`    (1 calendar day)
+    * `"1w"`    (1 calendar week)
+    * `"1mo"`   (1 calendar month)
+    * `"1q"`    (1 calendar quarter)
+    * `"1y"`    (1 calendar year)
+    * `"1i"`    (1 index count)
 
-    Or combine them:
-    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    These strings can be combined:
+
+    - `"3d12h4m25s"`   (3 days, 12 hours, 4 minutes, and 25 seconds)
 
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",

@@ -33,23 +33,20 @@ def lit(
     Parameters
     ----------
     value
-        Value that should be used as a `literal`.
+        The value to be used as a literal.
     dtype
-        Optionally define a dtype.
+        An optional dtype for the literal.
     allow_object
-        If type is unknown use an 'object' type.
-        By default, we will raise a `ValueException`
-        if the type is unknown.
+        Whether to use the :class:`Object` type for literals that do not match any
+        of Polars's standard data types, rather than raising a `TypeError`.
 
     Notes
     -----
-    Expected datatypes
-
-    - `pl.lit([])` -> empty  Series Float32
-    - `pl.lit([1, 2, 3])` -> Series Int64
-    - `pl.lit([[]])`-> empty  Series List<Null>
-    - `pl.lit([[1, 2, 3]])` -> Series List<i64>
-    - `pl.lit(None)` -> Series Null
+    - `pl.lit([])` evaluates to a length-1 `List[Null]` `Series`.
+    - `pl.lit([1, 2, 3])` evaluates to a length-1 `List[Int64]` `Series`.
+    - `pl.lit([[]])` evaluates to a length-1 `List[List[Null]]` `Series`.
+    - `pl.lit([[1, 2, 3]])` evaluates to a length-1 `List[List[Int64]]` `Series`.
+    - `pl.lit(None)` evaluates to a length-1 :class:`Null` `Series`.
 
     Examples
     --------
@@ -62,12 +59,12 @@ def lit(
     >>> pl.lit(date(2021, 1, 20))  # doctest: +IGNORE_RESULT
     >>> pl.lit(datetime(2023, 3, 31, 10, 30, 45))  # doctest: +IGNORE_RESULT
 
-    Literal list/Series data (1D):
+    Literal list/`Series` data (1D):
 
     >>> pl.lit([1, 2, 3])  # doctest: +SKIP
     >>> pl.lit(pl.Series("x", [1, 2, 3]))  # doctest: +IGNORE_RESULT
 
-    Literal list/Series data (2D):
+    Literal list/`Series` data (2D):
 
     >>> pl.lit([[1, 2], [3, 4]])  # doctest: +SKIP
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT

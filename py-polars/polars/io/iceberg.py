@@ -69,7 +69,7 @@ def scan_iceberg(
 
     Examples
     --------
-    Creates a scan for an Iceberg table from local filesystem, or object store.
+    Creates a scan for an Iceberg table from local filesystem, or object store:
 
     >>> table_path = "file:/path/to/iceberg-table/metadata.json"
     >>> pl.scan_iceberg(table_path).collect()  # doctest: +SKIP
@@ -122,7 +122,7 @@ def scan_iceberg(
 
     Creates a scan for an Iceberg table with additional options.
     In the below example, `without_files` option is used which loads the table without
-    file tracking information.
+    file tracking information:
 
     >>> table_path = "/path/to/iceberg-table/metadata.json"
     >>> storage_options = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
@@ -221,7 +221,7 @@ def _to_ast(expr: str) -> ast.expr:
 
 @singledispatch
 def _convert_predicate(a: Any) -> Any:
-    """Walks the AST to  convert the  PyArrow expression to a PyIceberg expression."""
+    """Walks the AST to convert the PyArrow expression to a PyIceberg expression."""
     raise ValueError(f"Unexpected symbol: {a}")
 
 

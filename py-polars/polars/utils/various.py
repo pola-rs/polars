@@ -244,7 +244,7 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
 
 
 def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
-    """Scale size in bytes to other size units (eg: "kb", "mb", "gb", "tb")."""
+    """Scale size in bytes to other size units (e.g. "kb", "mb", "gb", "tb")."""
     if unit in {"b", "bytes"}:
         return sz
     elif unit in {"kb", "kilobytes"}:

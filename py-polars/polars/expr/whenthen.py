@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 class When:
     """
-    Utility class for the `when-then-otherwise` expression.
+    A utility class for the `when-then-otherwise` expression.
 
     Represents the initial state of the expression after `pl.when(...)` is called.
 
@@ -45,7 +45,7 @@ class When:
 
 class Then(Expr):
     """
-    Utility class for the `when-then-otherwise` expression.
+    A utility class for the `when-then-otherwise` expression.
 
     Represents the state of the expression after `pl.when(...).then(...)` is called.
 
@@ -75,10 +75,10 @@ class Then(Expr):
         predicates
             Condition(s) that must be met in order to apply the subsequent statement.
             Accepts one or more :class:`Boolean` expressions, which are implicitly
-            combined with `&`. String input is parsed as a column name.
+            combined with `&`. Strings are treated as column names.
         constraints
             Apply conditions as `colname = value` keyword arguments that are treated as
-            equality matches, such as `x = 123`. As with the predicates parameter,
+            equality matches, such as `x = 123`. As with the `predicates` parameter,
             multiple conditions are implicitly combined using `&`.
 
         """
@@ -102,7 +102,7 @@ class Then(Expr):
 
 class ChainedWhen(Expr):
     """
-    Utility class for the `when-then-otherwise` expression.
+    A utility class for the `when-then-otherwise` expression.
 
     Represents the state of the expression after an additional `when` is called.
 
@@ -130,7 +130,7 @@ class ChainedWhen(Expr):
 
 class ChainedThen(Expr):
     """
-    Utility class for the `when-then-otherwise` expression.
+    A utility class for the `when-then-otherwise` expression.
 
     Represents the state of the expression after an additional `then` is called.
 
@@ -160,10 +160,10 @@ class ChainedThen(Expr):
         predicates
             Condition(s) that must be met in order to apply the subsequent statement.
             Accepts one or more :class:`Boolean` expressions, which are implicitly
-            combined with `&`. String input is parsed as a column name.
+            combined with `&`. Strings are parsed as column names.
         constraints
             Apply conditions as `colname = value` keyword arguments that are treated as
-            equality matches, such as `x = 123`. As with the predicates parameter,
+            equality matches, such as `x = 123`. As with the `predicates` parameter,
             multiple conditions are implicitly combined using `&`.
 
         """

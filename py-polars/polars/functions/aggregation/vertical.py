@@ -19,13 +19,13 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        The name(s) of the column(s) to aggregate.
     ignore_nulls
-        Ignore null values (default).
+        Whether to ignore `null` values.
 
-        If set to `False`, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no `True` values,
-        the output is `None`.
+        If `ignore_nulls=False`, `Kleene logic`_ is used to deal with `null` values:
+        if the column contains any `null` values and no `True` values,
+        the output is `null`.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -35,7 +35,7 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
 
     Examples
     --------
-    Selecting all columns.
+    Select all columns:
 
     >>> df = pl.DataFrame(
     ...     {
@@ -53,7 +53,7 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     │ 2   ┆ 0   │
     └─────┴─────┘
 
-    Evaluate bitwise AND for a column.
+    Take the bitwise AND of a column:
 
     >>> df.select(pl.all("a"))
     shape: (1, 1)
@@ -85,13 +85,13 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        The name(s) of the column(s) to aggregate.
     ignore_nulls
-        Ignore null values (default).
+        Whether to ignore `null` values.
 
-        If set to `False`, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no `True` values,
-        the output is `None`.
+        If `ignore_nulls=False`, `Kleene logic`_ is used to deal with `null` values:
+        if the column contains any `null` values and no `True` values,
+        the output is `null`.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -119,14 +119,14 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
 
 def max(*names: str) -> Expr:
     """
-    Get the maximum value.
+    Get the maximum value of the elements in each column.
 
     Syntactic sugar for `col(names).max()`.
 
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        The name(s) of the column(s) to aggregate.
 
     See Also
     --------
@@ -134,7 +134,7 @@ def max(*names: str) -> Expr:
 
     Examples
     --------
-    Get the maximum value of a column.
+    Get the maximum value of a column:
 
     >>> df = pl.DataFrame(
     ...     {
@@ -153,7 +153,7 @@ def max(*names: str) -> Expr:
     │ 8   │
     └─────┘
 
-    Get the maximum value of multiple columns.
+    Get the maximum value of multiple columns:
 
     >>> df.select(pl.max("^a|b$"))
     shape: (1, 2)
@@ -180,14 +180,14 @@ def max(*names: str) -> Expr:
 
 def min(*names: str) -> Expr:
     """
-    Get the minimum value.
+    Get the minimum value of the elements in each column.
 
     Syntactic sugar for `col(names).min()`.
 
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        The name(s) of the column(s) to aggregate.
 
     See Also
     --------
@@ -195,7 +195,7 @@ def min(*names: str) -> Expr:
 
     Examples
     --------
-    Get the minimum value of a column.
+    Get the minimum value of a column:
 
     >>> df = pl.DataFrame(
     ...     {
@@ -214,7 +214,7 @@ def min(*names: str) -> Expr:
     │ 1   │
     └─────┘
 
-    Get the minimum value of multiple columns.
+    Get the minimum value of multiple columns:
 
     >>> df.select(pl.min("^a|b$"))
     shape: (1, 2)
@@ -241,14 +241,14 @@ def min(*names: str) -> Expr:
 
 def sum(*names: str) -> Expr:
     """
-    Sum all values.
+    Get the sum of the elements in each column.
 
     Syntactic sugar for `col(name).sum()`.
 
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        The name(s) of the column(s) to aggregate.
 
     See Also
     --------
@@ -256,7 +256,7 @@ def sum(*names: str) -> Expr:
 
     Examples
     --------
-    Sum a column.
+    Sum a column:
 
     >>> df = pl.DataFrame(
     ...     {
@@ -275,7 +275,7 @@ def sum(*names: str) -> Expr:
     │ 3   │
     └─────┘
 
-    Sum multiple columns.
+    Sum multiple columns:
 
     >>> df.select(pl.sum("a", "c"))
     shape: (1, 2)
@@ -302,14 +302,14 @@ def sum(*names: str) -> Expr:
 
 def cum_sum(*names: str) -> Expr:
     """
-    Cumulatively sum all values.
+    Get the cumulative sum of the elements in each column.
 
     Syntactic sugar for `col(names).cum_sum()`.
 
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        The name(s) of the column(s) to aggregate.
 
     See Also
     --------
@@ -350,7 +350,7 @@ def cumsum(*names: str) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        The name(s) of the column(s) to aggregate.
 
     """
     return cum_sum(*names)

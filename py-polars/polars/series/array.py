@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class ArrayNameSpace:
-    """Namespace for list related methods."""
+    """A namespace for :class:`Array` `Series`."""
 
     _accessor = "arr"
 
@@ -20,7 +20,7 @@ class ArrayNameSpace:
 
     def min(self) -> Series:
         """
-        Compute the min values of the sub-arrays.
+        Get the minimum value of the elements in each array.
 
         Examples
         --------
@@ -37,7 +37,7 @@ class ArrayNameSpace:
 
     def max(self) -> Series:
         """
-        Compute the max values of the sub-arrays.
+        Get the maximum value of the elements in each array.
 
         Examples
         --------
@@ -54,7 +54,7 @@ class ArrayNameSpace:
 
     def sum(self) -> Series:
         """
-        Compute the sum values of the sub-arrays.
+        Get the sum of the elements in each array.
 
         Examples
         --------
@@ -77,12 +77,13 @@ class ArrayNameSpace:
 
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
-        Get the unique/distinct values in the array.
+        Get the unique values that appear in each array, removing duplicates.
 
         Parameters
         ----------
         maintain_order
-            Maintain order of data. This requires more work.
+            Whether to keep the unique elements in the same order as in the input data.
+            This is slower.
 
         Examples
         --------
@@ -106,12 +107,12 @@ class ArrayNameSpace:
 
     def to_list(self) -> Series:
         """
-        Convert an Array column into a List column with the same inner data type.
+        Convert an :class:`Array` `Series` into a :class:`List` `Series`.
 
         Returns
         -------
         Series
-            Series of data type :class:`List`.
+            A :class:`List` `Series`.
 
         Examples
         --------
@@ -128,12 +129,12 @@ class ArrayNameSpace:
 
     def any(self) -> Series:
         """
-        Evaluate whether any :class:`Boolean` value is true for every subarray.
+        Evaluate whether any :class:`Boolean` value in each array is true.
 
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            A :class:`Boolean` `Series`.
 
         Examples
         --------
@@ -156,12 +157,12 @@ class ArrayNameSpace:
 
     def all(self) -> Series:
         """
-        Evaluate whether all :class:`Boolean` values are true for every subarray.
+        Evaluate whether all :class:`Boolean` values in each array are `true`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            A :class:`Boolean` `Series`.
 
         Examples
         --------

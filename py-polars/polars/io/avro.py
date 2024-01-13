@@ -18,20 +18,19 @@ def read_avro(
     n_rows: int | None = None,
 ) -> DataFrame:
     """
-    Read into a DataFrame from Apache Avro format.
+    Read into a `DataFrame` from an Apache Avro file.
 
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
     columns
-        Columns to select. Accepts a list of column indices (starting at zero) or a list
-        of column names.
+        A list of column indices (starting at zero) or column names to read.
     n_rows
-        Stop reading from Apache Avro file after reading `n_rows`.
+        The number of rows to read from the Apache Avro file.
 
     Returns
     -------

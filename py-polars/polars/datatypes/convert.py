@@ -435,7 +435,7 @@ def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
 
 
 def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None:
-    """Map a PolarsDataType short repr (eg: 'i64', 'list[str]') back into a dtype."""
+    """Map a PolarsDataType short repr (e.g. 'i64', 'list[str]') back into a dtype."""
     if dtype_string is None:
         return None
     m = re.match(r"^(\w+)(?:\[(.+)\])?$", dtype_string)

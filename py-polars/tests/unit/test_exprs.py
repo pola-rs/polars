@@ -442,7 +442,7 @@ def test_abs_expr() -> None:
 
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
-    # boolean context (eg: and/or/not operators)
+    # boolean context (e.g. and/or/not operators)
     with pytest.raises(TypeError, match="ambiguous"):
         pl.col("colx") and pl.col("coly")  # type: ignore[redundant-expr]
 

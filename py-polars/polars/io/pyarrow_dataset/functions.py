@@ -16,7 +16,7 @@ def scan_pyarrow_dataset(
     batch_size: int | None = None,
 ) -> LazyFrame:
     """
-    Scan a pyarrow dataset.
+    Scan a :mod:`pyarrow` dataset.
 
     This can be useful to connect to cloud or partitioned datasets.
 
@@ -30,13 +30,13 @@ def scan_pyarrow_dataset(
     Parameters
     ----------
     source
-        Pyarrow dataset to scan.
+        A PyArrow dataset to scan.
     allow_pyarrow_filter
-        Allow predicates to be pushed down to pyarrow. This can lead to different
-        results if comparisons are done with null values as pyarrow handles this
-        different than polars does.
+        Whether to allow predicates to be pushed down to PyArrow. This can lead to
+        different results if comparisons are done with `null` values, as PyArrow handles
+        this differently than polars.
     batch_size
-        The maximum row count for scanned pyarrow record batches.
+        The maximum row count for scanned PyArrow record batches.
 
     Warnings
     --------

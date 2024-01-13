@@ -123,7 +123,7 @@ def read_excel(
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
-    Read Excel (XLSX) spreadsheet data into a DataFrame.
+    Read Excel (XLSX) spreadsheet data into a `DataFrame`.
 
     .. versionadded:: 0.19.4
         Added support for "pyxlsb" engine for reading Excel Binary Workbooks (.xlsb).
@@ -133,19 +133,20 @@ def read_excel(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
     sheet_id
-        Sheet number(s) to convert (set `0` to load all sheets as DataFrames) and
-        return a `{sheetname: DataFrame}` dict. (Defaults to `1` if neither this nor
-        `sheet_name` are specified). Can also take a sequence of sheet numbers.
+        The sheet number(s) to read, starting from 1. Set `sheet_id=0` to load all
+        worksheets. If more than one is given, or `sheet_id=0`, then a
+        `{sheetname: DataFrame}` dict is returned. Mutually exclusive with `sheet_name`.
     sheet_name
-        Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
-        than one is given then a `{sheetname: DataFrame}` dict is returned.
+        The sheet name(s) to read. If more than one is given then a
+        `{sheetname: DataFrame}` dict is returned. Mutually exclusive with `sheet_id`.
     engine
-        Library used to parse the spreadsheet file; defaults to "xlsx2csv" if not set.
+        The library used to parse the spreadsheet file; defaults to `"xlsx2csv"` if not
+        set.
 
         * `"xlsx2csv" <https://github.com/dilshod/xlsx2csv>`_: the fastest engine;
           converts the data to an in-memory CSV before using the native polars
@@ -173,11 +174,12 @@ def read_excel(
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
         "infer_schema_length": None}``
     schema_overrides
-        Support type specification or override of one or more columns.
+        A dict of `{name: dtype}` pairs to override the dtypes of specific columns,
+        instead of automatically inferring them or using the dtypes specified in
+        the schema.
     raise_if_empty
-        When there is no data in the sheet, :class:`NoDataError` is raised. If this
-        parameter is set to False, an empty :class:`DataFrame` (with no columns) is
-        returned instead.
+        Whether to raise a :class:`NoDataError` instead of returning an empty
+        `DataFrame` with no columns when the source file is empty.
 
     Notes
     -----
@@ -190,14 +192,11 @@ def read_excel(
 
     Returns
     -------
-    DataFrame
-        If reading a single sheet.
-    dict
-        If reading multiple sheets, a `{sheet_name: DataFrame}` dict is returned.
+    A `DataFrame`, or a `{sheetname: DataFrame}` dict if reading multiple sheets.
 
     Examples
     --------
-    Read the "data" worksheet from an Excel file into a `DataFrame`.
+    Read the "data" worksheet from an Excel file into a `DataFrame`:
 
     >>> pl.read_excel(
     ...     source="test.xlsx",
@@ -347,28 +346,29 @@ def read_ods(
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
-    Read OpenOffice (ODS) spreadsheet data into a DataFrame.
+    Read OpenOffice (ODS) spreadsheet data into a `DataFrame`.
 
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
     sheet_id
-        Sheet number(s) to convert, starting from 1 (set `0` to load *all* worksheets
-        as DataFrames) and return a `{sheetname: DataFrame}` dict. (Defaults to `1` if
-        neither this nor `sheet_name` are specified). Can also take a sequence of sheet
-        numbers.
+        The sheet number(s) to read, starting from 1. Set `sheet_id=0` to load all
+        worksheets. If more than one is given, or `sheet_id=0`, then a
+        `{sheetname: DataFrame}` dict is returned. Mutually exclusive with `sheet_name`.
     sheet_name
-        Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If
-        more than one is given then a `{sheetname: DataFrame}` dict is returned.
+        The sheet name(s) to read. If more than one is given then a
+        `{sheetname: DataFrame}` dict is returned. Mutually exclusive with `sheet_id`.
     schema_overrides
-        Support type specification or override of one or more columns.
+        A dict of `{name: dtype}` pairs to override the dtypes of specific columns,
+        instead of automatically inferring them or using the dtypes specified in
+        the schema.
     raise_if_empty
-        When there is no data in the sheet, `NoDataError` is raised. If this parameter
-        is set to False, an empty DataFrame (with no columns) is returned instead.
+        Whether to raise a :class:`NoDataError` instead of returning an empty
+        `DataFrame` with no columns when the source file is empty.
 
     Returns
     -------
@@ -376,7 +376,7 @@ def read_ods(
 
     Examples
     --------
-    Read the "data" worksheet from an OpenOffice spreadsheet file into a `DataFrame`.
+    Read the `"data"` worksheet from an OpenOffice spreadsheet file into a `DataFrame`:
 
     >>> pl.read_ods(
     ...     source="test.ods",
@@ -384,7 +384,7 @@ def read_ods(
     ... )  # doctest: +SKIP
 
     If the correct dtypes can't be determined, use the `schema_overrides` parameter
-    to specify them.
+    to specify them:
 
     >>> pl.read_ods(
     ...     source="test.ods",

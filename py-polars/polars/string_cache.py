@@ -32,13 +32,13 @@ class StringCache(contextlib.ContextDecorator):
 
     Examples
     --------
-    Construct two Series using the same global string cache.
+    Construct two `Series` using the same global string cache.
 
     >>> with pl.StringCache():
     ...     s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
     ...     s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
 
-    As both Series are constructed under the same global string cache,
+    As both `Series` are constructed under the same global string cache,
     they can be concatenated.
 
     >>> pl.concat([s1, s2])
@@ -111,14 +111,14 @@ def enable_string_cache(enable: bool | None = None) -> None:
 
     Examples
     --------
-    Construct two Series using the same global string cache.
+    Construct two `Series` using the same global string cache.
 
     >>> pl.enable_string_cache()
     >>> s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
     >>> s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
     >>> pl.disable_string_cache()
 
-    As both Series are constructed under the same global string cache,
+    As both `Series` are constructed under the same global string cache,
     they can be concatenated.
 
     >>> pl.concat([s1, s2])
@@ -167,14 +167,14 @@ def disable_string_cache() -> bool:
 
     Examples
     --------
-    Construct two Series using the same global string cache.
+    Construct two `Series` using the same global string cache.
 
     >>> pl.enable_string_cache()
     >>> s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
     >>> s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
     >>> pl.disable_string_cache()
 
-    As both Series are constructed under the same global string cache,
+    As both `Series` are constructed under the same global string cache,
     they can be concatenated.
 
     >>> pl.concat([s1, s2])

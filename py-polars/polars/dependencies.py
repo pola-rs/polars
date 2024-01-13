@@ -109,11 +109,11 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
     Parameters
     ----------
     module_name : str
-        name of the module to import, eg: "pyarrow".
+        name of the module to import, e.g. "pyarrow".
 
     Notes
     -----
-    If the requested module is not available (eg: has not been installed), a proxy
+    If the requested module is not available (e.g. has not been installed), a proxy
     module is created in its place, which raises an exception on any attribute
     access. This allows for import and use as normal, without requiring explicit
     guard conditions - if the module is never used, no exception occurs; if it

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 class ExprArrayNameSpace:
-    """Namespace for array related expressions."""
+    """A namespace for :class:`Array` expressions."""
 
     _accessor = "arr"
 
@@ -18,7 +18,7 @@ class ExprArrayNameSpace:
 
     def min(self) -> Expr:
         """
-        Compute the min values of the sub-arrays.
+        Get the minimum value of the elements in each array.
 
         Examples
         --------
@@ -42,7 +42,7 @@ class ExprArrayNameSpace:
 
     def max(self) -> Expr:
         """
-        Compute the max values of the sub-arrays.
+        Get the maximum value of the elements in each array.
 
         Examples
         --------
@@ -66,7 +66,7 @@ class ExprArrayNameSpace:
 
     def sum(self) -> Expr:
         """
-        Compute the sum values of the sub-arrays.
+        Get the sum of the elements in each array.
 
         Examples
         --------
@@ -90,12 +90,13 @@ class ExprArrayNameSpace:
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the array.
+        Get the unique values that appear in each array, removing duplicates.
 
         Parameters
         ----------
         maintain_order
-            Maintain order of data. This requires more work.
+            Whether to keep the unique elements in the same order as in the input data.
+            This is slower.
 
         Examples
         --------
@@ -120,12 +121,12 @@ class ExprArrayNameSpace:
 
     def to_list(self) -> Expr:
         """
-        Convert an Array column into a List column with the same inner data type.
+        Convert :class:`Array` columns to :class:`List` columns.
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`List`.
+        Series
+            A :class:`List` expression.
 
         Examples
         --------
@@ -149,7 +150,7 @@ class ExprArrayNameSpace:
 
     def any(self) -> Expr:
         """
-        Evaluate whether any :class:`Boolean` value is true for every subarray.
+        Evaluate whether any :class:`Boolean` value in each array is true.
 
         Examples
         --------
@@ -184,7 +185,7 @@ class ExprArrayNameSpace:
 
     def all(self) -> Expr:
         """
-        Evaluate whether all :class:`Boolean` values are true for every subarray.
+        Evaluate whether all :class:`Boolean` values in each array are `true`.
 
         Examples
         --------

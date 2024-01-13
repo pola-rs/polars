@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class StringNameSpace:
-    """Series.str namespace."""
+    """A namespace for :class:`String` `Series`."""
 
     _accessor = "str"
 
@@ -40,26 +40,29 @@ class StringNameSpace:
         cache: bool = True,
     ) -> Series:
         """
-        Convert a String column into a Date column.
+        Convert a :class:`String` `Series` into a :class:`Date` `Series`.
 
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
+            The date format to use for conversion. Refer to the
+            `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d"`.
-            If set to None (default), the format is inferred from the data.
+            If `format=None` (the default), the format is inferred from the data.
         strict
-            Raise an error if any conversion fails.
+            Whether to raise an error if any conversion fails.
         exact
-            Require an exact format match. If False, allow the format to match anywhere
-            in the target string.
+            Whether to require an exact format match. If `exact=False`, allow the format
+            to match anywhere in the target string.
 
             .. note::
                 Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
-            Use a cache of unique, converted dates to apply the conversion.
+            Whether to use a cache of unique, converted dates to speed up the
+            conversion. Consider setting `cache=False` for speed when most dates are
+            unique.
 
         Examples
         --------
@@ -89,36 +92,39 @@ class StringNameSpace:
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
-        Convert a String column into a Datetime column.
+        Convert a :class:`String` `Series` into a :class:`Datetime` `Series`.
 
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
+            The datetime format to use for conversion. Refer to the
+            `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
-            If set to None (default), the format is inferred from the data.
+            If `format=None` (the default), the format is inferred from the data.
         time_unit : {None, 'us', 'ns', 'ms'}
-            Unit of time for the resulting Datetime column. If set to None (default),
-            the time unit is inferred from the format string if given, eg:
-            `"%F %T%.3f"` => `Datetime("ms")`. If no fractional second component is
-            found, the default is `"us"`.
+            The time unit of the resulting :class:`Datetime` `Series`. If
+            `time_unit=None` (the default), the time unit is inferred from the format
+            string if given, e.g.: `"%F %T%.3f"` → `Datetime("ms")`. If no fractional
+            second component is found, the default is `"us"`.
         time_zone
-            Time zone for the resulting Datetime column.
+            The time zone of the resulting :class:`Datetime` `Series``.
         strict
-            Raise an error if any conversion fails.
+            Whether to raise an error if any conversion fails.
         exact
-            Require an exact format match. If False, allow the format to match anywhere
-            in the target string.
+            Whether to require an exact format match. If `exact=False`, allow the format
+            to match anywhere in the target string.
 
             .. note::
                 Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
-            Use a cache of unique, converted datetimes to apply the conversion.
+            Whether to use a cache of unique, converted datetimes to speed up the
+            conversion. Consider setting `cache=False` for speed when most datetimes are
+            unique.
         utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
+            Whether to parse time zone-aware datetimes as UTC. This may be useful if you
+            have data with mixed offsets.
 
             .. deprecated:: 0.18.0
                 This is now a no-op, you can safely remove it.
@@ -161,19 +167,22 @@ class StringNameSpace:
         cache: bool = True,
     ) -> Series:
         """
-        Convert a String column into a Time column.
+        Convert a :class:`String` `Series` into a :class:`Time` `Series`.
 
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
+            The format to use for conversion. Refer to the
+            `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%H:%M:%S"`.
-            If set to None (default), the format is inferred from the data.
+            If `format=None` (the default), the format is inferred from the data.
         strict
-            Raise an error if any conversion fails.
+            Whether to raise an error if any conversion fails.
         cache
-            Use a cache of unique, converted times to apply the conversion.
+            Whether to use a cache of unique, converted dates to speed up the
+            conversion. Consider setting `cache=False` for speed when most dates are
+            unique.
 
         Examples
         --------
@@ -201,28 +210,33 @@ class StringNameSpace:
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
-        Convert a String column into a Date/Datetime/Time column.
+        Convert a :class:`String` `Series` into a temporal `Series`.
 
         Parameters
         ----------
         dtype
-            The data type to convert to. Can be either Date, Datetime, or Time.
+            The data type to convert into. Can be :class:`Date`, :class:`Datetime`
+            or :class:`Time`.
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
+            The format to use for conversion. Refer to the
+            `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
-            If set to None (default), the format is inferred from the data.
+            If `format=None` (the default), the format is inferred from the data.
         strict
-            Raise an error if any conversion fails.
+            Whether to raise an error if any conversion fails.
         exact
-            Require an exact format match. If False, allow the format to match anywhere
-            in the target string. Conversion to the Time type is always exact.
+            Whether to require an exact format match. If `exact=False`, allow the format
+            to match anywhere in the target string. Conversion to the :class:`Time` type
+            is always exact.
 
             .. note::
                 Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
-            Use a cache of unique, converted dates to apply the datetime conversion.
+            Whether to use a cache of unique, converted dates/datetimes/times to speed
+            up the conversion. Consider setting `cache=False` for speed when most dates
+            are unique.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -242,7 +256,7 @@ class StringNameSpace:
         Notes
         -----
         When converting to a Datetime type, the time unit is inferred from the format
-        string if given, eg: `"%F %T%.3f"` => `Datetime("ms")`. If no fractional
+        string if given, e.g. `"%F %T%.3f"` → `Datetime("ms")`. If no fractional
         second component is found, the default is `"us"`.
 
         Examples
@@ -292,14 +306,14 @@ class StringNameSpace:
         inference_length: int = 100,
     ) -> Series:
         """
-        Convert a String column into a Decimal column.
+        Convert a :class:`String` `Series` into a :class:`Decimal` `Series`.
 
         This method infers the needed parameters `precision` and `scale`.
 
         Parameters
         ----------
         inference_length
-            Number of elements to parse to determine the `precision` and `scale`
+            The number of elements to parse to determine the `precision` and `scale`.
 
         Examples
         --------
@@ -323,12 +337,12 @@ class StringNameSpace:
 
     def len_bytes(self) -> Series:
         """
-        Return the length of each string as the number of bytes.
+        Get the length of each string as the number of bytes.
 
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            A :class:`UInt32` `Series`.
 
         See Also
         --------
@@ -338,8 +352,8 @@ class StringNameSpace:
         -----
         When working with non-ASCII text, the length in bytes is not the same as the
         length in characters. You may want to use :func:`len_chars` instead.
-        Note that :func:`len_bytes` is much more performant (_O(1)_) than
-        :func:`len_chars` (_O(n)_).
+        Note that :func:`len_bytes` is much faster (_O(1)_) than :func:`len_chars`
+        (_O(n)_).
 
         Examples
         --------
@@ -363,7 +377,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            A :class:`UInt32` `Series`.
 
         See Also
         --------
@@ -392,22 +406,20 @@ class StringNameSpace:
 
     def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Series:
         """
-        Vertically concat the values in the Series to a single string value.
+        Vertically concatenate strings into a single string.
 
         Parameters
         ----------
         delimiter
             The delimiter to insert between consecutive string values.
         ignore_nulls
-            Ignore null values (default).
-
-            If set to ``False``, `null` values will be propagated.
-            if the column contains any `null` values, the output is ``None``.
+            Whether to ignore `null` values. If `ignore_nulls=False`, any `null` value
+            in the input will lead to a `null` output.
 
         Returns
         -------
         Series
-            Series of data type :class:`String`.
+            A :class:`String` `Series`.
 
         Examples
         --------
@@ -430,7 +442,7 @@ class StringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
-        Check if strings in Series contain a substring that matches a regex.
+        Check if each string contains a substring that matches a regex.
 
         Parameters
         ----------
@@ -438,10 +450,11 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat `pattern` as a literal string, not as a regular expression.
+            Whether to treat `pattern` as a literal string, rather than as a regular
+            expression.
         strict
-            Raise an error if the underlying pattern is not a valid regex,
-            otherwise mask out with a `null` value.
+            Whether to raise an error if the underlying pattern is not a valid regex,
+            rather than setting the output to `null`.
 
         Notes
         -----
@@ -467,7 +480,13 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            A :class:`Boolean` `Series`.
+
+        See Also
+        --------
+        starts_with : Check if string values start with a substring.
+        ends_with : Check if string values end with a substring.
+        contains_any : Check if each string contains any of several possible substrings.
 
         Examples
         --------
@@ -495,17 +514,23 @@ class StringNameSpace:
 
     def ends_with(self, suffix: str | Expr) -> Series:
         """
-        Check if string values end with a substring.
+        Check if each string ends with a substring.
 
         Parameters
         ----------
         suffix
-            Suffix substring.
+            A substring to check for as the suffix.
+
+        Returns
+        -------
+        Series
+            A :class:`Boolean` `Series`.
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
         starts_with : Check if string values start with a substring.
+        contains : Check if each string contains a substring that matches a regex.
+        contains_any : Check if each string contains any of several possible substrings.
 
         Examples
         --------
@@ -523,17 +548,23 @@ class StringNameSpace:
 
     def starts_with(self, prefix: str | Expr) -> Series:
         """
-        Check if string values start with a substring.
+        Check if each string starts with a substring.
 
         Parameters
         ----------
         prefix
-            Prefix substring.
+            A substring to check for as the prefix.
+
+        Returns
+        -------
+        Series
+            A :class:`Boolean` `Series`.
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
         ends_with : Check if string values end with a substring.
+        contains : Check if each string contains a substring that matches a regex.
+        contains_any : Check if each string contains any of several possible substrings.
 
         Examples
         --------
@@ -551,21 +582,21 @@ class StringNameSpace:
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
         """
-        Decode a value using the provided encoding.
+        Decode strings using the provided encoding.
 
         Parameters
         ----------
         encoding : {'hex', 'base64'}
             The encoding to use.
         strict
-            Raise an error if the underlying value cannot be decoded,
-            otherwise mask out with a `null` value.
+            Whether to raise an error if the underlying value cannot be decoded,
+            rather than setting the output to `null`.
 
         """
 
     def encode(self, encoding: TransferEncoding) -> Series:
         """
-        Encode a value using the provided encoding.
+        Encode strings using the provided encoding.
 
         Parameters
         ----------
@@ -575,7 +606,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`String`.
+            A :class:`String` `Series`.
 
         Examples
         --------
@@ -602,16 +633,15 @@ class StringNameSpace:
         Parameters
         ----------
         dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
+            The dtype to cast the extracted value to. If `None`, the dtype will be
             inferred from the JSON value.
         infer_schema_length
             How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            If `None`, all rows are used.
 
         See Also
         --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
+        json_path_match : Get the first match of JSON string to a JSONPath expression.
 
         Examples
         --------
@@ -629,24 +659,25 @@ class StringNameSpace:
 
     def json_path_match(self, json_path: str) -> Series:
         """
-        Extract the first match of json string with provided JSONPath expression.
+        Get the first match of JSON string to a JSONPath expression.
 
-        Throw errors if encounter invalid json strings. All return value will be cast
-        to :class:`String` regardless of the original value.
+        Throws errors if invalid JSON strings are encountered.
+        All return values will be cast to :class:`String` regardless of the original
+        value.
 
-        Documentation on JSONPath standard can be found
+        Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string.
+            A valid JSONPath query string.
 
         Returns
         -------
-        Series
-            Series of data type :class:`String`. Contains `null` values if the original
-            value is `null` or the `json_path` returns nothing.
+        Expr
+            A :class:`String` `Series`, with `null` values where the original
+            value was `null` or if the `json_path` returned nothing.
 
         Examples
         --------
@@ -676,15 +707,14 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
-            Index of the targeted capture group.
-            Group 0 means the whole pattern, the first group begin at index 1.
-            Defaults to the first capture group.
+            The index of the targeted capture group. Group 0 means the whole pattern;
+            the first group begins at index 1. Defaults to the first capture group.
 
         Returns
         -------
         Series
-            Series of data type :class:`String`. Contains `null` values if the original
-            value is `null` or `regex` captures nothing.
+            A :class:`String` `Series`, with `null` values where the original value
+            was `null` or the regex captured nothing.
 
         Notes
         -----
@@ -736,7 +766,8 @@ class StringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. If the haystack string is `null`, `null` is returned.
+        as a :class:`List` `Series`. If the haystack string is `null`, `null` is
+        returned.
 
         Parameters
         ----------
@@ -784,7 +815,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type `List(String)`.
+            A `List(String)` `Series`.
 
         Examples
         --------
@@ -818,7 +849,7 @@ class StringNameSpace:
         If your pattern contains unnamed groups, their numerical position is converted
         to a string.
 
-        For example, we can access the first group via the string `"1"`::
+        For example, we can access the first group via the string `"1"`:
 
             >>> (
             ...     pl.Series(["foo bar baz"])
@@ -834,8 +865,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type
-            :class:`String`.
+            A :class:`Struct` `Series` with :class:`String` fields.
 
         Examples
         --------
@@ -866,16 +896,16 @@ class StringNameSpace:
         ----------
         pattern
             A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
-            regular expressions.
+            <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat `pattern` as a literal string, not as a regular expression.
+            Whether to treat `pattern` as a literal string, rather than as a regular
+            expression.
 
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`. Returns `null` if the original
-            value is `null`.
+            A :class:`UInt32` `Series`, with `null` values where the original value
+            was `null`.
 
         Examples
         --------
@@ -906,38 +936,96 @@ class StringNameSpace:
 
     def split(self, by: IntoExpr, *, inclusive: bool = False) -> Series:
         """
-        Split the string by a substring.
+        Split each string into a :class:`List` of substrings.
 
         Parameters
         ----------
         by
-            Substring to split by.
+            The substring to split by.
         inclusive
-            If True, include the split character/string in the results.
+            Whether to include the split character/string in the results.
 
         Returns
         -------
         Series
-            Series of data type `List(String)`.
+            A `List(String)` `Series`.
+
+        See Also
+        --------
+        splitn : Split each string into a :class:`Struct` of `n` substrings.
+        split_exact : Split each string into a :class:`Struct` of `n` substrings,
+                      discarding the rest.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", ["foo bar", "foo_bar", "foo_bar_baz"])
+        >>> pl.DataFrame(
+        ...     [
+        ...         s,
+        ...         s.str.split(by="_").alias("split"),
+        ...         s.str.split(by="_", inclusive=True).alias("split_inclusive"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────────┬───────────────────────┬─────────────────────────┐
+        │ s           ┆ split                 ┆ split_inclusive         │
+        │ ---         ┆ ---                   ┆ ---                     │
+        │ str         ┆ list[str]             ┆ list[str]               │
+        ╞═════════════╪═══════════════════════╪═════════════════════════╡
+        │ foo bar     ┆ ["foo bar"]           ┆ ["foo bar"]             │
+        │ foo_bar     ┆ ["foo", "bar"]        ┆ ["foo_", "bar"]         │
+        │ foo_bar_baz ┆ ["foo", "bar", "baz"] ┆ ["foo_", "bar_", "baz"] │
+        └─────────────┴───────────────────────┴─────────────────────────┘
+
+        >>> s = pl.Series("s", ["foo^bar", "foo_bar", "foo*bar*baz"])
+        >>> by = pl.Series("by", ["_", "_", "*"])
+        >>> pl.DataFrame(
+        ...     [
+        ...         s,
+        ...         by,
+        ...         s.str.split(by).alias("split"),
+        ...         s.str.split(by, inclusive=True).alias("split_inclusive"),
+        ...     ]
+        ... )
+        shape: (3, 4)
+        ┌─────────────┬─────┬───────────────────────┬─────────────────────────┐
+        │ s           ┆ by  ┆ split                 ┆ split_inclusive         │
+        │ ---         ┆ --- ┆ ---                   ┆ ---                     │
+        │ str         ┆ str ┆ list[str]             ┆ list[str]               │
+        ╞═════════════╪═════╪═══════════════════════╪═════════════════════════╡
+        │ foo^bar     ┆ _   ┆ ["foo^bar"]           ┆ ["foo^bar"]             │
+        │ foo_bar     ┆ _   ┆ ["foo", "bar"]        ┆ ["foo_", "bar"]         │
+        │ foo*bar*baz ┆ *   ┆ ["foo", "bar", "baz"] ┆ ["foo*", "bar*", "baz"] │
+        └─────────────┴─────┴───────────────────────┴─────────────────────────┘
 
         """
 
     def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Series:
         """
-        Split the string by a substring using `n` splits.
+        Split each string into a :class:`Struct` of `n` substrings, discarding the rest.
 
-        Results in a struct of `n+1` fields.
-
-        If it cannot make `n` splits, the remaining field elements will be `null`.
+        Make `n` splits from the left, forming `n + 1` fields. Discard the remainder of
+        the string. If fewer than `n - 1` splits are possible, the remaining field
+        elements will be `null`.
 
         Parameters
         ----------
         by
-            Substring to split by.
+            The substring to split by.
         n
-            Number of splits to make.
+            The number of splits to make.
         inclusive
-            If True, include the split character/string in the results.
+            Whether to include the `by` substring in the results.
+
+        Returns
+        -------
+        Series
+            A :class:`Struct` `Series` with :class:`String` fields.
+
+        See Also
+        --------
+        split : Split each string into a :class:`List` of substrings.
+        splitn : Split each string into a :class:`Struct` of `n` substrings.
 
         Examples
         --------
@@ -975,28 +1063,33 @@ class StringNameSpace:
         │ d          ┆ 4           │
         └────────────┴─────────────┘
 
-        Returns
-        -------
-        Series
-            Series of data type :class:`Struct` with fields of data type
-            :class:`String`.
-
         """
 
     def splitn(self, by: IntoExpr, n: int) -> Series:
         """
-        Split the string by a substring, restricted to returning at most `n` items.
+        Split each string into a :class:`Struct` of `n` substrings.
 
-        If the number of possible splits is less than `n-1`, the remaining field
-        elements will be null. If the number of possible splits is `n-1` or greater,
-        the last (nth) substring will contain the remainder of the string.
+        Make `n - 1` splits from the left, forming `n` fields. Put the remainder of the
+        string in the final field. If fewer than `n - 1` splits are possible, the
+        remaining field elements will be `null`.
 
         Parameters
         ----------
         by
-            Substring to split by.
+            The substring to split by.
         n
-            Max number of items to return.
+            The maximum number of substrings to split into.
+
+        Returns
+        -------
+        Series
+            A :class:`Struct` `Series` with :class:`String` fields.
+
+        See Also
+        --------
+        split : Split each string into a :class:`List` of substrings.
+        split_exact : Split each string into a :class:`Struct` of `n` substrings,
+                      discarding the rest.
 
         Examples
         --------
@@ -1034,19 +1127,13 @@ class StringNameSpace:
         │ foo        ┆ bar baz     │
         └────────────┴─────────────┘
 
-        Returns
-        -------
-        Series
-            Series of data type :class:`Struct` with fields of data type
-            :class:`String`.
-
         """
 
     def replace(
         self, pattern: str, value: str, *, literal: bool = False, n: int = 1
     ) -> Series:
         r"""
-        Replace first matching regex/literal substring with a new string value.
+        Replace the first matching regex/literal substring with a new string value.
 
         Parameters
         ----------
@@ -1054,11 +1141,17 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            String that will replace the matched substring.
+            The string that will replace each matched substring.
         literal
-            Treat pattern as a literal string.
+            Whether to treat `pattern` as a literal string, rather than as a regular
+            expression.
         n
-            Number of matches to replace.
+            The number of matches to replace.
+
+        Returns
+        -------
+        Series
+            A :class:`String` `Series`.
 
         Notes
         -----
@@ -1090,6 +1183,8 @@ class StringNameSpace:
         See Also
         --------
         replace_all : Replace all matching regex/literal substrings.
+        replace_many : Replace each of many substrings with a corresponding string, or
+                       a single string.
 
         Examples
         --------
@@ -1114,13 +1209,21 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            String that will replace the matches.
+            The string that will replace each matched substring.
         literal
-            Treat pattern as a literal string.
+            Whether to treat `pattern` as a literal string, rather than as a regular
+            expression.
+
+        Returns
+        -------
+        Series
+            A :class:`String` `Series`.
 
         See Also
         --------
-        replace : Replace first matching regex/literal substring.
+        replace : Replace the first matching regex/literal substring.
+        replace_many : Replace each of many substrings with a corresponding string, or
+                       a single string.
 
         Examples
         --------
@@ -1143,8 +1246,15 @@ class StringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped. If `characters=None` (the default), all
+            whitespace is removed instead.
+
+        See Also
+        --------
+        strip_chars_start
+        strip_chars_end
+        strip_prefix
+        strip_suffix
 
         Examples
         --------
@@ -1159,7 +1269,7 @@ class StringNameSpace:
 
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so, unless that whitespace is
-        also included in the string.
+        also included in the string:
 
         >>> s.str.strip_chars("o ")
         shape: (2,)
@@ -1175,12 +1285,25 @@ class StringNameSpace:
         r"""
         Remove leading characters.
 
+        .. note::
+            This method strips any characters present in `characters` from the
+            start of the input, no matter their order. To strip a prefix (i.e.
+            a "word" of characters in a certain order), use
+            :func:`strip_prefix` instead.
+
         Parameters
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped. If `characters=None` (the default), all
+            whitespace is removed instead.
+
+        See Also
+        --------
+        strip_chars_end
+        strip_chars
+        strip_prefix
+        strip_suffix
 
         Examples
         --------
@@ -1194,7 +1317,7 @@ class StringNameSpace:
         ]
 
         Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
+        will not be stripped automatically when doing so:
 
         >>> s.str.strip_chars_start("wod\t")
         shape: (2,)
@@ -1210,12 +1333,25 @@ class StringNameSpace:
         r"""
         Remove trailing characters.
 
+        .. note::
+            This method strips any characters present in `characters` from the
+            end of the input, no matter their order. To strip a suffix (i.e.
+            a "word" of characters in a certain order), use
+            :func:`strip_suffix` instead.
+
         Parameters
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped. If `characters=None` (the default), all
+            whitespace is removed instead.
+
+        See Also
+        --------
+        strip_chars_start
+        strip_chars
+        strip_prefix
+        strip_suffix
 
         Examples
         --------
@@ -1229,7 +1365,7 @@ class StringNameSpace:
         ]
 
         Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
+        will not be stripped automatically when doing so:
 
         >>> s.str.strip_chars_end("orld\t")
         shape: (2,)
@@ -1243,14 +1379,24 @@ class StringNameSpace:
 
     def strip_prefix(self, prefix: IntoExpr) -> Series:
         """
-        Remove prefix.
+        Remove a prefix from each string exactly once, if present.
 
-        The prefix will be removed from the string exactly once, if found.
+        .. note::
+            This method strips the exact character sequence provided in
+            `prefix` from the start of the input. To strip a set of characters
+            in any order, use :func:`strip_chars_start` instead.
 
         Parameters
         ----------
         prefix
             The prefix to be removed.
+
+        See Also
+        --------
+        strip_suffix
+        strip_chars_start
+        strip_chars_end
+        strip_chars
 
         Examples
         --------
@@ -1269,14 +1415,24 @@ class StringNameSpace:
 
     def strip_suffix(self, suffix: IntoExpr) -> Series:
         """
-        Remove suffix.
+        Remove a suffix from each string exactly once, if present.
 
-        The suffix will be removed from the string exactly once, if found.
+        .. note::
+            This method strips the exact character sequence provided in
+            `suffix` from the end of the input. To strip a set of characters
+            in any order, use :func:`strip_chars_end` instead.
 
         Parameters
         ----------
         suffix
             The suffix to be removed.
+
+        See Also
+        --------
+        strip_prefix
+        strip_chars_start
+        strip_chars_end
+        strip_chars
 
         Examples
         --------
@@ -1395,7 +1551,7 @@ class StringNameSpace:
 
     def to_lowercase(self) -> Series:
         """
-        Modify the strings to their lowercase equivalent.
+        Make each string lowercase.
 
         Examples
         --------
@@ -1412,7 +1568,7 @@ class StringNameSpace:
 
     def to_uppercase(self) -> Series:
         """
-        Modify the strings to their uppercase equivalent.
+        Make each string uppercase.
 
         Examples
         --------
@@ -1429,7 +1585,7 @@ class StringNameSpace:
 
     def to_titlecase(self) -> Series:
         """
-        Modify the strings to their titlecase equivalent.
+        Make each string titlecase (each word capitalized).
 
         Examples
         --------
@@ -1446,7 +1602,7 @@ class StringNameSpace:
 
     def reverse(self) -> Series:
         """
-        Returns string values in reversed order.
+        Reverse each string.
 
         Examples
         --------
@@ -1463,21 +1619,20 @@ class StringNameSpace:
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
-        Create subslices of the string values of a String Series.
+        Get contiguous substrings of length `length`, starting at `offset`.
 
         Parameters
         ----------
         offset
-            Start index. Negative indexing is supported.
+            The start index. Negative indexing is supported.
         length
-            Length of the slice. If set to `None` (default), the slice is taken to the
-            end of the string.
+            The length of the slice. If `length=None` (the default), the slice will be
+            taken to the end of the string.
 
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type
-            :class:`String`.
+            A :class:`String` `Series`.
 
         Examples
         --------
@@ -1508,12 +1663,12 @@ class StringNameSpace:
 
     def explode(self) -> Series:
         """
-        Returns a column with a separate row for every string character.
+        Put every character of every string on its own row.
 
         Returns
         -------
         Series
-            Series of data type :class:`String`.
+            A :class:`String` `Series`.
 
         Examples
         --------
@@ -1534,21 +1689,20 @@ class StringNameSpace:
 
     def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
         """
-        Convert a :class:`String` column to an :class:`Int64` column with `base` radix.
+        Cast a :class:`String` `Series` to an :class:`Int64` `Series` of a given base.
 
         Parameters
         ----------
         base
-            Positive integer which is the base of the string we are parsing.
-            Default: 10.
+            The base of the integer that will be parsed.
         strict
-            If `True` (the default), will raise any :class:`ParseError` or overflow as
-            :class:`ComputeError`. If `False`, silently converts to `null`.
+            Whether to raise a `ComputeError` on any parsing error or overflow,
+            rather than silently converting to `null`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            A :class:`Int64` `Series`.
 
         Examples
         --------
@@ -1658,13 +1812,13 @@ class StringNameSpace:
         ----------
         pattern
             A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
+            <https://docs.rs/regex/latest/regex/>`_. Can also be a `Series` of
             regular expressions.
 
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`. Returns `null` if the original
+            A :class:`UInt32` `Series`. Returns `null` if the original
             value is `null`.
 
         """
@@ -1750,18 +1904,31 @@ class StringNameSpace:
         self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
-        Use the Aho-Corasick algorithm to find matches.
+        Check if each string contains any of several possible substrings.
 
-        This version determines if any of the patterns find a match.
+        This function uses the Aho-Corasick algorithm.
 
         Parameters
         ----------
         patterns
-            String patterns to search.
+            A sequence of substrings to search for.
         ascii_case_insensitive
-            Enable ASCII-aware case-insensitive matching.
-            When this option is enabled, searching will be performed without respect
+            Whether to enable ASCII-aware case-insensitive matching. When
+            `ascii_case_insensitive=True`, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+
+        Returns
+        -------
+        Series
+            A :class:`Boolean` `Series`.
+
+        See Also
+        --------
+        starts_with : Check if string values start with a substring.
+        ends_with : Check if string values end with a substring.
+        contains : Check if each string contains a substring that matches a regex.
+        replace_many : Replace each of many substrings with a corresponding string,
+                       or a single string.
 
         Examples
         --------
@@ -1793,19 +1960,33 @@ class StringNameSpace:
         ascii_case_insensitive: bool = False,
     ) -> Series:
         """
-        Use the Aho-Corasick algorithm to replace many matches.
+        Replace each of many substrings with a corresponding string, or a single string.
+
+        This function uses the Aho-Corasick algorithm.
 
         Parameters
         ----------
         patterns
-            String patterns to search and replace.
+            A sequence of substrings to search for.
         replace_with
-            Strings to replace where a pattern was a match.
-            This can be broadcasted. So it supports many:one and many:many.
+            A sequence of strings of the same length as `patterns` to replace each of
+            the substrings in `patterns` with. Or, a single string to replace all of
+            the substrings in `patterns` with.
         ascii_case_insensitive
-            Enable ASCII-aware case-insensitive matching.
-            When this option is enabled, searching will be performed without respect
+            Whether to enable ASCII-aware case-insensitive matching. When
+            `ascii_case_insensitive=True`, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+
+        Returns
+        -------
+        Series
+            A :class:`String` `Series`.
+
+        See Also
+        --------
+        replace : Replace the first matching regex/literal substring.
+        replace_all : Replace all matching regex/literal substrings.
+        contains_any : Check if each string contains any of several possible substrings.
 
         Examples
         --------

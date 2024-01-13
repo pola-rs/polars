@@ -20,12 +20,12 @@ def when(
     """
     Start a `when-then-otherwise` expression.
 
-    Expression similar to an `if-else` statement in Python. Always initiated by a
+    Similar to an `if-else` statement in Python. Always initiated by a
     `pl.when(<condition>).then(<value if condition>)`., and optionally followed by
     chaining one or more `.when(<condition>).then(<value>)` statements.
 
     Chained `when, thens` should be read as Python `if, elif, ... elif` blocks, not as
-    `if, if, ... if`, i.e. the first condition that evaluates to True will be picked.
+    `if, if, ... if`, i.e. the first condition that evaluates to `True` will be picked.
 
     If none of the conditions are `True`, an optional `.otherwise(<value if all
     statements are false>)` can be appended at the end. If not appended, and none
@@ -36,11 +36,11 @@ def when(
     predicates
         Condition(s) that must be met in order to apply the subsequent statement.
         Accepts one or more :class:`Boolean` expressions, which are implicitly combined
-        with `&`. String input is parsed as a column name.
+        with `&`. Strings are treated as column names.
     constraints
         Apply conditions as `colname = value` keyword arguments that are treated as
-        equality matches, such as `x = 123`. As with the predicates parameter, multiple
-        conditions are implicitly combined using `&`.
+        equality matches, such as `x = 123`. As with the `predicates` parameter,
+        multiple conditions are implicitly combined using `&`.
 
     Warnings
     --------
@@ -50,8 +50,8 @@ def when(
 
     Examples
     --------
-    Below we add a column with the value 1, where column "foo" > 2 and the value -1
-    where it isn't.
+    Add a column with the value `1` where column `"foo"` is greater than 2, and the
+    value `-1` where it isn't:
 
     >>> df = pl.DataFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
     >>> df.with_columns(pl.when(pl.col("foo") > 2).then(1).otherwise(-1).alias("val"))
@@ -87,12 +87,12 @@ def when(
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
 
-    Note how in the example above for the second row in the DataFrame,
-    where `foo=3` and `bar=4`, the first `when` evaluates to `True`, and therefore
-    the second `when`, which is also `True`, is not evaluated.
+    Note how in the example above, for the second row in the `DataFrame` where `foo=3`
+    and `bar=4`, the first `when` evaluates to `True`, so the second `when` (which is
+    also `True`) is not evaluated.
 
     The `otherwise` at the end is optional. If left out, any rows where none
-    of the `when` expressions evaluate to True, are set to `null`:
+    of the `when` expressions evaluate to `True` are set to `null`:
 
     >>> df.with_columns(pl.when(pl.col("foo") > 2).then(1).alias("val"))
     shape: (3, 3)

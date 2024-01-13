@@ -115,8 +115,8 @@ class BatchedCsvReader:
         Parameters
         ----------
         n
-            Number of chunks to fetch.
-            This is ideally greater than or equal to the number of threads.
+            The number of chunks to fetch, ideally greater than or equal to the number
+            of threads.
 
         Examples
         --------
@@ -129,7 +129,7 @@ class BatchedCsvReader:
 
         Returns
         -------
-        List of DataFrames
+        list of DataFrames
 
         """
         batches = self._reader.next_batches(n)

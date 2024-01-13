@@ -41,7 +41,7 @@ def test_all_any_horizontally() -> None:
     assert dfltr.collect().rows() == [(None, None, False)]
 
     # confirm that we reduce the horizontal filter components
-    # (eg: explain does not contain an "all_horizontal" node)
+    # (e.g. explain does not contain an "all_horizontal" node)
     assert "horizontal" not in dfltr.explain().lower()
 
 

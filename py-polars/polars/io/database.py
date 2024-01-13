@@ -258,7 +258,7 @@ class ConnectionExecutor:
                     )
                     return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
         except Exception as err:
-            # eg: valid turbodbc/snowflake connection, but no arrow support
+            # e.g. valid turbodbc/snowflake connection, but no arrow support
             # compiled in to the underlying driver (or on this connection)
             arrow_not_supported = (
                 "does not support Apache Arrow",
@@ -333,7 +333,7 @@ class ConnectionExecutor:
 
                 query = text(query)  # type: ignore[assignment]
 
-        # note: some cursor execute methods (eg: sqlite3) only take positional
+        # note: some cursor execute methods (e.g. sqlite3) only take positional
         # params, hence the slightly convoluted resolution of the 'options' dict
         try:
             params = signature(cursor_execute).parameters
@@ -430,46 +430,45 @@ def read_database(  # noqa: D417
     **kwargs: Any,
 ) -> DataFrame | Iterable[DataFrame]:
     """
-    Read the results of a SQL query into a DataFrame, given a connection object.
+    Read the results of a SQL query into a `DataFrame`, given a connection object.
 
     Parameters
     ----------
     query
-        SQL query to execute (if using a SQLAlchemy connection object this can
-        be a suitable "Selectable", otherwise it is expected to be a string).
+        The SQL query to execute (if using a SQLAlchemy connection object this can be a
+        suitable `Selectable`, otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
         executed against. Can also pass a valid ODBC connection string, starting with
         "Driver=", in which case the `arrow-odbc
-        <https://arrow-odbc.readthedocs.io/en/latest/modules.html>`_ package will be used to establish
-        the connection and return Arrow-native data to Polars.
+        <https://arrow-odbc.readthedocs.io/en/latest/modules.html>`_ package will be
+        used to establish the connection and return Arrow-native data to Polars.
     iter_batches
-        Return an iterator of DataFrames, where each DataFrame represents a batch of
-        data returned by the query; this can be useful for processing large resultsets
-        in a memory-efficient manner. If supported by the backend, this value is passed
-        to the underlying query execution method (note that very low values will
-        typically result in poor performance as it will result in many round-trips to
-        the database as the data is returned). If the backend does not support changing
-        the batch size then a single DataFrame is yielded from the iterator.
+        Whether to return an iterator of dataframes, where each `DataFrame` represents a
+        batch of data returned by the query; this can be useful for processing large
+        resultsets in a memory-efficient manner. If supported by the backend, this value
+        is passed to the underlying query execution method (note that very low values
+        will typically result in poor performance as it will result in many round-trips
+        to the database as the data is returned). If the backend does not support
+        changing the batch size then a single DataFrame is yielded from the iterator.
     batch_size
-        Indicate the size of each batch when `iter_batches` is True (note that you can
-        still set this when `iter_batches` is False, in which case the resulting
-        DataFrame is constructed internally using batched return before being returned
-        to you. Note that some backends may support batched operation but not allow for
-        an explicit size; in this case you will still receive batches, but their exact
-        size will be determined by the backend (so may not equal the value set here).
+        The batch size when `iter_batches=True` (note that you can still set this when
+        `iter_batches=False`, in which case the resulting `DataFrame` is constructed
+        internally using batched return before being returned. Note that some backends
+        may support batched operation but not allow for an explicit size; in this case
+        you will still receive batches, but their exact size will be determined by the
+        backend (so may not equal the value set here).
     schema_overrides
         A dictionary mapping column names to dtypes, used to override the schema
         inferred from the query cursor or given by the incoming Arrow data (depending
         on driver/backend). This can be useful if the given types can be more precisely
-        defined (for example, if you know that a given column can be declared as :class:`UInt32`
-        instead of :class:`Int64`).
+        defined (for example, if you know that a given column can be declared as
+        :class:`UInt32` instead of :class:`Int64`).
     execute_options
-        These options will be passed through into the underlying query execution method
-        as kwargs. In the case of connections made using an ODBC string (which use
-        `arrow-odbc
-        <https://arrow-odbc.readthedocs.io/en/latest/modules.html>`_) these options are passed to the
-        `read_arrow_batches_from_odbc
+        Keyword arguments to be passed to the underlying query execution method. In the
+        case of connections made using an ODBC string (which use `arrow-odbc
+        <https://arrow-odbc.readthedocs.io/en/latest/modules.html>`_), these options are
+        passed to the `read_arrow_batches_from_odbc
         <https://arrow-odbc.readthedocs.io/en/latest/arrow_odbc.html#arrow_odbc.read_arrow_batches_from_odbc>`_
         method.
 
@@ -479,8 +478,8 @@ def read_database(  # noqa: D417
       databases such as SQLite to large cloud databases such as Snowflake), as well as
       generic libraries such as ADBC, SQLAlchemy and various flavours of ODBC. If the
       backend supports returning Arrow data directly then this facility will be used to
-      efficiently instantiate the DataFrame; otherwise, the DataFrame is initialised
-      from row-wise data.
+      efficiently instantiate the `DataFrame`; otherwise, the `DataFrame` will be
+      initialised from row-wise data.
 
     * Support for Arrow Flight SQL data is available via the `adbc-driver-flightsql`
       package; see https://arrow.apache.org/adbc/current/driver/flight_sql.html for
@@ -500,11 +499,11 @@ def read_database(  # noqa: D417
 
     See Also
     --------
-    read_database_uri : Create a DataFrame from a SQL query using a URI string.
+    read_database_uri : Create a `DataFrame` from a SQL query using a URI string.
 
     Examples
     --------
-    Instantiate a DataFrame from a SQL query against a user-supplied connection:
+    Instantiate a `DataFrame` from a SQL query against a user-supplied connection:
 
     >>> df = pl.read_database(
     ...     query="SELECT * FROM test_data",
@@ -520,7 +519,7 @@ def read_database(  # noqa: D417
     ...     execute_options={"parameters": {"value": 0}},
     ... )  # doctest: +SKIP
 
-    Use 'qmark' style parameterisation; values are still passed via `execute_options`,
+    Use "qmark"-style parameterisation; values are still passed via `execute_options`,
     but in this case the "parameters" value is a sequence of literals, not a dict:
 
     >>> df = pl.read_database(
@@ -529,9 +528,9 @@ def read_database(  # noqa: D417
     ...     execute_options={"parameters": [0]},
     ... )  # doctest: +SKIP
 
-    Instantiate a DataFrame using an ODBC connection string (requires `arrow-odbc`)
+    Instantiate a `DataFrame` using an ODBC connection string (requires `arrow-odbc`)
     setting upper limits on the buffer size of variadic text/binary columns, returning
-    the result as an iterator over DataFrames containing batches of 1000 rows:
+    the result as an iterator over dataframes containing batches of 1000 rows:
 
     >>> for df in pl.read_database(
     ...     query="SELECT * FROM test_data",
@@ -607,18 +606,18 @@ def read_database_uri(
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     """
-    Read the results of a SQL query into a DataFrame, given a URI.
+    Read the results of a SQL query into a `DataFrame`, given a URI.
 
     Parameters
     ----------
     query
-        Raw SQL query (or queries).
+        One or more SQL queries to execute.
     uri
         A connectorx or ADBC connection URI string that starts with the backend's
         driver name, for example:
 
-        * "postgresql://user:pass@server:port/database"
-        * "snowflake://user:pass@account/database/schema?warehouse=warehouse&role=role"
+        * `"postgresql://user:pass@server:port/database"`
+        * `"snowflake://user:pass@account/database/schema?warehouse=warehouse&role=role"`
     partition_on
         The column on which to partition the result (connectorx).
     partition_range
@@ -626,7 +625,7 @@ def read_database_uri(
     partition_num
         How many partitions to generate (connectorx).
     protocol
-        Backend-specific transfer protocol directive (connectorx); see connectorx
+        Backend-specific transfer protocol directive (connectorx); see the connectorx
         documentation for more details.
     engine : {'connectorx', 'adbc'}
         Selects the engine used for reading the database (defaulting to connectorx):
@@ -645,8 +644,8 @@ def read_database_uri(
 
           * https://arrow.apache.org/adbc/
     schema_overrides
-        A dictionary mapping column names to dtypes, used to override the schema
-        given in the data returned by the query.
+        A dict of `{name: dtype}` pairs used to override the schema given in the data
+        returned by the query.
 
     Notes
     -----
@@ -654,21 +653,21 @@ def read_database_uri(
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     For `adbc` you will need to have installed :mod:`pyarrow` and the ADBC driver
-    associated with the backend you are connecting to, eg: `adbc-driver-postgresql`.
+    associated with the backend you are connecting to, e.g. `adbc-driver-postgresql`.
 
     See Also
     --------
-    read_database : Create a DataFrame from a SQL query using a connection object.
+    read_database : Create a `DataFrame` from a SQL query using a connection object.
 
     Examples
     --------
-    Create a DataFrame from a SQL query using a single thread:
+    Create a `DataFrame` from a SQL query using a single thread:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
     >>> pl.read_database_uri(query, uri)  # doctest: +SKIP
 
-    Create a DataFrame in parallel using 10 threads by automatically partitioning
+    Create a `DataFrame` in parallel using 10 threads by automatically partitioning
     the provided SQL on the partition column:
 
     >>> uri = "postgresql://username:password@server:port/database"
@@ -681,7 +680,7 @@ def read_database_uri(
     ...     engine="connectorx",
     ... )  # doctest: +SKIP
 
-    Create a DataFrame in parallel using 2 threads by explicitly providing two
+    Create a `DataFrame` in parallel using 2 threads by explicitly providing two
     SQL queries:
 
     >>> uri = "postgresql://username:password@server:port/database"

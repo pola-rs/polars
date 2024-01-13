@@ -14,7 +14,7 @@ CSV
    DataFrame.write_csv
    LazyFrame.sink_csv
 
-Feather/ IPC
+Feather/IPC
 ~~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
@@ -58,7 +58,7 @@ JSON
    DataFrame.write_json
    DataFrame.write_ndjson
 
-AVRO
+Avro
 ~~~~
 .. autosummary::
    :toctree: api/
@@ -91,10 +91,8 @@ Delta Lake
    read_delta
    DataFrame.write_delta
 
-Datasets
-~~~~~~~~
-Connect to pyarrow datasets.
-
+PyArrow
+~~~~~~~
 .. autosummary::
    :toctree: api/
 
@@ -103,7 +101,7 @@ Connect to pyarrow datasets.
 
 BatchedCsvReader
 ~~~~~~~~~~~~~~~~
-This reader comes available by calling `pl.read_csv_batched`.
+This class is returned by :func:`polars.read_csv_batched`.
 
 .. currentmodule:: polars.io.csv.batched_reader
 

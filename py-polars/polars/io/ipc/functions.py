@@ -31,41 +31,40 @@ def read_ipc(
     rechunk: bool = True,
 ) -> DataFrame:
     """
-    Read into a :class:`DataFrame` from an Arrow IPC (Feather v2) file.
+    Read into a `DataFrame` from an Arrow IPC (Feather v2) file.
 
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_). If `fsspec
-        https://filesystem-spec.readthedocs.io>`_ is installed, it will be used to open
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_. If `fsspec
+        <https://filesystem-spec.readthedocs.io>`_ is installed, it will be used to open
         remote files.
     columns
-        Columns to select. Accepts a list of column indices (starting at zero) or a list
-        of column names.
+        A list of column indices (starting at zero) or column names to read.
     n_rows
-        Stop reading from IPC file after reading `n_rows`.
-        Only valid when `use_pyarrow=False`.
+        The number of rows to read from the IPC file.
+        Only used when `use_pyarrow=False`.
     use_pyarrow
-        Use :mod:`pyarrow` or the native Rust reader.
+        Whether to use the IPC reader from :mod:`pyarrow` instead of polars's.
     memory_map
-        Try to memory map the file. This can greatly improve performance on repeated
-        queries as the OS may cache pages.
-        Only uncompressed IPC files can be memory mapped.
+        Whether to try to memory-map the file. This can greatly improve performance on
+        repeated queries as the OS may cache pages. Only uncompressed IPC files can be
+        memory-mapped.
     storage_options
         Extra options that make sense for `fsspec.open()
         <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_ for a
-        particular storage connection.
-        e.g. host, port, username, password, etc.
+        particular storage connection, e.g. host, port, username, password, etc.
     row_count_name
-        If not `None`, this will insert a row count column with give name into the
-        DataFrame
+        If not `None`, add a row count column with this name as the first column.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+        An integer offset to start the row count at; only used when `row_count_name`
+        is not `None`.
     rechunk
-        Make sure that all data is contiguous.
+        Whether to ensure each column of the result is stored contiguously in
+        memory; see :func:`DataFrame.rechunk` for details.
 
     Returns
     -------
@@ -126,37 +125,37 @@ def read_ipc_stream(
     rechunk: bool = True,
 ) -> DataFrame:
     """
-    Read into a :class:`DataFrame` from an Arrow IPC record batch stream.
+    Read into a `DataFrame` from an Arrow IPC record batch stream.
 
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_). If `fsspec
-        https://filesystem-spec.readthedocs.io>`_ is installed, it will be used to open
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_. If `fsspec
+        <https://filesystem-spec.readthedocs.io>`_ is installed, it will be used to open
         remote files.
     columns
-        Columns to select. Accepts a list of column indices (starting at zero) or a list
-        of column names.
+        A list of column indices (starting at zero) or column names to read.
     n_rows
-        Stop reading from IPC stream after reading `n_rows`.
+        The number of rows to read from the IPC stream.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
-        Use :mod:`pyarrow` or the native Rust reader.
+        Whether to use the IPC reader from :mod:`pyarrow` instead of polars's.
     storage_options
         Extra options that make sense for `fsspec.open()
         <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_ for a
         particular storage connection.
         e.g. host, port, username, password, etc.
     row_count_name
-        If not `None`, this will insert a row count column with give name into the
-        DataFrame
+        If not `None`, add a row count column with this name as the first column.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+        An integer offset to start the row count at; only used when `row_count_name`
+        is not `None`.
     rechunk
-        Make sure that all data is contiguous.
+        Whether to ensure each column of the result is stored contiguously in
+        memory; see :func:`DataFrame.rechunk` for details.
 
     Returns
     -------
@@ -201,15 +200,15 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via the builtin `open
-        <https://docs.python.org/3/library/functions.html#open>`_function) or `BytesIO
-        <https://docs.python.org/3/library/io.html#io.BytesIO>`_).
+        A path to a file or a file-like object. By file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. from the builtin `open
+        <https://docs.python.org/3/library/functions.html#open>`_ function) or `BytesIO
+        <https://docs.python.org/3/library/io.html#io.BytesIO>`_.
 
     Returns
     -------
     dict
-        Dictionary mapping column names to datatypes
+        A dictionary mapping column names to datatypes.
 
     """
     if isinstance(source, (str, Path)):
@@ -238,27 +237,28 @@ def scan_ipc(
     Parameters
     ----------
     source
-        Path to a IPC file.
+        A path to an IPC file, or a glob pattern matching multiple files.
     n_rows
-        Stop reading from IPC file after reading `n_rows`.
+        The number of rows to read from the IPC file.
     cache
-        Cache the result after reading.
+        Whether to cache the result after reading.
     rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
+        Whether to ensure each column of the result is stored contiguously in
+        memory; see :func:`DataFrame.rechunk` for details.
     row_count_name
-        If not None, this will insert a row count column with give name into the
-        DataFrame
+        If not `None`, add a row count column with this name as the first column.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+        An integer offset to start the row count at; only used when `row_count_name`
+        is not `None`.
     storage_options
         Extra options that make sense for `fsspec.open()
         <https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.open>`_ for a
         particular storage connection.
         e.g. host, port, username, password, etc.
     memory_map
-        Try to memory map the file. This can greatly improve performance on repeated
-        queries as the OS may cache pages.
-        Only uncompressed IPC files can be memory mapped.
+        Whether to memory-map the underlying file. This can greatly improve performance
+        on repeated queries as the operating system may cache pages.
+        Only uncompressed IPC files can be memory-mapped.
 
     """
     return pl.LazyFrame._scan_ipc(

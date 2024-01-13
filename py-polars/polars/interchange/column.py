@@ -23,15 +23,15 @@ if TYPE_CHECKING:
 
 class PolarsColumn(Column):
     """
-    A column object backed by a Polars Series.
+    A column object backed by a Polars `Series`.
 
     Parameters
     ----------
     column
-        The Polars Series backing the column object.
+        The `Polars` Series backing the column object.
     allow_copy
-        Allow data to be copied during operations on this column. If set to `False`,
-        a RuntimeError will be raised if data would be copied.
+        Allow data to be copied during operations on this column. If `allow_copy=False`,
+        a `RuntimeError` will be raised if data would be copied.
 
     """
 
@@ -93,7 +93,7 @@ class PolarsColumn(Column):
 
     @property
     def null_count(self) -> int:
-        """The number of null elements."""
+        """The number of `null` elements."""
         return self._col.null_count()
 
     @property
@@ -119,8 +119,8 @@ class PolarsColumn(Column):
         -----
         When `n_chunks` is higher than the number of chunks in the column, a slice
         must be performed that is not on the chunk boundary. This will trigger some
-        compute if the column contains null values or if the column is of data type
-        boolean.
+        compute if the column contains `null` values or if the column is
+        :class:`Boolean`.
 
         """
         total_n_chunks = self.num_chunks()

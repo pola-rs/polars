@@ -17,7 +17,7 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 @expr_dispatch
 class StructNameSpace:
-    """Series.struct namespace."""
+    """A namespace for :class:`Struct` `Series`."""
 
     _accessor = "struct"
 
@@ -37,43 +37,43 @@ class StructNameSpace:
 
     @property
     def fields(self) -> list[str]:
-        """Get the names of the fields."""
+        """Get the names of the :class:`Struct` fields of this `Series`."""
         if getattr(self, "_s", None) is None:
             return []
         return self._s.struct_fields()
 
     def field(self, name: str) -> Series:
         """
-        Retrieve one of the fields of this :class:`Struct` as a new :class:`Series`.
+        Get a :class:`Struct` field as a new `Series`.
 
         Parameters
         ----------
         name
-            Name of the field
+            The name of the :class:`Struct` field to get.
 
         """
 
     def rename_fields(self, names: Sequence[str]) -> Series:
         """
-        Rename the fields of the struct.
+        Rename the fields of the :class:`Struct`.
 
         Parameters
         ----------
         names
-            New names in the order of the struct's fields
+            The new field names, given in the same order as the struct's fields.
 
         """
 
     @property
     def schema(self) -> OrderedDict[str, DataType]:
-        """Get the struct definition as a name/dtype schema dict."""
+        """Get the :class:`Struct` schema as a `{field_name: dtype}` dict."""
         if getattr(self, "_s", None) is None:
             return OrderedDict()
         return OrderedDict(self._s.dtype().to_schema())
 
     def unnest(self) -> DataFrame:
         """
-        Convert this struct Series to a DataFrame with a separate column for each field.
+        Convert this :class:`Struct` `Series` to a `DataFrame` of its fields.
 
         Examples
         --------
@@ -94,7 +94,7 @@ class StructNameSpace:
 
     def json_encode(self) -> Series:
         """
-        Convert this struct to a string column with json values.
+        Convert this :class:`Struct` `Series` to a JSON :class:`String` `Series`.
 
         Examples
         --------

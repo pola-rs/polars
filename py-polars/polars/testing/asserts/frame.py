@@ -30,30 +30,31 @@ def assert_frame_equal(
     Parameters
     ----------
     left
-        The first DataFrame or LazyFrame to compare.
+        The first `DataFrame` or `LazyFrame` to compare.
     right
-        The second DataFrame or LazyFrame to compare.
+        The second `DataFrame` or `LazyFrame` to compare.
     check_row_order
-        Require row order to match.
+        Whether to require the row order to match.
 
         .. note::
             Setting this to `False` requires sorting the data, which will fail on
             frames that contain unsortable columns.
     check_column_order
-        Require column order to match.
+        Whether to require the column order to match.
     check_dtype
-        Require data types to match.
+        Whether to require the data types to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
-        Only affects columns with a Float data type.
+        Whether to require float values to match exactly. If `check_exact=False`, values
+        are considered equal when within a specified tolerance of each other (see `rtol`
+        and `atol`). Only relevant for :class:`Float32` or :class:`Float64` columns.
     rtol
-        Relative tolerance for inexact checking. Fraction of values in `right`.
+        The relative tolerance for inexact checking, as a fraction of the values in
+        `right`.
     atol
-        Absolute tolerance for inexact checking.
+        The absolute tolerance for inexact checking.
     categorical_as_str
-        Cast categorical columns to string before comparing. Enabling this helps
-        compare columns that do not share the same string cache.
+        Whether to cast categorical columns to string before comparing. Enabling this
+        helps compare columns that do not share the same string cache.
 
     See Also
     --------
@@ -214,30 +215,31 @@ def assert_frame_not_equal(
     Parameters
     ----------
     left
-        The first DataFrame or LazyFrame to compare.
+        The first `DataFrame` or `LazyFrame` to compare.
     right
-        The second DataFrame or LazyFrame to compare.
+        The second `DataFrame` or `LazyFrame` to compare.
     check_row_order
-        Require row order to match.
+        Whether to require the row order to match.
 
         .. note::
             Setting this to `False` requires sorting the data, which will fail on
             frames that contain unsortable columns.
     check_column_order
-        Require column order to match.
+        Whether to require the column order to match.
     check_dtype
-        Require data types to match.
+        Whether to require the data types to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
-        Only affects columns with a Float data type.
+        Whether to require float values to match exactly. If `check_exact=False`, values
+        are considered equal when within a specified tolerance of each other (see `rtol`
+        and `atol`). Only relevant for :class:`Float32` or :class:`Float64` columns.
     rtol
-        Relative tolerance for inexact checking. Fraction of values in `right`.
+        The relative tolerance for inexact checking, as a fraction of the values in
+        `right`.
     atol
-        Absolute tolerance for inexact checking.
+        The absolute tolerance for inexact checking.
     categorical_as_str
-        Cast categorical columns to string before comparing. Enabling this helps
-        compare columns that do not share the same string cache.
+        Whether to cast categorical columns to string before comparing. Enabling this
+        helps compare columns that do not share the same string cache.
 
     See Also
     --------

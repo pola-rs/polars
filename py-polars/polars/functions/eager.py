@@ -27,33 +27,37 @@ def concat(
     parallel: bool = True,
 ) -> PolarsType:
     """
-    Combine multiple DataFrames, LazyFrames, or Series into a single object.
+    Combine multiple `DataFrame`, `LazyFrame`, or `Series` objects into a single object.
 
     Parameters
     ----------
     items
-        DataFrames, LazyFrames, or Series to concatenate.
+        `DataFrame`, `LazyFrame`, or `Series` objects to concatenate.
     how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}
-        Series only support the `vertical` strategy.
+        `Series` only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
-          their common supertype *if* they are mismatched (eg: Int32 → Int64).
+          their common supertype *if* they are mismatched (e.g. :class:`Int32` →
+          :class:`Int64`).
         * diagonal: Finds a union between the column schemas and fills missing column
           values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
-          their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
+          their common supertype *if* they are mismatched (e.g. :class:`Int32` →
+          :class:`Int64`).
+        * horizontal: Stacks `Series` into dataframes horizontally and fills with `null`
           if the lengths don't match.
-        * align: Combines frames horizontally, auto-determining the common key columns
-          and aligning rows using the same logic as `align_frames`; this behaviour is
-          patterned after a full outer join, but does not handle column-name collision.
+        * align: Combines dataframes horizontally, auto-determining the common key
+          columns and aligning rows using the same logic as `align_frames`; this
+          behaviour is patterned after a full outer join, but does not handle
+          column-name collision.
           (If you need more control, you should use a suitable join method instead).
     rechunk
-        Make sure that the result data is in contiguous memory.
+        Whether to ensure each column of the result is stored contiguously in
+        memory; see :func:`DataFrame.rechunk` for details.
     parallel
-        Only relevant for LazyFrames. This determines if the concatenated
-        lazy computations may be executed in parallel.
+        Whether the concatenated lazy computations may be executed in parallel; only
+        relevant for `LazyFrame` concatenation.
 
     Examples
     --------
@@ -290,8 +294,9 @@ def align_frames(
     r"""
     Align a sequence of frames using common values from one or more columns as a key.
 
-    Frames that do not contain the given key values have rows injected (with nulls
-    filling the non-key columns), and each resulting frame is sorted by the key.
+    Frames that do not contain the given key columns (`on`) have rows injected (with
+    `null` values filling the non-key columns), and each resulting frame is sorted by
+    the key.
 
     The original column order of input frames is not changed unless `select` is
     specified (in which case the final column order is determined from that). In the
@@ -307,15 +312,16 @@ def align_frames(
     Parameters
     ----------
     frames
-        Sequence of DataFrames or LazyFrames.
+        A sequence of dataframes or lazyframes.
     on
         One or more columns whose unique values will be used to align the frames.
     select
-        Optional post-alignment column select to constrain and/or order
-        the columns returned from the newly aligned frames.
+        An optional column or sequence of columns to select after aligning the frames.
+        May be used to reorder the columns.
     descending
-        Sort the alignment column values in descending order; can be a single
-        :class:`Boolean` or a list of booleans associated with each column in `on`.
+        Whether to sort the `on` columns in descending instead of ascending order after
+        aligning the frames; can be a single :class:`Boolean` or a list of booleans of
+        the same length as `on`.
     how
         By default the row alignment values are determined using a full outer join
         strategy across all frames; if you know that the first frame contains all
@@ -362,7 +368,7 @@ def align_frames(
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘
     ...
 
-    Align frames by the "dt" column:
+    Align dataframes by the `"dt"` column:
 
     >>> af1, af2, af3 = pl.align_frames(
     ...     df1, df2, df3, on="dt"
@@ -383,7 +389,8 @@ def align_frames(
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
     ...
 
-    Align frames by "dt" using "left" alignment, but keep only cols "x" and "y":
+    Align dataframes by the `"dt"` column using `"left"` alignment, but keep only
+    columns `"x"` and `"y"` from each `DataFrame`:
 
     >>> af1, af2, af3 = pl.align_frames(
     ...     df1, df2, df3, on="dt", select=["x", "y"], how="left"
@@ -404,7 +411,7 @@ def align_frames(
     # └─────┴──────┘      └─────┴──────┘      └──────┴──────┘
     ...
 
-    Now data is aligned, and you can easily calculate the row-wise dot product:
+    Now that the dataframes are aligned, you can easily calculate the row-wise dot product:
 
     >>> (af1 * af2 * af3).fill_null(0).select(pl.sum_horizontal("*").alias("dot"))
     shape: (3, 1)

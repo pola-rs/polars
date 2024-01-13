@@ -888,7 +888,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            Number of columns to display; if `n < 0` (eg: -1), display all columns.
+            Number of columns to display; if `n < 0` (e.g. -1), display all columns.
 
         Examples
         --------
@@ -1185,7 +1185,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            Number of rows to display; if `n < 0` (eg: -1), display all
+            Number of rows to display; if `n < 0` (e.g. -1), display all
             rows (DataFrame) and all elements (Series).
 
         Examples

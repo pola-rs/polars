@@ -430,7 +430,7 @@ def test_nested_cache_composition() -> None:
     # function representing a composable stage of a pipeline; it implements
     # an inner scope for the case where it is called by itself, but when
     # called as part of a larger series of ops it should not invalidate
-    # the string cache (eg: the outermost scope should be respected).
+    # the string cache (e.g. the outermost scope should be respected).
     def create_lazy(data: dict) -> pl.LazyFrame:  # type: ignore[type-arg]
         with pl.StringCache():
             df = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
