@@ -7390,14 +7390,17 @@ class DataFrame:
         │ Cam   ┆ Yu   ┆ 83.0 ┆ null │
         └───────┴──────┴──────┴──────┘
 
-        Use selectors to determine the `values` columns, and `sort_columns=True` to
-        alphabetically order the non-index columns (`'Art'` and `'Math'`):
+        Use selectors to determine the `values` columns, `maintain_order=True` to
+        alphabetically order the index rows (`'First'` and `'Last'`), and
+        `sort_columns=True` to alphabetically order the non-index columns (`'Art'` and
+        `'Math'`):
 
         >>> import polars.selectors as cs
         >>> df_long.pivot(
         ...     index=["First", "Last"],
         ...     columns="Subject",
         ...     values=cs.integer(),
+        ...     maintain_order=True,
         ...     sort_columns=True,
         ... )
         shape: (3, 4)
@@ -7414,33 +7417,34 @@ class DataFrame:
         Note that `pivot`, unlike :func:`melt`, is only available in eager mode.
         However, if you know the unique values of the `columns` in advance, you can
         perform a "lazy pivot" using :func:`LazyFrame.groupby` to get the same result as
-        above in lazy mode:
+        above (except for the order not being stable) in lazy mode:
 
         >>> index = "First", "Last"
         >>> columns = "Subject"
-        >>> values = cs.integer()
+        >>> values = "Grade"
         >>> unique_columns = df_long[columns].unique()
         >>> (
         ...     df_long.lazy()
-        ...     .group_by(index, maintain_order=True)
+        ...     .group_by(index)
         ...     .agg(
         ...         pl.col(values)
-        ...         .filter(pl.col(columns).eq(column))
+        ...         .filter(pl.col(columns) == column)
         ...         .first()
         ...         .alias(column)
         ...         for column in unique_columns
         ...     )
         ...     .collect()
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
+        
         shape: (3, 4)
         ┌───────┬──────┬──────┬──────┐
         │ First ┆ Last ┆ Art  ┆ Math │
         │ ---   ┆ ---  ┆ ---  ┆ ---  │
         │ str   ┆ str  ┆ i64  ┆ i64  │
         ╞═══════╪══════╪══════╪══════╡
+        │ Cam   ┆ Yu   ┆ null ┆ 78   │
         │ Amy   ┆ Wu   ┆ 88   ┆ 90   │
         │ Bo    ┆ Xi   ┆ 92   ┆ 85   │
-        │ Cam   ┆ Yu   ┆ null ┆ 78   │
         └───────┴──────┴──────┴──────┘
 
         To emulate e.g. `aggregate_function=pl.element().mean()`, replace `.first()`
