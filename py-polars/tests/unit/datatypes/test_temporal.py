@@ -822,7 +822,6 @@ def test_upsample_index(
                 .fill_null(strategy=fill)
                 .sort(["groups", "index"])
             )
-            print(result)
             assert_frame_equal(result, _expected)
     else:
         with pytest.raises(ComputeError):
