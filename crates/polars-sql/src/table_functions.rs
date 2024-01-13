@@ -72,6 +72,9 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "csv")]
     fn read_csv(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        if args.is_empty() {
+            polars_bail!(ComputeError: "read_csv expected a path")
+        }
         use polars_lazy::frame::LazyFileListReader;
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyCsvReader::new(&path).finish()?;
@@ -80,6 +83,9 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "parquet")]
     fn read_parquet(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        if args.is_empty() {
+            polars_bail!(ComputeError: "read_parquet expected a path")
+        }
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyFrame::scan_parquet(&path, Default::default())?;
         Ok((path, lf))
@@ -87,6 +93,10 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "ipc")]
     fn read_ipc(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        if args.is_empty() {
+            polars_bail!(ComputeError: "read_ipc expected a path")
+        }
+
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyFrame::scan_ipc(&path, Default::default())?;
         Ok((path, lf))
@@ -95,6 +105,9 @@ impl PolarsTableFunctions {
     fn read_ndjson(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
         use polars_lazy::frame::LazyFileListReader;
         use polars_lazy::prelude::LazyJsonLineReader;
+        if args.is_empty() {
+            polars_bail!(ComputeError: "read_json expected a path")
+        }
 
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyJsonLineReader::new(path.clone()).finish()?;
