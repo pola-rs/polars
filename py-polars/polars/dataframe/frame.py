@@ -4058,14 +4058,14 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str]) -> DataFrame:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> DataFrame:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function.
 
         Examples
         --------
@@ -4083,8 +4083,22 @@ class DataFrame:
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> df.rename(lambda column_name: "c" + column_name[1:])
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
-        return self.lazy().rename(mapping).collect(_eager=True)
+        if callable(mapping):
+            return self.select(F.all().name.map(mapping))
+        else:
+            return self.lazy().rename(mapping).collect(_eager=True)
 
     def insert_column(self, index: int, column: Series) -> Self:
         """
