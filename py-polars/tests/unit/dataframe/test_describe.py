@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time
 
 import pytest
 
@@ -16,13 +16,17 @@ def test_df_describe() -> None:
             "c": [True, False, True],
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
-            "f": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
+            "f": [
+                datetime(2020, 1, 1, 10, 30),
+                datetime(2021, 7, 5, 15, 0),
+                datetime(2022, 12, 31, 20, 30),
+            ],
+            "g": [date(2020, 1, 1), date(2021, 7, 5), date(2022, 12, 31)],
+            "h": [time(10, 30), time(15, 0), time(20, 30)],
         },
         schema_overrides={"e": pl.Categorical},
     )
-
     result = df.describe()
-    print(result)
     expected = pl.DataFrame(
         {
             "describe": [
@@ -48,10 +52,32 @@ def test_df_describe() -> None:
                 3.0,
             ],
             "b": [2.0, 1.0, 4.5, 0.7071067811865476, 4.0, 4.0, 5.0, 5.0, 5.0],
-            "c": ["3", "0", None, None, "False", None, None, None, "True"],
+            "c": [3.0, 0.0, None, None, None, None, None, None, None],
             "d": ["2", "1", None, None, "b", None, None, None, "c"],
             "e": ["2", "1", None, None, None, None, None, None, None],
-            "f": ["3", "0", None, None, "2020-01-01", None, None, None, "2022-01-01"],
+            "f": [
+                "3",
+                "0",
+                None,
+                None,
+                "2020-01-01 10:30:00",
+                None,
+                "2021-07-05 15:00:00",
+                None,
+                "2022-12-31 20:30:00",
+            ],
+            "g": [
+                "3",
+                "0",
+                None,
+                None,
+                "2020-01-01",
+                None,
+                "2021-07-05",
+                None,
+                "2022-12-31",
+            ],
+            "h": ["3", "0", None, None, "10:30:00", None, "15:00:00", None, "20:30:00"],
         }
     )
     assert_frame_equal(result, expected)
@@ -64,9 +90,7 @@ def test_df_describe_nested() -> None:
             "list": [[1, 2], [3, 4], [1, 2], None],
         }
     )
-
     result = df.describe()
-
     expected = pl.DataFrame(
         [
             ("count", 3, 3),
@@ -80,16 +104,14 @@ def test_df_describe_nested() -> None:
             ("max", None, None),
         ],
         schema=["describe"] + df.columns,
-        schema_overrides={"struct": pl.String, "list": pl.String},
+        schema_overrides={"struct": pl.Float64, "list": pl.Float64},
     )
     assert_frame_equal(result, expected)
 
 
 def test_df_describe_custom_percentiles() -> None:
     df = pl.DataFrame({"numeric": [1, 2, 1, None]})
-
     result = df.describe(percentiles=(0.2, 0.4, 0.5, 0.6, 0.8))
-
     expected = pl.DataFrame(
         [
             ("count", 3.0),
@@ -112,9 +134,7 @@ def test_df_describe_custom_percentiles() -> None:
 @pytest.mark.parametrize("pcts", [None, []])
 def test_df_describe_no_percentiles(pcts: list[float] | None) -> None:
     df = pl.DataFrame({"numeric": [1, 2, 1, None]})
-
     result = df.describe(percentiles=pcts)
-
     expected = pl.DataFrame(
         [
             ("count", 3.0),
@@ -131,9 +151,7 @@ def test_df_describe_no_percentiles(pcts: list[float] | None) -> None:
 
 def test_df_describe_empty_column() -> None:
     df = pl.DataFrame(schema={"a": pl.Int64})
-
     result = df.describe()
-
     expected = pl.DataFrame(
         [
             ("count", 0.0),

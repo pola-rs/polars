@@ -4392,33 +4392,42 @@ class DataFrame:
         ...         "bool": [True, False, True],
         ...         "str": [None, "b", "c"],
         ...         "str2": ["usd", "eur", None],
-        ...         "date": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
+        ...         "date": [date(2020, 1, 1), date(2021, 7, 5), date(2022, 12, 31)],
         ...     }
         ... )
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬───────┬──────┬──────┬────────────┐
-        │ describe   ┆ float    ┆ int      ┆ bool  ┆ str  ┆ str2 ┆ date       │
-        │ ---        ┆ ---      ┆ ---      ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
-        │ str        ┆ f64      ┆ f64      ┆ str   ┆ str  ┆ str  ┆ str        │
-        ╞════════════╪══════════╪══════════╪═══════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3     ┆ 2    ┆ 2    ┆ 3          │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0     ┆ 1    ┆ 1    ┆ 0          │
-        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ null       │
-        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null       │
-        │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01 │
-        └────────────┴──────────┴──────────┴───────┴──────┴──────┴────────────┘
+        ┌────────────┬──────────┬──────────┬──────┬──────┬──────┬────────────┐
+        │ describe   ┆ float    ┆ int      ┆ bool ┆ str  ┆ str2 ┆ date       │
+        │ ---        ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---  ┆ ---        │
+        │ str        ┆ f64      ┆ f64      ┆ f64  ┆ str  ┆ str  ┆ str        │
+        ╞════════════╪══════════╪══════════╪══════╪══════╪══════╪════════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0  ┆ 2    ┆ 2    ┆ 3          │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0  ┆ 1    ┆ 1    ┆ 0          │
+        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null ┆ null ┆ null ┆ null       │
+        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null ┆ null ┆ null ┆ null       │
+        │ min        ┆ 1.0      ┆ 4.0      ┆ null ┆ b    ┆ eur  ┆ 2020-01-01 │
+        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null ┆ null ┆ null ┆ null       │
+        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null ┆ null ┆ null ┆ 2021-07-05 │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null ┆ null ┆ null ┆ null       │
+        │ max        ┆ 3.0      ┆ 5.0      ┆ null ┆ c    ┆ usd  ┆ 2022-12-31 │
+        └────────────┴──────────┴──────────┴──────┴──────┴──────┴────────────┘
         """
         if not self.columns:
             msg = "cannot describe a DataFrame without any columns"
             raise TypeError(msg)
 
         # Determine which columns should get std/mean/percentile statistics
-        stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
+        stat_cols, temporal_cols, numeric_result = [], [], set()
+        schema = self.schema
+        for c, dt in schema.items():
+            if dt.is_numeric():
+                stat_cols.append(c)
+                numeric_result.add(c)
+            elif dt.is_temporal():
+                temporal_cols.append(c)
+            elif dt in (Boolean, Null) or dt.is_nested():
+                numeric_result.add(c)  # no stats
 
         # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
@@ -4427,7 +4436,12 @@ class DataFrame:
         percentiles = parse_percentiles(percentiles)
         for p in percentiles:
             for c in self.columns:
-                expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
+                if c in stat_cols:
+                    expr = F.col(c).quantile(p)
+                elif p == 0.5 and c in temporal_cols:
+                    expr = F.col(c).to_physical().median().cast(schema[c])
+                else:
+                    expr = F.lit(None)
                 expr = expr.alias(f"{p}:{c}")
                 percentile_exprs.append(expr)
             metrics.append(f"{p * 100:g}%")
@@ -4441,12 +4455,11 @@ class DataFrame:
             (F.col(c).std() if c in stat_cols else F.lit(None)).alias(f"std:{c}")
             for c in self.columns
         ]
-
         minmax_cols = {
             c
             for c, dt in self.schema.items()
             if not dt.is_nested()
-            and dt not in (Object, Null, Unknown, Categorical, Enum)
+            and dt not in (Object, Null, Unknown, Categorical, Enum, Boolean)
         }
         min_exprs = [
             (F.col(c).min() if c in minmax_cols else F.lit(None)).alias(f"min:{c}")
@@ -4488,7 +4501,7 @@ class DataFrame:
             summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
-                else (float(v) if c in stat_cols else str(v))
+                else (float(v) if (c in numeric_result) else str(v))
                 for v in summary[c]
             ]
 

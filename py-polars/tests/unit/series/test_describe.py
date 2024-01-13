@@ -1,7 +1,5 @@
 from datetime import date
 
-import pytest
-
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
 
@@ -49,9 +47,10 @@ def test_series_describe_string() -> None:
     result = s.describe()
 
     stats = {
-        "count": 3,
-        "null_count": 0,
-        "unique": 3,
+        "count": "3",
+        "null_count": "0",
+        "min": "abc",
+        "max": "xyz",
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
     assert_frame_equal(expected, result)
@@ -64,9 +63,11 @@ def test_series_describe_boolean() -> None:
     stats = {
         "count": 4,
         "null_count": 1,
-        "sum": 3,
     }
-    expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+    expected = pl.DataFrame(
+        data={"statistic": stats.keys(), "value": stats.values()},
+        schema_overrides={"value": pl.Float64},
+    )
     assert_frame_equal(expected, result)
 
 
@@ -88,25 +89,34 @@ def test_series_describe_date() -> None:
 def test_series_describe_empty() -> None:
     s = pl.Series(dtype=pl.Float64)
     result = s.describe()
-    print(result)
     stats = {
         "count": 0.0,
         "null_count": 0.0,
-        "mean": None,
-        "std": None,
-        "min": None,
-        "25%": None,
-        "50%": None,
-        "75%": None,
-        "max": None,
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
     assert_frame_equal(expected, result)
 
 
-def test_series_describe_unsupported_dtype() -> None:
-    s = pl.Series(dtype=pl.List(pl.Int64))
-    with pytest.raises(
-        TypeError, match="cannot describe Series of data type List\\(Int64\\)"
-    ):
-        s.describe()
+def test_series_describe_null() -> None:
+    s = pl.Series([None, None], dtype=pl.Null)
+    result = s.describe()
+    stats = {
+        "count": 0.0,
+        "null_count": 2.0,
+    }
+    expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+    assert_frame_equal(expected, result)
+
+
+def test_series_describe_nested_list() -> None:
+    s = pl.Series(
+        values=[[10e10, 10e15], [10e12, 10e13], [10e10, 10e15]],
+        dtype=pl.List(pl.Int64),
+    )
+    result = s.describe()
+    stats = {
+        "count": 3.0,
+        "null_count": 0.0,
+    }
+    expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+    assert_frame_equal(expected, result)

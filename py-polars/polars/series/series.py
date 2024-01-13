@@ -102,7 +102,6 @@ from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
     no_default,
-    parse_percentiles,
     parse_version,
     range_to_series,
     range_to_slice,
@@ -1916,68 +1915,23 @@ class Series:
 
         Non-numeric data types may not have all statistics available.
 
-        >>> s = pl.Series(["a", "a", None, "b", "c"])
+        >>> s = pl.Series(["aa", "aa", None, "bb", "cc"])
         >>> s.describe()
-        shape: (3, 2)
+        shape: (4, 2)
         ┌────────────┬───────┐
         │ statistic  ┆ value │
         │ ---        ┆ ---   │
-        │ str        ┆ i64   │
+        │ str        ┆ str   │
         ╞════════════╪═══════╡
         │ count      ┆ 4     │
         │ null_count ┆ 1     │
-        │ unique     ┆ 4     │
+        │ min        ┆ aa    │
+        │ max        ┆ cc    │
         └────────────┴───────┘
         """
-        stats: dict[str, PythonLiteral | None]
-        stats_dtype: PolarsDataType
-
-        if self.dtype.is_numeric():
-            stats_dtype = Float64
-            stats = {
-                "count": self.count(),
-                "null_count": self.null_count(),
-                "mean": self.mean(),
-                "std": self.std(),
-                "min": self.min(),
-            }
-            for p in parse_percentiles(percentiles):
-                stats[f"{p:.0%}"] = self.quantile(p)
-            stats["max"] = self.max()
-
-        elif self.dtype == Boolean:
-            stats_dtype = Int64
-            stats = {
-                "count": self.count(),
-                "null_count": self.null_count(),
-                "sum": self.sum(),
-            }
-        elif self.dtype == String:
-            stats_dtype = Int64
-            stats = {
-                "count": self.count(),
-                "null_count": self.null_count(),
-                "unique": self.n_unique(),
-            }
-        elif self.dtype.is_temporal():
-            # we coerce all to string, because a polars column
-            # only has a single dtype and dates: datetime and count: int don't match
-            stats_dtype = String
-            stats = {
-                "count": str(self.count()),
-                "null_count": str(self.null_count()),
-                "min": str(self.dt.min()),
-                "50%": str(self.dt.median()),
-                "max": str(self.dt.max()),
-            }
-        else:
-            msg = f"cannot describe Series of data type {self.dtype}"
-            raise TypeError(msg)
-
-        return pl.DataFrame(
-            {"statistic": stats.keys(), "value": stats.values()},
-            schema={"statistic": String, "value": stats_dtype},
-        )
+        stats = self.to_frame().describe(percentiles=percentiles)
+        stats.columns = ["statistic", "value"]
+        return stats.filter(F.col("value").is_not_null())
 
     def sum(self) -> int | float:
         """
