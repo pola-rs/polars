@@ -1266,18 +1266,17 @@ def test_csv_categorical_categorical_merge() -> None:
     )["x"].to_list() == ["A", "B"]
 
 
-def test_csv_clip_n_rows_to_sample_size() -> None:
-    import tempfile
-
+@pytest.mark.write_disk()
+def test_csv_clip_sample_size_to_n_rows(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.csv"
     case_numbers = [f"{i:06d}" for i in range(1, 1001)]
     test = ["test" for _ in range(1, 1001)]
     df = pl.DataFrame({"test": test, "case_number": case_numbers})
     df[622, "case_number"] = "CASE-NO0A60"
-    with tempfile.NamedTemporaryFile(delete=True, suffix=".csv") as temp_file:
-        filename = temp_file.name
-        df.write_csv(filename)
-        df = pl.read_csv(filename, n_rows=1)
-        assert len(df) == 1
+    df.write_csv(file_path)
+    df = pl.read_csv(file_path, n_rows=1)
+    assert len(df) == 1
 
 
 def test_batched_csv_reader(foods_file_path: Path) -> None:
