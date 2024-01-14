@@ -1,6 +1,4 @@
 // https://github.com/pola-rs/polars-cli/issues/51
-use polars_core::prelude::*;
-use polars_lazy::prelude::*;
 use polars_sql::*;
 
 #[test]
