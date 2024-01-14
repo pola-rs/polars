@@ -1737,3 +1737,10 @@ def test_invalid_csv_raise() -> None:
     "SK0127960V000","SK BT 0018977","
     """.strip()
         )
+
+@pytest.mark.slow()
+def test_partial_read_compressed_web_file() -> None:
+    url = 'https://raw.githubusercontent.com/hadley/mastering-shiny/main/neiss/injuries.tsv.gz'
+    df = pl.read_csv(url, separator='\t', skip_rows=40, has_header=False,
+                     skip_rows_after_header=20, n_rows=30)
+    assert df.shape == (30, 10)
