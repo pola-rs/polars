@@ -9212,6 +9212,56 @@ class DataFrame:
         """
         return self.lazy().approx_n_unique().collect(_eager=True)
 
+    def value_counts(
+        self, *, count_col: str = "count", sort: bool = False
+    ) -> DataFrame:
+        """
+        Count the occurrences of unique rows.
+
+        Parameters
+        ----------
+        count_col
+            The name of the count column to add to the DataFrame.
+        sort
+            Sort the output by count in descending order.
+            If set to `False` (default), the order of the output is random.
+
+        Returns
+        -------
+        DataFrame
+            Mapping of unique rows to their count.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [0, 0, 0, 2], "b": [0, 0, 0, 0], "c": [1, 0, 0, 0]})
+        >>> df.value_counts()  # doctest: +IGNORE_RESULT
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ count │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ i64 ┆ i64 ┆ i64 ┆ u32   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ 0   ┆ 0   ┆ 1   ┆ 1     │
+        │ 0   ┆ 0   ┆ 0   ┆ 2     │
+        │ 2   ┆ 0   ┆ 0   ┆ 1     │
+        └─────┴─────┴─────┴───────┘
+
+        Sort the output by count:
+
+        >>> df.value_counts(sort=True)  # doctest: +IGNORE_RESULT
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ count │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ i64 ┆ i64 ┆ i64 ┆ u32   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ 0   ┆ 0   ┆ 0   ┆ 2     │
+        │ 0   ┆ 0   ┆ 1   ┆ 1     │
+        │ 2   ┆ 0   ┆ 0   ┆ 1     │
+        └─────┴─────┴─────┴───────┘
+        """
+        return self.lazy().value_counts(count_col=count_col, sort=sort).collect()
+
     def rechunk(self) -> Self:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.

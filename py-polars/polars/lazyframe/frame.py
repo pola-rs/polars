@@ -4563,6 +4563,59 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.all().approx_n_unique())
 
+    def value_counts(
+        self, *, count_col: str = "count", sort: bool = False
+    ) -> LazyFrame:
+        """
+        Count the occurrences of unique rows.
+
+        Parameters
+        ----------
+        count_col
+            The name of the count column to add to the LazyFrame.
+        sort
+            Sort the output by count in descending order.
+            If set to `False` (default), the order of the output is random.
+
+        Returns
+        -------
+        LazyFrame
+            Mapping of unique rows to their count.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame({"a": [0, 0, 0, 2], "b": [0, 0, 0, 0], "c": [1, 0, 0, 0]})
+        >>> lf.value_counts().collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ count │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ i64 ┆ i64 ┆ i64 ┆ u32   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ 0   ┆ 0   ┆ 1   ┆ 1     │
+        │ 0   ┆ 0   ┆ 0   ┆ 2     │
+        │ 2   ┆ 0   ┆ 0   ┆ 1     │
+        └─────┴─────┴─────┴───────┘
+
+        Sort the output by count:
+
+        >>> lf.value_counts(sort=True).collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ count │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ i64 ┆ i64 ┆ i64 ┆ u32   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ 0   ┆ 0   ┆ 0   ┆ 2     │
+        │ 0   ┆ 0   ┆ 1   ┆ 1     │
+        │ 2   ┆ 0   ┆ 0   ┆ 1     │
+        └─────┴─────┴─────┴───────┘
+        """
+        df = self.group_by(F.all()).agg(F.all(), F.count().alias(count_col))
+        if sort:
+            df = df.sort(count_col, descending=True)
+        return df
+
     def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
         """
         Add a row index as the first column in the LazyFrame.
