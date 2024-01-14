@@ -17,7 +17,7 @@ impl AExpr {
         use AExpr::*;
         use DataType::*;
         match self {
-            Count => Ok(Field::new(COUNT, IDX_DTYPE)),
+            Len => Ok(Field::new(LEN, IDX_DTYPE)),
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)

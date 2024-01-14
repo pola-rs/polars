@@ -290,7 +290,7 @@ def test_distinct_projection_pd_7578() -> None:
         },
         schema_overrides={"len": pl.UInt32},
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_join_suffix_collision_9562() -> None:

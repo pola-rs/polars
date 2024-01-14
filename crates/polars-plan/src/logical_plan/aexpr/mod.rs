@@ -15,7 +15,7 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::consts::COUNT;
+use crate::prelude::consts::LEN;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
@@ -188,7 +188,7 @@ pub enum AExpr {
         offset: Node,
         length: Node,
     },
-    Count,
+    Len,
     Nth(i64),
 }
 
@@ -224,7 +224,7 @@ impl AExpr {
             | SortBy { .. }
             | Agg { .. }
             | Window { .. }
-            | Count
+            | Len
             | Slice { .. }
             | Gather { .. }
             | Nth(_)
@@ -259,7 +259,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {},
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Len => {},
             Alias(e, _) => container.push(*e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
@@ -338,7 +338,7 @@ impl AExpr {
     pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
+            Column(_) | Literal(_) | Wildcard | Len | Nth(_) => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
             Explode(input) => input,
@@ -420,7 +420,7 @@ impl AExpr {
     pub(crate) fn is_leaf(&self) -> bool {
         matches!(
             self,
-            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Count | AExpr::Nth(_)
+            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len | AExpr::Nth(_)
         )
     }
 }
