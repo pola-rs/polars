@@ -233,8 +233,13 @@ impl<'a> CoreReader<'a> {
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
                     #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+                    let total_n_rows = if let Some(n) = n_rows {
+                        Some(skip_rows + (has_header as usize) + skip_rows_after_header + n)
+                    } else {
+                        None
+                    };
                     if let Some(b) =
-                        decompress(&reader_bytes, n_rows, separator, quote_char, eol_char)
+                        decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
                     {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
