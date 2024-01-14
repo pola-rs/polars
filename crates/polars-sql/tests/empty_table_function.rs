@@ -1,4 +1,10 @@
 // https://github.com/pola-rs/polars-cli/issues/51
+#[cfg(any(
+    feature = "csv",
+    feature = "parquet",
+    feature = "ipc",
+    feature = "json"
+))]
 use polars_sql::*;
 
 #[test]
