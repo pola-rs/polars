@@ -130,7 +130,7 @@ pub(crate) fn create_physical_expr(
                         if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                             apply_columns.push(Arc::from("literal"))
                         } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
-                            apply_columns.push(Arc::from("count"))
+                            apply_columns.push(Arc::from("len"))
                         } else {
                             let e = node_to_expr(function, expr_arena);
                             polars_bail!(

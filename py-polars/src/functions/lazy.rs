@@ -188,11 +188,6 @@ pub fn len() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cum_count(reverse: bool) -> PyExpr {
-    dsl::cum_count(reverse).into()
-}
-
-#[pyfunction]
 pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
     dsl::cov(a.inner, b.inner, ddof).into()
 }

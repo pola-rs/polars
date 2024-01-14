@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
 from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
@@ -93,7 +93,7 @@ def count(*columns: str) -> Expr:
     """
     Return the number of non-null values in the column.
 
-    This function is syntactic sugar for `col(column).count()`.
+    This function is syntactic sugar for `col(columns).count()`.
 
     Calling this function without any arguments returns the number of rows in the
     context. **This way of using the function is deprecated. Please use :func:`len`
@@ -168,12 +168,12 @@ def count(*columns: str) -> Expr:
 
 def cum_count(*columns: str, reverse: bool = False) -> Expr:
     """
-    Return the cumulative count of the non-null values in the column or of the context.
+    Return the cumulative count of the non-null values in the column.
+
+    This function is syntactic sugar for `col(columns).cum_count()`.
 
     If no arguments are passed, returns the cumulative count of a context.
     Rows containing null values count towards the result.
-
-    Otherwise, this function is syntactic sugar for `col(names).cum_count()`.
 
     Parameters
     ----------
@@ -184,24 +184,7 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
 
     Examples
     --------
-    Return the row numbers of a context. Note that rows containing null values are
-    counted towards the total.
-
     >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
-    >>> df.select(pl.cum_count())
-    shape: (3, 1)
-    ┌───────────┐
-    │ cum_count │
-    │ ---       │
-    │ u32       │
-    ╞═══════════╡
-    │ 1         │
-    │ 2         │
-    │ 3         │
-    └───────────┘
-
-    Return the cumulative count of non-null values in a column.
-
     >>> df.select(pl.cum_count("a"))
     shape: (3, 1)
     ┌─────┐
@@ -213,23 +196,18 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     │ 2   │
     │ 2   │
     └─────┘
-
-    Add row numbers to a DataFrame.
-
-    >>> df.select(pl.cum_count().alias("row_number"), pl.all())
-    shape: (3, 3)
-    ┌────────────┬──────┬──────┐
-    │ row_number ┆ a    ┆ b    │
-    │ ---        ┆ ---  ┆ ---  │
-    │ u32        ┆ i64  ┆ i64  │
-    ╞════════════╪══════╪══════╡
-    │ 1          ┆ 1    ┆ 3    │
-    │ 2          ┆ 2    ┆ null │
-    │ 3          ┆ null ┆ null │
-    └────────────┴──────┴──────┘
     """
     if not columns:
-        return wrap_expr(plr.cum_count(reverse=reverse))
+        issue_deprecation_warning(
+            "`pl.cum_count()` is deprecated. The same result can be achieved using"
+            " `pl.int_range(1, pl.len() + 1, dtype=pl.UInt32)`,"
+            " or `int_range(pl.len(), 0, -1, dtype=pl.UInt32)` when `reverse=True`.",
+            version="0.20.5",
+        )
+        if reverse:
+            return F.int_range(F.len(), 0, step=-1, dtype=UInt32).alias("cum_count")
+        else:
+            return F.int_range(1, F.len() + 1, dtype=UInt32).alias("cum_count")
     return F.col(*columns).cum_count(reverse=reverse)
 
 
