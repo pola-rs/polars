@@ -922,10 +922,14 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.lazy().rename({"A": "C"}).collect()
     assert res.columns[0] == "C"
 
+
 def test_rename_lambda() -> None:
     ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
-    out = ldf.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col).collect()
+    out = ldf.rename(
+        lambda col: "foo" if col == "a" else "bar" if col == "b" else col
+    ).collect()
     assert out.columns == ["foo", "bar", "c"]
+
 
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
