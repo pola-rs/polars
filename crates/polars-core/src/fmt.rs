@@ -513,7 +513,9 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                .map_or(8, |n: i64| if n < 0 { height } else { n as usize });
+                // Note: see "https://github.com/pola-rs/polars/pull/13699" for
+                // the rationale behind choosing 10 as the default value ;)
+                .map_or(10, |n: i64| if n < 0 { height } else { n as usize });
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
