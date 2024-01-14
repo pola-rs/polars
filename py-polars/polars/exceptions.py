@@ -44,7 +44,21 @@ except ImportError:
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
     class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an unexpected schema mismatch causes an error."""
+        """
+        Exception raised when an unexpected schema mismatch causes an error.
+
+        Examples
+        --------
+        Joining two `Series` each containing one `struct` with mismatched key order.
+
+        >>> housing1 = pl.Series([{"city": "Chicago", "address": "100 Main St"}])
+        >>> housing2 = pl.Series(
+        ...     [{"address": "303 Mockingbird Lane", "city": "Los Angeles"}]
+        ... )
+        >>> housing1.append(housing2)
+        polars.exceptions.SchemaError: cannot append field with name "address" to struct
+        with field name "city"
+        """
 
     class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when a specified schema field is not found."""
