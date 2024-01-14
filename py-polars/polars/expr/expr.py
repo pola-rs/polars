@@ -7839,9 +7839,9 @@ class Expr:
         └──────┴──────┘
         """
         if lower_bound is not None:
-            lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
+            lower_bound = parse_as_expression(lower_bound)
         if upper_bound is not None:
-            upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
+            upper_bound = parse_as_expression(upper_bound)
         return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
     def lower_bound(self) -> Self:

@@ -133,19 +133,26 @@ def test_clip_bound_cast_to_float() -> None:
 def test_clip_non_numeric_dtype_fails() -> None:
     msg = "`clip` only supports physical numeric types"
 
-    s = pl.Series(["a", "bc"])
+    s = pl.Series([[1], [2, 3]])
     with pytest.raises(pl.InvalidOperationError, match=msg):
-        s.clip("a", "x")
+        s.clip([1], [5])  # type: ignore[arg-type]
 
     s = pl.Series([1, 2])
     with pytest.raises(pl.InvalidOperationError, match=msg):
-        s.clip("a", "x")
+        s.clip([1], [5])  # type: ignore[arg-type]
 
 
 def test_clip_determining_supertype_fails() -> None:
     s = pl.Series([1, 2])
     with pytest.raises(pl.ComputeError, match="failed to determine supertype"):
         s.clip(b"a", [5])  # type: ignore[arg-type]
+
+
+def test_clip_string_input() -> None:
+    df = pl.DataFrame({"a": [0, 1, 2], "min": [1, None, 1]})
+    result = df.select(pl.col("a").clip("min"))
+    expected = pl.DataFrame({"a": [1, None, 2]})
+    assert_frame_equal(result, expected)
 
 
 def test_clip_min_max_deprecated() -> None:
