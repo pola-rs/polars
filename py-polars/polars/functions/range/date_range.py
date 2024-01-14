@@ -304,9 +304,8 @@ def date_ranges(
     ...         "end": date(2022, 1, 3),
     ...     }
     ... )
-
-    >>> with pl.Config(fmt_str_lengths=65):
-    ...     print(df.with_columns(date_range=pl.date_ranges("start", "end")))
+    >>> with pl.Config(fmt_str_lengths=50):
+    ...     df.with_columns(date_range=pl.date_ranges("start", "end"))
     shape: (2, 3)
     ┌────────────┬────────────┬──────────────────────────────────────┐
     │ start      ┆ end        ┆ date_range                           │

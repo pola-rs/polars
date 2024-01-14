@@ -303,12 +303,12 @@ def datetime_ranges(
     >>> from datetime import datetime
     >>> df = pl.DataFrame(
     ...     {
-    ...         "start": [datetime(2022, 1, 1, 0, 0, 0), datetime(2022, 1, 2, 0, 0, 0)],
-    ...         "end": datetime(2022, 1, 3, 0, 0, 0),
+    ...         "start": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
+    ...         "end": datetime(2022, 1, 3),
     ...     }
     ... )
-    >>> with pl.Config(fmt_str_lengths=65):
-    ...     print(df.select(datetime_range=pl.datetime_ranges("start", "end")))
+    >>> with pl.Config(fmt_str_lengths=100):
+    ...     df.select(datetime_range=pl.datetime_ranges("start", "end"))
     shape: (2, 1)
     ┌─────────────────────────────────────────────────────────────────┐
     │ datetime_range                                                  │
