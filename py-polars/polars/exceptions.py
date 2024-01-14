@@ -91,7 +91,7 @@ except ImportError:
         >>> pl.DataFrame(
         ...     [
         ...         pl.Series(["a", "b", "c"], dtype=pl.Categorical),
-        ...         pl.Series(["c", "b", "b"], dtype=pl.Categorical)
+        ...         pl.Series(["c", "b", "b"], dtype=pl.Categorical),
         ...     ]
         ... ).transpose()
         polars.exceptions.StringCacheMismatchError: cannot compare categoricals coming
@@ -101,7 +101,7 @@ except ImportError:
         ...     pl.DataFrame(
         ...         [
         ...             pl.Series(["a", "b", "c"], dtype=pl.Categorical),
-        ...             pl.Series(["c", "b", "b"], dtype=pl.Categorical)
+        ...             pl.Series(["c", "b", "b"], dtype=pl.Categorical),
         ...         ]
         ...     ).transpose()
         shape: (2, 3)
