@@ -562,8 +562,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start and end of the string. If set to
+            None (default), all leading and trailing whitespace is removed instead.
 
         Examples
         --------
@@ -625,8 +625,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start of the string. If set to None
+            (default), all leading whitespace is removed instead.
 
         See Also
         --------
@@ -694,8 +694,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the end of the string. If set to None
+            (default), all trailing whitespace is removed instead.
 
         See Also
         --------
