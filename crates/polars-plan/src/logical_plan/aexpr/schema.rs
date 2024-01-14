@@ -127,7 +127,11 @@ impl AExpr {
                     Mean(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        float_type(&mut field);
+                        if matches!(&field.dtype, DataType::Boolean) {
+                            field.coerce(DataType::Float64);
+                        } else {
+                            float_type(&mut field);
+                        }
                         Ok(field)
                     },
                     Implode(expr) => {
