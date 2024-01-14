@@ -315,6 +315,11 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub fn total_buffer_len(&self) -> usize {
         self.total_buffer_len
     }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.views.len()
+    }
 }
 
 impl BinaryViewArray {
@@ -370,8 +375,9 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         self
     }
 
+    #[inline(always)]
     fn len(&self) -> usize {
-        self.views.len()
+        BinaryViewArrayGeneric::len(self)
     }
 
     fn data_type(&self) -> &ArrowDataType {
