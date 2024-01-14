@@ -379,10 +379,16 @@ impl<'a> CoreReader<'a> {
         // if we set an upper bound on bytes, keep a reference to the bytes beyond the bound
         let mut remaining_bytes = None;
 
+        // clip sample_size to n_rows
+        let sample_size = self
+            .n_rows
+            .map(|n| std::cmp::min(n, self.sample_size))
+            .unwrap_or(self.sample_size);
+
         // if None, there are less then 128 rows in the file and the statistics don't matter that much
         if let Some((mean, std)) = get_line_stats(
             bytes,
-            self.sample_size,
+            sample_size,
             self.eol_char,
             self.schema.len(),
             self.separator,

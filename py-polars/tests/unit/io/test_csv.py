@@ -1266,6 +1266,20 @@ def test_csv_categorical_categorical_merge() -> None:
     )["x"].to_list() == ["A", "B"]
 
 
+def test_csv_clip_n_rows_to_sample_size() -> None:
+    import tempfile
+
+    case_numbers = [f"{i:06d}" for i in range(1, 1001)]
+    test = ["test" for _ in range(1, 1001)]
+    df = pl.DataFrame({"test": test, "case_number": case_numbers})
+    df[622, "case_number"] = "CASE-NO0A60"
+    with tempfile.NamedTemporaryFile(delete=True, suffix=".csv") as temp_file:
+        filename = temp_file.name
+        df.write_csv(filename)
+        df = pl.read_csv(filename, n_rows=1)
+        assert len(df) == 1
+
+
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(5)
