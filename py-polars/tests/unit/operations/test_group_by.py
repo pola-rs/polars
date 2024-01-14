@@ -250,7 +250,7 @@ def df() -> pl.DataFrame:
     ("method", "expected"),
     [
         ("all", [("a", [1, 2], [None, 1]), ("b", [3, 4, 5], [None, 1, None])]),
-        ("count", [("a", 2), ("b", 3)]),
+        ("len", [("a", 2), ("b", 3)]),
         ("first", [("a", 1, None), ("b", 3, None)]),
         ("last", [("a", 2, 1), ("b", 5, None)]),
         ("max", [("a", 2, 1), ("b", 5, 1)]),
@@ -763,7 +763,7 @@ def test_perfect_hash_table_null_values() -> None:
 def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
-    out = df.group_by(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
 
@@ -890,8 +890,8 @@ def test_group_by_with_expr_as_key() -> None:
 
 def test_lazy_group_by_reuse_11767() -> None:
     lgb = pl.select(x=1).lazy().group_by("x")
-    a = lgb.count()
-    b = lgb.count()
+    a = lgb.len()
+    b = lgb.len()
     assert_frame_equal(a, b)
 
 

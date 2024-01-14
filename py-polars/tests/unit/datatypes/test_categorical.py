@@ -124,7 +124,7 @@ def test_unset_sorted_on_append() -> None:
         ]
     ).sort("key")
     df = pl.concat([df1, df2], rechunk=False)
-    assert df.group_by("key").count()["count"].to_list() == [4, 4]
+    assert df.group_by("key").len()["len"].to_list() == [4, 4]
 
 
 @pytest.mark.parametrize(

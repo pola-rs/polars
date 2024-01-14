@@ -5272,10 +5272,10 @@ class DataFrame:
         └──────┴─────┴─────┘
 
         An index column can also be created using the expressions :func:`int_range`
-        and :func:`count`.
+        and :func:`len`.
 
         >>> df.select(
-        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
         ...     pl.all(),
         ... )
         shape: (3, 3)
@@ -7260,9 +7260,8 @@ class DataFrame:
 
             - None: no aggregation takes place, will raise error if multiple values are in group.
             - A predefined aggregate function string, one of
-              {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
+              {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len'}
             - An expression to do the aggregation.
-
         maintain_order
             Sort the grouped keys so that the output order is predictable.
         sort_columns
@@ -7392,8 +7391,15 @@ class DataFrame:
                 aggregate_expr = F.element().median()._pyexpr
             elif aggregate_function == "last":
                 aggregate_expr = F.element().last()._pyexpr
+            elif aggregate_function == "len":
+                aggregate_expr = F.len()._pyexpr
             elif aggregate_function == "count":
-                aggregate_expr = F.count()._pyexpr
+                issue_deprecation_warning(
+                    "`aggregate_function='count'` input for `pivot` is deprecated."
+                    " Please use `aggregate_function='len'`.",
+                    version="0.20.5",
+                )
+                aggregate_expr = F.len()._pyexpr
             else:
                 msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 raise ValueError(msg)

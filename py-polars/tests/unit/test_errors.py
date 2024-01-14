@@ -20,7 +20,7 @@ def test_error_on_empty_group_by() -> None:
     with pytest.raises(
         pl.ComputeError, match="at least one key is required in a group_by operation"
     ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.count())
+        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.len())
 
 
 def test_error_on_reducing_map() -> None:

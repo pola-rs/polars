@@ -100,7 +100,7 @@ ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 PivotAgg: TypeAlias = Literal[
-    "first", "sum", "max", "min", "mean", "median", "last", "count"
+    "min", "max", "first", "last", "sum", "mean", "median", "len"
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 SizeUnit: TypeAlias = Literal[
