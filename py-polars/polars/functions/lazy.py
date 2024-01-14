@@ -15,6 +15,7 @@ from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.deprecation import (
     deprecate_parameter_as_positional,
     deprecate_renamed_function,
+    issue_deprecation_warning,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -90,12 +91,13 @@ def element() -> Expr:
 @deprecate_parameter_as_positional("column", version="0.20.4")
 def count(*columns: str) -> Expr:
     """
-    Either return the number of rows in the context, or return the number of non-null values in the column.
+    Return the number of non-null values in the column.
 
-    If no arguments are passed, returns the number of rows in the context; note that rows
-    containing null values count towards the total (this is similar to `COUNT(*)` in SQL).
+    This function is syntactic sugar for `col(column).count()`.
 
-    Otherwise, this function is syntactic sugar for `col(column).count()`.
+    Calling this function without any arguments returns the number of rows in the
+    context. **This way of using the function is deprecated. Please use :func:`len`
+    instead.**
 
     Parameters
     ----------
@@ -113,9 +115,6 @@ def count(*columns: str) -> Expr:
 
     Examples
     --------
-    Return the number of rows in a context. Note that rows containing null values are
-    counted towards the total.
-
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2, None],
@@ -123,18 +122,6 @@ def count(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "foo"],
     ...     }
     ... )
-    >>> df.select(pl.count())
-    shape: (1, 1)
-    ┌───────┐
-    │ count │
-    │ ---   │
-    │ u32   │
-    ╞═══════╡
-    │ 3     │
-    └───────┘
-
-    Return the number of non-null values in a column.
-
     >>> df.select(pl.count("a"))
     shape: (1, 1)
     ┌─────┐
@@ -157,26 +144,25 @@ def count(*columns: str) -> Expr:
     │ 1   ┆ 3   │
     └─────┴─────┘
 
-    Generate an index column using `count` in conjunction with :func:`int_range`.
+    Return the number of rows in a context. **This way of using the function is
+    deprecated. Please use :func:`len` instead.**
 
-    >>> df.select(
-    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
-    ...     pl.all(),
-    ... )
-    shape: (3, 4)
-    ┌───────┬──────┬──────┬─────┐
-    │ index ┆ a    ┆ b    ┆ c   │
-    │ ---   ┆ ---  ┆ ---  ┆ --- │
-    │ u32   ┆ i64  ┆ i64  ┆ str │
-    ╞═══════╪══════╪══════╪═════╡
-    │ 0     ┆ 1    ┆ 3    ┆ foo │
-    │ 1     ┆ 2    ┆ null ┆ bar │
-    │ 2     ┆ null ┆ null ┆ foo │
-    └───────┴──────┴──────┴─────┘
-
-    """  # noqa: W505
+    >>> df.select(pl.count())  # doctest: +SKIP
+    shape: (1, 1)
+    ┌───────┐
+    │ count │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 3     │
+    └───────┘
+    """
     if not columns:
-        return wrap_expr(plr.count())
+        issue_deprecation_warning(
+            "`pl.count()` is deprecated. Please use `pl.len()` instead.",
+            version="0.20.5",
+        )
+        return F.len().alias("count")
     return F.col(*columns).count()
 
 

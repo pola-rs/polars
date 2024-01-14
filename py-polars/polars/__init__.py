@@ -138,6 +138,7 @@ from polars.functions import (
     int_range,
     int_ranges,
     last,
+    len,
     lit,
     map,
     map_batches,
@@ -393,6 +394,8 @@ __all__ = [
     "tail",
     "time",  # named time_, see import above
     "var",
+    # polars.functions.len
+    "len",
     # polars.functions.random
     "set_random_seed",
     # polars.convert
