@@ -8,6 +8,7 @@
 //! use polars_core::prelude::*;
 //! use polars_io::prelude::*;
 //! use std::io::Cursor;
+//! use std::num::NonZeroUsize;
 //!
 //! let basic_json = r#"{"a":1, "b":2.0, "c":false, "d":"4"}
 //! {"a":-10, "b":-3.5, "c":true, "d":"4"}
@@ -25,7 +26,7 @@
 //! let df = JsonReader::new(file)
 //! .with_json_format(JsonFormat::JsonLines)
 //! .infer_schema_len(Some(3))
-//! .with_batch_size(3)
+//! .with_batch_size(NonZeroUsize::new(3).unwrap())
 //! .finish()
 //! .unwrap();
 //!
@@ -65,6 +66,7 @@ pub(crate) mod infer;
 
 use std::convert::TryFrom;
 use std::io::Write;
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 
 use arrow::array::{ArrayRef, StructArray};
@@ -193,7 +195,7 @@ where
     rechunk: bool,
     ignore_errors: bool,
     infer_schema_len: Option<usize>,
-    batch_size: usize,
+    batch_size: NonZeroUsize,
     projection: Option<Vec<String>>,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
@@ -210,7 +212,7 @@ where
             rechunk: true,
             ignore_errors: false,
             infer_schema_len: Some(100),
-            batch_size: 8192,
+            batch_size: NonZeroUsize::new(8192).unwrap(),
             projection: None,
             schema: None,
             schema_overwrite: None,
@@ -300,7 +302,7 @@ where
                     self.schema_overwrite,
                     None,
                     1024, // sample size
-                    1 << 18,
+                    NonZeroUsize::new(1 << 18).unwrap(),
                     false,
                     self.infer_schema_len,
                     self.ignore_errors,
@@ -354,7 +356,7 @@ where
     /// Set the batch size (number of records to load at one time)
     ///
     /// This heavily influences loading time.
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+    pub fn with_batch_size(mut self, batch_size: NonZeroUsize) -> Self {
         self.batch_size = batch_size;
         self
     }

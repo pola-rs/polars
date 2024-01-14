@@ -121,7 +121,7 @@ impl PyLazyFrame {
         paths: Vec<PathBuf>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
-        batch_size: Option<usize>,
+        batch_size: Option<NonZeroUsize>,
         n_rows: Option<usize>,
         low_memory: bool,
         rechunk: bool,
