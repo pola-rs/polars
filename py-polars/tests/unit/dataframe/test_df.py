@@ -1138,6 +1138,10 @@ def test_rename(df: pl.DataFrame) -> None:
     # check if we can select these new columns
     _ = out[["foos", "bars"]]
 
+def test_rename_lambda() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    out = df.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col)
+    assert out.columns == ["foo", "bar", "c"]
 
 def test_write_csv() -> None:
     df = pl.DataFrame(
