@@ -99,7 +99,7 @@ impl PolarsTableFunctions {
     }
     #[cfg(feature = "json")]
     fn read_ndjson(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        polars_ensure!(!args.is_empty(), ComputeError; "read_json expected a path");
+        polars_ensure!(!args.is_empty(), ComputeError: "read_json expected a path");
 
         use polars_lazy::frame::LazyFileListReader;
         use polars_lazy::prelude::LazyJsonLineReader;
