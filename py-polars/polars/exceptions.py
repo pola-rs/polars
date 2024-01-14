@@ -61,13 +61,63 @@ except ImportError:
         """
 
     class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a specified schema field is not found."""
+        """
+        Exception raised when a specified schema field is not found.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"exists": [1, 2, 3]})
+        >>> df.rename({"does_not_exist": "exists"})
+        polars.exceptions.SchemaFieldNotFoundError: does_not_exist
+        """
 
     class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
+        """
+        Exception raised when trying to perform operations on data structures with incompatible shapes.
+
+        Examples
+        --------
+        >>> pl.DataFrame({"a": [1, 2], "b": [1.0, 2.0, 3.0]})
+        polars.exceptions.ShapeError: could not create a new DataFrame: series "a" has
+        length 2 while series "b" has length 3
+        """  # noqa: W505
 
     class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when string caches come from different sources."""
+        """
+        Exception raised when string caches come from different sources.
+
+        Examples
+        --------
+        >>> pl.DataFrame(
+        ...     [
+        ...         pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+        ...         pl.Series(["c", "b", "b"], dtype=pl.Categorical)
+        ...     ]
+        ... ).transpose()
+        polars.exceptions.StringCacheMismatchError: cannot compare categoricals coming
+        from different sources, consider setting a global StringCache.
+
+        >>> with pl.StringCache():
+        ...     pl.DataFrame(
+        ...         [
+        ...             pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+        ...             pl.Series(["c", "b", "b"], dtype=pl.Categorical)
+        ...         ]
+        ...     ).transpose()
+        shape: (2, 3)
+        ┌──────────┬──────────┬──────────┐
+        │ column_0 ┆ column_1 ┆ column_2 │
+        │ ---      ┆ ---      ┆ ---      │
+        │ cat      ┆ cat      ┆ cat      │
+        ╞══════════╪══════════╪══════════╡
+        │ a        ┆ b        ┆ c        │
+        │ c        ┆ b        ┆ b        │
+        └──────────┴──────────┴──────────┘
+
+        Alternatively, if the performance cost is acceptable, you could just set:
+        `pl.enable_string_cache()`
+        on startup.
+        """
 
     class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when a specified Struct field is not found."""
