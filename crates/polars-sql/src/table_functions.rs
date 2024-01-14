@@ -1,6 +1,13 @@
 use std::str::FromStr;
 
-use polars_core::prelude::{polars_bail, polars_ensure, PolarsError, PolarsResult};
+#[cfg(any(
+    feature = "csv",
+    feature = "parquet",
+    feature = "ipc",
+    feature = "json"
+))]
+use polars_core::prelude::polars_ensure;
+use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::LazyFrame;
