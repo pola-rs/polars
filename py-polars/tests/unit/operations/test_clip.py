@@ -116,6 +116,38 @@ def test_clip_datetime(clip_exprs: list[pl.Expr]) -> None:
     assert_frame_equal(result, expected)
 
 
+def test_clip_bound_invalid_for_original_dtype() -> None:
+    s = pl.Series([1, 2, 3, 4], dtype=pl.UInt32)
+    result = s.clip(-1, 5)
+    expected = pl.Series([1, 2, 3, 4], dtype=pl.Int64)
+    assert_series_equal(result, expected)
+
+
+def test_clip_bound_cast_to_float() -> None:
+    s = pl.Series([1, 2, 3, 4], dtype=pl.UInt32)
+    result = s.clip(1.5, 3.5)
+    expected = pl.Series([1.5, 2.0, 3.0, 3.5])
+    assert_series_equal(result, expected)
+
+
+def test_clip_non_numeric_dtype_fails() -> None:
+    msg = "`clip` only supports physical numeric types"
+
+    s = pl.Series(["a", "bc"])
+    with pytest.raises(pl.InvalidOperationError, match=msg):
+        s.clip("a", "x")
+
+    s = pl.Series([1, 2])
+    with pytest.raises(pl.InvalidOperationError, match=msg):
+        s.clip("a", "x")
+
+
+def test_clip_determining_supertype_fails() -> None:
+    s = pl.Series([1, 2])
+    with pytest.raises(pl.ComputeError, match="failed to determine supertype"):
+        s.clip(b"a", [5])  # type: ignore[arg-type]
+
+
 def test_clip_min_max_deprecated() -> None:
     s = pl.Series([-1, 0, 1])
 

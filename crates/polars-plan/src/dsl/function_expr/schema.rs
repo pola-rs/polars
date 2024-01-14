@@ -69,7 +69,7 @@ impl FunctionExpr {
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
-            Clip { .. } => mapper.with_same_dtype(),
+            Clip { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "mode")]
             Mode => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
