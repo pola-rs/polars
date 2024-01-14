@@ -2,6 +2,7 @@ mod exitable;
 
 use std::collections::HashMap;
 use std::io::BufWriter;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub use exitable::PyInProcessQuery;
@@ -591,7 +592,7 @@ impl PyLazyFrame {
         separator: u8,
         line_terminator: String,
         quote_char: u8,
-        batch_size: usize,
+        batch_size: NonZeroUsize,
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
