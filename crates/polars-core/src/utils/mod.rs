@@ -6,7 +6,8 @@ use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
-pub use arrow::legacy::utils::{TrustMyLength, *};
+pub use arrow::trusted_len::{TrustMyLength};
+pub use arrow::legacy::utils::*;
 use flatten::*;
 use num_traits::{One, Zero};
 use rayon::prelude::*;
