@@ -2386,11 +2386,12 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self) -> RecordBatchIter {
+    pub fn iter_chunks(&self, pl_flavor: bool) -> RecordBatchIter {
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
             n_chunks: self.n_chunks(),
+            pl_flavor,
         }
     }
 
@@ -3015,6 +3016,7 @@ pub struct RecordBatchIter<'a> {
     columns: &'a Vec<Series>,
     idx: usize,
     n_chunks: usize,
+    pl_flavor: bool,
 }
 
 impl<'a> Iterator for RecordBatchIter<'a> {
@@ -3025,7 +3027,11 @@ impl<'a> Iterator for RecordBatchIter<'a> {
             None
         } else {
             // create a batch of the columns with the same chunk no.
-            let batch_cols = self.columns.iter().map(|s| s.to_arrow(self.idx)).collect();
+            let batch_cols = self
+                .columns
+                .iter()
+                .map(|s| s.to_arrow(self.idx, self.pl_flavor))
+                .collect();
             self.idx += 1;
 
             Some(ArrowChunk::new(batch_cols))

@@ -169,7 +169,7 @@ where
     }
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
-        let fields = schema.to_arrow().fields;
+        let fields = schema.to_arrow(true).fields;
         let schema = ArrowSchema::from(fields);
 
         let parquet_schema = to_parquet_schema(&schema)?;
@@ -209,7 +209,7 @@ fn prepare_rg_iter<'a>(
     options: WriteOptions,
     parallel: bool,
 ) -> impl Iterator<Item = PolarsResult<RowGroupIter<'a, PolarsError>>> + 'a {
-    let rb_iter = df.iter_chunks();
+    let rb_iter = df.iter_chunks(true);
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
         _ => {

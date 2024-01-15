@@ -155,7 +155,7 @@ where
             unsafe { unset_bit_raw(validity_slice, i) }
         }
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(),
+            T::get_dtype().to_arrow(true),
             new_values.into(),
             Some(validity.into()),
         );
@@ -274,7 +274,7 @@ impl ExplodeByOffsets for ListChunked {
             last = o;
         }
         process_range(start, last, &mut builder);
-        let arr = builder.finish(Some(&inner_type.to_arrow())).unwrap();
+        let arr = builder.finish(Some(&inner_type.to_arrow(true))).unwrap();
         unsafe { self.copy_with_chunks(vec![Box::new(arr)], true, true) }.into_series()
     }
 }

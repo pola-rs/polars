@@ -100,7 +100,7 @@ impl Series {
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap()
+                Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow(true)).unwrap()
             },
             #[cfg(feature = "object")]
             Object(_, _) => {

@@ -18,7 +18,7 @@ impl Series {
     /// Convert a chunk in the Series to the correct Arrow type.
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/ categoricals, etc.
-    pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
+    pub fn to_arrow(&self, chunk_idx: usize, pl_flavor: bool) -> ArrayRef {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
@@ -44,10 +44,10 @@ impl Series {
                         .unwrap()
                     };
 
-                    s.to_arrow(0)
+                    s.to_arrow(0, true)
                 };
 
-                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow());
+                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(true));
                 let arr = ListArray::<i64>::new(
                     data_type,
                     arr.offsets().clone(),
@@ -76,17 +76,21 @@ impl Series {
                 Box::new(arr) as ArrayRef
             },
             #[cfg(feature = "dtype-date")]
-            DataType::Date => cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow()).unwrap(),
+            DataType::Date => {
+                cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow(true)).unwrap()
+            },
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
+                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(true)).unwrap()
             },
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
+                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(true)).unwrap()
             },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap(),
+            DataType::Time => {
+                cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow(true)).unwrap()
+            },
             #[cfg(feature = "object")]
             DataType::Object(_, None) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;
@@ -102,6 +106,14 @@ impl Series {
                     let s = self.slice(offset, len);
                     object_series_to_arrow_array(&s)
                 }
+            },
+            DataType::String if pl_flavor => {
+                // TODO: implement Utf8ViewCast Here
+                self.array_ref(chunk_idx).clone()
+            },
+            DataType::Binary if pl_flavor => {
+                // TODO: implement BinViewCast Here
+                self.array_ref(chunk_idx).clone()
             },
             _ => self.array_ref(chunk_idx).clone(),
         }
