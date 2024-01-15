@@ -49,6 +49,14 @@ def test_str_concat_all_null() -> None:
     assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
 
 
+def test_str_concat_single_null() -> None:
+    s = pl.Series([None], dtype=pl.String)
+    assert_series_equal(
+        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.String)
+    )
+    assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
+
+
 def test_str_concat_empty_list() -> None:
     s = pl.Series([], dtype=pl.String)
     assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series([""]))
