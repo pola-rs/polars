@@ -836,7 +836,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks()
+                .iter_chunks(false)
                 .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
                 .collect::<PyResult<_>>()?;
             Ok(rbs)
@@ -859,7 +859,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks()
+                .iter_chunks(false)
                 .map(|rb| {
                     let mut rb = rb.into_arrays();
                     for i in &cat_columns {

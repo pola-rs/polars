@@ -3108,7 +3108,7 @@ mod test {
             "foo" => &[1, 2, 3, 4, 5]
         )
         .unwrap();
-        let mut iter = df.iter_chunks();
+        let mut iter = df.iter_chunks(true);
         assert_eq!(5, iter.next().unwrap().len());
         assert!(iter.next().is_none());
     }
