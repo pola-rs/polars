@@ -152,8 +152,8 @@ impl_polars_datatype!(DatetimeType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
 impl_polars_datatype!(DurationType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
 impl_polars_datatype!(CategoricalType, Unknown, PrimitiveArray<u32>, 'a, u32, u32);
 impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64);
-impl_polars_datatype!(StringType, String, Utf8Array<i64>, 'a, &'a str, Option<&'a str>);
-impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>);
+impl_polars_datatype!(StringType, String, Utf8ViewArray, 'a, &'a str, Option<&'a str>);
+impl_polars_datatype!(BinaryType, Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>);
 impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

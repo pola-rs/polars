@@ -2,10 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::array::static_array::{ParameterFreeDtypeStaticArray, StaticArray};
-use crate::array::{
-    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryArray,
-    MutableBinaryValuesArray, PrimitiveArray, Utf8Array,
-};
+use crate::array::{Array, BinaryArray, BinaryViewArrayGeneric, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray, PrimitiveArray, Utf8Array, ViewType};
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
@@ -439,10 +436,12 @@ impl<T: IntoBytes> ArrayFromIter<T> for BinaryArray<i64> {
 }
 
 impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryArray<i64> {
+    #[inline]
     fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
         BinaryArray::from_iter(iter.into_iter().map(|s| Some(s?.into_bytes())))
     }
 
+    #[inline]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = Option<T>>,
@@ -483,6 +482,89 @@ impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryArray<i64> {
         }
     }
 }
+
+// mod private {
+//     use super::*;
+//     pub trait Sealed {}
+//     impl Sealed for String {}
+//     impl Sealed for Vec<u8> {}
+//     impl<'a> Sealed for Cow<'a, str> {}
+//     impl<'a> Sealed for &'a [u8] {}
+// }
+
+trait AsRefLocal<T: ?Sized> {
+    /// Converts this type into a shared reference of the (usually inferred) input type.
+    fn as_ref(&self) -> &T {
+        self
+    }
+
+
+}
+
+impl AsRefLocal<str> for String {}
+impl<'a> AsRefLocal<str> for Cow<'a, str> {}
+impl AsRefLocal<[u8]> for Vec<u8> {}
+impl<'a> AsRefLocal<[u8]> for &'a [u8] {}
+
+impl<A: AsRefLocal<T>, T: ViewType + ?Sized> ArrayFromIter<A> for BinaryViewArrayGeneric<T> {
+    #[inline]
+    fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        MutableBinaryViewArray::from_values_iter(iter.into_iter().map(|a| a.as_ref())).into()
+    }
+
+    #[inline]
+    fn arr_from_iter_trusted<I>(iter: I) -> Self
+        where
+            I: IntoIterator<Item = T>,
+            I::IntoIter: TrustedLen,
+    {
+        Self::arr_from_iter(iter)
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E> {
+        let mut iter = iter.into_iter();
+        let mut arr = MutableBinaryViewArray::with_capacity(iter.size_hint().0);
+        iter.try_for_each(|x| -> Result<(), E> {
+            arr.push_value_ignore_validity(x?.as_ref());
+            Ok(())
+        })?;
+        Ok(arr.into())
+    }
+
+    // No faster implementation than this available, fall back to default.
+    // fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
+}
+
+impl<T: ViewType + ?Sized, A: AsRefLocal<T>> ArrayFromIter<Option<A>> for BinaryViewArrayGeneric<T> {
+    #[inline]
+    fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        MutableBinaryViewArray::from_iter(iter.into_iter().map(|a| a.map(|a| a.as_ref()))).into()
+    }
+
+    #[inline]
+    fn arr_from_iter_trusted<I>(iter: I) -> Self
+        where
+            I: IntoIterator<Item = T>,
+            I::IntoIter: TrustedLen,
+    {
+        Self::arr_from_iter(iter)
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E> {
+        let mut iter = iter.into_iter();
+        let mut arr = MutableBinaryViewArray::with_capacity(iter.size_hint().0);
+        iter.try_for_each(|x| -> Result<(), E> {
+            let x = x?.map(|x| x.as_ref());
+            arr.push(x);
+            Ok(())
+        })?;
+        Ok(arr.into())
+    }
+
+    // No faster implementation than this available, fall back to default.
+    // fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
+}
+
 
 /// We use this to re-use the binary collect implementation for strings.
 /// # Safety

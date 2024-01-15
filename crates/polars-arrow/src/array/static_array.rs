@@ -1,10 +1,8 @@
 use bytemuck::Zeroable;
 
 use crate::array::static_array_collect::ArrayFromIterDtype;
-use crate::array::{
-    Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BooleanArray, FixedSizeListArray,
-    ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter,
-};
+use crate::array::{Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArrayGeneric, BooleanArray, FixedSizeListArray, ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter, ViewType};
+use crate::array::binview::BinaryViewValueIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
@@ -236,6 +234,39 @@ impl StaticArray for BinaryArray<i64> {
 impl ParameterFreeDtypeStaticArray for BinaryArray<i64> {
     fn get_dtype() -> ArrowDataType {
         ArrowDataType::LargeBinary
+    }
+}
+
+impl<T: ViewType + ?Sized> StaticArray for BinaryViewArrayGeneric<T> {
+    type ValueT<'a> = &'a T;
+    type ZeroableValueT<'a> = Option<&'a T>;
+    type ValueIterT<'a> = BinaryViewValueIter<'a, T>;
+
+    unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_> {
+        self.value_unchecked(idx)
+    }
+
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+        self.iter()
+    }
+
+    fn values_iter(&self) -> Self::ValueIterT<'_> {
+        self.values_iter()
+    }
+
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
+    }
+}
+
+
+impl<T: ViewType + ?Sized> ParameterFreeDtypeStaticArray for BinaryViewArrayGeneric<T> {
+    fn get_dtype() -> ArrowDataType {
+        T::DATA_TYPE
     }
 }
 
