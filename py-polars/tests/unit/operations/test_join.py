@@ -835,3 +835,13 @@ def test_outer_join_coalesce_different_names_13450() -> None:
 
     out = df1.join(df2, left_on="L1", right_on="L3", how="outer_coalesce")
     assert_frame_equal(out, expected)
+
+
+# https://github.com/pola-rs/polars/issues/10663
+def test_join_on_wildcard_error() -> None:
+    df = pl.DataFrame({"x": [1]})
+    df2 = pl.DataFrame({"x": [1], "y": [2]})
+    with pytest.raises(
+        pl.ComputeError, match="wildcard column selection not supported at this point"
+    ):
+        df.join(df2, on=pl.all())
