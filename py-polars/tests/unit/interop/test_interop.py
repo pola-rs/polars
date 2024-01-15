@@ -419,9 +419,14 @@ def test_from_numpy() -> None:
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
-    with pytest.raises(ValueError, match="cannot create DataFrame from array with more than two dimensions"):
+    with pytest.raises(
+        ValueError,
+        match="cannot create DataFrame from array with more than two dimensions",
+    ):
         _ = pl.from_numpy(np.array([[[1]]]))
-    with pytest.raises(ValueError, match="cannot create DataFrame from zero-dimensional array"):
+    with pytest.raises(
+        ValueError, match="cannot create DataFrame from zero-dimensional array"
+    ):
         _ = pl.from_numpy(np.array(1))
 
 
