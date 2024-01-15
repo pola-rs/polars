@@ -436,7 +436,7 @@ impl LazyFrame {
     /// Removes columns from the DataFrame.
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
-    pub fn drop_columns<I, T>(self, columns: I) -> Self
+    pub fn drop<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -447,7 +447,7 @@ impl LazyFrame {
             .collect::<PlHashSet<_>>();
 
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop_columns(to_drop).build();
+        let lp = self.get_plan_builder().drop(to_drop).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
