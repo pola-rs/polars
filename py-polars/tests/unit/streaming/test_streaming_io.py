@@ -172,6 +172,12 @@ def test_sink_csv_exception_for_quote(value: str) -> None:
         df.sink_csv("path", quote_char=value)
 
 
+def test_sink_csv_batch_size_zero() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    with pytest.raises(ValueError, match="invalid zero value"):
+        lf.sink_csv("test.csv", batch_size=0)
+
+
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
     df = pl.scan_csv(foods_file_path).collect(streaming=True)
