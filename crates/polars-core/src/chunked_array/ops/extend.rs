@@ -90,77 +90,16 @@ where
 #[doc(hidden)]
 impl StringChunked {
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append::<StringType>(self, other);
-        if self.chunks.len() > 1 {
-            self.append(other);
-            *self = self.rechunk();
-            return;
-        }
-        let arr = self.downcast_iter().next().unwrap();
-
-        // increments 1
-        let arr = arr.clone();
-
-        // now we drop our owned ArrayRefs so that
-        // decrements 1
-        {
-            self.chunks.clear();
-        }
-
-        use Either::*;
-
-        match arr.into_mut() {
-            Left(immutable) => {
-                extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            },
-            Right(mut mutable) => {
-                for arr in other.downcast_iter() {
-                    mutable.extend_trusted_len(arr.into_iter())
-                }
-                let arr: Utf8Array<i64> = mutable.into();
-                self.chunks.push(Box::new(arr) as ArrayRef)
-            },
-        }
-        self.compute_len();
         self.set_sorted_flag(IsSorted::Not);
+        self.append(other)
     }
 }
 
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append::<BinaryType>(self, other);
-        if self.chunks.len() > 1 {
-            self.append(other);
-            *self = self.rechunk();
-            return;
-        }
-        let arr = self.downcast_iter().next().unwrap();
-
-        // increments 1
-        let arr = arr.clone();
-
-        // now we drop our owned ArrayRefs so that
-        // decrements 1
-        {
-            self.chunks.clear();
-        }
-
-        use Either::*;
-
-        match arr.into_mut() {
-            Left(immutable) => {
-                extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            },
-            Right(mut mutable) => {
-                for arr in other.downcast_iter() {
-                    mutable.extend_trusted_len(arr.into_iter())
-                }
-                let arr: BinaryArray<i64> = mutable.into();
-                self.chunks.push(Box::new(arr) as ArrayRef)
-            },
-        }
-        self.compute_len();
+        self.set_sorted_flag(IsSorted::Not);
+        self.append(other)
     }
 }
 

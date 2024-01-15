@@ -56,7 +56,7 @@ impl<'a> ChunkFull<&'a str> for StringChunked {
 
 impl ChunkFullNull for StringChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = Utf8Array::new_null(DataType::String.to_arrow(true), length);
+        let arr = Utf8ViewArray::new_null(DataType::String.to_arrow(true), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -74,7 +74,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = BinaryArray::new_null(DataType::Binary.to_arrow(true), length);
+        let arr = BinaryViewArray::new_null(DataType::Binary.to_arrow(true), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
