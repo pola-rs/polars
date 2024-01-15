@@ -94,8 +94,12 @@ impl PyExpr {
         self.inner.clone().str().strip_suffix(suffix.inner).into()
     }
 
-    fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
-        self.inner.clone().str().slice(start, length).into()
+    fn str_slice(&self, offset: Self, length: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .slice(offset.inner, length.inner)
+            .into()
     }
 
     fn str_explode(&self) -> Self {

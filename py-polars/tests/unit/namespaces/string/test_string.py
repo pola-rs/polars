@@ -16,6 +16,39 @@ def test_str_slice() -> None:
     assert df.select([pl.col("a").str.slice(2, 4)])["a"].to_list() == ["obar", "rfoo"]
 
 
+def test_str_slice_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["foobar", None, "barfoo", "abcd", ""],
+            "offset": [1, 3, None, -3, 2],
+            "length": [3, 4, 2, None, 2],
+        }
+    )
+    out = df.select(
+        all_expr=pl.col("a").str.slice("offset", "length"),
+        offset_expr=pl.col("a").str.slice("offset", 2),
+        length_expr=pl.col("a").str.slice(0, "length"),
+        length_none=pl.col("a").str.slice("offset", None),
+        offset_length_lit=pl.col("a").str.slice(-3, 3),
+        str_lit=pl.lit("qwert").str.slice("offset", "length"),
+    )
+    expected = pl.DataFrame(
+        {
+            "all_expr": ["oob", None, None, "bcd", ""],
+            "offset_expr": ["oo", None, None, "bc", ""],
+            "length_expr": ["foo", None, "ba", "abcd", ""],
+            "length_none": ["oobar", None, None, "bcd", ""],
+            "offset_length_lit": ["bar", None, "foo", "bcd", ""],
+            "str_lit": ["wer", "rt", None, "ert", "er"],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    # negative length is not allowed
+    with pytest.raises(pl.ComputeError):
+        df.select(pl.col("a").str.slice(0, -1))
+
+
 def test_str_concat() -> None:
     s = pl.Series(["1", None, "2", None])
     # propagate null

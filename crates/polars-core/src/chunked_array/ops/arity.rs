@@ -623,9 +623,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            let mut out = unary_elementwise(rhs, |b| op(a.clone(), b));
-            out.rename(lhs.name());
-            out
+            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -650,9 +648,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            let mut out = try_unary_elementwise(rhs, |b| op(a.clone(), b))?;
-            out.rename(lhs.name());
-            Ok(out)
+            Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -686,9 +682,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.value_unchecked(0) };
-            let mut out = unary_elementwise_values(rhs, |b| op(a.clone(), b));
-            out.rename(lhs.name());
-            out
+            unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
         },
         (_, 1) => {
             let b = unsafe { rhs.value_unchecked(0) };
@@ -722,9 +716,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.value_unchecked(0) };
-            let mut out = try_unary_elementwise_values(rhs, |b| op(a.clone(), b))?;
-            out.rename(lhs.name());
-            Ok(out)
+            Ok(try_unary_elementwise_values(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
         },
         (_, 1) => {
             let b = unsafe { rhs.value_unchecked(0) };

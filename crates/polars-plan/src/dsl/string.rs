@@ -516,11 +516,13 @@ impl StringNameSpace {
     }
 
     /// Slice the string values.
-    pub fn slice(self, start: i64, length: Option<u64>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Slice(
-                start, length,
-            )))
+    pub fn slice(self, offset: Expr, length: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Slice),
+            &[offset, length],
+            false,
+            false,
+        )
     }
 
     pub fn explode(self) -> Expr {

@@ -2027,7 +2027,9 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_reverse())
 
-    def slice(self, offset: int, length: int | None = None) -> Expr:
+    def slice(
+        self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
+    ) -> Expr:
         """
         Create subslices of the string values of a String Series.
 
@@ -2079,6 +2081,8 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ onf      │
         └─────────────┴──────────┘
         """
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
     def explode(self) -> Expr:
