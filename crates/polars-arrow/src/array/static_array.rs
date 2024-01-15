@@ -1,7 +1,7 @@
 use bytemuck::Zeroable;
 
 use crate::array::static_array_collect::ArrayFromIterDtype;
-use crate::array::{Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArrayGeneric, BooleanArray, FixedSizeListArray, ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter, ViewType};
+use crate::array::{Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BinaryViewArrayGeneric, BooleanArray, FixedSizeListArray, ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter, ViewType, Utf8ViewArray};
 use crate::array::binview::BinaryViewValueIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -237,10 +237,11 @@ impl ParameterFreeDtypeStaticArray for BinaryArray<i64> {
     }
 }
 
-impl<T: ViewType + ?Sized> StaticArray for BinaryViewArrayGeneric<T> {
-    type ValueT<'a> = &'a T;
-    type ZeroableValueT<'a> = Option<&'a T>;
-    type ValueIterT<'a> = BinaryViewValueIter<'a, T>;
+impl StaticArray for BinaryViewArray
+{
+    type ValueT<'a> = &'a [u8];
+    type ZeroableValueT<'a> = Option<&'a [u8]>;
+    type ValueIterT<'a> = BinaryViewValueIter<'a, [u8]>;
 
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_> {
         self.value_unchecked(idx)
@@ -264,9 +265,43 @@ impl<T: ViewType + ?Sized> StaticArray for BinaryViewArrayGeneric<T> {
 }
 
 
-impl<T: ViewType + ?Sized> ParameterFreeDtypeStaticArray for BinaryViewArrayGeneric<T> {
+impl ParameterFreeDtypeStaticArray for BinaryViewArray {
     fn get_dtype() -> ArrowDataType {
-        T::DATA_TYPE
+        ArrowDataType::BinaryView
+    }
+}
+
+impl StaticArray for Utf8ViewArray
+{
+    type ValueT<'a> = &'a str;
+    type ZeroableValueT<'a> = Option<&'a str>;
+    type ValueIterT<'a> = BinaryViewValueIter<'a, str>;
+
+    unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_> {
+        self.value_unchecked(idx)
+    }
+
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+        self.iter()
+    }
+
+    fn values_iter(&self) -> Self::ValueIterT<'_> {
+        self.values_iter()
+    }
+
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
+    }
+}
+
+
+impl ParameterFreeDtypeStaticArray for Utf8ViewArray {
+    fn get_dtype() -> ArrowDataType {
+        ArrowDataType::Utf8View
     }
 }
 
