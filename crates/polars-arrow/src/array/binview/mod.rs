@@ -36,6 +36,9 @@ use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 
+static BIN_VIEW_TYPE: ArrowDataType = ArrowDataType::BinaryView;
+static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
+
 pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     const IS_UTF8: bool;
     const DATA_TYPE: ArrowDataType;
@@ -49,6 +52,8 @@ pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
 
     #[allow(clippy::wrong_self_convention)]
     fn into_owned(&self) -> Self::Owned;
+
+    fn dtype() -> &'static ArrowDataType;
 }
 
 impl ViewType for str {
@@ -69,6 +74,9 @@ impl ViewType for str {
     fn into_owned(&self) -> Self::Owned {
         self.to_string()
     }
+    fn dtype() -> &'static ArrowDataType {
+        &UTF8_VIEW_TYPE
+    }
 }
 
 impl ViewType for [u8] {
@@ -88,6 +96,10 @@ impl ViewType for [u8] {
 
     fn into_owned(&self) -> Self::Owned {
         self.to_vec()
+    }
+
+    fn dtype() -> &'static ArrowDataType {
+        &BIN_VIEW_TYPE
     }
 }
 
@@ -381,7 +393,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     }
 
     fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+        T::dtype()
     }
 
     fn validity(&self) -> Option<&Bitmap> {
