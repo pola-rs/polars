@@ -855,8 +855,8 @@ impl SQLFunctionVisitor<'_> {
             #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
-                Ok(e.str().slice(0, match length {
-                    Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                Ok(e.str().slice(lit(0), match length {
+                    Expr::Literal(LiteralValue::Int64(n)) => lit(n as u64),
                     _ => {
                         polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1]);
                     }
@@ -905,11 +905,11 @@ impl SQLFunctionVisitor<'_> {
             Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
                 Ok(e.str().slice( match length {
-                    Expr::Literal(LiteralValue::Int64(n)) => -n,
+                    Expr::Literal(LiteralValue::Int64(n)) => lit(-n),
                     _ => {
                         polars_bail!(InvalidOperation: "Invalid 'length' for Right: {}", function.args[1]);
                     }
-                }, None))
+                }, lit(Null)))
             }),
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
@@ -925,19 +925,19 @@ impl SQLFunctionVisitor<'_> {
                 2 => self.try_visit_binary(|e, start| {
                     Ok(e.str().slice(
                         match start {
-                            Expr::Literal(LiteralValue::Int64(n)) => n - 1 ,
+                            Expr::Literal(LiteralValue::Int64(n)) => lit(n - 1) ,
                             _ => polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]),
-                        }, None))
+                        }, lit(Null)))
                 }),
                 3 => self.try_visit_ternary(|e, start, length| {
                     Ok(e.str().slice(
                         match start {
-                            Expr::Literal(LiteralValue::Int64(n)) => n - 1,
+                            Expr::Literal(LiteralValue::Int64(n)) => lit(n - 1),
                             _ => {
                                 polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
                             }
                         }, match length {
-                            Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                            Expr::Literal(LiteralValue::Int64(n)) => lit(n as u64),
                             _ => {
                                 polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
                             }
