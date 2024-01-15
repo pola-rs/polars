@@ -6909,7 +6909,7 @@ class DataFrame:
         """
         Create a copy of this DataFrame.
 
-        This is a cheap operation that does not copy data.
+        This is a cheap operation.
 
         See Also
         --------

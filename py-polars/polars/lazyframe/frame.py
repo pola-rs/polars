@@ -2522,7 +2522,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Create a copy of this LazyFrame.
 
-        This is a cheap operation that does not copy data.
+        This is a cheap operation.
 
         See Also
         --------
