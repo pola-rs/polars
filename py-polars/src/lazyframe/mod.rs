@@ -153,7 +153,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "csv")]
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
-        low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
+        default_dtype, low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
     )
@@ -168,6 +168,7 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
+        default_dtype: Option<Wrap<DataType>>,
         low_memory: bool,
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
@@ -185,6 +186,7 @@ impl PyLazyFrame {
         truncate_ragged_lines: bool,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
+        let default_dtype = default_dtype.map(|w| w.0);
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let separator = separator.as_bytes()[0];
@@ -213,6 +215,7 @@ impl PyLazyFrame {
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.as_ref())
+            .with_default_dtype(default_dtype)
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .low_memory(low_memory)
             .with_comment_prefix(comment_prefix)
