@@ -31,7 +31,7 @@ pub fn unix_time() -> NaiveDateTime {
 }
 
 #[cfg(feature = "timezones")]
-const FIXED_OFFSET_PATTERN: &str = r#"(?x)
+static FIXED_OFFSET_PATTERN: &str = r#"(?x)
     ^
     (?P<sign>[-+])?            # optional sign
     (?P<hour>0[0-9]|1[0-4])    # hour (between 0 and 14)
