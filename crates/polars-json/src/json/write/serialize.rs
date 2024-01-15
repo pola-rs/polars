@@ -143,6 +143,21 @@ fn utf8_serializer<'a, O: Offset>(
     materialize_serializer(f, array.iter(), offset, take)
 }
 
+fn utf8view_serializer<'a>(
+    array: &'a Utf8ViewArray,
+    offset: usize,
+    take: usize,
+) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+    let f = |x: Option<&str>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            utf8::write_str(buf, x).unwrap();
+        } else {
+            buf.extend_from_slice(b"null")
+        }
+    };
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
 fn struct_serializer<'a>(
     array: &'a StructArray,
     offset: usize,
@@ -406,11 +421,11 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Float64 => {
             float_serializer::<f64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        ArrowDataType::Utf8 => {
-            utf8_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        },
         ArrowDataType::LargeUtf8 => {
             utf8_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::Utf8View => {
+            utf8view_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Struct(_) => {
             struct_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
