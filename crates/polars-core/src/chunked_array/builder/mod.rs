@@ -1,4 +1,3 @@
-mod binary;
 mod boolean;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
@@ -7,14 +6,12 @@ mod null;
 mod primitive;
 mod string;
 
-use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-pub use binary::*;
 pub use boolean::*;
 #[cfg(feature = "dtype-array")]
 pub(crate) use fixed_size_list::*;
@@ -148,7 +145,7 @@ where
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
         let cap = get_iter_capacity(&it);
-        let mut builder = StringChunkedBuilder::new(name, cap, cap * 5);
+        let mut builder = StringChunkedBuilder::new(name, cap);
         it.for_each(|opt| builder.append_option(opt));
         builder.finish()
     }
@@ -156,7 +153,7 @@ where
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: &str, it: impl Iterator<Item = S>) -> Self {
         let cap = get_iter_capacity(&it);
-        let mut builder = StringChunkedBuilder::new(name, cap, cap * 5);
+        let mut builder = StringChunkedBuilder::new(name, cap);
         it.for_each(|v| builder.append_value(v));
         builder.finish()
     }
@@ -187,16 +184,16 @@ where
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<B>>) -> Self {
         let cap = get_iter_capacity(&it);
-        let mut builder = BinaryChunkedBuilder::new(name, cap, cap * 5);
-        it.for_each(|opt| builder.append_option(opt));
+        let mut builder = BinaryChunkedBuilder::new(name, cap);
+        builder.chunk_builder.extend(it);
         builder.finish()
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: &str, it: impl Iterator<Item = B>) -> Self {
         let cap = get_iter_capacity(&it);
-        let mut builder = BinaryChunkedBuilder::new(name, cap, cap * 5);
-        it.for_each(|v| builder.append_value(v));
+        let mut builder = BinaryChunkedBuilder::new(name, cap);
+        builder.chunk_builder.extend_values(it);
         builder.finish()
     }
 }

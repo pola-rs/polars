@@ -13,6 +13,8 @@ pub struct Field {
     pub dtype: DataType,
 }
 
+pub type FieldRef = Arc<Field>;
+
 impl Field {
     /// Creates a new `Field`.
     ///

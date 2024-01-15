@@ -9,7 +9,7 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
 }
 
 fn any_values_to_string(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
-    let mut builder = StringChunkedBuilder::new("", avs.len(), avs.len() * 10);
+    let mut builder = StringChunkedBuilder::new("", avs.len());
 
     // amortize allocations
     let mut owned = String::new();

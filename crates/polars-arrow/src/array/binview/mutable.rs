@@ -163,6 +163,21 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
+    pub fn extend_constant<V: AsRef<T>>(&mut self, additional: usize, value: Option<V>) {
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, value.is_some())
+        }
+
+        // Push and pop to get the properly encoded value.
+        // For long string this leads to a dictionary encoding,
+        // as we push the string only once in the buffers
+        let view_value = value.map(|v| {
+            self.push_value_ignore_validity(v);
+            self.views.pop().unwrap()
+        }).unwrap_or(0);
+        self.views.extend(std::iter::repeat(view_value).take(additional))
+    }
+
     impl_mutable_array_mut_validity!();
 
     #[inline]

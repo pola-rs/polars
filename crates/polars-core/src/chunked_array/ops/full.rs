@@ -46,11 +46,8 @@ impl ChunkFullNull for BooleanChunked {
 
 impl<'a> ChunkFull<&'a str> for StringChunked {
     fn full(name: &str, value: &'a str, length: usize) -> Self {
-        let mut builder = StringChunkedBuilder::new(name, length, length * value.len());
-
-        for _ in 0..length {
-            builder.append_value(value);
-        }
+        let mut builder = StringChunkedBuilder::new(name, length);
+        builder.chunk_builder.extend_constant(length, Some(value));
         let mut out = builder.finish();
         out.set_sorted_flag(IsSorted::Ascending);
         out
@@ -66,11 +63,9 @@ impl ChunkFullNull for StringChunked {
 
 impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
     fn full(name: &str, value: &'a [u8], length: usize) -> Self {
-        let mut builder = BinaryChunkedBuilder::new(name, length, length * value.len());
 
-        for _ in 0..length {
-            builder.append_value(value);
-        }
+        let mut builder = BinaryChunkedBuilder::new(name, length);
+        builder.chunk_builder.extend_constant(length, Some(value));
         let mut out = builder.finish();
         out.set_sorted_flag(IsSorted::Ascending);
         out
