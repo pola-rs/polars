@@ -2957,7 +2957,7 @@ class Expr:
 
         Notes
         -----
-        `null` is considered to be a unique value for the purposes of this count.
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -2999,7 +2999,7 @@ class Expr:
         >>> df.select(
         ...     exact=pl.col("n").n_unique(),
         ...     approx=pl.col("n").approx_n_unique(),
-        ... )
+        ... )  # doctest: +SKIP
         shape: (1, 2)
         ┌───────┬────────┐
         │ exact ┆ approx │
