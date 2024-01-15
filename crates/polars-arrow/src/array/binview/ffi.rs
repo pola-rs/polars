@@ -12,8 +12,8 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
     fn buffers(&self) -> Vec<Option<*const u8>> {
         let mut buffers = Vec::with_capacity(self.buffers.len() + 2);
         buffers.push(self.validity.as_ref().map(|x| x.as_ptr()));
-        buffers.push(Some(self.views.as_ptr().cast::<u8>()));
-        buffers.extend(self.buffers.iter().map(|b| Some(b.as_ptr())));
+        buffers.push(Some(self.views.storage_ptr().cast::<u8>()));
+        buffers.extend(self.buffers.iter().map(|b| Some(b.storage_ptr())));
         buffers
     }
 
