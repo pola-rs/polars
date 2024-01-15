@@ -126,7 +126,7 @@ unsafe impl<T: ViewType + ?Sized> Sync for BinaryViewArrayGeneric<T> {}
 fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Arc<[(*const T, usize)]> {
     buffers
         .iter()
-        .map(|buf| (buf.as_ptr(), buf.len()))
+        .map(|buf| (buf.storage_ptr(), buf.len()))
         .collect()
 }
 
@@ -262,7 +262,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         // data: 12 bytes
 
         let bytes = if len <= 12 {
-            let ptr = self.views.as_ptr() as *const u8;
+            let ptr = self.views.storage_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
             let buffer_idx = (v >> 64) as u32;

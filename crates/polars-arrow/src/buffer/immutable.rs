@@ -177,13 +177,13 @@ impl<T> Buffer<T> {
         self.length = length;
     }
 
-    /// Returns a pointer to the start of this buffer.
+    /// Returns a pointer to the start of the storage underlying this buffer.
     #[inline]
-    pub(crate) fn as_ptr(&self) -> *const T {
-        self.ptr
+    pub(crate) fn storage_ptr(&self) -> *const T {
+        self.storage.as_ptr()
     }
 
-    /// Returns the offset of this buffer.
+    /// Returns the start offset of this buffer within the underlying storage.
     #[inline]
     pub fn offset(&self) -> usize {
         unsafe {
@@ -220,21 +220,6 @@ impl<T> Buffer<T> {
         }
     }
 
-    /// Returns a mutable reference to its underlying `Vec`, if possible.
-    /// Note that only `[self.offset(), self.offset() + self.len()[` in this vector is visible
-    /// by this buffer.
-    ///
-    /// This operation returns [`Some`] iff this [`Buffer`]:
-    /// * has not been cloned (i.e. [`Arc`]`::get_mut` yields [`Some`])
-    /// * has not been imported from the C data interface (FFI)
-    /// # Safety
-    /// The caller must ensure that the vector in the mutable reference keeps a length of at least `self.offset() + self.len() - 1`.
-    #[inline]
-    pub unsafe fn get_mut(&mut self) -> Option<&mut Vec<T>> {
-        // Arc::get_mut(&mut self.storage).and_then(|b| b.get_vec())
-        unimplemented!()
-    }
-
     /// Returns a mutable reference to its slice, if possible.
     ///
     /// This operation returns [`Some`] iff this [`Buffer`]:
@@ -256,32 +241,6 @@ impl<T> Buffer<T> {
     /// Get the weak count of underlying `Arc` data buffer.
     pub fn shared_count_weak(&self) -> usize {
         Arc::weak_count(&self.storage)
-    }
-
-    /// Returns its internal representation
-    #[must_use]
-    pub fn into_inner(self) -> (Arc<Bytes<T>>, usize, usize) {
-        // let Self {
-        //     data,
-        //     offset,
-        //     length,
-        // } = self;
-        // (data, offset, length)
-        unimplemented!();
-    }
-
-    /// Creates a `[Bitmap]` from its internal representation.
-    /// This is the inverted from `[Bitmap::into_inner]`
-    ///
-    /// # Safety
-    /// Callers must ensure all invariants of this struct are upheld.
-    pub unsafe fn from_inner_unchecked(_data: Arc<Bytes<T>>, _offset: usize, _length: usize) -> Self {
-        // Self {
-        //     data,
-        //     offset,
-        //     length,
-        // }
-        unimplemented!();
     }
 }
 
