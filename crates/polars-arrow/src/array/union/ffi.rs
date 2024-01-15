@@ -10,11 +10,11 @@ unsafe impl ToFfi for UnionArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {
         if let Some(offsets) = &self.offsets {
             vec![
-                Some(self.types.as_ptr().cast::<u8>()),
-                Some(offsets.as_ptr().cast::<u8>()),
+                Some(self.types.storage_ptr().cast::<u8>()),
+                Some(offsets.storage_ptr().cast::<u8>()),
             ]
         } else {
-            vec![Some(self.types.as_ptr().cast::<u8>())]
+            vec![Some(self.types.storage_ptr().cast::<u8>())]
         }
     }
 
