@@ -217,6 +217,34 @@ def test_decimal_arithmetic() -> None:
     }
 
 
+def test_decimal_series_value_arithmetic() -> None:
+    s = pl.Series([D("0.10"), D("10.10"), D("100.01")])
+
+    out1 = s + 10
+    out2 = s + D("10")
+    with pytest.raises(pl.InvalidOperationError):
+        s + D("10.0001")
+    out4 = s * 2 / 3
+    out5 = s / D("1.5")
+    out6 = s - 5
+
+    assert out1.dtype == pl.Decimal(precision=None, scale=2)
+    assert out2.dtype == pl.Decimal(precision=None, scale=2)
+    assert out4.dtype == pl.Decimal(precision=None, scale=2)
+    assert out5.dtype == pl.Decimal(precision=None, scale=2)
+    assert out6.dtype == pl.Decimal(precision=None, scale=2)
+
+    assert out1.to_list() == [D("10.1"), D("20.1"), D("110.01")]
+    assert out2.to_list() == [D("10.1"), D("20.1"), D("110.01")]
+    assert out4.to_list() == [
+        D("0.06"),
+        D("6.73"),
+        D("66.67"),
+    ]  # TODO: do we want floor instead of round?
+    assert out5.to_list() == [D("0.06"), D("6.73"), D("66.67")]
+    assert out6.to_list() == [D("-4.9"), D("5.1"), D("95.01")]
+
+
 def test_decimal_aggregations() -> None:
     df = pl.DataFrame(
         {
