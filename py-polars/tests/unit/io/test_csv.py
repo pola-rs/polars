@@ -94,7 +94,11 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     read_df = pl.read_csv(file_path, try_parse_dates=True)
 
     read_df = read_df.with_columns(
-        [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
+        [
+            pl.col("cat").cast(pl.Categorical),
+            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+            pl.col("time").cast(pl.Time),
+        ]
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
@@ -942,8 +946,8 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     df.write_csv(file_path)
 
     path_glob = tmp_path / "small*.csv"
-    assert pl.scan_csv(path_glob).collect().shape == (3, 11)
-    assert pl.read_csv(path_glob).shape == (3, 11)
+    assert pl.scan_csv(path_glob).collect().shape == (3, 12)
+    assert pl.read_csv(path_glob).shape == (3, 12)
 
 
 def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
