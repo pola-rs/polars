@@ -1,3 +1,4 @@
+use crate::trusted_len::TrustedLen;
 use super::*;
 
 pub trait TrustedLenPush<T> {

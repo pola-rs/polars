@@ -8,7 +8,8 @@ use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
 use crate::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
 use crate::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
-use crate::legacy::trusted_len::{TrustedLen, TrustedLenPush};
+use crate::legacy::trusted_len::{TrustedLenPush};
+use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
 pub trait ArrayFromIterDtype<T>: Sized {

@@ -11,7 +11,7 @@ use crate::array::{Array, MutableArray};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::trusted_len::TrustedLen;
+use crate::trusted_len::TrustedLen;
 
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 
@@ -222,6 +222,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.extend(iterator)
     }
 
+    #[inline]
     pub fn from_iterator<I, P>(iterator: I) -> Self
     where
         I: Iterator<Item = Option<P>>,
