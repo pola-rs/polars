@@ -1,7 +1,7 @@
 use arrow::array::{
-    Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, StructArray, Utf8Array,
+    Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, PrimitiveArray,
+    StructArray, Utf8Array, Utf8ViewArray,
 };
-use arrow::compute::cast::cast;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_utils::vec::PushUnchecked;
@@ -56,14 +56,13 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
                     }
                 },
                 ArrowDataType::LargeUtf8 => {
-                    flattened_columns.push(
-                        cast(
-                            arr.as_ref(),
-                            &ArrowDataType::LargeBinary,
-                            Default::default(),
-                        )
-                        .unwrap(),
-                    );
+                    let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                    flattened_columns.push(arr.to_binary().boxed());
+                    flattened_fields.push(field.clone());
+                },
+                ArrowDataType::Utf8View => {
+                    let arr = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+                    flattened_columns.push(arr.to_binview().boxed());
                     flattened_fields.push(field.clone());
                 },
                 _ => {
@@ -121,7 +120,11 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
             let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
             crate::variable::encode_iter(array.into_iter(), out, field)
         },
-        ArrowDataType::LargeUtf8 => {
+        ArrowDataType::BinaryView => {
+            let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            crate::variable::encode_iter(array.into_iter(), out, field)
+        },
+        ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View => {
             panic!("should be cast to binary")
         },
         ArrowDataType::Dictionary(_, _, _) => {
