@@ -50,8 +50,8 @@ pub struct Buffer<T> {
     length: usize,
 }
 
-unsafe impl<T: Sync> Sync for Buffer<T> { }
-unsafe impl<T: Send> Send for Buffer<T> { }
+unsafe impl<T: Sync> Sync for Buffer<T> {}
+unsafe impl<T: Send> Send for Buffer<T> {}
 
 impl<T: PartialEq> PartialEq for Buffer<T> {
     #[inline]
@@ -116,9 +116,7 @@ impl<T> Buffer<T> {
         // Safety:
         // invariant of this struct `offset + length <= data.len()`
         debug_assert!(self.offset() + self.length <= self.storage.len());
-        unsafe {
-            std::slice::from_raw_parts(self.ptr, self.length)
-        }
+        unsafe { std::slice::from_raw_parts(self.ptr, self.length) }
     }
 
     /// Returns the byte slice stored in this buffer
@@ -244,12 +242,10 @@ impl<T> Buffer<T> {
     /// * has not been imported from the C data interface (FFI)
     #[inline]
     pub fn get_mut_slice(&mut self) -> Option<&mut [T]> {
-        unsafe {
-            let offset = self.offset();
-            let unique = Arc::get_mut(&mut self.storage)?;
-            let vec = unique.get_vec()?;
-            Some(vec.get_unchecked_mut(offset..offset + self.length))
-        }
+        let offset = self.offset();
+        let unique = Arc::get_mut(&mut self.storage)?;
+        let vec = unique.get_vec()?;
+        Some(unsafe { vec.get_unchecked_mut(offset..offset + self.length) })
     }
 
     /// Get the strong count of underlying `Arc` data buffer.
@@ -279,7 +275,7 @@ impl<T> Buffer<T> {
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.
-    pub unsafe fn from_inner_unchecked(data: Arc<Bytes<T>>, offset: usize, length: usize) -> Self {
+    pub unsafe fn from_inner_unchecked(_data: Arc<Bytes<T>>, _offset: usize, _length: usize) -> Self {
         // Self {
         //     data,
         //     offset,
