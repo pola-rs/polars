@@ -2955,18 +2955,25 @@ class Expr:
         """
         Count unique values.
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").n_unique())
-        shape: (1, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 2   │
-        └─────┘
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2, 3], "y": [1, 1, 1, None, None]})
+        >>> df.select(
+        ...     x_unique=pl.col("x").n_unique(),
+        ...     y_unique=pl.col("y").n_unique(),
+        ... )
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ x_unique ┆ y_unique │
+        │ ---      ┆ ---      │
+        │ u32      ┆ u32      │
+        ╞══════════╪══════════╡
+        │ 3        ┆ 2        │
+        └──────────┴──────────┘
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
@@ -2978,16 +2985,29 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").approx_n_unique())
+        >>> df = pl.DataFrame({"n": [1, 1, 2]})
+        >>> df.select(pl.col("n").approx_n_unique())
         shape: (1, 1)
         ┌─────┐
-        │ a   │
+        │ n   │
         │ --- │
         │ u32 │
         ╞═════╡
         │ 2   │
         └─────┘
+        >>> df = pl.DataFrame({"n": range(1000)})
+        >>> df.select(
+        ...     exact=pl.col("n").n_unique(),
+        ...     approx=pl.col("n").approx_n_unique(),
+        ... )  # doctest: +SKIP
+        shape: (1, 2)
+        ┌───────┬────────┐
+        │ exact ┆ approx │
+        │ ---   ┆ ---    │
+        │ u32   ┆ u32    │
+        ╞═══════╪════════╡
+        │ 1000  ┆ 1005   │
+        └───────┴────────┘
         """
         return self._from_pyexpr(self._pyexpr.approx_n_unique())
 
@@ -3000,18 +3020,19 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [None, 1, None],
-        ...         "b": [1, 2, 3],
+        ...         "b": [10, None, 300],
+        ...         "c": [350, 650, 850],
         ...     }
         ... )
         >>> df.select(pl.all().null_count())
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 2   ┆ 0   │
-        └─────┴─────┘
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ 1   ┆ 0   │
+        └─────┴─────┴─────┘
         """
         return self._from_pyexpr(self._pyexpr.null_count())
 
