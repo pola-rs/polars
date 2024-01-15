@@ -10220,7 +10220,10 @@ class DataFrame:
         │ 1.0  ┆ -1.0 ┆ 1.0  │
         └──────┴──────┴──────┘
         """
-        return DataFrame(np.corrcoef(self.to_numpy().T, **kwargs), schema=self.columns)
+        correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
+        if self.width == 1:
+            correlation_matrix = np.array([correlation_matrix])
+        return DataFrame(correlation_matrix, schema=self.columns)
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """
