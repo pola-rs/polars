@@ -105,10 +105,10 @@ impl Field {
     /// let f = Field::new("Value", DataType::Int64);
     /// let af = arrow::datatypes::Field::new("Value", arrow::datatypes::ArrowDataType::Int64, true);
     ///
-    /// assert_eq!(f.to_arrow(), af);
+    /// assert_eq!(f.to_arrow(true), af);
     /// ```
-    pub fn to_arrow(&self) -> ArrowField {
-        ArrowField::new(self.name.as_str(), self.dtype.to_arrow(), true)
+    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowField {
+        ArrowField::new(self.name.as_str(), self.dtype.to_arrow(pl_flavor), true)
     }
 }
 

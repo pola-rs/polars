@@ -57,7 +57,7 @@ where
                         self.downcast_iter().next().unwrap(),
                         idx,
                         value,
-                        T::get_dtype().to_arrow(),
+                        T::get_dtype().to_arrow(true),
                     )?;
                     return Ok(Self::with_chunk(self.name(), arr));
                 }
@@ -103,7 +103,7 @@ where
             let chunks = left
                 .downcast_iter()
                 .zip(mask.downcast_iter())
-                .map(|(arr, mask)| set_with_mask(arr, mask, value, T::get_dtype().to_arrow()));
+                .map(|(arr, mask)| set_with_mask(arr, mask, value, T::get_dtype().to_arrow(true)));
             Ok(ChunkedArray::from_chunk_iter(self.name(), chunks))
         } else {
             // slow path, could be optimized.

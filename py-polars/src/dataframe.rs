@@ -103,6 +103,7 @@ impl PyDataFrame {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
         IpcStreamWriter::new(&mut buf)
+            .with_pl_flavor(true)
             .finish(&mut self.df.clone())
             .expect("ipc writer");
         Ok(PyBytes::new(py, &buf).to_object(py))
@@ -835,7 +836,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks()
+                .iter_chunks(false)
                 .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
                 .collect::<PyResult<_>>()?;
             Ok(rbs)
@@ -858,7 +859,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks()
+                .iter_chunks(false)
                 .map(|rb| {
                     let mut rb = rb.into_arrays();
                     for i in &cat_columns {

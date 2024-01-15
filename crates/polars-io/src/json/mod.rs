@@ -135,9 +135,12 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks();
-        let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
+        let fields = df
+            .iter()
+            .map(|s| s.field().to_arrow(true))
+            .collect::<Vec<_>>();
         let batches = df
-            .iter_chunks()
+            .iter_chunks(true)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
 
         match self.json_format {
@@ -173,8 +176,11 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
-        let chunks = df.iter_chunks();
+        let fields = df
+            .iter()
+            .map(|s| s.field().to_arrow(true))
+            .collect::<Vec<_>>();
+        let chunks = df.iter_chunks(true);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
@@ -247,7 +253,7 @@ where
                         overwrite_schema(mut_schema, overwrite)?;
                     }
 
-                    DataType::Struct(schema.iter_fields().collect()).to_arrow()
+                    DataType::Struct(schema.iter_fields().collect()).to_arrow(true)
                 } else {
                     // infer
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
@@ -255,7 +261,7 @@ where
                             values,
                             self.infer_schema_len.unwrap_or(usize::MAX),
                         )?
-                        .to_arrow()
+                        .to_arrow(true)
                     } else {
                         polars_json::json::infer(&json_value)?
                     };
@@ -274,7 +280,7 @@ where
                                 .map(|(name, dt)| Field::new(&name, dt))
                                 .collect(),
                         )
-                        .to_arrow()
+                        .to_arrow(true)
                     } else {
                         inner_dtype
                     }

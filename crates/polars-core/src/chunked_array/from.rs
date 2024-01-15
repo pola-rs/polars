@@ -209,7 +209,7 @@ where
         #[cfg(debug_assertions)]
         {
             if !chunks.is_empty() && dtype.is_primitive() {
-                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow())
+                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow(true))
             }
         }
         let field = Arc::new(Field::new(name, dtype));

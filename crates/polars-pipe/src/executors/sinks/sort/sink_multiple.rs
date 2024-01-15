@@ -271,7 +271,7 @@ impl Sink for SortSinkMultiple {
 
         let sort_dtypes = self.sort_dtypes.take().map(|arr| {
             arr.iter()
-                .map(|dt| dt.to_physical().to_arrow())
+                .map(|dt| dt.to_physical().to_arrow(true))
                 .collect::<Vec<_>>()
         });
 

@@ -23,7 +23,7 @@ fn slots_to_mut(slots: &Utf8Array<i64>) -> MutableUtf8Array<i64> {
     // all offsets are valid and the u8 data is valid utf8
     unsafe {
         MutableUtf8Array::new_unchecked(
-            DataType::String.to_arrow(),
+            ArrowDataType::LargeUtf8,
             offset_buf,
             values_buf,
             validity_buf,
