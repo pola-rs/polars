@@ -1328,23 +1328,23 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
     @deprecate_function(
-        "Use `cast(pl.Int64).cast(pl.Datetime(time_unit, time_zone))` instead.",
-        version="0.20.4",
+        "Instead, first cast to `Int64` and then cast to the desired data type.",
+        version="0.20.5",
     )
     def with_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
         Set time unit of an expression of dtype Datetime or Duration.
 
+        .. deprecated:: 0.20.5
+            First cast to `Int64` and then cast to the desired data type.
+
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
-
-        .. deprecated:: 0.20.4
-            Use ``cast(pl.Int64).cast(pl.Datetime(time_unit, time_zone))`` instead.
 
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` expression.
+            Unit of time for the `Datetime` or `Duration` expression.
 
         Examples
         --------
@@ -1361,10 +1361,8 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").dt.with_time_unit("us").alias("time_unit_us"),
-        ...     ]
+        ...     pl.col("date"),
+        ...     pl.col("date").dt.with_time_unit("us").alias("time_unit_us"),
         ... )  # doctest: +SKIP
         shape: (3, 2)
         ┌─────────────────────┬───────────────────────┐

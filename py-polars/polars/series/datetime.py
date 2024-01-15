@@ -895,16 +895,16 @@ class DateTimeNameSpace:
         """
         Set time unit a Series of dtype Datetime or Duration.
 
+        .. deprecated:: 0.20.5
+            First cast to `Int64` and then cast to the desired data type.
+
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
-
-        .. deprecated:: 0.20.4
-            Use ``cast(pl.Int64).cast(pl.Datetime(time_unit, time_zone))`` instead.
 
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` Series.
+            Unit of time for the `Datetime` or `Duration` Series.
 
         Examples
         --------
