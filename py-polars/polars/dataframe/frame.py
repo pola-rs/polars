@@ -4397,37 +4397,40 @@ class DataFrame:
         ... )
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬──────┬──────┬──────┬────────────┐
-        │ describe   ┆ float    ┆ int      ┆ bool ┆ str  ┆ str2 ┆ date       │
-        │ ---        ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---  ┆ ---        │
-        │ str        ┆ f64      ┆ f64      ┆ f64  ┆ str  ┆ str  ┆ str        │
-        ╞════════════╪══════════╪══════════╪══════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0  ┆ 2    ┆ 2    ┆ 3          │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0  ┆ 1    ┆ 1    ┆ 0          │
-        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null ┆ null ┆ null ┆ null       │
-        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null ┆ null ┆ null ┆ null       │
-        │ min        ┆ 1.0      ┆ 4.0      ┆ null ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null ┆ null ┆ null ┆ null       │
-        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null ┆ null ┆ null ┆ 2021-07-05 │
-        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null ┆ null ┆ null ┆ null       │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ null ┆ c    ┆ usd  ┆ 2022-12-31 │
-        └────────────┴──────────┴──────────┴──────┴──────┴──────┴────────────┘
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬──────┬────────────┐
+        │ describe   ┆ float    ┆ int      ┆ bool     ┆ str  ┆ str2 ┆ date       │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str  ┆ str        │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪══════╪════════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 2    ┆ 2    ┆ 3          │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 1    ┆ 1    ┆ 0          │
+        │ mean       ┆ 2.266667 ┆ 4.5      ┆ 0.666667 ┆ null ┆ null ┆ null       │
+        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null     ┆ null ┆ null ┆ null       │
+        │ min        ┆ 1.0      ┆ 4.0      ┆ null     ┆ b    ┆ eur  ┆ 2020-01-01 │
+        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ 2021-07-05 │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ max        ┆ 3.0      ┆ 5.0      ┆ null     ┆ c    ┆ usd  ┆ 2022-12-31 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
         """
         if not self.columns:
             msg = "cannot describe a DataFrame without any columns"
             raise TypeError(msg)
 
         # Determine which columns should get std/mean/percentile statistics
-        stat_cols, temporal_cols, numeric_result = [], [], set()
+        stat_cols, temporal_cols, bool_cols, numeric_result = set(), set(), set(), set()
         schema = self.schema
         for c, dt in schema.items():
             if dt.is_numeric():
-                stat_cols.append(c)
+                stat_cols.add(c)
                 numeric_result.add(c)
             elif dt.is_temporal():
-                temporal_cols.append(c)
-            elif dt in (Boolean, Null) or dt.is_nested():
-                numeric_result.add(c)  # no stats
+                temporal_cols.add(c)
+            elif dt == Boolean:
+                bool_cols.add(c)
+                numeric_result.add(c)
+            elif dt == Null or dt.is_nested():
+                numeric_result.add(c)
 
         # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
@@ -4448,7 +4451,9 @@ class DataFrame:
         metrics.append("max")
 
         mean_exprs = [
-            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
+            (
+                F.col(c).mean() if (c in stat_cols or c in bool_cols) else F.lit(None)
+            ).alias(f"mean:{c}")
             for c in self.columns
         ]
         std_exprs = [

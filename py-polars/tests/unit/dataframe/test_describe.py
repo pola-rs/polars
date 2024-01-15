@@ -52,7 +52,7 @@ def test_df_describe() -> None:
                 3.0,
             ],
             "b": [2.0, 1.0, 4.5, 0.7071067811865476, 4.0, 4.0, 5.0, 5.0, 5.0],
-            "c": [3.0, 0.0, None, None, None, None, None, None, None],
+            "c": [3.0, 0.0, 2 / 3, None, None, None, None, None, None],
             "d": ["2", "1", None, None, "b", None, None, None, "c"],
             "e": ["2", "1", None, None, None, None, None, None, None],
             "f": [

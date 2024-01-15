@@ -63,6 +63,7 @@ def test_series_describe_boolean() -> None:
     stats = {
         "count": 4,
         "null_count": 1,
+        "mean": 0.75,
     }
     expected = pl.DataFrame(
         data={"statistic": stats.keys(), "value": stats.values()},
