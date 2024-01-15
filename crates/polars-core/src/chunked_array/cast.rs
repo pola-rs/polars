@@ -25,7 +25,7 @@ pub(crate) fn cast_chunks(
         }
     };
 
-    let arrow_dtype = dtype.to_arrow();
+    let arrow_dtype = dtype.to_arrow(true);
     chunks
         .iter()
         .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options))

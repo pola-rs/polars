@@ -32,6 +32,8 @@ use crate::WriterFactory;
 pub struct IpcWriter<W> {
     pub(super) writer: W,
     pub(super) compression: Option<IpcCompression>,
+    /// Polars' flavor of arrow. This might be temporary.
+    pub(super) pl_flavor: bool,
 }
 
 impl<W: Write> IpcWriter<W> {
@@ -41,10 +43,15 @@ impl<W: Write> IpcWriter<W> {
         self
     }
 
+    pub fn with_pl_flavor(mut self, pl_flavor: bool) -> Self {
+        self.pl_flavor = pl_flavor;
+        self
+    }
+
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let mut writer = write::FileWriter::new(
             self.writer,
-            Arc::new(schema.to_arrow()),
+            Arc::new(schema.to_arrow(self.pl_flavor)),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
@@ -52,7 +59,10 @@ impl<W: Write> IpcWriter<W> {
         );
         writer.start()?;
 
-        Ok(BatchedWriter { writer })
+        Ok(BatchedWriter {
+            writer,
+            pl_flavor: self.pl_flavor,
+        })
     }
 }
 
@@ -64,20 +74,21 @@ where
         IpcWriter {
             writer,
             compression: None,
+            pl_flavor: false,
         }
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
-            Arc::new(df.schema().to_arrow()),
+            Arc::new(df.schema().to_arrow(self.pl_flavor)),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
             },
         )?;
         df.align_chunks();
-        let iter = df.iter_chunks();
+        let iter = df.iter_chunks(self.pl_flavor);
 
         for batch in iter {
             ipc_writer.write(&batch, None)?
@@ -89,6 +100,7 @@ where
 
 pub struct BatchedWriter<W: Write> {
     writer: write::FileWriter<W>,
+    pl_flavor: bool,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -97,7 +109,7 @@ impl<W: Write> BatchedWriter<W> {
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let iter = df.iter_chunks();
+        let iter = df.iter_chunks(self.pl_flavor);
         for batch in iter {
             self.writer.write(&batch, None)?
         }

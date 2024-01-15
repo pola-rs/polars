@@ -72,12 +72,12 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
         DataType::Categorical(_, _) => {
             let ca = by.categorical().unwrap();
             if ca.uses_lexical_ordering() {
-                by.to_arrow(0)
+                by.to_arrow(0, true)
             } else {
                 ca.physical().chunks[0].clone()
             }
         },
-        _ => by.to_arrow(0),
+        _ => by.to_arrow(0, true),
     };
     Ok(out)
 }

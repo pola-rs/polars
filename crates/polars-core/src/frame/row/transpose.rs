@@ -243,7 +243,7 @@ where
                 };
 
                 let arr = PrimitiveArray::<T::Native>::new(
-                    T::get_dtype().to_arrow(),
+                    T::get_dtype().to_arrow(true),
                     values.into(),
                     validity,
                 );

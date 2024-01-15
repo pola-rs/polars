@@ -130,8 +130,11 @@ where
             av.push(Zero::zero())
         }
 
-        let array =
-            PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), Some(validity.into()));
+        let array = PrimitiveArray::new(
+            T::get_dtype().to_arrow(true),
+            av.into(),
+            Some(validity.into()),
+        );
         ChunkedArray::with_chunk(chunked_arr.name(), array)
     } else {
         ChunkedArray::from_vec(chunked_arr.name(), av)
