@@ -1739,15 +1739,18 @@ def test_invalid_csv_raise() -> None:
         )
 
 
-@pytest.mark.slow()
-def test_partial_read_compressed_web_file() -> None:
-    url = "https://raw.githubusercontent.com/hadley/mastering-shiny/main/neiss/injuries.tsv.gz"
-    df = pl.read_csv(
-        url,
-        separator="\t",
-        skip_rows=40,
-        has_header=False,
-        skip_rows_after_header=20,
-        n_rows=30,
-    )
-    assert df.shape == (30, 10)
+@pytest.mark.write_disk()
+def test_partial_read_compressed_file(tmp_path: Path) -> None:
+    df = pl.DataFrame({
+        "idx": range(1_000),
+        "dt": date(2025, 12, 31),
+        "txt": "hello world"})
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "large.csv.gz"
+    bytes_io = io.BytesIO()
+    df.write_csv(bytes_io)
+    with gzip.GzipFile(file_path, mode="w") as f:
+        f.write(bytes_io.encode())
+    df = pl.read_csv(file_path, skip_rows=40, has_header=False,
+                     skip_rows_after_header=20, n_rows=30)
+    assert df.shape == (30, 3)
