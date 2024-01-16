@@ -291,7 +291,7 @@ impl BinaryChunked {
     pub unsafe fn to_string(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
+            .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
         StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
@@ -303,10 +303,7 @@ impl StringChunked {
         let chunks = self
             .downcast_iter()
             .map(|arr| {
-                Box::new(arrow::compute::cast::utf8_to_binary(
-                    arr,
-                    ArrowDataType::LargeBinary,
-                )) as ArrayRef
+                arr.to_binview().boxed()
             })
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
