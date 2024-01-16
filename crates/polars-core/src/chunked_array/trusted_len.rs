@@ -161,6 +161,26 @@ where
     }
 }
 
+impl<Ptr> FromTrustedLenIterator<Ptr> for BinaryOffsetChunked
+    where
+        Ptr: PolarsAsRef<[u8]>,
+{
+    fn from_iter_trusted_length<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        iter.collect()
+    }
+}
+
+impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for BinaryOffsetChunked
+    where
+        Ptr: AsRef<[u8]>,
+{
+    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        iter.collect()
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromTrustedLenIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {

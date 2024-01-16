@@ -649,7 +649,7 @@ impl ValueSize for StringChunked {
     }
 }
 
-impl ValueSize for BinaryChunked {
+impl ValueSize for BinaryOffsetChunked {
     fn get_values_size(&self) -> usize {
         self.chunks
             .iter()

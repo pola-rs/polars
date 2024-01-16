@@ -163,7 +163,20 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
+    pub fn extend_null(&mut self, additional: usize) {
+        if self.validity.is_none() && additional > 0 {
+            self.init_validity();
+        }
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false)
+        }
+    }
+
     pub fn extend_constant<V: AsRef<T>>(&mut self, additional: usize, value: Option<V>) {
+        if value.is_none() && self.validity.is_none() {
+            self.init_validity();
+        }
+
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, value.is_some())
         }

@@ -24,6 +24,7 @@ pub enum DataType {
     /// String data
     String,
     Binary,
+    BinaryOffset,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,

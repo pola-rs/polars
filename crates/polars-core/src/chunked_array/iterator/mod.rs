@@ -172,6 +172,32 @@ impl BinaryChunked {
     }
 }
 
+impl<'a> IntoIterator for &'a BinaryOffsetChunked {
+    type Item = Option<&'a [u8]>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
+    }
+}
+
+
+impl BinaryOffsetChunked {
+    #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = &[u8]> + DoubleEndedIterator + TrustedLen
+    {
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flat_map(|arr| arr.values_iter())
+                .trust_my_length(self.len())
+        }
+    }
+}
+
 impl<'a> IntoIterator for &'a ListChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
