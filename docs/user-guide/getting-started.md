@@ -22,7 +22,7 @@ This chapter is here to help you get started with Polars. It covers all the fund
 
 ## Reading & writing
 
-Polars supports reading and writing to all common files (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). In the following examples we will show how to operate on most common file formats. For the following dataframe
+Polars supports reading and writing to all common files (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below we use csv as example to demonstrate foundational read/write operations.
 
 {{code_block('user-guide/basics/reading-writing','dataframe',['DataFrame'])}}
 
@@ -30,9 +30,9 @@ Polars supports reading and writing to all common files (e.g. csv, json, parquet
 --8<-- "python/user-guide/basics/reading-writing.py:dataframe"
 ```
 
-### CSV
+### CSV example
 
-Polars has its own fast implementation for csv reading with many flexible configuration options.
+In this example we write the DataFrame to `output.csv`. After that we can read it back with `read_csv` and `print` the result for inspection.
 
 {{code_block('user-guide/basics/reading-writing','csv',['read_csv','write_csv'])}}
 
@@ -40,31 +40,7 @@ Polars has its own fast implementation for csv reading with many flexible config
 --8<-- "python/user-guide/basics/reading-writing.py:csv"
 ```
 
-As we can see above, Polars made the datetimes a `string`. We can tell Polars to parse dates, when reading the csv, to ensure the date becomes a datetime. The example can be found below:
-
-{{code_block('user-guide/basics/reading-writing','csv2',['read_csv'])}}
-
-```python exec="on" result="text" session="getting-started/reading"
---8<-- "python/user-guide/basics/reading-writing.py:csv2"
-```
-
-### JSON
-
-{{code_block('user-guide/basics/reading-writing','json',['read_json','write_json'])}}
-
-```python exec="on" result="text" session="getting-started/reading"
---8<-- "python/user-guide/basics/reading-writing.py:json"
-```
-
-### Parquet
-
-{{code_block('user-guide/basics/reading-writing','parquet',['read_parquet','write_parquet'])}}
-
-```python exec="on" result="text" session="getting-started/reading"
---8<-- "python/user-guide/basics/reading-writing.py:parquet"
-```
-
-To see more examples and other data formats go to the [User Guide](io/csv.md), section IO.
+For more examples on the CSV file format and other data formats, start here [IO section on CSV](io/csv.md) of the User Guide. 
 
 ## Expressions
 
@@ -79,7 +55,12 @@ To learn more about expressions and the context in which they operate, see the U
 
 ### Select statement
 
-To select a column we need to do two things. Define the `DataFrame` we want the data from. And second, select the data that we need. In the example below you see that we select `col('*')`. The asterisk stands for all columns.
+To select a column we need to do two things: 
+
+1. Define the `DataFrame` we want the data from. 
+2. Select the data that we need. 
+
+In the example below you see that we select `col('*')`. The asterisk stands for all columns.
 
 {{code_block('user-guide/basics/expressions','select',['select'])}}
 
@@ -100,25 +81,7 @@ print(
 )
 ```
 
-The second option is to specify each column using `pl.col`. This option is shown below.
-
-{{code_block('user-guide/basics/expressions','select3',['select'])}}
-
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/basics/expressions.py:select3"
-)
-```
-
-If you want to exclude an entire column from your view, you can simply use `exclude` in your `select` statement.
-
-{{code_block('user-guide/basics/expressions','exclude',['select'])}}
-
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/basics/expressions.py:exclude"
-)
-```
+Follow these links to other parts of the User guide to learn more about [basic operations](expressions/operators.md) or [column selections](expressions/column-selections.md).
 
 ### Filter
 
@@ -154,7 +117,7 @@ print(
 )
 ```
 
-### Group by
+### Group_by
 
 We will create a new `DataFrame` for the Group by functionality. This new `DataFrame` will include several 'groups' that we want to group by.
 

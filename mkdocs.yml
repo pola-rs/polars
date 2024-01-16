@@ -13,6 +13,7 @@ nav:
     - user-guide/getting-started.md
     - user-guide/installation.md
     - Concepts:
+      - user-guide/concepts/index.md
       - Data types:
         - user-guide/concepts/data-types/overview.md
         - user-guide/concepts/data-types/categoricals.md
@@ -22,6 +23,7 @@ nav:
       - user-guide/concepts/lazy-vs-eager.md
       - user-guide/concepts/streaming.md
     - Expressions:
+      - user-guide/expressions/index.md
       - user-guide/expressions/operators.md
       - user-guide/expressions/column-selections.md
       - user-guide/expressions/functions.md
@@ -37,6 +39,7 @@ nav:
       - user-guide/expressions/structs.md
       - user-guide/expressions/numpy.md
     - Transformations:
+      - user-guide/transformations/index.md
       - user-guide/transformations/joins.md
       - user-guide/transformations/concatenation.md
       - user-guide/transformations/pivot.md
@@ -48,6 +51,7 @@ nav:
         - user-guide/transformations/time-series/resampling.md
         - user-guide/transformations/time-series/timezones.md
     - Lazy API:
+      - user-guide/lazy/index.md
       - user-guide/lazy/using.md
       - user-guide/lazy/optimizations.md
       - user-guide/lazy/schemas.md
@@ -55,6 +59,7 @@ nav:
       - user-guide/lazy/execution.md
       - user-guide/lazy/streaming.md
     - IO:
+      - user-guide/io/index.md
       - user-guide/io/csv.md
       - user-guide/io/excel.md
       - user-guide/io/parquet.md
@@ -127,6 +132,7 @@ theme:
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.footer
+    - navigation.indexes
     - content.tabs.link
   icon:
     repo: fontawesome/brands/github
