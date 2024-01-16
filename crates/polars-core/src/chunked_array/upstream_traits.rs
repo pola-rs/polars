@@ -101,7 +101,13 @@ impl PolarsAsRef<str> for String {}
 impl PolarsAsRef<str> for &str {}
 // &["foo", "bar"]
 impl PolarsAsRef<str> for &&str {}
+
 impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
+impl PolarsAsRef<[u8]> for Vec<u8> {}
+impl PolarsAsRef<[u8]> for &[u8] {}
+// TODO: remove!
+impl PolarsAsRef<[u8]> for &&[u8] {}
+impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
 
 impl<Ptr> FromIterator<Ptr> for StringChunked
 where
@@ -124,14 +130,6 @@ where
     }
 }
 
-impl PolarsAsRef<[u8]> for Vec<u8> {}
-
-impl PolarsAsRef<[u8]> for &[u8] {}
-
-// TODO: remove!
-impl PolarsAsRef<[u8]> for &&[u8] {}
-
-impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
 
 impl<Ptr> FromIterator<Ptr> for BinaryChunked
 where
@@ -517,8 +515,17 @@ where
     Ptr: PolarsAsRef<str> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
-        let bin: BinaryChunked = iter.into_par_iter().map(|v| v.as_ref().as_bytes()).collect();
-        unsafe { bin.to_string() }
+        let vectors = collect_into_linked_list(iter);
+        let cap = get_capacity_from_par_results(&vectors);
+
+        let mut builder = MutableBinaryViewArray::with_capacity(cap);
+        // TODO! we can do this in parallel ind just combine the buffers.
+        for vec in vectors {
+            for val in vec {
+                builder.push_value_ignore_validity(val.as_ref())
+            }
+        }
+        ChunkedArray::with_chunk("", builder.freeze())
     }
 }
 
@@ -546,8 +553,26 @@ where
     Ptr: AsRef<str> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let bin: BinaryChunked = iter.into_par_iter().map(|v| v.map(|v| v.as_ref().as_bytes())).collect();
-        unsafe { bin.to_string() }
+        let vectors = collect_into_linked_list(iter);
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+
+        let arrays = vectors
+            .into_par_iter()
+            .map(|vector| {
+                let cap = vector.len();
+                let mut mutable = MutableBinaryViewArray::with_capacity(cap, );
+                for opt_val in vector {
+                    mutable.push(opt_val)
+                }
+                mutable.freeze()
+            })
+            .collect::<Vec<_>>();
+
+        // TODO!
+        // do this in parallel.
+        let arrays = arrays.iter().map(|arr| arr as &dyn Array).collect::<Vec<_>>();
+        let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
+        unsafe { StringChunked::from_chunks("", vec![arr]) }
     }
 }
 

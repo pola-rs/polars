@@ -1,3 +1,4 @@
+use arrow::datatypes::PhysicalType::LargeBinary;
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
@@ -323,6 +324,7 @@ impl DataType {
                 let fields = fields.iter().map(|fld| fld.to_arrow(true)).collect();
                 Ok(ArrowDataType::Struct(fields))
             },
+            BinaryOffset => Ok(ArrowDataType::LargeBinary),
             Unknown => {
                 polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
             },
@@ -398,6 +400,7 @@ impl Display for DataType {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
+            DataType::BinaryOffset => "binary[offset]"
         };
         f.write_str(s)
     }
