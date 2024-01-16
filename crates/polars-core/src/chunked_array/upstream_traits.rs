@@ -517,6 +517,16 @@ where
     Ptr: PolarsAsRef<str> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
+        let bin: BinaryChunked = iter.into_par_iter().map(|v| v.as_ref().as_bytes()).collect();
+        unsafe { bin.to_string() }
+    }
+}
+
+impl<Ptr> FromParallelIterator<Ptr> for BinaryChunked
+    where
+        Ptr: PolarsAsRef<[u8]> + Send + Sync,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let cap = get_capacity_from_par_results(&vectors);
 
@@ -534,6 +544,17 @@ where
 impl<Ptr> FromParallelIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str> + Send + Sync,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        let bin: BinaryChunked = iter.into_par_iter().map(|v| v.map(|v| v.as_ref().as_bytes())).collect();
+        unsafe { bin.to_string() }
+    }
+}
+
+
+impl<Ptr> FromParallelIterator<Option<Ptr>> for BinaryChunked
+    where
+        Ptr: AsRef<[u8]> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
@@ -555,7 +576,7 @@ where
         // do this in parallel.
         let arrays = arrays.iter().map(|arr| arr as &dyn Array).collect::<Vec<_>>();
         let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
-        unsafe { StringChunked::from_chunks("", vec![arr]) }
+        unsafe { BinaryChunked::from_chunks("", vec![arr]) }
     }
 }
 
