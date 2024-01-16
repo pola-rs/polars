@@ -266,6 +266,11 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
                 .push(std::mem::take(&mut self.in_progress_buffer).into());
         }
     }
+
+    #[inline]
+    pub fn freeze(self) -> BinaryViewArrayGeneric<T> {
+        self.into()
+    }
 }
 
 impl MutableBinaryViewArray<[u8]> {

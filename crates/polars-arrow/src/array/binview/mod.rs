@@ -311,9 +311,16 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     impl_mut_validity!();
     impl_into_array!();
 
-    pub fn from<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
+    pub fn from_slice<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
         let mutable = MutableBinaryViewArray::from_iterator(
             slice.as_ref().iter().map(|opt_v| opt_v.as_ref()),
+        );
+        mutable.into()
+    }
+
+    pub fn from_slice_values<S: AsRef<T>, P: AsRef<[S]>>(slice: P) -> Self {
+        let mutable = MutableBinaryViewArray::from_values_iter(
+            slice.as_ref().iter().map(|v| v.as_ref()),
         );
         mutable.into()
     }
@@ -332,6 +339,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub fn len(&self) -> usize {
         self.views.len()
     }
+
 }
 
 impl BinaryViewArray {
