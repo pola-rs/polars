@@ -98,10 +98,12 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.views.capacity()
     }
 
-    fn init_validity(&mut self) {
+    fn init_validity(&mut self, unset_last: bool) {
         let mut validity = MutableBitmap::with_capacity(self.views.capacity());
         validity.extend_constant(self.len(), true);
-        validity.set(self.len() - 1, false);
+        if unset_last {
+            validity.set(self.len() - 1, false);
+        }
         self.validity = Some(validity);
     }
 
@@ -159,22 +161,23 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.views.push(0);
         match &mut self.validity {
             Some(validity) => validity.push(false),
-            None => self.init_validity(),
+            None => self.init_validity(true),
         }
     }
 
     pub fn extend_null(&mut self, additional: usize) {
         if self.validity.is_none() && additional > 0 {
-            self.init_validity();
+            self.init_validity(false);
         }
+        self.views.extend(std::iter::repeat(0).take(additional));
         if let Some(validity) = &mut self.validity {
-            validity.extend_constant(additional, false)
+            validity.extend_constant(additional, false);
         }
     }
 
     pub fn extend_constant<V: AsRef<T>>(&mut self, additional: usize, value: Option<V>) {
         if value.is_none() && self.validity.is_none() {
-            self.init_validity();
+            self.init_validity(false);
         }
 
         if let Some(validity) = &mut self.validity {
@@ -188,7 +191,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.push_value_ignore_validity(v);
             self.views.pop().unwrap()
         }).unwrap_or(0);
-        self.views.extend(std::iter::repeat(view_value).take(additional))
+        self.views.extend(std::iter::repeat(view_value).take(additional));
     }
 
     impl_mutable_array_mut_validity!();

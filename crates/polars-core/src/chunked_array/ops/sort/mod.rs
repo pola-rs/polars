@@ -347,7 +347,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         } else {
             mutable.extend_null(null_count);
             for row in v {
-                mutable.push_value_ignore_validity(row)
+                mutable.push_value(row)
             }
         }
         let mut ca = ChunkedArray::with_chunk(self.name(), mutable.into());
