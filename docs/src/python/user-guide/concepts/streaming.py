@@ -18,11 +18,8 @@ print(q1.explain(streaming=True))
 # --8<-- [end:example]
 
 # --8<-- [start:example2]
-q2 = (
-    pl.scan_csv("docs/data/iris.csv")
-    .with_columns(
-        pl.col("sepal_length").mean().over("species")
-    )
+q2 = pl.scan_csv("docs/data/iris.csv").with_columns(
+    pl.col("sepal_length").mean().over("species")
 )
 
 print(q2.explain(streaming=True))
