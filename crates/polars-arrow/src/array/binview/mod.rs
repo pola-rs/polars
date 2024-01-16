@@ -274,7 +274,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         // data: 12 bytes
 
         let bytes = if len <= 12 {
-            let ptr = self.views.storage_ptr() as *const u8;
+            let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
             let buffer_idx = (v >> 64) as u32;
@@ -417,6 +417,9 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     }
 
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        debug_assert!(
+            offset + length <= self.len(),
+        );
         self.validity = self
             .validity
             .take()

@@ -267,7 +267,7 @@ impl DataType {
     }
 
     #[inline]
-    pub fn try_to_arrow(&self, _pl_flavor: bool) -> PolarsResult<ArrowDataType> {
+    pub fn try_to_arrow(&self, pl_flavor: bool) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
             Boolean => Ok(ArrowDataType::Boolean),
@@ -288,10 +288,21 @@ impl DataType {
                 scale.unwrap_or(0), // and what else can we do here?
             )),
             String => {
-                // TODO! implement pl_flavor
-                Ok(ArrowDataType::LargeUtf8)
+                let dt = if pl_flavor {
+                   ArrowDataType::Utf8View
+                } else {
+                    ArrowDataType::LargeUtf8
+                };
+                Ok(dt)
             },
-            Binary => Ok(ArrowDataType::LargeBinary),
+            Binary => {
+                let dt = if pl_flavor {
+                    ArrowDataType::BinaryView
+                } else {
+                    ArrowDataType::LargeBinary
+                };
+                Ok(dt)
+            },
             Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),

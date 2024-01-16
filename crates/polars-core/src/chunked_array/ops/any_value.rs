@@ -32,8 +32,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         }};
     }
     match dtype {
-        DataType::String => downcast_and_pack!(LargeStringArray, String),
-        DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
+        DataType::String => downcast_and_pack!(Utf8ViewArray, String),
+        DataType::Binary => downcast_and_pack!(BinaryViewArray, Binary),
         DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
         DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
@@ -119,6 +119,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             PolarsExtension::arr_to_av(arr, idx)
         },
         DataType::Null => AnyValue::Null,
+        DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
         dt => panic!("not implemented for {dt:?}"),
     }
 }
