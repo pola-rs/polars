@@ -40,7 +40,7 @@ In this example we write the DataFrame to `output.csv`. After that we can read i
 --8<-- "python/user-guide/basics/reading-writing.py:csv"
 ```
 
-For more examples on the CSV file format and other data formats, start here [IO section on CSV](io/csv.md) of the User Guide. 
+For more examples on the CSV file format and other data formats, start here [IO section on CSV](io/csv.md) of the User Guide.
 
 ## Expressions
 
@@ -55,10 +55,10 @@ To learn more about expressions and the context in which they operate, see the U
 
 ### Select statement
 
-To select a column we need to do two things: 
+To select a column we need to do two things:
 
-1. Define the `DataFrame` we want the data from. 
-2. Select the data that we need. 
+1. Define the `DataFrame` we want the data from.
+2. Select the data that we need.
 
 In the example below you see that we select `col('*')`. The asterisk stands for all columns.
 
