@@ -100,16 +100,16 @@ def test_filter_where() -> None:
     ]
 
 
-def test_count_expr() -> None:
+def test_len_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
 
-    out = df.select(pl.count())
+    out = df.select(pl.len())
     assert out.shape == (1, 1)
     assert cast(int, out.item()) == 5
 
-    out = df.group_by("b", maintain_order=True).agg(pl.count())
+    out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
-    assert out["count"].to_list() == [4, 1]
+    assert out["len"].to_list() == [4, 1]
 
 
 def test_map_alias() -> None:
@@ -678,7 +678,7 @@ def test_head() -> None:
     assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").head(pl.len() / 2)).to_dict(as_series=False) == {
         "a": [1, 2]
     }
 
@@ -690,7 +690,7 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").tail(pl.len() / 2)).to_dict(as_series=False) == {
         "a": [4, 5]
     }
 

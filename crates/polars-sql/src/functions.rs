@@ -1,6 +1,6 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
 use polars_lazy::dsl::Expr;
-use polars_plan::dsl::{coalesce, concat_str, count, when};
+use polars_plan::dsl::{coalesce, concat_str, len, when};
 use polars_plan::logical_plan::LiteralValue;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{lit, StrptimeOptions};
@@ -1137,7 +1137,7 @@ impl SQLFunctionVisitor<'_> {
         let args = extract_args(self.func);
         match (self.func.distinct, args.as_slice()) {
             // count()
-            (false, []) => Ok(count()),
+            (false, []) => Ok(len()),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx)?;
@@ -1145,7 +1145,7 @@ impl SQLFunctionVisitor<'_> {
                 Ok(expr.count())
             },
             // count(*)
-            (false, [FunctionArgExpr::Wildcard]) => Ok(count()),
+            (false, [FunctionArgExpr::Wildcard]) => Ok(len()),
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx)?;

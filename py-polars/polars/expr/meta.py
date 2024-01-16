@@ -130,11 +130,11 @@ class ExprMetaNameSpace:
         >>> e_sum_over = pl.sum("foo").over("groups")
         >>> e_sum_over.meta.output_name()
         'foo'
-        >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
+        >>> e_sum_slice = pl.sum("foo").slice(pl.len() - 10, pl.col("bar"))
         >>> e_sum_slice.meta.output_name()
         'foo'
-        >>> pl.count().meta.output_name()
-        'count'
+        >>> pl.len().meta.output_name()
+        'len'
         """
         try:
             return self._pyexpr.meta_output_name()
@@ -180,7 +180,7 @@ class ExprMetaNameSpace:
         >>> e_sum_over = pl.sum("foo").over("groups")
         >>> e_sum_over.meta.root_names()
         ['foo', 'groups']
-        >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
+        >>> e_sum_slice = pl.sum("foo").slice(pl.len() - 10, pl.col("bar"))
         >>> e_sum_slice.meta.root_names()
         ['foo', 'bar']
         """

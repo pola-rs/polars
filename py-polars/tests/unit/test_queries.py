@@ -34,7 +34,7 @@ def test_repeat_expansion_in_group_by() -> None:
     out = (
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
         .group_by("g", maintain_order=True)
-        .agg(pl.repeat(1, pl.count()).cum_sum())
+        .agg(pl.repeat(1, pl.len()).cum_sum())
         .to_dict(as_series=False)
     )
     assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}
@@ -126,10 +126,10 @@ def test_sorted_group_by_optimization(monkeypatch: Any) -> None:
         sorted_implicit = (
             df.with_columns(pl.col("a").sort(descending=descending))
             .group_by("a")
-            .agg(pl.count())
+            .agg(pl.len())
         )
         sorted_explicit = (
-            df.group_by("a").agg(pl.count()).sort("a", descending=descending)
+            df.group_by("a").agg(pl.len()).sort("a", descending=descending)
         )
         assert_frame_equal(sorted_explicit, sorted_implicit)
 
@@ -258,7 +258,7 @@ def test_ternary_none_struct() -> None:
                 pl.struct(
                     [
                         pl.sum(name).alias("sum"),
-                        (pl.count() - pl.col(name).null_count()).alias("count"),
+                        (pl.len() - pl.col(name).null_count()).alias("count"),
                     ]
                 ),
             )

@@ -252,10 +252,10 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
             foods_file_path,
             dtypes={"calories": pl.String, "sugars_g": pl.Int8},
         )
-        .select(pl.count())
+        .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"count": 27}, schema={"count": pl.UInt32})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.UInt32})
     assert_frame_equal(df, expected)
 
 

@@ -23,14 +23,14 @@ use crate::executors::sinks::group_by::aggregates::{AggregateFunction, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::DataChunk;
 
-struct Count {}
+struct Len {}
 
-impl PhysicalIoExpr for Count {
+impl PhysicalIoExpr for Len {
     fn evaluate_io(&self, _df: &DataFrame) -> PolarsResult<Series> {
         unimplemented!()
     }
 }
-impl PhysicalPipedExpr for Count {
+impl PhysicalPipedExpr for Len {
     fn evaluate(&self, chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
         // the length must match the chunks as the operators expect that
         // so we fill a null series.
@@ -42,7 +42,7 @@ impl PhysicalPipedExpr for Count {
     }
 
     fn expression(&self) -> Expr {
-        Expr::Count
+        Expr::Len
     }
 }
 
@@ -57,7 +57,7 @@ pub fn can_convert_to_hash_agg(
         .map(|(_, ae)| {
             match ae {
                 AExpr::Agg(_)
-                | AExpr::Count
+                | AExpr::Len
                 | AExpr::Cast { .. }
                 | AExpr::Literal(_)
                 | AExpr::Column(_)
@@ -70,7 +70,7 @@ pub fn can_convert_to_hash_agg(
             }
             ae
         })
-        .filter(|ae| matches!(ae, AExpr::Agg(_) | AExpr::Count))
+        .filter(|ae| matches!(ae, AExpr::Agg(_) | AExpr::Len))
         .count()
         == 1
         && can_run_partitioned
@@ -80,7 +80,7 @@ pub fn can_convert_to_hash_agg(
             node = *input
         }
         match expr_arena.get(node) {
-            AExpr::Count => true,
+            AExpr::Len => true,
             ae @ AExpr::Agg(agg_fn) => {
                 matches!(
                     agg_fn,
@@ -128,9 +128,9 @@ where
 {
     match expr_arena.get(node) {
         AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
-        AExpr::Count => (
+        AExpr::Len => (
             IDX_DTYPE,
-            Arc::new(Count {}),
+            Arc::new(Len {}),
             AggregateFunction::Count(CountAgg::new()),
         ),
         AExpr::Agg(agg) => match agg {

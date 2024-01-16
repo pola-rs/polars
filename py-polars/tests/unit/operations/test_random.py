@@ -14,7 +14,7 @@ def test_shuffle_group_by_reseed() -> None:
         shuffled = df.group_by("group", maintain_order=True).agg(
             pl.col("l").shuffle(seed)
         )
-        num_unique = shuffled.group_by("l").agg(pl.lit(0)).select(pl.count())
+        num_unique = shuffled.group_by("l").agg(pl.lit(0)).select(pl.len())
         return int(num_unique[0, 0])
 
     assert unique_shuffle_groups(50, None) > 1  # Astronomically unlikely.
