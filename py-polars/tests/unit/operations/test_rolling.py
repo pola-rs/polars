@@ -57,9 +57,10 @@ def test_rolling_negative_offset_3914() -> None:
             ),
         }
     )
-    assert df.rolling(index_column="datetime", period="2d", offset="-4d").agg(
-        pl.count().alias("count")
-    )["count"].to_list() == [0, 0, 1, 2, 2]
+    result = df.rolling(index_column="datetime", period="2d", offset="-4d").agg(
+        pl.len()
+    )
+    assert result["len"].to_list() == [0, 0, 1, 2, 2]
 
     df = pl.DataFrame(
         {

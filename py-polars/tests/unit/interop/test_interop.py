@@ -1047,11 +1047,13 @@ def test_to_init_repr() -> None:
 
 
 def test_untrusted_categorical_input() -> None:
-    df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).group_by("x").count().to_dict(as_series=False) == {
-        "x": ["x"],
-        "count": [1],
-    }
+    df_pd = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
+    df = pl.from_pandas(df_pd)
+    result = df.group_by("x").len()
+    expected = pl.DataFrame(
+        {"x": ["x"], "len": [1]}, schema={"x": pl.Categorical, "len": pl.UInt32}
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_sliced_struct_from_arrow() -> None:

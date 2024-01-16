@@ -203,7 +203,7 @@ def test_predicate_pushdown_group_by_keys() -> None:
     assert (
         'SELECTION: "None"'
         not in df.group_by("group")
-        .agg([pl.count().alias("str_list")])
+        .agg([pl.len().alias("str_list")])
         .filter(pl.col("group") == 1)
         .explain()
     )
@@ -388,16 +388,16 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     # that only refers to the common window keys.
     actual = lf.with_columns(
         (pl.col("value") * 2).over("key").alias("value_2"),
-    ).filter(pl.count().over("key") == 1)
+    ).filter(pl.len().over("key") == 1)
 
     plan = actual.explain()
-    assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
+    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
     assert 'SELECTION: "None"' in plan
 
     # Test window in filter
-    actual = lf.filter(pl.count().over("key") == 1).filter(pl.col("key") == 1)
+    actual = lf.filter(pl.len().over("key") == 1).filter(pl.col("key") == 1)
     plan = actual.explain()
-    assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
+    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
     assert r'SELECTION: "[(col(\"key\")) == (1)]"' in plan
 
 

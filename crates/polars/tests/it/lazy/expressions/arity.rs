@@ -11,7 +11,7 @@ fn test_list_broadcast() {
     .unwrap()
     .lazy()
     .group_by([col("g")])
-    .agg([col("a").unique_counts() * count()])
+    .agg([col("a").unique_counts() * len()])
     .collect()
     .unwrap();
 }

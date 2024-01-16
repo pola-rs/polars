@@ -56,7 +56,7 @@ def test_pivot_list() -> None:
     ("agg_fn", "expected_rows"),
     [
         ("first", [("a", 2, None, None), ("b", None, None, 10)]),
-        ("count", [("a", 2, None, None), ("b", None, 2, 1)]),
+        ("len", [("a", 2, None, None), ("b", None, 2, 1)]),
         ("min", [("a", 2, None, None), ("b", None, 8, 10)]),
         ("max", [("a", 4, None, None), ("b", None, 8, 10)]),
         ("sum", [("a", 6, None, None), ("b", None, 8, 10)]),
@@ -106,14 +106,12 @@ def test_pivot_categorical_index() -> None:
         schema=[("A", pl.Categorical), ("B", pl.Categorical)],
     )
 
-    result = df.pivot(values="B", index=["A"], columns="B", aggregate_function="count")
+    result = df.pivot(values="B", index=["A"], columns="B", aggregate_function="len")
     expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
     assert result.to_dict(as_series=False) == expected
 
     # test expression dispatch
-    result = df.pivot(
-        values="B", index=["A"], columns="B", aggregate_function=pl.count()
-    )
+    result = df.pivot(values="B", index=["A"], columns="B", aggregate_function=pl.len())
     assert result.to_dict(as_series=False) == expected
 
     df = pl.DataFrame(
@@ -125,7 +123,7 @@ def test_pivot_categorical_index() -> None:
         schema=[("A", pl.Categorical), ("B", pl.Categorical), ("C", pl.Categorical)],
     )
     result = df.pivot(
-        values="B", index=["A", "C"], columns="B", aggregate_function="count"
+        values="B", index=["A", "C"], columns="B", aggregate_function="len"
     )
     expected = {
         "A": ["Fire", "Water"],

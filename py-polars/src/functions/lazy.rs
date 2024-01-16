@@ -183,13 +183,8 @@ pub fn concat_str(s: Vec<PyExpr>, separator: &str) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn count() -> PyExpr {
-    dsl::count().into()
-}
-
-#[pyfunction]
-pub fn cum_count(reverse: bool) -> PyExpr {
-    dsl::cum_count(reverse).into()
+pub fn len() -> PyExpr {
+    dsl::len().into()
 }
 
 #[pyfunction]
