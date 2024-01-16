@@ -137,15 +137,16 @@ impl Series {
         dtype: &ArrowDataType,
     ) -> PolarsResult<Self> {
         match dtype {
-            ArrowDataType::LargeUtf8 => Ok(StringChunked::from_chunks(name, chunks).into_series()),
-            ArrowDataType::Utf8 => {
+            ArrowDataType::Utf8View => Ok(StringChunked::from_chunks(name, chunks).into_series()),
+            ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
                 let chunks = cast_chunks(&chunks, &DataType::String, false).unwrap();
                 Ok(StringChunked::from_chunks(name, chunks).into_series())
             },
-            ArrowDataType::LargeBinary => {
+            ArrowDataType::BinaryView  => {
+                let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
-            ArrowDataType::Binary => {
+            ArrowDataType::Binary | ArrowDataType::LargeBinary => {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
@@ -499,13 +500,10 @@ fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRe
 /// Converts to physical types and bubbles up the correct [`DataType`].
 unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
     match arrays[0].data_type() {
-        ArrowDataType::Utf8 => (
-            convert(&arrays, |arr| {
-                let arr = arr.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-                Box::from(utf8_to_large_utf8(arr))
-            }),
-            DataType::String,
-        ),
+        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
+            let chunks = cast_chunks(&arrays, &DataType::String, false).unwrap();
+            (chunks, DataType::String)
+        },
         #[allow(unused_variables)]
         dt @ ArrowDataType::Dictionary(_, _, _) => {
             feature_gated!("dtype-categorical", {

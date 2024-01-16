@@ -136,8 +136,6 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
-            ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::String,
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None,Default::default()),
@@ -157,6 +155,9 @@ impl From<&ArrowDataType> for DataType {
             }
             #[cfg(feature = "dtype-decimal")]
             ArrowDataType::Decimal(precision, scale) => DataType::Decimal(Some(*precision), Some(*scale)),
+            ArrowDataType::Utf8View => DataType::String,
+            ArrowDataType::BinaryView => DataType::Binary,
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::BinaryOffset,
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
     }

@@ -84,6 +84,7 @@ where
 
 type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
 type LargeListUtf8Builder = MutableListArray<i64, MutableUtf8Array<i64>>;
+type LargeListBinViewBuilder<T> = MutableListArray<i64, MutableBinaryViewArray<T>>;
 type LargeListBinaryBuilder = MutableListArray<i64, MutableBinaryArray<i64>>;
 type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
 type LargeListNullBuilder = MutableListArray<i64, MutableNullArray>;
