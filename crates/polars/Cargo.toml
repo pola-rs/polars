@@ -178,6 +178,7 @@ rank = ["polars-lazy?/rank", "polars-ops/rank"]
 reinterpret = ["polars-core/reinterpret", "polars-lazy?/reinterpret", "polars-ops/reinterpret"]
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
+negate = ["polars-ops/negate", "polars-lazy?/negate"]
 rle = ["polars-lazy?/rle"]
 rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window", "polars-time/rolling_window"]
 round_series = ["polars-ops/round_series", "polars-lazy?/round_series"]
@@ -366,6 +367,7 @@ docs-selection = [
   "dynamic_group_by",
   "extract_groups",
   "replace",
+  "negate",
 ]
 
 bench = [

@@ -61,6 +61,7 @@ features = [
   "log",
   "mode",
   "moment",
+  "negate",
   "ndarray",
   "partition_by",
   "product",

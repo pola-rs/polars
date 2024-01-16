@@ -43,6 +43,11 @@ impl PyExpr {
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
+    fn __neg__(&self) -> PyResult<Self> {
+        let expr = self.inner.clone();
+        let out = -expr;
+        Ok(out.into())
+    }
 
     fn to_str(&self) -> String {
         format!("{:?}", self.inner)

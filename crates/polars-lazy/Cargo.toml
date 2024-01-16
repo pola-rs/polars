@@ -159,6 +159,7 @@ peaks = ["polars-plan/peaks"]
 cov = ["polars-ops/cov", "polars-plan/cov"]
 hist = ["polars-plan/hist"]
 replace = ["polars-plan/replace"]
+negate = ["polars-plan/negate"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 string_encoding = ["polars-plan/string_encoding"]
@@ -265,6 +266,7 @@ features = [
   "meta",
   "mode",
   "moment",
+  "negate",
   "nightly",
   "object",
   "panic_on_schema",
