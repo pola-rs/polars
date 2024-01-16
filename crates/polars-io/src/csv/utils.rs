@@ -461,6 +461,7 @@ pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
     separator: u8,
     max_read_rows: Option<usize>,
+    n_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
@@ -474,6 +475,11 @@ pub fn infer_file_schema(
     try_parse_dates: bool,
     raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
+    // Clip max_read_rows to n_rows.
+    let max_read_rows = match (max_read_rows, n_rows) {
+        (Some(m), Some(n)) => Some(std::cmp::min(m, n)),
+        _ => max_read_rows,
+    };
     infer_file_schema_inner(
         reader_bytes,
         separator,

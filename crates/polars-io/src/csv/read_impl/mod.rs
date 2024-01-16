@@ -243,6 +243,7 @@ impl<'a> CoreReader<'a> {
                         &reader_bytes,
                         separator,
                         max_records,
+                        n_rows,
                         has_header,
                         schema_overwrite.as_deref(),
                         &mut skip_rows,
@@ -379,7 +380,7 @@ impl<'a> CoreReader<'a> {
         // if we set an upper bound on bytes, keep a reference to the bytes beyond the bound
         let mut remaining_bytes = None;
 
-        // clip sample_size to n_rows
+        // Clip sample_size to n_rows.
         let sample_size = self
             .n_rows
             .map(|n| std::cmp::min(n, self.sample_size))

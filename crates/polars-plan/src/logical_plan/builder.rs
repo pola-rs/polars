@@ -326,6 +326,7 @@ impl LogicalPlanBuilder {
             &reader_bytes,
             separator,
             infer_schema_length,
+            n_rows,
             has_header,
             schema_overwrite,
             &mut skip_rows,

@@ -1266,17 +1266,15 @@ def test_csv_categorical_categorical_merge() -> None:
     )["x"].to_list() == ["A", "B"]
 
 
-@pytest.mark.write_disk()
-def test_csv_clip_sample_size_to_n_rows(tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "small.csv"
-    case_numbers = [f"{i:06d}" for i in range(1, 1001)]
-    test = ["test" for _ in range(1, 1001)]
-    df = pl.DataFrame({"test": test, "case_number": case_numbers})
-    df[622, "case_number"] = "CASE-NO0A60"
-    df.write_csv(file_path)
-    df = pl.read_csv(file_path, n_rows=1)
-    assert len(df) == 1
+def test_csv_n_rows_schema_inference() -> None:
+    df = pl.DataFrame(
+        {"string_col": ["string", "string"], "mixed_col": ["0", "string"]}
+    )
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+    df = pl.read_csv(f, n_rows=1)
+    assert df.dtypes == [pl.String, pl.Int64]
 
 
 def test_batched_csv_reader(foods_file_path: Path) -> None:
