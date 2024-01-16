@@ -37,6 +37,7 @@ pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
 pub mod udf;
+mod unary;
 
 use std::fmt::Debug;
 use std::sync::Arc;
