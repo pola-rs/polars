@@ -845,3 +845,12 @@ def test_join_on_wildcard_error() -> None:
         pl.ComputeError, match="wildcard column selection not supported at this point"
     ):
         df.join(df2, on=pl.all())
+
+
+def test_join_on_nth_error() -> None:
+    df = pl.DataFrame({"x": [1]})
+    df2 = pl.DataFrame({"x": [1], "y": [2]})
+    with pytest.raises(
+        pl.ComputeError, match="nth column selection not supported at this point"
+    ):
+        df.join(df2, on=pl.first())
