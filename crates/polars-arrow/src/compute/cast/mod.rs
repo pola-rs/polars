@@ -852,6 +852,8 @@ fn from_to_binview(array: &dyn Array,
         Int64 => primitive_to_binview_dyn::<i64>(array),
         Float32 => primitive_to_binview_dyn::<f32>(array),
         Float64 => primitive_to_binview_dyn::<f64>(array),
+        Binary => binary_to_binview::<i32>(array.as_any().downcast_ref().unwrap()),
+        LargeBinary => binary_to_binview::<i64>(array.as_any().downcast_ref().unwrap()),
         _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),

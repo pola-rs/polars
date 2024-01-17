@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::buffer::Buffer;
+use arrow::compute::cast::binary_to_binview;
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
@@ -78,41 +79,16 @@ impl RowsEncoded {
         }
     }
 
+    /// This conversion is free.
     pub fn into_array(self) -> BinaryArray<i64> {
         unsafe { rows_to_array(self.values, self.offsets) }
     }
 
+    /// This does allocate views.
     pub fn into_binview(self) -> BinaryViewArray {
-        let buffer_idx = 0 as u32;
-        let base_ptr = self.values.as_ptr() as usize;
-
-        let mut views = Vec::with_capacity(self.offsets.len() - 1);
-        for bytes in self.iter() {
-            let len: u32 = bytes.len().try_into().unwrap();
-            
-            let mut payload = [0; 16];
-
-            if len <= 12 {
-                payload[4..4 + bytes.len()].copy_from_slice(bytes);
-            } else {
-                unsafe { payload[4..8].copy_from_slice(bytes.get_unchecked_release(0..4)) };
-                let offset = (bytes.as_ptr() as usize - base_ptr) as u32;
-                payload[0..4].copy_from_slice(&len.to_le_bytes());
-                payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
-                payload[12..16].copy_from_slice(&offset.to_le_bytes());
-            }
-
-            let value = u128::from_le_bytes(payload);
-            unsafe { views.push_unchecked(value) };
-        }
-        unsafe {
-            let buffer: Buffer<u8> = self.values.into();
-            BinaryViewArray::new_unchecked_unknown_md(ArrowDataType::BinaryView,
-                views.into(),
-                Arc::from([buffer]),
-                None,
-            )
-        }
+        binary_to_binview(
+            &self.into_array()
+        )
     }
 
     #[cfg(test)]

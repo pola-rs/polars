@@ -1,12 +1,12 @@
-use arrow::array::Utf8Array;
+use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8Array, Utf8ViewArray};
 
 /// Returns a Utf8Array<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
 /// `start` can be negative, in which case the start counts from the end of the string.
 pub(super) fn utf8_substring(
-    array: &Utf8Array<i64>,
+    array: &Utf8ViewArray,
     start: i64,
     length: &Option<u64>,
-) -> Utf8Array<i64> {
+) -> Utf8ViewArray {
     let length = length.map(|v| v as usize);
 
     let iter = array.values_iter().map(|str_val| {
@@ -46,6 +46,5 @@ pub(super) fn utf8_substring(
         }
     });
 
-    let new = Utf8Array::<i64>::from_trusted_len_values_iter(iter);
-    new.with_validity(array.validity().cloned())
+    MutableBinaryViewArray::from_values_iter(iter).freeze().with_validity(array.validity().cloned())
 }

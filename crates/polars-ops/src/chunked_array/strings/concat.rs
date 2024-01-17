@@ -1,4 +1,5 @@
 use arrow::array::{Utf8Array, ValueSize};
+use arrow::compute::cast::utf8_to_utf8view;
 use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
@@ -33,8 +34,11 @@ pub fn str_concat(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> St
     });
 
     let buf = buf.into_bytes();
+    assert!(capacity >= buf.len());
     let offsets = vec![0, buf.len() as i64];
     let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
+    // conversion is cheap with one value.
+    let arr = utf8_to_utf8view(&arr);
     StringChunked::with_chunk(ca.name(), arr)
 }
 
@@ -66,20 +70,7 @@ pub fn hor_str_concat(cas: &[&StringChunked], delimiter: &str) -> PolarsResult<S
         ComputeError: "all series in `hor_str_concat` should have equal or unit length"
     );
 
-    // Calculate total capacity needed.
-    let tot_strings_bytes: usize = cas
-        .iter()
-        .map(|ca| {
-            let bytes = ca.get_values_size();
-            if ca.len() == 1 {
-                len * bytes
-            } else {
-                bytes
-            }
-        })
-        .sum();
-    let capacity = tot_strings_bytes + (cas.len() - 1) * delimiter.len() * len;
-    let mut builder = StringChunkedBuilder::new(cas[0].name(), len, capacity);
+    let mut builder = StringChunkedBuilder::new(cas[0].name(), len);
 
     // Broadcast if appropriate.
     let mut cols: Vec<_> = cas

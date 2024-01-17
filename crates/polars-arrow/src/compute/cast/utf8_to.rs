@@ -1,7 +1,11 @@
+use std::sync::Arc;
 use chrono::Datelike;
 use polars_error::PolarsResult;
+use polars_utils::slice::GetSaferUnchecked;
+use polars_utils::vec::PushUnchecked;
 
 use crate::array::*;
+use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
 use crate::temporal_conversions::{
@@ -137,4 +141,40 @@ pub fn utf8_to_binary<O: Offset>(
             from.validity().cloned(),
         )
     }
+}
+
+pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
+    let buffer_idx = 0 as u32;
+    let base_ptr = arr.values().as_ptr() as usize;
+
+    let mut views = Vec::with_capacity(arr.len());
+    for bytes in arr.values_iter() {
+        let len: u32 = bytes.len().try_into().unwrap();
+
+        let mut payload = [0; 16];
+
+        if len <= 12 {
+            payload[4..4 + bytes.len()].copy_from_slice(bytes);
+        } else {
+            unsafe { payload[4..8].copy_from_slice(bytes.get_unchecked_release(0..4)) };
+            let offset = (bytes.as_ptr() as usize - base_ptr) as u32;
+            payload[0..4].copy_from_slice(&len.to_le_bytes());
+            payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
+            payload[12..16].copy_from_slice(&offset.to_le_bytes());
+        }
+
+        let value = u128::from_le_bytes(payload);
+        unsafe { views.push_unchecked(value) };
+    }
+    unsafe {
+        BinaryViewArray::new_unchecked_unknown_md(ArrowDataType::BinaryView,
+                                                  views.into(),
+                                                  Arc::from([arr.values().clone()]),
+                                                  arr.validity().cloned(),
+        )
+    }
+}
+
+pub fn utf8_to_utf8view<O: Offset>(arr: &Utf8Array<O>) -> Utf8ViewArray {
+    unsafe { binary_to_binview(&arr.to_binary()).to_utf8view_unchecked() }
 }
