@@ -1,3 +1,4 @@
+import io
 from datetime import date, datetime
 from typing import Iterator
 
@@ -193,3 +194,9 @@ def test_err_transpose_object() -> None:
 
     with pytest.raises(pl.InvalidOperationError):
         pl.DataFrame([CustomObject()]).transpose()
+
+
+def test_transpose_name_from_column_13777() -> None:
+    csv_file = io.BytesIO(b"id,kc\nhi,3")
+    df = pl.read_csv(csv_file).transpose(column_names="id")
+    assert_series_equal(df.to_series(0), pl.Series("hi", [3]))

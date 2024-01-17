@@ -94,7 +94,7 @@ impl DataFrame {
             Some(cn) => match cn {
                 Either::Left(name) => {
                     let new_names = self.column(&name).and_then(|x| x.str())?;
-                    polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
+                    polars_ensure!(new_names.null_count() == 0, ComputeError: "Column with new names can't have null values");
                     df = Cow::Owned(self.drop(&name)?);
                     new_names
                         .into_no_null_iter()
