@@ -1,5 +1,5 @@
 use arrow::legacy::time_zone::Tz;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;

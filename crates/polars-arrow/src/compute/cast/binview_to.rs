@@ -10,7 +10,7 @@ use crate::types::NativeType;
 
 pub(super) fn view_to_binary<O: Offset>(array: &BinaryViewArray) -> BinaryArray<O> {
     let len: usize = Array::len(array);
-    let mut mutable = MutableBinaryValuesArray::<O>::with_capacities(len, len * 12);
+    let mut mutable = MutableBinaryValuesArray::<O>::with_capacities(len, array.total_bytes_len());
     for slice in array.values_iter() {
         mutable.push(slice)
     }

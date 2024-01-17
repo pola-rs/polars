@@ -5,7 +5,7 @@ use std::sync::Arc;
 use polars_error::PolarsResult;
 use polars_utils::slice::GetSaferUnchecked;
 
-use crate::array::binview::view::{validate_utf8_only_view, View};
+use crate::array::binview::view::{validate_utf8_only, View};
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::{Array, MutableArray};
 use crate::bitmap::MutableBitmap;
@@ -313,7 +313,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
 impl MutableBinaryViewArray<[u8]> {
     pub fn validate_utf8(&mut self) -> PolarsResult<()> {
-        validate_utf8_only_view(&self.views, &self.completed_buffers)
+        validate_utf8_only(&self.views, &self.completed_buffers)
     }
 }
 

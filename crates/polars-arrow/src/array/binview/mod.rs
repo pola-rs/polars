@@ -27,7 +27,7 @@ pub use mutable::MutableBinaryViewArray;
 use private::Sealed;
 
 use crate::array::binview::view::{
-    validate_binary_view, validate_utf8_only_view, validate_utf8_view,
+    validate_binary_view, validate_utf8_only, validate_utf8_view,
 };
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
@@ -375,7 +375,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
-        validate_utf8_only_view(&self.views, &self.buffers)
+        validate_utf8_only(&self.views, &self.buffers)
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].

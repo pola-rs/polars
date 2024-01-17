@@ -416,6 +416,20 @@ pub fn cast(
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
         },
+        (_, BinaryView) => {
+            from_to_binview(array, from_type, to_type).map(|arr| arr.boxed())
+        }
+        (_, Utf8View) => {
+            match from_type {
+                LargeUtf8 => Ok(utf8_to_utf8view(array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap()).boxed()),
+                Utf8 => Ok(utf8_to_utf8view(array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap()).boxed()),
+                _ => {
+                    from_to_binview(array, from_type, to_type).map(|arr| {
+                        unsafe { arr.to_utf8view_unchecked() }.boxed()
+                    })
+                }
+            }
+        }
         (Utf8, _) => match to_type {
             LargeUtf8 => Ok(Box::new(utf8_to_large_utf8(
                 array.as_any().downcast_ref().unwrap(),
@@ -569,14 +583,6 @@ pub fn cast(
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
         },
-        (_, BinaryView) => {
-            from_to_binview(array, from_type, to_type).map(|arr| arr.boxed())
-        }
-        (_, Utf8View) => {
-            from_to_binview(array, from_type, to_type).map(|arr| {
-                unsafe { arr.to_utf8view_unchecked() }.boxed()
-            })
-        }
         (_, Binary) => match from_type {
             // UInt8 => primitive_to_binary_dyn::<u8, i32>(array),
             // UInt16 => primitive_to_binary_dyn::<u16, i32>(array),

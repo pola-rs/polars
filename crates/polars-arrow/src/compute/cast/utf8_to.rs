@@ -148,14 +148,17 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
     let base_ptr = arr.values().as_ptr() as usize;
 
     let mut views = Vec::with_capacity(arr.len());
+    let mut uses_buffer = false;
     for bytes in arr.values_iter() {
         let len: u32 = bytes.len().try_into().unwrap();
 
         let mut payload = [0; 16];
+        payload[0..4].copy_from_slice(&len.to_le_bytes());
 
         if len <= 12 {
             payload[4..4 + bytes.len()].copy_from_slice(bytes);
         } else {
+            uses_buffer = true;
             unsafe { payload[4..8].copy_from_slice(bytes.get_unchecked_release(0..4)) };
             let offset = (bytes.as_ptr() as usize - base_ptr) as u32;
             payload[0..4].copy_from_slice(&len.to_le_bytes());
@@ -166,10 +169,15 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
         let value = u128::from_le_bytes(payload);
         unsafe { views.push_unchecked(value) };
     }
+    let buffers = if uses_buffer {
+        Arc::from([arr.values().clone()])
+    } else {
+        Arc::from([])
+    };
     unsafe {
         BinaryViewArray::new_unchecked_unknown_md(ArrowDataType::BinaryView,
                                                   views.into(),
-                                                  Arc::from([arr.values().clone()]),
+                                                  buffers,
                                                   arr.validity().cloned(),
         )
     }

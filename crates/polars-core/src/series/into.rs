@@ -1,3 +1,4 @@
+use arrow::compute::cast::cast_default;
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",
@@ -107,13 +108,21 @@ impl Series {
                     object_series_to_arrow_array(&s)
                 }
             },
-            DataType::String if pl_flavor => {
-                // TODO: implement Utf8ViewCast Here
-                self.array_ref(chunk_idx).clone()
+            DataType::String => {
+                if pl_flavor {
+                    self.array_ref(chunk_idx).clone()
+                } else {
+                    let arr = self.array_ref(chunk_idx);
+                    cast_default(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
+                }
             },
-            DataType::Binary if pl_flavor => {
-                // TODO: implement BinViewCast Here
-                self.array_ref(chunk_idx).clone()
+            DataType::Binary => {
+                if pl_flavor {
+                    self.array_ref(chunk_idx).clone()
+                } else {
+                    let arr = self.array_ref(chunk_idx);
+                    cast_default(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
+                }
             },
             _ => self.array_ref(chunk_idx).clone(),
         }

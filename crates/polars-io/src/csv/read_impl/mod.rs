@@ -130,13 +130,6 @@ impl<'a> fmt::Debug for CoreReader<'a> {
     }
 }
 
-pub(crate) struct RunningSize {
-    max: AtomicUsize,
-    sum: AtomicUsize,
-    count: AtomicUsize,
-    last: AtomicUsize,
-}
-
 fn compute_size_hint(max: usize, sum: usize, count: usize, last: usize) -> usize {
     let avg = (sum as f32 / count as f32) as usize;
     let size = std::cmp::max(last, avg) as f32;
@@ -146,38 +139,6 @@ fn compute_size_hint(max: usize, sum: usize, count: usize, last: usize) -> usize
         size as usize
     }
 }
-impl RunningSize {
-    fn new(size: usize) -> Self {
-        Self {
-            max: AtomicUsize::new(size),
-            sum: AtomicUsize::new(size),
-            count: AtomicUsize::new(1),
-            last: AtomicUsize::new(size),
-        }
-    }
-
-    pub(crate) fn update(&self, size: usize) -> (usize, usize, usize, usize) {
-        let max = self.max.fetch_max(size, Ordering::Release);
-        let sum = self.sum.fetch_add(size, Ordering::Release);
-        let count = self.count.fetch_add(1, Ordering::Release);
-        let last = self.last.fetch_add(size, Ordering::Release);
-        (
-            max,
-            sum / count,
-            last,
-            compute_size_hint(max, sum, count, last),
-        )
-    }
-
-    pub(crate) fn size_hint(&self) -> usize {
-        let max = self.max.load(Ordering::Acquire);
-        let sum = self.sum.load(Ordering::Acquire);
-        let count = self.count.load(Ordering::Acquire);
-        let last = self.last.load(Ordering::Acquire);
-        compute_size_hint(max, sum, count, last)
-    }
-}
-
 impl<'a> CoreReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -523,20 +484,6 @@ impl<'a> CoreReader<'a> {
         Ok(StringColumns::new(self.schema.clone(), new_projection))
     }
 
-    fn init_string_size_stats(
-        &self,
-        str_columns: &StringColumns,
-        capacity: usize,
-    ) -> Vec<RunningSize> {
-        // assume 10 chars per str
-        // this is not updated in low memory mode
-        let init_str_bytes = capacity * 10;
-        str_columns
-            .iter()
-            .map(|_| RunningSize::new(init_str_bytes))
-            .collect()
-    }
-
     fn parse_csv(
         &mut self,
         mut n_threads: usize,
@@ -562,7 +509,6 @@ impl<'a> CoreReader<'a> {
         // Structure:
         //      the inner vec has got buffers from all the columns.
         if let Some(predicate) = predicate {
-            let str_capacities = self.init_string_size_stats(&str_columns, chunk_size);
             let dfs = POOL.install(|| {
                 file_chunks
                     .into_par_iter()
@@ -583,7 +529,6 @@ impl<'a> CoreReader<'a> {
                                 projection,
                                 chunk_size,
                                 schema,
-                                &str_capacities,
                                 self.quote_char,
                                 self.encoding,
                                 self.ignore_errors,
@@ -627,10 +572,6 @@ impl<'a> CoreReader<'a> {
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
 
-                            // update the running str bytes statistics
-                            if !self.low_memory {
-                                update_string_stats(&str_capacities, &str_columns, &local_df)?;
-                            }
                             dfs.push((local_df, current_row_count));
                         }
                         Ok(dfs)
@@ -654,8 +595,6 @@ impl<'a> CoreReader<'a> {
                 std::cmp::min(rows_per_thread, max_proxy)
             };
 
-            let str_capacities = self.init_string_size_stats(&str_columns, capacity);
-
             let mut dfs = POOL.install(|| {
                 file_chunks
                     .into_par_iter()
@@ -671,7 +610,6 @@ impl<'a> CoreReader<'a> {
                             self.eol_char,
                             self.comment_prefix.as_ref(),
                             capacity,
-                            &str_capacities,
                             self.encoding,
                             self.null_values.as_ref(),
                             self.missing_is_null,
@@ -680,11 +618,6 @@ impl<'a> CoreReader<'a> {
                             stop_at_nbytes,
                             starting_point_offset,
                         )?;
-
-                        // update the running str bytes statistics
-                        if !self.low_memory {
-                            update_string_stats(&str_capacities, &str_columns, &df)?;
-                        }
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
@@ -705,7 +638,6 @@ impl<'a> CoreReader<'a> {
                                 &projection,
                                 remaining_rows,
                                 self.schema.as_ref(),
-                                &str_capacities,
                                 self.quote_char,
                                 self.encoding,
                                 self.ignore_errors,
@@ -773,22 +705,6 @@ impl<'a> CoreReader<'a> {
     }
 }
 
-fn update_string_stats(
-    str_capacities: &[RunningSize],
-    str_columns: &StringColumns,
-    local_df: &DataFrame,
-) -> PolarsResult<()> {
-    // update the running str bytes statistics
-    for (str_index, name) in str_columns.iter().enumerate() {
-        let ca = local_df.column(name)?.str()?;
-        let str_bytes_len = ca.get_values_size();
-
-        let _ = str_capacities[str_index].update(str_bytes_len);
-    }
-
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 fn read_chunk(
     bytes: &[u8],
@@ -801,7 +717,6 @@ fn read_chunk(
     eol_char: u8,
     comment_prefix: Option<&CommentPrefix>,
     capacity: usize,
-    str_capacities: &[RunningSize],
     encoding: CsvEncoding,
     null_values: Option<&NullValuesCompiled>,
     missing_is_null: bool,
@@ -815,7 +730,6 @@ fn read_chunk(
         projection,
         capacity,
         schema,
-        str_capacities,
         quote_char,
         encoding,
         ignore_errors,

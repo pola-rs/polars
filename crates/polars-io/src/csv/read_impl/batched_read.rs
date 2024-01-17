@@ -232,7 +232,6 @@ impl<'a> CoreReader<'a> {
             finished: false,
             file_chunk_reader: chunk_iter,
             file_chunks: vec![],
-            str_capacities: self.init_string_size_stats(&str_columns, self.chunk_size),
             str_columns,
             projection,
             starting_point_offset,
@@ -260,7 +259,6 @@ pub struct BatchedCsvReaderRead<'a> {
     finished: bool,
     file_chunk_reader: ChunkReader<'a>,
     file_chunks: Vec<(usize, usize)>,
-    str_capacities: Vec<RunningSize>,
     str_columns: StringColumns,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
@@ -339,7 +337,6 @@ impl<'a> BatchedCsvReaderRead<'a> {
                         self.eol_char,
                         self.comment_prefix.as_ref(),
                         self.chunk_size,
-                        &self.str_capacities,
                         self.encoding,
                         self.null_values.as_ref(),
                         self.missing_is_null,
@@ -351,7 +348,6 @@ impl<'a> BatchedCsvReaderRead<'a> {
 
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
-                    update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_index {
                         df.with_row_index_mut(&rc.name, Some(rc.offset));
                     }
