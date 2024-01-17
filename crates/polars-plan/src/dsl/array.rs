@@ -114,4 +114,22 @@ impl ArrayNameSpace {
             false,
         )
     }
+
+    #[cfg(feature = "array_count")]
+    /// Count how often the value produced by ``element`` occurs.
+    pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
+        let other = element.into();
+
+        self.0
+            .map_many_private(
+                FunctionExpr::ArrayExpr(ArrayFunction::CountMatches),
+                &[other],
+                false,
+                false,
+            )
+            .with_function_options(|mut options| {
+                options.input_wildcard_expansion = true;
+                options
+            })
+    }
 }

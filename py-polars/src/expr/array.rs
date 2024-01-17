@@ -73,4 +73,9 @@ impl PyExpr {
     fn arr_contains(&self, other: PyExpr) -> Self {
         self.inner.clone().arr().contains(other.inner).into()
     }
+
+    #[cfg(feature = "array_count")]
+    fn arr_count_matches(&self, expr: PyExpr) -> Self {
+        self.inner.clone().arr().count_matches(expr.inner).into()
+    }
 }
