@@ -275,7 +275,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_mean())
 
-    def sort(self, *, descending: bool = False) -> Expr:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
 
@@ -283,6 +283,8 @@ class ExprListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -312,7 +314,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [9, 2, 1] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_sort(descending))
+        return wrap_expr(self._pyexpr.list_sort(descending, nulls_last))
 
     def reverse(self) -> Expr:
         """
