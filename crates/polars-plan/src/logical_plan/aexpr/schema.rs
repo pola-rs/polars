@@ -221,8 +221,12 @@ impl AExpr {
                 function.get_field(schema, ctxt, &fields)
             },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
-            Wildcard => panic!("should be no wildcard at this point"),
-            Nth(_) => panic!("should be no nth at this point"),
+            Wildcard => {
+                polars_bail!(ComputeError: "wildcard column selection not supported at this point")
+            },
+            Nth(_) => {
+                polars_bail!(ComputeError: "nth column selection not supported at this point")
+            },
         }
     }
 }

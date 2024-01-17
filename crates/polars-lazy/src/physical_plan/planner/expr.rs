@@ -556,8 +556,12 @@ pub(crate) fn create_physical_expr(
                 ApplyOptions::GroupWise,
             )))
         },
-        Wildcard => panic!("should be no wildcard at this point"),
-        Nth(_) => panic!("should be no nth at this point"),
+        Wildcard => {
+            polars_bail!(ComputeError: "wildcard column selection not supported at this point")
+        },
+        Nth(_) => {
+            polars_bail!(ComputeError: "nth column selection not supported at this point")
+        },
     }
 }
 
