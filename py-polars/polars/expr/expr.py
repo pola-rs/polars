@@ -224,7 +224,7 @@ class Expr:
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq(other))
 
-    def __neg__(self) -> Expr:
+    def __neg__(self) -> Self:
         return self._from_pyexpr(-self._pyexpr)
 
     def __or__(self, other: IntoExprColumn | int | bool) -> Self:
