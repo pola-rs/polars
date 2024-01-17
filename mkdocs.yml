@@ -80,7 +80,7 @@ nav:
       - user-guide/migration/spark.md
     - Misc:
       - user-guide/misc/multiprocessing.md
-      - user-guide/misc/alternatives.md
+      - user-guide/misc/comparison.md
 
   - API reference: api/index.md
 
