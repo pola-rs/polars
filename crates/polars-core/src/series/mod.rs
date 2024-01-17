@@ -282,9 +282,10 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool) -> Self {
+    pub fn sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.sort_with(SortOptions {
             descending,
+            nulls_last,
             ..Default::default()
         })
     }

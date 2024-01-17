@@ -774,3 +774,18 @@ def test_sort_with_null_12272() -> None:
     assert out.sort("product").to_dict(as_series=False) == {
         "product": [None, -1.0, 2.0]
     }
+
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
+        ([1, None, 3], [1, 3, None]),
+        (
+            [date(2024, 1, 1), None, date(2024, 1, 3)],
+            [date(2024, 1, 1), date(2024, 1, 3), None],
+        ),
+        (["a", None, "c"], ["a", "c", None]),
+    ],
+)
+def test_sort_series_nulls_last(input, expected) -> None:
+    assert pl.Series(input).sort(nulls_last=True).to_list() == expected
