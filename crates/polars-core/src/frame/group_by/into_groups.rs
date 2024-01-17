@@ -291,7 +291,6 @@ impl IntoGroupsProxy for BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-struct")]
 fn fill_bytes_offset_hashes(ca: &BinaryOffsetChunked, null_h: u64, hb: RandomState) -> Vec<BytesHash> {
     let mut byte_hashes = Vec::with_capacity(ca.len());
     for arr in ca.downcast_iter() {
@@ -306,7 +305,6 @@ fn fill_bytes_offset_hashes(ca: &BinaryOffsetChunked, null_h: u64, hb: RandomSta
     byte_hashes
 }
 
-#[cfg(feature = "dtype-struct")]
 impl IntoGroupsProxy for BinaryOffsetChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {

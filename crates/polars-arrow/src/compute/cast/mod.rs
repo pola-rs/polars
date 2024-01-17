@@ -18,6 +18,7 @@ pub use utf8_to::*;
 
 use crate::array::*;
 use binview_to::{binview_to_primitive, binview_to_primitive_dyn};
+#[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
 use crate::datatypes::*;
 use crate::match_integer_type;

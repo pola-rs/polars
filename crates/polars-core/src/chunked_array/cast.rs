@@ -330,6 +330,20 @@ impl ChunkCast for BinaryChunked {
     }
 }
 
+impl ChunkCast for BinaryOffsetChunked {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        match data_type {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
+            _ => cast_impl(self.name(), &self.chunks, data_type),
+        }
+    }
+
+    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast(data_type)
+    }
+}
+
 fn boolean_to_string(ca: &BooleanChunked) -> StringChunked {
     ca.into_iter()
         .map(|opt_b| match opt_b {

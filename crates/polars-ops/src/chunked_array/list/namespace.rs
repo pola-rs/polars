@@ -99,7 +99,6 @@ pub trait ListNameSpaceImpl: AsList {
         let mut builder = StringChunkedBuilder::new(
             ca.name(),
             ca.len(),
-            ca.get_values_size() + separator.len() * ca.len(),
         );
 
         ca.for_each_amortized(|opt_s| {
@@ -127,7 +126,7 @@ pub trait ListNameSpaceImpl: AsList {
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder =
-            StringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size() + ca.len());
+            StringChunkedBuilder::new(ca.name(), ca.len());
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca.amortized_iter()

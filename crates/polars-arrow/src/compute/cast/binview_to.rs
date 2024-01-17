@@ -3,6 +3,7 @@ use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptions;
 use crate::datatypes::ArrowDataType;
+#[cfg(feature = "dtype-decimal")]
 use crate::legacy::compute::decimal::deserialize_decimal;
 use crate::offset::Offset;
 use crate::types::NativeType;

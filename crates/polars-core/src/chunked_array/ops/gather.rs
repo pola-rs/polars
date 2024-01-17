@@ -169,6 +169,7 @@ impl NotSpecialized for Int8Type {}
 impl NotSpecialized for Int16Type {}
 impl NotSpecialized for Int32Type {}
 impl NotSpecialized for Int64Type {}
+#[cfg(feature = "dtype-decimal")]
 impl NotSpecialized for Int128Type {}
 impl NotSpecialized for UInt8Type {}
 impl NotSpecialized for UInt16Type {}
@@ -178,9 +179,12 @@ impl NotSpecialized for Float32Type {}
 impl NotSpecialized for Float64Type {}
 impl NotSpecialized for BooleanType {}
 impl NotSpecialized for ListType {}
+#[cfg(feature = "dtype-array")]
 impl NotSpecialized for FixedSizeListType {}
 impl NotSpecialized for BinaryOffsetType {}
+#[cfg(feature = "dtype-decimal")]
 impl NotSpecialized for DecimalType {}
+#[cfg(feature = "object")]
 impl<T> NotSpecialized for ObjectType<T> {}
 
 

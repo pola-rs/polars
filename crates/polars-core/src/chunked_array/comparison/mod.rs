@@ -815,7 +815,7 @@ where
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const ChunkedArray<T>);
         // Should be get and not get_unchecked, because there could be nulls
-        self.get(idx_self).tot_eq(&ca_other.get(idx_other))
+        self.get_unchecked(idx_self).tot_eq(&ca_other.get_unchecked(idx_other))
     }
 }
 
@@ -824,7 +824,7 @@ impl ChunkEqualElement for BooleanChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const BooleanChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
     }
 }
 
@@ -833,7 +833,7 @@ impl ChunkEqualElement for StringChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const StringChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
     }
 }
 
@@ -842,7 +842,16 @@ impl ChunkEqualElement for BinaryChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const BinaryChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+    }
+}
+
+impl ChunkEqualElement for BinaryOffsetChunked {
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const BinaryOffsetChunked);
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
     }
 }
 

@@ -63,7 +63,6 @@ impl ChunkFullNull for StringChunked {
 
 impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
     fn full(name: &str, value: &'a [u8], length: usize) -> Self {
-
         let mut builder = BinaryChunkedBuilder::new(name, length);
         builder.chunk_builder.extend_constant(length, Some(value));
         let mut out = builder.finish();
@@ -75,6 +74,24 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = BinaryViewArray::new_null(DataType::Binary.to_arrow(true), length);
+        ChunkedArray::with_chunk(name, arr)
+    }
+}
+
+impl<'a> ChunkFull<&'a [u8]> for BinaryOffsetChunked {
+    fn full(name: &str, value: &'a [u8], length: usize) -> Self {
+        let mut mutable = MutableBinaryArray::with_capacities(length, length * value.len());
+        mutable.extend_values(std::iter::repeat(value).take(length));
+        let arr: BinaryArray<i64> = mutable.into();
+        let mut out = ChunkedArray::with_chunk(name, arr);
+        out.set_sorted_flag(IsSorted::Ascending);
+        out
+    }
+}
+
+impl ChunkFullNull for BinaryOffsetChunked {
+    fn full_null(name: &str, length: usize) -> Self {
+        let arr = BinaryArray::<i64>::new_null(DataType::BinaryOffset.to_arrow(true), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }

@@ -244,6 +244,17 @@ impl ChunkAnyValue for BinaryChunked {
     }
 }
 
+impl ChunkAnyValue for BinaryOffsetChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        get_any_value!(self, index)
+    }
+}
+
 impl ChunkAnyValue for ListChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {

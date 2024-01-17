@@ -104,6 +104,14 @@ impl BinaryChunked {
 }
 
 #[doc(hidden)]
+impl BinaryOffsetChunked {
+    pub fn extend(&mut self, other: &Self) {
+        self.set_sorted_flag(IsSorted::Not);
+        self.append(other)
+    }
+}
+
+#[doc(hidden)]
 impl BooleanChunked {
     pub fn extend(&mut self, other: &Self) {
         update_sorted_flag_before_append::<BooleanType>(self, other);

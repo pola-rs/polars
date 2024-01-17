@@ -24,6 +24,7 @@ mod object;
 mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+mod binary_offset;
 
 use std::any::Any;
 use std::borrow::Cow;
@@ -464,6 +465,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
 
 impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]
 impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}
