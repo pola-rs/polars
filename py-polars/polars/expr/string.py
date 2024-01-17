@@ -12,6 +12,7 @@ from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -448,9 +449,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_len_chars())
 
-    def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Expr:
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Expr:
         """
-        Vertically concat the values in the Series to a single string value.
+        Vertically concatenate the string values in the column to a single string value.
 
         Parameters
         ----------
@@ -458,9 +461,8 @@ class ExprStringNameSpace:
             The delimiter to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
-
-            If set to ``False``, null values will be propagated.
-            if the column contains any null values, the output is ``None``.
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
 
         Returns
         -------
@@ -479,7 +481,6 @@ class ExprStringNameSpace:
         ╞═════╡
         │ 1-2 │
         └─────┘
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
         >>> df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
         shape: (1, 1)
         ┌──────┐
@@ -490,6 +491,13 @@ class ExprStringNameSpace:
         │ null │
         └──────┘
         """
+        if delimiter is None:
+            issue_deprecation_warning(
+                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
+                " Pass a delimiter to silence this warning.",
+                version="0.20.5",
+            )
+            delimiter = "-"
         return wrap_expr(self._pyexpr.str_concat(delimiter, ignore_nulls))
 
     def to_uppercase(self) -> Expr:
