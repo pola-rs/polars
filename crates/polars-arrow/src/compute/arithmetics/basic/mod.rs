@@ -36,6 +36,7 @@ impl NativeArithmetics for i8 {}
 impl NativeArithmetics for i16 {}
 impl NativeArithmetics for i32 {}
 impl NativeArithmetics for i64 {}
+impl NativeArithmetics for i128 {}
 impl NativeArithmetics for f32 {}
 impl NativeArithmetics for f64 {}
 
