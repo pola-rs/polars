@@ -270,7 +270,7 @@ def test_operator_arithmetic_with_nulls(op: Any) -> None:
         s_expected = df_expected.to_series()
 
         # validate expr, frame, and series behaviour with null value arithmetic
-        op_name = operator.add.__name__
+        op_name = op.__name__
         for null_expr in (None, pl.lit(None)):
             assert_frame_equal(df_expected, df.select(op(pl.col("n"), null_expr)))
             assert_frame_equal(
