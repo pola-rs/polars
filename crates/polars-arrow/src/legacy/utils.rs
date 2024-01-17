@@ -3,7 +3,7 @@ use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
-use crate::trusted_len::{TrustedLen, TrustMyLength};
+use crate::trusted_len::{TrustMyLength, TrustedLen};
 use crate::types::NativeType;
 
 pub trait CustomIterTools: Iterator {

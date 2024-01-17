@@ -215,8 +215,7 @@ impl<'a> AnyValueBuffer<'a> {
                 new.finish().into_series()
             },
             String(b) => {
-                let mut new =
-                    StringChunkedBuilder::new(b.field.name(), capacity);
+                let mut new = StringChunkedBuilder::new(b.field.name(), capacity);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },

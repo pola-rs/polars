@@ -664,8 +664,8 @@ pub(super) fn primitive_to_binview<T: NativeType + SerPrimitive>(
 }
 
 pub(super) fn primitive_to_binview_dyn<T>(from: &dyn Array) -> BinaryViewArray
-    where
-        T: NativeType + SerPrimitive,
+where
+    T: NativeType + SerPrimitive,
 {
     let from = from.as_any().downcast_ref().unwrap();
     primitive_to_binview::<T>(from)

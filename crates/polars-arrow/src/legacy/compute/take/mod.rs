@@ -4,13 +4,14 @@ mod boolean;
 mod fixed_size_list;
 
 use polars_utils::slice::GetSaferUnchecked;
+
 use crate::array::*;
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::prelude::*;
-use crate::legacy::trusted_len::{TrustedLenPush};
+use crate::legacy::trusted_len::TrustedLenPush;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
 use crate::trusted_len::TrustedLen;
@@ -38,13 +39,13 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
             let arr = arr.as_any().downcast_ref().unwrap();
             Box::new(fixed_size_list::take_unchecked(arr, idx))
         },
-        BinaryView => {
-            take_binview_unchecked(arr.as_any().downcast_ref().unwrap(), idx).boxed()
-        }
+        BinaryView => take_binview_unchecked(arr.as_any().downcast_ref().unwrap(), idx).boxed(),
         Utf8View => {
             let arr: &Utf8ViewArray = arr.as_any().downcast_ref().unwrap();
-            take_binview_unchecked(&arr.to_binview(), idx).to_utf8view_unchecked().boxed()
-        }
+            take_binview_unchecked(&arr.to_binview(), idx)
+                .to_utf8view_unchecked()
+                .boxed()
+        },
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
         _ => {
@@ -70,8 +71,9 @@ unsafe fn take_binview_unchecked(arr: &BinaryViewArray, indices: &IdxArr) -> Bin
         arr.data_type().clone(),
         taken_views_values,
         arr.data_buffers().clone(),
-        taken_views.validity().cloned()
-    ).maybe_gc()
+        taken_views.validity().cloned(),
+    )
+    .maybe_gc()
 }
 
 /// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
@@ -87,9 +89,7 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
     // first take the values, these are always needed
     let values: Vec<T> = index_values
         .iter()
-        .map(|idx| {
-            *array_values.get_unchecked_release(*idx as usize)
-        })
+        .map(|idx| *array_values.get_unchecked_release(*idx as usize))
         .collect_trusted();
 
     let arr = if arr.null_count() > 0 {
@@ -107,7 +107,8 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
                 // i is iteration count
                 // idx is the index that we take from the values array.
                 let idx = *idx as usize;
-                if !validity_indices.get_bit_unchecked(i) || !validity_values.get_bit_unchecked(idx) {
+                if !validity_indices.get_bit_unchecked(i) || !validity_values.get_bit_unchecked(idx)
+                {
                     unset_bit_raw(validity_ptr, i);
                 }
             });
@@ -119,9 +120,17 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
                 }
             });
         };
-        PrimitiveArray::new_unchecked(arr.data_type().clone(), values.into(), Some(validity.into()))
+        PrimitiveArray::new_unchecked(
+            arr.data_type().clone(),
+            values.into(),
+            Some(validity.into()),
+        )
     } else {
-        PrimitiveArray::new_unchecked(arr.data_type().clone(), values.into(), indices.validity().cloned())
+        PrimitiveArray::new_unchecked(
+            arr.data_type().clone(),
+            values.into(),
+            indices.validity().cloned(),
+        )
     };
 
     arr

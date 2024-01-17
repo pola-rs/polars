@@ -275,7 +275,7 @@ impl IntoGroupsProxy for BinaryChunked {
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
-                                byte_hashes
+                                byte_hashes,
                             )
                         }
                     })
@@ -291,7 +291,11 @@ impl IntoGroupsProxy for BinaryChunked {
     }
 }
 
-fn fill_bytes_offset_hashes(ca: &BinaryOffsetChunked, null_h: u64, hb: RandomState) -> Vec<BytesHash> {
+fn fill_bytes_offset_hashes(
+    ca: &BinaryOffsetChunked,
+    null_h: u64,
+    hb: RandomState,
+) -> Vec<BytesHash> {
     let mut byte_hashes = Vec::with_capacity(ca.len());
     for arr in ca.downcast_iter() {
         for opt_b in arr {
@@ -327,7 +331,7 @@ impl IntoGroupsProxy for BinaryOffsetChunked {
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
-                                byte_hashes
+                                byte_hashes,
                             )
                         }
                     })

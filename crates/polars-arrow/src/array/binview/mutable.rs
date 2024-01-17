@@ -37,7 +37,7 @@ impl<T: ViewType + ?Sized> Clone for MutableBinaryViewArray<T> {
             validity: self.validity.clone(),
             phantom: Default::default(),
             total_bytes_len: self.total_bytes_len,
-            total_buffer_len: self.total_buffer_len
+            total_buffer_len: self.total_buffer_len,
         }
     }
 }
@@ -47,7 +47,6 @@ impl<T: ViewType + ?Sized> Debug for MutableBinaryViewArray<T> {
         write!(f, "mutable-binview{:?}", T::DATA_TYPE)
     }
 }
-
 
 impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
     fn default() -> Self {
@@ -222,11 +221,14 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         // Push and pop to get the properly encoded value.
         // For long string this leads to a dictionary encoding,
         // as we push the string only once in the buffers
-        let view_value = value.map(|v| {
-            self.push_value_ignore_validity(v);
-            self.views.pop().unwrap()
-        }).unwrap_or(0);
-        self.views.extend(std::iter::repeat(view_value).take(additional));
+        let view_value = value
+            .map(|v| {
+                self.push_value_ignore_validity(v);
+                self.views.pop().unwrap()
+            })
+            .unwrap_or(0);
+        self.views
+            .extend(std::iter::repeat(view_value).take(additional));
     }
 
     impl_mutable_array_mut_validity!();
@@ -245,9 +247,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
     #[inline]
     pub fn extend_trusted_len_values<I, P>(&mut self, iterator: I)
-        where
-            I: TrustedLen<Item = P>,
-            P: AsRef<T>,
+    where
+        I: TrustedLen<Item = P>,
+        P: AsRef<T>,
     {
         self.extend_values(iterator)
     }
@@ -266,9 +268,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
     #[inline]
     pub fn extend_trusted_len<I, P>(&mut self, iterator: I)
-        where
-            I: TrustedLen<Item = Option<P>>,
-            P: AsRef<T>,
+    where
+        I: TrustedLen<Item = Option<P>>,
+        P: AsRef<T>,
     {
         self.extend(iterator)
     }
@@ -331,8 +333,7 @@ impl<T: ViewType + ?Sized, P: AsRef<T>> FromIterator<Option<P>> for MutableBinar
     }
 }
 
-impl<T: ViewType + ?Sized> MutableArray for MutableBinaryViewArray<T>
-{
+impl<T: ViewType + ?Sized> MutableArray for MutableBinaryViewArray<T> {
     fn data_type(&self) -> &ArrowDataType {
         T::dtype()
     }

@@ -1,6 +1,7 @@
 //! Declares [`TrustedLen`].
 use std::iter::Scan;
 use std::slice::Iter;
+
 use crate::array::FixedSizeListArray;
 use crate::bitmap::utils::{BitmapIter, ZipValidity, ZipValidityIter};
 
@@ -57,7 +58,6 @@ unsafe impl<A: Clone> TrustedLen for std::iter::Repeat<A> {}
 unsafe impl<A, F: FnMut() -> A> TrustedLen for std::iter::RepeatWith<F> {}
 unsafe impl<A: TrustedLen> TrustedLen for std::iter::Take<A> {}
 
-
 unsafe impl<T> TrustedLen for &mut dyn TrustedLen<Item = T> {}
 unsafe impl<T> TrustedLen for Box<dyn TrustedLen<Item = T> + '_> {}
 
@@ -72,14 +72,13 @@ unsafe impl<T> TrustedLen for std::ops::RangeInclusive<T> where std::ops::RangeI
 unsafe impl<A: TrustedLen> TrustedLen for std::iter::StepBy<A> {}
 
 unsafe impl<I, St, F, B> TrustedLen for Scan<I, St, F>
-    where
-        F: FnMut(&mut St, I::Item) -> Option<B>,
-        I: TrustedLen + Iterator<Item = B>,
+where
+    F: FnMut(&mut St, I::Item) -> Option<B>,
+    I: TrustedLen + Iterator<Item = B>,
 {
 }
 
 unsafe impl<K, V> TrustedLen for hashbrown::hash_map::IntoIter<K, V> {}
-
 
 #[derive(Clone)]
 pub struct TrustMyLength<I: Iterator<Item = J>, J> {
@@ -88,8 +87,8 @@ pub struct TrustMyLength<I: Iterator<Item = J>, J> {
 }
 
 impl<I, J> TrustMyLength<I, J>
-    where
-        I: Iterator<Item = J>,
+where
+    I: Iterator<Item = J>,
 {
     #[inline]
     pub fn new(iter: I, len: usize) -> Self {
@@ -98,8 +97,8 @@ impl<I, J> TrustMyLength<I, J>
 }
 
 impl<I, J> Iterator for TrustMyLength<I, J>
-    where
-        I: Iterator<Item = J>,
+where
+    I: Iterator<Item = J>,
 {
     type Item = J;
 
@@ -116,12 +115,11 @@ impl<I, J> Iterator for TrustMyLength<I, J>
 impl<I, J> ExactSizeIterator for TrustMyLength<I, J> where I: Iterator<Item = J> {}
 
 impl<I, J> DoubleEndedIterator for TrustMyLength<I, J>
-    where
-        I: Iterator<Item = J> + DoubleEndedIterator,
+where
+    I: Iterator<Item = J> + DoubleEndedIterator,
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back()
     }
 }
-

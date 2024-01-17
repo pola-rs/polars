@@ -295,9 +295,8 @@ impl DataFrame {
         let values_len = value_vars.iter().map(|name| name.len()).sum::<usize>();
 
         // The column name of the variable that is melted
-        let mut variable_col = MutableBinaryViewArray::<str>::with_capacity(
-            len * value_vars.len() + 1,
-        );
+        let mut variable_col =
+            MutableBinaryViewArray::<str>::with_capacity(len * value_vars.len() + 1);
         // prepare ids
         let ids_ = self.select_with_schema_unchecked(id_vars, &schema)?;
         let mut ids = ids_.clone();

@@ -1,7 +1,9 @@
 // Adapted from https://github.com/serde-rs/json/blob/f901012df66811354cb1d490ad59480d8fdf77b5/src/ser.rs
 use std::io;
 
-use arrow::array::{Array, MutableBinaryViewArray, MutableUtf8ValuesArray, Utf8Array, Utf8ViewArray};
+use arrow::array::{
+    Array, MutableBinaryViewArray, MutableUtf8ValuesArray, Utf8Array, Utf8ViewArray,
+};
 
 use crate::json::write::new_serializer;
 

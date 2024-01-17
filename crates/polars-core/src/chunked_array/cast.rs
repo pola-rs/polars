@@ -227,7 +227,11 @@ impl ChunkCast for StringChunked {
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
                     let chunks = self.downcast_iter().map(|arr| {
-                        arrow::compute::cast::binview_to_decimal(&arr.to_binview(), *precision, *scale)
+                        arrow::compute::cast::binview_to_decimal(
+                            &arr.to_binview(),
+                            *precision,
+                            *scale,
+                        )
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
                         .into_decimal_unchecked(*precision, *scale)
@@ -302,9 +306,7 @@ impl StringChunked {
     pub fn as_binary(&self) -> BinaryChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| {
-                arr.to_binview().boxed()
-            })
+            .map(|arr| arr.to_binview().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
         unsafe {

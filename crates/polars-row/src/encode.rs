@@ -306,7 +306,9 @@ mod test {
 
     use super::*;
     use crate::decode::decode_rows_from_binary;
-    use crate::variable::{decode_binary, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL, decode_binview};
+    use crate::variable::{
+        decode_binary, decode_binview, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL,
+    };
 
     #[test]
     fn test_fixed_and_variable_encode() {

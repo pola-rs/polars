@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use chrono::Datelike;
 use polars_error::PolarsResult;
 use polars_utils::slice::GetSaferUnchecked;
@@ -175,10 +176,11 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
         Arc::from([])
     };
     unsafe {
-        BinaryViewArray::new_unchecked_unknown_md(ArrowDataType::BinaryView,
-                                                  views.into(),
-                                                  buffers,
-                                                  arr.validity().cloned(),
+        BinaryViewArray::new_unchecked_unknown_md(
+            ArrowDataType::BinaryView,
+            views.into(),
+            buffers,
+            arr.validity().cloned(),
         )
     }
 }

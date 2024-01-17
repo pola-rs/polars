@@ -130,7 +130,6 @@ where
     }
 }
 
-
 impl<Ptr> FromIterator<Ptr> for BinaryChunked
 where
     Ptr: PolarsAsRef<[u8]>,
@@ -530,8 +529,8 @@ where
 }
 
 impl<Ptr> FromParallelIterator<Ptr> for BinaryChunked
-    where
-        Ptr: PolarsAsRef<[u8]> + Send + Sync,
+where
+    Ptr: PolarsAsRef<[u8]> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
@@ -560,7 +559,7 @@ where
             .into_par_iter()
             .map(|vector| {
                 let cap = vector.len();
-                let mut mutable = MutableBinaryViewArray::with_capacity(cap, );
+                let mut mutable = MutableBinaryViewArray::with_capacity(cap);
                 for opt_val in vector {
                     mutable.push(opt_val)
                 }
@@ -570,16 +569,18 @@ where
 
         // TODO!
         // do this in parallel.
-        let arrays = arrays.iter().map(|arr| arr as &dyn Array).collect::<Vec<_>>();
+        let arrays = arrays
+            .iter()
+            .map(|arr| arr as &dyn Array)
+            .collect::<Vec<_>>();
         let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
         unsafe { StringChunked::from_chunks("", vec![arr]) }
     }
 }
 
-
 impl<Ptr> FromParallelIterator<Option<Ptr>> for BinaryChunked
-    where
-        Ptr: AsRef<[u8]> + Send + Sync,
+where
+    Ptr: AsRef<[u8]> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
@@ -589,7 +590,7 @@ impl<Ptr> FromParallelIterator<Option<Ptr>> for BinaryChunked
             .into_par_iter()
             .map(|vector| {
                 let cap = vector.len();
-                let mut mutable = MutableBinaryViewArray::with_capacity(cap, );
+                let mut mutable = MutableBinaryViewArray::with_capacity(cap);
                 for opt_val in vector {
                     mutable.push(opt_val)
                 }
@@ -599,7 +600,10 @@ impl<Ptr> FromParallelIterator<Option<Ptr>> for BinaryChunked
 
         // TODO!
         // do this in parallel.
-        let arrays = arrays.iter().map(|arr| arr as &dyn Array).collect::<Vec<_>>();
+        let arrays = arrays
+            .iter()
+            .map(|arr| arr as &dyn Array)
+            .collect::<Vec<_>>();
         let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
         unsafe { BinaryChunked::from_chunks("", vec![arr]) }
     }

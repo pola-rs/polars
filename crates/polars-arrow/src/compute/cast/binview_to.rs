@@ -1,4 +1,5 @@
 use polars_error::PolarsResult;
+
 use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptions;
@@ -37,8 +38,8 @@ pub(super) fn binview_to_primitive<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
 ) -> PrimitiveArray<T>
-    where
-        T: NativeType + Parse,
+where
+    T: NativeType + Parse,
 {
     let iter = from.iter().map(|x| x.and_then::<T, _>(|x| T::parse(x)));
 
@@ -50,8 +51,8 @@ pub(super) fn binview_to_primitive_dyn<T>(
     to: &ArrowDataType,
     options: CastOptions,
 ) -> PolarsResult<Box<dyn Array>>
-    where
-        T: NativeType + Parse,
+where
+    T: NativeType + Parse,
 {
     let from = from.as_any().downcast_ref().unwrap();
     if options.partial {

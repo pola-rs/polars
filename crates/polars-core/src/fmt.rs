@@ -974,11 +974,11 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
-            AnyValue::Binary(d)  => {
+            AnyValue::Binary(d) => {
                 let s = String::from_utf8_lossy(d);
                 write!(f, "{}", format_args!("b\"{s}\""))
             },
-            AnyValue::BinaryOwned(d)  => {
+            AnyValue::BinaryOwned(d) => {
                 let s = String::from_utf8_lossy(d);
                 write!(f, "{}", format_args!("b\"{s}\""))
             },

@@ -172,24 +172,20 @@ impl ParsedBuffer for Utf8Field {
         }
 
         let parse_result = validate_utf8(bytes);
-        let data_len = self.mutable.len();
-
-        // check if field fits in the str data buffer
-        let remaining_capacity = self.mutable.capacity() - data_len;
-        if remaining_capacity < bytes.len() {
-            // exponential growth strategy
-            self.mutable
-                .reserve(std::cmp::max(self.mutable.capacity(), bytes.len()))
-        }
 
         // note that one branch writes without updating the length, so we must do that later.
         let bytes = if needs_escaping {
             self.scratch.clear();
             self.scratch.reserve(bytes.len());
             polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+
             // Safety:
             // we just allocated enough capacity and data_len is correct.
-            unsafe { escape_field(bytes, self.quote_char, self.scratch.spare_capacity_mut()) };
+            unsafe {
+                let n_written =
+                    escape_field(bytes, self.quote_char, self.scratch.spare_capacity_mut());
+                self.scratch.set_len(n_written);
+            }
             self.scratch.as_slice()
         } else {
             bytes
@@ -197,7 +193,7 @@ impl ParsedBuffer for Utf8Field {
 
         match parse_result {
             true => {
-                let value= unsafe { std::str::from_utf8_unchecked(bytes) };
+                let value = unsafe { std::str::from_utf8_unchecked(bytes) };
                 self.mutable.push_value(value)
             },
             false => {
@@ -575,9 +571,7 @@ impl Buffer {
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
-            Buffer::Utf8(v) => {
-                v.mutable.push_null()
-            },
+            Buffer::Utf8(v) => v.mutable.push_null(),
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { buf, .. } => buf.builder.append_null(),
             #[cfg(feature = "dtype-date")]

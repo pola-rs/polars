@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::buffer::Buffer;
 use arrow::compute::cast::binary_to_binview;
@@ -86,9 +87,7 @@ impl RowsEncoded {
 
     /// This does allocate views.
     pub fn into_binview(self) -> BinaryViewArray {
-        binary_to_binview(
-            &self.into_array()
-        )
+        binary_to_binview(&self.into_array())
     }
 
     #[cfg(test)]

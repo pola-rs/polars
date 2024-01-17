@@ -187,7 +187,6 @@ impl NotSpecialized for DecimalType {}
 #[cfg(feature = "object")]
 impl<T> NotSpecialized for ObjectType<T> {}
 
-
 impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
@@ -255,7 +254,11 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
         let rechunked = self.rechunk();
         let indices = indices.rechunk();
         let indices_arr = indices.downcast_iter().next().unwrap();
-        let chunks = rechunked.chunks().iter().map(|arr| take_unchecked(arr.as_ref(), indices_arr)).collect::<Vec<_>>();
+        let chunks = rechunked
+            .chunks()
+            .iter()
+            .map(|arr| take_unchecked(arr.as_ref(), indices_arr))
+            .collect::<Vec<_>>();
 
         let mut out = ChunkedArray::from_chunks(self.name(), chunks);
 
@@ -276,6 +279,5 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
 impl ChunkTakeUnchecked<IdxCa> for StringChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         self.as_binary().take_unchecked(indices).to_string()
-
     }
 }

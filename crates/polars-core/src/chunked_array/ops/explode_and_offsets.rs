@@ -80,7 +80,6 @@ impl ChunkExplode for ListChunked {
     }
 }
 
-
 #[cfg(feature = "dtype-array")]
 impl ChunkExplode for ArrayChunked {
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {

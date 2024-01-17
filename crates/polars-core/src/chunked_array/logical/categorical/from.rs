@@ -1,6 +1,6 @@
 use arrow::array::DictionaryArray;
-use arrow::datatypes::IntegerType;
 use arrow::compute::cast::{cast, CastOptions};
+use arrow::datatypes::IntegerType;
 
 use super::*;
 

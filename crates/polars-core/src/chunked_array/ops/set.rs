@@ -183,8 +183,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
     {
         let idx_iter = idx.into_iter();
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder =
-            StringChunkedBuilder::new(self.name(), self.len());
+        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
 
         for current_idx in idx_iter.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
@@ -215,8 +214,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
     {
-        let mut builder =
-            StringChunkedBuilder::new(self.name(), self.len());
+        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
         impl_scatter_with!(self, builder, idx, f)
     }
 
@@ -248,8 +246,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Self: Sized,
     {
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder =
-            BinaryChunkedBuilder::new(self.name(), self.len());
+        let mut builder = BinaryChunkedBuilder::new(self.name(), self.len());
 
         for current_idx in idx.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
@@ -280,8 +277,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Self: Sized,
         F: Fn(Option<&'a [u8]>) -> Option<Vec<u8>>,
     {
-        let mut builder =
-            BinaryChunkedBuilder::new(self.name(), self.len());
+        let mut builder = BinaryChunkedBuilder::new(self.name(), self.len());
         impl_scatter_with!(self, builder, idx, f)
     }
 

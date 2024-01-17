@@ -5,7 +5,9 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::{MutableUtf8ValuesArray, MutableUtf8ValuesIter, StrAsBytes, Utf8Array};
 use crate::array::physical_binary::*;
-use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
+use crate::array::{
+    Array, MutableArray, MutableBinaryViewArray, TryExtend, TryExtendFromSelf, TryPush,
+};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;

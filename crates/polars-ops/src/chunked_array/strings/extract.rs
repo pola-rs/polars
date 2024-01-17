@@ -2,7 +2,10 @@ use std::iter::zip;
 
 #[cfg(feature = "extract_groups")]
 use arrow::array::{Array, StructArray};
-use arrow::array::{BinaryViewArray, MutableArray, MutableBinaryViewArray, MutableUtf8Array, Utf8Array, Utf8ViewArray};
+use arrow::array::{
+    BinaryViewArray, MutableArray, MutableBinaryViewArray, MutableUtf8Array, Utf8Array,
+    Utf8ViewArray,
+};
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
 
@@ -35,12 +38,7 @@ fn extract_groups_array(
         builders.iter_mut().for_each(|arr| arr.push_null());
     }
 
-    let values = builders
-        .into_iter()
-        .map(|a| {
-            a.freeze().boxed()
-        })
-        .collect();
+    let values = builders.into_iter().map(|a| a.freeze().boxed()).collect();
     Ok(StructArray::new(data_type.clone(), values, arr.validity().cloned()).boxed())
 }
 

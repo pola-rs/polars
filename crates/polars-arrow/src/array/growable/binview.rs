@@ -19,7 +19,7 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     total_bytes_len: usize,
     total_buffer_len: usize,
     // This will be used to determine if the buffers should be added.
-    processed_index: Vec<bool>
+    processed_index: Vec<bool>,
 }
 
 impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
@@ -54,7 +54,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             buffers: Vec::with_capacity(n_buffers),
             total_bytes_len: 0,
             total_buffer_len: 0,
-            processed_index: vec![false; n_arrays]
+            processed_index: vec![false; n_arrays],
         }
     }
 
@@ -70,13 +70,14 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                 validity.map(|v| v.into()),
                 self.total_bytes_len,
                 self.total_buffer_len,
-            ).maybe_gc()
+            )
+            .maybe_gc()
         }
     }
 
     pub unsafe fn extend_unchecked(&mut self, index: usize, start: usize, len: usize) {
         let array = *self.arrays.get_unchecked(index);
-        let add_buffers = std::mem::replace(self.processed_index.get_unchecked_mut(index) , true);
+        let add_buffers = std::mem::replace(self.processed_index.get_unchecked_mut(index), true);
         if add_buffers {
             self.buffers.extend_from_slice(array.data_buffers());
         }
@@ -92,14 +93,14 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             self.total_buffer_len += b.len();
         }
 
-        self.views.extend(array.views().get_unchecked(range).iter().map(|&view| {
-            self.total_bytes_len += (view as u32) as usize;
+        self.views
+            .extend(array.views().get_unchecked(range).iter().map(|&view| {
+                self.total_bytes_len += (view as u32) as usize;
 
-            // If null the buffer index is ignored because the length is 0,
-            // so we can just do this
-            view + buffer_offset
-        }));
-
+                // If null the buffer index is ignored because the length is 0,
+                // so we can just do this
+                view + buffer_offset
+            }));
     }
 }
 
@@ -140,7 +141,8 @@ impl<'a, T: ViewType + ?Sized> From<GrowableBinaryViewArray<'a, T>> for BinaryVi
                 val.validity.map(|v| v.into()),
                 val.total_bytes_len,
                 val.total_buffer_len,
-            ).maybe_gc()
+            )
+            .maybe_gc()
         }
     }
 }

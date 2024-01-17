@@ -2,13 +2,17 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::array::static_array::{ParameterFreeDtypeStaticArray, StaticArray};
-use crate::array::{Array, BinaryArray, BinaryViewArray, BinaryViewArrayGeneric, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray, PrimitiveArray, Utf8Array, Utf8ViewArray, ViewType};
+use crate::array::{
+    Array, BinaryArray, BinaryViewArray, BinaryViewArrayGeneric, BooleanArray, FixedSizeListArray,
+    ListArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray,
+    PrimitiveArray, Utf8Array, Utf8ViewArray, ViewType,
+};
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
 use crate::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
 use crate::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
-use crate::legacy::trusted_len::{TrustedLenPush};
+use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -484,7 +488,6 @@ impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryArray<i64> {
     }
 }
 
-
 impl<T: IntoBytes> ArrayFromIter<T> for BinaryViewArray {
     #[inline]
     fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
@@ -493,9 +496,9 @@ impl<T: IntoBytes> ArrayFromIter<T> for BinaryViewArray {
 
     #[inline]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
-        where
-            I: IntoIterator<Item = T>,
-            I::IntoIter: TrustedLen,
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: TrustedLen,
     {
         Self::arr_from_iter(iter)
     }
@@ -517,19 +520,24 @@ impl<T: IntoBytes> ArrayFromIter<T> for BinaryViewArray {
 impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryViewArray {
     #[inline]
     fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
-        MutableBinaryViewArray::from_iter(iter.into_iter().map(|opt_a| opt_a.map(|a| a.into_bytes()))).into()
+        MutableBinaryViewArray::from_iter(
+            iter.into_iter().map(|opt_a| opt_a.map(|a| a.into_bytes())),
+        )
+        .into()
     }
 
     #[inline]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
-        where
-            I: IntoIterator<Item = Option<T>>,
-            I::IntoIter: TrustedLen,
+    where
+        I: IntoIterator<Item = Option<T>>,
+        I::IntoIter: TrustedLen,
     {
         Self::arr_from_iter(iter)
     }
 
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(iter: I) -> Result<Self, E> {
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
+        iter: I,
+    ) -> Result<Self, E> {
         let mut iter = iter.into_iter();
         let mut arr = MutableBinaryViewArray::with_capacity(iter.size_hint().0);
         iter.try_for_each(|x| -> Result<(), E> {
@@ -543,7 +551,6 @@ impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryViewArray {
     // No faster implementation than this available, fall back to default.
     // fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
 }
-
 
 /// We use this to re-use the binary collect implementation for strings.
 /// # Safety
@@ -560,7 +567,6 @@ impl StrIntoBytes for String {}
 impl<'a> StrIntoBytes for &'a str {}
 impl<'a> StrIntoBytes for Cow<'a, str> {}
 
-
 impl<T: StrIntoBytes> ArrayFromIter<T> for Utf8ViewArray {
     #[inline]
     fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
@@ -569,15 +575,15 @@ impl<T: StrIntoBytes> ArrayFromIter<T> for Utf8ViewArray {
 
     #[inline]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
-        where
-            I: IntoIterator<Item = T>,
-            I::IntoIter: TrustedLen,
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: TrustedLen,
     {
         Self::arr_from_iter(iter)
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E> {
-        unsafe { BinaryViewArray::try_arr_from_iter(iter).map(|arr| arr.to_utf8view_unchecked() )}
+        unsafe { BinaryViewArray::try_arr_from_iter(iter).map(|arr| arr.to_utf8view_unchecked()) }
     }
 
     // No faster implementation than this available, fall back to default.
@@ -592,21 +598,22 @@ impl<T: StrIntoBytes> ArrayFromIter<Option<T>> for Utf8ViewArray {
 
     #[inline]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
-        where
-            I: IntoIterator<Item = Option<T>>,
-            I::IntoIter: TrustedLen,
+    where
+        I: IntoIterator<Item = Option<T>>,
+        I::IntoIter: TrustedLen,
     {
         Self::arr_from_iter(iter)
     }
 
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(iter: I) -> Result<Self, E> {
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
+        iter: I,
+    ) -> Result<Self, E> {
         unsafe { BinaryViewArray::try_arr_from_iter(iter).map(|arr| arr.to_utf8view_unchecked()) }
     }
 
     // No faster implementation than this available, fall back to default.
     // fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
 }
-
 
 impl<T: StrIntoBytes> ArrayFromIter<T> for Utf8Array<i64> {
     #[inline(always)]

@@ -1,6 +1,7 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+mod binary_offset;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
@@ -24,7 +25,6 @@ mod object;
 mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-mod binary_offset;
 
 use std::any::Any;
 use std::borrow::Cow;

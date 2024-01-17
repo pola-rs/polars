@@ -815,7 +815,8 @@ where
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const ChunkedArray<T>);
         // Should be get and not get_unchecked, because there could be nulls
-        self.get_unchecked(idx_self).tot_eq(&ca_other.get_unchecked(idx_other))
+        self.get_unchecked(idx_self)
+            .tot_eq(&ca_other.get_unchecked(idx_other))
     }
 }
 

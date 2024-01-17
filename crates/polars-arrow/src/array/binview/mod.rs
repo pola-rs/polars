@@ -23,18 +23,18 @@ mod private {
     impl Sealed for str {}
     impl Sealed for [u8] {}
 }
+pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
 use private::Sealed;
 
-use crate::array::binview::view::{
-    validate_binary_view, validate_utf8_only, validate_utf8_view,
-};
+use crate::array::binview::view::{validate_binary_view, validate_utf8_only, validate_utf8_view};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-
-pub use iterator::BinaryViewValueIter;
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
+
+pub type MutablePlString = MutableBinaryViewArray<str>;
+pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
 
 static BIN_VIEW_TYPE: ArrowDataType = ArrowDataType::BinaryView;
 static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
@@ -325,9 +325,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn from_slice_values<S: AsRef<T>, P: AsRef<[S]>>(slice: P) -> Self {
-        let mutable = MutableBinaryViewArray::from_values_iter(
-            slice.as_ref().iter().map(|v| v.as_ref()),
-        );
+        let mutable =
+            MutableBinaryViewArray::from_values_iter(slice.as_ref().iter().map(|v| v.as_ref()));
         mutable.into()
     }
 
@@ -349,33 +348,30 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Garbage collect
     pub fn gc(self) -> Self {
         if self.buffers.is_empty() {
-            return self
+            return self;
         }
         let mut mutable = MutableBinaryViewArray::with_capacity(self.len());
         let buffers = self.raw_buffers.as_ref();
 
         for view in self.views.as_ref() {
-            unsafe {
-                mutable.push_view(*view, buffers)
-            }
+            unsafe { mutable.push_view(*view, buffers) }
         }
         mutable.freeze().with_validity(self.validity)
     }
 
     pub fn maybe_gc(self) -> Self {
         if self.total_buffer_len == 0 {
-            return self
+            return self;
         }
         // Subtract the maximum amount of inlined strings.
-        let min_in_buffer = self.total_bytes_len.saturating_sub (self.len() * 12);
+        let min_in_buffer = self.total_bytes_len.saturating_sub(self.len() * 12);
         let frac = (min_in_buffer as f64) / ((self.total_buffer_len() + 1) as f64);
 
         if frac < 0.25 {
-            return self.gc()
+            return self.gc();
         }
         self
     }
-
 }
 
 impl BinaryViewArray {
@@ -453,9 +449,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     }
 
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        debug_assert!(
-            offset + length <= self.len(),
-        );
+        debug_assert!(offset + length <= self.len(),);
         self.validity = self
             .validity
             .take()

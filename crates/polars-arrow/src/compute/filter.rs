@@ -275,17 +275,19 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn 
         BinaryView => {
             let iter = SlicesIterator::new(filter.values());
             let mut mutable = growable::GrowableBinaryViewArray::new(
-                vec![array.as_any().downcast_ref::<BinaryViewArray>().unwrap()], false, iter.slots()
+                vec![array.as_any().downcast_ref::<BinaryViewArray>().unwrap()],
+                false,
+                iter.slots(),
             );
             unsafe {
                 iter.for_each(|(start, len)| mutable.extend_unchecked(0, start, len));
             }
             Ok(mutable.as_box())
-        }
+        },
         // Should go via BinaryView
         Utf8View => {
             unreachable!()
-        }
+        },
         _ => {
             let iter = SlicesIterator::new(filter.values());
             let mut mutable = make_growable(&[array], false, iter.slots());

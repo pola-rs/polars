@@ -155,7 +155,6 @@ impl<'a> IntoIterator for &'a BinaryChunked {
     }
 }
 
-
 impl BinaryChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
@@ -180,7 +179,6 @@ impl<'a> IntoIterator for &'a BinaryOffsetChunked {
         unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
     }
 }
-
 
 impl BinaryOffsetChunked {
     #[allow(clippy::wrong_self_convention)]
@@ -249,15 +247,8 @@ impl ListChunked {
         unsafe {
             self.downcast_iter()
                 .flat_map(|arr| arr.values_iter())
-                .map(move |arr| {
-                    unsafe {
-                        Series::from_chunks_and_dtype_unchecked(
-                            "",
-                            vec![arr],
-                            &inner_type,
-                        )
-                    }
-
+                .map(move |arr| unsafe {
+                    Series::from_chunks_and_dtype_unchecked("", vec![arr], &inner_type)
                 })
                 .trust_my_length(self.len())
         }

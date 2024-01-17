@@ -49,8 +49,10 @@ impl ListStringChunkedBuilder {
         }
         for arr in ca.downcast_iter() {
             if arr.null_count() == 0 {
-                self.builder.mut_values().extend_values(arr.non_null_values_iter());
-            }else {
+                self.builder
+                    .mut_values()
+                    .extend_values(arr.non_null_values_iter());
+            } else {
                 self.builder.mut_values().extend_trusted_len(arr.iter())
             }
         }

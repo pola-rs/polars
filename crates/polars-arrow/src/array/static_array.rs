@@ -1,8 +1,12 @@
 use bytemuck::Zeroable;
 
-use crate::array::static_array_collect::ArrayFromIterDtype;
-use crate::array::{Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BinaryViewArrayGeneric, BooleanArray, FixedSizeListArray, ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter, ViewType, Utf8ViewArray};
 use crate::array::binview::BinaryViewValueIter;
+use crate::array::static_array_collect::ArrayFromIterDtype;
+use crate::array::{
+    Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BinaryViewArrayGeneric,
+    BooleanArray, FixedSizeListArray, ListArray, ListValuesIter, PrimitiveArray, Utf8Array,
+    Utf8ValuesIter, Utf8ViewArray, ViewType,
+};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
@@ -237,8 +241,7 @@ impl ParameterFreeDtypeStaticArray for BinaryArray<i64> {
     }
 }
 
-impl StaticArray for BinaryViewArray
-{
+impl StaticArray for BinaryViewArray {
     type ValueT<'a> = &'a [u8];
     type ZeroableValueT<'a> = Option<&'a [u8]>;
     type ValueIterT<'a> = BinaryViewValueIter<'a, [u8]>;
@@ -264,15 +267,13 @@ impl StaticArray for BinaryViewArray
     }
 }
 
-
 impl ParameterFreeDtypeStaticArray for BinaryViewArray {
     fn get_dtype() -> ArrowDataType {
         ArrowDataType::BinaryView
     }
 }
 
-impl StaticArray for Utf8ViewArray
-{
+impl StaticArray for Utf8ViewArray {
     type ValueT<'a> = &'a str;
     type ZeroableValueT<'a> = Option<&'a str>;
     type ValueIterT<'a> = BinaryViewValueIter<'a, str>;
@@ -297,7 +298,6 @@ impl StaticArray for Utf8ViewArray
         Self::new_null(dtype, length)
     }
 }
-
 
 impl ParameterFreeDtypeStaticArray for Utf8ViewArray {
     fn get_dtype() -> ArrowDataType {

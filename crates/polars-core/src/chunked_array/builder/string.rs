@@ -2,14 +2,14 @@ use super::*;
 
 pub struct BinViewChunkedBuilder<T: ViewType + ?Sized> {
     pub(crate) chunk_builder: MutableBinaryViewArray<T>,
-    pub(crate) field: FieldRef
+    pub(crate) field: FieldRef,
 }
 
 impl<T: ViewType + ?Sized> Clone for BinViewChunkedBuilder<T> {
     fn clone(&self) -> Self {
         Self {
             chunk_builder: self.chunk_builder.clone(),
-            field: self.field.clone()
+            field: self.field.clone(),
         }
     }
 }
@@ -27,7 +27,7 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
     pub fn new(name: &str, capacity: usize) -> Self {
         Self {
             chunk_builder: MutableBinaryViewArray::with_capacity(capacity),
-            field: Arc::new(Field::new(name, DataType::from(&T::DATA_TYPE)))
+            field: Arc::new(Field::new(name, DataType::from(&T::DATA_TYPE))),
         }
     }
 

@@ -1,5 +1,5 @@
-use crate::trusted_len::TrustedLen;
 use super::*;
+use crate::trusted_len::TrustedLen;
 
 pub trait TrustedLenPush<T> {
     /// Will push an item and not check if there is enough capacity.

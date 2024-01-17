@@ -1,4 +1,5 @@
 use arrow::datatypes::PhysicalType::LargeBinary;
+
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
@@ -289,7 +290,7 @@ impl DataType {
             )),
             String => {
                 let dt = if pl_flavor {
-                   ArrowDataType::Utf8View
+                    ArrowDataType::Utf8View
                 } else {
                     ArrowDataType::LargeUtf8
                 };
@@ -411,7 +412,7 @@ impl Display for DataType {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
-            DataType::BinaryOffset => "binary[offset]"
+            DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
     }

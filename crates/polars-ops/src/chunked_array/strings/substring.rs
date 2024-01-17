@@ -46,5 +46,7 @@ pub(super) fn utf8_substring(
         }
     });
 
-    MutableBinaryViewArray::from_values_iter(iter).freeze().with_validity(array.validity().cloned())
+    MutableBinaryViewArray::from_values_iter(iter)
+        .freeze()
+        .with_validity(array.validity().cloned())
 }

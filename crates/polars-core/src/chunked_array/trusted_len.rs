@@ -162,8 +162,8 @@ where
 }
 
 impl<Ptr> FromTrustedLenIterator<Ptr> for BinaryOffsetChunked
-    where
-        Ptr: PolarsAsRef<[u8]>,
+where
+    Ptr: PolarsAsRef<[u8]>,
 {
     fn from_iter_trusted_length<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = BinaryArray::from_iter_values(iter.into_iter());
@@ -172,8 +172,8 @@ impl<Ptr> FromTrustedLenIterator<Ptr> for BinaryOffsetChunked
 }
 
 impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for BinaryOffsetChunked
-    where
-        Ptr: AsRef<[u8]>,
+where
+    Ptr: AsRef<[u8]>,
 {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let iter = iter.into_iter();

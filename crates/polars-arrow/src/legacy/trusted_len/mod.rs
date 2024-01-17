@@ -10,4 +10,3 @@ pub use rev::FromIteratorReversed;
 
 use crate::array::FixedSizeListArray;
 use crate::bitmap::utils::{BitmapIter, ZipValidity, ZipValidityIter};
-

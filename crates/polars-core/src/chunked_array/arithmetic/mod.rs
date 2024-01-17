@@ -128,9 +128,7 @@ impl Add for &BinaryChunked {
                         unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
                     })
                 },
-                None => {
-                    BinaryChunked::full_null(self.name(), self.len())
-                },
+                None => BinaryChunked::full_null(self.name(), self.len()),
             };
         }
         // broadcasting path lhs
