@@ -247,6 +247,7 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
 }
 
 pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
+    dbg!(&array);
     // The validities may be masking out `true` bits, making the filter operation
     // based on the values incorrect
     if let Some(validities) = filter.validity() {
@@ -272,6 +273,20 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn 
             let array = array.as_any().downcast_ref().unwrap();
             Ok(Box::new(filter_primitive::<$T>(array, filter)))
         }),
+        BinaryView => {
+            let iter = SlicesIterator::new(filter.values());
+            let mut mutable = growable::GrowableBinaryViewArray::new(
+                vec![array.as_any().downcast_ref::<BinaryViewArray>().unwrap()], false, iter.slots()
+            );
+            unsafe {
+                iter.for_each(|(start, len)| mutable.extend_unchecked(0, start, len));
+            }
+            Ok(mutable.as_box())
+        }
+        // Should go via BinaryView
+        Utf8View => {
+            unreachable!()
+        }
         _ => {
             let iter = SlicesIterator::new(filter.values());
             let mut mutable = make_growable(&[array], false, iter.slots());

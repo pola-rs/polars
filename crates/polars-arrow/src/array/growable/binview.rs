@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::Growable;
@@ -17,6 +18,8 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     buffers: Vec<Buffer<u8>>,
     total_bytes_len: usize,
     total_buffer_len: usize,
+    // This will be used to determine if the buffers should be added.
+    processed_index: Vec<bool>
 }
 
 impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
@@ -41,6 +44,8 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             .map(|binview| binview.data_buffers().len())
             .sum::<usize>();
 
+        let n_arrays = arrays.len();
+
         Self {
             arrays,
             data_type,
@@ -49,6 +54,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             buffers: Vec::with_capacity(n_buffers),
             total_bytes_len: 0,
             total_buffer_len: 0,
+            processed_index: vec![false; n_arrays]
         }
     }
 
@@ -67,30 +73,40 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             ).maybe_gc()
         }
     }
-}
 
-impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let array = self.arrays[index];
+    pub unsafe fn extend_unchecked(&mut self, index: usize, start: usize, len: usize) {
+        let array = *self.arrays.get_unchecked(index);
+        let add_buffers = std::mem::replace(self.processed_index.get_unchecked_mut(index) , true);
+        if add_buffers {
+            self.buffers.extend_from_slice(array.data_buffers());
+        }
+
         extend_validity(&mut self.validity, array, start, len);
 
         let buffer_offset: u32 = self.buffers.len().try_into().expect("unsupported");
         let buffer_offset = (buffer_offset as u128) << 64;
 
         let range = start..start + len;
-        self.buffers.extend_from_slice(array.data_buffers());
 
         for b in array.data_buffers().as_ref() {
             self.total_buffer_len += b.len();
         }
 
-        self.views.extend(array.views()[range].iter().map(|&view| {
+        self.views.extend(array.views().get_unchecked(range).iter().map(|&view| {
             self.total_bytes_len += (view as u32) as usize;
 
             // If null the buffer index is ignored because the length is 0,
             // so we can just do this
             view + buffer_offset
         }));
+
+    }
+}
+
+impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
+    fn extend(&mut self, index: usize, start: usize, len: usize) {
+        assert!(index < self.arrays.len());
+        unsafe { self.extend_unchecked(index, start, len) }
     }
 
     fn extend_validity(&mut self, additional: usize) {
