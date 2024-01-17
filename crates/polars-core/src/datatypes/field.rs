@@ -155,7 +155,7 @@ impl From<&ArrowDataType> for DataType {
             }
             #[cfg(feature = "dtype-decimal")]
             ArrowDataType::Decimal(precision, scale) => DataType::Decimal(Some(*precision), Some(*scale)),
-            ArrowDataType::Utf8View => DataType::String,
+            ArrowDataType::Utf8View |ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::String,
             ArrowDataType::BinaryView => DataType::Binary,
             ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::BinaryOffset,
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),

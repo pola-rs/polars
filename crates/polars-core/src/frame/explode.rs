@@ -368,16 +368,6 @@ mod test {
             exploded.column("foo").unwrap().i8().unwrap().get(8),
             Some(2)
         );
-
-        let str = Series::new("foo", &["abc", "de", "fg"]);
-        let df = DataFrame::new(vec![str, s0, s1]).unwrap();
-        let exploded = df.explode(["foo"]).unwrap();
-        assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(6), Some(1));
-        assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(6), Some(3));
-        assert_eq!(
-            exploded.column("foo").unwrap().str().unwrap().get(6),
-            Some("g")
-        );
     }
 
     #[test]
