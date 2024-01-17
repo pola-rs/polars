@@ -451,7 +451,7 @@ impl SQLContext {
                 lf = self.process_order_by(lf, &query.order_by)?;
 
                 column_names.retain(|&name| !retained_names.contains(name));
-                lf.drop_columns(column_names)
+                lf.drop(column_names)
             } else if contains_wildcard_exclude {
                 let mut dropped_names = Vec::with_capacity(projections.len());
 
@@ -471,7 +471,7 @@ impl SQLContext {
                 if exclude_expr.is_some() {
                     lf = lf.with_columns(projections);
                     lf = self.process_order_by(lf, &query.order_by)?;
-                    lf.drop_columns(dropped_names)
+                    lf.drop(dropped_names)
                 } else {
                     lf = lf.select(projections);
                     self.process_order_by(lf, &query.order_by)?
