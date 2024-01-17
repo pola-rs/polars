@@ -285,5 +285,4 @@ def test_array_count_matches(
 ) -> None:
     df = pl.DataFrame({"arr": arr}, schema={"arr": pl.Array(dtype, 2)})
     out = df.select(count_matches=pl.col("arr").arr.count_matches(data))
-    print(out)
     assert out.to_dict(as_series=False) == {"count_matches": expected}
