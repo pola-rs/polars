@@ -19,6 +19,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Quarter => map!(datetime::quarter),
             Week => map!(datetime::week),
             WeekDay => map!(datetime::weekday),
+            Duration(tu) => map_as_slice!(datetime::duration, tu),
             Day => map!(datetime::day),
             OrdinalDay => map!(datetime::ordinal_day),
             Time => map!(datetime::time),
