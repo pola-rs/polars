@@ -206,6 +206,9 @@ impl PySeries {
                     DataType::Unknown => {
                         panic!("to_list not implemented for unknown")
                     },
+                    DataType::BinaryOffset => {
+                        unreachable!()
+                    },
                 };
                 pylist.to_object(py)
             }

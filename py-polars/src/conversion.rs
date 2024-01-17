@@ -28,6 +28,7 @@ use pyo3::types::{
 };
 use pyo3::{intern, PyAny, PyResult};
 use smartstring::alias::String as SmartString;
+use polars_rs::export::arrow;
 
 use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
@@ -135,7 +136,7 @@ impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
 impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
-        let mut builder = StringChunkedBuilder::new("", len, len * 25);
+        let mut builder = StringChunkedBuilder::new("", len);
 
         for res in obj.iter()? {
             let item = res?;
@@ -151,7 +152,7 @@ impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
 impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
-        let mut builder = BinaryChunkedBuilder::new("", len, len * 25);
+        let mut builder = BinaryChunkedBuilder::new("", len);
 
         for res in obj.iter()? {
             let item = res?;
@@ -428,6 +429,9 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Unknown")).unwrap();
                 class.call0().unwrap().into()
             },
+            DataType::BinaryOffset => {
+                unimplemented!()
+            }
         }
     }
 }
@@ -512,7 +516,8 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let s = get_series(categories)?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let arr = ca.downcast_iter().next().unwrap();
-                create_enum_data_type(arr.clone())
+                let categories = arrow::compute::cast::utf8view_to_utf8(arr);
+                create_enum_data_type(categories)
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,

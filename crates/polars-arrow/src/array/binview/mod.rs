@@ -303,6 +303,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         BinaryViewValueIter::new(self)
     }
 
+    pub fn len_iter(&self) -> impl Iterator<Item=u32> + '_ {
+        self.views.iter().map(|v| *v as u32)
+    }
+
     /// Returns an iterator of the non-null values.
     pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, BinaryViewArrayGeneric<T>> {
         NonNullValuesIter::new(self, self.validity())
