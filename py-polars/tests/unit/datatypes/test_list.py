@@ -304,9 +304,6 @@ def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").list.count_matches(2).alias("number_of_twos")
     ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
-    assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").list.count_matches(2).alias("number_of_twos")
-    ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
 def test_list_sum_and_dtypes() -> None:
