@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use arrow::compute::cast::utf8_to_large_utf8;
-use arrow::legacy::compute::cast::cast;
+use arrow::compute::cast::cast_default as cast;
 #[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(
@@ -24,6 +24,8 @@ use crate::chunked_array::temporal::validate_time_zone;
 use crate::config::decimal_is_active;
 use crate::config::verbose;
 use crate::prelude::*;
+
+
 
 impl Series {
     /// Takes chunks and a polars datatype and constructs the Series

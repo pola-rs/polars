@@ -83,7 +83,7 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
 }
 
 #[cfg(feature = "dtype-struct")]
-pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryChunked> {
+pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
@@ -101,7 +101,7 @@ pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryChunked>
         })
         .collect();
 
-    Ok(BinaryChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
 }
 
 pub fn _get_rows_encoded(

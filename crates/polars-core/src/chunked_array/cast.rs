@@ -227,7 +227,7 @@ impl ChunkCast for StringChunked {
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
                     let chunks = self.downcast_iter().map(|arr| {
-                        arrow::legacy::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
+                        arrow::compute::cast::binview_to_decimal(&arr.to_binview(), *precision, *scale)
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
                         .into_decimal_unchecked(*precision, *scale)

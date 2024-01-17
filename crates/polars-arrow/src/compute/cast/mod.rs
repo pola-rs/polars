@@ -17,7 +17,8 @@ pub use primitive_to::*;
 pub use utf8_to::*;
 
 use crate::array::*;
-use crate::compute::cast::binview_to::{binview_to_primitive, binview_to_primitive_dyn};
+use binview_to::{binview_to_primitive, binview_to_primitive_dyn};
+pub use binview_to::binview_to_decimal;
 use crate::datatypes::*;
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
@@ -32,6 +33,15 @@ pub struct CastOptions {
     /// default to false
     /// whether to cast to an integer at the best-effort
     pub partial: bool,
+}
+
+impl CastOptions {
+    pub fn unchecked() -> Self {
+        Self {
+            wrapped: true,
+            partial: false
+        }
+    }
 }
 
 impl CastOptions {
@@ -197,6 +207,13 @@ fn cast_list_to_fixed_size_list<O: Offset>(
     .map_err(|_| polars_err!(ComputeError: "not all elements have the specified width {size}"))
 }
 
+pub fn cast_default(
+    array: &dyn Array,
+    to_type: &ArrowDataType,
+) -> PolarsResult<Box<dyn Array>> {
+    cast(array, to_type, Default::default())
+}
+
 /// Cast `array` to the provided data type and return a new [`Array`] with
 /// type `to_type`, if possible.
 ///
@@ -360,7 +377,7 @@ pub fn cast(
             match to_type {
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
-                UInt8 | UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64 => {
+                UInt8 | UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64 | Decimal(_, _) => {
                     cast(&arr.to_binview(), to_type, options)
                 },
                 _ => polars_bail!(InvalidOperation:

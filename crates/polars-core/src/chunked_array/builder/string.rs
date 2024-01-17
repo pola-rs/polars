@@ -1,9 +1,17 @@
 use super::*;
 
-#[derive(Clone)]
 pub struct BinViewChunkedBuilder<T: ViewType + ?Sized> {
     pub(crate) chunk_builder: MutableBinaryViewArray<T>,
     pub(crate) field: FieldRef
+}
+
+impl<T: ViewType + ?Sized> Clone for BinViewChunkedBuilder<T> {
+    fn clone(&self) -> Self {
+        Self {
+            chunk_builder: self.chunk_builder.clone(),
+            field: self.field.clone()
+        }
+    }
 }
 
 pub type StringChunkedBuilder = BinViewChunkedBuilder<str>;

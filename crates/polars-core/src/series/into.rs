@@ -4,7 +4,7 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use arrow::legacy::compute::cast::cast;
+use arrow::compute::cast::cast_default as cast;
 
 use crate::prelude::*;
 

@@ -16,7 +16,6 @@ use crate::trusted_len::TrustedLen;
 
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 
-#[derive(Clone)]
 pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     views: Vec<u128>,
     completed_buffers: Vec<Buffer<u8>>,
@@ -29,6 +28,19 @@ pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     total_buffer_len: usize,
 }
 
+impl<T: ViewType + ?Sized> Clone for MutableBinaryViewArray<T> {
+    fn clone(&self) -> Self {
+        Self {
+            views: self.views.clone(),
+            completed_buffers: self.completed_buffers.clone(),
+            in_progress_buffer: self.in_progress_buffer.clone(),
+            validity: self.validity.clone(),
+            phantom: Default::default(),
+            total_bytes_len: self.total_bytes_len,
+            total_buffer_len: self.total_buffer_len
+        }
+    }
+}
 
 impl<T: ViewType + ?Sized> Debug for MutableBinaryViewArray<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

@@ -3,6 +3,7 @@ use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptions;
 use crate::datatypes::ArrowDataType;
+use crate::legacy::compute::decimal::deserialize_decimal;
 use crate::offset::Offset;
 use crate::types::NativeType;
 
@@ -57,4 +58,17 @@ pub(super) fn binview_to_primitive_dyn<T>(
     } else {
         Ok(Box::new(binview_to_primitive::<T>(from, to)))
     }
+}
+
+#[cfg(feature = "dtype-decimal")]
+pub fn binview_to_decimal(
+    array: &BinaryViewArray,
+    precision: Option<usize>,
+    scale: usize,
+) -> PrimitiveArray<i128> {
+    let precision = precision.map(|p| p as u8);
+    array
+        .iter()
+        .map(|val| val.and_then(|val| deserialize_decimal(val, precision, scale as u8)))
+        .collect()
 }

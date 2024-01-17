@@ -169,6 +169,7 @@ impl NotSpecialized for Int8Type {}
 impl NotSpecialized for Int16Type {}
 impl NotSpecialized for Int32Type {}
 impl NotSpecialized for Int64Type {}
+impl NotSpecialized for Int128Type {}
 impl NotSpecialized for UInt8Type {}
 impl NotSpecialized for UInt16Type {}
 impl NotSpecialized for UInt32Type {}
@@ -177,6 +178,10 @@ impl NotSpecialized for Float32Type {}
 impl NotSpecialized for Float64Type {}
 impl NotSpecialized for BooleanType {}
 impl NotSpecialized for ListType {}
+impl NotSpecialized for FixedSizeListType {}
+impl NotSpecialized for BinaryOffsetType {}
+impl NotSpecialized for DecimalType {}
+impl<T> NotSpecialized for ObjectType<T> {}
 
 
 impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
