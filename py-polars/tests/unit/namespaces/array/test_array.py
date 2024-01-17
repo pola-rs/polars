@@ -92,6 +92,17 @@ def test_array_sort() -> None:
     expected = pl.Series([[None, 1, 2], [1, 2, 3]], dtype=pl.Array(pl.UInt32, 3))
     assert_series_equal(asc, expected)
 
+    # test nulls_last
+    s = pl.Series([[None, 1, 2], [-1, None, 9]], dtype=pl.Array(pl.Int8, 3))
+    assert_series_equal(
+        s.arr.sort(nulls_last=True),
+        pl.Series([[1, 2, None], [-1, 9, None]], dtype=pl.Array(pl.Int8, 3)),
+    )
+    assert_series_equal(
+        s.arr.sort(nulls_last=False),
+        pl.Series([[None, 1, 2], [None, -1, 9]], dtype=pl.Array(pl.Int8, 3)),
+    )
+
 
 def test_array_reverse() -> None:
     s = pl.Series([[2, None, 1], [1, None, 2]], dtype=pl.Array(pl.UInt32, 3))
