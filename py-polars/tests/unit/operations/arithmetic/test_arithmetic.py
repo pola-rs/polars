@@ -122,15 +122,6 @@ def test_floor_division_float_int_consistency() -> None:
     )
 
 
-def test_unary_plus() -> None:
-    data = [1, 2]
-    df = pl.DataFrame({"x": data})
-    assert df.select(+pl.col("x"))[:, 0].to_list() == data
-
-    with pytest.raises(pl.exceptions.ComputeError):
-        pl.select(+pl.lit(""))
-
-
 def test_series_expr_arithm() -> None:
     s = pl.Series([1, 2, 3])
     assert (s + pl.col("a")).meta == pl.lit(s) + pl.col("a")

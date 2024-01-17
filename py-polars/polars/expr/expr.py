@@ -236,10 +236,7 @@ class Expr:
         return self._from_pyexpr(other_expr._or(self._pyexpr))
 
     def __pos__(self) -> Expr:
-        pos_expr = F.lit(0) + self
-        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
-            pos_expr = pos_expr.alias(name)
-        return pos_expr
+        return self
 
     def __pow__(self, exponent: IntoExprColumn | int | float) -> Self:
         exponent = parse_as_expression(exponent)
