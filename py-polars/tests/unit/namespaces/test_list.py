@@ -763,6 +763,15 @@ def test_list_ordering() -> None:
     assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
     assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
 
+    # test nulls_last
+    s = pl.Series([[None, 1, 2], [-1, None, 9]])
+    assert_series_equal(
+        s.list.sort(nulls_last=True), pl.Series([[1, 2, None], [-1, 9, None]])
+    )
+    assert_series_equal(
+        s.list.sort(nulls_last=False), pl.Series([[None, 1, 2], [None, -1, 9]])
+    )
+
 
 def test_list_get_logical_type() -> None:
     s = pl.Series(

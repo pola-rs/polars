@@ -94,15 +94,15 @@ impl PyExpr {
         self.inner.clone().list().tail(n.inner).into()
     }
 
-    fn list_sort(&self, descending: bool) -> Self {
+    fn list_sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.inner
             .clone()
             .list()
             .sort(SortOptions {
                 descending,
+                nulls_last,
                 ..Default::default()
             })
-            .with_fmt("list.sort")
             .into()
     }
 

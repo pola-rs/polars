@@ -37,12 +37,13 @@ impl PyExpr {
         self.inner.clone().arr().any().into()
     }
 
-    fn arr_sort(&self, descending: bool) -> Self {
+    fn arr_sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.inner
             .clone()
             .arr()
             .sort(SortOptions {
                 descending,
+                nulls_last,
                 ..Default::default()
             })
             .into()
