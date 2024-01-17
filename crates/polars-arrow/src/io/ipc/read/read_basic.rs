@@ -85,13 +85,17 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<T>> {
+    if length == 0 {
+        return Ok(vec![]);
+    }
+
     if is_little_endian != is_native_little_endian() {
         polars_bail!(ComputeError:
             "Reading compressed and big endian IPC".to_string(),
         )
     }
 
-    // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
+    // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
     let mut buffer = vec![T::default(); length];
 
