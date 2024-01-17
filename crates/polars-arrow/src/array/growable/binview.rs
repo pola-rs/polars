@@ -64,7 +64,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                 validity.map(|v| v.into()),
                 self.total_bytes_len,
                 self.total_buffer_len,
-            )
+            ).maybe_gc()
         }
     }
 }
@@ -78,10 +78,9 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
         let buffer_offset = (buffer_offset as u128) << 64;
 
         let range = start..start + len;
-        let buffers_range = &array.data_buffers()[range.clone()];
-        self.buffers.extend_from_slice(buffers_range);
+        self.buffers.extend_from_slice(array.data_buffers());
 
-        for b in buffers_range {
+        for b in array.data_buffers().as_ref() {
             self.total_buffer_len += b.len();
         }
 
@@ -125,7 +124,7 @@ impl<'a, T: ViewType + ?Sized> From<GrowableBinaryViewArray<'a, T>> for BinaryVi
                 val.validity.map(|v| v.into()),
                 val.total_bytes_len,
                 val.total_buffer_len,
-            )
+            ).maybe_gc()
         }
     }
 }

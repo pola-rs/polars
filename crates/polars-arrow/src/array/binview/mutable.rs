@@ -5,12 +5,13 @@ use std::sync::Arc;
 use polars_error::PolarsResult;
 use polars_utils::slice::GetSaferUnchecked;
 
-use crate::array::binview::view::validate_utf8_only_view;
+use crate::array::binview::view::{validate_utf8_only_view, View};
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::{Array, MutableArray};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
+use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
 
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
@@ -105,6 +106,28 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             validity.set(self.len() - 1, false);
         }
         self.validity = Some(validity);
+    }
+
+    /// # Safety
+    /// - caller must allocate enough capacity
+    /// - caller must ensure the view and buffers match.
+    #[inline]
+    pub unsafe fn push_view(&mut self, v: u128, buffers: &[(*const u8, usize)]) {
+        let len = v as u32;
+        self.total_bytes_len += len as usize;
+        if len <= 12 {
+            self.views.push_unchecked(v)
+        } else {
+            self.total_buffer_len += len as usize;
+            let buffer_idx = (v >> 64) as u32;
+            let offset = (v >> 96) as u32;
+            let (data_ptr, data_len) = *buffers.get_unchecked(buffer_idx as usize);
+            let data = std::slice::from_raw_parts(data_ptr, data_len);
+            let offset = offset as usize;
+            let bytes = data.get_unchecked(offset..offset + len as usize);
+            let t = T::from_bytes_unchecked(bytes);
+            self.push_value_ignore_validity(t)
+        }
     }
 
     pub fn push_value_ignore_validity<V: AsRef<T>>(&mut self, value: V) {

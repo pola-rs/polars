@@ -295,9 +295,8 @@ impl DataFrame {
         let values_len = value_vars.iter().map(|name| name.len()).sum::<usize>();
 
         // The column name of the variable that is melted
-        let mut variable_col = MutableUtf8Array::<i64>::with_capacities(
+        let mut variable_col = MutableBinaryViewArray::<str>::with_capacity(
             len * value_vars.len() + 1,
-            len * values_len + 1,
         );
         // prepare ids
         let ids_ = self.select_with_schema_unchecked(id_vars, &schema)?;
@@ -313,7 +312,7 @@ impl DataFrame {
         let mut values = Vec::with_capacity(value_vars.len());
 
         for value_column_name in &value_vars {
-            variable_col.extend_trusted_len_values(std::iter::repeat(value_column_name).take(len));
+            variable_col.extend_constant(len, Some(value_column_name.as_str()));
             // ensure we go via the schema so we are O(1)
             // self.column() is linear
             // together with this loop that would make it O^2 over value_vars

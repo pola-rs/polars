@@ -340,6 +340,36 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         self.views.len()
     }
 
+    /// Garbage collect
+    pub fn gc(self) -> Self {
+        if self.buffers.is_empty() {
+            return self
+        }
+        let mut mutable = MutableBinaryViewArray::with_capacity(self.len());
+        let buffers = self.raw_buffers.as_ref();
+
+        for view in self.views.as_ref() {
+            unsafe {
+                mutable.push_view(*view, buffers)
+            }
+        }
+        mutable.freeze().with_validity(self.validity)
+    }
+
+    pub fn maybe_gc(self) -> Self {
+        if self.total_buffer_len == 0 {
+            return self
+        }
+        // Subtract the maximum amount of inlined strings.
+        let min_in_buffer = self.total_bytes_len.saturating_sub (self.len() * 12);
+        let frac = (min_in_buffer as f64) / ((self.total_buffer_len() + 1) as f64);
+
+        if frac < 0.25 {
+            return self.gc()
+        }
+        self
+    }
+
 }
 
 impl BinaryViewArray {

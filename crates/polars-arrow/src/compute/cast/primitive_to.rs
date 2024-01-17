@@ -646,3 +646,27 @@ pub fn months_to_months_days_ns(from: &PrimitiveArray<i32>) -> PrimitiveArray<mo
 pub fn f16_to_f32(from: &PrimitiveArray<f16>) -> PrimitiveArray<f32> {
     unary(from, |x| x.to_f32(), ArrowDataType::Float32)
 }
+
+/// Returns a [`Utf8Array`] where every element is the utf8 representation of the number.
+pub(super) fn primitive_to_binview<T: NativeType + SerPrimitive>(
+    from: &PrimitiveArray<T>,
+) -> BinaryViewArray {
+    let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
+
+    let mut scratch = vec![];
+    for &x in from.values().iter() {
+        unsafe { scratch.set_len(0) };
+        T::write(&mut scratch, x);
+        mutable.push_value_ignore_validity(&scratch)
+    }
+
+    mutable.freeze().with_validity(from.validity().cloned())
+}
+
+pub(super) fn primitive_to_binview_dyn<T>(from: &dyn Array) -> BinaryViewArray
+    where
+        T: NativeType + SerPrimitive,
+{
+    let from = from.as_any().downcast_ref().unwrap();
+    primitive_to_binview::<T>(from)
+}
