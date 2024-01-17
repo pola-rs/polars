@@ -787,5 +787,5 @@ def test_sort_with_null_12272() -> None:
         (["a", None, "c"], ["a", "c", None]),
     ],
 )
-def test_sort_series_nulls_last(input, expected) -> None:
+def test_sort_series_nulls_last(input: list[Any], expected: list[Any]) -> None:
     assert pl.Series(input).sort(nulls_last=True).to_list() == expected

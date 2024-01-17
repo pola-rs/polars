@@ -3377,7 +3377,11 @@ class Series:
         """
 
     def sort(
-        self, *, descending: bool = False, nulls_last: bool = False, in_place: bool = False
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        in_place: bool = False,
     ) -> Self:
         """
         Sort this Series.
