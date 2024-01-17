@@ -104,6 +104,7 @@ fn concat_binview(a: &BinaryViewArray, b: &BinaryViewArray) -> BinaryViewArray {
     let mut scratch = vec![];
     for (a, b) in a.values_iter().zip(b.values_iter()) {
         concat_binary_arrs(a, b, &mut scratch);
+        mutable.push_value(&scratch)
     }
 
     mutable.freeze().with_validity(validity)
@@ -127,7 +128,9 @@ impl Add for &BinaryChunked {
                         unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
                     })
                 },
-                None => BinaryChunked::full_null(self.name(), self.len()),
+                None => {
+                    BinaryChunked::full_null(self.name(), self.len())
+                },
             };
         }
         // broadcasting path lhs

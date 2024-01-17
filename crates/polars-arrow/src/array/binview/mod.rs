@@ -117,6 +117,12 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     total_buffer_len: usize,
 }
 
+impl<T: ViewType + ?Sized> PartialEq for BinaryViewArrayGeneric<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.into_iter().zip(other.into_iter()).all(|(l, r)| l == r)
+    }
+}
+
 impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
     fn clone(&self) -> Self {
         Self {

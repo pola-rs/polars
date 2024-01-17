@@ -40,7 +40,7 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
     if columns.iter().any(|arr| {
         matches!(
             arr.data_type(),
-            ArrowDataType::Struct(_) | ArrowDataType::LargeUtf8
+            ArrowDataType::Struct(_) | ArrowDataType::Utf8View
         )
     }) {
         let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
@@ -54,11 +54,6 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
                         flattened_columns.push(arr.clone() as ArrayRef);
                         flattened_fields.push(field.clone())
                     }
-                },
-                ArrowDataType::LargeUtf8 => {
-                    let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-                    flattened_columns.push(arr.to_binary().boxed());
-                    flattened_fields.push(field.clone());
                 },
                 ArrowDataType::Utf8View => {
                     let arr = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
@@ -175,7 +170,7 @@ pub fn allocate_rows_buf(
     let has_variable = columns.iter().any(|arr| {
         matches!(
             arr.data_type(),
-            ArrowDataType::LargeBinary | ArrowDataType::Dictionary(_, _, _)
+            ArrowDataType::BinaryView | ArrowDataType::Dictionary(_, _, _)
         )
     });
 
@@ -188,7 +183,7 @@ pub fn allocate_rows_buf(
             .map(|arr| {
                 if matches!(
                     arr.data_type(),
-                    ArrowDataType::LargeBinary | ArrowDataType::Dictionary(_, _, _)
+                    ArrowDataType::BinaryView | ArrowDataType::Dictionary(_, _, _)
                 ) {
                     0
                 } else {
@@ -207,8 +202,8 @@ pub fn allocate_rows_buf(
         let mut processed_count = 0;
         for array in columns.iter() {
             match array.data_type() {
-                ArrowDataType::LargeBinary => {
-                    let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+                ArrowDataType::BinaryView => {
+                    let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                     if processed_count == 0 {
                         for opt_val in array.into_iter() {
                             unsafe {
@@ -311,13 +306,13 @@ mod test {
 
     use super::*;
     use crate::decode::decode_rows_from_binary;
-    use crate::variable::{decode_binary, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
+    use crate::variable::{decode_binary, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL, decode_binview};
 
     #[test]
     fn test_fixed_and_variable_encode() {
         let a = Int32Array::from_vec(vec![1, 2, 3]);
         let b = Int32Array::from_vec(vec![213, 12, 12]);
-        let c = Utf8Array::<i64>::from_iter([Some("a"), Some(""), Some("meep")]);
+        let c = Utf8ViewArray::from_slice([Some("a"), Some(""), Some("meep")]);
 
         let encoded = convert_columns_no_order(&[Box::new(a), Box::new(b), Box::new(c)]);
         assert_eq!(encoded.offsets, &[0, 44, 55, 99,]);
@@ -330,13 +325,13 @@ mod test {
     fn test_str_encode() {
         let sentence = "The black cat walked under a ladder but forget it's milk so it ...";
         let arr =
-            Utf8Array::<i64>::from_iter([Some("a"), Some(""), Some("meep"), Some(sentence), None]);
+            BinaryViewArray::from_slice([Some("a"), Some(""), Some("meep"), Some(sentence), None]);
 
         let field = SortField {
             descending: false,
             nulls_last: false,
         };
-        let arr = arrow::compute::cast::cast(&arr, &ArrowDataType::LargeBinary, Default::default())
+        let arr = arrow::compute::cast::cast(&arr, &ArrowDataType::BinaryView, Default::default())
             .unwrap();
         let rows_encoded = convert_columns(&[arr], &[field]);
         let row1 = rows_encoded.get(0);
@@ -389,31 +384,31 @@ mod test {
             descending: false,
             nulls_last: false,
         };
-        let arr = BinaryArray::<i64>::from_iter_values(a.iter());
+        let arr = BinaryViewArray::from_slice_values(a);
         let rows_encoded = convert_columns_no_order(&[arr.clone().boxed()]);
 
         let mut rows = rows_encoded.iter().collect::<Vec<_>>();
-        let decoded = unsafe { decode_binary(&mut rows, &field) };
+        let decoded = unsafe { decode_binview(&mut rows, &field) };
         assert_eq!(decoded, arr);
     }
 
     #[test]
     fn test_reverse_variable() {
-        let a = Utf8Array::<i64>::from_slice(["one", "two", "three", "four", "five", "six"]);
+        let a = Utf8ViewArray::from_slice_values(["one", "two", "three", "four", "five", "six"]);
 
         let fields = &[SortField {
             descending: true,
             nulls_last: false,
         }];
 
-        let dtypes = [ArrowDataType::LargeUtf8];
+        let dtypes = [ArrowDataType::Utf8View];
 
         unsafe {
             let encoded = convert_columns(&[Box::new(a.clone())], fields);
             let out = decode_rows_from_binary(&encoded.into_array(), fields, &dtypes, &mut vec![]);
 
             let arr = &out[0];
-            let decoded = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+            let decoded = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             assert_eq!(decoded, &a);
         }
     }

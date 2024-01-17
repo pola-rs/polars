@@ -225,7 +225,7 @@ impl SortSinkMultiple {
             Series::from_chunks_and_dtype_unchecked(
                 POLARS_SORT_COLUMN,
                 vec![Box::new(rows_encoded.into_array())],
-                &DataType::Binary,
+                &DataType::BinaryOffset,
             )
         };
 
