@@ -12,12 +12,21 @@ where
 pub fn negate(s: &Series) -> PolarsResult<Series> {
     use DataType::*;
     let out = match s.dtype() {
+        #[cfg(feature = "dtype-i8")]
         Int8 => negate_numeric(s.i8().unwrap()).into_series(),
+        #[cfg(feature = "dtype-i16")]
         Int16 => negate_numeric(s.i16().unwrap()).into_series(),
         Int32 => negate_numeric(s.i32().unwrap()).into_series(),
         Int64 => negate_numeric(s.i64().unwrap()).into_series(),
         Float32 => negate_numeric(s.f32().unwrap()).into_series(),
         Float64 => negate_numeric(s.f64().unwrap()).into_series(),
+        #[cfg(feature = "dtype-duration")]
+        Duration(_) => {
+            let physical = s.to_physical_repr();
+            let ca = physical.i64().unwrap();
+            let s = negate_numeric(ca).into_series();
+            s.cast(s.dtype())?
+        },
         dt => polars_bail!(opq = neg, dt),
     };
     Ok(out)

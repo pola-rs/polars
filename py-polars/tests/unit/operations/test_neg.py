@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import timedelta
+from decimal import Decimal as D
+
 import pytest
 
 import polars as pl
@@ -22,6 +25,21 @@ def test_neg_method() -> None:
     result_op = lf.select(-pl.col("a"))
     result_method = lf.select(pl.col("a").neg())
     assert_frame_equal(result_op, result_method)
+
+
+@pytest.mark.skip(reason="Decimals not supported yet")
+def test_neg_decimal() -> None:
+    lf = pl.LazyFrame({"a": [D("-1.5"), D("0.0"), D("5.0"), None]})
+    result = lf.select(-pl.col("a"))
+    expected = pl.LazyFrame({"a": [D("1.5"), D("0.0"), D("-5.0"), None]})
+    assert_frame_equal(result, expected)
+
+
+def test_neg_duration() -> None:
+    lf = pl.LazyFrame({"a": [timedelta(hours=2), timedelta(days=-2), None]})
+    result = lf.select(-pl.col("a"))
+    expected = pl.LazyFrame({"a": [timedelta(hours=-2), timedelta(days=2), None]})
+    assert_frame_equal(result, expected)
 
 
 def test_neg_overflow() -> None:
