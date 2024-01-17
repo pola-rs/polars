@@ -76,9 +76,8 @@ fn finalize_dataframe(
         // in the `DataFrame`.
         if can_decode {
             let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
-            // let sort_dtypes = sort_by_idx(sort_dtypes, sort_idx);
 
-            let encoded = encoded.binary().unwrap();
+            let encoded = encoded.binary_offset().unwrap();
             assert_eq!(encoded.chunks().len(), 1);
             let arr = encoded.downcast_iter().next().unwrap();
 

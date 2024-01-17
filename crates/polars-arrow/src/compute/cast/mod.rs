@@ -215,6 +215,14 @@ pub fn cast_default(
     cast(array, to_type, Default::default())
 }
 
+pub fn cast_unchecked(
+    array: &dyn Array,
+    to_type: &ArrowDataType,
+) -> PolarsResult<Box<dyn Array>> {
+    cast(array, to_type, CastOptions::unchecked())
+}
+
+
 /// Cast `array` to the provided data type and return a new [`Array`] with
 /// type `to_type`, if possible.
 ///
