@@ -247,7 +247,6 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
 }
 
 pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
-    dbg!(&array);
     // The validities may be masking out `true` bits, making the filter operation
     // based on the values incorrect
     if let Some(validities) = filter.validity() {

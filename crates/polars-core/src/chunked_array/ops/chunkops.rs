@@ -135,9 +135,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // The len: 0 special cases ensure we release memory.
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
         let exec = || {
-            dbg!(&self.chunks);
             let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-            dbg!(&chunks);
             let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
             out.length = len as IdxSize;
             out

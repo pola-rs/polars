@@ -456,7 +456,6 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn lt(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        dbg!(&self, &rhs);
         // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {

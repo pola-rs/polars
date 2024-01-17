@@ -27,7 +27,7 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
     match arr.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let arr: &PrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
-            take_primitive_unchecked::<$T>(arr, idx)
+            take_primitive_unchecked::<$T>(arr, idx).boxed()
         }),
         Boolean => {
             let arr = arr.as_any().downcast_ref().unwrap();
@@ -38,6 +38,13 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
             let arr = arr.as_any().downcast_ref().unwrap();
             Box::new(fixed_size_list::take_unchecked(arr, idx))
         },
+        BinaryView => {
+            take_binview_unchecked(arr.as_any().downcast_ref().unwrap(), idx).boxed()
+        }
+        Utf8View => {
+            let arr: &Utf8ViewArray = arr.as_any().downcast_ref().unwrap();
+            take_binview_unchecked(&arr.to_binview(), idx).to_utf8view_unchecked().boxed()
+        }
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
         _ => {
@@ -51,16 +58,31 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
     }
 }
 
+unsafe fn take_binview_unchecked(arr: &BinaryViewArray, indices: &IdxArr) -> BinaryViewArray {
+    let views = arr.views().clone();
+    // PrimitiveArray<u128> is not supported, so we go via i128
+    let views = std::mem::transmute::<Buffer<u128>, Buffer<i128>>(views);
+    let views = PrimitiveArray::from_data_default(views, arr.validity().cloned());
+    let taken_views = take_primitive_unchecked(&views, indices);
+    let taken_views_values = taken_views.values().clone();
+    let taken_views_values = std::mem::transmute::<Buffer<i128>, Buffer<u128>>(taken_views_values);
+    BinaryViewArray::new_unchecked_unknown_md(
+        arr.data_type().clone(),
+        taken_views_values,
+        arr.data_buffers().clone(),
+        taken_views.validity().cloned()
+    ).maybe_gc()
+}
+
 /// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
 /// # Safety
 /// caller must ensure indices are in bounds
 pub unsafe fn take_primitive_unchecked<T: NativeType>(
     arr: &PrimitiveArray<T>,
     indices: &IdxArr,
-) -> Box<PrimitiveArray<T>> {
+) -> PrimitiveArray<T> {
     let array_values = arr.values().as_slice();
     let index_values = indices.values().as_slice();
-    let validity_values = arr.validity().expect("should have nulls");
 
     // first take the values, these are always needed
     let values: Vec<T> = index_values
@@ -71,6 +93,7 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
         .collect_trusted();
 
     let arr = if arr.null_count() > 0 {
+        let validity_values = arr.validity().unwrap();
         // the validity buffer we will fill with all valid. And we unset the ones that are null
         // in later checks
         // this is in the assumption that most values will be valid.
@@ -96,12 +119,12 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
                 }
             });
         };
-        PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), Some(validity.into()))
+        PrimitiveArray::new_unchecked(arr.data_type().clone(), values.into(), Some(validity.into()))
     } else {
-        PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), indices.validity().cloned())
+        PrimitiveArray::new_unchecked(arr.data_type().clone(), values.into(), indices.validity().cloned())
     };
 
-    Box::new(arr)
+    arr
 }
 
 /// Forked and adapted from arrow-rs
