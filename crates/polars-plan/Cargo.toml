@@ -163,7 +163,6 @@ cov = ["polars-ops/cov"]
 hist = ["polars-ops/hist"]
 replace = ["polars-ops/replace"]
 find_many = ["polars-ops/find_many"]
-negate = ["polars-ops/negate"]
 
 bigidx = ["polars-core/bigidx"]
 
@@ -261,7 +260,6 @@ features = [
   "streaming",
   "true_div",
   "sign",
-  "negate",
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

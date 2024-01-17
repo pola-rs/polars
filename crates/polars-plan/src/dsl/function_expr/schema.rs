@@ -29,7 +29,6 @@ impl FunctionExpr {
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
-            #[cfg(feature = "negate")]
             Negate => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {

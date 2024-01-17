@@ -123,7 +123,6 @@ pub enum FunctionExpr {
     Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
-    #[cfg(feature = "negate")]
     Negate,
     #[cfg(feature = "hist")]
     Hist {
@@ -385,7 +384,6 @@ impl Hash for FunctionExpr {
             Mode => {},
             #[cfg(feature = "abs")]
             Abs => {},
-            #[cfg(feature = "negate")]
             Negate => {},
             NullCount => {},
             #[cfg(feature = "date_offset")]
@@ -562,7 +560,6 @@ impl Display for FunctionExpr {
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "abs")]
             Abs => "abs",
-            #[cfg(feature = "negate")]
             Negate => "negate",
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
@@ -811,7 +808,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Boolean(func) => func.into(),
             #[cfg(feature = "abs")]
             Abs => map!(abs::abs),
-            #[cfg(feature = "negate")]
             Negate => map!(dispatch::negate),
             NullCount => {
                 let f = |s: &mut [Series]| {

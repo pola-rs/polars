@@ -1,6 +1,4 @@
-#[cfg(feature = "negate")]
-use std::ops::Neg;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
 use super::*;
 
@@ -45,7 +43,6 @@ impl Rem for Expr {
     }
 }
 
-#[cfg(feature = "negate")]
 impl Neg for Expr {
     type Output = Expr;
 
