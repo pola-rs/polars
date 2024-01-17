@@ -4650,7 +4650,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Add a column at index 0 that counts the rows.
 
         .. deprecated::
-            Use `meth`:with_row_index` instead.
+            Use `with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
