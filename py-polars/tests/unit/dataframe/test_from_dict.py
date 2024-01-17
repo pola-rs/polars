@@ -196,7 +196,7 @@ def test_from_dict_with_scalars_mixed() -> None:
 def test_from_dict_duration_subseconds() -> None:
     d = {"duration": [timedelta(seconds=1, microseconds=1000)]}
     result = pl.from_dict(d)
-    expected = pl.select(pl.duration(seconds=1, microseconds=1000))
+    expected = pl.select(duration=pl.duration(seconds=1, microseconds=1000))
     assert_frame_equal(result, expected)
 
 
