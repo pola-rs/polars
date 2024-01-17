@@ -214,7 +214,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_all())
 
-    def sort(self, *, descending: bool = False) -> Expr:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the arrays in this column.
 
@@ -222,6 +222,8 @@ class ExprArrayNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -253,7 +255,7 @@ class ExprArrayNameSpace:
         └───────────────┴───────────────┘
 
         """
-        return wrap_expr(self._pyexpr.arr_sort(descending))
+        return wrap_expr(self._pyexpr.arr_sort(descending, nulls_last))
 
     def reverse(self) -> Expr:
         """
