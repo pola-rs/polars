@@ -23,6 +23,8 @@ pub enum ArrayFunction {
     Join,
     #[cfg(feature = "is_in")]
     Contains,
+    #[cfg(feature = "array_count")]
+    CountMatches,
 }
 
 impl ArrayFunction {
@@ -42,6 +44,8 @@ impl ArrayFunction {
             Join => mapper.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
             Contains => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "array_count")]
+            CountMatches => mapper.with_dtype(IDX_DTYPE),
         }
     }
 }
@@ -75,6 +79,8 @@ impl Display for ArrayFunction {
             Join => "join",
             #[cfg(feature = "is_in")]
             Contains => "contains",
+            #[cfg(feature = "array_count")]
+            CountMatches => "count_matches",
         };
         write!(f, "arr.{name}")
     }
@@ -101,6 +107,8 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Join => map_as_slice!(join),
             #[cfg(feature = "is_in")]
             Contains => map_as_slice!(contains),
+            #[cfg(feature = "array_count")]
+            CountMatches => map_as_slice!(count_matches),
         }
     }
 }
@@ -176,4 +184,17 @@ pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
     let array = &s[0];
     let item = &s[1];
     Ok(is_in(item, array)?.with_name(array.name()).into_series())
+}
+
+#[cfg(feature = "array_count")]
+pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let element = &args[1];
+    polars_ensure!(
+        element.len() == 1,
+        ComputeError: "argument expression in `arr.count_matches` must produce exactly one element, got {}",
+        element.len()
+    );
+    let ca = s.array()?;
+    ca.array_count_matches(element.get(0).unwrap())
 }

@@ -280,3 +280,20 @@ def test_array_contains_literal(
     out = df.select(contains=pl.col("array").arr.contains(data)).to_series()
     expected_series = pl.Series("contains", expected)
     assert_series_equal(out, expected_series)
+
+
+@pytest.mark.parametrize(
+    ("arr", "data", "expected", "dtype"),
+    [
+        ([[1, 2], [3, None], None], 1, [1, 0, None], pl.Int64),
+        ([[True, False], [True, None], None], True, [1, 1, None], pl.Boolean),
+        ([["a", "b"], ["c", None], None], "a", [1, 0, None], pl.String),
+        ([[b"a", b"b"], [b"c", None], None], b"a", [1, 0, None], pl.Binary),
+    ],
+)
+def test_array_count_matches(
+    arr: list[list[Any] | None], data: Any, expected: list[Any], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"arr": arr}, schema={"arr": pl.Array(dtype, 2)})
+    out = df.select(count_matches=pl.col("arr").arr.count_matches(data))
+    assert out.to_dict(as_series=False) == {"count_matches": expected}
