@@ -1171,7 +1171,7 @@ fn test_cross_join() -> PolarsResult<()> {
         "b" => [None, Some(12)]
     ]?;
 
-    let out = df1.lazy().cross_join(df2.lazy()).collect()?;
+    let out = df1.lazy().cross_join(df2.lazy(), None).collect()?;
     assert_eq!(out.shape(), (6, 4));
     Ok(())
 }

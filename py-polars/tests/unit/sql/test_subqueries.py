@@ -5,30 +5,18 @@ from polars.testing import assert_frame_equal
 
 
 def test_join_on_subquery() -> None:
-    df1 = pl.DataFrame(
-        {
-            "x": [-1, 0, 1, 2, 3, 4],
-        }
-    )
-
-    df2 = pl.DataFrame(
-        {
-            "y": [0, 1, 2, 3],
-        }
-    )
+    df1 = pl.DataFrame({"x": [-1, 0, 1, 2, 3, 4]})
+    df2 = pl.DataFrame({"y": [0, 1, 2, 3]})
 
     sql = pl.SQLContext(df1=df1, df2=df2)
     res = sql.execute(
         """
-        SELECT
-        *
-        FROM df1
+        SELECT * FROM df1
         INNER JOIN (SELECT * FROM df2) AS df2
         ON df1.x = df2.y
         """,
         eager=True,
     )
-
     df_expected_join = pl.DataFrame({"x": [0, 1, 2, 3]})
     assert_frame_equal(
         left=res,
@@ -37,30 +25,18 @@ def test_join_on_subquery() -> None:
 
 
 def test_from_subquery() -> None:
-    df1 = pl.DataFrame(
-        {
-            "x": [-1, 0, 1, 2, 3, 4],
-        }
-    )
-
-    df2 = pl.DataFrame(
-        {
-            "y": [0, 1, 2, 3],
-        }
-    )
+    df1 = pl.DataFrame({"x": [-1, 0, 1, 2, 3, 4]})
+    df2 = pl.DataFrame({"y": [0, 1, 2, 3]})
 
     sql = pl.SQLContext(df1=df1, df2=df2)
     res = sql.execute(
         """
-        SELECT
-        *
-        FROM (SELECT * FROM df1) AS df1
+        SELECT * FROM (SELECT * FROM df1) AS df1
         INNER JOIN (SELECT * FROM df2) AS df2
         ON df1.x = df2.y
         """,
         eager=True,
     )
-
     df_expected_join = pl.DataFrame({"x": [0, 1, 2, 3]})
     assert_frame_equal(
         left=res,
@@ -75,14 +51,12 @@ def test_in_subquery() -> None:
             "y": [2, 3, 4, 5, 6, 7],
         }
     )
-
     df_other = pl.DataFrame(
         {
             "w": [1, 2, 3, 4, 5, 6],
             "z": [2, 3, 4, 5, 6, 7],
         }
     )
-
     df_chars = pl.DataFrame(
         {
             "one": ["a", "b", "c", "d", "e", "f"],

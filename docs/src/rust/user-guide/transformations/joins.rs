@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df_cross_join = df_colors
         .clone()
         .lazy()
-        .cross_join(df_sizes.clone().lazy())
+        .cross_join(df_sizes.clone().lazy(), None)
         .collect()?;
     println!("{}", &df_cross_join);
     // --8<-- [end:cross]

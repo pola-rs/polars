@@ -85,7 +85,7 @@ fn test_streaming_union_order() -> PolarsResult<()> {
 fn test_streaming_union_join() -> PolarsResult<()> {
     let q = get_csv_glob();
     let q = q.select([col("sugars_g"), col("calories")]);
-    let q = q.clone().cross_join(q);
+    let q = q.clone().cross_join(q, None);
 
     assert_streaming_with_default(q, true, true);
     Ok(())
@@ -166,18 +166,22 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
         "a" => [1 ,2, 3]
     ]?;
     let q = df.lazy();
-    let out = q.clone().cross_join(q).with_streaming(true).collect()?;
+    let out = q
+        .clone()
+        .cross_join(q, None)
+        .with_streaming(true)
+        .collect()?;
     assert_eq!(out.shape(), (9, 2));
 
     let q = get_parquet_file().with_projection_pushdown(false);
     let q1 = q
         .clone()
         .select([col("calories")])
-        .cross_join(q.clone())
+        .cross_join(q.clone(), None)
         .filter(col("calories").gt(col("calories_right")));
     let q2 = q1
         .select([all().name().suffix("_second")])
-        .cross_join(q)
+        .cross_join(q, None)
         .filter(col("calories_right_second").lt(col("calories")))
         .select([
             col("calories"),
@@ -266,7 +270,7 @@ fn test_streaming_slice() -> PolarsResult<()> {
     ]?
     .lazy();
 
-    let q = lf_a.clone().cross_join(lf_a).slice(10, 20);
+    let q = lf_a.clone().cross_join(lf_a, None).slice(10, 20);
     let a = q.with_streaming(true).collect().unwrap();
     assert_eq!(a.shape(), (20, 2));
 
