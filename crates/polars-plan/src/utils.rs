@@ -199,7 +199,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
 pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
-            Expr:: Alias(_, name) => return Ok(name.clone()),
+            Expr::Alias(_, name) => return Ok(name.clone()),
             Expr::Filter { input, .. } => return get_single_leaf(input),
             Expr::Gather { expr, .. } => return get_single_leaf(expr),
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
