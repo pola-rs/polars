@@ -7577,7 +7577,7 @@ class Series:
         return StructNameSpace(self)
 
     @property
-    def plot(self) -> Any:
+    def plot(self) -> hvplot.plotting.core.hvPlotTabularPolars:
         """
         Create a plot namespace.
 
