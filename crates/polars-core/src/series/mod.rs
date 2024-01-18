@@ -189,6 +189,9 @@ impl Series {
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
+        if self.len() <= 1 {
+            return IsSorted::Ascending;
+        }
         let flags = self.get_flags();
         if flags.contains(Settings::SORTED_DSC) {
             IsSorted::Descending
