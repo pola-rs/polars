@@ -9,7 +9,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date, Datetime, String
 from polars.exceptions import NoDataError, ParameterCollisionError
-from polars.io._utils import _process_http_file
+from polars.io._utils import _looks_like_url, _process_file_url
 from polars.io.csv.functions import read_csv
 from polars.utils.various import normalize_filepath
 
@@ -401,8 +401,9 @@ def _read_spreadsheet(
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     if isinstance(source, (str, Path)):
-        if (source := normalize_filepath(source)).startswith("http"):
-            source = _process_http_file(source)
+        source = normalize_filepath(source)
+        if _looks_like_url(source):
+            source = _process_file_url(source)
 
     if engine is None:
         if (src := str(source).lower()).endswith(".ods"):
