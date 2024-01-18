@@ -8,7 +8,7 @@ You can find performance benchmarks (h2oai benchmark) of these tools here: [Pola
 
 Pandas stands as a widely-adopted and comprehensive tool in Python data analysis, renowned for its rich feature set and strong community support. However, due to its single threaded nature, it can struggle with performance and memory usage on medium and large datasets.
 
-Polars, in contrast, is tailored for high-performance multithreaded computing on single nodes, offering significant speed and memory efficiency improvements, especially for medium to large data operations.
+In contrast, Polars is optimised for high-performance multithreaded computing on single nodes, providing significant improvements in speed and memory efficiency, particularly for medium to large data operations. Its more composable and stricter API results in greater expressiveness and fewer schema-related bugs.
 
 ### Dask
 
