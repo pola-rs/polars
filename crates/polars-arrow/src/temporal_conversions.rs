@@ -4,7 +4,7 @@ use chrono::format::{parse, Parsed, StrftimeItems};
 use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 use polars_error::{polars_err, PolarsResult};
 
-use crate::array::{PrimitiveArray, Utf8Array};
+use crate::array::{PrimitiveArray, Utf8Array, Utf8ViewArray};
 use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
 use crate::types::months_days_ns;
@@ -251,7 +251,7 @@ pub fn timestamp_ns_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
 
 /// Converts a timestamp in `time_unit` and `timezone` into [`chrono::DateTime`].
 #[inline]
-pub fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> chrono::NaiveDateTime {
+pub(crate) fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> chrono::NaiveDateTime {
     match time_unit {
         TimeUnit::Second => timestamp_s_to_datetime(timestamp),
         TimeUnit::Millisecond => timestamp_ms_to_datetime(timestamp),
@@ -369,8 +369,8 @@ pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> 
         .ok()
 }
 
-fn utf8_to_timestamp_impl<O: Offset, T: chrono::TimeZone>(
-    array: &Utf8Array<O>,
+fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
+    array: &Utf8ViewArray,
     fmt: &str,
     time_zone: String,
     tz: T,
@@ -384,10 +384,11 @@ fn utf8_to_timestamp_impl<O: Offset, T: chrono::TimeZone>(
         .to(ArrowDataType::Timestamp(time_unit, Some(time_zone)))
 }
 
+
 /// Parses `value` to a [`chrono_tz::Tz`] with the Arrow's definition of timestamp with a timezone.
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
-pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
+pub(crate) fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
     timezone
         .parse::<chrono_tz::Tz>()
         .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))
@@ -395,19 +396,19 @@ pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
 
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
-fn chrono_tz_utf_to_timestamp<O: Offset>(
-    array: &Utf8Array<O>,
+fn chrono_tz_utf_to_timestamp(
+    array: &Utf8ViewArray,
     fmt: &str,
     time_zone: String,
     time_unit: TimeUnit,
 ) -> PolarsResult<PrimitiveArray<i64>> {
     let tz = parse_offset_tz(&time_zone)?;
-    Ok(utf8_to_timestamp_impl(array, fmt, time_zone, tz, time_unit))
+    Ok(utf8view_to_timestamp_impl(array, fmt, time_zone, tz, time_unit))
 }
 
 #[cfg(not(feature = "chrono-tz"))]
-fn chrono_tz_utf_to_timestamp<O: Offset>(
-    _: &Utf8Array<O>,
+fn chrono_tz_utf_to_timestamp(
+    _: &Utf8ViewArray,
     _: &str,
     timezone: String,
     _: TimeUnit,
@@ -423,8 +424,8 @@ fn chrono_tz_utf_to_timestamp<O: Offset>(
 /// The feature `"chrono-tz"` enables IANA and zoneinfo formats for `timezone`.
 /// # Error
 /// This function errors iff `timezone` is not parsable to an offset.
-pub fn utf8_to_timestamp<O: Offset>(
-    array: &Utf8Array<O>,
+pub(crate) fn utf8view_to_timestamp(
+    array: &Utf8ViewArray,
     fmt: &str,
     time_zone: String,
     time_unit: TimeUnit,
@@ -432,7 +433,7 @@ pub fn utf8_to_timestamp<O: Offset>(
     let tz = parse_offset(time_zone.as_str());
 
     if let Ok(tz) = tz {
-        Ok(utf8_to_timestamp_impl(array, fmt, time_zone, tz, time_unit))
+        Ok(utf8view_to_timestamp_impl(array, fmt, time_zone, tz, time_unit))
     } else {
         chrono_tz_utf_to_timestamp(array, fmt, time_zone, time_unit)
     }
@@ -442,8 +443,8 @@ pub fn utf8_to_timestamp<O: Offset>(
 /// [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, None)`.
 /// Timezones are ignored.
 /// Null elements remain null; non-parsable elements are set to null.
-pub fn utf8_to_naive_timestamp<O: Offset>(
-    array: &Utf8Array<O>,
+pub(crate) fn utf8view_to_naive_timestamp(
+    array: &Utf8ViewArray,
     fmt: &str,
     time_unit: TimeUnit,
 ) -> PrimitiveArray<i64> {
@@ -471,7 +472,7 @@ fn get_days_between_months(year: i32, month: u32, months: i32) -> i64 {
 
 /// Adds an `interval` to a `timestamp` in `time_unit` units without timezone.
 #[inline]
-pub fn add_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_days_ns) -> i64 {
+pub(crate) fn add_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_days_ns) -> i64 {
     // convert seconds to a DateTime of a given offset.
     let datetime = match time_unit {
         TimeUnit::Second => timestamp_s_to_datetime(timestamp),
@@ -499,7 +500,7 @@ pub fn add_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_
 
 /// Adds an `interval` to a `timestamp` in `time_unit` units and timezone `timezone`.
 #[inline]
-pub fn add_interval<T: chrono::TimeZone>(
+pub(crate) fn add_interval<T: chrono::TimeZone>(
     timestamp: i64,
     time_unit: TimeUnit,
     interval: months_days_ns,

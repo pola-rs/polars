@@ -312,13 +312,13 @@ impl DataType {
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
                 Box::new(arrow::datatypes::Field::new(
                     "item",
-                    dt.try_to_arrow(true)?,
+                    dt.try_to_arrow(pl_flavor)?,
                     true,
                 )),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                arrow::datatypes::Field::new("item", dt.to_arrow(true), true),
+                arrow::datatypes::Field::new("item", dt.to_arrow(pl_flavor), true),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
@@ -333,7 +333,7 @@ impl DataType {
             )),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
-                let fields = fields.iter().map(|fld| fld.to_arrow(true)).collect();
+                let fields = fields.iter().map(|fld| fld.to_arrow(pl_flavor)).collect();
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),

@@ -21,9 +21,11 @@ pub use primitive_to::*;
 pub use utf8_to::*;
 
 use crate::array::*;
+use crate::compute::cast::binview_to::{utf8view_to_date32_dyn, utf8view_to_naive_timestamp_dyn};
 use crate::datatypes::*;
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
+use crate::temporal_conversions::utf8view_to_timestamp;
 
 /// options defining how Cast kernels behave
 #[derive(Clone, Copy, Debug, Default)]
@@ -388,6 +390,13 @@ pub fn cast(
                 | Float32
                 | Float64
                 | Decimal(_, _) => cast(&arr.to_binview(), to_type, options),
+                Timestamp(time_unit, None) => {
+                    utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
+                },
+                Timestamp(time_unit, Some(time_zone)) => {
+                    utf8view_to_timestamp(array.as_any().downcast_ref().unwrap(),RFC3339, time_zone.clone(), time_unit.to_owned()).map(|arr| arr.boxed())
+                },
+                Date32 => utf8view_to_date32_dyn(array),
                 _ => polars_bail!(InvalidOperation:
                     "casting from {from_type:?} to {to_type:?} not supported",
                 ),

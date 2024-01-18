@@ -1,4 +1,4 @@
-use arrow::compute::cast::cast_default;
+use arrow::compute::cast::{cast_default, cast_unchecked};
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",
@@ -23,7 +23,9 @@ impl Series {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx),
+            DataType::Struct(_) => {
+                self.struct_().unwrap().to_arrow(chunk_idx, pl_flavor)
+            },
             // special list branch to
             // make sure that we recursively apply all logical types.
             DataType::List(inner) => {
@@ -45,10 +47,10 @@ impl Series {
                         .unwrap()
                     };
 
-                    s.to_arrow(0, true)
+                    s.to_arrow(0, pl_flavor)
                 };
 
-                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(true));
+                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(pl_flavor));
                 let arr = ListArray::<i64>::new(
                     data_type,
                     arr.offsets().clone(),
@@ -78,19 +80,19 @@ impl Series {
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
-                cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow(true)).unwrap()
+                cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow(pl_flavor)).unwrap()
             },
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(true)).unwrap()
+                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(pl_flavor)).unwrap()
             },
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(true)).unwrap()
+                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(pl_flavor)).unwrap()
             },
             #[cfg(feature = "dtype-time")]
             DataType::Time => {
-                cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow(true)).unwrap()
+                cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow(pl_flavor)).unwrap()
             },
             #[cfg(feature = "object")]
             DataType::Object(_, None) => {
@@ -113,7 +115,7 @@ impl Series {
                     self.array_ref(chunk_idx).clone()
                 } else {
                     let arr = self.array_ref(chunk_idx);
-                    cast_default(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
+                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
                 }
             },
             DataType::Binary => {
@@ -121,7 +123,7 @@ impl Series {
                     self.array_ref(chunk_idx).clone()
                 } else {
                     let arr = self.array_ref(chunk_idx);
-                    cast_default(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
+                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
                 }
             },
             _ => self.array_ref(chunk_idx).clone(),

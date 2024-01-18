@@ -1,13 +1,17 @@
+use chrono::Datelike;
 use polars_error::PolarsResult;
 
 use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptions;
-use crate::datatypes::ArrowDataType;
+use crate::datatypes::{ArrowDataType, TimeUnit};
 #[cfg(feature = "dtype-decimal")]
 use crate::legacy::compute::decimal::deserialize_decimal;
 use crate::offset::Offset;
+use crate::temporal_conversions::EPOCH_DAYS_FROM_CE;
 use crate::types::NativeType;
+
+pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
 pub(super) fn view_to_binary<O: Offset>(array: &BinaryViewArray) -> BinaryArray<O> {
     let len: usize = Array::len(array);
@@ -73,4 +77,36 @@ pub fn binview_to_decimal(
         .iter()
         .map(|val| val.and_then(|val| deserialize_decimal(val, precision, scale as u8)))
         .collect()
+}
+
+pub(super) fn utf8view_to_naive_timestamp_dyn(
+    from: &dyn Array,
+    time_unit: TimeUnit,
+) -> PolarsResult<Box<dyn Array>> {
+    let from = from.as_any().downcast_ref().unwrap();
+    Ok(Box::new(utf8view_to_naive_timestamp(from, time_unit)))
+}
+
+/// [`crate::temporal_conversions::utf8view_to_timestamp`] applied for RFC3339 formatting
+pub fn utf8view_to_naive_timestamp(
+    from: &Utf8ViewArray,
+    time_unit: TimeUnit,
+) -> PrimitiveArray<i64> {
+    crate::temporal_conversions::utf8view_to_naive_timestamp(from, RFC3339, time_unit)
+}
+
+pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {
+    let iter = from.iter().map(|x| {
+        x.and_then(|x| {
+            x.parse::<chrono::NaiveDate>()
+                .ok()
+                .map(|x| x.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+        })
+    });
+    PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(ArrowDataType::Date32)
+}
+
+pub(super) fn utf8view_to_date32_dyn(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
+    let from = from.as_any().downcast_ref().unwrap();
+    Ok(Box::new(utf8view_to_date32(from)))
 }
