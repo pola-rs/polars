@@ -959,7 +959,7 @@ class Series:
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
             other = self.to_frame().select_seq(other).to_series()
         elif other is None:
-            other = pl.Series("", [None], dtype=self.dtype)
+            other = pl.Series("", [None])
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
