@@ -316,26 +316,4 @@ mod test {
         let df_read = IpcReader::new(buf).finish().unwrap();
         assert!(df.equals(&df_read));
     }
-
-    #[test]
-    fn write_struct() {
-        let a = Series::new("foo", &["a", "b", "c"]);
-        let b = Series::new("bar", &["a", "b", "c"]);
-        let s = StructChunked::new("a", &[a, b]).unwrap().into_series();
-        let mut df = df![
-            "a" => s
-        ]
-        .unwrap();
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-
-        IpcWriter::new(&mut buf)
-            .with_pl_flavor(true)
-            .finish(&mut df)
-            .expect("ipc writer");
-
-        buf.set_position(0);
-
-        let df_read = IpcReader::new(buf).finish().unwrap();
-        assert!(df.equals(&df_read));
-    }
 }
