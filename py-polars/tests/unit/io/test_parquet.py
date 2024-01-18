@@ -679,3 +679,22 @@ def test_read_parquet_binary_bytes() -> None:
 
     out = pl.read_parquet(bytes)
     assert_frame_equal(out, df)
+
+
+def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
+    """'+00:00' timezones becomes 'UTC' timezone."""
+    utc_path = tmp_path / "utc.parquet"
+    zero_path = tmp_path / "00_00.parquet"
+    for timezone, path in [("+00:00", zero_path), ("UTC", utc_path)]:
+        pq.write_table(
+            pa.table(
+                {"c1": [1234567890123] * 10},
+                schema=pa.schema([pa.field("c1", pa.timestamp("ms", tz=timezone))]),
+            ),
+            path,
+        )
+
+    df = pl.scan_parquet([utc_path, zero_path]).head(5).collect()
+    assert df.schema["c1"].time_zone == "UTC"
+    df = pl.scan_parquet([zero_path, utc_path]).head(5).collect()
+    assert df.schema["c1"].time_zone == "UTC"

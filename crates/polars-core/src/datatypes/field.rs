@@ -131,7 +131,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::FixedSizeList(f, size) => DataType::Array(Box::new(f.data_type().into()), *size),
             ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
+            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), DataType::canonical_timezone(tz)),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::String,

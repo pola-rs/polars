@@ -204,11 +204,8 @@ impl Series {
             },
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
-                let mut tz = tz.clone();
+                let mut tz = DataType::canonical_timezone(tz);
                 match tz.as_deref() {
-                    Some("") => tz = None,
-                    #[cfg(feature = "timezones")]
-                    Some("+00:00") | Some("00:00") => tz = Some("UTC".to_string()),
                     #[cfg(feature = "timezones")]
                     Some(tz_str) => match validate_time_zone(tz_str) {
                         Ok(_) => (),
