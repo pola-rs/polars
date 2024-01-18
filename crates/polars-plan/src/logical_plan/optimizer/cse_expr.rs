@@ -317,7 +317,7 @@ impl ExprIdentifierVisitor<'_> {
             // TODO! Add a typed null
             AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
             AExpr::Column(_) | AExpr::Literal(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
-            AExpr::Count => {
+            AExpr::Len => {
                 if self.is_group_by {
                     REFUSE_NO_MEMBER
                 } else {

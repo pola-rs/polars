@@ -1807,7 +1807,7 @@ fn test_partitioned_gb_count() -> PolarsResult<()> {
     .group_by([col("col")])
     .agg([
         // we make sure to alias with a different name
-        count().alias("counted"),
+        len().alias("counted"),
         col("col").count().alias("count2"),
     ])
     .collect()?;

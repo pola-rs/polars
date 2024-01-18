@@ -198,11 +198,11 @@ def int_range(
             2
     ]
 
-    Generate an index column using `int_range` in conjunction with :func:`count`.
+    Generate an index column by using `int_range` in conjunction with :func:`len`.
 
     >>> df = pl.DataFrame({"a": [1, 3, 5], "b": [2, 4, 6]})
     >>> df.select(
-    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+    ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
     ...     pl.all(),
     ... )
     shape: (3, 3)

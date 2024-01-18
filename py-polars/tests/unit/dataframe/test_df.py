@@ -1774,9 +1774,9 @@ def test_extension() -> None:
 def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
-    result = df.group_by("x", maintain_order=True).count()
+    result = df.group_by("x", maintain_order=True).len()
     expected = pl.DataFrame(
-        {"x": ["b", "a"], "count": [2, 1]}, schema_overrides={"count": pl.UInt32}
+        {"x": ["b", "a"], "len": [2, 1]}, schema_overrides={"len": pl.UInt32}
     )
     assert_frame_equal(result, expected)
 
@@ -2409,7 +2409,7 @@ def test_group_by_slice_expression_args() -> None:
 
     out = (
         df.group_by("groups", maintain_order=True)
-        .agg([pl.col("vals").slice(pl.count() * 0.1, (pl.count() // 5))])
+        .agg([pl.col("vals").slice(pl.len() * 0.1, (pl.len() // 5))])
         .explode("vals")
     )
 

@@ -53,7 +53,7 @@ impl UpperExp for AExpr {
             AExpr::Window { .. } => "window",
             AExpr::Wildcard => "*",
             AExpr::Slice { .. } => "slice",
-            AExpr::Count => "count",
+            AExpr::Len => "len",
             AExpr::Nth(v) => return write!(f, "nth({})", v),
         };
 

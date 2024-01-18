@@ -153,7 +153,7 @@ impl AexprNode {
                 (Gather { .. }, Gather { .. })
                 | (Filter { .. }, Filter { .. })
                 | (Ternary { .. }, Ternary { .. })
-                | (Count, Count)
+                | (Len, Len)
                 | (Slice { .. }, Slice { .. })
                 | (Explode(_), Explode(_)) => true,
                 (SortBy { descending: l, .. }, SortBy { descending: r, .. }) => l == r,

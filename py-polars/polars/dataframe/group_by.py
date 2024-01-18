@@ -305,7 +305,7 @@ class GroupBy:
         It is better to implement this with an expression:
 
         >>> df.filter(
-        ...     pl.int_range(0, pl.count()).shuffle().over("color") < 2
+        ...     pl.int_range(pl.len()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
         """
         by: list[str]
@@ -452,6 +452,32 @@ class GroupBy:
         """
         return self.agg(F.all())
 
+    def len(self) -> DataFrame:
+        """
+        Return the number of rows in each group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["apple", "apple", "orange"],
+        ...         "b": [1, None, 2],
+        ...     }
+        ... )
+        >>> df.group_by("a").len()  # doctest: +SKIP
+        shape: (2, 2)
+        ┌────────┬─────┐
+        │ a      ┆ len │
+        │ ---    ┆ --- │
+        │ str    ┆ u32 │
+        ╞════════╪═════╡
+        │ apple  ┆ 2   │
+        │ orange ┆ 1   │
+        └────────┴─────┘
+        """
+        return self.agg(F.len())
+
+    @deprecate_renamed_function("len", version="0.20.5")
     def count(self) -> DataFrame:
         """
         Return the number of rows in each group.
@@ -477,7 +503,7 @@ class GroupBy:
         │ orange ┆ 1     │
         └────────┴───────┘
         """
-        return self.agg(F.count())
+        return self.agg(F.len().alias("count"))
 
     def first(self) -> DataFrame:
         """

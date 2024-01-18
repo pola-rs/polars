@@ -102,12 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:dataframe2]
 
     // --8<-- [start:group_by]
-    let out = df2
-        .clone()
-        .lazy()
-        .group_by(["y"])
-        .agg([count()])
-        .collect()?;
+    let out = df2.clone().lazy().group_by(["y"]).agg([len()]).collect()?;
     println!("{}", out);
     // --8<-- [end:group_by]
 

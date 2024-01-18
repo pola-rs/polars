@@ -14,6 +14,11 @@ pub fn str_concat(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> St
         return StringChunked::full_null(ca.name(), 1);
     }
 
+    // Fast path for all nulls.
+    if ignore_nulls && ca.null_count() == ca.len() {
+        return StringChunked::new(ca.name(), &[""]);
+    }
+
     if ca.len() == 1 {
         return ca.clone();
     }

@@ -1026,7 +1026,7 @@ impl PyLazyFrame {
 
     fn drop(&self, columns: Vec<String>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_columns(columns).into()
+        ldf.drop(columns).into()
     }
 
     fn cast(&self, dtypes: HashMap<&str, Wrap<DataType>>, strict: bool) -> Self {

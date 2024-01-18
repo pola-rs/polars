@@ -407,7 +407,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn drop_columns(self, to_drop: PlHashSet<String>) -> Self {
+    pub fn drop(self, to_drop: PlHashSet<String>) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
 
         let mut output_schema = Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
