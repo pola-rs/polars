@@ -1933,7 +1933,10 @@ class Series:
         │ max        ┆ cc    │
         └────────────┴───────┘
         """
-        stats = self.to_frame().describe(percentiles=percentiles)
+        stats = self.to_frame().describe(
+            percentiles=percentiles,
+            interpolation=interpolation,
+        )
         stats.columns = ["statistic", "value"]
         return stats.filter(F.col("value").is_not_null())
 

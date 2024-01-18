@@ -75,17 +75,18 @@ def test_series_describe_boolean() -> None:
 
 
 def test_series_describe_date() -> None:
-    s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-    result = s.describe()
+    s = pl.Series([date(1999, 12, 31), date(2011, 3, 11), date(2021, 1, 18)])
+    result = s.describe(interpolation="linear")
 
     stats = {
         "count": "3",
         "null_count": "0",
-        "min": "2021-01-01",
-        "25%": "2021-01-02",
-        "50%": "2021-01-02",
-        "75%": "2021-01-03",
-        "max": "2021-01-03",
+        "mean": "2010-09-29",
+        "min": "1999-12-31",
+        "25%": "2005-08-05",
+        "50%": "2011-03-11",
+        "75%": "2016-02-13",
+        "max": "2021-01-18",
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
     assert_frame_equal(expected, result)
