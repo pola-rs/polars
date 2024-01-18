@@ -33,8 +33,8 @@ pub fn negate(s: &Series) -> PolarsResult<Series> {
         Duration(_) => {
             let physical = s.to_physical_repr();
             let ca = physical.i64().unwrap();
-            let s = negate_numeric(ca).into_series();
-            s.cast(s.dtype())?
+            let out = negate_numeric(ca).into_series();
+            out.cast(s.dtype())?
         },
         dt => polars_bail!(opq = neg, dt),
     };
