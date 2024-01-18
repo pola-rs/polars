@@ -27,7 +27,6 @@ def test_neg_method() -> None:
     assert_frame_equal(result_op, result_method)
 
 
-@pytest.mark.skip(reason="Decimals not supported yet")
 def test_neg_decimal() -> None:
     lf = pl.LazyFrame({"a": [D("-1.5"), D("0.0"), D("5.0"), None]})
     result = lf.select(-pl.col("a"))
