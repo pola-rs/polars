@@ -212,7 +212,7 @@ impl<'a> CoreReader<'a> {
             4096,
         );
 
-        let projection = self.get_projection();
+        let projection = self.get_projection()?;
 
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]

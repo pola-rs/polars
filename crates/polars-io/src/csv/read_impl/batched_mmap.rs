@@ -129,7 +129,7 @@ impl<'a> CoreReader<'a> {
             eol_char: self.eol_char,
         };
 
-        let projection = self.get_projection();
+        let projection = self.get_projection()?;
 
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]

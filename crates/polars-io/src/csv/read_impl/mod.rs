@@ -436,16 +436,19 @@ impl<'a> CoreReader<'a> {
             remaining_bytes,
         ))
     }
-    fn get_projection(&mut self) -> Vec<usize> {
+    fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
         // we also need to sort the projection to have predictable output.
         // the `parse_lines` function expects this.
         self.projection
             .take()
             .map(|mut v| {
                 v.sort_unstable();
-                v
+                if let Some(idx) = v.last() {
+                    polars_ensure!(*idx < self.schema.len(), OutOfBounds: "projection index: {} is out of bounds for csv schema with length: {}", idx, self.schema.len())
+                }
+                Ok(v)
             })
-            .unwrap_or_else(|| (0..self.schema.len()).collect())
+            .unwrap_or_else(|| Ok((0..self.schema.len()).collect()))
     }
 
     fn parse_csv(
@@ -457,7 +460,7 @@ impl<'a> CoreReader<'a> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
-        let projection = self.get_projection();
+        let projection = self.get_projection()?;
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {

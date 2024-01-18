@@ -1194,8 +1194,8 @@ mod test {
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
             (ArrowDataType::Utf8, DataType::String),
-            (ArrowDataType::LargeBinary, DataType::BinaryOffset),
-            (ArrowDataType::Binary, DataType::BinaryOffset),
+            (ArrowDataType::LargeBinary, DataType::Binary),
+            (ArrowDataType::Binary, DataType::Binary),
             (
                 ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
                 DataType::Time,
