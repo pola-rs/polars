@@ -108,6 +108,12 @@ pub fn qcut(
     let s = s.cast(&DataType::Float64)?;
     let s2 = s.sort(false);
     let ca = s2.f64()?;
+    
+    if ca.null_count() == ca.len() {
+        // If we only have nulls we don't have any breakpoints.
+        return cut(&s, vec![], labels, left_closed, include_breaks);
+    }
+
     let f = |&p| {
         ca.quantile(p, QuantileInterpolOptions::Linear)
             .unwrap()
