@@ -302,13 +302,11 @@ pub fn allocate_rows_buf(
 
 #[cfg(test)]
 mod test {
-    use arrow::array::{Int32Array};
+    use arrow::array::Int32Array;
 
     use super::*;
     use crate::decode::decode_rows_from_binary;
-    use crate::variable::{
-        decode_binview, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL,
-    };
+    use crate::variable::{decode_binview, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
 
     #[test]
     fn test_fixed_and_variable_encode() {
