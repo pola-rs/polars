@@ -426,7 +426,7 @@ impl PyExpr {
     fn gather_every(&self, n: usize, offset: usize) -> Self {
         self.inner
             .clone()
-            .map(
+            .apply(
                 move |s: Series| {
                     polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
                     Ok(Some(s.gather_every(n, offset)))
