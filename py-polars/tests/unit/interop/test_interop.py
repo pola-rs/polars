@@ -734,6 +734,7 @@ def test_from_fixed_size_binary_list() -> None:
     arrow_array = pa.array(val, type=pa.list_(pa.binary(24)))
     s = cast(pl.Series, pl.from_arrow(arrow_array))
     assert s.dtype == pl.List(pl.Binary)
+    print(s)
     assert s.to_list() == val
 
 

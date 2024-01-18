@@ -143,7 +143,6 @@ impl Series {
                 Ok(StringChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::BinaryView => {
-                let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::Binary | ArrowDataType::LargeBinary => {
@@ -504,6 +503,10 @@ unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataTy
             let chunks = cast_chunks(&arrays, &DataType::String, false).unwrap();
             (chunks, DataType::String)
         },
+        ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::FixedSizeBinary(_) => {
+            let chunks = cast_chunks(&arrays, &DataType::Binary, false).unwrap();
+            (chunks, DataType::Binary)
+        },
         #[allow(unused_variables)]
         dt @ ArrowDataType::Dictionary(_, _, _) => {
             feature_gated!("dtype-categorical", {
@@ -552,12 +555,6 @@ unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataTy
                     .collect();
                 (arrays, DataType::Array(Box::new(dtype), *size))
             })
-        },
-        ArrowDataType::FixedSizeBinary(_) | ArrowDataType::Binary => {
-            let out = convert(&arrays, |arr| {
-                cast(arr, &ArrowDataType::LargeBinary).unwrap()
-            });
-            to_physical_and_dtype(out)
         },
         ArrowDataType::LargeList(_) => {
             let values = arrays

@@ -177,6 +177,13 @@ pub fn fixed_size_binary_binary<O: Offset>(
     )
 }
 
+pub fn fixed_size_binary_to_binview(
+    from: &FixedSizeBinaryArray,
+) -> BinaryViewArray {
+    let mutable = MutableBinaryViewArray::from_values_iter(from.values_iter());
+    mutable.freeze().with_validity(from.validity().cloned())
+}
+
 /// Conversion of binary
 pub fn binary_to_list<O: Offset>(
     from: &BinaryArray<O>,
