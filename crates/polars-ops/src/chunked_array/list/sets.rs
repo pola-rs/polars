@@ -1,10 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
-use arrow::array::{
-    BinaryArray, ListArray, MutableArray, MutableBinaryArray, MutablePrimitiveArray,
-    PrimitiveArray, Utf8Array,
-};
+use arrow::array::{Array, BinaryArray, BinaryViewArray, ListArray, MutableArray, MutableBinaryArray, MutablePlBinary, MutablePrimitiveArray, PrimitiveArray, Utf8Array, Utf8ViewArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::offset::OffsetsBuffer;
@@ -29,7 +26,7 @@ where
     }
 }
 
-impl<'a> MaterializeValues<Option<&'a [u8]>> for MutableBinaryArray<i64> {
+impl<'a> MaterializeValues<Option<&'a [u8]>> for MutablePlBinary {
     fn extend_buf<I: Iterator<Item = Option<&'a [u8]>>>(&mut self, values: I) -> usize {
         self.extend(values);
         self.len()
@@ -231,8 +228,8 @@ where
 }
 
 fn binary(
-    a: &BinaryArray<i64>,
-    b: &BinaryArray<i64>,
+    a: &BinaryViewArray,
+    b: &BinaryViewArray,
     offsets_a: &[i64],
     offsets_b: &[i64],
     set_op: SetOperation,
@@ -244,7 +241,7 @@ fn binary(
     let mut set = Default::default();
     let mut set2: PlIndexSet<Option<&[u8]>> = Default::default();
 
-    let mut values_out = MutableBinaryArray::with_capacity(std::cmp::max(
+    let mut values_out = MutablePlBinary::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
         *offsets_b.last().unwrap(),
     ) as usize);
@@ -315,17 +312,10 @@ fn binary(
         offsets.push(offset as i64);
     }
     let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
-    let values: BinaryArray<i64> = values_out.into();
+    let values = values_out.freeze();
 
     if as_utf8 {
-        let values = unsafe {
-            Utf8Array::<i64>::new_unchecked(
-                ArrowDataType::LargeUtf8,
-                values.offsets().clone(),
-                values.values().clone(),
-                values.validity().cloned(),
-            )
-        };
+        let values = unsafe { values.to_utf8view_unchecked() };
         let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
         Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
     } else {
@@ -359,22 +349,20 @@ fn array_set_operation(
     let validity = combine_validities_and(a.validity(), b.validity());
 
     match dtype {
-        ArrowDataType::LargeUtf8 => {
-            let a = values_a.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            let b = values_b.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+        ArrowDataType::Utf8View => {
+            let a = values_a.as_any().downcast_ref::<Utf8ViewArray>().unwrap().to_binview();
+            let b = values_b.as_any().downcast_ref::<Utf8ViewArray>().unwrap().to_binview();
 
-            let a = utf8_to_binary(a);
-            let b = utf8_to_binary(b);
             binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
         },
         ArrowDataType::LargeBinary => {
             let a = values_a
                 .as_any()
-                .downcast_ref::<BinaryArray<i64>>()
+                .downcast_ref::<BinaryViewArray>()
                 .unwrap();
             let b = values_b
                 .as_any()
-                .downcast_ref::<BinaryArray<i64>>()
+                .downcast_ref::<BinaryViewArray>()
                 .unwrap();
             binary(a, b, offsets_a, offsets_b, set_op, validity, false)
         },
