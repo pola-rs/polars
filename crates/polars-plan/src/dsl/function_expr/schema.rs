@@ -277,6 +277,16 @@ impl FunctionExpr {
             EwmVar { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "replace")]
             Replace { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
+            FillNullWithStrategy(_) => mapper.with_same_dtype(),
+            GatherEvery { .. } => mapper.with_same_dtype(),
+            Reinterpret(signed) => {
+                let dt = if *signed {
+                    DataType::Int64
+                } else {
+                    DataType::UInt64
+                };
+                mapper.with_dtype(dt)
+            },
         }
     }
 }

@@ -10,7 +10,6 @@ use pyo3::types::PyBytes;
 use crate::conversion::{parse_fill_null_strategy, Wrap};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
-use crate::utils::reinterpret;
 use crate::PyExpr;
 
 #[pymethods]
@@ -356,16 +355,8 @@ impl PyExpr {
     }
 
     fn fill_null_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
-        let strat = parse_fill_null_strategy(strategy, limit)?;
-        Ok(self
-            .inner
-            .clone()
-            .apply(
-                move |s| s.fill_null(strat).map(Some),
-                GetOutput::same_type(),
-            )
-            .with_fmt("fill_null_with_strategy")
-            .into())
+        let strategy = parse_fill_null_strategy(strategy, limit)?;
+        Ok(self.inner.clone().fill_null_with_strategy(strategy).into())
     }
 
     fn fill_nan(&self, expr: Self) -> Self {
@@ -424,17 +415,7 @@ impl PyExpr {
     }
 
     fn gather_every(&self, n: usize, offset: usize) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s: Series| {
-                    polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
-                    Ok(Some(s.gather_every(n, offset)))
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("gather_every")
-            .into()
+        self.inner.clone().gather_every(n, offset).into()
     }
     fn tail(&self, n: usize) -> Self {
         self.inner.clone().tail(Some(n)).into()
@@ -689,16 +670,7 @@ impl PyExpr {
     }
 
     fn reinterpret(&self, signed: bool) -> Self {
-        let function = move |s: Series| reinterpret(&s, signed).map(Some);
-        let dt = if signed {
-            DataType::Int64
-        } else {
-            DataType::UInt64
-        };
-        self.inner
-            .clone()
-            .map(function, GetOutput::from_type(dt))
-            .into()
+        self.inner.clone().reinterpret(signed).into()
     }
     fn mode(&self) -> Self {
         self.inner.clone().mode().into()

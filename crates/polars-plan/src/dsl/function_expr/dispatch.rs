@@ -135,3 +135,19 @@ pub(super) fn replace(s: &[Series], return_dtype: Option<DataType>) -> PolarsRes
     let default = if let Some(s) = s.get(3) { s } else { &s[0] };
     polars_ops::series::replace(&s[0], &s[1], &s[2], default, return_dtype)
 }
+
+pub(super) fn fill_null_with_strategy(
+    s: &Series,
+    strategy: FillNullStrategy,
+) -> PolarsResult<Series> {
+    s.fill_null(strategy)
+}
+
+pub(super) fn gather_every(s: &Series, n: usize, offset: usize) -> PolarsResult<Series> {
+    polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n should be positive");
+    Ok(s.gather_every(n, offset))
+}
+
+pub(super) fn reinterpret(s: &Series, signed: bool) -> PolarsResult<Series> {
+    polars_ops::series::reinterpret(&s, signed)
+}

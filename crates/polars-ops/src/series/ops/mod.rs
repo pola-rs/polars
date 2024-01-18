@@ -38,6 +38,7 @@ mod moment;
 mod pct_change;
 #[cfg(feature = "rank")]
 mod rank;
+mod reinterpret;
 #[cfg(feature = "replace")]
 mod replace;
 #[cfg(feature = "rle")]
@@ -95,6 +96,7 @@ pub use pct_change::*;
 use polars_core::prelude::*;
 #[cfg(feature = "rank")]
 pub use rank::*;
+pub use reinterpret::*;
 #[cfg(feature = "replace")]
 pub use replace::*;
 #[cfg(feature = "rle")]
