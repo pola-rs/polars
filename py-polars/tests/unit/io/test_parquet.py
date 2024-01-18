@@ -685,11 +685,11 @@ def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
     """'+00:00' timezones becomes 'UTC' timezone."""
     utc_path = tmp_path / "utc.parquet"
     zero_path = tmp_path / "00_00.parquet"
-    for timezone, path in [("+00:00", zero_path), ("UTC", utc_path)]:
+    for tz, path in [("+00:00", zero_path), ("UTC", utc_path)]:
         pq.write_table(
             pa.table(
                 {"c1": [1234567890123] * 10},
-                schema=pa.schema([pa.field("c1", pa.timestamp("ms", tz=timezone))]),
+                schema=pa.schema([pa.field("c1", pa.timestamp("ms", tz=tz))]),
             ),
             path,
         )
