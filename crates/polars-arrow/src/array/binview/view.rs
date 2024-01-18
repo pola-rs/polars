@@ -2,6 +2,7 @@ use polars_error::*;
 
 use crate::buffer::Buffer;
 
+#[derive(Debug)]
 pub struct View {
     /// The length of the string/bytes.
     pub length: u32,
@@ -18,7 +19,7 @@ impl From<u128> for View {
     fn from(value: u128) -> Self {
         Self {
             length: value as u32,
-            prefix: (value >> 64) as u32,
+            prefix: (value >> 32) as u32,
             buffer_idx: (value >> 64) as u32,
             offset: (value >> 96) as u32,
         }

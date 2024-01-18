@@ -1,3 +1,4 @@
+use std::arch::x86_64::_mm256_cvtepu32_epi64;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -16,10 +17,9 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     validity: Option<MutableBitmap>,
     views: Vec<u128>,
     buffers: Vec<Buffer<u8>>,
+    buffers_offsets: Vec<u32>,
     total_bytes_len: usize,
     total_buffer_len: usize,
-    // This will be used to determine if the buffers should be added.
-    processed_index: Vec<bool>,
 }
 
 impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
@@ -39,22 +39,29 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             use_validity = true;
         };
 
-        let n_buffers = arrays
+        let mut cum_sum = 0;
+        let cum_offset = arrays
             .iter()
-            .map(|binview| binview.data_buffers().len())
-            .sum::<usize>();
+            .map(|binview| {
+                let mut out = cum_sum;
+                cum_sum += binview.data_buffers().len() as u32;
+                out
+            }).collect::<Vec<_>>();
 
-        let n_arrays = arrays.len();
+        let mut buffers = arrays.iter().map(|array| {
+            array.data_buffers().as_ref()
+        }).flatten().cloned().collect::<Vec<_>>();
+        let total_buffer_len = arrays.iter().map(|arr| arr.data_buffers().len()).sum::<usize>();
 
         Self {
             arrays,
             data_type,
             validity: prepare_validity(use_validity, capacity),
             views: Vec::with_capacity(capacity),
-            buffers: Vec::with_capacity(n_buffers),
+            buffers,
+            buffers_offsets: cum_offset,
             total_bytes_len: 0,
-            total_buffer_len: 0,
-            processed_index: vec![false; n_arrays],
+            total_buffer_len,
         }
     }
 
@@ -77,29 +84,23 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
 
     pub unsafe fn extend_unchecked(&mut self, index: usize, start: usize, len: usize) {
         let array = *self.arrays.get_unchecked(index);
-        let add_buffers = std::mem::replace(self.processed_index.get_unchecked_mut(index), true);
-        if add_buffers {
-            self.buffers.extend_from_slice(array.data_buffers());
-        }
 
         extend_validity(&mut self.validity, array, start, len);
 
-        let buffer_offset: u32 = self.buffers.len().try_into().expect("unsupported");
-        let buffer_offset = (buffer_offset as u128) << 64;
-
         let range = start..start + len;
-
-        for b in array.data_buffers().as_ref() {
-            self.total_buffer_len += b.len();
-        }
 
         self.views
             .extend(array.views().get_unchecked(range).iter().map(|&view| {
-                self.total_bytes_len += (view as u32) as usize;
+                let len = (view as u32) as usize;
+                self.total_bytes_len += len as usize;
 
-                // If null the buffer index is ignored because the length is 0,
-                // so we can just do this
-                view + buffer_offset
+                if len > 12 {
+                    let buffer_offset = *self.buffers_offsets.get_unchecked(index);
+                    let mask = (u32::MAX as u128) << 64;
+                    (view & !mask) | ((buffer_offset as u128) << 64)
+                } else {
+                    view
+                }
             }));
     }
 }

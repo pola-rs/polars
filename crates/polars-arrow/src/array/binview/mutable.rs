@@ -127,12 +127,15 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         let len = v as u32;
         self.total_bytes_len += len as usize;
         if len <= 12 {
+            debug_assert!(self.views.capacity() > self.views.len());
             self.views.push_unchecked(v)
         } else {
+            dbg!(View::from(v));
             self.total_buffer_len += len as usize;
             let buffer_idx = (v >> 64) as u32;
+            dbg!(buffer_idx);
             let offset = (v >> 96) as u32;
-            let (data_ptr, data_len) = *buffers.get_unchecked(buffer_idx as usize);
+            let (data_ptr, data_len) = *buffers.get_unchecked_release(buffer_idx as usize);
             let data = std::slice::from_raw_parts(data_ptr, data_len);
             let offset = offset as usize;
             let bytes = data.get_unchecked(offset..offset + len as usize);

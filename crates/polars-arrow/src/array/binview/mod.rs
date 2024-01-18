@@ -356,6 +356,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         }
         let mut mutable = MutableBinaryViewArray::with_capacity(self.len());
         let buffers = self.raw_buffers.as_ref();
+        dbg!(self.buffers.as_ref());
 
         for view in self.views.as_ref() {
             unsafe { mutable.push_view(*view, buffers) }
