@@ -3380,7 +3380,13 @@ class Series:
         ]
         """
 
-    def sort(self, *, descending: bool = False, in_place: bool = False) -> Self:
+    def sort(
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        in_place: bool = False,
+    ) -> Self:
         """
         Sort this Series.
 
@@ -3388,6 +3394,8 @@ class Series:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last instead of first.
         in_place
             Sort in-place.
 
@@ -3414,10 +3422,10 @@ class Series:
         ]
         """
         if in_place:
-            self._s = self._s.sort(descending)
+            self._s = self._s.sort(descending, nulls_last)
             return self
         else:
-            return self._from_pyseries(self._s.sort(descending))
+            return self._from_pyseries(self._s.sort(descending, nulls_last))
 
     def top_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
