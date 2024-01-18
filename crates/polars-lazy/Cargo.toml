@@ -123,6 +123,7 @@ chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids", "polars-ops
 list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 row_hash = ["polars-plan/row_hash"]
+reinterpret = ["polars-plan/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-plan/string_pad"]
 string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]

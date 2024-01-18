@@ -1625,6 +1625,7 @@ impl Expr {
         self.map_private(FunctionExpr::GatherEvery { n, offset })
     }
 
+    #[cfg(feature = "reinterpret")]
     pub fn reinterpret(self, signed: bool) -> Expr {
         self.map_private(FunctionExpr::Reinterpret(signed))
     }

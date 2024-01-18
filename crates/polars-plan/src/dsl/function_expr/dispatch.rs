@@ -148,6 +148,7 @@ pub(super) fn gather_every(s: &Series, n: usize, offset: usize) -> PolarsResult<
     Ok(s.gather_every(n, offset))
 }
 
+#[cfg(feature = "reinterpret")]
 pub(super) fn reinterpret(s: &Series, signed: bool) -> PolarsResult<Series> {
     polars_ops::series::reinterpret(&s, signed)
 }

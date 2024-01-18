@@ -279,6 +279,7 @@ impl FunctionExpr {
             Replace { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
             FillNullWithStrategy(_) => mapper.with_same_dtype(),
             GatherEvery { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => {
                 let dt = if *signed {
                     DataType::Int64
