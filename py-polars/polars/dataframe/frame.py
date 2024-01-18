@@ -4419,7 +4419,9 @@ class DataFrame:
         # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
-        for p in parse_percentiles(percentiles):
+
+        percentiles = parse_percentiles(percentiles)
+        for p in percentiles:
             for c in self.columns:
                 expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
                 expr = expr.alias(f"{p}:{c}")
@@ -4451,8 +4453,16 @@ class DataFrame:
             for c in self.columns
         ]
 
+        # If more than one quantile is requested,
+        # sort numerical columns to make them O(1).
+        # TODO: Should be removed once Polars supports
+        # getting multiples quantiles at once.
+        sort_exprs = [
+            (F.col(c).sort() if len(percentiles) > 1 and c in stat_cols else F.col(c))
+            for c in self.columns
+        ]
         # Calculate metrics in parallel
-        df_metrics = self.select(
+        df_metrics = self.select(*sort_exprs).select(
             F.all().count().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
             *mean_exprs,
