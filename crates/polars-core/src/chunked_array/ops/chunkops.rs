@@ -98,10 +98,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             .iter()
             .map(|arr| arr.null_count())
             .sum::<usize>() as IdxSize;
-
-        if self.length <= 1 {
-            self.set_sorted_flag(IsSorted::Ascending)
-        }
     }
 
     pub fn rechunk(&self) -> Self {
