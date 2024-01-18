@@ -81,21 +81,39 @@ impl LogicalType for DatetimeChunked {
             },
             #[cfg(feature = "dtype-time")]
             (Datetime(tu, _), Time) => match tu {
-                TimeUnit::Nanoseconds => Ok((self.0.as_ref() % NS_IN_DAY)
-                    .cast(&Int64)
-                    .unwrap()
-                    .into_time()
-                    .into_series()),
-                TimeUnit::Microseconds => Ok((self.0.as_ref() % US_IN_DAY * 1_000i64)
-                    .cast(&Int64)
-                    .unwrap()
-                    .into_time()
-                    .into_series()),
-                TimeUnit::Milliseconds => Ok((self.0.as_ref() % MS_IN_DAY * 1_000_000i64)
-                    .cast(&Int64)
-                    .unwrap()
-                    .into_time()
-                    .into_series()),
+                TimeUnit::Nanoseconds => {
+                    let ca = self.0.apply_values(|v| {
+                        let v = v % NS_IN_DAY;
+                        if v < 0 {
+                            v + NS_IN_DAY
+                        } else {
+                            v
+                        }
+                    });
+                    Ok(ca.cast(&Int64).unwrap().into_time().into_series())
+                },
+                TimeUnit::Microseconds => {
+                    let ca = self.0.apply_values(|v| {
+                        let v = v % US_IN_DAY * 1_000i64;
+                        if v < 0 {
+                            v + NS_IN_DAY
+                        } else {
+                            v
+                        }
+                    });
+                    Ok(ca.cast(&Int64).unwrap().into_time().into_series())
+                },
+                TimeUnit::Milliseconds => {
+                    let ca = self.0.apply_values(|v| {
+                        let v = v % MS_IN_DAY * 1_000_000i64;
+                        if v < 0 {
+                            v + NS_IN_DAY
+                        } else {
+                            v
+                        }
+                    });
+                    Ok(ca.cast(&Int64).unwrap().into_time().into_series())
+                },
             },
             _ => self.0.cast(dtype),
         }

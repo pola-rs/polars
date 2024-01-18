@@ -144,8 +144,18 @@ def test_local_datetime_sortedness(time_zone: str | None, expected: bool) -> Non
 def test_local_time_sortedness(time_zone: str | None) -> None:
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.time()
-    assert result.flags["SORTED_ASC"] is False
-    assert result.flags["SORTED_DESC"] is False
+    assert result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
+    ser = pl.Series([datetime(1969, 7, 21, 2, 56, 2, 123000)]).dt.cast_time_unit(
+        time_unit
+    )
+    result = ser.dt.time().item()
+    expected = time(2, 56, 2, 123000)
+    assert result == expected
 
 
 @pytest.mark.parametrize(
