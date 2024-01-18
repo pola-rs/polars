@@ -157,7 +157,7 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
     use arrow::datatypes::PhysicalType::*;
     match data_type.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
-        | Dictionary(_) | LargeUtf8 => 1,
+        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => 1,
         List | FixedSizeList | LargeList => {
             let a = data_type.to_logical_type();
             if let ArrowDataType::List(inner) = a {

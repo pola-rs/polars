@@ -571,7 +571,13 @@ impl Buffer {
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
-            Buffer::Utf8(v) => v.mutable.push_null(),
+            Buffer::Utf8(v) => {
+                if valid {
+                    v.mutable.push_value("")
+                } else {
+                    v.mutable.push_null()
+                }
+            },
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { buf, .. } => buf.builder.append_null(),
             #[cfg(feature = "dtype-date")]

@@ -460,6 +460,10 @@ pub fn cast(
             ),
         },
         (LargeUtf8, _) => match to_type {
+            LargeBinary => Ok(utf8_to_binary::<i64>(
+                array.as_any().downcast_ref().unwrap(),
+                to_type.clone(),
+            ).boxed()),
             // not supported by polars
             // UInt8 | UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64 => {
             //     let binary = utf8_to_binary::<i64>(
@@ -471,11 +475,6 @@ pub fn cast(
             // Date32 => utf8_to_date32_dyn::<i64>(array),
             // Date64 => utf8_to_date64_dyn::<i64>(array),
             // Utf8 => utf8_large_to_utf8(array.as_any().downcast_ref().unwrap()).map(|x| x.boxed()),
-            // LargeBinary => Ok(utf8_to_binary::<i64>(
-            //     array.as_any().downcast_ref().unwrap(),
-            //     to_type.clone(),
-            // )
-            // .boxed()),
             // Timestamp(time_unit, None) => {
             //     utf8_to_naive_timestamp_dyn::<i64>(array, time_unit.to_owned())
             // },

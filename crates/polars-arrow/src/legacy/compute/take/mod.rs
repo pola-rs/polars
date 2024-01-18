@@ -6,7 +6,7 @@ mod fixed_size_list;
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::*;
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::legacy::bit_util::unset_bit_raw;
@@ -46,6 +46,10 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
                 .to_utf8view_unchecked()
                 .boxed()
         },
+        Struct => {
+            let array = arr.as_any().downcast_ref().unwrap();
+            take_struct_unchecked(array, idx).boxed()
+        },
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
         _ => {
@@ -57,6 +61,49 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
             panic!("activate compute feature")
         },
     }
+}
+
+unsafe fn take_validity_unchecked(
+    validity: Option<&Bitmap>,
+    indices: &IdxArr
+) -> Option<Bitmap> {
+    let indices_validity = indices.validity();
+    match (validity, indices_validity) {
+        (None, _) => indices_validity.cloned(),
+        (Some(validity), None) => {
+            let iter = indices.values().iter().map(|index| {
+                validity.get_bit_unchecked(*index as usize)
+            });
+            MutableBitmap::from_trusted_len_iter(iter).into()
+        },
+        (Some(validity), _) => {
+            let iter = indices.iter().map(|x| match x {
+                Some(index) => {
+                    validity.get_bit_unchecked(*index as usize)
+                },
+                None => false,
+            });
+            MutableBitmap::from_trusted_len_iter(iter).into()
+        },
+    }
+}
+
+
+pub unsafe fn take_struct_unchecked(
+    array: &StructArray,
+    indices: &IdxArr
+) -> StructArray {
+    let values: Vec<Box<dyn Array>> = array
+        .values()
+        .iter()
+        .map(|a| take_unchecked(a.as_ref(), indices))
+        .collect();
+    let validity = take_validity_unchecked(array.validity(), indices);
+    StructArray::new(
+        array.data_type().clone(),
+        values,
+        validity,
+    )
 }
 
 unsafe fn take_binview_unchecked(arr: &BinaryViewArray, indices: &IdxArr) -> BinaryViewArray {

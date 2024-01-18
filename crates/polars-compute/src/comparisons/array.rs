@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryArray, FixedSizeListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{Array, BinaryViewArray, FixedSizeListArray, PrimitiveArray, Utf8ViewArray};
 use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
@@ -55,8 +55,8 @@ macro_rules! compare {
         match lhs_type.data_type().to_physical_type() {
             // Boolean => call_binary!(BooleanArray, lhs, rhs, $op),
             Boolean => todo!(),
-            LargeUtf8 => call_binary!(Utf8Array<i64>, lv, rv, $op),
-            LargeBinary => call_binary!(BinaryArray<i64>, lv, rv, $op),
+            BinaryView => call_binary!(BinaryViewArray, lv, rv, $op),
+            Utf8View => call_binary!(Utf8ViewArray, lv, rv, $op),
             Primitive(Int8) => call_binary!(PrimitiveArray<i8>, lv, rv, $op),
             Primitive(Int16) => call_binary!(PrimitiveArray<i16>, lv, rv, $op),
             Primitive(Int32) => call_binary!(PrimitiveArray<i32>, lv, rv, $op),
@@ -68,9 +68,9 @@ macro_rules! compare {
             Primitive(UInt64) => call_binary!(PrimitiveArray<i64>, lv, rv, $op),
             Primitive(Float32) => call_binary!(PrimitiveArray<f32>, lv, rv, $op),
             Primitive(Float64) => call_binary!(PrimitiveArray<f64>, lv, rv, $op),
-            _ => todo!(
-                "Comparison between {:?} are not yet supported",
-                lhs.data_type().to_physical_type()
+            dt => todo!(
+                "Comparison of Arrays with {:?} are not yet supported",
+                dt
             ),
         }
     }};
