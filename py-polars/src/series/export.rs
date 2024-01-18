@@ -15,7 +15,7 @@ impl PySeries {
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
 
-            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, true), py, pyarrow)
+            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, pyarrow)
         })
     }
 

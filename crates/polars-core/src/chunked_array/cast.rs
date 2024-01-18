@@ -278,16 +278,6 @@ impl ChunkCast for StringChunked {
     }
 }
 
-unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
-    let values = from.values().clone();
-    let offsets = from.offsets().clone();
-    Utf8Array::<i64>::new_unchecked(
-        ArrowDataType::LargeUtf8,
-        offsets,
-        values,
-        from.validity().cloned(),
-    )
-}
 
 impl BinaryChunked {
     /// # Safety
@@ -514,7 +504,7 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
         new_values,
         arr.validity().cloned(),
     );
-    Ok((Box::new(new_arr), inner_dtype))
+    Ok((new_arr.boxed(), inner_dtype))
 }
 
 unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> PolarsResult<Series> {

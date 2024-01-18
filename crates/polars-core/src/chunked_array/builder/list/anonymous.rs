@@ -161,7 +161,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
         let list_dtype_logical = match inner_dtype {
-            None => DataType::from(arr.data_type()),
+            None => DataType::from_arrow(arr.data_type(), false),
             Some(dt) => DataType::List(Box::new(dt)),
         };
 

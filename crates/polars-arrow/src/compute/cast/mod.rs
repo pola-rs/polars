@@ -23,6 +23,7 @@ pub use utf8_to::*;
 use crate::array::*;
 use crate::compute::cast::binview_to::{utf8view_to_date32_dyn, utf8view_to_naive_timestamp_dyn};
 use crate::datatypes::*;
+use crate::legacy::index::IdxSize;
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::utf8view_to_timestamp;
@@ -187,7 +188,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 
         // Build take indices for the values. This is used to fill in the null slots.
         let mut indices =
-            MutablePrimitiveArray::<O>::with_capacity(list.values().len() + null_cnt * size);
+            MutablePrimitiveArray::<IdxSize>::with_capacity(list.values().len() + null_cnt * size);
         for i in 0..list.len() {
             if list.is_null(i) {
                 indices.extend_constant(size, None)
@@ -195,11 +196,11 @@ fn cast_list_to_fixed_size_list<O: Offset>(
                 // SAFETY: we know the index is in bound.
                 let current_offset = unsafe { *offsets.get_unchecked(i) };
                 for j in 0..size {
-                    indices.push(Some(current_offset + O::from_as_usize(j)));
+                    indices.push(Some((current_offset + O::from_as_usize(j)).to_usize()  as IdxSize));
                 }
             }
         }
-        let take_values = crate::compute::take::take(list.values().as_ref(), &indices.into())?;
+        let take_values = unsafe { crate::legacy::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze()) };
 
         cast(take_values.as_ref(), inner.data_type(), options)?
     };
@@ -403,7 +404,7 @@ pub fn cast(
             }
         },
         (BinaryView, _) => match to_type {
-            BinaryView => array
+            Utf8View => array
                 .as_any()
                 .downcast_ref::<BinaryViewArray>()
                 .unwrap()

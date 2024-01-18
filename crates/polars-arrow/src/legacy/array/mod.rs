@@ -1,7 +1,4 @@
-use crate::array::{
-    new_null_array, Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray,
-    PrimitiveArray, StructArray, Utf8Array,
-};
+use crate::array::{new_null_array, Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, StructArray, Utf8Array, MutableBinaryViewArray, ViewType};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::utils::CustomIterTools;
@@ -107,16 +104,11 @@ pub trait ListFromIter {
         )
     }
 
-    /// Create a list-array from an iterator.
-    /// Used in group_by agg-list
-    ///
-    /// # Safety
-    /// Will produce incorrect arrays if size hint is incorrect.
-    unsafe fn from_iter_utf8_trusted_len<I, P, Ref>(iter: I, n_elements: usize) -> ListArray<i64>
-    where
-        I: IntoIterator<Item = Option<P>>,
-        P: IntoIterator<Item = Option<Ref>>,
-        Ref: AsRef<str>,
+    unsafe fn from_iter_binview_trusted_len<I, P, Ref, T: ViewType + ?Sized>(iter: I, n_elements: usize) -> ListArray<i64>
+        where
+            I: IntoIterator<Item = Option<P>>,
+            P: IntoIterator<Item = Option<Ref>>,
+            Ref: AsRef<T>,
     {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
@@ -125,7 +117,8 @@ pub trait ListFromIter {
         let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
-        let values: Utf8Array<i64> = iterator
+
+        let values: MutableBinaryViewArray<T> = iterator
             .filter_map(|opt_iter| match opt_iter {
                 Some(x) => {
                     let it = x.into_iter();
@@ -147,11 +140,25 @@ pub trait ListFromIter {
         // Safety:
         // offsets are monotonically increasing
         ListArray::new(
-            ListArray::<i64>::default_datatype(ArrowDataType::LargeUtf8),
+            ListArray::<i64>::default_datatype(T::DATA_TYPE),
             Offsets::new_unchecked(offsets).into(),
-            Box::new(values),
+            values.freeze().boxed(),
             Some(validity.into()),
         )
+    }
+
+    /// Create a list-array from an iterator.
+    /// Used in group_by agg-list
+    ///
+    /// # Safety
+    /// Will produce incorrect arrays if size hint is incorrect.
+    unsafe fn from_iter_utf8_trusted_len<I, P, Ref>(iter: I, n_elements: usize) -> ListArray<i64>
+    where
+        I: IntoIterator<Item = Option<P>>,
+        P: IntoIterator<Item = Option<Ref>>,
+        Ref: AsRef<str>,
+    {
+        Self::from_iter_binview_trusted_len(iter, n_elements)
     }
 
     /// Create a list-array from an iterator.
@@ -165,40 +172,7 @@ pub trait ListFromIter {
         P: IntoIterator<Item = Option<Ref>>,
         Ref: AsRef<[u8]>,
     {
-        let iterator = iter.into_iter();
-        let (lower, _) = iterator.size_hint();
-
-        let mut validity = MutableBitmap::with_capacity(lower);
-        let mut offsets = Vec::<i64>::with_capacity(lower + 1);
-        let mut length_so_far = 0i64;
-        offsets.push(length_so_far);
-        let values: BinaryArray<i64> = iterator
-            .filter_map(|opt_iter| match opt_iter {
-                Some(x) => {
-                    let it = x.into_iter();
-                    length_so_far += it.size_hint().0 as i64;
-                    validity.push(true);
-                    offsets.push(length_so_far);
-                    Some(it)
-                },
-                None => {
-                    validity.push(false);
-                    offsets.push(length_so_far);
-                    None
-                },
-            })
-            .flatten()
-            .trust_my_length(n_elements)
-            .collect();
-
-        // Safety:
-        // offsets are monotonically increasing
-        ListArray::new(
-            ListArray::<i64>::default_datatype(ArrowDataType::LargeBinary),
-            Offsets::new_unchecked(offsets).into(),
-            Box::new(values),
-            Some(validity.into()),
-        )
+        Self::from_iter_binview_trusted_len(iter, n_elements)
     }
 }
 impl ListFromIter for ListArray<i64> {}

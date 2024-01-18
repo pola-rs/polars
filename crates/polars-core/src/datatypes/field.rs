@@ -1,3 +1,4 @@
+use ndarray::Data;
 use smartstring::alias::String as SmartString;
 
 use super::*;
@@ -114,8 +115,13 @@ impl Field {
     }
 }
 
-impl From<&ArrowDataType> for DataType {
-    fn from(dt: &ArrowDataType) -> Self {
+impl DataType {
+    pub fn boxed(self) -> Box<DataType> {
+        Box::new(self)
+    }
+
+    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool) -> DataType {
+
         match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
@@ -130,8 +136,8 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
-            ArrowDataType::FixedSizeList(f, size) => DataType::Array(Box::new(f.data_type().into()), *size),
-            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
+            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.data_type(), bin_to_view).boxed(), *size),
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.data_type(), bin_to_view).boxed()),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
@@ -157,9 +163,23 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Decimal(precision, scale) => DataType::Decimal(Some(*precision), Some(*scale)),
             ArrowDataType::Utf8View |ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::String,
             ArrowDataType::BinaryView => DataType::Binary,
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::BinaryOffset,
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
+                if bin_to_view {
+                    DataType::Binary
+                } else {
+
+                    DataType::BinaryOffset
+                }
+            },
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
+
+    }
+}
+
+impl From<&ArrowDataType> for DataType {
+    fn from(dt: &ArrowDataType) -> Self {
+        Self::from_arrow(dt, true)
     }
 }
 
