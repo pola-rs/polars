@@ -1118,7 +1118,7 @@ class DataFrame:
         return self
 
     @property
-    def plot(self) -> Any:
+    def plot(self) -> hvplot.plotting.core.hvPlotTabularPolars:
         """
         Create a plot namespace.
 
