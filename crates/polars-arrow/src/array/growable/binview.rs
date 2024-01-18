@@ -1,5 +1,3 @@
-use std::arch::x86_64::_mm256_cvtepu32_epi64;
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::Growable;
@@ -43,12 +41,12 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         let cum_offset = arrays
             .iter()
             .map(|binview| {
-                let mut out = cum_sum;
+                let out = cum_sum;
                 cum_sum += binview.data_buffers().len() as u32;
                 out
             }).collect::<Vec<_>>();
 
-        let mut buffers = arrays.iter().map(|array| {
+        let buffers = arrays.iter().map(|array| {
             array.data_buffers().as_ref()
         }).flatten().cloned().collect::<Vec<_>>();
         let total_buffer_len = arrays.iter().map(|arr| arr.data_buffers().len()).sum::<usize>();

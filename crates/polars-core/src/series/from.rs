@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use arrow::compute::cast::{cast_default as cast, utf8_to_large_utf8};
+use arrow::compute::cast::{cast_unchecked as cast};
 #[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(

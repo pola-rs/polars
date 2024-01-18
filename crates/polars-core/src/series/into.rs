@@ -1,4 +1,4 @@
-use arrow::compute::cast::{cast_default, cast_unchecked};
+use arrow::compute::cast::{cast_unchecked};
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",

@@ -6,7 +6,7 @@ pub use boolean::*;
 use num_traits::{NumCast, ToPrimitive};
 pub use var::*;
 
-use crate::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array};
+use crate::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray};
 use crate::legacy::index::IdxSize;
 use crate::types::NativeType;
 

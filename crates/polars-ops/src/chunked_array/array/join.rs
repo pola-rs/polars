@@ -1,6 +1,5 @@
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
 use polars_core::prelude::ArrayChunked;
 
 use super::*;

@@ -92,29 +92,6 @@ fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
     }
 }
 
-/// Returns a [`BinaryArray`] where every element is the binary representation of the number.
-pub(super) fn primitive_to_binary<T: NativeType + SerPrimitive, O: Offset>(
-    from: &PrimitiveArray<T>,
-) -> BinaryArray<O> {
-    let (values, offsets) = primitive_to_values_and_offsets(from);
-
-    BinaryArray::<O>::new(
-        BinaryArray::<O>::default_data_type(),
-        offsets.into(),
-        values.into(),
-        from.validity().cloned(),
-    )
-}
-
-pub(super) fn primitive_to_binary_dyn<T, O>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
-where
-    O: Offset,
-    T: NativeType + SerPrimitive,
-{
-    let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(primitive_to_binary::<T, O>(from)))
-}
-
 /// Returns a [`BooleanArray`] where every element is different from zero.
 /// Validity is preserved.
 pub fn primitive_to_boolean<T: NativeType>(

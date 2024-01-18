@@ -1,13 +1,11 @@
 //! Conversion methods for dates and times.
 
 use chrono::format::{parse, Parsed, StrftimeItems};
-use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 use polars_error::{polars_err, PolarsResult};
 
-use crate::array::{PrimitiveArray, Utf8Array, Utf8ViewArray};
+use crate::array::{PrimitiveArray, Utf8ViewArray};
 use crate::datatypes::{ArrowDataType, TimeUnit};
-use crate::offset::Offset;
-use crate::types::months_days_ns;
 
 /// Number of seconds in a day
 pub const SECONDS_IN_DAY: i64 = 86_400;
@@ -453,76 +451,4 @@ pub(crate) fn utf8view_to_naive_timestamp(
         .map(|x| x.and_then(|x| utf8_to_naive_timestamp_scalar(x, fmt, &time_unit)));
 
     PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Timestamp(time_unit, None))
-}
-
-fn add_month(year: i32, month: u32, months: i32) -> chrono::NaiveDate {
-    let new_year = (year * 12 + (month - 1) as i32 + months) / 12;
-    let new_month = (year * 12 + (month - 1) as i32 + months) % 12 + 1;
-    chrono::NaiveDate::from_ymd_opt(new_year, new_month as u32, 1)
-        .expect("invalid or out-of-range date")
-}
-
-fn get_days_between_months(year: i32, month: u32, months: i32) -> i64 {
-    add_month(year, month, months)
-        .signed_duration_since(
-            chrono::NaiveDate::from_ymd_opt(year, month, 1).expect("invalid or out-of-range date"),
-        )
-        .num_days()
-}
-
-/// Adds an `interval` to a `timestamp` in `time_unit` units without timezone.
-#[inline]
-pub(crate) fn add_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_days_ns) -> i64 {
-    // convert seconds to a DateTime of a given offset.
-    let datetime = match time_unit {
-        TimeUnit::Second => timestamp_s_to_datetime(timestamp),
-        TimeUnit::Millisecond => timestamp_ms_to_datetime(timestamp),
-        TimeUnit::Microsecond => timestamp_us_to_datetime(timestamp),
-        TimeUnit::Nanosecond => timestamp_ns_to_datetime(timestamp),
-    };
-
-    // compute the number of days in the interval, which depends on the particular year and month (leap days)
-    let delta_days = get_days_between_months(datetime.year(), datetime.month(), interval.months())
-        + interval.days() as i64;
-
-    // add; no leap hours are considered
-    let new_datetime_tz = datetime
-        + chrono::Duration::nanoseconds(delta_days * 24 * 60 * 60 * 1_000_000_000 + interval.ns());
-
-    // convert back to the target unit
-    match time_unit {
-        TimeUnit::Second => new_datetime_tz.timestamp_millis() / 1000,
-        TimeUnit::Millisecond => new_datetime_tz.timestamp_millis(),
-        TimeUnit::Microsecond => new_datetime_tz.timestamp_nanos_opt().unwrap() / 1000,
-        TimeUnit::Nanosecond => new_datetime_tz.timestamp_nanos_opt().unwrap(),
-    }
-}
-
-/// Adds an `interval` to a `timestamp` in `time_unit` units and timezone `timezone`.
-#[inline]
-pub(crate) fn add_interval<T: chrono::TimeZone>(
-    timestamp: i64,
-    time_unit: TimeUnit,
-    interval: months_days_ns,
-    timezone: &T,
-) -> i64 {
-    // convert seconds to a DateTime of a given offset.
-    let datetime_tz = timestamp_to_datetime(timestamp, time_unit, timezone);
-
-    // compute the number of days in the interval, which depends on the particular year and month (leap days)
-    let delta_days =
-        get_days_between_months(datetime_tz.year(), datetime_tz.month(), interval.months())
-            + interval.days() as i64;
-
-    // add; tz will take care of leap hours
-    let new_datetime_tz = datetime_tz
-        + chrono::Duration::nanoseconds(delta_days * 24 * 60 * 60 * 1_000_000_000 + interval.ns());
-
-    // convert back to the target unit
-    match time_unit {
-        TimeUnit::Second => new_datetime_tz.timestamp_millis() / 1000,
-        TimeUnit::Millisecond => new_datetime_tz.timestamp_millis(),
-        TimeUnit::Microsecond => new_datetime_tz.timestamp_nanos_opt().unwrap() / 1000,
-        TimeUnit::Nanosecond => new_datetime_tz.timestamp_nanos_opt().unwrap(),
-    }
 }

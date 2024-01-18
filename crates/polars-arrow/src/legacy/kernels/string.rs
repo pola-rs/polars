@@ -1,7 +1,6 @@
-use crate::array::{Array, ArrayRef, BinaryViewArray, UInt32Array, Utf8Array, Utf8ViewArray};
+use crate::array::{Array, ArrayRef, UInt32Array, Utf8ViewArray};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::index::IdxSize;
 use crate::legacy::trusted_len::TrustedLenPush;
 
 pub fn utf8view_len_bytes(array: &Utf8ViewArray) -> ArrayRef {

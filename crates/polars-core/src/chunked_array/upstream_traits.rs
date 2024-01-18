@@ -5,7 +5,7 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_utils::sync::SyncPtr;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};

@@ -2,7 +2,7 @@
 use std::io;
 
 use arrow::array::{
-    Array, MutableBinaryViewArray, MutableUtf8ValuesArray, Utf8Array, Utf8ViewArray,
+    Array, MutableBinaryViewArray, Utf8ViewArray,
 };
 
 use crate::json::write::new_serializer;

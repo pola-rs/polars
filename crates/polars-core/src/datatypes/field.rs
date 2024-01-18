@@ -1,4 +1,3 @@
-use ndarray::Data;
 use smartstring::alias::String as SmartString;
 
 use super::*;

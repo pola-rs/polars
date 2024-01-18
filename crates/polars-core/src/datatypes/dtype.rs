@@ -1,5 +1,3 @@
-use arrow::datatypes::PhysicalType::LargeBinary;
-
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;

@@ -292,8 +292,6 @@ impl DataFrame {
             st = try_get_supertype(&st, dt?)?;
         }
 
-        let values_len = value_vars.iter().map(|name| name.len()).sum::<usize>();
-
         // The column name of the variable that is melted
         let mut variable_col =
             MutableBinaryViewArray::<str>::with_capacity(len * value_vars.len() + 1);

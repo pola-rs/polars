@@ -5,7 +5,6 @@ pub mod arg_sort_multiple;
 mod categorical;
 
 use std::cmp::Ordering;
-use std::iter::FromIterator;
 
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::array::ValueSize;

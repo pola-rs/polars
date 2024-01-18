@@ -1,13 +1,8 @@
-use std::sync::Arc;
-
 use arrow::array::{BinaryArray, BinaryViewArray};
-use arrow::buffer::Buffer;
 use arrow::compute::cast::binary_to_binview;
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
-use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::vec::PushUnchecked;
 
 #[derive(Clone, Default)]
 pub struct SortField {

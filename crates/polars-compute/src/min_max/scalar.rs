@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, Utf8Array, Utf8ViewArray};
+use arrow::array::{Array, BinaryViewArray, PrimitiveArray, Utf8ViewArray};
 use arrow::types::NativeType;
 use polars_utils::min_max::MinMax;
 

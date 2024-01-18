@@ -1,4 +1,4 @@
-use crate::array::{new_null_array, Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, StructArray, Utf8Array, MutableBinaryViewArray, ViewType};
+use crate::array::{new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, StructArray, MutableBinaryViewArray, ViewType};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::utils::CustomIterTools;

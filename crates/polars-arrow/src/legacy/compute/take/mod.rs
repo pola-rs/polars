@@ -8,13 +8,11 @@ use polars_utils::slice::GetSaferUnchecked;
 use crate::array::*;
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::buffer::Buffer;
-use crate::datatypes::{ArrowDataType, PhysicalType};
+use crate::datatypes::{PhysicalType};
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::prelude::*;
-use crate::legacy::trusted_len::TrustedLenPush;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
-use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 use crate::with_match_primitive_type;
 

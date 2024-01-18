@@ -21,8 +21,6 @@ impl TimeChunked {
     /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> StringChunked {
-        let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-
         let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
             let mut mutarr = MutablePlString::with_capacity(arr.len());

@@ -1,53 +1,14 @@
 use std::sync::Arc;
 
-use chrono::Datelike;
 use polars_error::PolarsResult;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::vec::PushUnchecked;
 
 use crate::array::*;
-use crate::buffer::Buffer;
-use crate::datatypes::{ArrowDataType, TimeUnit};
+use crate::datatypes::{ArrowDataType};
 use crate::offset::Offset;
-use crate::temporal_conversions::{
-    EPOCH_DAYS_FROM_CE,
-};
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
-
-/// Casts a [`Utf8Array`] to a Date32 primitive, making any uncastable value a Null.
-pub(super) fn utf8_to_date32<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i32> {
-    let iter = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.parse::<chrono::NaiveDate>()
-                .ok()
-                .map(|x| x.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
-        })
-    });
-    PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(ArrowDataType::Date32)
-}
-
-pub(super) fn utf8_to_date32_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
-    let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(utf8_to_date32::<O>(from)))
-}
-
-/// Casts a [`Utf8Array`] to a Date64 primitive, making any uncastable value a Null.
-pub(crate) fn utf8_to_date64<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i64> {
-    let iter = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.parse::<chrono::NaiveDate>()
-                .ok()
-                .map(|x| (x.num_days_from_ce() - EPOCH_DAYS_FROM_CE) as i64 * 86400000)
-        })
-    });
-    PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Date64)
-}
-
-pub(super) fn utf8_to_date64_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
-    let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(utf8_to_date64::<O>(from)))
-}
 
 pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,

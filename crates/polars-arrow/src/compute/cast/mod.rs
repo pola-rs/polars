@@ -12,7 +12,7 @@ pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
 pub use binview_to::utf8view_to_utf8;
-use binview_to::{binview_to_primitive, binview_to_primitive_dyn};
+use binview_to::{binview_to_primitive_dyn};
 pub use boolean_to::*;
 pub use decimal_to::*;
 pub use dictionary_to::*;
@@ -23,7 +23,6 @@ pub use utf8_to::*;
 use crate::array::*;
 use crate::compute::cast::binview_to::{utf8view_to_date32_dyn, utf8view_to_naive_timestamp_dyn, view_to_binary};
 use crate::datatypes::*;
-use crate::datatypes::PhysicalType::FixedSizeBinary;
 use crate::legacy::index::IdxSize;
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
@@ -316,11 +315,6 @@ pub fn cast(
             Int64 => binview_to_primitive_dyn::<i64>(array, to_type, options),
             Float32 => binview_to_primitive_dyn::<f32>(array, to_type, options),
             Float64 => binview_to_primitive_dyn::<f64>(array, to_type, options),
-            LargeBinary => Ok(utf8_to_binary::<i64>(
-                array.as_any().downcast_ref().unwrap(),
-                to_type.clone(),
-            )
-                .boxed()),
             LargeList(inner) if matches!(inner.data_type, ArrowDataType::UInt8) => {
                 let bin_array = view_to_binary::<i64>(array.as_any().downcast_ref().unwrap());
                 Ok(binary_to_list(&bin_array, to_type.clone()).boxed())
