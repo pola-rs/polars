@@ -204,15 +204,15 @@ impl Series {
             },
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
-                let mut tz = DataType::canonical_timezone(tz);
-                match tz.as_deref() {
+                let canonical_tz = DataType::canonical_timezone(tz);
+                let tz = match canonical_tz.as_deref() {
                     #[cfg(feature = "timezones")]
                     Some(tz_str) => match validate_time_zone(tz_str) {
-                        Ok(_) => (),
-                        Err(_) => tz = Some(parse_fixed_offset(tz_str)?),
+                        Ok(_) => canonical_tz,
+                        Err(_) => Some(parse_fixed_offset(tz_str)?),
                     },
-                    _ => (),
-                }
+                    _ => canonical_tz,
+                };
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_datetime(tu.into(), tz)
