@@ -1712,6 +1712,13 @@ def test_write_csv_bom() -> None:
     assert f.read() == b"\xef\xbb\xbfa,b\n1,1\n2,2\n3,3\n"
 
 
+def test_write_csv_batch_size_zero() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    with pytest.raises(ValueError, match="invalid zero value"):
+        df.write_csv(f, batch_size=0)
+
+
 def test_empty_csv_no_raise() -> None:
     assert pl.read_csv(io.StringIO(), raise_if_empty=False, has_header=False).shape == (
         0,

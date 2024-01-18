@@ -20,6 +20,8 @@ mod floor_divide;
 mod fused;
 mod horizontal;
 mod index;
+#[cfg(feature = "is_between")]
+mod is_between;
 #[cfg(feature = "is_first_distinct")]
 mod is_first_distinct;
 #[cfg(feature = "is_in")]
@@ -74,6 +76,8 @@ pub use floor_divide::*;
 pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
+#[cfg(feature = "is_between")]
+pub use is_between::*;
 #[cfg(feature = "is_first_distinct")]
 pub use is_first_distinct::*;
 #[cfg(feature = "is_in")]

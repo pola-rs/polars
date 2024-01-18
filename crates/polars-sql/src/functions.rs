@@ -1,6 +1,6 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
 use polars_lazy::dsl::Expr;
-use polars_plan::dsl::{coalesce, concat_str, count, when};
+use polars_plan::dsl::{coalesce, concat_str, len, when};
 use polars_plan::logical_plan::LiteralValue;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{lit, StrptimeOptions};
@@ -855,8 +855,8 @@ impl SQLFunctionVisitor<'_> {
             #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
-                Ok(e.str().slice(0, match length {
-                    Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                Ok(e.str().slice(lit(0), match length {
+                    Expr::Literal(LiteralValue::Int64(n)) => lit(n as u64),
                     _ => {
                         polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1]);
                     }
@@ -905,11 +905,11 @@ impl SQLFunctionVisitor<'_> {
             Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
                 Ok(e.str().slice( match length {
-                    Expr::Literal(LiteralValue::Int64(n)) => -n,
+                    Expr::Literal(LiteralValue::Int64(n)) => lit(-n),
                     _ => {
                         polars_bail!(InvalidOperation: "Invalid 'length' for Right: {}", function.args[1]);
                     }
-                }, None))
+                }, lit(Null)))
             }),
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
@@ -925,19 +925,19 @@ impl SQLFunctionVisitor<'_> {
                 2 => self.try_visit_binary(|e, start| {
                     Ok(e.str().slice(
                         match start {
-                            Expr::Literal(LiteralValue::Int64(n)) => n - 1 ,
+                            Expr::Literal(LiteralValue::Int64(n)) => lit(n - 1) ,
                             _ => polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]),
-                        }, None))
+                        }, lit(Null)))
                 }),
                 3 => self.try_visit_ternary(|e, start, length| {
                     Ok(e.str().slice(
                         match start {
-                            Expr::Literal(LiteralValue::Int64(n)) => n - 1,
+                            Expr::Literal(LiteralValue::Int64(n)) => lit(n - 1),
                             _ => {
                                 polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
                             }
                         }, match length {
-                            Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                            Expr::Literal(LiteralValue::Int64(n)) => lit(n as u64),
                             _ => {
                                 polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
                             }
@@ -1137,7 +1137,7 @@ impl SQLFunctionVisitor<'_> {
         let args = extract_args(self.func);
         match (self.func.distinct, args.as_slice()) {
             // count()
-            (false, []) => Ok(count()),
+            (false, []) => Ok(len()),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx)?;
@@ -1145,7 +1145,7 @@ impl SQLFunctionVisitor<'_> {
                 Ok(expr.count())
             },
             // count(*)
-            (false, [FunctionArgExpr::Wildcard]) => Ok(count()),
+            (false, [FunctionArgExpr::Wildcard]) => Ok(len()),
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx)?;

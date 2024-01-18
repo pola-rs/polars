@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import Any, cast
 
 import numpy as np
@@ -419,6 +419,15 @@ def test_from_numpy() -> None:
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
+    with pytest.raises(
+        ValueError,
+        match="cannot create DataFrame from array with more than two dimensions",
+    ):
+        _ = pl.from_numpy(np.array([[[1]]]))
+    with pytest.raises(
+        ValueError, match="cannot create DataFrame from zero-dimensional array"
+    ):
+        _ = pl.from_numpy(np.array(1))
 
 
 def test_from_numpy_structured() -> None:
@@ -1038,11 +1047,13 @@ def test_to_init_repr() -> None:
 
 
 def test_untrusted_categorical_input() -> None:
-    df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).group_by("x").count().to_dict(as_series=False) == {
-        "x": ["x"],
-        "count": [1],
-    }
+    df_pd = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
+    df = pl.from_pandas(df_pd)
+    result = df.group_by("x").len()
+    expected = pl.DataFrame(
+        {"x": ["x"], "len": [1]}, schema={"x": pl.Categorical, "len": pl.UInt32}
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_sliced_struct_from_arrow() -> None:
@@ -1073,10 +1084,36 @@ def test_sliced_struct_from_arrow() -> None:
 
 def test_from_arrow_invalid_time_zone() -> None:
     arr = pa.array(
-        [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="+01:00")
+        [datetime(2021, 1, 1, 0, 0, 0, 0)],
+        type=pa.timestamp("ns", tz="this-is-not-a-time-zone"),
     )
-    with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
+    with pytest.raises(
+        ComputeError, match=r"unable to parse time zone: 'this-is-not-a-time-zone'"
+    ):
         pl.from_arrow(arr)
+
+
+@pytest.mark.parametrize(
+    ("fixed_offset", "etc_tz"),
+    [
+        ("+10:00", "Etc/GMT-10"),
+        ("10:00", "Etc/GMT-10"),
+        ("-10:00", "Etc/GMT+10"),
+        ("+05:00", "Etc/GMT-5"),
+        ("05:00", "Etc/GMT-5"),
+        ("-05:00", "Etc/GMT+5"),
+    ],
+)
+def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
+    arr = pa.array(
+        [datetime(2021, 1, 1, 0, 0, 0, 0)],
+        type=pa.timestamp("us", tz=fixed_offset),
+    )
+    result = cast(pl.Series, pl.from_arrow(arr))
+    expected = pl.Series(
+        [datetime(2021, 1, 1, tzinfo=timezone.utc)]
+    ).dt.convert_time_zone(etc_tz)
+    assert_series_equal(result, expected)
 
 
 def test_from_avro_valid_time_zone_13032() -> None:

@@ -82,7 +82,7 @@ The opt-in features are:
     - `dtype-categorical`
     - `dtype-struct`
 - `lazy` - Lazy API
-    - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+    - `regex` - Use regexes in [column selection](crate::lazy::dsl::col)
     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 - `sql` - Pass SQL queries to polars.
 - `streaming` - Be able to process datasets that are larger than RAM.

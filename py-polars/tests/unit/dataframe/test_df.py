@@ -1774,9 +1774,9 @@ def test_extension() -> None:
 def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
-    result = df.group_by("x", maintain_order=True).count()
+    result = df.group_by("x", maintain_order=True).len()
     expected = pl.DataFrame(
-        {"x": ["b", "a"], "count": [2, 1]}, schema_overrides={"count": pl.UInt32}
+        {"x": ["b", "a"], "len": [2, 1]}, schema_overrides={"len": pl.UInt32}
     )
     assert_frame_equal(result, expected)
 
@@ -2409,7 +2409,7 @@ def test_group_by_slice_expression_args() -> None:
 
     out = (
         df.group_by("groups", maintain_order=True)
-        .agg([pl.col("vals").slice(pl.count() * 0.1, (pl.count() // 5))])
+        .agg([pl.col("vals").slice(pl.len() * 0.1, (pl.len() // 5))])
         .explode("vals")
     )
 
@@ -2482,79 +2482,6 @@ def test_asof_by_multiple_keys() -> None:
     ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
     assert_frame_equal(result, expected)
-
-
-def test_partition_by() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": ["A", "A", "B", "B", "C"],
-            "N": [1, 2, 2, 4, 2],
-            "bar": ["k", "l", "m", "m", "l"],
-        }
-    )
-
-    expected = [
-        {"foo": ["A"], "N": [1], "bar": ["k"]},
-        {"foo": ["A"], "N": [2], "bar": ["l"]},
-        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
-        {"foo": ["C"], "N": [2], "bar": ["l"]},
-    ]
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by("foo", "bar", maintain_order=True)
-    ] == expected
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by(cs.string(), maintain_order=True)
-    ] == expected
-
-    expected = [
-        {"N": [1]},
-        {"N": [2]},
-        {"N": [2, 4]},
-        {"N": [2]},
-    ]
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by(["foo", "bar"], maintain_order=True, include_key=False)
-    ] == expected
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by("foo", "bar", maintain_order=True, include_key=False)
-    ] == expected
-
-    assert [
-        a.to_dict(as_series=False) for a in df.partition_by("foo", maintain_order=True)
-    ] == [
-        {"foo": ["A", "A"], "N": [1, 2], "bar": ["k", "l"]},
-        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
-        {"foo": ["C"], "N": [2], "bar": ["l"]},
-    ]
-
-    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
-    assert df.partition_by(cs.all(), as_dict=True)["one", 1].to_dict(
-        as_series=False
-    ) == {
-        "a": ["one"],
-        "b": [1],
-    }
-    assert df.partition_by(["a"], as_dict=True)["one"].to_dict(as_series=False) == {
-        "a": ["one", "one"],
-        "b": [1, 3],
-    }
-
-    # test with both as_dict and include_key=False
-    df = pl.DataFrame(
-        {
-            "a": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "b": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "c": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "d": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-        }
-    ).sample(n=100_000, with_replacement=True, shuffle=True)
-
-    partitions = df.partition_by(["a", "b"], as_dict=True, include_key=False)
-    assert all(key == value.row(0) for key, value in partitions.items())
 
 
 def test_list_of_list_of_struct() -> None:

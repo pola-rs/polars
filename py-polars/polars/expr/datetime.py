@@ -446,6 +446,24 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> df.with_columns(
+        ...     day_name=pl.col("datetime").dt.to_string("%A"),
+        ...     month_name=pl.col("datetime").dt.to_string("%B"),
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬───────────┬────────────┐
+        │ datetime            ┆ day_name  ┆ month_name │
+        │ ---                 ┆ ---       ┆ ---        │
+        │ datetime[μs]        ┆ str       ┆ str        │
+        ╞═════════════════════╪═══════════╪════════════╡
+        │ 2020-03-01 00:00:00 ┆ Sunday    ┆ March      │
+        │ 2020-04-01 00:00:00 ┆ Wednesday ┆ April      │
+        │ 2020-05-01 00:00:00 ┆ Friday    ┆ May        │
+        └─────────────────────┴───────────┴────────────┘
         """
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
@@ -496,6 +514,24 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> df.with_columns(
+        ...     day_name=pl.col("datetime").dt.strftime("%A"),
+        ...     month_name=pl.col("datetime").dt.strftime("%B"),
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬───────────┬────────────┐
+        │ datetime            ┆ day_name  ┆ month_name │
+        │ ---                 ┆ ---       ┆ ---        │
+        │ datetime[μs]        ┆ str       ┆ str        │
+        ╞═════════════════════╪═══════════╪════════════╡
+        │ 2020-03-01 00:00:00 ┆ Sunday    ┆ March      │
+        │ 2020-04-01 00:00:00 ┆ Wednesday ┆ April      │
+        │ 2020-05-01 00:00:00 ┆ Friday    ┆ May        │
+        └─────────────────────┴───────────┴────────────┘
         """
         return self.to_string(format)
 
@@ -1327,9 +1363,16 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
+    @deprecate_function(
+        "Instead, first cast to `Int64` and then cast to the desired data type.",
+        version="0.20.5",
+    )
     def with_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
         Set time unit of an expression of dtype Datetime or Duration.
+
+        .. deprecated:: 0.20.5
+            First cast to `Int64` and then cast to the desired data type.
 
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
@@ -1337,7 +1380,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` expression.
+            Unit of time for the `Datetime` or `Duration` expression.
 
         Examples
         --------
@@ -1354,11 +1397,9 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").dt.with_time_unit("us").alias("time_unit_us"),
-        ...     ]
-        ... )
+        ...     pl.col("date"),
+        ...     pl.col("date").dt.with_time_unit("us").alias("time_unit_us"),
+        ... )  # doctest: +SKIP
         shape: (3, 2)
         ┌─────────────────────┬───────────────────────┐
         │ date                ┆ time_unit_us          │
@@ -1969,7 +2010,9 @@ class ExprDateTimeNameSpace:
         │ 2000-02-01 02:00:00 │
         │ 2000-03-01 02:00:00 │
         │ 2000-04-01 02:00:00 │
+        │ 2000-05-01 02:00:00 │
         │ …                   │
+        │ 2000-08-01 02:00:00 │
         │ 2000-09-01 02:00:00 │
         │ 2000-10-01 02:00:00 │
         │ 2000-11-01 02:00:00 │
@@ -2016,7 +2059,9 @@ class ExprDateTimeNameSpace:
         │ 2000-02-29 02:00:00 │
         │ 2000-03-31 02:00:00 │
         │ 2000-04-30 02:00:00 │
+        │ 2000-05-31 02:00:00 │
         │ …                   │
+        │ 2000-08-31 02:00:00 │
         │ 2000-09-30 02:00:00 │
         │ 2000-10-31 02:00:00 │
         │ 2000-11-30 02:00:00 │

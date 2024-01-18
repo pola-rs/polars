@@ -385,9 +385,11 @@ class StringNameSpace:
         ]
         """
 
-    def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Series:
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Series:
         """
-        Vertically concat the values in the Series to a single string value.
+        Vertically concatenate the string values in the column to a single string value.
 
         Parameters
         ----------
@@ -395,9 +397,8 @@ class StringNameSpace:
             The delimiter to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
-
-            If set to ``False``, null values will be propagated.
-            if the column contains any null values, the output is ``None``.
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
 
         Returns
         -------
@@ -1208,8 +1209,8 @@ class StringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start and end of the string. If set to
+            None (default), all leading and trailing whitespace is removed instead.
 
         Examples
         --------
@@ -1243,8 +1244,8 @@ class StringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start of the string. If set to None
+            (default), all leading whitespace is removed instead.
 
         Examples
         --------
@@ -1277,8 +1278,8 @@ class StringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the end of the string. If set to None
+            (default), all trailing whitespace is removed instead.
 
         Examples
         --------
@@ -1516,7 +1517,9 @@ class StringNameSpace:
         ]
         """
 
-    def slice(self, offset: int, length: int | None = None) -> Series:
+    def slice(
+        self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
+    ) -> Series:
         """
         Create subslices of the string values of a String Series.
 

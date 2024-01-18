@@ -254,10 +254,22 @@ impl Debug for Expr {
             Window {
                 function,
                 partition_by,
-                ..
-            } => write!(f, "{function:?}.over({partition_by:?})"),
+                options,
+            } => match options {
+                #[cfg(feature = "dynamic_group_by")]
+                WindowType::Rolling(options) => {
+                    write!(
+                        f,
+                        "{:?}.rolling(by='{}', offset={}, period={})",
+                        function, options.index_column, options.offset, options.period
+                    )
+                },
+                _ => {
+                    write!(f, "{function:?}.over({partition_by:?})")
+                },
+            },
             Nth(i) => write!(f, "nth({i})"),
-            Count => write!(f, "count()"),
+            Len => write!(f, "len()"),
             Explode(expr) => write!(f, "{expr:?}.explode()"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),

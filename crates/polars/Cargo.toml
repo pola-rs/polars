@@ -147,13 +147,15 @@ find_many = ["polars-plan/find_many"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 group_by_list = ["polars-core/group_by_list", "polars-ops/group_by_list"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
+is_between = ["polars-lazy?/is_between", "polars-ops/is_between"]
 is_first_distinct = ["polars-lazy?/is_first_distinct", "polars-ops/is_first_distinct"]
 is_in = ["polars-lazy?/is_in"]
 is_last_distinct = ["polars-lazy?/is_last_distinct", "polars-ops/is_last_distinct"]
 is_unique = ["polars-lazy?/is_unique", "polars-ops/is_unique"]
-lazy_regex = ["polars-lazy?/regex"]
+regex = ["polars-lazy?/regex"]
 list_any_all = ["polars-lazy?/list_any_all"]
 list_count = ["polars-ops/list_count", "polars-lazy?/list_count"]
+array_count = ["polars-ops/array_count", "polars-lazy?/array_count", "dtype-array"]
 list_drop_nulls = ["polars-lazy?/list_drop_nulls"]
 list_eval = ["polars-lazy?/list_eval"]
 list_gather = ["polars-ops/list_gather", "polars-lazy?/list_gather"]
@@ -310,6 +312,7 @@ docs-selection = [
   "checked_arithmetic",
   "ndarray",
   "repeat_by",
+  "is_between",
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",

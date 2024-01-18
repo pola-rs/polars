@@ -30,7 +30,7 @@ pub(crate) fn prepare_collect_dtype(dtype: &DataType) -> ArrowDataType {
                 registry::get_object_physical_type()
             },
         },
-        dt => dt.to_arrow(),
+        dt => dt.to_arrow(true),
     }
 }
 

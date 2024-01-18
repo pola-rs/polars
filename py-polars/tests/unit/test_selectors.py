@@ -57,6 +57,8 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         "fgg": pl.Boolean,
         "qqR": pl.String,
     }
+    assert df.select(cs.by_dtype()).schema == {}
+    assert df.select(cs.by_dtype([])).schema == {}
 
 
 def test_selector_by_name(df: pl.DataFrame) -> None:
@@ -75,6 +77,8 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
         "JJK",
         "qqR",
     ]
+    assert df.select(cs.by_name()).columns == []
+    assert df.select(cs.by_name([])).columns == []
 
 
 def test_selector_contains(df: pl.DataFrame) -> None:

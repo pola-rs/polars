@@ -77,7 +77,7 @@ pub enum StringFunction {
         length: usize,
         fill_char: char,
     },
-    Slice(i64, Option<u64>),
+    Slice,
     #[cfg(feature = "string_encoding")]
     HexEncode,
     #[cfg(feature = "binary_encoding")]
@@ -160,14 +160,8 @@ impl StringFunction {
             Base64Encode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => mapper.with_dtype(DataType::Binary),
-            Uppercase
-            | Lowercase
-            | StripChars
-            | StripCharsStart
-            | StripCharsEnd
-            | StripPrefix
-            | StripSuffix
-            | Slice(_, _) => mapper.with_same_dtype(),
+            Uppercase | Lowercase | StripChars | StripCharsStart | StripCharsEnd | StripPrefix
+            | StripSuffix | Slice => mapper.with_same_dtype(),
             #[cfg(feature = "string_pad")]
             PadStart { .. } | PadEnd { .. } | ZFill { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
@@ -231,7 +225,7 @@ impl Display for StringFunction {
             Base64Encode => "base64_encode",
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => "base64_decode",
-            Slice(_, _) => "slice",
+            Slice => "slice",
             StartsWith { .. } => "starts_with",
             StripChars => "strip_chars",
             StripCharsStart => "strip_chars_start",
@@ -340,7 +334,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_to_integer")]
             ToInteger(base, strict) => map!(strings::to_integer, base, strict),
-            Slice(start, length) => map!(strings::str_slice, start, length),
+            Slice => map_as_slice!(strings::str_slice),
             #[cfg(feature = "string_encoding")]
             HexEncode => map!(strings::hex_encode),
             #[cfg(feature = "binary_encoding")]
@@ -879,9 +873,22 @@ pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Se
     let ca = s.str()?;
     ca.to_integer(base, strict).map(|ok| ok.into_series())
 }
-pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
-    let ca = s.str()?;
-    Ok(ca.str_slice(start, length).into_series())
+pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
+    // Calculate the post-broadcast length and ensure everything is consistent.
+    let len = s
+        .iter()
+        .map(|series| series.len())
+        .filter(|l| *l != 1)
+        .max()
+        .unwrap_or(1);
+    polars_ensure!(
+        s.iter().all(|series| series.len() == 1 || series.len() == len),
+        ComputeError: "all series in `str_slice` should have equal or unit length"
+    );
+    let ca = s[0].str()?;
+    let offset = &s[1];
+    let length = &s[2];
+    Ok(ca.str_slice(offset, length)?.into_series())
 }
 
 #[cfg(feature = "string_encoding")]

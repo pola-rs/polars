@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        IntoExpr,
         IntoExprColumn,
         NullBehavior,
         ToStructStrategy,
@@ -241,7 +242,7 @@ class ListNameSpace:
     def var(self) -> Series:
         """Compute the var value of the arrays in the list."""
 
-    def sort(self, *, descending: bool = False) -> Series:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -249,6 +250,8 @@ class ListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -454,7 +457,9 @@ class ListNameSpace:
         ]
         """
 
-    def contains(self, item: float | str | bool | int | date | datetime) -> Series:
+    def contains(
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
+    ) -> Series:
         """
         Check if sublists contain the given item.
 
@@ -699,9 +704,7 @@ class ListNameSpace:
         ]
         """
 
-    def count_matches(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_matches(self, element: IntoExpr) -> Series:
         """
         Count how often the value produced by `element` occurs.
 

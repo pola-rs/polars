@@ -260,12 +260,12 @@ impl DataType {
 
     /// Convert to an Arrow data type.
     #[inline]
-    pub fn to_arrow(&self) -> ArrowDataType {
-        self.try_to_arrow().unwrap()
+    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowDataType {
+        self.try_to_arrow(pl_flavor).unwrap()
     }
 
     #[inline]
-    pub fn try_to_arrow(&self) -> PolarsResult<ArrowDataType> {
+    pub fn try_to_arrow(&self, _pl_flavor: bool) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
             Boolean => Ok(ArrowDataType::Boolean),
@@ -285,7 +285,10 @@ impl DataType {
                 (*precision).unwrap_or(38),
                 scale.unwrap_or(0), // and what else can we do here?
             )),
-            String => Ok(ArrowDataType::LargeUtf8),
+            String => {
+                // TODO! implement pl_flavor
+                Ok(ArrowDataType::LargeUtf8)
+            },
             Binary => Ok(ArrowDataType::LargeBinary),
             Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
@@ -295,13 +298,13 @@ impl DataType {
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
                 Box::new(arrow::datatypes::Field::new(
                     "item",
-                    dt.try_to_arrow()?,
+                    dt.try_to_arrow(true)?,
                     true,
                 )),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                arrow::datatypes::Field::new("item", dt.to_arrow(), true),
+                arrow::datatypes::Field::new("item", dt.to_arrow(true), true),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
@@ -316,7 +319,7 @@ impl DataType {
             )),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
-                let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
+                let fields = fields.iter().map(|fld| fld.to_arrow(true)).collect();
                 Ok(ArrowDataType::Struct(fields))
             },
             Unknown => {

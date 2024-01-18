@@ -63,7 +63,7 @@ df2 = pl.DataFrame(
 # --8<-- [end:dataframe2]
 
 # --8<-- [start:group_by]
-df2.group_by("y", maintain_order=True).count()
+df2.group_by("y", maintain_order=True).len()
 # --8<-- [end:group_by]
 
 # --8<-- [start:group_by2]

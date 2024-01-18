@@ -1,4 +1,5 @@
 use std::io::{BufWriter, Cursor};
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 
 use either::Either;
@@ -102,6 +103,7 @@ impl PyDataFrame {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
         IpcStreamWriter::new(&mut buf)
+            .with_pl_flavor(true)
             .finish(&mut self.df.clone())
             .expect("ipc writer");
         Ok(PyBytes::new(py, &buf).to_object(py))
@@ -605,7 +607,7 @@ impl PyDataFrame {
         separator: u8,
         line_terminator: String,
         quote_char: u8,
-        batch_size: usize,
+        batch_size: NonZeroUsize,
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
@@ -834,7 +836,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks()
+                .iter_chunks(false)
                 .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
                 .collect::<PyResult<_>>()?;
             Ok(rbs)
@@ -857,7 +859,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks()
+                .iter_chunks(false)
                 .map(|rb| {
                     let mut rb = rb.into_arrays();
                     for i in &cat_columns {

@@ -349,7 +349,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_var(ddof))
 
-    def sort(self, *, descending: bool = False) -> Expr:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
 
@@ -357,6 +357,8 @@ class ExprListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -386,7 +388,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [9, 2, 1] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_sort(descending))
+        return wrap_expr(self._pyexpr.list_sort(descending, nulls_last))
 
     def reverse(self) -> Expr:
         """
@@ -595,7 +597,7 @@ class ExprListNameSpace:
         return self.get(-1)
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | Expr
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
     ) -> Expr:
         """
         Check if sublists contain the given item.

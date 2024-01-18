@@ -78,7 +78,9 @@ from polars.exceptions import (
     InvalidOperationError,
     NoDataError,
     OutOfBoundsError,
+    PolarsError,
     PolarsPanicError,
+    PolarsWarning,
     SchemaError,
     SchemaFieldNotFoundError,
     ShapeError,
@@ -136,6 +138,7 @@ from polars.functions import (
     int_range,
     int_ranges,
     last,
+    len,
     lit,
     map,
     map_batches,
@@ -223,12 +226,14 @@ __all__ = [
     "InvalidOperationError",
     "NoDataError",
     "OutOfBoundsError",
+    "PolarsError",
     "PolarsPanicError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
     # warnings
+    "PolarsWarning",
     "CategoricalRemappingWarning",
     # core classes
     "DataFrame",
@@ -389,6 +394,8 @@ __all__ = [
     "tail",
     "time",  # named time_, see import above
     "var",
+    # polars.functions.len
+    "len",
     # polars.functions.random
     "set_random_seed",
     # polars.convert

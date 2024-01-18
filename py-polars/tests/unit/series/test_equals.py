@@ -70,3 +70,23 @@ def test_eq_list() -> None:
     result = s == 1
     expected = pl.Series([True, True])
     assert_series_equal(result, expected)
+
+
+def test_eq_missing_expr() -> None:
+    s = pl.Series([1, None])
+    result = s.eq_missing(pl.lit(1))
+
+    assert isinstance(result, pl.Expr)
+    result_evaluated = pl.select(result).to_series()
+    expected = pl.Series([True, False])
+    assert_series_equal(result_evaluated, expected)
+
+
+def test_ne_missing_expr() -> None:
+    s = pl.Series([1, None])
+    result = s.ne_missing(pl.lit(1))
+
+    assert isinstance(result, pl.Expr)
+    result_evaluated = pl.select(result).to_series()
+    expected = pl.Series([False, True])
+    assert_series_equal(result_evaluated, expected)

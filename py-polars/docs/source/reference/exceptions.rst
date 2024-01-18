@@ -14,6 +14,7 @@ Exceptions
     InvalidOperationError
     NoDataError
     NoRowsReturnedError
+    PolarsError
     PolarsPanicError
     RowsError
     SchemaError

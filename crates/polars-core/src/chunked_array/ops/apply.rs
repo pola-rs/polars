@@ -68,13 +68,13 @@ where
                 let out: U::Array = arr
                     .values_iter()
                     .map(&mut op)
-                    .collect_arr_with_dtype(dtype.to_arrow());
+                    .collect_arr_with_dtype(dtype.to_arrow(true));
                 out.with_validity_typed(arr.validity().cloned())
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op))
-                    .collect_arr_with_dtype(dtype.to_arrow());
+                    .collect_arr_with_dtype(dtype.to_arrow(true));
                 out.with_validity_typed(arr.validity().cloned())
             }
         });
@@ -159,7 +159,7 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow())
+            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow(true))
         };
 
         if owned_arr.values().is_sliced() {

@@ -94,8 +94,12 @@ impl PyExpr {
         self.inner.clone().str().strip_suffix(suffix.inner).into()
     }
 
-    fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
-        self.inner.clone().str().slice(start, length).into()
+    fn str_slice(&self, offset: Self, length: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .slice(offset.inner, length.inner)
+            .into()
     }
 
     fn str_explode(&self) -> Self {
@@ -123,7 +127,7 @@ impl PyExpr {
         self.inner.clone().str().len_chars().into()
     }
 
-    #[cfg(feature = "lazy_regex")]
+    #[cfg(feature = "regex")]
     fn str_replace_n(&self, pat: Self, val: Self, literal: bool, n: i64) -> Self {
         self.inner
             .clone()
@@ -132,7 +136,7 @@ impl PyExpr {
             .into()
     }
 
-    #[cfg(feature = "lazy_regex")]
+    #[cfg(feature = "regex")]
     fn str_replace_all(&self, pat: Self, val: Self, literal: bool) -> Self {
         self.inner
             .clone()
@@ -158,7 +162,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (pat, literal, strict))]
-    #[cfg(feature = "lazy_regex")]
+    #[cfg(feature = "regex")]
     fn str_contains(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
         match literal {
             Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
@@ -167,7 +171,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (pat, literal, strict))]
-    #[cfg(feature = "lazy_regex")]
+    #[cfg(feature = "regex")]
     fn str_find(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
         match literal {
             Some(true) => self.inner.clone().str().find_literal(pat.inner).into(),

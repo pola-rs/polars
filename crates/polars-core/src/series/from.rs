@@ -19,6 +19,8 @@ use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::EXTENSION_NAME;
 #[cfg(feature = "timezones")]
+use crate::chunked_array::temporal::parse_fixed_offset;
+#[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(all(feature = "dtype-decimal", feature = "python"))]
 use crate::config::decimal_is_active;
@@ -100,7 +102,7 @@ impl Series {
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap()
+                Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow(true)).unwrap()
             },
             #[cfg(feature = "object")]
             Object(_, _) => {
@@ -205,12 +207,14 @@ impl Series {
                 let mut tz = tz.clone();
                 match tz.as_deref() {
                     Some("") => tz = None,
+                    #[cfg(feature = "timezones")]
                     Some("+00:00") | Some("00:00") => tz = Some("UTC".to_string()),
-                    Some(_tz) => {
-                        #[cfg(feature = "timezones")]
-                        validate_time_zone(_tz)?;
+                    #[cfg(feature = "timezones")]
+                    Some(tz_str) => match validate_time_zone(tz_str) {
+                        Ok(_) => (),
+                        Err(_) => tz = Some(parse_fixed_offset(tz_str)?),
                     },
-                    None => (),
+                    _ => (),
                 }
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)

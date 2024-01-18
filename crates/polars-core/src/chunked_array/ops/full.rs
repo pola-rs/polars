@@ -22,7 +22,7 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(), length);
+        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(true), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -39,7 +39,7 @@ impl ChunkFull<bool> for BooleanChunked {
 
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = BooleanArray::new_null(DataType::Boolean.to_arrow(), length);
+        let arr = BooleanArray::new_null(ArrowDataType::Boolean, length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -59,7 +59,7 @@ impl<'a> ChunkFull<&'a str> for StringChunked {
 
 impl ChunkFullNull for StringChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = Utf8Array::new_null(DataType::String.to_arrow(), length);
+        let arr = Utf8Array::new_null(DataType::String.to_arrow(true), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -79,7 +79,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = BinaryArray::new_null(DataType::Binary.to_arrow(), length);
+        let arr = BinaryArray::new_null(DataType::Binary.to_arrow(true), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -111,7 +111,7 @@ impl ArrayChunked {
     ) -> ArrayChunked {
         let arr = FixedSizeListArray::new_null(
             ArrowDataType::FixedSizeList(
-                Box::new(ArrowField::new("item", inner_dtype.to_arrow(), true)),
+                Box::new(ArrowField::new("item", inner_dtype.to_arrow(true), true)),
                 width,
             ),
             length,
@@ -150,7 +150,7 @@ impl ListChunked {
         let arr: ListArray<i64> = ListArray::new_null(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
                 "item",
-                inner_dtype.to_physical().to_arrow(),
+                inner_dtype.to_physical().to_arrow(true),
                 true,
             ))),
             length,
