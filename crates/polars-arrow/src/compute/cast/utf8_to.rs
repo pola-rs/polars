@@ -5,7 +5,7 @@ use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::vec::PushUnchecked;
 
 use crate::array::*;
-use crate::datatypes::{ArrowDataType};
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
@@ -29,7 +29,6 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
 
     Ok(array.into())
 }
-
 
 /// Conversion of utf8
 pub fn utf8_to_large_utf8(from: &Utf8Array<i32>) -> Utf8Array<i64> {
@@ -70,7 +69,7 @@ pub fn utf8_to_binary<O: Offset>(
 }
 
 pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
-    let buffer_idx = 0 as u32;
+    let buffer_idx = 0_u32;
     let base_ptr = arr.values().as_ptr() as usize;
 
     let mut views = Vec::with_capacity(arr.len());

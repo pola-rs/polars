@@ -254,7 +254,7 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             set_variadic_buffer_counts(counts, array.values().as_ref())
         },
-        _ => return
+        _ => (),
     }
 }
 

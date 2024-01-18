@@ -68,12 +68,10 @@ impl PySeries {
         match self.series.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffer_from_primitive(&self.series, index),
             DataType::Boolean => get_buffer_from_primitive(&self.series, index),
-            DataType::List(_)  => {
-                get_buffer_from_nested(&self.series, index)
-            },
-            DataType::String =>  {
+            DataType::List(_) => get_buffer_from_nested(&self.series, index),
+            DataType::String => {
                 todo!()
-            }
+            },
             DataType::Array(_, _) => {
                 let ca = self.series.array().unwrap();
                 match index {
@@ -150,8 +148,7 @@ fn get_offsets(s: &Series) -> PyResult<PySeries> {
                 }
                 offsets.push(len_so_far)
             }
-            return Ok(Series::from_vec(s.name(), offsets).into())
-
+            return Ok(Series::from_vec(s.name(), offsets).into());
         },
         _ => return Err(PyValueError::new_err("expected list/string")),
     };

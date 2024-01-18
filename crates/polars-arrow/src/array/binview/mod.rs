@@ -119,7 +119,7 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
 
 impl<T: ViewType + ?Sized> PartialEq for BinaryViewArrayGeneric<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.into_iter().zip(other.into_iter()).all(|(l, r)| l == r)
+        self.into_iter().zip(other).all(|(l, r)| l == r)
     }
 }
 
@@ -303,7 +303,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         BinaryViewValueIter::new(self)
     }
 
-    pub fn len_iter(&self) -> impl Iterator<Item=u32> + '_ {
+    pub fn len_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.views.iter().map(|v| *v as u32)
     }
 

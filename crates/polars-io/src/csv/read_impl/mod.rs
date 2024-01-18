@@ -687,13 +687,7 @@ fn read_chunk(
     starting_point_offset: Option<usize>,
 ) -> PolarsResult<DataFrame> {
     let mut read = bytes_offset_thread;
-    let mut buffers = init_buffers(
-        projection,
-        capacity,
-        schema,
-        quote_char,
-        encoding,
-    )?;
+    let mut buffers = init_buffers(projection, capacity, schema, quote_char, encoding)?;
 
     let mut last_read = usize::MAX;
     loop {

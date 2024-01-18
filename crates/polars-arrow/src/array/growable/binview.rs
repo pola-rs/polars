@@ -44,12 +44,18 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                 let out = cum_sum;
                 cum_sum += binview.data_buffers().len() as u32;
                 out
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
-        let buffers = arrays.iter().map(|array| {
-            array.data_buffers().as_ref()
-        }).flatten().cloned().collect::<Vec<_>>();
-        let total_buffer_len = arrays.iter().map(|arr| arr.data_buffers().len()).sum::<usize>();
+        let buffers = arrays
+            .iter()
+            .flat_map(|array| array.data_buffers().as_ref())
+            .cloned()
+            .collect::<Vec<_>>();
+        let total_buffer_len = arrays
+            .iter()
+            .map(|arr| arr.data_buffers().len())
+            .sum::<usize>();
 
         Self {
             arrays,
@@ -80,6 +86,8 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         }
     }
 
+    /// # Safety
+    /// doesn't check bounds
     pub unsafe fn extend_unchecked(&mut self, index: usize, start: usize, len: usize) {
         let array = *self.arrays.get_unchecked(index);
 
@@ -90,7 +98,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         self.views
             .extend(array.views().get_unchecked(range).iter().map(|&view| {
                 let len = (view as u32) as usize;
-                self.total_bytes_len += len as usize;
+                self.total_bytes_len += len;
 
                 if len > 12 {
                     let buffer_offset = *self.buffers_offsets.get_unchecked(index);

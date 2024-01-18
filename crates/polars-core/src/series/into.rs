@@ -1,4 +1,3 @@
-use arrow::compute::cast::{cast_unchecked};
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",
@@ -6,6 +5,7 @@ use arrow::compute::cast::{cast_unchecked};
     feature = "dtype-time"
 ))]
 use arrow::compute::cast::cast_default as cast;
+use arrow::compute::cast::cast_unchecked;
 
 use crate::prelude::*;
 
@@ -23,9 +23,7 @@ impl Series {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                self.struct_().unwrap().to_arrow(chunk_idx, pl_flavor)
-            },
+            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx, pl_flavor),
             // special list branch to
             // make sure that we recursively apply all logical types.
             DataType::List(inner) => {
@@ -79,21 +77,29 @@ impl Series {
                 Box::new(arr) as ArrayRef
             },
             #[cfg(feature = "dtype-date")]
-            DataType::Date => {
-                cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow(pl_flavor)).unwrap()
-            },
+            DataType::Date => cast(
+                &*self.chunks()[chunk_idx],
+                &DataType::Date.to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(pl_flavor)).unwrap()
-            },
+            DataType::Datetime(_, _) => cast(
+                &*self.chunks()[chunk_idx],
+                &self.dtype().to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(pl_flavor)).unwrap()
-            },
+            DataType::Duration(_) => cast(
+                &*self.chunks()[chunk_idx],
+                &self.dtype().to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-time")]
-            DataType::Time => {
-                cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow(pl_flavor)).unwrap()
-            },
+            DataType::Time => cast(
+                &*self.chunks()[chunk_idx],
+                &DataType::Time.to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "object")]
             DataType::Object(_, None) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;

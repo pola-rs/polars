@@ -68,10 +68,7 @@ macro_rules! compare {
             Primitive(UInt64) => call_binary!(PrimitiveArray<i64>, lv, rv, $op),
             Primitive(Float32) => call_binary!(PrimitiveArray<f32>, lv, rv, $op),
             Primitive(Float64) => call_binary!(PrimitiveArray<f64>, lv, rv, $op),
-            dt => todo!(
-                "Comparison of Arrays with {:?} are not yet supported",
-                dt
-            ),
+            dt => todo!("Comparison of Arrays with {:?} are not yet supported", dt),
         }
     }};
 }

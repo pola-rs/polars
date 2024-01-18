@@ -324,7 +324,8 @@ mod test {
         let s = StructChunked::new("a", &[a, b]).unwrap().into_series();
         let mut df = df![
             "a" => s
-        ].unwrap();
+        ]
+        .unwrap();
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
 
         IpcWriter::new(&mut buf)

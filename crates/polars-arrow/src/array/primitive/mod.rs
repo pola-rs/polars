@@ -93,6 +93,8 @@ impl<T: NativeType> PrimitiveArray<T> {
         })
     }
 
+    /// # Safety
+    /// Doesn't check invariants
     pub unsafe fn new_unchecked(
         data_type: ArrowDataType,
         values: Buffer<T>,

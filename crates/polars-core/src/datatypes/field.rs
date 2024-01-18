@@ -120,7 +120,6 @@ impl DataType {
     }
 
     pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool) -> DataType {
-
         match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
@@ -172,7 +171,6 @@ impl DataType {
             },
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
-
     }
 }
 

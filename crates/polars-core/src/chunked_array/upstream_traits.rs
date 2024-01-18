@@ -125,7 +125,7 @@ where
     Ptr: AsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = MutableBinaryViewArray::from_iter(iter.into_iter()).freeze();
+        let arr = MutableBinaryViewArray::from_iter(iter).freeze();
         ChunkedArray::with_chunk("", arr)
     }
 }

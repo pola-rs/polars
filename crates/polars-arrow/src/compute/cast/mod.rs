@@ -11,8 +11,8 @@ mod utf8_to;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
+use binview_to::binview_to_primitive_dyn;
 pub use binview_to::utf8view_to_utf8;
-use binview_to::{binview_to_primitive_dyn};
 pub use boolean_to::*;
 pub use decimal_to::*;
 pub use dictionary_to::*;
@@ -21,7 +21,9 @@ pub use primitive_to::*;
 pub use utf8_to::*;
 
 use crate::array::*;
-use crate::compute::cast::binview_to::{utf8view_to_date32_dyn, utf8view_to_naive_timestamp_dyn, view_to_binary};
+use crate::compute::cast::binview_to::{
+    utf8view_to_date32_dyn, utf8view_to_naive_timestamp_dyn, view_to_binary,
+};
 use crate::datatypes::*;
 use crate::legacy::index::IdxSize;
 use crate::match_integer_type;
@@ -196,11 +198,15 @@ fn cast_list_to_fixed_size_list<O: Offset>(
                 // SAFETY: we know the index is in bound.
                 let current_offset = unsafe { *offsets.get_unchecked(i) };
                 for j in 0..size {
-                    indices.push(Some((current_offset + O::from_as_usize(j)).to_usize()  as IdxSize));
+                    indices.push(Some(
+                        (current_offset + O::from_as_usize(j)).to_usize() as IdxSize
+                    ));
                 }
             }
         }
-        let take_values = unsafe { crate::legacy::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze()) };
+        let take_values = unsafe {
+            crate::legacy::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze())
+        };
 
         cast(take_values.as_ref(), inner.data_type(), options)?
     };
@@ -304,7 +310,7 @@ pub fn cast(
             LargeBinary => Ok(binview_to::view_to_binary::<i64>(
                 array.as_any().downcast_ref().unwrap(),
             )
-                .boxed()),
+            .boxed()),
             UInt8 => binview_to_primitive_dyn::<u8>(array, to_type, options),
             UInt16 => binview_to_primitive_dyn::<u16>(array, to_type, options),
             UInt32 => binview_to_primitive_dyn::<u32>(array, to_type, options),
@@ -385,9 +391,13 @@ pub fn cast(
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },
-                Timestamp(time_unit, Some(time_zone)) => {
-                    utf8view_to_timestamp(array.as_any().downcast_ref().unwrap(),RFC3339, time_zone.clone(), time_unit.to_owned()).map(|arr| arr.boxed())
-                },
+                Timestamp(time_unit, Some(time_zone)) => utf8view_to_timestamp(
+                    array.as_any().downcast_ref().unwrap(),
+                    RFC3339,
+                    time_zone.clone(),
+                    time_unit.to_owned(),
+                )
+                .map(|arr| arr.boxed()),
                 Date32 => utf8view_to_date32_dyn(array),
                 _ => polars_bail!(InvalidOperation:
                     "casting from {from_type:?} to {to_type:?} not supported",
@@ -457,95 +467,24 @@ pub fn cast(
             LargeBinary => Ok(utf8_to_binary::<i64>(
                 array.as_any().downcast_ref().unwrap(),
                 to_type.clone(),
-            ).boxed()),
-            // not supported by polars
-            // UInt8 | UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64 => {
-            //     let binary = utf8_to_binary::<i64>(
-            //         array.as_any().downcast_ref().unwrap(),
-            //         ArrowDataType::LargeBinary,
-            //     );
-            //     cast(&binary, to_type, options)
-            // },
-            // Date32 => utf8_to_date32_dyn::<i64>(array),
-            // Date64 => utf8_to_date64_dyn::<i64>(array),
-            // Utf8 => utf8_large_to_utf8(array.as_any().downcast_ref().unwrap()).map(|x| x.boxed()),
-            // Timestamp(time_unit, None) => {
-            //     utf8_to_naive_timestamp_dyn::<i64>(array, time_unit.to_owned())
-            // },
-            // Timestamp(time_unit, Some(time_zone)) => {
-            //     utf8_to_timestamp_dyn::<i64>(array, time_zone.clone(), time_unit.to_owned())
-            // },
+            )
+            .boxed()),
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
         },
-
-        (_, Utf8) => match from_type {
-            // not supported by polars
-            // UInt8 => primitive_to_utf8_dyn::<u8, i32>(array),
-            // UInt16 => primitive_to_utf8_dyn::<u16, i32>(array),
-            // UInt32 => primitive_to_utf8_dyn::<u32, i32>(array),
-            // UInt64 => primitive_to_utf8_dyn::<u64, i32>(array),
-            // Int8 => primitive_to_utf8_dyn::<i8, i32>(array),
-            // Int16 => primitive_to_utf8_dyn::<i16, i32>(array),
-            // Int32 => primitive_to_utf8_dyn::<i32, i32>(array),
-            // Int64 => primitive_to_utf8_dyn::<i64, i32>(array),
-            // Float32 => primitive_to_utf8_dyn::<f32, i32>(array),
-            // Float64 => primitive_to_utf8_dyn::<f64, i32>(array),
-            // Timestamp(from_unit, Some(tz)) => {
-            //     let from = array.as_any().downcast_ref().unwrap();
-            //     Ok(Box::new(timestamp_to_utf8::<i32>(from, *from_unit, tz)?))
-            // },
-            // Timestamp(from_unit, None) => {
-            //     let from = array.as_any().downcast_ref().unwrap();
-            //     Ok(Box::new(naive_timestamp_to_utf8::<i32>(from, *from_unit)))
-            // },
-            _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
-            ),
-        },
-
         (_, LargeUtf8) => match from_type {
             UInt8 => primitive_to_utf8_dyn::<u8, i64>(array),
             LargeBinary => {
                 binary_to_utf8::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone())
                     .map(|x| x.boxed())
             },
-            // not supported by polars
-            // UInt16 => primitive_to_utf8_dyn::<u16, i64>(array),
-            // UInt32 => primitive_to_utf8_dyn::<u32, i64>(array),
-            // UInt64 => primitive_to_utf8_dyn::<u64, i64>(array),
-            // Int8 => primitive_to_utf8_dyn::<i8, i64>(array),
-            // Int16 => primitive_to_utf8_dyn::<i16, i64>(array),
-            // Int32 => primitive_to_utf8_dyn::<i32, i64>(array),
-            // Int64 => primitive_to_utf8_dyn::<i64, i64>(array),
-            // Float32 => primitive_to_utf8_dyn::<f32, i64>(array),
-            // Float64 => primitive_to_utf8_dyn::<f64, i64>(array),
-            // Timestamp(from_unit, Some(tz)) => {
-            //     let from = array.as_any().downcast_ref().unwrap();
-            //     Ok(Box::new(timestamp_to_utf8::<i64>(from, *from_unit, tz)?))
-            // },
-            // Timestamp(from_unit, None) => {
-            //     let from = array.as_any().downcast_ref().unwrap();
-            //     Ok(Box::new(naive_timestamp_to_utf8::<i64>(from, *from_unit)))
-            // },
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
         },
 
         (Binary, _) => match to_type {
-            // not supported by polars
-            // UInt8 => binary_to_primitive_dyn::<i32, u8>(array, to_type, options),
-            // UInt16 => binary_to_primitive_dyn::<i32, u16>(array, to_type, options),
-            // UInt32 => binary_to_primitive_dyn::<i32, u32>(array, to_type, options),
-            // UInt64 => binary_to_primitive_dyn::<i32, u64>(array, to_type, options),
-            // Int8 => binary_to_primitive_dyn::<i32, i8>(array, to_type, options),
-            // Int16 => binary_to_primitive_dyn::<i32, i16>(array, to_type, options),
-            // Int32 => binary_to_primitive_dyn::<i32, i32>(array, to_type, options),
-            // Int64 => binary_to_primitive_dyn::<i32, i64>(array, to_type, options),
-            // Float32 => binary_to_primitive_dyn::<i32, f32>(array, to_type, options),
-            // Float64 => binary_to_primitive_dyn::<i32, f64>(array, to_type, options),
             LargeBinary => Ok(Box::new(binary_to_large_binary(
                 array.as_any().downcast_ref().unwrap(),
                 to_type.clone(),
@@ -574,10 +513,6 @@ pub fn cast(
                 binary_to_utf8::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone())
                     .map(|x| x.boxed())
             },
-            // LargeList(inner) if matches!(inner.data_type, ArrowDataType::UInt8) => Ok(
-            //     binary_to_list::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone())
-            //         .boxed(),
-            // ),
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
@@ -597,38 +532,6 @@ pub fn cast(
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
         },
-        (_, Binary) => match from_type {
-            // UInt8 => primitive_to_binary_dyn::<u8, i32>(array),
-            // UInt16 => primitive_to_binary_dyn::<u16, i32>(array),
-            // UInt32 => primitive_to_binary_dyn::<u32, i32>(array),
-            // UInt64 => primitive_to_binary_dyn::<u64, i32>(array),
-            // Int8 => primitive_to_binary_dyn::<i8, i32>(array),
-            // Int16 => primitive_to_binary_dyn::<i16, i32>(array),
-            // Int32 => primitive_to_binary_dyn::<i32, i32>(array),
-            // Int64 => primitive_to_binary_dyn::<i64, i32>(array),
-            // Float32 => primitive_to_binary_dyn::<f32, i32>(array),
-            // Float64 => primitive_to_binary_dyn::<f64, i32>(array),
-            _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
-            ),
-        },
-
-        (_, LargeBinary) => match from_type {
-            // UInt8 => primitive_to_binary_dyn::<u8, i64>(array),
-            // UInt16 => primitive_to_binary_dyn::<u16, i64>(array),
-            // UInt32 => primitive_to_binary_dyn::<u32, i64>(array),
-            // UInt64 => primitive_to_binary_dyn::<u64, i64>(array),
-            // Int8 => primitive_to_binary_dyn::<i8, i64>(array),
-            // Int16 => primitive_to_binary_dyn::<i16, i64>(array),
-            // Int32 => primitive_to_binary_dyn::<i32, i64>(array),
-            // Int64 => primitive_to_binary_dyn::<i64, i64>(array),
-            // Float32 => primitive_to_binary_dyn::<f32, i64>(array),
-            // Float64 => primitive_to_binary_dyn::<f64, i64>(array),
-            _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
-            ),
-        },
-
         // start numeric casts
         (UInt8, UInt16) => primitive_to_primitive_dyn::<u8, u16>(array, to_type, as_options),
         (UInt8, UInt32) => primitive_to_primitive_dyn::<u8, u32>(array, to_type, as_options),
@@ -873,9 +776,7 @@ fn from_to_binview(
         Float32 => primitive_to_binview_dyn::<f32>(array),
         Float64 => primitive_to_binview_dyn::<f64>(array),
         Binary => binary_to_binview::<i32>(array.as_any().downcast_ref().unwrap()),
-        FixedSizeBinary(_) => fixed_size_binary_to_binview(
-            array.as_any().downcast_ref().unwrap()
-        ),
+        FixedSizeBinary(_) => fixed_size_binary_to_binview(array.as_any().downcast_ref().unwrap()),
         LargeBinary => binary_to_binview::<i64>(array.as_any().downcast_ref().unwrap()),
         _ => polars_bail!(InvalidOperation:
             "casting from {from_type:?} to {to_type:?} not supported",

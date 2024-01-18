@@ -1,7 +1,10 @@
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
-use arrow::array::{Array, BinaryViewArray, ListArray, MutableArray, MutablePlBinary, MutablePrimitiveArray, PrimitiveArray, Utf8ViewArray};
+use arrow::array::{
+    Array, BinaryViewArray, ListArray, MutableArray, MutablePlBinary, MutablePrimitiveArray,
+    PrimitiveArray, Utf8ViewArray,
+};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::offset::OffsetsBuffer;
@@ -341,20 +344,22 @@ fn array_set_operation(
 
     match dtype {
         ArrowDataType::Utf8View => {
-            let a = values_a.as_any().downcast_ref::<Utf8ViewArray>().unwrap().to_binview();
-            let b = values_b.as_any().downcast_ref::<Utf8ViewArray>().unwrap().to_binview();
+            let a = values_a
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .to_binview();
+            let b = values_b
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .to_binview();
 
             binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
         },
         ArrowDataType::LargeBinary => {
-            let a = values_a
-                .as_any()
-                .downcast_ref::<BinaryViewArray>()
-                .unwrap();
-            let b = values_b
-                .as_any()
-                .downcast_ref::<BinaryViewArray>()
-                .unwrap();
+            let a = values_a.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            let b = values_b.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             binary(a, b, offsets_a, offsets_b, set_op, validity, false)
         },
         ArrowDataType::Boolean => {

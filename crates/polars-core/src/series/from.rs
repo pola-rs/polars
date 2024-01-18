@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use arrow::compute::cast::{cast_unchecked as cast};
+use arrow::compute::cast::cast_unchecked as cast;
 #[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(
@@ -142,9 +142,7 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::String, false).unwrap();
                 Ok(StringChunked::from_chunks(name, chunks).into_series())
             },
-            ArrowDataType::BinaryView => {
-                Ok(BinaryChunked::from_chunks(name, chunks).into_series())
-            },
+            ArrowDataType::BinaryView => Ok(BinaryChunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Binary | ArrowDataType::LargeBinary => {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())

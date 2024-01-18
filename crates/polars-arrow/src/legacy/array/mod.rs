@@ -1,4 +1,7 @@
-use crate::array::{new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, StructArray, MutableBinaryViewArray, ViewType};
+use crate::array::{
+    new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray,
+    PrimitiveArray, StructArray, ViewType,
+};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::utils::CustomIterTools;
@@ -104,11 +107,16 @@ pub trait ListFromIter {
         )
     }
 
-    unsafe fn from_iter_binview_trusted_len<I, P, Ref, T: ViewType + ?Sized>(iter: I, n_elements: usize) -> ListArray<i64>
-        where
-            I: IntoIterator<Item = Option<P>>,
-            P: IntoIterator<Item = Option<Ref>>,
-            Ref: AsRef<T>,
+    /// # Safety
+    /// Will produce incorrect arrays if size hint is incorrect.
+    unsafe fn from_iter_binview_trusted_len<I, P, Ref, T: ViewType + ?Sized>(
+        iter: I,
+        n_elements: usize,
+    ) -> ListArray<i64>
+    where
+        I: IntoIterator<Item = Option<P>>,
+        P: IntoIterator<Item = Option<Ref>>,
+        Ref: AsRef<T>,
     {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();

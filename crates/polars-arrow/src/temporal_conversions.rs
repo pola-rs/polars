@@ -249,7 +249,10 @@ pub fn timestamp_ns_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
 
 /// Converts a timestamp in `time_unit` and `timezone` into [`chrono::DateTime`].
 #[inline]
-pub(crate) fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> chrono::NaiveDateTime {
+pub(crate) fn timestamp_to_naive_datetime(
+    timestamp: i64,
+    time_unit: TimeUnit,
+) -> chrono::NaiveDateTime {
     match time_unit {
         TimeUnit::Second => timestamp_s_to_datetime(timestamp),
         TimeUnit::Millisecond => timestamp_ms_to_datetime(timestamp),
@@ -382,7 +385,6 @@ fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
         .to(ArrowDataType::Timestamp(time_unit, Some(time_zone)))
 }
 
-
 /// Parses `value` to a [`chrono_tz::Tz`] with the Arrow's definition of timestamp with a timezone.
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
@@ -401,7 +403,9 @@ fn chrono_tz_utf_to_timestamp(
     time_unit: TimeUnit,
 ) -> PolarsResult<PrimitiveArray<i64>> {
     let tz = parse_offset_tz(&time_zone)?;
-    Ok(utf8view_to_timestamp_impl(array, fmt, time_zone, tz, time_unit))
+    Ok(utf8view_to_timestamp_impl(
+        array, fmt, time_zone, tz, time_unit,
+    ))
 }
 
 #[cfg(not(feature = "chrono-tz"))]
@@ -431,7 +435,9 @@ pub(crate) fn utf8view_to_timestamp(
     let tz = parse_offset(time_zone.as_str());
 
     if let Ok(tz) = tz {
-        Ok(utf8view_to_timestamp_impl(array, fmt, time_zone, tz, time_unit))
+        Ok(utf8view_to_timestamp_impl(
+            array, fmt, time_zone, tz, time_unit,
+        ))
     } else {
         chrono_tz_utf_to_timestamp(array, fmt, time_zone, time_unit)
     }

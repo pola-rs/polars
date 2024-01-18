@@ -1,4 +1,4 @@
-use arrow::array::{MutableBinaryViewArray};
+use arrow::array::MutableBinaryViewArray;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -126,12 +126,7 @@ pub(crate) struct Utf8Field {
 }
 
 impl Utf8Field {
-    fn new(
-        name: &str,
-        capacity: usize,
-        quote_char: Option<u8>,
-        encoding: CsvEncoding,
-    ) -> Self {
+    fn new(name: &str, capacity: usize, quote_char: Option<u8>, encoding: CsvEncoding) -> Self {
         Self {
             name: name.to_string(),
             mutable: MutableBinaryViewArray::with_capacity(capacity),

@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use arrow::array::*;
 
 use crate::prelude::*;
@@ -246,9 +244,7 @@ impl ListChunked {
         unsafe {
             self.downcast_iter()
                 .flat_map(|arr| arr.values_iter())
-                .map(move |arr|
-                    Series::from_chunks_and_dtype_unchecked("", vec![arr], &inner_type)
-                )
+                .map(move |arr| Series::from_chunks_and_dtype_unchecked("", vec![arr], &inner_type))
                 .trust_my_length(self.len())
         }
     }

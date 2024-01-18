@@ -16,6 +16,7 @@ use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
+use polars_rs::export::arrow;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
 use polars_utils::total_ord::TotalEq;
@@ -28,7 +29,6 @@ use pyo3::types::{
 };
 use pyo3::{intern, PyAny, PyResult};
 use smartstring::alias::String as SmartString;
-use polars_rs::export::arrow;
 
 use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
@@ -431,7 +431,7 @@ impl ToPyObject for Wrap<DataType> {
             },
             DataType::BinaryOffset => {
                 unimplemented!()
-            }
+            },
         }
     }
 }

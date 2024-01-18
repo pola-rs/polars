@@ -278,7 +278,6 @@ impl ChunkCast for StringChunked {
     }
 }
 
-
 impl BinaryChunked {
     /// # Safety
     /// String is not validated
