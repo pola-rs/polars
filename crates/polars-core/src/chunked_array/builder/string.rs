@@ -47,10 +47,6 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
     pub fn append_option<S: AsRef<T>>(&mut self, opt: Option<S>) {
         self.chunk_builder.push(opt);
     }
-
-    fn shrink_to_fit(&mut self) {
-        self.chunk_builder.shrink_to_fit()
-    }
 }
 
 impl StringChunkedBuilder {

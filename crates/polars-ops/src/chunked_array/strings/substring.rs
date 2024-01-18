@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8Array, Utf8ViewArray};
+use arrow::array::{Array, MutableBinaryViewArray, Utf8ViewArray};
 
 /// Returns a Utf8Array<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
 /// `start` can be negative, in which case the start counts from the end of the string.

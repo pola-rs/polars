@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
-use arrow::array::{Array, BinaryArray, BinaryViewArray, ListArray, MutableArray, MutableBinaryArray, MutablePlBinary, MutablePrimitiveArray, PrimitiveArray, Utf8Array, Utf8ViewArray};
+use arrow::array::{Array, BinaryViewArray, ListArray, MutableArray, MutablePlBinary, MutablePrimitiveArray, PrimitiveArray, Utf8ViewArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::offset::OffsetsBuffer;
@@ -322,15 +322,6 @@ fn binary(
         let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
         Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
     }
-}
-
-fn utf8_to_binary(arr: &Utf8Array<i64>) -> BinaryArray<i64> {
-    BinaryArray::<i64>::new(
-        ArrowDataType::LargeBinary,
-        arr.offsets().clone(),
-        arr.values().clone(),
-        arr.validity().cloned(),
-    )
 }
 
 fn array_set_operation(

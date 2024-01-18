@@ -1,6 +1,4 @@
-use arrow::array::{MutableBinaryViewArray, Utf8Array};
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::prelude::FromDataUtf8;
+use arrow::array::{MutableBinaryViewArray};
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -125,7 +123,6 @@ pub(crate) struct Utf8Field {
     scratch: Vec<u8>,
     quote_char: u8,
     encoding: CsvEncoding,
-    ignore_errors: bool,
 }
 
 impl Utf8Field {
@@ -134,7 +131,6 @@ impl Utf8Field {
         capacity: usize,
         quote_char: Option<u8>,
         encoding: CsvEncoding,
-        ignore_errors: bool,
     ) -> Self {
         Self {
             name: name.to_string(),
@@ -142,7 +138,6 @@ impl Utf8Field {
             scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
             encoding,
-            ignore_errors,
         }
     }
 }
@@ -445,7 +440,6 @@ pub(crate) fn init_buffers(
     schema: &Schema,
     quote_char: Option<u8>,
     encoding: CsvEncoding,
-    ignore_errors: bool,
 ) -> PolarsResult<Vec<Buffer>> {
     projection
         .iter()
@@ -464,7 +458,6 @@ pub(crate) fn init_buffers(
                     capacity,
                     quote_char,
                     encoding,
-                    ignore_errors,
                 )),
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(time_unit, time_zone) => Buffer::Datetime {
@@ -543,7 +536,7 @@ impl Buffer {
                 .cast(&DataType::Date)
                 .unwrap(),
 
-            Buffer::Utf8(mut v) => {
+            Buffer::Utf8(v) => {
                 let arr = v.mutable.freeze();
                 StringChunked::with_chunk(v.name.as_str(), arr).into_series()
             },

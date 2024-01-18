@@ -5,7 +5,7 @@ use polars_core::prelude::ArrayChunked;
 use super::*;
 
 fn join_literal(ca: &ArrayChunked, separator: &str) -> PolarsResult<StringChunked> {
-    let DataType::Array(_, width) = ca.dtype() else {
+    let DataType::Array(_, _) = ca.dtype() else {
         unreachable!()
     };
 

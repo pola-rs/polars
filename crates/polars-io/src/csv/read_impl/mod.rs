@@ -3,10 +3,8 @@ mod batched_read;
 
 use std::fmt;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use arrow::array::ValueSize;
 pub use batched_mmap::*;
 pub use batched_read::*;
 use polars_core::config::verbose;
@@ -130,15 +128,6 @@ impl<'a> fmt::Debug for CoreReader<'a> {
     }
 }
 
-fn compute_size_hint(max: usize, sum: usize, count: usize, last: usize) -> usize {
-    let avg = (sum as f32 / count as f32) as usize;
-    let size = std::cmp::max(last, avg) as f32;
-    if (max as f32) < (size * 1.5) {
-        max
-    } else {
-        size as usize
-    }
-}
 impl<'a> CoreReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -459,31 +448,6 @@ impl<'a> CoreReader<'a> {
             .unwrap_or_else(|| (0..self.schema.len()).collect())
     }
 
-    fn get_string_columns(&self, projection: &[usize]) -> PolarsResult<StringColumns> {
-        // keep track of the maximum capacity that needs to be allocated for the utf8-builder
-        // Per string column we keep a statistic of the maximum length of string bytes per chunk
-        // We must the names, not the indexes, (the indexes are incorrect due to projection
-        // pushdown)
-
-        let mut new_projection = Vec::with_capacity(projection.len());
-
-        for i in projection {
-            let (_, dtype) = self.schema.get_at_index(*i).ok_or_else(|| {
-                polars_err!(
-                    OutOfBounds:
-                    "projection index {} is out of bounds for CSV schema with {} columns",
-                    i, self.schema.len(),
-                )
-            })?;
-
-            if dtype == &DataType::String {
-                new_projection.push(*i)
-            }
-        }
-
-        Ok(StringColumns::new(self.schema.clone(), new_projection))
-    }
-
     fn parse_csv(
         &mut self,
         mut n_threads: usize,
@@ -494,7 +458,6 @@ impl<'a> CoreReader<'a> {
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
         let projection = self.get_projection();
-        let str_columns = self.get_string_columns(&projection)?;
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
@@ -531,7 +494,6 @@ impl<'a> CoreReader<'a> {
                                 schema,
                                 self.quote_char,
                                 self.encoding,
-                                self.ignore_errors,
                             )?;
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -640,7 +602,6 @@ impl<'a> CoreReader<'a> {
                                 self.schema.as_ref(),
                                 self.quote_char,
                                 self.encoding,
-                                self.ignore_errors,
                             )?;
 
                             parse_lines(
@@ -732,7 +693,6 @@ fn read_chunk(
         schema,
         quote_char,
         encoding,
-        ignore_errors,
     )?;
 
     let mut last_read = usize::MAX;
@@ -769,28 +729,4 @@ fn read_chunk(
             .map(|buf| buf.into_series())
             .collect::<PolarsResult<_>>()?,
     ))
-}
-
-/// List of strings, which are stored inside of a [Schema].
-///
-/// Conceptually it is `Vec<&str>` with `&str` tied to the lifetime of
-/// the [Schema].
-struct StringColumns {
-    schema: SchemaRef,
-    fields: Vec<usize>,
-}
-
-impl StringColumns {
-    /// New [StringColumns], where the list `fields` has indices
-    /// of fields in the `schema`.
-    fn new(schema: SchemaRef, fields: Vec<usize>) -> Self {
-        Self { schema, fields }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &str> {
-        self.fields.iter().map(|schema_i| {
-            let (name, _) = self.schema.get_at_index(*schema_i).unwrap();
-            name.as_str()
-        })
-    }
 }

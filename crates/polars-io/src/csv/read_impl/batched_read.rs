@@ -214,8 +214,6 @@ impl<'a> CoreReader<'a> {
 
         let projection = self.get_projection();
 
-        let str_columns = self.get_string_columns(&projection)?;
-
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
         let _cat_lock = if _has_cat {
@@ -232,7 +230,6 @@ impl<'a> CoreReader<'a> {
             finished: false,
             file_chunk_reader: chunk_iter,
             file_chunks: vec![],
-            str_columns,
             projection,
             starting_point_offset,
             row_index: self.row_index,
@@ -259,7 +256,6 @@ pub struct BatchedCsvReaderRead<'a> {
     finished: bool,
     file_chunk_reader: ChunkReader<'a>,
     file_chunks: Vec<(usize, usize)>,
-    str_columns: StringColumns,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
     row_index: Option<RowIndex>,

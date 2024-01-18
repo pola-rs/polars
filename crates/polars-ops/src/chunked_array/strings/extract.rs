@@ -3,7 +3,7 @@ use std::iter::zip;
 #[cfg(feature = "extract_groups")]
 use arrow::array::{Array, StructArray};
 use arrow::array::{
-    BinaryViewArray, MutableArray, MutableBinaryViewArray, MutableUtf8Array, Utf8Array,
+    MutableBinaryViewArray,
     Utf8ViewArray,
 };
 use polars_core::export::regex::Regex;

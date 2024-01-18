@@ -7,7 +7,6 @@ use crate::prelude::*;
 use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 
-type LargeListArray = ListArray<i64>;
 pub mod par;
 
 /// A [`PolarsIterator`] is an iterator over a [`ChunkedArray`] which contains polars types. A [`PolarsIterator`]
