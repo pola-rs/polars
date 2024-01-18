@@ -40,7 +40,7 @@ def test_suffix(fruits_cars: pl.DataFrame) -> None:
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
 
     out = pl.select(pl.int_range(1, 5).alias("int").name.suffix("_moo"))
-    assert out.columns == ["literal_moo"]
+    assert out.columns == ["int_moo"]
 
 
 def test_pipe() -> None:
