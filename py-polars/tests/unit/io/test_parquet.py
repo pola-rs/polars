@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pandas as pd
@@ -695,6 +695,6 @@ def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
         )
 
     df = pl.scan_parquet([utc_path, zero_path]).head(5).collect()
-    assert df.schema["c1"].time_zone == "UTC"
+    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
     df = pl.scan_parquet([zero_path, utc_path]).head(5).collect()
-    assert df.schema["c1"].time_zone == "UTC"
+    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
