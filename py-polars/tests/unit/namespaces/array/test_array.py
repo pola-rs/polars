@@ -42,9 +42,22 @@ def test_array_min_max_dtype_12123() -> None:
     assert_frame_equal(out, pl.DataFrame({"max": [3.0, 10.0], "min": [1.0, 4.0]}))
 
 
-def test_arr_sum() -> None:
-    s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
-    assert s.arr.sum().to_list() == [3, 7]
+@pytest.mark.parametrize(
+    ("data", "expected_sum", "dtype"),
+    [
+        ([[1, 2], [4, 3]], [3, 7], pl.Int64),
+        ([[1, None], [None, 3], [None, None]], [1, 3, 0], pl.Int64),
+        ([[1.0, 2.0], [4.0, 3.0]], [3.0, 7.0], pl.Float32),
+        ([[1.0, None], [None, 3.0], [None, None]], [1.0, 3.0, 0], pl.Float32),
+        ([[True, False], [True, True], [False, False]], [1, 2, 0], pl.Boolean),
+        ([[True, None], [None, False], [None, None]], [1, 0, 0], pl.Boolean),
+    ],
+)
+def test_arr_sum(
+    data: list[list[Any]], expected_sum: list[Any], dtype: pl.DataType
+) -> None:
+    s = pl.Series("a", data, dtype=pl.Array(dtype, 2))
+    assert s.arr.sum().to_list() == expected_sum
 
 
 def test_arr_unique() -> None:
