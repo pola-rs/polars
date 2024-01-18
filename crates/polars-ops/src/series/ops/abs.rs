@@ -11,19 +11,38 @@ where
 
 /// Convert numerical values to their absolute value.
 pub fn abs(s: &Series) -> PolarsResult<Series> {
-    let physical_s = s.to_physical_repr();
     use DataType::*;
-    let out = match physical_s.dtype() {
+    let out = match s.dtype() {
         #[cfg(feature = "dtype-i8")]
-        Int8 => abs_numeric(physical_s.i8()?).into_series(),
+        Int8 => abs_numeric(s.i8().unwrap()).into_series(),
         #[cfg(feature = "dtype-i16")]
-        Int16 => abs_numeric(physical_s.i16()?).into_series(),
-        Int32 => abs_numeric(physical_s.i32()?).into_series(),
-        Int64 => abs_numeric(physical_s.i64()?).into_series(),
-        UInt8 | UInt16 | UInt32 | UInt64 => s.clone(),
-        Float32 => abs_numeric(physical_s.f32()?).into_series(),
-        Float64 => abs_numeric(physical_s.f64()?).into_series(),
+        Int16 => abs_numeric(s.i16().unwrap()).into_series(),
+        Int32 => abs_numeric(s.i32().unwrap()).into_series(),
+        Int64 => abs_numeric(s.i64().unwrap()).into_series(),
+        #[cfg(feature = "dtype-u8")]
+        UInt8 => s.clone(),
+        #[cfg(feature = "dtype-u16")]
+        UInt16 => s.clone(),
+        UInt32 | UInt64 => s.clone(),
+        Float32 => abs_numeric(s.f32().unwrap()).into_series(),
+        Float64 => abs_numeric(s.f64().unwrap()).into_series(),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, _) => {
+            let ca = s.decimal().unwrap();
+            let precision = ca.precision();
+            let scale = ca.scale();
+
+            let out = abs_numeric(ca.as_ref());
+            out.into_decimal_unchecked(precision, scale).into_series()
+        },
+        #[cfg(feature = "dtype-duration")]
+        Duration(_) => {
+            let physical = s.to_physical_repr();
+            let ca = physical.i64().unwrap();
+            let out = abs_numeric(ca).into_series();
+            out.cast(s.dtype())?
+        },
         dt => polars_bail!(opq = abs, dt),
     };
-    out.cast(s.dtype())
+    Ok(out)
 }
