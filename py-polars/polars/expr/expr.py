@@ -5116,11 +5116,11 @@ class Expr:
 
     def neg(self) -> Self:
         """
-        Method equivalent of unary negation operator `-expr`.
+        Method equivalent of unary minus operator `-expr`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-1, 0, 1, None]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 2, None]})
         >>> df.with_columns(pl.col("a").neg())
         shape: (4, 1)
         ┌──────┐
@@ -5130,7 +5130,7 @@ class Expr:
         ╞══════╡
         │ 1    │
         │ 0    │
-        │ -1   │
+        │ -2   │
         │ null │
         └──────┘
         """
