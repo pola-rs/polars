@@ -6,6 +6,7 @@ use polars_core::prelude::arity::unary_mut_with_options;
 
 use super::*;
 
+#[cfg(feature = "array_count")]
 pub fn array_count_matches(ca: &ArrayChunked, value: AnyValue) -> PolarsResult<Series> {
     let value = Series::new("", [value]);
 
@@ -16,7 +17,7 @@ pub fn array_count_matches(ca: &ArrayChunked, value: AnyValue) -> PolarsResult<S
     Ok(out.into_series())
 }
 
-fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
+pub(super) fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
     unary_mut_with_options(ca, |arr| {
         let inner_arr = arr.values();
         let mask = inner_arr.as_any().downcast_ref::<BooleanArray>().unwrap();
