@@ -42,6 +42,9 @@ def test_suffix(fruits_cars: pl.DataFrame) -> None:
     out = pl.select(pl.int_range(1, 5).alias("int").name.suffix("_moo"))
     assert out.columns == ["int_moo"]
 
+    out = pl.select(pl.len().alias("foo").name.suffix("_bar"))
+    assert out.columns == ["foo_bar"]
+
 
 def test_pipe() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
