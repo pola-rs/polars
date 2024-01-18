@@ -62,7 +62,7 @@ def test_overflow_uint16_agg_mean() -> None:
         pl.DataFrame(
             {
                 "col1": ["A" for _ in range(1025)],
-                "col3": [64 for i in range(1025)],
+                "col3": [64 for _ in range(1025)],
             }
         )
         .with_columns(

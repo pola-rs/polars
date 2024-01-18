@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,46 @@ def test_join_anti_semi(sql: str, expected: pl.DataFrame) -> None:
     assert_frame_equal(expected, ctx.execute(sql))
 
 
+def test_join_cross() -> None:
+    frames = {
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+    }
+    with pl.SQLContext(frames, eager_execution=True) as ctx:
+        out = ctx.execute(
+            """
+            SELECT *
+            FROM tbl_a
+            CROSS JOIN tbl_b
+            ORDER BY a, b, c
+            """
+        )
+        assert out.rows() == [
+            (1, 4, "w", 3, 6, "x"),
+            (1, 4, "w", 2, 5, "y"),
+            (1, 4, "w", 1, 4, "z"),
+            (2, 0, "y", 3, 6, "x"),
+            (2, 0, "y", 2, 5, "y"),
+            (2, 0, "y", 1, 4, "z"),
+            (3, 6, "z", 3, 6, "x"),
+            (3, 6, "z", 2, 5, "y"),
+            (3, 6, "z", 1, 4, "z"),
+        ]
+
+
+def test_join_cross_13618() -> None:
+    df1 = pl.DataFrame({"id": [1, 2, 3]})
+    df2 = pl.DataFrame({"id": [3, 4, 5]})  # noqa: F841
+    res = df1.sql(
+        """
+        SELECT df2.id
+        FROM self CROSS JOIN df2
+        WHERE self.id = df2.id
+        """,
+    )
+    assert_frame_equal(res, pl.DataFrame({"id": [3]}))
+
+
 @pytest.mark.parametrize(
     "join_clause",
     [
@@ -88,9 +129,10 @@ def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
         "calories": [45, 20],
         "fats_g": [0.5, 0.0],
         "sugars_g": [2, 2],
-        "calories_right": [45, 45],
-        "fats_g_right": [0.5, 0.5],
-        "sugars_g_right": [2, 2],
+        "category:foods2": ["vegetables", "vegetables"],
+        "calories:foods2": [45, 45],
+        "fats_g:foods2": [0.5, 0.5],
+        "sugars_g:foods2": [2, 2],
     }
 
 
@@ -177,6 +219,43 @@ def test_join_left_multi_nested() -> None:
                 (2, None, None, None),
                 (3, 6, "x", None),
             ]
+
+
+def test_join_misc_13618() -> None:
+    import polars as pl
+
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "B": [5, 4, 3, 2, 1],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        }
+    )
+    res = (
+        pl.SQLContext(t=df, t1=df, eager_execution=True)
+        .execute("SELECT t.A, t.fruits, t1.B, t1.cars FROM t JOIN t1 ON t.A=t1.B")
+        .to_dict(as_series=False)
+    )
+    assert res == {
+        "A": [5, 4, 3, 2, 1],
+        "fruits": ["banana", "apple", "apple", "banana", "banana"],
+        "B": [5, 4, 3, 2, 1],
+        "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+    }
+
+
+def test_join_misc_16255() -> None:
+    df1 = pl.read_csv(BytesIO(b"id,data\n1,open"))
+    df2 = pl.read_csv(BytesIO(b"id,data\n1,closed"))  # noqa: F841
+    res = df1.sql(
+        """
+        SELECT a.id, a.data AS d1, b.data AS d2
+        FROM self AS a JOIN df2 AS b
+        ON a.id = b.id
+        """
+    )
+    assert res.rows() == [(1, "open", "closed")]
 
 
 @pytest.mark.parametrize(
