@@ -114,9 +114,10 @@ from polars.utils.various import (
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
 
-
 if TYPE_CHECKING:
     import sys
+
+    from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
     from polars.series._numpy import SeriesView
@@ -7577,7 +7578,7 @@ class Series:
         return StructNameSpace(self)
 
     @property
-    def plot(self) -> hvplot.plotting.core.hvPlotTabularPolars:
+    def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
 
