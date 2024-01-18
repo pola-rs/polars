@@ -205,6 +205,15 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Len => return Ok(Arc::from(LEN)),
+            Expr::Function { input, .. } => {
+                // if we have no inputs, return "literal", else follow the left-most input
+                if input.is_empty() {
+                    return Ok(Arc::from(LITERAL_NAME));
+                } else {
+                    return get_single_leaf(&input[0]);
+                }
+            },
+            Expr::Literal(_) => return Ok(Arc::from(LITERAL_NAME)),
             _ => {},
         }
     }

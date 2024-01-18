@@ -39,6 +39,9 @@ def test_suffix(fruits_cars: pl.DataFrame) -> None:
     out = df.select([pl.all().name.suffix("_reverse")])
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
 
+    out = pl.select(pl.int_range(1, 5).alias("int").name.suffix("_moo"))
+    assert out.columns == ["literal_moo"]
+
 
 def test_pipe() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
