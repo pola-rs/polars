@@ -1,9 +1,7 @@
-use std::borrow::Cow;
-
+use polars::prelude::*;
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
-use crate::prelude::*;
 use crate::PySeries;
 
 #[pymethods]
@@ -229,20 +227,8 @@ macro_rules! impl_decimal {
         #[pymethods]
         impl PySeries {
             fn $name(&self, rhs: PyDecimal) -> PyResult<Self> {
-                let series = self.series.decimal().map_err(PyPolarsErr::from)?;
-                let scale = (series.scale() as i32) - (rhs.1 as i32);
-                let (chunked, rhs) = match scale.cmp(&0) {
-                    std::cmp::Ordering::Less => (
-                        Cow::Owned(series.0.clone() * 10_i128.pow(-scale as _)),
-                        rhs.0,
-                    ),
-                    std::cmp::Ordering::Equal => (Cow::Borrowed(&series.0), rhs.0),
-                    std::cmp::Ordering::Greater => (
-                        Cow::Borrowed(&series.0),
-                        rhs.0.wrapping_mul(10_i128.pow(scale as _)),
-                    ),
-                };
-                let s = chunked.$method(rhs);
+                let rhs = Series::new("decimal", &[AnyValue::Decimal(rhs.0, rhs.1)]);
+                let s = self.series.$method(&rhs).map_err(PyPolarsErr::from)?;
                 Ok(s.into_series().into())
             }
         }

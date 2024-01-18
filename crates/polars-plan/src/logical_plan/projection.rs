@@ -263,6 +263,11 @@ fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
                     || tz_r.is_some() && (tz_l.as_deref().unwrap_or("") == "*")
                     || tz_l.is_some() && (tz_r.as_deref().unwrap_or("") == "*"))
         },
+        // note: allow Decimal unknown scale
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => {
+            s1.zip(*s2).map(|(s1, s2)| s1 == s2).unwrap_or(true)
+        },
         // ...but otherwise require exact match
         _ => d1 == d2,
     }

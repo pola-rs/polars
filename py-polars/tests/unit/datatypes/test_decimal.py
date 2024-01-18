@@ -189,11 +189,12 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
     ]
 
 
-def test_decimal_compare_number() -> None:
+def test_decimal_eq_number() -> None:
     a = pl.Series([D("1.5"), D("22.25"), D("10.0")], dtype=pl.Decimal)
     assert_series_equal(a == 1, pl.Series([False, False, False]))
     assert_series_equal(a == 1.5, pl.Series([True, False, False]))
     assert_series_equal(a == D("1.5"), pl.Series([True, False, False]))
+    assert_series_equal(a == pl.Series([D("1.5")]), pl.Series([True, False, False]))
 
 
 @pytest.mark.parametrize(
@@ -208,8 +209,10 @@ def test_decimal_compare_number() -> None:
 def test_decimal_compare(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
-    s = pl.Series([None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")], dtype=pl.Decimal)
-    s2 = pl.Series([None, D("1.2"), D("2.13"), D("4.99"), D("4.99"), D("2.13")])
+    s = pl.Series(
+        [None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")], dtype=pl.Decimal
+    )
+    s2 = pl.Series([None, D("1.20"), D("2.130"), D("4.990"), D("4.990"), D("2.130")])
 
     assert_series_equal(op(s, s2), expected)
 
@@ -248,8 +251,7 @@ def test_decimal_series_value_arithmetic() -> None:
 
     out1 = s + 10
     out2 = s + D("10")
-    with pytest.raises(pl.InvalidOperationError):
-        s + D("10.0001")
+    out3 = s + D("10.0001")
     out4 = s * 2 / 3
     out5 = s / D("1.5")
     out6 = s - 5
@@ -262,6 +264,7 @@ def test_decimal_series_value_arithmetic() -> None:
 
     assert out1.to_list() == [D("10.1"), D("20.1"), D("110.01")]
     assert out2.to_list() == [D("10.1"), D("20.1"), D("110.01")]
+    assert out3.to_list() == [D("10.1001"), D("20.1001"), D("110.0101")]
     assert out4.to_list() == [
         D("0.06"),
         D("6.73"),
