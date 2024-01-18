@@ -1869,7 +1869,9 @@ class Series:
         return wrap_df(PyDataFrame([self._s]))
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
+        self,
+        percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
+        interpolation: RollingInterpolationMethod = "nearest",
     ) -> DataFrame:
         """
         Quick summary statistics of a Series.
@@ -1882,6 +1884,8 @@ class Series:
         percentiles
             One or more percentiles to include in the summary statistics (if the
             Series has a numeric dtype). All values must be in the range `[0, 1]`.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method used when calculating percentiles.
 
         Notes
         -----

@@ -64,6 +64,8 @@ def test_series_describe_boolean() -> None:
         "count": 4,
         "null_count": 1,
         "mean": 0.75,
+        "min": False,
+        "max": True,
     }
     expected = pl.DataFrame(
         data={"statistic": stats.keys(), "value": stats.values()},
@@ -80,7 +82,9 @@ def test_series_describe_date() -> None:
         "count": "3",
         "null_count": "0",
         "min": "2021-01-01",
+        "25%": "2021-01-02",
         "50%": "2021-01-02",
+        "75%": "2021-01-03",
         "max": "2021-01-03",
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
