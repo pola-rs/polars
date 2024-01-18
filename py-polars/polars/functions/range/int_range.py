@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, overload
 from polars import functions as F
 from polars.datatypes import Int64
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
+from polars.utils._wrap import wrap_expr, wrap_s
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -219,6 +219,9 @@ def int_range(
     if end is None:
         end = start
         start = 0
+
+    if isinstance(start, int) and isinstance(end, int) and eager:
+        return wrap_s(plr.eager_int_range(start, end, step, dtype))
 
     start = parse_as_expression(start)
     end = parse_as_expression(end)
