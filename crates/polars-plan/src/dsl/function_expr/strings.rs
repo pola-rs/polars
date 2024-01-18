@@ -906,8 +906,7 @@ pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
     let ca = s.str()?;
-    // ca.explode()
-    todo!()
+    ca.explode()
 }
 
 #[cfg(feature = "dtype-decimal")]
