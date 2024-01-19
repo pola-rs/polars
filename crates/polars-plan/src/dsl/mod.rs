@@ -947,6 +947,10 @@ impl Expr {
         self.fill_null_impl(fill_value.into())
     }
 
+    pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
+        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+    }
+
     /// Replace the floating point `NaN` values by a value.
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
@@ -1615,6 +1619,15 @@ impl Expr {
 
     pub fn to_physical(self) -> Expr {
         self.map_private(FunctionExpr::ToPhysical)
+    }
+
+    pub fn gather_every(self, n: usize, offset: usize) -> Expr {
+        self.apply_private(FunctionExpr::GatherEvery { n, offset })
+    }
+
+    #[cfg(feature = "reinterpret")]
+    pub fn reinterpret(self, signed: bool) -> Expr {
+        self.map_private(FunctionExpr::Reinterpret(signed))
     }
 
     #[cfg(feature = "strings")]

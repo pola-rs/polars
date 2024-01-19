@@ -150,6 +150,7 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
+    FillNullWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
     ShiftAndFill,
@@ -320,6 +321,12 @@ pub enum FunctionExpr {
     Replace {
         return_dtype: Option<DataType>,
     },
+    GatherEvery {
+        n: usize,
+        offset: usize,
+    },
+    #[cfg(feature = "reinterpret")]
+    Reinterpret(bool),
 }
 
 impl Hash for FunctionExpr {
@@ -521,6 +528,10 @@ impl Hash for FunctionExpr {
             },
             #[cfg(feature = "replace")]
             Replace { return_dtype } => return_dtype.hash(state),
+            FillNullWithStrategy(strategy) => strategy.hash(state),
+            GatherEvery { n, offset } => (n, offset).hash(state),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => signed.hash(state),
         }
     }
 }
@@ -689,6 +700,10 @@ impl Display for FunctionExpr {
             Hist { .. } => "hist",
             #[cfg(feature = "replace")]
             Replace { .. } => "replace",
+            FillNullWithStrategy(_) => "fill_null_with_strategy",
+            GatherEvery { .. } => "gather_every",
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(_) => "reinterpret",
         };
         write!(f, "{s}")
     }
@@ -1040,6 +1055,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { return_dtype } => {
                 map_as_slice!(dispatch::replace, return_dtype.clone())
             },
+            FillNullWithStrategy(strategy) => map!(dispatch::fill_null_with_strategy, strategy),
+            GatherEvery { n, offset } => map!(dispatch::gather_every, n, offset),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => map!(dispatch::reinterpret, signed),
         }
     }
 }
