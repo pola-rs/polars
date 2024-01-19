@@ -4065,7 +4065,8 @@ class DataFrame:
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name, or a function.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Examples
         --------
@@ -4095,10 +4096,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
-        if callable(mapping):
-            return self.select(F.all().name.map(mapping))
-        else:
-            return self.lazy().rename(mapping).collect(_eager=True)
+        return self.lazy().rename(mapping).collect(_eager=True)
 
     def insert_column(self, index: int, column: Series) -> Self:
         """

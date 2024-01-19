@@ -4172,7 +4172,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name, or a function.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Notes
         -----
