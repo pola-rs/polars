@@ -115,6 +115,36 @@ fn mmap_binary<O: Offset, T: AsRef<[u8]>>(
     })
 }
 
+fn mmap_binview<T: AsRef<[u8]>>(
+    data: Arc<T>,
+    node: &Node,
+    block_offset: usize,
+    buffers: &mut VecDeque<IpcBuffer>,
+) -> PolarsResult<ArrowArray> {
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
+    let data_ref = data.as_ref().as_ref();
+
+    let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
+
+    let views = get_buffer::<u128>(data_ref, block_offset, buffers, num_rows + 1)?.as_ptr();
+    todo!()
+    // buffers
+
+    //
+    // // NOTE: offsets and values invariants are _not_ validated
+    // Ok(unsafe {
+    //     create_array(
+    //         data,
+    //         num_rows,
+    //         null_count,
+    //         [validity, Some(offsets), Some(values)].into_iter(),
+    //         [].into_iter(),
+    //         None,
+    //         None,
+    //     )
+    // })
+}
+
 fn mmap_fixed_size_binary<T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
@@ -235,6 +265,7 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     let child = ListArray::<O>::try_get_child(data_type)?.data_type();
@@ -253,6 +284,7 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
         &ipc_field.fields[0],
         dictionaries,
         field_nodes,
+        variadic_buffer_counts,
         buffers,
     )?;
 
@@ -279,6 +311,7 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     let child = FixedSizeListArray::try_child_and_size(data_type)?
@@ -297,6 +330,7 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
         &ipc_field.fields[0],
         dictionaries,
         field_nodes,
+        variadic_buffer_counts,
         buffers,
     )?;
 
@@ -322,6 +356,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     let children = StructArray::try_get_fields(data_type)?;
@@ -343,6 +378,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
                 ipc,
                 dictionaries,
                 field_nodes,
+                variadic_buffer_counts,
                 buffers,
             )
         })
@@ -405,6 +441,7 @@ fn get_array<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     use crate::datatypes::PhysicalType::*;
@@ -429,6 +466,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         LargeList => mmap_list::<i64, _>(
@@ -439,6 +477,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         FixedSizeList => mmap_fixed_size_list(
@@ -449,6 +488,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         Struct => mmap_struct(
@@ -459,6 +499,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
@@ -485,6 +526,7 @@ pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = get_array(
@@ -494,6 +536,7 @@ pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
         ipc_field,
         dictionaries,
         field_nodes,
+        variadic_buffer_counts,
         buffers,
     )?;
     // The unsafety comes from the fact that `array` is not necessarily valid -
