@@ -3370,9 +3370,9 @@ def test_from_dicts_undeclared_column_dtype() -> None:
 
 
 def test_from_dicts_with_override() -> None:
-    data = [{'a': '1', 'b': '2'}, {'a':1, 'b':2}]
-    override = {'a': pl.Int32, 'b': pl.UInt8}
-    result = pl.from_dicts(data, schema_overrides=override)
+    data = [{"a": "1", "b": "2"}, {"a": 1, "b": 2}]
+    override = {"a": pl.Int32, "b": pl.UInt8}
+    result = pl.from_dicts(data, schema_overrides=override)  # type: ignore[arg-type]
     assert result.schema == {"a": pl.Int32, "b": pl.UInt8}
 
 

@@ -415,7 +415,7 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(0)
                 }
             },
-            String(v) =>  NumCast::from((*v).parse::<i64>().ok()?),
+            String(v) => NumCast::from((*v).parse::<i64>().ok()?),
             _ => None,
         }
     }
