@@ -7276,11 +7276,10 @@ class DataFrame:
         the `C x V` combinations of these columns, and the results will be concatenated
         horizontally to form the output `DataFrame`.
 
-        When there are multiple `values` and/or `columns` columns, the names of the
-        non-index columns will be prefixed with `f'{value}_{column}_'`, where `value`
-        and `column` are column names in `values` and `columns`, to avoid having
-        duplicate column names. The `'_'` can be changed to a different string using the
-        `separator` argument.
+        When there are multiple `values` columns, the names of the non-index columns
+        will be prefixed with `f'{value}_{column}_'`, where `value` and `column` are
+        column names in `values` and `columns`, to avoid having duplicate column names.
+        The `'_'` can be changed to a different string using the `separator` argument.
 
         When multiple rows of the input `DataFrame` have the same `values` for all of
         the columns in `index` and `columns`, `pivot` will raise an error unless these
