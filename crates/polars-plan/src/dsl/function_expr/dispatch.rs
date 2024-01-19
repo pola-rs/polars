@@ -152,3 +152,7 @@ pub(super) fn gather_every(s: &Series, n: usize, offset: usize) -> PolarsResult<
 pub(super) fn reinterpret(s: &Series, signed: bool) -> PolarsResult<Series> {
     polars_ops::series::reinterpret(s, signed)
 }
+
+pub(super) fn negate(s: &Series) -> PolarsResult<Series> {
+    polars_ops::series::negate(s)
+}

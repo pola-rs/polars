@@ -1,3 +1,5 @@
+use std::ops::Neg;
+
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
@@ -42,6 +44,9 @@ impl PyExpr {
     }
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
+    }
+    fn __neg__(&self) -> PyResult<Self> {
+        Ok(self.inner.clone().neg().into())
     }
 
     fn to_str(&self) -> String {
