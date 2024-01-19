@@ -69,6 +69,7 @@ from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
+    from polars.polars import coalesce as pycoalesce
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr
@@ -2541,6 +2542,47 @@ class Expr:
             fill_value = parse_as_expression(fill_value, str_as_lit=True)
         n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.shift(n, fill_value))
+
+    def coalesce(
+        self, exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+    ) -> Expr:
+        """
+        Folds the expressions from left to right, keeping the first non-null value.
+
+        Parameters
+        ----------
+        exprs
+            Columns to coalesce. Accepts expression input. Strings are parsed as column
+            names, other non-expression inputs are parsed as literals.
+        *more_exprs
+            Additional columns to coalesce, specified as positional arguments.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, None, None, None],
+        ...         "b": [1, 2, None, None],
+        ...         "c": [5, None, 3, None],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("a").coalesce("b", (pl.col("c") * 3), 99.9).alias("d"),
+        ... )
+        shape: (4, 4)
+        ┌──────┬──────┬──────┬──────┐
+        │ a    ┆ b    ┆ c    ┆ d    │
+        │ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ i64  ┆ f64  │
+        ╞══════╪══════╪══════╪══════╡
+        │ 1    ┆ 1    ┆ 5    ┆ 1.0  │
+        │ null ┆ 2    ┆ null ┆ 2.0  │
+        │ null ┆ null ┆ 3    ┆ 9.0  │
+        │ null ┆ null ┆ null ┆ 99.9 │
+        └──────┴──────┴──────┴──────┘
+        """
+        exprs = [self._pyexpr] + parse_as_list_of_expressions(exprs, *more_exprs)
+        return self._from_pyexpr(pycoalesce(exprs))
 
     def fill_null(
         self,

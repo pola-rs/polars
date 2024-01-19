@@ -364,46 +364,31 @@ def test_align_frames_duplicate_key() -> None:
 def test_coalesce() -> None:
     df = pl.DataFrame(
         {
-            "a": [1, None, None, None],
-            "b": [1, 2, None, None],
-            "c": [5, None, 3, None],
+            "a": [1.0, None, None, None],
+            "b": [1.0, 2.0, None, None],
+            "c": [5.0, None, 3.0, None],
         }
     )
-
-    # List inputs
-    expected = pl.Series("d", [1, 2, 3, 10]).to_frame()
-    result = df.select(pl.coalesce(["a", "b", "c", 10]).alias("d"))
-    assert_frame_equal(expected, result)
-
-    # Positional inputs
-    expected = pl.Series("d", [1.0, 2.0, 3.0, 10.0]).to_frame()
-    result = df.select(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
-    assert_frame_equal(result, expected)
+    expected = pl.Series("d", [1.0, 2.0, 3.0, 99.9]).to_frame()
+    for coalesce_expr in (
+        pl.coalesce(pl.col(["a", "b", "c"]), 99.9).alias("d"),
+        pl.coalesce(["a", "b", "c", 99.9]).alias("d"),
+        pl.col("a").coalesce(pl.col("b", "c"), 99.9).alias("d"),
+        pl.col("a").coalesce("b", "c", 99.9).alias("d"),
+    ):
+        result = df.select(coalesce_expr)
+        assert_frame_equal(result, expected)
 
 
 def test_overflow_diff() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [20, 10, 30],
-        }
-    )
+    df = pl.DataFrame({"a": [20, 10, 30]})
     assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(as_series=False) == {
         "a": [None, -10, 20]
     }
 
 
 def test_fill_null_unknown_output_type() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [
-                None,
-                2,
-                3,
-                4,
-                5,
-            ]
-        }
-    )
+    df = pl.DataFrame({"a": [None, 2, 3, 4, 5]})
     assert df.with_columns(
         np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
     ).to_dict(as_series=False) == {
