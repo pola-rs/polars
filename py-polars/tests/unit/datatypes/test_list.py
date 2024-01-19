@@ -84,8 +84,8 @@ def test_decimal() -> None:
     input = [[Decimal("1.23"), Decimal("4.56")], [Decimal("7.89"), Decimal("10.11")]]
     s = pl.Series(input)
     assert s.dtype == pl.List(pl.Decimal)
-    assert s.dtype.inner == pl.Decimal
-    assert s.dtype.inner.is_nested() is False
+    assert s.dtype.inner == pl.Decimal  # type: ignore[attr-defined]
+    assert s.dtype.inner.is_nested() is False  # type: ignore[attr-defined]
     assert s.to_list() == input
 
 
