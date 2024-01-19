@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowDataType;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{

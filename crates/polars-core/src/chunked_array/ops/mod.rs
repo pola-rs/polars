@@ -527,6 +527,14 @@ impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
     }
 }
 
+impl ChunkExpandAtIndex<BinaryOffsetType> for BinaryOffsetChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> BinaryOffsetChunked {
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted_flag(IsSorted::Ascending);
+        out
+    }
+}
+
 impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn new_from_index(&self, index: usize, length: usize) -> ListChunked {
         let opt_val = self.get_as_series(index);

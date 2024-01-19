@@ -69,7 +69,7 @@ pub trait ChunkGatherSkipNulls<I: ?Sized>: Sized {
 
 impl<T: PolarsDataType> ChunkGatherSkipNulls<[IdxSize]> for ChunkedArray<T>
 where
-    ChunkedArray<T>: ChunkFilter<T>,
+    ChunkedArray<T>: ChunkFilter<T> + ChunkTake<[IdxSize]>,
 {
     fn gather_skip_nulls(&self, indices: &[IdxSize]) -> PolarsResult<Self> {
         if self.null_count() == 0 {
@@ -101,7 +101,7 @@ where
 
 impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T>
 where
-    ChunkedArray<T>: ChunkFilter<T>,
+    ChunkedArray<T>: ChunkFilter<T> + ChunkTake<IdxCa>,
 {
     fn gather_skip_nulls(&self, indices: &IdxCa) -> PolarsResult<Self> {
         if self.null_count() == 0 {

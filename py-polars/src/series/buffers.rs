@@ -56,24 +56,6 @@ impl PySeries {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
             })),
-            DataType::String => {
-                let ca = s.str().unwrap();
-                let arr = ca.downcast_iter().next().unwrap();
-                Ok(BufferInfo {
-                    pointer: arr.values().as_ptr() as usize,
-                    offset: 0,
-                    length: arr.len(),
-                })
-            },
-            DataType::Binary => {
-                let ca = s.binary().unwrap();
-                let arr = ca.downcast_iter().next().unwrap();
-                Ok(BufferInfo {
-                    pointer: arr.values().as_ptr() as usize,
-                    offset: 0,
-                    length: arr.len(),
-                })
-            },
             _ => {
                 let msg = "Cannot take pointer of nested type, try to first select a buffer";
                 raise_err!(msg, ComputeError);
@@ -86,8 +68,9 @@ impl PySeries {
         match self.series.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffer_from_primitive(&self.series, index),
             DataType::Boolean => get_buffer_from_primitive(&self.series, index),
-            DataType::String | DataType::List(_) | DataType::Binary => {
-                get_buffer_from_nested(&self.series, index)
+            DataType::List(_) => get_buffer_from_nested(&self.series, index),
+            DataType::String => {
+                todo!()
             },
             DataType::Array(_, _) => {
                 let ca = self.series.array().unwrap();
@@ -129,18 +112,6 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>
                     let ca = s.list().unwrap();
                     Box::new(ca.downcast_iter().map(|arr| arr.values().clone()))
                 },
-                DataType::String => {
-                    let ca = s.str().unwrap();
-                    Box::new(ca.downcast_iter().map(|arr| {
-                        PrimitiveArray::from_data_default(arr.values().clone(), None).boxed()
-                    }))
-                },
-                DataType::Binary => {
-                    let ca = s.binary().unwrap();
-                    Box::new(ca.downcast_iter().map(|arr| {
-                        PrimitiveArray::from_data_default(arr.values().clone(), None).boxed()
-                    }))
-                },
                 dt => {
                     let msg = format!("{dt} not yet supported as nested buffer access");
                     raise_err!(msg, ComputeError);
@@ -167,7 +138,17 @@ fn get_offsets(s: &Series) -> PyResult<PySeries> {
         },
         DataType::String => {
             let ca = s.str().unwrap();
-            Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
+            let mut offsets = Vec::with_capacity(ca.len() + 1);
+            let mut len_so_far: i64 = 0;
+            offsets.push(len_so_far);
+
+            for arr in ca.downcast_iter() {
+                for length in arr.len_iter() {
+                    len_so_far += length as i64;
+                }
+                offsets.push(len_so_far)
+            }
+            return Ok(Series::from_vec(s.name(), offsets).into());
         },
         _ => return Err(PyValueError::new_err("expected list/string")),
     };
