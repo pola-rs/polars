@@ -157,8 +157,8 @@ Examples
 
             s = pl.Series("n", [1, 2, 3, 4, 5])
 
-            s2 = s.math.square().rename("n2", in_place=True)
-            s3 = s.math.cube().rename("n3", in_place=True)
+            s2 = s.math.square().rename("n2")
+            s3 = s.math.cube().rename("n3")
 
             # shape: (5,)          shape: (5,)           shape: (5,)
             # Series: 'n' [i64]    Series: 'n2' [i64]    Series: 'n3' [i64]
