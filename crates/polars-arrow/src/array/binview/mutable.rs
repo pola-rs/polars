@@ -5,7 +5,7 @@ use std::sync::Arc;
 use polars_error::PolarsResult;
 use polars_utils::slice::GetSaferUnchecked;
 
-use crate::array::binview::view::{validate_utf8_only, View};
+use crate::array::binview::view::validate_utf8_only;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::{Array, MutableArray};
 use crate::bitmap::MutableBitmap;
