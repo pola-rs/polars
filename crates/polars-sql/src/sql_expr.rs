@@ -9,6 +9,8 @@ use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, lit, when};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+#[cfg(feature = "dtype-decimal")]
+use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
@@ -27,13 +29,23 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type)) => {
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
+        #[cfg(feature = "dtype-decimal")]
+        SQLDataType::Dec(info) | SQLDataType::Decimal(info) | SQLDataType::Numeric(info) => {
+            match *info {
+                ExactNumberInfo::PrecisionAndScale(p, s) => {
+                    DataType::Decimal(Some(p as usize), Some(s as usize))
+                },
+                ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
+                ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
+            }
+        },
         SQLDataType::BigInt(_) => DataType::Int64,
+        SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Bytea
         | SQLDataType::Bytes(_)
         | SQLDataType::Binary(_)
         | SQLDataType::Blob(_)
         | SQLDataType::Varbinary(_) => DataType::Binary,
-        SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Char(_)
         | SQLDataType::CharVarying(_)
         | SQLDataType::Character(_)
@@ -47,6 +59,9 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Double | SQLDataType::DoublePrecision => DataType::Float64,
         SQLDataType::Float(_) => DataType::Float32,
         SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
+        SQLDataType::Int2(_) => DataType::Int16,
+        SQLDataType::Int4(_) => DataType::Int32,
+        SQLDataType::Int8(_) => DataType::Int64,
         SQLDataType::Interval => DataType::Duration(TimeUnit::Milliseconds),
         SQLDataType::Real => DataType::Float32,
         SQLDataType::SmallInt(_) => DataType::Int16,
@@ -55,6 +70,9 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::TinyInt(_) => DataType::Int8,
         SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt2(_) => DataType::UInt16,
+        SQLDataType::UnsignedInt4(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt8(_) => DataType::UInt64,
         SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
         SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
 
