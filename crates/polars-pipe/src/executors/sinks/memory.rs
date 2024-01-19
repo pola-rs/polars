@@ -58,10 +58,15 @@ impl MemTracker {
     }
 
     pub(super) fn free_memory_fraction_since_start(&self) -> f64 {
-        // we divide first to reduce the precision loss in floats
-        let available_at_start = (self.available_at_start / TO_MB) as f64;
-        let available = (self.get_available() / TO_MB) as f64;
-        available / available_at_start
+        if self.available_at_start == 0 {
+            // This branch exists to prevent division by 0 so we don't return NaN.
+            0.0
+        } else {
+            // We divide first to reduce the precision loss in floats.
+            let available_at_start = (self.available_at_start / TO_MB) as f64;
+            let available = (self.get_available() / TO_MB) as f64;
+            available / available_at_start
+        }
     }
 
     /// Increment the used memory and return the previous value.
