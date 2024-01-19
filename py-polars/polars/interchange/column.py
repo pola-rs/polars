@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Categorical
+from polars.datatypes import Boolean, Categorical
 from polars.interchange.buffer import PolarsBuffer
 from polars.interchange.protocol import (
     Column,
@@ -51,9 +51,10 @@ class PolarsColumn(Column):
     @property
     def offset(self) -> int:
         """Offset of the first element with respect to the start of the underlying buffer."""  # noqa: W505
-        # TODO: Fix for non-physical types - get buffer first?
-        _, offset, _ = self._col._get_buffer_info()
-        return offset
+        if self._col.dtype == Boolean:
+            return self._col._get_buffer_info()[1]
+        else:
+            return 0
 
     @property
     def dtype(self) -> Dtype:
