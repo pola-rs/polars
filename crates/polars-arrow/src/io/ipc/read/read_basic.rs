@@ -45,6 +45,23 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     Ok(())
 }
 
+fn read_uncompressed_bytes<R: Read + Seek>(
+    reader: &mut R,
+    buffer_length: usize,
+    is_little_endian: bool,
+) -> PolarsResult<Vec<u8>> {
+    if is_native_little_endian() == is_little_endian {
+        let mut buffer = Vec::with_capacity(buffer_length);
+        let _ = reader
+            .take(buffer_length as u64)
+            .read_to_end(&mut buffer)
+            .unwrap();
+        Ok(buffer)
+    } else {
+        unreachable!()
+    }
+}
+
 fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
@@ -122,6 +139,61 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         },
     }
     Ok(buffer)
+}
+
+fn read_compressed_bytes<R: Read + Seek>(
+    reader: &mut R,
+    buffer_length: usize,
+    is_little_endian: bool,
+    compression: Compression,
+    scratch: &mut Vec<u8>,
+) -> PolarsResult<Vec<u8>> {
+    read_compressed_buffer::<u8, _>(
+        reader,
+        buffer_length,
+        buffer_length,
+        is_little_endian,
+        compression,
+        scratch,
+    )
+}
+
+pub fn read_bytes<R: Read + Seek>(
+    buf: &mut VecDeque<IpcBuffer>,
+    reader: &mut R,
+    block_offset: u64,
+    is_little_endian: bool,
+    compression: Option<Compression>,
+    scratch: &mut Vec<u8>,
+) -> PolarsResult<Buffer<u8>> {
+    let buf = buf
+        .pop_front()
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::ExpectedBuffer))?;
+
+    let offset: u64 = buf
+        .offset()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+
+    let buffer_length: usize = buf
+        .length()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+
+    reader.seek(SeekFrom::Start(block_offset + offset))?;
+
+    if let Some(compression) = compression {
+        Ok(read_compressed_bytes(
+            reader,
+            buffer_length,
+            is_little_endian,
+            compression,
+            scratch,
+        )?
+        .into())
+    } else {
+        Ok(read_uncompressed_bytes(reader, buffer_length, is_little_endian)?.into())
+    }
 }
 
 pub fn read_buffer<T: NativeType, R: Read + Seek>(
