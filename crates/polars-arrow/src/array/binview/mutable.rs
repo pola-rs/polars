@@ -130,10 +130,8 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             debug_assert!(self.views.capacity() > self.views.len());
             self.views.push_unchecked(v)
         } else {
-            dbg!(View::from(v));
             self.total_buffer_len += len as usize;
             let buffer_idx = (v >> 64) as u32;
-            dbg!(buffer_idx);
             let offset = (v >> 96) as u32;
             let (data_ptr, data_len) = *buffers.get_unchecked_release(buffer_idx as usize);
             let data = std::slice::from_raw_parts(data_ptr, data_len);

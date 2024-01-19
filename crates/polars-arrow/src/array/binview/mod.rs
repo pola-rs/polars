@@ -356,7 +356,6 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         }
         let mut mutable = MutableBinaryViewArray::with_capacity(self.len());
         let buffers = self.raw_buffers.as_ref();
-        dbg!(self.buffers.as_ref());
 
         for view in self.views.as_ref() {
             unsafe { mutable.push_view(*view, buffers) }
@@ -454,13 +453,14 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     }
 
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        debug_assert!(offset + length <= self.len(),);
+        debug_assert!(offset + length <= self.len());
         self.validity = self
             .validity
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
         self.views.slice_unchecked(offset, length);
+        self.total_bytes_len = self.len_iter().map(|v| v as usize).sum::<usize>();
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
