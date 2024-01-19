@@ -1,6 +1,4 @@
-use arrow::array::{
-    BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
-};
+use arrow::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::{self, Bitmap};
 use arrow::types::NativeType;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
@@ -68,111 +66,6 @@ impl<T: NativeType + NotSimdPrimitive + TotalOrd> TotalOrdKernel for PrimitiveAr
 
     fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         self.values().iter().map(|l| l.tot_ge(other)).collect()
-    }
-}
-
-impl TotalOrdKernel for BinaryViewArray {
-    type Scalar = [u8];
-
-    fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
-        debug_assert!(self.len() == other.len());
-        // TODO! speed-up by first comparing views
-        self.values_iter()
-            .zip(other.values_iter())
-            .map(|(l, r)| l.tot_eq(&r))
-            .collect()
-    }
-
-    fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
-        debug_assert!(self.len() == other.len());
-        self.values_iter()
-            .zip(other.values_iter())
-            .map(|(l, r)| l.tot_ne(&r))
-            .collect()
-    }
-
-    fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
-        debug_assert!(self.len() == other.len());
-        self.values_iter()
-            .zip(other.values_iter())
-            .map(|(l, r)| l.tot_lt(&r))
-            .collect()
-    }
-
-    fn tot_le_kernel(&self, other: &Self) -> Bitmap {
-        debug_assert!(self.len() == other.len());
-        self.values_iter()
-            .zip(other.values_iter())
-            .map(|(l, r)| l.tot_le(&r))
-            .collect()
-    }
-
-    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values_iter().map(|l| l.tot_eq(&other)).collect()
-    }
-
-    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values_iter().map(|l| l.tot_ne(&other)).collect()
-    }
-
-    fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values_iter().map(|l| l.tot_lt(&other)).collect()
-    }
-
-    fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values_iter().map(|l| l.tot_le(&other)).collect()
-    }
-
-    fn tot_gt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values_iter().map(|l| l.tot_gt(&other)).collect()
-    }
-
-    fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values_iter().map(|l| l.tot_ge(&other)).collect()
-    }
-}
-
-impl TotalOrdKernel for Utf8ViewArray {
-    type Scalar = str;
-
-    fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
-        self.to_binview().tot_eq_kernel(&other.to_binview())
-    }
-
-    fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
-        self.to_binview().tot_ne_kernel(&other.to_binview())
-    }
-
-    fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
-        self.to_binview().tot_lt_kernel(&other.to_binview())
-    }
-
-    fn tot_le_kernel(&self, other: &Self) -> Bitmap {
-        self.to_binview().tot_le_kernel(&other.to_binview())
-    }
-
-    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.to_binview().tot_eq_kernel_broadcast(other.as_bytes())
-    }
-
-    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.to_binview().tot_ne_kernel_broadcast(other.as_bytes())
-    }
-
-    fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.to_binview().tot_lt_kernel_broadcast(other.as_bytes())
-    }
-
-    fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.to_binview().tot_le_kernel_broadcast(other.as_bytes())
-    }
-
-    fn tot_gt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.to_binview().tot_gt_kernel_broadcast(other.as_bytes())
-    }
-
-    fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.to_binview().tot_ge_kernel_broadcast(other.as_bytes())
     }
 }
 
