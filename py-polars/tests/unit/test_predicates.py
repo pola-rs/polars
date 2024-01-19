@@ -2,8 +2,9 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import numpy as np
-import polars as pl
 import pytest
+
+import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
