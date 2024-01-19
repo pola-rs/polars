@@ -242,16 +242,15 @@ dtype-slim = [
 # opt-in datatypes for Series
 dtype-date = [
   "polars-core/dtype-date",
-  "polars-lazy?/dtype-date",
   "polars-io/dtype-date",
+  "polars-lazy?/dtype-date",
   "polars-time?/dtype-date",
-  "polars-core/dtype-date",
   "polars-ops/dtype-date",
 ]
 dtype-datetime = [
   "polars-core/dtype-datetime",
-  "polars-lazy?/dtype-datetime",
   "polars-io/dtype-datetime",
+  "polars-lazy?/dtype-datetime",
   "polars-time?/dtype-datetime",
   "polars-ops/dtype-datetime",
 ]
@@ -259,25 +258,46 @@ dtype-duration = [
   "polars-core/dtype-duration",
   "polars-lazy?/dtype-duration",
   "polars-time?/dtype-duration",
-  "polars-core/dtype-duration",
   "polars-ops/dtype-duration",
 ]
-dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time?/dtype-time", "polars-ops/dtype-time"]
+dtype-time = [
+  "polars-core/dtype-time",
+  "polars-io/dtype-time",
+  "polars-lazy?/dtype-time",
+  "polars-time?/dtype-time",
+  "polars-ops/dtype-time",
+]
 dtype-array = [
   "polars-core/dtype-array",
   "polars-lazy?/dtype-array",
   "polars-ops/dtype-array",
 ]
-dtype-i8 = ["polars-core/dtype-i8", "polars-lazy?/dtype-i8", "polars-ops/dtype-i8"]
-dtype-i16 = ["polars-core/dtype-i16", "polars-lazy?/dtype-i16", "polars-ops/dtype-i16"]
+dtype-i8 = [
+  "polars-core/dtype-i8",
+  "polars-lazy?/dtype-i8",
+  "polars-ops/dtype-i8",
+]
+dtype-i16 = [
+  "polars-core/dtype-i16",
+  "polars-lazy?/dtype-i16",
+  "polars-ops/dtype-i16",
+]
 dtype-decimal = [
   "polars-core/dtype-decimal",
+  "polars-io/dtype-decimal",
   "polars-lazy?/dtype-decimal",
   "polars-ops/dtype-decimal",
-  "polars-io/dtype-decimal",
 ]
-dtype-u8 = ["polars-core/dtype-u8", "polars-lazy?/dtype-u8", "polars-ops/dtype-u8"]
-dtype-u16 = ["polars-core/dtype-u16", "polars-lazy?/dtype-u16", "polars-ops/dtype-u16"]
+dtype-u8 = [
+  "polars-core/dtype-u8",
+  "polars-lazy?/dtype-u8",
+  "polars-ops/dtype-u8",
+]
+dtype-u16 = [
+  "polars-core/dtype-u16",
+  "polars-lazy?/dtype-u16",
+  "polars-ops/dtype-u16",
+]
 dtype-categorical = [
   "polars-core/dtype-categorical",
   "polars-io/dtype-categorical",
@@ -286,9 +306,9 @@ dtype-categorical = [
 ]
 dtype-struct = [
   "polars-core/dtype-struct",
+  "polars-io/dtype-struct",
   "polars-lazy?/dtype-struct",
   "polars-ops/dtype-struct",
-  "polars-io/dtype-struct",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 
