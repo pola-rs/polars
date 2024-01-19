@@ -1670,8 +1670,8 @@ def test_limit() -> None:
 def test_filter() -> None:
     s = pl.Series("a", [1, 2, 3])
     mask = pl.Series("", [True, False, True])
-    assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
 
+    assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
     assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
 
 

@@ -2,9 +2,8 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import numpy as np
-import pytest
-
 import polars as pl
+import pytest
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
@@ -299,10 +298,14 @@ def test_multi_alias_pushdown() -> None:
     lf = pl.LazyFrame({"a": [1], "b": [1]})
 
     actual = lf.with_columns(m="a", n="b").filter((pl.col("m") + pl.col("n")) < 2)
-
     plan = actual.explain()
+
     assert "FILTER" not in plan
     assert r'SELECTION: "[([(col(\"a\")) + (col(\"b\"))]) < (2)]' in plan
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        # confirm we aren't using `eq_missing` in the query plan (denoted as " ==v ")
+        assert " ==v " not in lf.select(pl.col("a").filter(a=None)).explain()
 
 
 def test_predicate_pushdown_with_window_projections_12637() -> None:
@@ -466,3 +469,24 @@ def test_predicate_pd_join_13300() -> None:
     lf = lf.join(lf_other, left_on="new_col", right_on="col4", how="left")
     lf = lf.filter(pl.col("new_col") < 12)
     assert lf.collect().to_dict(as_series=False) == {"col3": [10], "new_col": [11]}
+
+
+def test_filter_eq_missing_13861() -> None:
+    lf = pl.LazyFrame({"a": [1, None, 3], "b": ["xx", "yy", None]})
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        assert lf.collect().filter(a=None).rows() == []
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        lff = lf.filter(a=None)
+        assert lff.collect().rows() == []
+        assert " ==v " not in lff.explain()  # check no `eq_missing` op
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        assert lf.filter(pl.col("a").eq(None)).collect().rows() == []
+
+    for filter_expr in (
+        pl.col("a").eq_missing(None),
+        pl.col("a").is_null(),
+    ):
+        assert lf.collect().filter(filter_expr).rows() == [(None, "yy")]
