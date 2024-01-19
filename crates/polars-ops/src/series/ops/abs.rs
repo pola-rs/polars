@@ -19,11 +19,6 @@ pub fn abs(s: &Series) -> PolarsResult<Series> {
         Int16 => abs_numeric(s.i16().unwrap()).into_series(),
         Int32 => abs_numeric(s.i32().unwrap()).into_series(),
         Int64 => abs_numeric(s.i64().unwrap()).into_series(),
-        #[cfg(feature = "dtype-u8")]
-        UInt8 => s.clone(),
-        #[cfg(feature = "dtype-u16")]
-        UInt16 => s.clone(),
-        UInt32 | UInt64 => s.clone(),
         Float32 => abs_numeric(s.f32().unwrap()).into_series(),
         Float64 => abs_numeric(s.f64().unwrap()).into_series(),
         #[cfg(feature = "dtype-decimal")]
@@ -42,6 +37,7 @@ pub fn abs(s: &Series) -> PolarsResult<Series> {
             let out = abs_numeric(ca).into_series();
             out.cast(s.dtype())?
         },
+        dt if dt.is_unsigned_integer() => s.clone(),
         dt => polars_bail!(opq = abs, dt),
     };
     Ok(out)
