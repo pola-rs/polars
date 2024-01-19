@@ -419,6 +419,11 @@ def test_from_numpy() -> None:
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
+    data2 = np.array(["foo", "bar"], dtype=object)
+    df = pl.from_numpy(data2)
+    assert df.shape == (2, 1)
+    assert df.rows() == [("foo",), ("bar",)]
+    assert df.schema == {"column_0": pl.String}
 
 
 def test_from_numpy_structured() -> None:
