@@ -223,7 +223,7 @@ pub trait TemporalMethods: AsSeries {
         self.to_string(format)
     }
 
-    #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
+    #[cfg(feature = "temporal")]
     /// Convert date(time) object to timestamp in [`TimeUnit`].
     fn timestamp(&self, tu: TimeUnit) -> PolarsResult<Int64Chunked> {
         let s = self.as_series();
