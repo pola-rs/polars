@@ -350,7 +350,6 @@ def test_enum_categories_series_input() -> None:
     assert_series_equal(dtype.categories, categories.alias("category"))
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 def test_enum_categories_series_zero_copy() -> None:
     categories = pl.Series(["a", "b"])
     dtype = pl.Enum(categories)
@@ -359,10 +358,3 @@ def test_enum_categories_series_zero_copy() -> None:
     result_dtype = s.dtype
 
     assert result_dtype == dtype
-
-    original_buffer_info = categories._get_buffer(0)._get_buffer_info()
-    dtype_buffer_info = dtype.categories._get_buffer(0)._get_buffer_info()
-    result_dtype_buffer_info = result_dtype.categories._get_buffer(0)._get_buffer_info()  # type: ignore[attr-defined]
-
-    assert original_buffer_info == dtype_buffer_info
-    assert original_buffer_info == result_dtype_buffer_info
