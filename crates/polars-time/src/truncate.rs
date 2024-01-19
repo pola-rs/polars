@@ -1,5 +1,4 @@
 use arrow::legacy::time_zone::Tz;
-#[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 use polars_core::prelude::*;
@@ -12,7 +11,6 @@ pub trait PolarsTruncate {
         Self: Sized;
 }
 
-#[cfg(feature = "dtype-datetime")]
 impl PolarsTruncate for DatetimeChunked {
     fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self> {
         let offset = Duration::parse(offset);
@@ -48,7 +46,6 @@ impl PolarsTruncate for DatetimeChunked {
     }
 }
 
-#[cfg(feature = "dtype-date")]
 impl PolarsTruncate for DateChunked {
     fn truncate(
         &self,
