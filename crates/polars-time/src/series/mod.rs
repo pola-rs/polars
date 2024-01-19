@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, Div};
 
 use polars_core::prelude::*;
 
@@ -117,6 +117,34 @@ pub trait TemporalMethods: AsSeries {
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.ordinal()),
             dt => polars_bail!(opq = ordinal_day, dt),
+        }
+    }
+
+    /// Calculate the millennium from the underlying NaiveDateTime representation.
+    fn millennium(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            // note: adjust by one for the years on the <n>000 boundaries.
+            // (2000 is the end of the 2nd millennium; 2001 is the beginning of the 3rd).
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
+            dt => polars_bail!(opq = century, dt),
+        }
+    }
+
+    /// Calculate the millennium from the underlying NaiveDateTime representation.
+    fn century(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            // note: adjust by one for years on the <nn>00 boundaries.
+            // (1900 is the end of the 19th century; 1901 is the beginning of the 20th).
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| (ca.year() - 1i32).div(100f64) + 1),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i32).div(100f64) + 1),
+            dt => polars_bail!(opq = century, dt),
         }
     }
 

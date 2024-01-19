@@ -12,6 +12,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: TemporalFunction) -> Self {
         use TemporalFunction::*;
         match func {
+            Millennium => map!(datetime::millennium),
+            Century => map!(datetime::century),
             Year => map!(datetime::year),
             IsLeapYear => map!(datetime::is_leap_year),
             IsoYear => map!(datetime::iso_year),
@@ -31,6 +33,13 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Millisecond => map!(datetime::millisecond),
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
+            TotalDays => map!(datetime::total_days),
+            TotalHours => map!(datetime::total_hours),
+            TotalMinutes => map!(datetime::total_minutes),
+            TotalSeconds => map!(datetime::total_seconds),
+            TotalMilliseconds => map!(datetime::total_milliseconds),
+            TotalMicroseconds => map!(datetime::total_microseconds),
+            TotalNanoseconds => map!(datetime::total_nanoseconds),
             ToString(format) => map!(datetime::to_string, &format),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
             #[cfg(feature = "timezones")]

@@ -46,6 +46,8 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
+        ("millennium", pl.Series(values=[2, 3, 3], dtype=pl.Int32)),
+        ("century", pl.Series(values=[20, 21, 21], dtype=pl.Int32)),
         ("year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
         ("iso_year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
         ("quarter", pl.Series(values=[2, 4, 1], dtype=pl.Int8)),

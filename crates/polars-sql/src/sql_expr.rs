@@ -941,7 +941,9 @@ pub(crate) fn parse_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResu
 
 fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
     Ok(match field {
-        DateTimeField::Decade => expr.dt().year() / lit(10),
+        DateTimeField::Millennium => expr.dt().millennium(),
+        DateTimeField::Century => expr.dt().century(),
+        DateTimeField::Decade => expr.dt().year() / lit(10i32),
         DateTimeField::Isoyear => expr.dt().iso_year(),
         DateTimeField::Year => expr.dt().year(),
         DateTimeField::Quarter => expr.dt().quarter(),
@@ -970,6 +972,8 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
             (expr.clone().dt().second() * lit(1_000_000_000f64)) + expr.dt().nanosecond()
         },
         DateTimeField::Time => expr.dt().time(),
+        #[cfg(feature = "timezones")]
+        DateTimeField::Timezone => expr.dt().base_utc_offset().dt().total_seconds(),
         DateTimeField::Epoch => {
             expr.clone()
                 .dt()
@@ -978,7 +982,7 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
                 + expr.dt().nanosecond().div(lit(1_000_000_000f64))
         },
         _ => {
-            polars_bail!(ComputeError: "Extract function does not yet support {}", field)
+            polars_bail!(ComputeError: "EXTRACT function does not support {}", field)
         },
     })
 }
@@ -988,6 +992,8 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
     parse_extract(
         expr,
         match part.as_str() {
+            "millennium" => &DateTimeField::Millennium,
+            "century" => &DateTimeField::Century,
             "decade" => &DateTimeField::Decade,
             "isoyear" => &DateTimeField::Isoyear,
             "year" => &DateTimeField::Year,
@@ -1004,10 +1010,12 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
             "millisecond" | "milliseconds" => &DateTimeField::Millisecond,
             "microsecond" | "microseconds" => &DateTimeField::Microsecond,
             "nanosecond" | "nanoseconds" => &DateTimeField::Nanosecond,
+            #[cfg(feature = "timezones")]
+            "timezone" => &DateTimeField::Timezone,
             "time" => &DateTimeField::Time,
             "epoch" => &DateTimeField::Epoch,
             _ => {
-                polars_bail!(ComputeError: "Date part '{}' not supported", part)
+                polars_bail!(ComputeError: "DATE_PART function does not support '{}'", part)
             },
         },
     )
