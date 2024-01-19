@@ -363,6 +363,15 @@ impl Debug for Series {
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
             },
+            DataType::BinaryOffset => {
+                format_array!(
+                    f,
+                    self.binary_offset().unwrap(),
+                    "binary[offset]",
+                    self.name(),
+                    "Series"
+                )
+            },
             dt => panic!("{dt:?} not impl"),
         }
     }
@@ -974,7 +983,14 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
+            AnyValue::Binary(d) => {
+                let s = String::from_utf8_lossy(d);
+                write!(f, "{}", format_args!("b\"{s}\""))
+            },
+            AnyValue::BinaryOwned(d) => {
+                let s = String::from_utf8_lossy(d);
+                write!(f, "{}", format_args!("b\"{s}\""))
+            },
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]

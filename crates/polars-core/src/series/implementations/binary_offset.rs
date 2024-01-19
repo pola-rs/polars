@@ -7,14 +7,12 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
-impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
+impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
@@ -30,18 +28,11 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     fn _set_flags(&mut self, flags: Settings) {
         self.0.set_flags(flags)
     }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
-    }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.equal_element(idx_self, idx_other, other)
     }
 
-    #[cfg(feature = "zip_with")]
-    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
-        ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
-    }
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
     }
@@ -60,36 +51,6 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_list(groups)
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_min(groups)
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_max(groups)
-    }
-
-    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::subtract(&self.0, rhs)
-    }
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::add_to(&self.0, rhs)
-    }
-    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::multiply(&self.0, rhs)
-    }
-    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::divide(&self.0, rhs)
-    }
-    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::remainder(&self.0, rhs)
-    }
-    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
@@ -99,7 +60,7 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<BinaryChunked> {
+impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }
@@ -209,21 +170,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.has_validity()
     }
 
-    #[cfg(feature = "algorithm_group_by")]
-    fn unique(&self) -> PolarsResult<Series> {
-        ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
-    fn n_unique(&self) -> PolarsResult<usize> {
-        ChunkUnique::n_unique(&self.0)
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
-    fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        ChunkUnique::arg_unique(&self.0)
-    }
-
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -236,20 +182,10 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         ChunkReverse::reverse(&self.0).into_series()
     }
 
-    fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-        self.0.as_single_ptr()
-    }
-
     fn shift(&self, periods: i64) -> Series {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::max_as_series(&self.0))
-    }
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::min_as_series(&self.0))
-    }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

@@ -24,6 +24,7 @@ pub enum DataType {
     /// String data
     String,
     Binary,
+    BinaryOffset,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -190,6 +191,10 @@ impl DataType {
         matches!(self, DataType::Boolean)
     }
 
+    pub fn is_binary(&self) -> bool {
+        matches!(self, DataType::Binary)
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
@@ -265,7 +270,7 @@ impl DataType {
     }
 
     #[inline]
-    pub fn try_to_arrow(&self, _pl_flavor: bool) -> PolarsResult<ArrowDataType> {
+    pub fn try_to_arrow(&self, pl_flavor: bool) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
             Boolean => Ok(ArrowDataType::Boolean),
@@ -286,10 +291,21 @@ impl DataType {
                 scale.unwrap_or(0), // and what else can we do here?
             )),
             String => {
-                // TODO! implement pl_flavor
-                Ok(ArrowDataType::LargeUtf8)
+                let dt = if pl_flavor {
+                    ArrowDataType::Utf8View
+                } else {
+                    ArrowDataType::LargeUtf8
+                };
+                Ok(dt)
             },
-            Binary => Ok(ArrowDataType::LargeBinary),
+            Binary => {
+                let dt = if pl_flavor {
+                    ArrowDataType::BinaryView
+                } else {
+                    ArrowDataType::LargeBinary
+                };
+                Ok(dt)
+            },
             Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
@@ -298,13 +314,13 @@ impl DataType {
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
                 Box::new(arrow::datatypes::Field::new(
                     "item",
-                    dt.try_to_arrow(true)?,
+                    dt.try_to_arrow(pl_flavor)?,
                     true,
                 )),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                arrow::datatypes::Field::new("item", dt.to_arrow(true), true),
+                arrow::datatypes::Field::new("item", dt.to_arrow(pl_flavor), true),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
@@ -319,9 +335,10 @@ impl DataType {
             )),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
-                let fields = fields.iter().map(|fld| fld.to_arrow(true)).collect();
+                let fields = fields.iter().map(|fld| fld.to_arrow(pl_flavor)).collect();
                 Ok(ArrowDataType::Struct(fields))
             },
+            BinaryOffset => Ok(ArrowDataType::LargeBinary),
             Unknown => {
                 polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
             },
@@ -397,6 +414,7 @@ impl Display for DataType {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
+            DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
     }

@@ -247,35 +247,38 @@ mod test {
             .unwrap();
         df_read.equals(&expected);
 
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut df = df![
-            "letters" => ["x", "y", "z"],
-            "ints" => [123, 456, 789],
-            "floats" => [4.5, 10.0, 10.0],
-            "other" => ["misc", "other", "value"],
-        ]
-        .unwrap();
-        IpcWriter::new(&mut buf)
-            .finish(&mut df)
-            .expect("ipc writer");
-        buf.set_position(0);
-        let expected = df![
-            "letters" => ["x", "y", "z"],
-            "floats" => [4.5, 10.0, 10.0],
-            "other" => ["misc", "other", "value"],
-            "ints" => [123, 456, 789],
-        ]
-        .unwrap();
-        let df_read = IpcReader::new(&mut buf)
-            .with_columns(Some(vec![
-                "letters".to_string(),
-                "floats".to_string(),
-                "other".to_string(),
-                "ints".to_string(),
-            ]))
-            .finish()
+        for pl_flavor in [false, true] {
+            let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+            let mut df = df![
+                "letters" => ["x", "y", "z"],
+                "ints" => [123, 456, 789],
+                "floats" => [4.5, 10.0, 10.0],
+                "other" => ["misc", "other", "value"],
+            ]
             .unwrap();
-        assert!(df_read.equals(&expected));
+            IpcWriter::new(&mut buf)
+                .with_pl_flavor(pl_flavor)
+                .finish(&mut df)
+                .expect("ipc writer");
+            buf.set_position(0);
+            let expected = df![
+                "letters" => ["x", "y", "z"],
+                "floats" => [4.5, 10.0, 10.0],
+                "other" => ["misc", "other", "value"],
+                "ints" => [123, 456, 789],
+            ]
+            .unwrap();
+            let df_read = IpcReader::new(&mut buf)
+                .with_columns(Some(vec![
+                    "letters".to_string(),
+                    "floats".to_string(),
+                    "other".to_string(),
+                    "ints".to_string(),
+                ]))
+                .finish()
+                .unwrap();
+            assert!(df_read.equals(&expected));
+        }
     }
 
     #[test]

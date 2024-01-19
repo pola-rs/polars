@@ -1650,17 +1650,7 @@ impl DataFrame {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
             return self.clone().filter_vertical(mask);
         }
-        let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
-            DataType::String => {
-                let ca = s.str().unwrap();
-                if ca.get_values_size() / 24 <= ca.len() {
-                    s.filter(mask)
-                } else {
-                    s.filter_threaded(mask, true)
-                }
-            },
-            _ => s.filter(mask),
-        })?;
+        let new_col = self.try_apply_columns_par(&|s| s.filter(mask))?;
         Ok(DataFrame::new_no_checks(new_col))
     }
 
@@ -1682,19 +1672,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
-        let new_col = POOL.install(|| {
-            self.try_apply_columns_par(&|s| match s.dtype() {
-                DataType::String => {
-                    let ca = s.str().unwrap();
-                    if ca.get_values_size() / 24 <= ca.len() {
-                        s.take(indices)
-                    } else {
-                        s.take_threaded(indices, true)
-                    }
-                },
-                _ => s.take(indices),
-            })
-        })?;
+        let new_col = POOL.install(|| self.try_apply_columns_par(&|s| s.take(indices)))?;
 
         Ok(DataFrame::new_no_checks(new_col))
     }
@@ -1707,12 +1685,7 @@ impl DataFrame {
 
     unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| {
-                self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::String => s.take_unchecked_threaded(idx, true),
-                    _ => s.take_unchecked(idx),
-                })
-            })
+            POOL.install(|| self.apply_columns_par(&|s| s.take_unchecked(idx)))
         } else {
             self.columns.iter().map(|s| s.take_unchecked(idx)).collect()
         };
@@ -1725,12 +1698,7 @@ impl DataFrame {
 
     unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| {
-                self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::String => s.take_slice_unchecked_threaded(idx, true),
-                    _ => s.take_slice_unchecked(idx),
-                })
-            })
+            POOL.install(|| self.apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
             self.columns
                 .iter()
