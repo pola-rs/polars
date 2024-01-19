@@ -360,5 +360,9 @@ def test_enum_categories_series_zero_copy() -> None:
 
     assert result_dtype == dtype
 
-    assert categories._get_buffer_info() == dtype.categories._get_buffer_info()
-    assert categories._get_buffer_info() == result_dtype.categories._get_buffer_info()  # type: ignore[attr-defined]
+    original_buffer_info = categories._get_buffer(0)._get_buffer_info()
+    dtype_buffer_info = dtype.categories._get_buffer(0)._get_buffer_info()
+    result_dtype_buffer_info = result_dtype.categories._get_buffer(0)._get_buffer_info()  # type: ignore[attr-defined]
+
+    assert original_buffer_info == dtype_buffer_info
+    assert original_buffer_info == result_dtype_buffer_info

@@ -394,7 +394,7 @@ class Series:
         Raises
         ------
         ComputeError
-            If the `Series` contains multiple chunks.
+            If the `Series` contains multiple chunks or if it is not of a physical type.
         """
         return self._s._get_buffer_info()
 

@@ -43,12 +43,10 @@ impl PySeries {
             DataType::Boolean => {
                 let ca = s.bool().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
-                // this one is quite useless as you need to know the offset
-                // into the first byte.
-                let (slice, start, len) = arr.values().as_slice();
+                let (slice, offset, len) = arr.values().as_slice();
                 Ok(BufferInfo {
                     pointer: slice.as_ptr() as usize,
-                    offset: start,
+                    offset: offset,
                     length: len,
                 })
             },
@@ -57,7 +55,7 @@ impl PySeries {
                 BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
             })),
             _ => {
-                let msg = "Cannot take pointer of nested type, try to first select a buffer";
+                let msg = "cannot take pointer non-physical type; try to select a buffer first";
                 raise_err!(msg, ComputeError);
             },
         }
@@ -68,10 +66,10 @@ impl PySeries {
         match self.series.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffer_from_primitive(&self.series, index),
             DataType::Boolean => get_buffer_from_primitive(&self.series, index),
-            DataType::List(_) => get_buffer_from_nested(&self.series, index),
             DataType::String => {
                 todo!()
             },
+            DataType::List(_) => get_buffer_from_nested(&self.series, index),
             DataType::Array(_, _) => {
                 let ca = self.series.array().unwrap();
                 match index {

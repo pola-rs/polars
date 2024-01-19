@@ -102,7 +102,7 @@ def test_series_from_buffers_datetime() -> None:
 
 
 def test_series_from_buffers_string() -> None:
-    dtype = pl.Utf8
+    dtype = pl.String
     data = pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8)
     validity = pl.Series([True, True, False, True])
     offsets = pl.Series([0, 1, 3, 3, 9], dtype=pl.Int64)
@@ -155,7 +155,7 @@ def test_series_from_buffers_unsupported_offsets() -> None:
         TypeError,
         match="offsets buffer must have data type Int64, got Int8",
     ):
-        pl.Series._from_buffers(pl.Utf8, data=[data, offsets])
+        pl.Series._from_buffers(pl.String, data=[data, offsets])
 
 
 def test_series_from_buffers_offsets_do_not_match_data() -> None:
@@ -166,7 +166,7 @@ def test_series_from_buffers_offsets_do_not_match_data() -> None:
         pl.PolarsPanicError,
         match="offsets must not exceed the values length",
     ):
-        pl.Series._from_buffers(pl.Utf8, data=[data, offsets])
+        pl.Series._from_buffers(pl.String, data=[data, offsets])
 
 
 def test_series_from_buffers_no_buffers() -> None:
