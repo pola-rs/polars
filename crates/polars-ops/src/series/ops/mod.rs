@@ -35,6 +35,7 @@ mod is_unique;
 mod log;
 #[cfg(feature = "moment")]
 mod moment;
+mod negate;
 #[cfg(feature = "pct_change")]
 mod pct_change;
 #[cfg(feature = "rank")]
@@ -94,6 +95,7 @@ pub use is_unique::*;
 pub use log::*;
 #[cfg(feature = "moment")]
 pub use moment::*;
+pub use negate::*;
 #[cfg(feature = "pct_change")]
 pub use pct_change::*;
 use polars_core::prelude::*;

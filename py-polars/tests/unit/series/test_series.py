@@ -430,15 +430,6 @@ def test_arithmetic_datetime() -> None:
     with pytest.raises(TypeError):
         2**a
 
-    with pytest.raises(TypeError):
-        +a
-
-
-def test_arithmetic_string() -> None:
-    a = pl.Series("a", [""])
-    with pytest.raises(TypeError):
-        +a
-
 
 def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)

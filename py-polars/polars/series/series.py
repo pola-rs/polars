@@ -1185,10 +1185,10 @@ class Series:
         return other.dot(self)
 
     def __neg__(self) -> Series:
-        return 0 - self
+        return self.to_frame().select_seq(-F.col(self.name)).to_series()
 
     def __pos__(self) -> Series:
-        return 0 + self
+        return self
 
     def __abs__(self) -> Series:
         return self.abs()
