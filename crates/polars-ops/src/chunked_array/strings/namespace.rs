@@ -232,7 +232,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    fn zfill(&self, length: usize) -> StringChunked {
+    fn zfill(&self, length: &UInt64Chunked) -> StringChunked {
         let ca = self.as_string();
         pad::zfill(ca, length)
     }
