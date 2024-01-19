@@ -363,6 +363,15 @@ impl Debug for Series {
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
             },
+            DataType::BinaryOffset => {
+                format_array!(
+                    f,
+                    self.binary_offset().unwrap(),
+                    "binary[offset]",
+                    self.name(),
+                    "Series"
+                )
+            },
             dt => panic!("{dt:?} not impl"),
         }
     }

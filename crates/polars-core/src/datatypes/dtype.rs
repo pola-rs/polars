@@ -191,6 +191,10 @@ impl DataType {
         matches!(self, DataType::Boolean)
     }
 
+    pub fn is_binary(&self) -> bool {
+        matches!(self, DataType::Binary)
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]

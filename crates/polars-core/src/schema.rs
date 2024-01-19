@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
 use arrow::datatypes::ArrowSchemaRef;
@@ -347,7 +348,18 @@ impl Schema {
         let fields: Vec<_> = self
             .inner
             .iter()
-            .map(|(name, dtype)| ArrowField::new(name.as_str(), dtype.to_arrow(pl_flavor), true))
+            .map(|(name, dtype)| {
+                let field = ArrowField::new(name.as_str(), dtype.to_arrow(pl_flavor), true);
+                match dtype {
+                    DataType::BinaryOffset => field.with_metadata({
+                        let mut bs = BTreeMap::new();
+                        // Make sure that we keep the type we written.
+                        bs.insert("pl".to_string(), "maintain_type".to_string());
+                        bs
+                    }),
+                    _ => field,
+                }
+            })
             .collect();
         ArrowSchema::from(fields)
     }
