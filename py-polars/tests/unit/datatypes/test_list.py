@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pickle
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -77,6 +78,15 @@ def test_categorical() -> None:
 
     assert out.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
     assert out.dtype.inner.is_nested() is False  # type: ignore[attr-defined]
+
+
+def test_decimal() -> None:
+    input = [[Decimal("1.23"), Decimal("4.56")], [Decimal("7.89"), Decimal("10.11")]]
+    s = pl.Series(input)
+    assert s.dtype == pl.List(pl.Decimal)
+    assert s.dtype.inner == pl.Decimal
+    assert s.dtype.inner.is_nested() is False
+    assert s.to_list() == input
 
 
 def test_cast_inner() -> None:
