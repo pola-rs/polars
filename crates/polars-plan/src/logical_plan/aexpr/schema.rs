@@ -1,7 +1,9 @@
 use super::*;
 
 fn float_type(field: &mut Field) {
-    if field.dtype.is_numeric() && !matches!(&field.dtype, DataType::Float32) {
+    if (field.dtype.is_numeric() || field.dtype == DataType::Boolean)
+        && field.dtype != DataType::Float32
+    {
         field.coerce(DataType::Float64)
     }
 }
@@ -127,11 +129,7 @@ impl AExpr {
                     Mean(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        if matches!(&field.dtype, DataType::Boolean) {
-                            field.coerce(DataType::Float64);
-                        } else {
-                            float_type(&mut field);
-                        }
+                        float_type(&mut field);
                         Ok(field)
                     },
                     Implode(expr) => {
