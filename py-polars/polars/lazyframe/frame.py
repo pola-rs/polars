@@ -4165,14 +4165,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         drop_cols = _expand_selectors(self, *columns)
         return self._from_pyldf(self._ldf.drop(drop_cols))
 
-    def rename(self, mapping: dict[str, str]) -> Self:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> Self:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Notes
         -----
@@ -4199,10 +4200,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> lf.rename(lambda column_name: "c" + column_name[1:]).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
-        existing = list(mapping.keys())
-        new = list(mapping.values())
-        return self._from_pyldf(self._ldf.rename(existing, new))
+        if callable(mapping):
+            return self.select(F.all().name.map(mapping))
+        else:
+            existing = list(mapping.keys())
+            new = list(mapping.values())
+            return self._from_pyldf(self._ldf.rename(existing, new))
 
     def reverse(self) -> Self:
         """
