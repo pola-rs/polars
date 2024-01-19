@@ -3369,6 +3369,13 @@ def test_from_dicts_undeclared_column_dtype() -> None:
     assert result.schema == {"x": pl.Null}
 
 
+def test_from_dicts_with_override() -> None:
+    data = [{'a': '1', 'b': '2'}, {'a':1, 'b':2}]
+    override = {'a': pl.Int32, 'b': pl.UInt8}
+    result = pl.from_dicts(data, schema_overrides=override)
+    assert result.schema == {"a": pl.Int32, "b": pl.UInt8}
+
+
 def test_from_records_u64_12329() -> None:
     s = pl.from_records([{"a": 9908227375760408577}])
     assert s.dtypes == [pl.UInt64]
