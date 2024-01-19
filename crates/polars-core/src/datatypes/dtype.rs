@@ -95,6 +95,17 @@ impl PartialEq for DataType {
 impl Eq for DataType {}
 
 impl DataType {
+    /// Standardize timezones to consistent values.
+    pub(crate) fn canonical_timezone(tz: &Option<String>) -> Option<TimeZone> {
+        match tz.as_deref() {
+            Some("") => None,
+            #[cfg(feature = "timezones")]
+            Some("+00:00") | Some("00:00") => Some("UTC"),
+            _ => tz.as_deref(),
+        }
+        .map(|s| s.to_string())
+    }
+
     pub fn value_within_range(&self, other: AnyValue) -> bool {
         use DataType::*;
         match self {

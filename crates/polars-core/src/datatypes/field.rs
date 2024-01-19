@@ -137,7 +137,7 @@ impl DataType {
             ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.data_type(), bin_to_view).boxed(), *size),
             ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.data_type(), bin_to_view).boxed()),
             ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
+            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), DataType::canonical_timezone(tz)),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
