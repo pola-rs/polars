@@ -8,6 +8,7 @@ mod view;
 use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use polars_error::*;
@@ -112,7 +113,7 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
     /// Total bytes length if we would concatenate them all.
-    total_bytes_len: usize,
+    total_bytes_len: AtomicU64,
     /// Total bytes in the buffer (excluding remaining capacity)
     total_buffer_len: usize,
 }
@@ -132,7 +133,7 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
             raw_buffers: self.raw_buffers.clone(),
             validity: self.validity.clone(),
             phantom: Default::default(),
-            total_bytes_len: self.total_bytes_len,
+            total_bytes_len: AtomicU64::new(self.total_bytes_len.load(Ordering::Relaxed)),
             total_buffer_len: self.total_buffer_len,
         }
     }
@@ -147,6 +148,7 @@ fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Arc<[(*const T, usize)]> {
         .map(|buf| (buf.storage_ptr(), buf.len()))
         .collect()
 }
+const UNKNOWN_LEN: u64 = u64::MAX;
 
 impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// # Safety
@@ -169,7 +171,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             raw_buffers,
             validity,
             phantom: Default::default(),
-            total_bytes_len,
+            total_bytes_len: AtomicU64::new(total_bytes_len as u64),
             total_buffer_len,
         }
     }
@@ -336,7 +338,14 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 
     /// Get the total length of bytes that it would take to concatenate all binary/str values in this array.
     pub fn total_bytes_len(&self) -> usize {
-        self.total_bytes_len
+        let total = self.total_bytes_len.load(Ordering::Relaxed);
+        if total == UNKNOWN_LEN {
+            let total = self.len_iter().map(|v| v as usize).sum::<usize>();
+            self.total_bytes_len.store(total as u64, Ordering::Relaxed);
+            total
+        } else {
+            total as usize
+        }
     }
 
     /// Get the length of bytes that are stored in the variadic buffers.
@@ -367,8 +376,9 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         if self.total_buffer_len == 0 {
             return self;
         }
+        let total_bytes_len = self.total_bytes_len.load(Ordering::Relaxed) as usize;
         // Subtract the maximum amount of inlined strings.
-        let min_in_buffer = self.total_bytes_len.saturating_sub(self.len() * 12);
+        let min_in_buffer = total_bytes_len.saturating_sub(self.len() * 12);
         let frac = (min_in_buffer as f64) / ((self.total_buffer_len() + 1) as f64);
 
         if frac < 0.25 {
@@ -400,7 +410,7 @@ impl BinaryViewArray {
             self.views.clone(),
             self.buffers.clone(),
             self.validity.clone(),
-            self.total_bytes_len,
+            self.total_bytes_len.load(Ordering::Relaxed) as usize,
             self.total_buffer_len,
         )
     }
@@ -415,7 +425,7 @@ impl Utf8ViewArray {
                 self.views.clone(),
                 self.buffers.clone(),
                 self.validity.clone(),
-                self.total_bytes_len,
+                self.total_bytes_len.load(Ordering::Relaxed) as usize,
                 self.total_buffer_len,
             )
         }
@@ -460,7 +470,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
         self.views.slice_unchecked(offset, length);
-        self.total_bytes_len = self.len_iter().map(|v| v as usize).sum::<usize>();
+        self.total_bytes_len.store(UNKNOWN_LEN, Ordering::Relaxed)
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
