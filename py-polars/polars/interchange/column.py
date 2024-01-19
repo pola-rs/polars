@@ -51,6 +51,7 @@ class PolarsColumn(Column):
     @property
     def offset(self) -> int:
         """Offset of the first element with respect to the start of the underlying buffer."""  # noqa: W505
+        # TODO: Fix for non-physical types - get buffer first?
         _, offset, _ = self._col._get_buffer_info()
         return offset
 
@@ -148,6 +149,7 @@ class PolarsColumn(Column):
 
     def get_buffers(self) -> ColumnBuffers:
         """Return a dictionary containing the underlying buffers."""
+        # TODO: Handle string
         return {
             "data": self._get_data_buffer(),
             "validity": self._get_validity_buffer(),
