@@ -221,21 +221,25 @@ def test_rolling_infinity() -> None:
 
 def test_rolling_extrema() -> None:
     # sorted data and nulls flags trigger different kernels
-    df = (
-        pl.DataFrame(
-            {
-                "col1": pl.int_range(0, 7, eager=True),
-                "col2": pl.int_range(0, 7, eager=True).reverse(),
-            }
-        )
-    ).with_columns(
+
+    # TEMPORARY: as per discussion in https://github.com/pola-rs/polars/pull/13819,
+    # `.name.keep().name.suffix()` currently fails. For now we build our df in steps
+    # as a workaround.
+    df1 = pl.DataFrame(
+        {
+            "col1": pl.int_range(0, 7, eager=True),
+            "col2": pl.int_range(0, 7, eager=True).reverse(),
+        }
+    )
+    df2 = df1.with_columns(
         [
             pl.when(pl.int_range(0, pl.len(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
-            .name.suffix("_nulls")
+            .name.keep()
         ]
     )
+    df = pl.concat((df1, df2.select(pl.all().name.suffix("_nulls"))), how="horizontal")
 
     assert df.select([pl.all().rolling_min(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 0, 1, 2, 3, 4],
