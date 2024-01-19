@@ -46,12 +46,12 @@ fn fields_to_struct_array(fields: &[Series], physical: bool) -> (ArrayRef, Vec<S
             let s = s.rechunk();
             match s.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => s.to_arrow(0),
+                DataType::Object(_, _) => s.to_arrow(0, true),
                 _ => {
                     if physical {
                         s.chunks()[0].clone()
                     } else {
-                        s.to_arrow(0)
+                        s.to_arrow(0, true)
                     }
                 },
             }
@@ -143,7 +143,7 @@ impl StructChunked {
                 .iter()
                 .map(|s| match s.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_, _) => s.to_arrow(i),
+                    DataType::Object(_, _) => s.to_arrow(i, true),
                     _ => s.chunks()[i].clone(),
                 })
                 .collect::<Vec<_>>();
@@ -293,11 +293,11 @@ impl StructChunked {
         self.into()
     }
 
-    pub(crate) fn to_arrow(&self, i: usize) -> ArrayRef {
+    pub(crate) fn to_arrow(&self, i: usize, pl_flavor: bool) -> ArrayRef {
         let values = self
             .fields
             .iter()
-            .map(|s| s.to_arrow(i))
+            .map(|s| s.to_arrow(i, pl_flavor))
             .collect::<Vec<_>>();
 
         // we determine fields from arrays as there might be object arrays

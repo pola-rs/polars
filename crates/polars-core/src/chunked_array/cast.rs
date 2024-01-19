@@ -25,7 +25,7 @@ pub(crate) fn cast_chunks(
         }
     };
 
-    let arrow_dtype = dtype.to_arrow();
+    let arrow_dtype = dtype.to_arrow(true);
     chunks
         .iter()
         .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options))
@@ -227,7 +227,11 @@ impl ChunkCast for StringChunked {
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
                     let chunks = self.downcast_iter().map(|arr| {
-                        arrow::legacy::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
+                        arrow::compute::cast::binview_to_decimal(
+                            &arr.to_binview(),
+                            *precision,
+                            *scale,
+                        )
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
                         .into_decimal_unchecked(*precision, *scale)
@@ -274,24 +278,13 @@ impl ChunkCast for StringChunked {
     }
 }
 
-unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
-    let values = from.values().clone();
-    let offsets = from.offsets().clone();
-    Utf8Array::<i64>::new_unchecked(
-        ArrowDataType::LargeUtf8,
-        offsets,
-        values,
-        from.validity().cloned(),
-    )
-}
-
 impl BinaryChunked {
     /// # Safety
     /// String is not validated
     pub unsafe fn to_string(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
+            .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
         StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
@@ -302,12 +295,7 @@ impl StringChunked {
     pub fn as_binary(&self) -> BinaryChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| {
-                Box::new(arrow::compute::cast::utf8_to_binary(
-                    arr,
-                    ArrowDataType::LargeBinary,
-                )) as ArrayRef
-            })
+            .map(|arr| arr.to_binview().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
         unsafe {
@@ -330,6 +318,20 @@ impl ChunkCast for BinaryChunked {
             DataType::String => unsafe { Ok(self.to_string().into_series()) },
             _ => self.cast(data_type),
         }
+    }
+}
+
+impl ChunkCast for BinaryOffsetChunked {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        match data_type {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
+            _ => cast_impl(self.name(), &self.chunks, data_type),
+        }
+    }
+
+    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast(data_type)
     }
 }
 
@@ -501,7 +503,7 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
         new_values,
         arr.validity().cloned(),
     );
-    Ok((Box::new(new_arr), inner_dtype))
+    Ok((new_arr.boxed(), inner_dtype))
 }
 
 unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> PolarsResult<Series> {

@@ -1447,7 +1447,10 @@ def numpy_to_pydf(
                 msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
                 raise ValueError(msg)
         else:
-            msg = f"cannot create DataFrame from array with more than two dimensions; shape = {shape}"
+            if shape == ():
+                msg = "cannot create DataFrame from zero-dimensional array"
+            else:
+                msg = f"cannot create DataFrame from array with more than two dimensions; shape = {shape}"
             raise ValueError(msg)
 
     if schema is not None and len(schema) != n_columns:

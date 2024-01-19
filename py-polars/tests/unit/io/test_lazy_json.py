@@ -56,6 +56,11 @@ def test_scan_ndjson_with_schema(foods_ndjson_path: Path) -> None:
     assert df["sugars_g"].dtype == pl.Float64
 
 
+def test_scan_ndjson_batch_size_zero() -> None:
+    with pytest.raises(ValueError, match="invalid zero value"):
+        pl.scan_ndjson("test.ndjson", batch_size=0)
+
+
 @pytest.mark.write_disk()
 def test_scan_with_projection(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)

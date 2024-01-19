@@ -52,7 +52,7 @@ pub(super) fn process_group_by(
         // Counts change due to groupby's
         // TODO! handle aliases, so that the predicate that is pushed down refers to the column before alias.
         let mut push_down = !has_aexpr(*predicate, expr_arena, |ae| {
-            matches!(ae, AExpr::Count | AExpr::Alias(_, _))
+            matches!(ae, AExpr::Len | AExpr::Alias(_, _))
         });
 
         for name in aexpr_to_leaf_names_iter(*predicate, expr_arena) {

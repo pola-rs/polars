@@ -73,7 +73,7 @@ fn write_sliced_utf8() -> PolarsResult<()> {
 
 #[test]
 fn write_binview() -> PolarsResult<()> {
-    let array = Utf8ViewArray::from([Some("foo"), Some("bar"), None, Some("hamlet")]).boxed();
+    let array = Utf8ViewArray::from_slice([Some("foo"), Some("bar"), None, Some("hamlet")]).boxed();
     let schema = prep_schema(array.as_ref());
     let columns = Chunk::try_new(vec![array])?;
     round_trip(columns, schema, None, Some(Compression::ZSTD))

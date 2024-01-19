@@ -430,15 +430,6 @@ def test_arithmetic_datetime() -> None:
     with pytest.raises(TypeError):
         2**a
 
-    with pytest.raises(TypeError):
-        +a
-
-
-def test_arithmetic_string() -> None:
-    a = pl.Series("a", [""])
-    with pytest.raises(TypeError):
-        +a
-
 
 def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)
@@ -1654,21 +1645,6 @@ def test_temporal_comparison(
     )
 
 
-def test_abs() -> None:
-    # ints
-    s = pl.Series([1, -2, 3, -4])
-    assert_series_equal(s.abs(), pl.Series([1, 2, 3, 4]))
-    assert_series_equal(cast(pl.Series, np.abs(s)), pl.Series([1, 2, 3, 4]))
-
-    # floats
-    s = pl.Series([1.0, -2.0, 3, -4.0])
-    assert_series_equal(s.abs(), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    assert_series_equal(cast(pl.Series, np.abs(s)), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    assert_series_equal(
-        pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
-    )
-
-
 def test_to_dummies() -> None:
     s = pl.Series("a", [1, 2, 3])
     result = s.to_dummies()
@@ -2397,11 +2373,6 @@ def test_repr_html(df: pl.DataFrame) -> None:
     # check it does not panic/error, and appears to contain a table
     html = pl.Series("misc", [123, 456, 789])._repr_html_()
     assert "<table" in html
-
-
-def test_builtin_abs() -> None:
-    s = pl.Series("s", [-1, 0, 1, None])
-    assert abs(s).to_list() == [1, 0, 1, None]
 
 
 @pytest.mark.parametrize(

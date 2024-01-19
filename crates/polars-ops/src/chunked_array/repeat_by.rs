@@ -38,7 +38,10 @@ where
 
                 // SAFETY: length of iter is trusted.
                 unsafe {
-                    LargeListArray::from_iter_primitive_trusted_len(iter, T::get_dtype().to_arrow())
+                    LargeListArray::from_iter_primitive_trusted_len(
+                        iter,
+                        T::get_dtype().to_arrow(true),
+                    )
                 }
             }))
         },

@@ -77,7 +77,7 @@ pub enum StringFunction {
         length: usize,
         fill_char: char,
     },
-    Slice(i64, Option<u64>),
+    Slice,
     #[cfg(feature = "string_encoding")]
     HexEncode,
     #[cfg(feature = "binary_encoding")]
@@ -108,7 +108,7 @@ pub enum StringFunction {
     Titlecase,
     Uppercase,
     #[cfg(feature = "string_pad")]
-    ZFill(usize),
+    ZFill,
     #[cfg(feature = "find_many")]
     ContainsMany {
         ascii_case_insensitive: bool,
@@ -160,16 +160,10 @@ impl StringFunction {
             Base64Encode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => mapper.with_dtype(DataType::Binary),
-            Uppercase
-            | Lowercase
-            | StripChars
-            | StripCharsStart
-            | StripCharsEnd
-            | StripPrefix
-            | StripSuffix
-            | Slice(_, _) => mapper.with_same_dtype(),
+            Uppercase | Lowercase | StripChars | StripCharsStart | StripCharsEnd | StripPrefix
+            | StripSuffix | Slice => mapper.with_same_dtype(),
             #[cfg(feature = "string_pad")]
-            PadStart { .. } | PadEnd { .. } | ZFill { .. } => mapper.with_same_dtype(),
+            PadStart { .. } | PadEnd { .. } | ZFill => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
             SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
                 (0..n + 1)
@@ -231,7 +225,7 @@ impl Display for StringFunction {
             Base64Encode => "base64_encode",
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => "base64_decode",
-            Slice(_, _) => "slice",
+            Slice => "slice",
             StartsWith { .. } => "starts_with",
             StripChars => "strip_chars",
             StripCharsStart => "strip_chars_start",
@@ -263,7 +257,7 @@ impl Display for StringFunction {
             ToDecimal(_) => "to_decimal",
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
-            ZFill(_) => "zfill",
+            ZFill => "zfill",
             #[cfg(feature = "find_many")]
             ContainsMany { .. } => "contains_many",
             #[cfg(feature = "find_many")]
@@ -304,8 +298,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(strings::pad_start, length, fill_char)
             },
             #[cfg(feature = "string_pad")]
-            ZFill(alignment) => {
-                map!(strings::zfill, alignment)
+            ZFill => {
+                map_as_slice!(strings::zfill)
             },
             #[cfg(feature = "temporal")]
             Strptime(dtype, options) => {
@@ -340,7 +334,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_to_integer")]
             ToInteger(base, strict) => map!(strings::to_integer, base, strict),
-            Slice(start, length) => map!(strings::str_slice, start, length),
+            Slice => map_as_slice!(strings::str_slice),
             #[cfg(feature = "string_encoding")]
             HexEncode => map!(strings::hex_encode),
             #[cfg(feature = "binary_encoding")]
@@ -478,8 +472,10 @@ pub(super) fn pad_end(s: &Series, length: usize, fill_char: char) -> PolarsResul
 }
 
 #[cfg(feature = "string_pad")]
-pub(super) fn zfill(s: &Series, length: usize) -> PolarsResult<Series> {
-    let ca = s.str()?;
+pub(super) fn zfill(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let length_s = s[1].strict_cast(&DataType::UInt64)?;
+    let length = length_s.u64()?;
     Ok(ca.zfill(length).into_series())
 }
 
@@ -560,10 +556,13 @@ pub(super) fn strptime(
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
     match dtype {
+        #[cfg(feature = "dtype-date")]
         DataType::Date => to_date(&s[0], options),
+        #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(time_unit, time_zone) => {
             to_datetime(s, &time_unit, time_zone.as_ref(), options)
         },
+        #[cfg(feature = "dtype-time")]
         DataType::Time => to_time(&s[0], options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
@@ -879,9 +878,22 @@ pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Se
     let ca = s.str()?;
     ca.to_integer(base, strict).map(|ok| ok.into_series())
 }
-pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
-    let ca = s.str()?;
-    Ok(ca.str_slice(start, length).into_series())
+pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
+    // Calculate the post-broadcast length and ensure everything is consistent.
+    let len = s
+        .iter()
+        .map(|series| series.len())
+        .filter(|l| *l != 1)
+        .max()
+        .unwrap_or(1);
+    polars_ensure!(
+        s.iter().all(|series| series.len() == 1 || series.len() == len),
+        ComputeError: "all series in `str_slice` should have equal or unit length"
+    );
+    let ca = s[0].str()?;
+    let offset = &s[1];
+    let length = &s[2];
+    Ok(ca.str_slice(offset, length)?.into_series())
 }
 
 #[cfg(feature = "string_encoding")]

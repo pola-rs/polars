@@ -243,8 +243,8 @@ fn test_binary_agg_context_0() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
-            .then(repeat(lit("a"), count()))
-            .otherwise(repeat(lit("b"), count()))
+            .then(repeat(lit("a"), len()))
+            .otherwise(repeat(lit("b"), len()))
             .alias("foo")])
         .collect()
         .unwrap();

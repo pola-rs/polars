@@ -62,7 +62,7 @@ def test_date() -> None:
         ),
     ],
 )
-def test_extract_datepart(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
+def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
     df = pl.DataFrame(
         {
             "dt": [
@@ -81,3 +81,43 @@ def test_extract_datepart(part: str, dtype: pl.DataType, expected: list[Any]) ->
 
             assert res.dtype == dtype
             assert res.to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (date(1, 1, 1), [1, 1]),
+        (date(100, 1, 1), [1, 1]),
+        (date(101, 1, 1), [1, 2]),
+        (date(1000, 1, 1), [1, 10]),
+        (date(1001, 1, 1), [2, 11]),
+        (date(1899, 12, 31), [2, 19]),
+        (date(1900, 12, 31), [2, 19]),
+        (date(1901, 1, 1), [2, 20]),
+        (date(2000, 12, 31), [2, 20]),
+        (date(2001, 1, 1), [3, 21]),
+        (date(5555, 5, 5), [6, 56]),
+        (date(9999, 12, 31), [10, 100]),
+    ],
+)
+def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
+    with pl.SQLContext(
+        frame_data=pl.DataFrame({"dt": [dt]}), eager_execution=True
+    ) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              EXTRACT(MILLENNIUM FROM dt) AS c1,
+              DATE_PART(dt,'century') AS c2,
+              EXTRACT(millennium FROM dt) AS c3,
+              DATE_PART(dt,'CENTURY') AS c4,
+            FROM frame_data
+            """
+        )
+        assert_frame_equal(
+            left=res,
+            right=pl.DataFrame(
+                data=[expected + expected],
+                schema=["c1", "c2", "c3", "c4"],
+            ).cast(pl.Int32),
+        )

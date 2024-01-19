@@ -4,6 +4,7 @@ import contextlib
 import math
 import os
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -17,6 +18,7 @@ from typing import (
     NoReturn,
     Sequence,
     Union,
+    cast,
     overload,
 )
 
@@ -112,9 +114,10 @@ from polars.utils.various import (
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
 
-
 if TYPE_CHECKING:
     import sys
+
+    from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
     from polars.series._numpy import SeriesView
@@ -956,15 +959,38 @@ class Series:
         if isinstance(other, pl.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
             other = self.to_frame().select_seq(other).to_series()
+        elif other is None:
+            other = pl.Series("", [None])
+
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
-        if _check_for_numpy(other) and isinstance(other, np.ndarray):
+        elif _check_for_numpy(other) and isinstance(other, np.ndarray):
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
-        if (
+        elif (
             isinstance(other, (float, date, datetime, timedelta, str))
             and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
+
+        if isinstance(other, (PyDecimal, int)) and self.dtype.is_decimal():
+            # Infer the number's scale.  Then use the max of the inferred scale and the
+            # Series' scale.  At present, this will cause arithmetic to fail with a
+            # PyDecimal that has a scale greater than the Series' scale, but will ensure
+            # that scale is not lost.
+            _s = sequence_to_pyseries(self.name, [other], dtype=Decimal)
+            _s = _s.cast(
+                Decimal(
+                    scale=max(
+                        cast(Decimal, _s.dtype()).scale, cast(Decimal, self.dtype).scale
+                    )
+                ),
+                strict=True,
+            )
+
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
@@ -1159,10 +1185,10 @@ class Series:
         return other.dot(self)
 
     def __neg__(self) -> Series:
-        return 0 - self
+        return self.to_frame().select_seq(-F.col(self.name)).to_series()
 
     def __pos__(self) -> Series:
-        return 0 + self
+        return self
 
     def __abs__(self) -> Series:
         return self.abs()
@@ -3355,7 +3381,13 @@ class Series:
         ]
         """
 
-    def sort(self, *, descending: bool = False, in_place: bool = False) -> Self:
+    def sort(
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        in_place: bool = False,
+    ) -> Self:
         """
         Sort this Series.
 
@@ -3363,6 +3395,8 @@ class Series:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last instead of first.
         in_place
             Sort in-place.
 
@@ -3389,10 +3423,10 @@ class Series:
         ]
         """
         if in_place:
-            self._s = self._s.sort(descending)
+            self._s = self._s.sort(descending, nulls_last)
             return self
         else:
-            return self._from_pyseries(self._s.sort(descending))
+            return self._from_pyseries(self._s.sort(descending, nulls_last))
 
     def top_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
@@ -7544,7 +7578,7 @@ class Series:
         return StructNameSpace(self)
 
     @property
-    def plot(self) -> Any:
+    def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
 

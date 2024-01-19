@@ -128,7 +128,7 @@ impl Display for ListFunction {
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
             #[cfg(feature = "list_count")]
-            CountMatches => "count",
+            CountMatches => "count_matches",
             Sum => "sum",
             Min => "min",
             Max => "max",
@@ -459,7 +459,7 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
     let element = &args[1];
     polars_ensure!(
         element.len() == 1,
-        ComputeError: "argument expression in `arr.count` must produce exactly one element, got {}",
+        ComputeError: "argument expression in `list.count_matches` must produce exactly one element, got {}",
         element.len()
     );
     let ca = s.list()?;

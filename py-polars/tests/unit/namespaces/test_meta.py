@@ -34,12 +34,12 @@ def test_root_and_output_names() -> None:
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "groups"]
 
-    e = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
+    e = pl.sum("foo").slice(pl.len() - 10, pl.col("bar"))
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "bar"]
 
-    e = pl.count()
-    assert e.meta.output_name() == "count"
+    e = pl.len()
+    assert e.meta.output_name() == "len"
 
     with pytest.raises(
         pl.ComputeError,

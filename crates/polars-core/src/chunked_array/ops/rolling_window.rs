@@ -242,7 +242,7 @@ mod inner_mod {
                 }
             }
             let arr = PrimitiveArray::new(
-                T::get_dtype().to_arrow(),
+                T::get_dtype().to_arrow(true),
                 values.into(),
                 Some(validity.into()),
             );

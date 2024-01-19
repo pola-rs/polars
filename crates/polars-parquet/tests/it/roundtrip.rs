@@ -73,7 +73,7 @@ fn round_trip(
 
 #[test]
 fn roundtrip_binview() -> PolarsResult<()> {
-    let array = Utf8ViewArray::from([Some("foo"), Some("bar"), None, Some("hamlet")]);
+    let array = Utf8ViewArray::from_slice([Some("foo"), Some("bar"), None, Some("hamlet")]);
 
     round_trip(
         &array.boxed(),

@@ -9,6 +9,11 @@ from polars.testing import assert_frame_equal
 
 
 def test_corr() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    result = df.corr()
+    expected = pl.DataFrame({"a": [1.0]})
+    assert_frame_equal(result, expected)
+
     df = pl.DataFrame(
         {
             "a": [1, 2, 4],

@@ -191,8 +191,9 @@ impl StringNameSpace {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    pub fn zfill(self, length: usize) -> Expr {
-        self.0.map_private(StringFunction::ZFill(length).into())
+    pub fn zfill(self, length: Expr) -> Expr {
+        self.0
+            .map_many_private(StringFunction::ZFill.into(), &[length], false, false)
     }
 
     /// Find the index of a literal substring within another string value.
@@ -516,11 +517,13 @@ impl StringNameSpace {
     }
 
     /// Slice the string values.
-    pub fn slice(self, start: i64, length: Option<u64>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Slice(
-                start, length,
-            )))
+    pub fn slice(self, offset: Expr, length: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Slice),
+            &[offset, length],
+            false,
+            false,
+        )
     }
 
     pub fn explode(self) -> Expr {

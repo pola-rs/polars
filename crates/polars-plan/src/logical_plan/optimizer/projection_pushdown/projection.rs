@@ -3,7 +3,7 @@ use super::*;
 fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     match expr_arena.get(node) {
         AExpr::Alias(node, _) => is_count(*node, expr_arena),
-        AExpr::Count => true,
+        AExpr::Len => true,
         _ => false,
     }
 }

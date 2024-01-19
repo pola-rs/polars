@@ -42,6 +42,7 @@ macro_rules! impl_reverse {
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(StringType, StringChunked);
 impl_reverse!(BinaryType, BinaryChunked);
+impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
 impl_reverse!(ListType, ListChunked);
 
 #[cfg(feature = "dtype-array")]

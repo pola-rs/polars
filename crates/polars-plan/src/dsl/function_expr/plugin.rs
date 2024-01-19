@@ -138,7 +138,7 @@ pub(super) unsafe fn plugin_field(
         // we deallocate the fields buffer
         let fields = fields
             .iter()
-            .map(|field| arrow::ffi::export_field_to_c(&field.to_arrow()))
+            .map(|field| arrow::ffi::export_field_to_c(&field.to_arrow(true)))
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let n_args = fields.len();

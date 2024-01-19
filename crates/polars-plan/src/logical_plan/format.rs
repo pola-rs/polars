@@ -269,7 +269,7 @@ impl Debug for Expr {
                 },
             },
             Nth(i) => write!(f, "nth({i})"),
-            Count => write!(f, "count()"),
+            Len => write!(f, "len()"),
             Explode(expr) => write!(f, "{expr:?}.explode()"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),

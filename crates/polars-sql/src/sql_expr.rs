@@ -9,6 +9,8 @@ use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, lit, when};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+#[cfg(feature = "dtype-decimal")]
+use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
@@ -27,13 +29,23 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type)) => {
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
+        #[cfg(feature = "dtype-decimal")]
+        SQLDataType::Dec(info) | SQLDataType::Decimal(info) | SQLDataType::Numeric(info) => {
+            match *info {
+                ExactNumberInfo::PrecisionAndScale(p, s) => {
+                    DataType::Decimal(Some(p as usize), Some(s as usize))
+                },
+                ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
+                ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
+            }
+        },
         SQLDataType::BigInt(_) => DataType::Int64,
+        SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Bytea
         | SQLDataType::Bytes(_)
         | SQLDataType::Binary(_)
         | SQLDataType::Blob(_)
         | SQLDataType::Varbinary(_) => DataType::Binary,
-        SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Char(_)
         | SQLDataType::CharVarying(_)
         | SQLDataType::Character(_)
@@ -47,6 +59,9 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Double | SQLDataType::DoublePrecision => DataType::Float64,
         SQLDataType::Float(_) => DataType::Float32,
         SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
+        SQLDataType::Int2(_) => DataType::Int16,
+        SQLDataType::Int4(_) => DataType::Int32,
+        SQLDataType::Int8(_) => DataType::Int64,
         SQLDataType::Interval => DataType::Duration(TimeUnit::Milliseconds),
         SQLDataType::Real => DataType::Float32,
         SQLDataType::SmallInt(_) => DataType::Int16,
@@ -55,6 +70,9 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::TinyInt(_) => DataType::Int8,
         SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt2(_) => DataType::UInt16,
+        SQLDataType::UnsignedInt4(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt8(_) => DataType::UInt64,
         SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
         SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
 
@@ -923,7 +941,9 @@ pub(crate) fn parse_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResu
 
 fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
     Ok(match field {
-        DateTimeField::Decade => expr.dt().year() / lit(10),
+        DateTimeField::Millennium => expr.dt().millennium(),
+        DateTimeField::Century => expr.dt().century(),
+        DateTimeField::Decade => expr.dt().year() / lit(10i32),
         DateTimeField::Isoyear => expr.dt().iso_year(),
         DateTimeField::Year => expr.dt().year(),
         DateTimeField::Quarter => expr.dt().quarter(),
@@ -952,6 +972,8 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
             (expr.clone().dt().second() * lit(1_000_000_000f64)) + expr.dt().nanosecond()
         },
         DateTimeField::Time => expr.dt().time(),
+        #[cfg(feature = "timezones")]
+        DateTimeField::Timezone => expr.dt().base_utc_offset().dt().total_seconds(),
         DateTimeField::Epoch => {
             expr.clone()
                 .dt()
@@ -960,7 +982,7 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
                 + expr.dt().nanosecond().div(lit(1_000_000_000f64))
         },
         _ => {
-            polars_bail!(ComputeError: "Extract function does not yet support {}", field)
+            polars_bail!(ComputeError: "EXTRACT function does not support {}", field)
         },
     })
 }
@@ -970,6 +992,8 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
     parse_extract(
         expr,
         match part.as_str() {
+            "millennium" => &DateTimeField::Millennium,
+            "century" => &DateTimeField::Century,
             "decade" => &DateTimeField::Decade,
             "isoyear" => &DateTimeField::Isoyear,
             "year" => &DateTimeField::Year,
@@ -986,10 +1010,12 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
             "millisecond" | "milliseconds" => &DateTimeField::Millisecond,
             "microsecond" | "microseconds" => &DateTimeField::Microsecond,
             "nanosecond" | "nanoseconds" => &DateTimeField::Nanosecond,
+            #[cfg(feature = "timezones")]
+            "timezone" => &DateTimeField::Timezone,
             "time" => &DateTimeField::Time,
             "epoch" => &DateTimeField::Epoch,
             _ => {
-                polars_bail!(ComputeError: "Date part '{}' not supported", part)
+                polars_bail!(ComputeError: "DATE_PART function does not support '{}'", part)
             },
         },
     )

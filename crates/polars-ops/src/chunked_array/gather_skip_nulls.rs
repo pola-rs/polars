@@ -69,7 +69,7 @@ pub trait ChunkGatherSkipNulls<I: ?Sized>: Sized {
 
 impl<T: PolarsDataType> ChunkGatherSkipNulls<[IdxSize]> for ChunkedArray<T>
 where
-    ChunkedArray<T>: ChunkFilter<T>,
+    ChunkedArray<T>: ChunkFilter<T> + ChunkTake<[IdxSize]>,
 {
     fn gather_skip_nulls(&self, indices: &[IdxSize]) -> PolarsResult<Self> {
         if self.null_count() == 0 {
@@ -94,14 +94,14 @@ where
             .collect();
         let gathered =
             unsafe { gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.len()) };
-        let arr = T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow());
+        let arr = T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(true));
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }
 }
 
 impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T>
 where
-    ChunkedArray<T>: ChunkFilter<T>,
+    ChunkedArray<T>: ChunkFilter<T> + ChunkTake<IdxCa>,
 {
     fn gather_skip_nulls(&self, indices: &IdxCa) -> PolarsResult<Self> {
         if self.null_count() == 0 {
@@ -140,7 +140,7 @@ where
             gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.as_ref().len())
         };
 
-        let mut arr = T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow());
+        let mut arr = T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(true));
         if indices.null_count() > 0 {
             let array_refs: Vec<&dyn Array> = indices.chunks().iter().map(|x| &**x).collect();
             arr = arr.with_validity_typed(concatenate_validities(&array_refs));

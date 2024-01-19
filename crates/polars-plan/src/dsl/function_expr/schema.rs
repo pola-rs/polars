@@ -29,6 +29,7 @@ impl FunctionExpr {
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
+            Negate => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 PowFunction::Generic => mapper.pow_dtype(),
@@ -277,6 +278,17 @@ impl FunctionExpr {
             EwmVar { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "replace")]
             Replace { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
+            FillNullWithStrategy(_) => mapper.with_same_dtype(),
+            GatherEvery { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => {
+                let dt = if *signed {
+                    DataType::Int64
+                } else {
+                    DataType::UInt64
+                };
+                mapper.with_dtype(dt)
+            },
         }
     }
 }

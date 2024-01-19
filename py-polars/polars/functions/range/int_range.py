@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, overload
 from polars import functions as F
 from polars.datatypes import Int64
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
+from polars.utils._wrap import wrap_expr, wrap_s
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -198,11 +198,11 @@ def int_range(
             2
     ]
 
-    Generate an index column using `int_range` in conjunction with :func:`count`.
+    Generate an index column by using `int_range` in conjunction with :func:`len`.
 
     >>> df = pl.DataFrame({"a": [1, 3, 5], "b": [2, 4, 6]})
     >>> df.select(
-    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+    ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
     ...     pl.all(),
     ... )
     shape: (3, 3)
@@ -219,6 +219,9 @@ def int_range(
     if end is None:
         end = start
         start = 0
+
+    if isinstance(start, int) and isinstance(end, int) and eager:
+        return wrap_s(plr.eager_int_range(start, end, step, dtype))
 
     start = parse_as_expression(start)
     end = parse_as_expression(end)

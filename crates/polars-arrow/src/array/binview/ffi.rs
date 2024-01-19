@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
@@ -12,8 +13,8 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
     fn buffers(&self) -> Vec<Option<*const u8>> {
         let mut buffers = Vec::with_capacity(self.buffers.len() + 2);
         buffers.push(self.validity.as_ref().map(|x| x.as_ptr()));
-        buffers.push(Some(self.views.as_ptr().cast::<u8>()));
-        buffers.extend(self.buffers.iter().map(|b| Some(b.as_ptr())));
+        buffers.push(Some(self.views.storage_ptr().cast::<u8>()));
+        buffers.extend(self.buffers.iter().map(|b| Some(b.storage_ptr())));
         buffers
     }
 
@@ -48,7 +49,7 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
             buffers: self.buffers.clone(),
             raw_buffers: self.raw_buffers.clone(),
             phantom: Default::default(),
-            total_bytes_len: self.total_bytes_len,
+            total_bytes_len: AtomicU64::new(self.total_bytes_len.load(Ordering::Relaxed)),
             total_buffer_len: self.total_buffer_len,
         }
     }
