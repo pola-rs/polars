@@ -235,8 +235,8 @@ def int_range(
 
 @overload
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -247,8 +247,8 @@ def int_ranges(
 
 @overload
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -259,8 +259,8 @@ def int_ranges(
 
 @overload
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -270,8 +270,8 @@ def int_ranges(
 
 
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = 0,
+    end: int | IntoExprColumn | None = None,
     step: int | IntoExprColumn = 1,
     *,
     dtype: PolarsIntegerType = Int64,
@@ -283,9 +283,10 @@ def int_ranges(
     Parameters
     ----------
     start
-        Start of the range (inclusive).
+        Start of the range (inclusive). Defaults to 0.
     end
-        End of the range (exclusive).
+        End of the range (exclusive). If set to `None` (default),
+        the value of `start` is used and `start` is set to `0`.
     step
         Step size of the range.
     dtype
@@ -316,7 +317,27 @@ def int_ranges(
     │ 1     ┆ 3   ┆ [1, 2]     │
     │ -1    ┆ 2   ┆ [-1, 0, 1] │
     └───────┴─────┴────────────┘
+
+    `end` can be omitted for a shorter syntax.
+
+    >>> df = pl.DataFrame({"end": [0, 1, 2, 3]})
+    >>> df.with_columns(int_range=pl.int_ranges("end"))
+    shape: (4, 2)
+    ┌─────┬───────────┐
+    │ end ┆ int_range │
+    │ --- ┆ ---       │
+    │ i64 ┆ list[i64] │
+    ╞═════╪═══════════╡
+    │ 0   ┆ []        │
+    │ 1   ┆ [0]       │
+    │ 2   ┆ [0, 1]    │
+    │ 3   ┆ [0, 1, 2] │
+    └─────┴───────────┘
     """
+    if end is None:
+        end = start
+        start = 0
+
     start = parse_as_expression(start)
     end = parse_as_expression(end)
     step = parse_as_expression(step)

@@ -43,10 +43,26 @@ def test_int_range_short_syntax() -> None:
     assert_series_equal(pl.select(int=result).to_series(), expected)
 
 
+def test_int_ranges_short_syntax() -> None:
+    result = pl.int_ranges(3)
+    expected = pl.Series("int", [[0, 1, 2]])
+    assert_series_equal(pl.select(int=result).to_series(), expected)
+
+
 def test_int_range_start_default() -> None:
     result = pl.int_range(end=3)
     expected = pl.Series("int", [0, 1, 2])
     assert_series_equal(pl.select(int=result).to_series(), expected)
+
+
+def test_int_ranges_start_default() -> None:
+    result = pl.DataFrame({"start": [1, -1], "end": [3, 2]}).with_columns(
+        int_range=pl.int_ranges(end="end")
+    )
+    expected = pl.DataFrame(
+        {"start": [1, -1], "end": [3, 2], "int_range": [[0, 1, 2], [0, 1]]}
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_int_range_eager() -> None:
