@@ -80,41 +80,17 @@ impl LogicalType for DatetimeChunked {
                     .into_series()),
             },
             #[cfg(feature = "dtype-time")]
-            (Datetime(tu, _), Time) => match tu {
-                TimeUnit::Nanoseconds => {
-                    let ca = self.0.apply_values(|v| {
-                        let v = v % NS_IN_DAY;
-                        if v < 0 {
-                            v + NS_IN_DAY
-                        } else {
-                            v
-                        }
-                    });
-                    Ok(ca.cast(&Int64).unwrap().into_time().into_series())
-                },
-                TimeUnit::Microseconds => {
-                    let ca = self.0.apply_values(|v| {
-                        let v = v % US_IN_DAY * 1_000i64;
-                        if v < 0 {
-                            v + NS_IN_DAY
-                        } else {
-                            v
-                        }
-                    });
-                    Ok(ca.cast(&Int64).unwrap().into_time().into_series())
-                },
-                TimeUnit::Milliseconds => {
-                    let ca = self.0.apply_values(|v| {
-                        let v = v % MS_IN_DAY * 1_000_000i64;
-                        if v < 0 {
-                            v + NS_IN_DAY
-                        } else {
-                            v
-                        }
-                    });
-                    Ok(ca.cast(&Int64).unwrap().into_time().into_series())
-                },
-            },
+            (Datetime(tu, _), Time) => Ok({
+                let (modder, multiplier) = match tu {
+                    TimeUnit::Nanoseconds => (NS_IN_DAY, 1i64),
+                    TimeUnit::Microseconds => (US_IN_DAY, 1_000i64),
+                    TimeUnit::Milliseconds => (MS_IN_DAY, 1_000_000i64),
+                };
+                self.0
+                    .apply_values(|v| (v % modder * multiplier) + (NS_IN_DAY * (v < 0) as i64))
+                    .into_time()
+                    .into_series()
+            }),
             _ => self.0.cast(dtype),
         }
     }
