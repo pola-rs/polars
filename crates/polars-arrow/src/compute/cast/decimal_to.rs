@@ -137,3 +137,28 @@ where
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(decimal_to_integer::<T>(from)))
 }
+
+/// Returns a [`Utf8Array`] where every element is the utf8 representation of the decimal.
+#[cfg(feature = "dtype-decimal")]
+pub(super) fn decimal_to_binview(from: &PrimitiveArray<i128>) -> BinaryViewArray {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.data_type().to_logical_type() {
+        (*p, *s)
+    } else {
+        panic!("internal error: i128 is always a decimal")
+    };
+
+    let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
+
+    for &x in from.values().iter() {
+        let buf = crate::legacy::compute::decimal::format_decimal(x, from_scale, false);
+        mutable.push_value_ignore_validity(buf.as_str().as_bytes())
+    }
+
+    mutable.freeze().with_validity(from.validity().cloned())
+}
+
+#[cfg(feature = "dtype-decimal")]
+pub(super) fn decimal_to_binview_dyn(from: &dyn Array) -> BinaryViewArray {
+    let from = from.as_any().downcast_ref().unwrap();
+    decimal_to_binview(from)
+}

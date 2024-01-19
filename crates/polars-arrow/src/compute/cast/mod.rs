@@ -778,6 +778,8 @@ fn from_to_binview(
         Binary => binary_to_binview::<i32>(array.as_any().downcast_ref().unwrap()),
         FixedSizeBinary(_) => fixed_size_binary_to_binview(array.as_any().downcast_ref().unwrap()),
         LargeBinary => binary_to_binview::<i64>(array.as_any().downcast_ref().unwrap()),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, _) => decimal_to_binview_dyn(array),
         _ => polars_bail!(InvalidOperation:
             "casting from {from_type:?} to {to_type:?} not supported",
         ),
