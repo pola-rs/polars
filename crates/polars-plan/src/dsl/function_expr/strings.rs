@@ -108,7 +108,7 @@ pub enum StringFunction {
     Titlecase,
     Uppercase,
     #[cfg(feature = "string_pad")]
-    ZFill(usize),
+    ZFill,
     #[cfg(feature = "find_many")]
     ContainsMany {
         ascii_case_insensitive: bool,
@@ -163,7 +163,7 @@ impl StringFunction {
             Uppercase | Lowercase | StripChars | StripCharsStart | StripCharsEnd | StripPrefix
             | StripSuffix | Slice => mapper.with_same_dtype(),
             #[cfg(feature = "string_pad")]
-            PadStart { .. } | PadEnd { .. } | ZFill { .. } => mapper.with_same_dtype(),
+            PadStart { .. } | PadEnd { .. } | ZFill => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
             SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
                 (0..n + 1)
@@ -257,7 +257,7 @@ impl Display for StringFunction {
             ToDecimal(_) => "to_decimal",
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
-            ZFill(_) => "zfill",
+            ZFill => "zfill",
             #[cfg(feature = "find_many")]
             ContainsMany { .. } => "contains_many",
             #[cfg(feature = "find_many")]
@@ -298,8 +298,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(strings::pad_start, length, fill_char)
             },
             #[cfg(feature = "string_pad")]
-            ZFill(alignment) => {
-                map!(strings::zfill, alignment)
+            ZFill => {
+                map_as_slice!(strings::zfill)
             },
             #[cfg(feature = "temporal")]
             Strptime(dtype, options) => {
@@ -472,8 +472,10 @@ pub(super) fn pad_end(s: &Series, length: usize, fill_char: char) -> PolarsResul
 }
 
 #[cfg(feature = "string_pad")]
-pub(super) fn zfill(s: &Series, length: usize) -> PolarsResult<Series> {
-    let ca = s.str()?;
+pub(super) fn zfill(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let length_s = s[1].strict_cast(&DataType::UInt64)?;
+    let length = length_s.u64()?;
     Ok(ca.zfill(length).into_series())
 }
 
