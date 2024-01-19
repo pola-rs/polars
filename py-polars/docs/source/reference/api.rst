@@ -93,7 +93,7 @@ Examples
 
             pl.DataFrame(
                 data=["aaa", "bbb", "ccc", "ddd", "eee", "fff"],
-                columns=[("txt", pl.String)],
+                schema=[("txt", pl.String)],
             ).split.by_alternate_rows()
 
             # [┌─────┐  ┌─────┐
@@ -124,7 +124,7 @@ Examples
 
             ldf = pl.DataFrame(
                 data={"a": [1, 2], "b": [3, 4], "c": [5.6, 6.7]},
-                columns=[("a", pl.Int16), ("b", pl.Int32), ("c", pl.Float32)],
+                schema=[("a", pl.Int16), ("b", pl.Int32), ("c", pl.Float32)],
             ).lazy()
 
             ldf.types.upcast_integer_types()
