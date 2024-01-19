@@ -69,6 +69,16 @@ We recommend using the latest Python version (`3.12`).
 Make sure you deactivate any active virtual environments or conda environments, as the steps below will create a new virtual environment for Polars.
 You will need Python even if you intend to work on the Rust code only, as we rely on the Python tests to verify all functionality.
 
+Additionally, If you do not have [cmake](https://cmake.org) installed, it's important for compiling some of Polars' dependencies.
+
+**For macOS:** Install `cmake` via Homebrew by running the following:
+
+```bash
+$ brew install cmake
+```
+
+**For Windows or Linux:** Download an installer from the official [cmake website](https://cmake.org/download/).
+
 Finally, install [dprint](https://dprint.dev/install/).
 This is not strictly required, but it is recommended as we use it to autoformat certain file types.
 
