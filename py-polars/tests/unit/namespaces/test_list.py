@@ -798,3 +798,10 @@ def test_list_get_logical_type() -> None:
         dtype=pl.Date,
     )
     assert_series_equal(out, expected)
+
+
+def test_list_eval_gater_every_13410() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
+    out = df.with_columns(result=pl.col("a").list.eval(pl.element().gather_every(2)))
+    expected = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]], "result": [[1, 3], [4, 6]]})
+    assert_frame_equal(out, expected)
