@@ -359,7 +359,7 @@ macro_rules! with_match_physical_numeric_polars_type {(
         UInt64 => __with_ty__! { UInt64Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype: {}", dt)
     }
 })}
 
