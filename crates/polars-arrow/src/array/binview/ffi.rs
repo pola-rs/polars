@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
@@ -48,7 +49,7 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
             buffers: self.buffers.clone(),
             raw_buffers: self.raw_buffers.clone(),
             phantom: Default::default(),
-            total_bytes_len: self.total_bytes_len,
+            total_bytes_len: AtomicU64::new(self.total_bytes_len.load(Ordering::Relaxed)),
             total_buffer_len: self.total_buffer_len,
         }
     }
