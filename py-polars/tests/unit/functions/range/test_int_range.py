@@ -56,12 +56,9 @@ def test_int_range_start_default() -> None:
 
 
 def test_int_ranges_start_default() -> None:
-    result = pl.DataFrame({"start": [1, -1], "end": [3, 2]}).with_columns(
-        int_range=pl.int_ranges(end="end")
-    )
-    expected = pl.DataFrame(
-        {"start": [1, -1], "end": [3, 2], "int_range": [[0, 1, 2], [0, 1]]}
-    )
+    df = pl.DataFrame({"end": [3, 2]})
+    result = df.select(int_range=pl.int_ranges(end="end"))
+    expected = pl.DataFrame({"int_range": [[0, 1, 2], [0, 1]]})
     assert_frame_equal(result, expected)
 
 
