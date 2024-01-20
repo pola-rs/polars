@@ -425,9 +425,12 @@ class Series:
         ComputeError
             If the `Series` contains multiple chunks.
         """
-        keys = ["values", "validity", "offsets"]
         buffers = self._s._get_buffers()
-        return {k: self._from_pyseries(b) for k, b in zip(keys, buffers)}
+        keys = ("values", "validity", "offsets")
+        return {
+            k: self._from_pyseries(b) if b is not None else b
+            for k, b in zip(keys, buffers)
+        }
 
     @classmethod
     def _from_buffer(
@@ -470,7 +473,9 @@ class Series:
             the physical data type of `dtype`. Some data types require multiple buffers:
 
             - `String`: A data buffer of type `UInt8` and an offsets buffer
-                        of type `Int64`.
+                        of type `Int64`. Note that this does not match how the data
+                        is represented internally and data copy is required to construct
+                        the Series.
         validity
             Validity buffer. If specified, must be a Series of data type `Boolean`.
 
