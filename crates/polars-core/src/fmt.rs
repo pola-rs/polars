@@ -497,6 +497,14 @@ fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     )
 }
 
+fn get_str_width() -> usize {
+    std::env::var(FMT_STR_LEN)
+        .as_deref()
+        .unwrap_or("")
+        .parse()
+        .unwrap_or(32)
+}
+
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -506,11 +514,7 @@ impl Display for DataFrame {
                 self.columns.iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
-            let str_truncate = std::env::var(FMT_STR_LEN)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .unwrap_or(32);
+            let str_truncate = get_str_width();
 
             let max_n_cols = std::env::var(FMT_MAX_COLS)
                 .as_deref()
@@ -984,8 +988,14 @@ impl Display for AnyValue<'_> {
             AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::Binary(d) => {
-                let s = String::from_utf8_lossy(d);
-                write!(f, "{}", format_args!("b\"{s}\""))
+                let max_width = get_str_width() * 2;
+                if d.len() > max_width {
+                    let s = String::from_utf8_lossy(&d[..max_width]);
+                    write!(f, "{}", format_args!("b\"{s}...\""))
+                } else {
+                    let s = String::from_utf8_lossy(d);
+                    write!(f, "{}", format_args!("b\"{s}\""))
+                }
             },
             AnyValue::BinaryOwned(d) => {
                 let s = String::from_utf8_lossy(d);

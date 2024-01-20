@@ -119,6 +119,8 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
             | arrow::datatypes::PhysicalType::Utf8
             | arrow::datatypes::PhysicalType::LargeUtf8
             | arrow::datatypes::PhysicalType::Binary
+            | arrow::datatypes::PhysicalType::BinaryView
+            | arrow::datatypes::PhysicalType::Utf8View
             | arrow::datatypes::PhysicalType::LargeBinary
             | arrow::datatypes::PhysicalType::FixedSizeBinary
             | arrow::datatypes::PhysicalType::Dictionary(_)
