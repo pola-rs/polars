@@ -446,7 +446,7 @@ class LazyFrame:
             return scan  # type: ignore[return-value]
 
         if storage_options:
-            storage_options = list(storage_options.items())  #  type: ignore[assignment]
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
         else:
             # Handle empty dict input
             storage_options = None
@@ -2698,7 +2698,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
-            F.col(name).eq_missing(value) for name, value in constraints.items()
+            F.col(name).eq(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
             msg = "at least one predicate or constraint must be provided"
