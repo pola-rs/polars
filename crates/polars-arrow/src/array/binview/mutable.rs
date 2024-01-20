@@ -136,7 +136,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             let (data_ptr, data_len) = *buffers.get_unchecked_release(buffer_idx as usize);
             let data = std::slice::from_raw_parts(data_ptr, data_len);
             let offset = offset as usize;
-            let bytes = data.get_unchecked(offset..offset + len as usize);
+            let bytes = data.get_unchecked_release(offset..offset + len as usize);
             let t = T::from_bytes_unchecked(bytes);
             self.push_value_ignore_validity(t)
         }
