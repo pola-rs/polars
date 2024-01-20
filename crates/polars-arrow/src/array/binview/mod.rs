@@ -108,8 +108,6 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     data_type: ArrowDataType,
     views: Buffer<u128>,
     buffers: Arc<[Buffer<u8>]>,
-    // Needed for FFI
-    buffer_lens: Arc<[i64]>,
     // Raw buffer access. (pointer, len).
     raw_buffers: Arc<[(*const u8, usize)]>,
     validity: Option<Bitmap>,
@@ -132,7 +130,6 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
             data_type: self.data_type.clone(),
             views: self.views.clone(),
             buffers: self.buffers.clone(),
-            buffer_lens: self.buffer_lens.clone(),
             raw_buffers: self.raw_buffers.clone(),
             validity: self.validity.clone(),
             phantom: Default::default(),
@@ -148,14 +145,7 @@ unsafe impl<T: ViewType + ?Sized> Sync for BinaryViewArrayGeneric<T> {}
 fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Arc<[(*const T, usize)]> {
     buffers
         .iter()
-        .map(|buf| (buf.as_ptr(), buf.len()))
-        .collect()
-}
-
-fn buffer_lens<T>(buffers: &[Buffer<T>]) -> Arc<[i64]> {
-    buffers
-        .iter()
-        .map(|buf| buf.len() as i64)
+        .map(|buf| (buf.storage_ptr(), buf.len()))
         .collect()
 }
 const UNKNOWN_LEN: u64 = u64::MAX;
@@ -174,13 +164,11 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         total_buffer_len: usize,
     ) -> Self {
         let raw_buffers = buffers_into_raw(&buffers);
-        let buffer_lens = buffer_lens(buffers.as_ref());
         Self {
             data_type,
             views,
             buffers,
             raw_buffers,
-            buffer_lens,
             validity,
             phantom: Default::default(),
             total_bytes_len: AtomicU64::new(total_bytes_len as u64),
@@ -213,8 +201,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         &self.buffers
     }
 
-    pub fn variadic_buffer_lengths(&self) -> &[i64] {
-        self.buffer_lens.as_ref()
+    pub fn variadic_buffer_lengths(&self) -> Vec<i64> {
+        self.buffers.iter().map(|buf| buf.len() as i64).collect()
     }
 
     pub fn views(&self) -> &Buffer<u128> {

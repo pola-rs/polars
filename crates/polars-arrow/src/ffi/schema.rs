@@ -271,6 +271,8 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "tDn" => ArrowDataType::Duration(TimeUnit::Nanosecond),
         "tiM" => ArrowDataType::Interval(IntervalUnit::YearMonth),
         "tiD" => ArrowDataType::Interval(IntervalUnit::DayTime),
+        "vu" => ArrowDataType::Utf8View,
+        "vz" => ArrowDataType::BinaryView,
         "+l" => {
             let child = schema.child(0);
             ArrowDataType::List(Box::new(to_field(child)?))
