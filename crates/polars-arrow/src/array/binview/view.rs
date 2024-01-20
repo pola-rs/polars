@@ -1,4 +1,5 @@
 use polars_error::*;
+use polars_utils::slice::GetSaferUnchecked;
 
 use crate::buffer::Buffer;
 
@@ -85,18 +86,27 @@ pub(super) fn validate_utf8_view(views: &[u128], buffers: &[Buffer<u8>]) -> Pola
     validate_view(views, buffers, validate_utf8)
 }
 
-pub(super) fn validate_utf8_only(views: &[u128], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
+/// # Safety
+/// The views and buffers must uphold the invariants of BinaryView otherwise we will go OOB.
+pub(super) unsafe fn validate_utf8_only(
+    views: &[u128],
+    buffers: &[Buffer<u8>],
+) -> PolarsResult<()> {
     for view in views {
         let len = *view as u32;
         if len <= 12 {
-            validate_utf8(&view.to_le_bytes()[4..4 + len as usize])?;
+            validate_utf8(
+                view.to_le_bytes()
+                    .get_unchecked_release(4..4 + len as usize),
+            )?;
         } else {
-            let view = View::from(*view);
-            let data = &buffers[view.buffer_idx as usize];
+            let buffer_idx = (*view >> 64) as u32;
+            let offset = (*view >> 96) as u32;
+            let data = buffers.get_unchecked_release(buffer_idx as usize);
 
-            let start = view.offset as usize;
+            let start = offset as usize;
             let end = start + len as usize;
-            let b = &data.as_slice()[start..end];
+            let b = &data.as_slice().get_unchecked_release(start..end);
             validate_utf8(b)?;
         };
     }

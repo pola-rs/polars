@@ -401,7 +401,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
-        validate_utf8_only(&self.views, &self.buffers)
+        // SAFETY: views are correct
+        unsafe { validate_utf8_only(&self.views, &self.buffers) }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].
