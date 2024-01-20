@@ -57,7 +57,11 @@ def polars_type_to_constructor(
         if base_type == dt.Array:
             return functools.partial(PySeries.new_array, dtype.width, dtype.inner)  # type: ignore[union-attr]
         if base_type == dt.Decimal:
-            return functools.partial(PySeries.new_decimal, getattr(dtype, 'precision', None), getattr(dtype, 'scale', None))
+            return functools.partial(
+                PySeries.new_decimal,
+                getattr(dtype, "precision", None),
+                getattr(dtype, "scale", None),
+            )
 
         return _POLARS_TYPE_TO_CONSTRUCTOR[base_type]
     except KeyError:  # pragma: no cover

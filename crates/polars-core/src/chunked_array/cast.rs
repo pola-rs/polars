@@ -237,7 +237,7 @@ impl ChunkCast for StringChunked {
                 (_, None) => {
                     polars_warn!("when inferring scale in string->decimal cast, precision is currently ignored");
                     self.to_decimal(100)
-                }
+                },
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {

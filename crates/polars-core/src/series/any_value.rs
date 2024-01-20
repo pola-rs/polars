@@ -58,7 +58,7 @@ fn any_values_to_decimal(
                     polars_bail!(
                         ComputeError: "conversion of any-value of dtype {} to decimal must specify scale", av.dtype(),
                     );
-                }
+                },
             }
         } else if matches!(av, AnyValue::Null) {
             continue;

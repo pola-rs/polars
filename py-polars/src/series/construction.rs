@@ -286,7 +286,13 @@ impl PySeries {
 
     #[pyo3(signature = (precision, scale, name, val, strict))]
     #[staticmethod]
-    fn new_decimal(precision: Option<usize>, scale: Option<usize>, name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<PySeries> {
+    fn new_decimal(
+        precision: Option<usize>,
+        scale: Option<usize>,
+        name: &str,
+        val: Vec<Wrap<AnyValue<'_>>>,
+        strict: bool,
+    ) -> PyResult<PySeries> {
         // TODO: do we have to respect 'strict' here? It's possible if we want to.
         let avs = slice_extract_wrapped(&val);
         // Create a fake dtype with a placeholder "none" scale, to be inferred later.
