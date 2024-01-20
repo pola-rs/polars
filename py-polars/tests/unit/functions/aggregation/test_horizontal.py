@@ -240,6 +240,12 @@ def test_sum_max_min() -> None:
     assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
 
 
+def test_str_sum_horizontal() -> None:
+    df = pl.DataFrame({"A": ["a", "b", None, "c", None], "B": ["f", "g", "h", None, None]})
+    out = df.select(pl.sum_horizontal("A", "B"))
+    assert_series_equal(out["A"], pl.Series("A", ["af", "bg", "h", "c", ""]))
+
+
 def test_cum_sum_horizontal() -> None:
     df = pl.DataFrame(
         {
