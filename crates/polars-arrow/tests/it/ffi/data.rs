@@ -46,13 +46,13 @@ fn bool_nullable() -> PolarsResult<()> {
 
 #[test]
 fn binview_nullable_inlined() -> PolarsResult<()> {
-    let data = Utf8ViewArray::from_slice(&[Some("foo"), None, Some("barbar"), None]);
+    let data = Utf8ViewArray::from_slice([Some("foo"), None, Some("barbar"), None]);
     test_round_trip(data)
 }
 
 #[test]
 fn binview_nullable_buffered() -> PolarsResult<()> {
-    let data = Utf8ViewArray::from_slice(&[
+    let data = Utf8ViewArray::from_slice([
         Some("foobaroiwalksdfjoiei"),
         None,
         Some("barbar"),
