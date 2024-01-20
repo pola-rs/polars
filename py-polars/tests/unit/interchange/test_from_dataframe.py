@@ -52,7 +52,7 @@ def test_from_dataframe_categorical() -> None:
     df = pl.DataFrame({"a": ["foo", "bar"]}, schema={"a": pl.Categorical})
     df_pa = df.to_arrow()
 
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    result = pl.from_dataframe(df_pa, allow_copy=True)
     expected = pl.DataFrame(
         {"a": ["foo", "bar"]}, schema={"a": pl.Enum(["foo", "bar"])}
     )
@@ -74,7 +74,7 @@ def test_from_dataframe_empty_categories_zero_copy() -> None:
 
 
 def test_from_dataframe_pandas_zero_copy() -> None:
-    data = {"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]}
+    data = {"a": [1, 2], "b": [3.0, 4.0]}
 
     df = pd.DataFrame(data)
     result = pl.from_dataframe(df, allow_copy=False)
@@ -87,7 +87,6 @@ def test_from_dataframe_pyarrow_table_zero_copy() -> None:
         {
             "a": [1, 2],
             "b": [3.0, 4.0],
-            "c": ["foo", None],
         }
     )
     df_pa = df.to_arrow()
@@ -107,12 +106,11 @@ def test_from_dataframe_pyarrow_empty_table() -> None:
 def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
     a = pa.array([1, 2])
     b = pa.array([3.0, 4.0])
-    c = pa.array(["foo", "bar"], type=pa.large_string())
 
-    batch = pa.record_batch([a, b, c], names=["a", "b", "c"])
+    batch = pa.record_batch([a, b], names=["a", "b"])
     result = pl.from_dataframe(batch, allow_copy=False)
 
-    expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
+    expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
     assert_frame_equal(result, expected)
 
 
@@ -185,7 +183,7 @@ def test_from_dataframe_categorical_pandas() -> None:
     expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(CopyNotAllowedError, match="bitmask must be constructed"):
+    with pytest.raises(CopyNotAllowedError, match="string buffers must be converted"):
         result = pl.from_dataframe(df_pd, allow_copy=False)
 
 
@@ -200,9 +198,7 @@ def test_from_dataframe_categorical_pyarrow() -> None:
     expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(
-        CopyNotAllowedError, match="offsets buffer must be cast from Int32 to Int64"
-    ):
+    with pytest.raises(CopyNotAllowedError, match="string buffers must be converted"):
         result = pl.from_dataframe(df_pa, allow_copy=False)
 
 

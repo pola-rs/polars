@@ -137,6 +137,7 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        SeriesBuffers,
         SizeUnit,
         TemporalLiteral,
     )
@@ -394,49 +395,39 @@ class Series:
         Raises
         ------
         ComputeError
-            If the `Series` contains multiple chunks or if it is not of a physical type.
+            If the `Series` contains multiple chunks or if its data type is not
+            physical.
         """
         return self._s._get_buffer_info()
 
-    @overload
-    def _get_buffer(self, index: Literal[0]) -> Self:
-        ...
-
-    @overload
-    def _get_buffer(self, index: Literal[1, 2]) -> Self | None:
-        ...
-
-    def _get_buffer(self, index: Literal[0, 1, 2]) -> Self | None:
+    def _get_buffers(self) -> SeriesBuffers:
         """
-        Return the underlying data, validity, or offsets buffer as a Series.
+        Return the underlying values, validity, and offsets buffers as Series.
 
-        The data buffer always exists.
+        The values buffer always exists.
         The validity buffer may not exist if the column contains no null values.
         The offsets buffer only exists for Series of data type `String` and `List`.
 
-        Parameters
-        ----------
-        index
-            An index indicating the buffer to return:
-
-            - `0` -> data buffer
-            - `1` -> validity buffer
-            - `2` -> offsets buffer
-
         Returns
         -------
-        Series or None
-            `Series` if the specified buffer exists, `None` otherwise.
+        dict
+            Dictionary with `"values"`, `"validity"`, and `"offsets"` keys mapping
+            to the corresponding buffer or `None` if the buffer doesn't exist.
+
+        Warnings
+        --------
+        The underlying buffers for `String` Series can not be represented in this
+        format. Instead, the buffers are converted to a values and offsets buffer.
+        This is used for the dataframe interchange protocol.
 
         Raises
         ------
         ComputeError
             If the `Series` contains multiple chunks.
         """
-        buffer = self._s._get_buffer(index)
-        if buffer is None:
-            return None
-        return self._from_pyseries(buffer)
+        keys = ["values", "validity", "offsets"]
+        buffers = self._s._get_buffers()
+        return {k: self._from_pyseries(b) for k, b in zip(keys, buffers)}
 
     @classmethod
     def _from_buffer(

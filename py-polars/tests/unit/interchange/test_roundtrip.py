@@ -34,7 +34,6 @@ protocol_dtypes = [
 ]
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 @given(dataframes(allowed_dtypes=protocol_dtypes))
 def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
@@ -63,7 +62,6 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 @pytest.mark.skipif(
     sys.version_info < (3, 9),
     reason="The correct `from_dataframe` implementation for pandas is not available before Python 3.9",

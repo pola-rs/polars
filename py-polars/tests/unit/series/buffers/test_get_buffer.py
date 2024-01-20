@@ -34,7 +34,6 @@ def test_get_buffer_with_validity() -> None:
     assert offsets is None
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 def test_get_buffer_string_type() -> None:
     s = pl.Series(["a", "bc", None, "éâç", ""])
 

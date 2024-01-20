@@ -3352,7 +3352,6 @@ def test_flags() -> None:
     }
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 def test_interchange() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
     dfi = df.__dataframe__()

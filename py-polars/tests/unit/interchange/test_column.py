@@ -14,20 +14,6 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import Dtype
 
 
-def test_init_global_categorical() -> None:
-    with pl.StringCache():
-        s = pl.Series("a", ["x"], dtype=pl.Categorical)
-
-    col = PolarsColumn(s)
-    expected = pl.Series("a", ["x"], dtype=pl.Categorical)
-    assert_series_equal(col._col, expected)
-
-    with pytest.raises(
-        CopyNotAllowedError, match="column 'a' must be converted to a local categorical"
-    ):
-        PolarsColumn(s, allow_copy=False)
-
-
 def test_size() -> None:
     s = pl.Series([1, 2, 3])
     col = PolarsColumn(s)
@@ -83,7 +69,7 @@ def test_describe_categorical_enum() -> None:
     assert out["is_ordered"] is True
     assert out["is_dictionary"] is True
 
-    expected_categories = pl.Series(["a", "b", "c"])
+    expected_categories = pl.Series("category", ["a", "b", "c"])
     assert_series_equal(out["categories"]._col, expected_categories)
 
 
@@ -197,7 +183,6 @@ def test_get_buffers() -> None:
     assert out["offsets"] is None
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 def test_get_buffers_with_validity_and_offsets() -> None:
     s = pl.Series(["a", "bc", None, "éâç"])
     col = PolarsColumn(s)
@@ -234,6 +219,18 @@ def test_get_buffers_chunked_bitmask() -> None:
     assert chunks[1].get_buffers()["data"][0]._data.item() is False
 
 
+def test_get_buffers_global_categorical_zero_copy_fails() -> None:
+    with pl.StringCache():
+        s = pl.Series("a", ["x"], dtype=pl.Categorical)
+
+    col = PolarsColumn(s, allow_copy=False)
+
+    with pytest.raises(
+        CopyNotAllowedError, match="column 'a' must be converted to a local categorical"
+    ):
+        col.get_buffers()
+
+
 def test_get_buffers_chunked_zero_copy_fails() -> None:
     s1 = pl.Series([1, 2, 3])
     s = pl.concat([s1, s1], rechunk=False)
@@ -258,11 +255,10 @@ def test_get_buffers_chunked_zero_copy_fails() -> None:
             pl.Series([-1.5, 3.0, 0.0], dtype=pl.Float64),
             (DtypeKind.FLOAT, 64, "g", "="),
         ),
-        pytest.param(
+        (
             pl.Series(["a", "bc", None, "éâç"], dtype=pl.String),
             pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8),
             (DtypeKind.UINT, 8, "C", "="),
-            marks=pytest.mark.skip(reason="Implementing new String type"),
         ),
         (
             pl.Series(
@@ -291,7 +287,6 @@ def test_get_data_buffer(
     assert result_dtype == expected_dtype
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 def test_get_validity_buffer() -> None:
     s = pl.Series(["a", None, "b"])
     col = PolarsColumn(s)
@@ -313,7 +308,6 @@ def test_get_validity_buffer_no_nulls() -> None:
     assert col._get_validity_buffer() is None
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 def test_get_offsets_buffer() -> None:
     s = pl.Series(["a", "bc", None, "éâç"])
     col = PolarsColumn(s)
