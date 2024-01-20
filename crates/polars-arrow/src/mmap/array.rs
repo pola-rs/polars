@@ -54,6 +54,18 @@ fn get_buffer<'a, T: NativeType>(
     Ok(values)
 }
 
+fn get_bytes<'a>(
+    data: &'a [u8],
+    block_offset: usize,
+    buffers: &mut VecDeque<IpcBuffer>,
+) -> PolarsResult<&'a [u8]> {
+    let (offset, length) = get_buffer_bounds(buffers)?;
+
+    // verify that they are in-bounds
+    data.get(block_offset + offset..block_offset + offset + length)
+        .ok_or_else(|| polars_err!(ComputeError: "buffer out of bounds"))
+}
+
 fn get_validity<'a>(
     data: &'a [u8],
     block_offset: usize,
@@ -108,6 +120,52 @@ fn mmap_binary<O: Offset, T: AsRef<[u8]>>(
             num_rows,
             null_count,
             [validity, Some(offsets), Some(values)].into_iter(),
+            [].into_iter(),
+            None,
+            None,
+        )
+    })
+}
+
+fn mmap_binview<T: AsRef<[u8]>>(
+    data: Arc<T>,
+    node: &Node,
+    block_offset: usize,
+    buffers: &mut VecDeque<IpcBuffer>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
+) -> PolarsResult<ArrowArray> {
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
+    let data_ref = data.as_ref().as_ref();
+
+    let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
+
+    let views = get_buffer::<u128>(data_ref, block_offset, buffers, num_rows)?.as_ptr();
+
+    let n_variadic = variadic_buffer_counts
+        .pop_front()
+        .ok_or_else(|| polars_err!(ComputeError: "expected variadic_buffer_count"))?;
+
+    let mut buffer_ptrs = Vec::with_capacity(n_variadic + 2);
+    buffer_ptrs.push(validity);
+    buffer_ptrs.push(Some(views));
+
+    let mut variadic_buffer_sizes = Vec::with_capacity(n_variadic);
+    for _ in 0..n_variadic {
+        let variadic_buffer = get_bytes(data_ref, block_offset, buffers)?;
+        variadic_buffer_sizes.push(variadic_buffer.len());
+        buffer_ptrs.push(Some(variadic_buffer.as_ptr()));
+    }
+
+    // Move variadic buffer sizes in an Arc, so that it stays alive.
+    let data = Arc::new((data, variadic_buffer_sizes));
+
+    // NOTE: invariants are not validated
+    Ok(unsafe {
+        create_array(
+            data,
+            num_rows,
+            null_count,
+            buffer_ptrs.into_iter(),
             [].into_iter(),
             None,
             None,
@@ -235,6 +293,7 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     let child = ListArray::<O>::try_get_child(data_type)?.data_type();
@@ -253,6 +312,7 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
         &ipc_field.fields[0],
         dictionaries,
         field_nodes,
+        variadic_buffer_counts,
         buffers,
     )?;
 
@@ -279,6 +339,7 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     let child = FixedSizeListArray::try_child_and_size(data_type)?
@@ -297,6 +358,7 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
         &ipc_field.fields[0],
         dictionaries,
         field_nodes,
+        variadic_buffer_counts,
         buffers,
     )?;
 
@@ -322,6 +384,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     let children = StructArray::try_get_fields(data_type)?;
@@ -343,6 +406,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
                 ipc,
                 dictionaries,
                 field_nodes,
+                variadic_buffer_counts,
                 buffers,
             )
         })
@@ -398,6 +462,7 @@ fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn get_array<T: AsRef<[u8]>>(
     data: Arc<T>,
     block_offset: usize,
@@ -405,6 +470,7 @@ fn get_array<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     use crate::datatypes::PhysicalType::*;
@@ -419,6 +485,9 @@ fn get_array<T: AsRef<[u8]>>(
             mmap_primitive::<$T, _>(data, &node, block_offset, buffers)
         }),
         Utf8 | Binary => mmap_binary::<i32, _>(data, &node, block_offset, buffers),
+        Utf8View | BinaryView => {
+            mmap_binview(data, &node, block_offset, buffers, variadic_buffer_counts)
+        },
         FixedSizeBinary => mmap_fixed_size_binary(data, &node, block_offset, buffers, data_type),
         LargeBinary | LargeUtf8 => mmap_binary::<i64, _>(data, &node, block_offset, buffers),
         List => mmap_list::<i32, _>(
@@ -429,6 +498,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         LargeList => mmap_list::<i64, _>(
@@ -439,6 +509,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         FixedSizeList => mmap_fixed_size_list(
@@ -449,6 +520,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         Struct => mmap_struct(
@@ -459,6 +531,7 @@ fn get_array<T: AsRef<[u8]>>(
             ipc_field,
             dictionaries,
             field_nodes,
+            variadic_buffer_counts,
             buffers,
         ),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
@@ -477,6 +550,7 @@ fn get_array<T: AsRef<[u8]>>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Maps a memory region to an [`Array`].
 pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     data: Arc<T>,
@@ -485,6 +559,7 @@ pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = get_array(
@@ -494,6 +569,7 @@ pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
         ipc_field,
         dictionaries,
         field_nodes,
+        variadic_buffer_counts,
         buffers,
     )?;
     // The unsafety comes from the fact that `array` is not necessarily valid -
