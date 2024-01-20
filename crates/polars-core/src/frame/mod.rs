@@ -2480,16 +2480,29 @@ impl DataFrame {
                 Ok(&acc + &s)
             };
 
-        match self.columns.len() {
-            0 => Ok(None),
-            1 => Ok(Some(self.columns[0].clone())),
-            2 => sum_fn(&self.columns[0], &self.columns[1], null_strategy).map(Some),
+        let non_null_cols = self
+            .columns
+            .iter()
+            .filter(|x| x.dtype() != &DataType::Null)
+            .collect::<Vec<_>>();
+
+        match non_null_cols.len() {
+            0 => {
+                if self.columns.is_empty() {
+                    Ok(None)
+                } else {
+                    // all columns are null dtype, so result is null dtype
+                    Ok(Some(self.columns[0].clone()))
+                }
+            },
+            1 => Ok(Some(non_null_cols[0].clone())),
+            2 => sum_fn(&non_null_cols[0], &non_null_cols[1], null_strategy).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
                 POOL.install(|| {
-                    self.columns
-                        .par_iter()
+                    non_null_cols
+                        .into_par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
                         .try_reduce_with(|l, r| sum_fn(&l, &r, null_strategy).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
