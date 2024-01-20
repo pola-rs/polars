@@ -93,9 +93,9 @@ def arange(
 
     Examples
     --------
-    >>> pl.arange(0, 3, eager=True).alias("int")
+    >>> pl.arange(0, 3, eager=True)
     shape: (3,)
-    Series: 'int' [i64]
+    Series: 'literal' [i64]
     [
             0
             1
@@ -178,9 +178,9 @@ def int_range(
 
     Examples
     --------
-    >>> pl.int_range(0, 3, eager=True).alias("int")
+    >>> pl.int_range(0, 3, eager=True)
     shape: (3,)
-    Series: 'int' [i64]
+    Series: 'literal' [i64]
     [
             0
             1
@@ -189,9 +189,9 @@ def int_range(
 
     `end` can be omitted for a shorter syntax.
 
-    >>> pl.int_range(3, eager=True).alias("int")
+    >>> pl.int_range(3, eager=True)
     shape: (3,)
-    Series: 'int' [i64]
+    Series: 'literal' [i64]
     [
             0
             1
@@ -320,18 +320,15 @@ def int_ranges(
 
     `end` can be omitted for a shorter syntax.
 
-    >>> df = pl.DataFrame({"end": [0, 1, 2, 3]})
-    >>> df.with_columns(int_range=pl.int_ranges("end"))
-    shape: (4, 2)
+    >>> df.select("end", int_range=pl.int_ranges("end"))
+    shape: (2, 2)
     ┌─────┬───────────┐
     │ end ┆ int_range │
     │ --- ┆ ---       │
     │ i64 ┆ list[i64] │
     ╞═════╪═══════════╡
-    │ 0   ┆ []        │
-    │ 1   ┆ [0]       │
-    │ 2   ┆ [0, 1]    │
     │ 3   ┆ [0, 1, 2] │
+    │ 2   ┆ [0, 1]    │
     └─────┴───────────┘
     """
     if end is None:
