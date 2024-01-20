@@ -2464,19 +2464,21 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their sum values.
     pub fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
-        let sum_fn =
-            |acc: &Series, s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
-                let mut acc = acc.clone();
-                let mut s = s.clone();
+        let apply_null_strategy =
+            |mut s: Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
                 if let NullStrategy::Ignore = null_strategy {
                     // if has nulls
-                    if acc.has_validity() {
-                        acc = acc.fill_null(FillNullStrategy::Zero)?;
-                    }
                     if s.has_validity() {
                         s = s.fill_null(FillNullStrategy::Zero)?;
                     }
                 }
+                Ok(s)
+            };
+
+        let sum_fn =
+            |acc: &Series, s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
+                let acc: Series = apply_null_strategy(acc.clone(), null_strategy)?;
+                let s = apply_null_strategy(s.clone(), null_strategy)?;
                 Ok(&acc + &s)
             };
 
@@ -2495,7 +2497,10 @@ impl DataFrame {
                     Ok(Some(self.columns[0].clone()))
                 }
             },
-            1 => Ok(Some(non_null_cols[0].clone())),
+            1 => Ok(Some(apply_null_strategy(
+                non_null_cols[0].clone(),
+                null_strategy,
+            )?)),
             2 => sum_fn(&non_null_cols[0], &non_null_cols[1], null_strategy).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
