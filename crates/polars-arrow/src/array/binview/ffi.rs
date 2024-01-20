@@ -62,18 +62,37 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         let validity = unsafe { array.validity() }?;
         let views = unsafe { array.buffer::<u128>(1) }?;
 
-        let n = array.n_buffers() - 2;
-        let mut buffers = Vec::with_capacity(n);
+        // 2 - validity + views
+        let n_buffers = array.n_buffers();
+        let mut remaining_buffers = n_buffers - 2;
+        if remaining_buffers <= 1 {
+            return Ok(Self::new_unchecked_unknown_md(
+                data_type,
+                views,
+                Arc::from([]),
+                validity,
+            ));
+        }
 
-        for i in 2..n + 2 {
-            let values = unsafe { array.buffer::<u8>(i) }?;
-            buffers.push(values);
+        let n_variadic_buffers = remaining_buffers - 1;
+        let variadic_buffer_offset = n_buffers - 1;
+
+        let variadic_buffer_sizes =
+            array.buffer_known_len::<i64>(variadic_buffer_offset, n_variadic_buffers)?;
+        remaining_buffers -= 1;
+
+        let mut variadic_buffers = Vec::with_capacity(remaining_buffers);
+
+        let offset = 2;
+        for (i, &size) in (offset..remaining_buffers + offset).zip(variadic_buffer_sizes.iter()) {
+            let values = unsafe { array.buffer_known_len::<u8>(i, size as usize) }?;
+            variadic_buffers.push(values);
         }
 
         Ok(Self::new_unchecked_unknown_md(
             data_type,
             views,
-            Arc::from(buffers),
+            Arc::from(variadic_buffers),
             validity,
         ))
     }
