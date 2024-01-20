@@ -55,7 +55,7 @@ def arange(
 
 
 def arange(
-    start: int | IntoExprColumn = 1,
+    start: int | IntoExprColumn = 0,
     end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
