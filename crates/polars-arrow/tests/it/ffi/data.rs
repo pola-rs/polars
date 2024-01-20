@@ -29,15 +29,6 @@ fn test_round_trip(expected: impl Array + Clone + 'static) -> PolarsResult<()> {
     _test_round_trip(array.sliced(1, 2), expected.sliced(1, 2))
 }
 
-fn test_round_trip_schema(field: Field) -> PolarsResult<()> {
-    let schema_ffi = ffi::export_field_to_c(&field);
-
-    let result = unsafe { ffi::import_field_from_c(&schema_ffi)? };
-
-    assert_eq!(result, field);
-    Ok(())
-}
-
 #[test]
 fn bool_nullable() -> PolarsResult<()> {
     let data = BooleanArray::from(&[Some(true), None, Some(false), None]);
