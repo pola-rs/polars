@@ -139,7 +139,7 @@ fn mmap_binview<T: AsRef<[u8]>>(
 
     let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
 
-    let views = get_buffer::<u128>(data_ref, block_offset, buffers, num_rows)?.as_ptr();
+    let views = get_buffer::<u128>(data_ref, block_offset, buffers, num_rows)?;
 
     let n_variadic = variadic_buffer_counts
         .pop_front()
@@ -147,14 +147,15 @@ fn mmap_binview<T: AsRef<[u8]>>(
 
     let mut buffer_ptrs = Vec::with_capacity(n_variadic + 2);
     buffer_ptrs.push(validity);
-    buffer_ptrs.push(Some(views));
+    buffer_ptrs.push(Some(views.as_ptr()));
 
     let mut variadic_buffer_sizes = Vec::with_capacity(n_variadic);
     for _ in 0..n_variadic {
         let variadic_buffer = get_bytes(data_ref, block_offset, buffers)?;
-        variadic_buffer_sizes.push(variadic_buffer.len());
+        variadic_buffer_sizes.push(variadic_buffer.len() as i64);
         buffer_ptrs.push(Some(variadic_buffer.as_ptr()));
     }
+    buffer_ptrs.push(Some(variadic_buffer_sizes.as_ptr().cast::<u8>()));
 
     // Move variadic buffer sizes in an Arc, so that it stays alive.
     let data = Arc::new((data, variadic_buffer_sizes));

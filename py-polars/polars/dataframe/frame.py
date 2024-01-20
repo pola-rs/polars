@@ -3255,6 +3255,8 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO:
         ...
 
@@ -3263,6 +3265,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> None:
         ...
 
@@ -3270,6 +3274,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path | None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3283,6 +3289,11 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+        future
+            WARNING: this argument is unstable and will be removed without it being
+            considered a breaking change.
+            Setting this to `True` will write polars' internal data-structures that
+            might not be available by other Arrow implementations.
 
         Examples
         --------
@@ -3307,7 +3318,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc(file, compression)
+        self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload

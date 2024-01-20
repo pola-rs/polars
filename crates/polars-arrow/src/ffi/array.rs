@@ -280,7 +280,6 @@ unsafe fn create_buffer<T: NativeType>(
     }
 
     let offset = buffer_offset(array, data_type, index);
-    dbg!(offset, len);
     let ptr: *mut T = get_buffer_ptr(array, data_type, index)?;
 
     // We have to check alignment.
