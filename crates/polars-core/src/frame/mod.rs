@@ -2501,7 +2501,7 @@ impl DataFrame {
                 non_null_cols[0].clone(),
                 null_strategy,
             )?)),
-            2 => sum_fn(&non_null_cols[0], &non_null_cols[1], null_strategy).map(Some),
+            2 => sum_fn(non_null_cols[0], non_null_cols[1], null_strategy).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
