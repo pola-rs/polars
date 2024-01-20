@@ -248,6 +248,41 @@ def test_str_sum_horizontal() -> None:
     assert_series_equal(out["A"], pl.Series("A", ["af", "bg", "h", "c", ""]))
 
 
+def test_sum_null_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [5, None, 3, 2, 1],
+            "B": [5, 3, None, 2, 1],
+            "C": [None, None, None, None, None],
+        }
+    )
+
+    assert_series_equal(
+        df.select(pl.sum_horizontal("A", "B", "C")).to_series(),
+        pl.Series("A", [10, 3, 3, 4, 2]),
+    )
+    assert_series_equal(
+        df.select(pl.sum_horizontal("C", "B")).to_series(),
+        pl.Series("C", [5, 3, 0, 2, 1]),
+    )
+    assert_series_equal(
+        df.select(pl.sum_horizontal("C", "C")).to_series(),
+        pl.Series("C", [None, None, None, None, None]),
+    )
+
+
+def test_sum_single_col() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [5, None, 3, None, 1],
+        }
+    )
+
+    assert_series_equal(
+        df.select(pl.sum_horizontal("A")).to_series(), pl.Series("A", [5, 0, 3, 0, 1])
+    )
+
+
 def test_cum_sum_horizontal() -> None:
     df = pl.DataFrame(
         {
