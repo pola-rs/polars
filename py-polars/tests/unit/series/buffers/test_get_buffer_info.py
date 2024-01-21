@@ -27,7 +27,9 @@ def test_get_buffer_info_after_rechunk() -> None:
 
 def test_get_buffer_info_invalid_data_type() -> None:
     s = pl.Series(["a", "bc"])
-    with pytest.raises(pl.ComputeError):
+
+    msg = "`_get_buffer_info` not implemented for non-physical type str; try to select a buffer first"
+    with pytest.raises(TypeError, match=msg):
         s._get_buffer_info()
 
 

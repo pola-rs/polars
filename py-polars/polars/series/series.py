@@ -419,11 +419,6 @@ class Series:
         The underlying buffers for `String` Series can not be represented in this
         format. Instead, the buffers are converted to a values and offsets buffer.
         This is used for the dataframe interchange protocol.
-
-        Raises
-        ------
-        ComputeError
-            If the `Series` contains multiple chunks.
         """
         buffers = self._s._get_buffers()
         keys = ("values", "validity", "offsets")

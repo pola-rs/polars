@@ -64,11 +64,6 @@ impl PySeries {
     /// Return the underlying values, validity, and offsets buffers as Series.
     fn _get_buffers(&self) -> PyResult<(Self, Option<Self>, Option<Self>)> {
         let s = &self.series;
-        if s.n_chunks() > 1 {
-            let msg = "cannot get buffers for Series with multiple chunks";
-            return Err(PyTypeError::new_err(msg));
-        }
-
         match s.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffers_from_primitive(s),
             DataType::Boolean => get_buffers_from_primitive(s),
@@ -104,6 +99,9 @@ fn get_buffers_from_primitive(
 }
 
 fn get_buffers_from_string(s: &Series) -> PyResult<(PySeries, Option<PySeries>, Option<PySeries>)> {
+    // We cannot do this zero copy anyway, so rechunk first
+    let s = s.rechunk();
+
     let ca = s.str().map_err(PyPolarsErr::from)?;
     let arr_binview = ca.downcast_iter().next().unwrap();
 
@@ -111,7 +109,7 @@ fn get_buffers_from_string(s: &Series) -> PyResult<(PySeries, Option<PySeries>, 
     let arr_utf8 = arrow::compute::cast::utf8view_to_utf8(arr_binview);
 
     let values = get_string_bytes(&arr_utf8)?;
-    let validity = get_bitmap(s);
+    let validity = get_bitmap(&s);
     let offsets = get_string_offsets(&arr_utf8)?;
 
     Ok((values, validity, Some(offsets)))
