@@ -28,7 +28,7 @@ impl PyBatchedCsv {
     #[pyo3(signature = (
         infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows,
         projection, separator, rechunk, columns, encoding, n_threads, path, overwrite_dtype,
-        overwrite_dtype_slice, low_memory, comment_prefix, quote_char, null_values,
+        overwrite_dtype_slice, default_dtype, low_memory, comment_prefix, quote_char, null_values,
         missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_index,
         sample_size, eol_char, raise_if_empty, truncate_ragged_lines)
     )]
@@ -48,6 +48,7 @@ impl PyBatchedCsv {
         path: PathBuf,
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
+        default_dtype: Option<Wrap<DataType>>,
         low_memory: bool,
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
@@ -61,6 +62,7 @@ impl PyBatchedCsv {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
     ) -> PyResult<PyBatchedCsv> {
+        let default_dtype = default_dtype.map(|w| w.0);
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
         let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
@@ -107,6 +109,7 @@ impl PyBatchedCsv {
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_dtypes_slice(overwrite_dtype_slice.as_deref())
+            .with_default_dtype(default_dtype)
             .with_missing_is_null(!missing_utf8_is_empty_string)
             .low_memory(low_memory)
             .with_comment_prefix(comment_prefix)

@@ -143,6 +143,7 @@ where
     path: Option<PathBuf>,
     schema_overwrite: Option<SchemaRef>,
     dtype_overwrite: Option<&'a [DataType]>,
+    default_dtype: Option<DataType>,
     sample_size: usize,
     chunk_size: usize,
     comment_prefix: Option<CommentPrefix>,
@@ -287,6 +288,13 @@ where
         self
     }
 
+    /// Set the default dtype for columns not in schema_overwrite, as an alternative
+    /// to specifying a full schema
+    pub fn with_default_dtype(mut self, default_dtype: Option<DataType>) -> Self {
+        self.default_dtype = default_dtype;
+        self
+    }
+
     /// Set the CSV reader to infer the schema of the file
     ///
     /// # Arguments
@@ -406,6 +414,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.n_threads,
             schema,
             self.dtype_overwrite,
+            std::mem::take(&mut self.default_dtype),
             self.sample_size,
             self.chunk_size,
             self.low_memory,
@@ -524,6 +533,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.max_records,
                     self.has_header,
                     None,
+                    self.default_dtype.as_ref(),
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
                     self.comment_prefix.as_ref(),
@@ -553,6 +563,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.max_records,
                     self.has_header,
                     None,
+                    self.default_dtype.as_ref(),
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
                     self.comment_prefix.as_ref(),
@@ -592,6 +603,7 @@ where
             path: None,
             schema_overwrite: None,
             dtype_overwrite: None,
+            default_dtype: None,
             sample_size: 1024,
             chunk_size: 1 << 18,
             low_memory: false,

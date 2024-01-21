@@ -139,6 +139,7 @@ pub fn infer_file_schema_inner(
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
+    default_dtype: Option<&DataType>,
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
     skip_rows: &mut usize,
@@ -240,6 +241,7 @@ pub fn infer_file_schema_inner(
             max_read_rows,
             has_header,
             schema_overwrite,
+            default_dtype,
             skip_rows,
             skip_rows_after_header,
             comment_prefix,
@@ -378,6 +380,13 @@ pub fn infer_file_schema_inner(
             }
         }
 
+        // use the default_dtype for columns not in schema_overwrite
+        // (or if schema_overwrite doesn't exist)
+        if let Some(dtype) = default_dtype {
+            fields.push(Field::new(field_name, dtype.clone()));
+            continue;
+        }
+
         // determine data type based on possible types
         // if there are incompatible types, use DataType::String
         match possibilities.len() {
@@ -432,6 +441,7 @@ pub fn infer_file_schema_inner(
             max_read_rows,
             has_header,
             schema_overwrite,
+            default_dtype,
             skip_rows,
             skip_rows_after_header,
             comment_prefix,
@@ -463,6 +473,7 @@ pub fn infer_file_schema(
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
+    default_dtype: Option<&DataType>,
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
     skip_rows: &mut usize,
@@ -480,6 +491,7 @@ pub fn infer_file_schema(
         max_read_rows,
         has_header,
         schema_overwrite,
+        default_dtype,
         skip_rows,
         skip_rows_after_header,
         comment_prefix,

@@ -341,6 +341,15 @@ def test_dtype_overwrite_with_column_idx_selection() -> None:
     assert df.columns == ["b", "c", "d"]
 
 
+def test_default_dtype() -> None:
+    df = pl.read_csv(
+        io.StringIO("row_name,value1,value2\napple,1,2"),
+        dtypes={"row_name": pl.String},
+        default_dtype=pl.Int32,
+    )
+    assert df.dtypes == [pl.String, pl.Int32, pl.Int32]
+
+
 def test_partial_column_rename() -> None:
     csv = textwrap.dedent(
         """\

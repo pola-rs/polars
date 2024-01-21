@@ -22,6 +22,7 @@ pub struct LazyCsvReader<'a> {
     cache: bool,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
+    default_dtype: Option<DataType>,
     low_memory: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
@@ -56,6 +57,7 @@ impl<'a> LazyCsvReader<'a> {
             cache: true,
             schema: None,
             schema_overwrite: None,
+            default_dtype: None,
             low_memory: false,
             comment_prefix: None,
             quote_char: Some(b'"'),
@@ -130,6 +132,14 @@ impl<'a> LazyCsvReader<'a> {
     #[must_use]
     pub fn with_dtype_overwrite(mut self, schema: Option<&'a Schema>) -> Self {
         self.schema_overwrite = schema;
+        self
+    }
+
+    /// Set the default dtype for columns not in schema_overwrite, as an alternative
+    /// to specifying a full schema
+    #[must_use]
+    pub fn with_default_dtype(mut self, default_dtype: Option<DataType>) -> Self {
+        self.default_dtype = default_dtype;
         self
     }
 
@@ -256,6 +266,7 @@ impl<'a> LazyCsvReader<'a> {
             self.has_header,
             // we set it to None and modify them after the schema is updated
             None,
+            self.default_dtype.as_ref(),
             &mut skip_rows,
             self.skip_rows_after_header,
             self.comment_prefix.as_ref(),
@@ -290,6 +301,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.cache,
             self.schema,
             self.schema_overwrite,
+            self.default_dtype,
             self.low_memory,
             self.comment_prefix,
             self.quote_char,
