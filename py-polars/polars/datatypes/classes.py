@@ -218,6 +218,11 @@ class DataType(metaclass=DataTypeClass):
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
 
+    @classmethod
+    def is_bool(cls) -> bool:
+        """Check whether the data type is a boolean type."""
+        return issubclass(cls, Boolean)
+
 
 def _custom_reconstruct(
     cls: type[Any], base: type[Any], state: Any

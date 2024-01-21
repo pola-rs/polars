@@ -4391,6 +4391,9 @@ class DataFrame:
         -----
         The median is included by default as the 50% percentile.
 
+        The mean for boolean columns is the ratio of true values
+        to the total non-null values.
+
         Warnings
         --------
         We will never guarantee the output of describe to be stable.
@@ -4416,21 +4419,21 @@ class DataFrame:
         ... )
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬───────┬──────┬──────┬────────────┐
-        │ describe   ┆ float    ┆ int      ┆ bool  ┆ str  ┆ str2 ┆ date       │
-        │ ---        ┆ ---      ┆ ---      ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
-        │ str        ┆ f64      ┆ f64      ┆ str   ┆ str  ┆ str  ┆ str        │
-        ╞════════════╪══════════╪══════════╪═══════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3     ┆ 2    ┆ 2    ┆ 3          │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0     ┆ 1    ┆ 1    ┆ 0          │
-        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ null       │
-        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null       │
-        │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01 │
-        └────────────┴──────────┴──────────┴───────┴──────┴──────┴────────────┘
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬──────┬────────────┐
+        │ describe   ┆ float    ┆ int      ┆ bool     ┆ str  ┆ str2 ┆ date       │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
+        │ str        ┆ f64      ┆ f64      ┆ str      ┆ str  ┆ str  ┆ str        │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪══════╪════════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3        ┆ 2    ┆ 2    ┆ 3          │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0        ┆ 1    ┆ 1    ┆ 0          │
+        │ mean       ┆ 2.266667 ┆ 4.5      ┆ 0.666667 ┆ null ┆ null ┆ null       │
+        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null     ┆ null ┆ null ┆ null       │
+        │ min        ┆ 1.0      ┆ 4.0      ┆ false    ┆ b    ┆ eur  ┆ 2020-01-01 │
+        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ max        ┆ 3.0      ┆ 5.0      ┆ true     ┆ c    ┆ usd  ┆ 2022-01-01 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
         """
         if not self.columns:
             msg = "cannot describe a DataFrame without any columns"
@@ -4438,7 +4441,8 @@ class DataFrame:
 
         # Determine which columns should get std/mean/percentile statistics
         stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
-
+        # Determine bool columns to include mean statistics
+        bool_cols = {c for c, dt in self.schema.items() if dt.is_bool()}
         # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
@@ -4451,7 +4455,9 @@ class DataFrame:
         metrics.append("max")
 
         mean_exprs = [
-            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
+            (
+                F.col(c).mean() if c in stat_cols or c in bool_cols else F.lit(None)
+            ).alias(f"mean:{c}")
             for c in self.columns
         ]
         std_exprs = [
@@ -4490,14 +4496,13 @@ class DataFrame:
             df_metrics.row(0)[(n * self.width) : (n + 1) * self.width]
             for n in range(len(metrics))
         ]
-
         # Cast by column type (numeric/bool -> float), (other -> string)
         summary = dict(zip(self.columns, list(zip(*described))))
         for c in self.columns:
             summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
-                else (float(v) if c in stat_cols else str(v))
+                else (float(v) if c in stat_cols else pl.Series([v])._str_value(0))
                 for v in summary[c]
             ]
 

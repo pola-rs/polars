@@ -383,6 +383,17 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
+    def _str_value(self, index: int) -> str:
+        """
+        Return a string representation of the element at `index`.
+
+        Returns
+        -------
+        str
+            string representation of the value.
+        """
+        return self._s.str_value(index)
+
     def _get_buffer_info(self) -> BufferInfo:
         """
         Return pointer, offset, and length information about the underlying buffer.
