@@ -114,6 +114,28 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                 }
             }));
     }
+
+    #[inline]
+    pub(crate) unsafe fn extend_unchecked_no_buffers(
+        &mut self,
+        index: usize,
+        start: usize,
+        len: usize,
+    ) {
+        let array = *self.arrays.get_unchecked(index);
+
+        extend_validity(&mut self.validity, array, start, len);
+
+        let range = start..start + len;
+
+        self.views
+            .extend(array.views().get_unchecked(range).iter().map(|view| {
+                let len = (*view as u32) as usize;
+                self.total_bytes_len += len;
+
+                *view
+            }))
+    }
 }
 
 impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
