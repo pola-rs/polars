@@ -3371,7 +3371,7 @@ def test_from_dicts_undeclared_column_dtype() -> None:
 
 def test_from_dicts_with_override() -> None:
     data = [
-        {"a": "1", "b": str(2**64-1), "c": "1"},
+        {"a": "1", "b": str(2**64 - 1), "c": "1"},
         {"a": "1", "b": "1", "c": "-5.0"},
     ]
     override = {"a": pl.Int32, "b": pl.UInt64, "c": pl.Float32}
@@ -3381,10 +3381,10 @@ def test_from_dicts_with_override() -> None:
         pl.DataFrame(
             {
                 "a": pl.Series([1, 1], dtype=pl.Int32),
-                "b": pl.Series([2**64-1, 1], dtype=pl.UInt64),
+                "b": pl.Series([2**64 - 1, 1], dtype=pl.UInt64),
                 "c": pl.Series([1.0, -5.0], dtype=pl.Float32),
             }
-        )
+        ),
     )
 
 
