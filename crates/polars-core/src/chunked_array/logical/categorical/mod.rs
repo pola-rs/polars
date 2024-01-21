@@ -125,7 +125,7 @@ impl CategoricalChunked {
     }
 
     // Convert to fixed enum. In case a value is not in the categories return Error
-    pub fn to_enum(&self, categories: &Utf8Array<i64>, hash: u128) -> PolarsResult<Self> {
+    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> PolarsResult<Self> {
         // Fast paths
         match self.get_rev_map().as_ref() {
             RevMapping::Enum(_, cur_hash) if hash == *cur_hash => return Ok(self.clone()),

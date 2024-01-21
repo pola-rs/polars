@@ -335,7 +335,7 @@ impl Series {
                     ),
                 };
                 let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
-                let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
 
                 // Safety
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
