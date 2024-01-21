@@ -410,8 +410,8 @@ mod test {
         let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
-        let arr: DictionaryArray<u32> = (ca).into();
-        let s = Series::try_from(("foo", Box::new(arr) as ArrayRef))?;
+        let arr = ca.to_arrow(true, false);
+        let s = Series::try_from(("foo", arr))?;
         assert!(matches!(s.dtype(), &DataType::Categorical(_, _)));
         assert_eq!(s.null_count(), 1);
         assert_eq!(s.len(), 6);
