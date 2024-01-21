@@ -330,7 +330,7 @@ impl<'a> CoreReader<'a> {
         set_upper_bound: bool,
     ) -> (&'b [u8], usize, Option<&'b [u8]>) {
         // initial row guess. We use the line statistic to guess the number of rows to allocate
-        let mut total_rows = 0;
+        let mut total_rows = self.n_rows.unwrap_or(128);
         let mut line_length_upper_bound = 0.0;
 
         // if we set an upper bound on bytes, keep a reference to the bytes beyond the bound
