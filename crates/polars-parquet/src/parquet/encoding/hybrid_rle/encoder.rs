@@ -55,7 +55,7 @@ fn bitpacked_encode_u32<W: Write, I: Iterator<Item = u32>>(
     }
 
     if remainder != 0 {
-        let compressed_remainder_size = ceil8(remainder * num_bits);
+        let compressed_remainder_size = ceil8(remainder) * num_bits;
         iterator
             .by_ref()
             .take(remainder)
