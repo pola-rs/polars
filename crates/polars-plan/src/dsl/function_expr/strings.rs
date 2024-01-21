@@ -23,7 +23,10 @@ use crate::{map, map_as_slice};
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
     #[cfg(feature = "concat_str")]
-    ConcatHorizontal(String),
+    ConcatHorizontal {
+        delimiter: String,
+        ignore_nulls: bool,
+    },
     #[cfg(feature = "concat_str")]
     ConcatVertical {
         delimiter: String,
@@ -124,7 +127,7 @@ impl StringFunction {
         use StringFunction::*;
         match self {
             #[cfg(feature = "concat_str")]
-            ConcatVertical { .. } | ConcatHorizontal(_) => mapper.with_dtype(DataType::String),
+            ConcatVertical { .. } | ConcatHorizontal { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
@@ -194,7 +197,7 @@ impl Display for StringFunction {
             EndsWith { .. } => "ends_with",
             Extract(_) => "extract",
             #[cfg(feature = "concat_str")]
-            ConcatHorizontal(_) => "concat_horizontal",
+            ConcatHorizontal { .. } => "concat_horizontal",
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } => "concat_vertical",
             Explode => "explode",
@@ -318,7 +321,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 ignore_nulls,
             } => map!(strings::concat, &delimiter, ignore_nulls),
             #[cfg(feature = "concat_str")]
-            ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
+            ConcatHorizontal {
+                delimiter,
+                ignore_nulls,
+            } => map_as_slice!(strings::concat_hor, &delimiter, ignore_nulls),
             #[cfg(feature = "regex")]
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
             #[cfg(feature = "string_reverse")]
@@ -696,13 +702,17 @@ pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsR
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn concat_hor(series: &[Series], delimiter: &str) -> PolarsResult<Series> {
+pub(super) fn concat_hor(
+    series: &[Series],
+    delimiter: &str,
+    ignore_nulls: bool,
+) -> PolarsResult<Series> {
     let str_series: Vec<_> = series
         .iter()
         .map(|s| s.cast(&DataType::String))
         .collect::<PolarsResult<_>>()?;
     let cas: Vec<_> = str_series.iter().map(|s| s.str().unwrap()).collect();
-    Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter)?.into_series())
+    Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter, ignore_nulls)?.into_series())
 }
 
 impl From<StringFunction> for FunctionExpr {

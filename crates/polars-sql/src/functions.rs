@@ -839,14 +839,14 @@ impl SQLFunctionVisitor<'_> {
             Concat => if function.args.is_empty() {
                 polars_bail!(InvalidOperation: "Invalid number of arguments for Concat: 0");
             } else {
-                self.visit_variadic(|exprs: &[Expr]| concat_str(exprs, ""))
+                self.visit_variadic(|exprs: &[Expr]| concat_str(exprs, "", true))
             },
             ConcatWS => if function.args.len() < 2 {
                 polars_bail!(InvalidOperation: "Invalid number of arguments for ConcatWS: {}", function.args.len());
             } else {
                 self.try_visit_variadic(|exprs: &[Expr]| {
                     match &exprs[0] {
-                        Expr::Literal(LiteralValue::String(s)) => Ok(concat_str(&exprs[1..], s)),
+                        Expr::Literal(LiteralValue::String(s)) => Ok(concat_str(&exprs[1..], s, true)),
                         _ => polars_bail!(InvalidOperation: "ConcatWS 'separator' must be a literal string; found {:?}", exprs[0]),
                     }
                 })
