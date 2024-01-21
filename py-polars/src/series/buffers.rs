@@ -1,10 +1,24 @@
+//! Construct and deconstruct Series based on the underlying buffers.
+//!
+//! This functionality is mainly intended for use with the Python dataframe
+//! interchange protocol.
+//!
+//! As Polars has no Buffer concept in Python, each buffer is represented as
+//! a Series of its physical type.
+//!
+//! Note that String Series have underlying `Utf8View` buffers, which
+//! currently cannot be represented as Series. Since the interchange protocol
+//! cannot handle these buffers anyway and expects bytes and offsets buffers,
+//! operations on String Series will convert from/to such buffers. This
+//! conversion requires data to be copied.
+
 use polars::export::arrow;
 use polars::export::arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
 use polars::export::arrow::bitmap::Bitmap;
 use polars::export::arrow::buffer::Buffer;
 use polars::export::arrow::offset::OffsetsBuffer;
 use polars::export::arrow::types::NativeType;
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyTypeError;
 
 use super::*;
 
@@ -43,12 +57,10 @@ impl PySeries {
             DataType::Boolean => {
                 let ca = s.bool().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
-                // this one is quite useless as you need to know the offset
-                // into the first byte.
-                let (slice, start, len) = arr.values().as_slice();
+                let (slice, offset, len) = arr.values().as_slice();
                 Ok(BufferInfo {
                     pointer: slice.as_ptr() as usize,
-                    offset: start,
+                    offset,
                     length: len,
                 })
             },
@@ -56,44 +68,68 @@ impl PySeries {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
             })),
-            _ => {
-                let msg = "Cannot take pointer of nested type, try to first select a buffer";
-                raise_err!(msg, ComputeError);
+            dt => {
+                let msg = format!("`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first");
+                Err(PyTypeError::new_err(msg))
             },
         }
     }
 
-    /// Return the underlying data, validity, or offsets buffer as a Series.
-    fn _get_buffer(&self, index: usize) -> PyResult<Option<Self>> {
-        match self.series.dtype().to_physical() {
-            dt if dt.is_numeric() => get_buffer_from_primitive(&self.series, index),
-            DataType::Boolean => get_buffer_from_primitive(&self.series, index),
-            DataType::List(_) => get_buffer_from_nested(&self.series, index),
-            DataType::String => {
-                todo!()
+    /// Return the underlying values, validity, and offsets buffers as Series.
+    fn _get_buffers(&self) -> PyResult<(Self, Option<Self>, Option<Self>)> {
+        let s = &self.series;
+        match s.dtype().to_physical() {
+            dt if dt.is_numeric() => get_buffers_from_primitive(s),
+            DataType::Boolean => get_buffers_from_primitive(s),
+            DataType::String => get_buffers_from_string(s),
+            dt => {
+                let msg = format!("`_get_buffers` not implemented for `dtype` {dt}");
+                Err(PyTypeError::new_err(msg))
             },
-            DataType::Array(_, _) => {
-                let ca = self.series.array().unwrap();
-                match index {
-                    0 => {
-                        let buffers = ca
-                            .downcast_iter()
-                            .map(|arr| arr.values().clone())
-                            .collect::<Vec<_>>();
-                        Ok(Some(
-                            Series::try_from((self.series.name(), buffers))
-                                .map_err(PyPolarsErr::from)?
-                                .into(),
-                        ))
-                    },
-                    1 => Ok(get_bitmap(&self.series)),
-                    2 => Ok(None),
-                    _ => Err(PyValueError::new_err("expected an index <= 2")),
-                }
-            },
-            _ => todo!(),
         }
     }
+}
+
+fn get_pointer<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
+    let arr = ca.downcast_iter().next().unwrap();
+    arr.values().as_ptr() as usize
+}
+
+fn get_buffers_from_primitive(
+    s: &Series,
+) -> PyResult<(PySeries, Option<PySeries>, Option<PySeries>)> {
+    let chunks = s
+        .chunks()
+        .iter()
+        .map(|arr| arr.with_validity(None))
+        .collect::<Vec<_>>();
+    let values = Series::try_from((s.name(), chunks))
+        .map_err(PyPolarsErr::from)?
+        .into();
+
+    let validity = get_bitmap(s);
+    let offsets = None;
+    Ok((values, validity, offsets))
+}
+
+/// The underlying buffers for `String` Series cannot be represented in this
+/// format. Instead, the buffers are converted to a values and offsets buffer.
+/// This copies data.
+fn get_buffers_from_string(s: &Series) -> PyResult<(PySeries, Option<PySeries>, Option<PySeries>)> {
+    // We cannot do this zero copy anyway, so rechunk first
+    let s = s.rechunk();
+
+    let ca = s.str().map_err(PyPolarsErr::from)?;
+    let arr_binview = ca.downcast_iter().next().unwrap();
+
+    // This is not zero-copy
+    let arr_utf8 = arrow::compute::cast::utf8view_to_utf8(arr_binview);
+
+    let values = get_string_bytes(&arr_utf8)?;
+    let validity = get_bitmap(&s);
+    let offsets = get_string_offsets(&arr_utf8)?;
+
+    Ok((values, validity, Some(offsets)))
 }
 
 fn get_bitmap(s: &Series) -> Option<PySeries> {
@@ -104,85 +140,26 @@ fn get_bitmap(s: &Series) -> Option<PySeries> {
     }
 }
 
-fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>> {
-    match index {
-        0 => {
-            let buffers: Box<dyn Iterator<Item = ArrayRef>> = match s.dtype() {
-                DataType::List(_) => {
-                    let ca = s.list().unwrap();
-                    Box::new(ca.downcast_iter().map(|arr| arr.values().clone()))
-                },
-                dt => {
-                    let msg = format!("{dt} not yet supported as nested buffer access");
-                    raise_err!(msg, ComputeError);
-                },
-            };
-            let buffers = buffers.collect::<Vec<_>>();
-            Ok(Some(
-                Series::try_from((s.name(), buffers))
-                    .map_err(PyPolarsErr::from)?
-                    .into(),
-            ))
-        },
-        1 => Ok(get_bitmap(s)),
-        2 => get_offsets(s).map(Some),
-        _ => Err(PyValueError::new_err("expected an index <= 2")),
-    }
-}
-
-fn get_offsets(s: &Series) -> PyResult<PySeries> {
-    let buffers: Box<dyn Iterator<Item = &OffsetsBuffer<i64>>> = match s.dtype() {
-        DataType::List(_) => {
-            let ca = s.list().unwrap();
-            Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
-        },
-        DataType::String => {
-            let ca = s.str().unwrap();
-            let mut offsets = Vec::with_capacity(ca.len() + 1);
-            let mut len_so_far: i64 = 0;
-            offsets.push(len_so_far);
-
-            for arr in ca.downcast_iter() {
-                for length in arr.len_iter() {
-                    len_so_far += length as i64;
-                }
-                offsets.push(len_so_far)
-            }
-            return Ok(Series::from_vec(s.name(), offsets).into());
-        },
-        _ => return Err(PyValueError::new_err("expected list/string")),
-    };
-    let buffers = buffers
-        .map(|arr| PrimitiveArray::from_data_default(arr.buffer().clone(), None).boxed())
-        .collect::<Vec<_>>();
-    Ok(Series::try_from((s.name(), buffers))
+fn get_string_bytes(arr: &Utf8Array<i64>) -> PyResult<PySeries> {
+    let values_buffer = arr.values();
+    let values_arr =
+        PrimitiveArray::<u8>::try_new(ArrowDataType::UInt8, values_buffer.clone(), None)
+            .map_err(PyPolarsErr::from)?;
+    let values = Series::from_arrow("", values_arr.to_boxed())
         .map_err(PyPolarsErr::from)?
-        .into())
+        .into();
+    Ok(values)
 }
 
-fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<Option<PySeries>> {
-    match index {
-        0 => {
-            let chunks = s
-                .chunks()
-                .iter()
-                .map(|arr| arr.with_validity(None))
-                .collect::<Vec<_>>();
-            Ok(Some(
-                Series::try_from((s.name(), chunks))
-                    .map_err(PyPolarsErr::from)?
-                    .into(),
-            ))
-        },
-        1 => Ok(get_bitmap(s)),
-        2 => Ok(None),
-        _ => Err(PyValueError::new_err("expected an index <= 2")),
-    }
-}
-
-fn get_pointer<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
-    let arr = ca.downcast_iter().next().unwrap();
-    arr.values().as_ptr() as usize
+fn get_string_offsets(arr: &Utf8Array<i64>) -> PyResult<PySeries> {
+    let offsets_buffer = arr.offsets().buffer();
+    let offsets_arr =
+        PrimitiveArray::<i64>::try_new(ArrowDataType::Int64, offsets_buffer.clone(), None)
+            .map_err(PyPolarsErr::from)?;
+    let offsets = Series::from_arrow("", offsets_arr.to_boxed())
+        .map_err(PyPolarsErr::from)?
+        .into();
+    Ok(offsets)
 }
 
 #[pymethods]
@@ -213,9 +190,10 @@ impl PySeries {
                 unsafe { from_buffer_boolean_impl(pointer, offset, length, owner) }?
             },
             dt => {
-                return Err(PyTypeError::new_err(format!(
-                    "`from_buffer` requires a physical type as input for `dtype`, got {dt}",
-                )))
+                let msg = format!(
+                    "`_from_buffer` requires a physical type as input for `dtype`, got {dt}"
+                );
+                return Err(PyTypeError::new_err(msg));
             },
         };
 
@@ -275,9 +253,8 @@ impl PySeries {
 
         match data.len() {
             0 => {
-                return Err(PyTypeError::new_err(
-                    "`data` input to `from_buffers` must contain at least one buffer",
-                ));
+                let msg = "`data` input to `_from_buffers` must contain at least one buffer";
+                return Err(PyTypeError::new_err(msg));
             },
             1 if validity.is_none() => {
                 let values = data.pop().unwrap();
@@ -291,10 +268,11 @@ impl PySeries {
             Some(s) => {
                 let dtype = s.series.dtype();
                 if !dtype.is_bool() {
-                    return Err(PyTypeError::new_err(format!(
+                    let msg = format!(
                         "validity buffer must have data type Boolean, got {:?}",
                         dtype
-                    )));
+                    );
+                    return Err(PyTypeError::new_err(msg));
                 }
                 Some(series_to_bitmap(s.series).unwrap())
             },
@@ -329,16 +307,15 @@ impl PySeries {
                         series_to_offsets(s)
                     },
                     None => return Err(PyTypeError::new_err(
-                        "`from_buffers` cannot create a String column without an offsets buffer",
+                        "`_from_buffers` cannot create a String column without an offsets buffer",
                     )),
                 };
                 let values = series_to_buffer::<UInt8Type>(values);
                 from_buffers_string_impl(values, validity, offsets)?
             },
             dt => {
-                return Err(PyTypeError::new_err(format!(
-                    "`from_buffers` not implemented for `dtype` {dt}",
-                )))
+                let msg = format!("`_from_buffers` not implemented for `dtype` {dt}");
+                return Err(PyTypeError::new_err(msg));
             },
         };
 
@@ -382,13 +359,19 @@ fn from_buffers_bool_impl(data: Bitmap, validity: Option<Bitmap>) -> PyResult<Se
     let s = s_result.map_err(PyPolarsErr::from)?;
     Ok(s)
 }
+/// Constructing a `String` Series requires specifying a values and offsets buffer,
+/// which does not match the actual underlying buffers. The values and offsets
+/// buffer are converted into the actual buffers, which copies data.
 fn from_buffers_string_impl(
     data: Buffer<u8>,
     validity: Option<Bitmap>,
     offsets: OffsetsBuffer<i64>,
 ) -> PyResult<Series> {
     let arr = Utf8Array::new(ArrowDataType::LargeUtf8, offsets, data, validity);
+
+    // This is not zero-copy
     let s_result = Series::from_arrow("", arr.to_boxed());
+
     let s = s_result.map_err(PyPolarsErr::from)?;
     Ok(s)
 }
