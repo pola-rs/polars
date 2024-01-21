@@ -265,15 +265,34 @@ def test_get_buffers_chunked_bitmask() -> None:
     assert chunks[1].get_buffers()["data"][0]._data.item() is False
 
 
-def test_get_buffers_global_categorical_zero_copy_fails() -> None:
-    with pl.StringCache():
-        s = pl.Series("a", ["x"], dtype=pl.Categorical)
+def test_get_buffers_string_zero_copy_fails() -> None:
+    s = pl.Series("a", ["a", "bc"], dtype=pl.String)
 
     col = PolarsColumn(s, allow_copy=False)
 
-    with pytest.raises(
-        CopyNotAllowedError, match="column 'a' must be converted to a local categorical"
-    ):
+    msg = "string buffers must be converted"
+    with pytest.raises(CopyNotAllowedError, match=msg):
+        col.get_buffers()
+
+
+def test_get_buffers_global_categorical() -> None:
+    with pl.StringCache():
+        _ = pl.Series("a", ["a", "b"], dtype=pl.Categorical)
+        s = pl.Series("a", ["c", "b"], dtype=pl.Categorical)
+
+    # Converted to local categorical
+    col = PolarsColumn(s, allow_copy=True)
+    result = col.get_buffers()
+
+    data_buffer, _ = result["data"]
+    expected = pl.Series("a", [0, 1], dtype=pl.UInt32)
+    assert_series_equal(data_buffer._data, expected)
+
+    # Zero copy fails
+    col = PolarsColumn(s, allow_copy=False)
+
+    msg = "column 'a' must be converted to a local categorical"
+    with pytest.raises(CopyNotAllowedError, match=msg):
         col.get_buffers()
 
 

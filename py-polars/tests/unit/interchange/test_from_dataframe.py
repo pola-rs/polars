@@ -59,6 +59,13 @@ def test_from_dataframe_categorical() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_from_dataframe_empty_string_zero_copy() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.String})
+    df_pa = df.to_arrow()
+    result = pl.from_dataframe(df_pa, allow_copy=False)
+    assert_frame_equal(result, df)
+
+
 def test_from_dataframe_empty_bool_zero_copy() -> None:
     df = pl.DataFrame(schema={"a": pl.Boolean})
     df_pd = df.to_pandas()
@@ -213,6 +220,23 @@ def test_from_dataframe_categorical_non_string_keys() -> None:
         NotImplementedError, match="non-string categories are not supported"
     ):
         pl.from_dataframe(df_pa)
+
+
+def test_from_dataframe_categorical_non_u32_values() -> None:
+    values = [None, None]
+
+    dtype = pa.dictionary(pa.int8(), pa.utf8())
+    arr = pa.array(values, dtype)
+    df_pa = pa.Table.from_arrays([arr], names=["a"])
+
+    result = pl.from_dataframe(df_pa)
+    expected = pl.Series("a", values, dtype=pl.Enum([])).to_frame()
+    assert_frame_equal(result, expected)
+
+    with pytest.raises(
+        CopyNotAllowedError, match="data buffer must be cast from Int8 to UInt32"
+    ):
+        result = pl.from_dataframe(df_pa, allow_copy=False)
 
 
 class PatchableColumn(PolarsColumn):
