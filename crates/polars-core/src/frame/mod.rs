@@ -2469,11 +2469,10 @@ impl DataFrame {
                 if let NullStrategy::Ignore = null_strategy {
                     // if has nulls
                     if s.has_validity() {
-                        s.fill_null(FillNullStrategy::Zero)
+                        return s.fill_null(FillNullStrategy::Zero);
                     }
-                } else {
-                    Ok(s.clone())
                 }
+                Ok(s.clone())
             };
 
         let sum_fn =
