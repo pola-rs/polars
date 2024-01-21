@@ -1899,10 +1899,20 @@ class Series:
         -----
         The median is included by default as the 50% percentile.
 
+        The mean for boolean series is the ratio of true values
+        to the total non-null values.
+
+
         Returns
         -------
         DataFrame
             Mapping with summary statistics of a Series.
+
+        Warnings
+        --------
+        We will never guarantee the output of describe to be stable.
+        It will show statistics that we deem informative and may
+        be updated in the future.
 
         Examples
         --------
@@ -1924,6 +1934,20 @@ class Series:
         │ 75%        ┆ 4.0      │
         │ max        ┆ 5.0      │
         └────────────┴──────────┘
+
+        >>> s = pl.Series([True, False, True, None, True])
+        >>> s.describe()
+        shape: (4, 2)
+        ┌────────────┬───────┐
+        │ statistic  ┆ value │
+        │ ---        ┆ ---   │
+        │ str        ┆ f64   │
+        ╞════════════╪═══════╡
+        │ count      ┆ 4.0   │
+        │ null_count ┆ 1.0   │
+        │ sum        ┆ 3.0   │
+        │ mean       ┆ 0.75  │
+        └────────────┴───────┘
 
         Non-numeric data types may not have all statistics available.
 
@@ -1957,11 +1981,12 @@ class Series:
             stats["max"] = self.max()
 
         elif self.dtype == Boolean:
-            stats_dtype = Int64
+            stats_dtype = Float64
             stats = {
                 "count": self.count(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
+                "mean": self.mean(),
             }
         elif self.dtype == String:
             stats_dtype = Int64

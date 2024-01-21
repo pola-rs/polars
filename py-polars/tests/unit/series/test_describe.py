@@ -61,11 +61,7 @@ def test_series_describe_boolean() -> None:
     s = pl.Series([True, False, None, True, True])
     result = s.describe()
 
-    stats = {
-        "count": 4,
-        "null_count": 1,
-        "sum": 3,
-    }
+    stats = {"count": 4, "null_count": 1, "sum": 3, "mean": 0.75}
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
     assert_frame_equal(expected, result)
 
