@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..Default::default()
             },
         )
-        .agg([count()])
+        .agg([len()])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:group_by_dyn2]

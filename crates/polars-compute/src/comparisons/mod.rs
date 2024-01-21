@@ -84,6 +84,7 @@ impl NotSimdPrimitive for u128 {}
 impl NotSimdPrimitive for i128 {}
 
 mod scalar;
+mod view;
 
 #[cfg(feature = "simd")]
 mod simd;

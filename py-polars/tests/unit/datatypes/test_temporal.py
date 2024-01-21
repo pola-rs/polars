@@ -467,11 +467,12 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = (
-        pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
-        .cast(pl.Datetime)
-        .dt.with_time_unit("ns")
-    )
+    with pytest.deprecated_call(match="`with_time_unit` is deprecated"):
+        s1 = (
+            pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
+            .cast(pl.Datetime)
+            .dt.with_time_unit("ns")
+        )
     df = pl.DataFrame([s0, s1])
 
     rows = df.rows()
@@ -1310,13 +1311,13 @@ def test_rolling_by_() -> None:
     out = (
         df.sort("datetime")
         .rolling(index_column="datetime", by="group", period=timedelta(days=3))
-        .agg([pl.count().alias("count")])
+        .agg([pl.len().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
         .rolling(index_column="datetime", by="group", period="3d")
-        .agg([pl.count().alias("count")])
+        .agg([pl.len().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
     assert out.to_dict(as_series=False) == {
@@ -2573,30 +2574,18 @@ def test_datetime_cum_agg_schema() -> None:
 
 
 def test_rolling_group_by_empty_groups_by_take_6330() -> None:
-    df = (
-        pl.DataFrame({"Event": ["Rain", "Sun"]})
-        .join(
-            pl.DataFrame(
-                {
-                    "Date": [1, 2, 3, 4],
-                }
-            ),
-            how="cross",
-        )
-        .set_sorted("Date")
-    )
-    assert (
-        df.rolling(
-            index_column="Date",
-            period="2i",
-            offset="-2i",
-            by="Event",
-            closed="left",
-        ).agg([pl.count()])
-    ).to_dict(as_series=False) == {
+    df1 = pl.DataFrame({"Event": ["Rain", "Sun"]})
+    df2 = pl.DataFrame({"Date": [1, 2, 3, 4]})
+    df = df1.join(df2, how="cross").set_sorted("Date")
+
+    result = df.rolling(
+        index_column="Date", period="2i", offset="-2i", by="Event", closed="left"
+    ).agg(pl.len())
+
+    assert result.to_dict(as_series=False) == {
         "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
-        "count": [0, 1, 2, 2, 0, 1, 2, 2],
+        "len": [0, 1, 2, 2, 0, 1, 2, 2],
     }
 
 

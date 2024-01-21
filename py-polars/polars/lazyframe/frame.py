@@ -446,7 +446,7 @@ class LazyFrame:
             return scan  # type: ignore[return-value]
 
         if storage_options:
-            storage_options = list(storage_options.items())  #  type: ignore[assignment]
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
         else:
             # Handle empty dict input
             storage_options = None
@@ -2698,7 +2698,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
-            F.col(name).eq_missing(value) for name, value in constraints.items()
+            F.col(name).eq(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
             msg = "at least one predicate or constraint must be provided"
@@ -4165,14 +4165,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         drop_cols = _expand_selectors(self, *columns)
         return self._from_pyldf(self._ldf.drop(drop_cols))
 
-    def rename(self, mapping: dict[str, str]) -> Self:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> Self:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Notes
         -----
@@ -4199,10 +4200,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> lf.rename(lambda column_name: "c" + column_name[1:]).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
-        existing = list(mapping.keys())
-        new = list(mapping.values())
-        return self._from_pyldf(self._ldf.rename(existing, new))
+        if callable(mapping):
+            return self.select(F.all().name.map(mapping))
+        else:
+            existing = list(mapping.keys())
+            new = list(mapping.values())
+            return self._from_pyldf(self._ldf.rename(existing, new))
 
     def reverse(self) -> Self:
         """
@@ -4616,10 +4631,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴─────┘
 
         An index column can also be created using the expressions :func:`int_range`
-        and :func:`count`.
+        and :func:`len`.
 
         >>> lf.select(
-        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
         ...     pl.all(),
         ... ).collect()
         shape: (3, 3)
@@ -4642,7 +4657,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     @deprecate_function(
         "Use `with_row_index` instead."
-        "Note that the default column name has changed from 'row_nr' to 'index'.",
+        " Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
@@ -4650,7 +4665,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Add a column at index 0 that counts the rows.
 
         .. deprecated::
-            Use `meth`:with_row_index` instead.
+            Use :meth:`with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters

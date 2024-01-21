@@ -1,6 +1,6 @@
 use arrow::array::DictionaryArray;
+use arrow::compute::cast::{cast, CastOptions};
 use arrow::datatypes::IntegerType;
-use arrow::legacy::compute::cast::cast;
 
 use super::*;
 
@@ -55,7 +55,7 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
             RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => unsafe {
                 DictionaryArray::try_new_unchecked(
                     dtype,
-                    cast(keys, &ArrowDataType::Int64)
+                    cast(keys, &ArrowDataType::Int64, CastOptions::unchecked())
                         .unwrap()
                         .as_any()
                         .downcast_ref::<PrimitiveArray<i64>>()

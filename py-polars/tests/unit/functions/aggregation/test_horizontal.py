@@ -37,10 +37,10 @@ def test_all_any_horizontally() -> None:
     assert_frame_equal(result, expected)
 
     # note: a kwargs filter will use an internal call to all_horizontal
-    dfltr = df.lazy().filter(var1=None, var3=False)
-    assert dfltr.collect().rows() == [(None, None, False)]
+    dfltr = df.lazy().filter(var1=True, var3=False)
+    assert dfltr.collect().rows() == [(True, False, False)]
 
-    # confirm that we reduce the horizontal filter components
+    # confirm that we reduced the horizontal filter components
     # (eg: explain does not contain an "all_horizontal" node)
     assert "horizontal" not in dfltr.explain().lower()
 
@@ -238,6 +238,14 @@ def test_sum_max_min() -> None:
     assert_series_equal(out["sum"], pl.Series("sum", [2.0, 4.0, 6.0]))
     assert_series_equal(out["max"], pl.Series("max", [1.0, 4.0, 9.0]))
     assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
+
+
+def test_str_sum_horizontal() -> None:
+    df = pl.DataFrame(
+        {"A": ["a", "b", None, "c", None], "B": ["f", "g", "h", None, None]}
+    )
+    out = df.select(pl.sum_horizontal("A", "B"))
+    assert_series_equal(out["A"], pl.Series("A", ["af", "bg", "h", "c", ""]))
 
 
 def test_cum_sum_horizontal() -> None:

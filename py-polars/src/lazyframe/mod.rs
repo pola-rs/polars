@@ -2,6 +2,7 @@ mod exitable;
 
 use std::collections::HashMap;
 use std::io::BufWriter;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub use exitable::PyInProcessQuery;
@@ -120,7 +121,7 @@ impl PyLazyFrame {
         paths: Vec<PathBuf>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
-        batch_size: Option<usize>,
+        batch_size: Option<NonZeroUsize>,
         n_rows: Option<usize>,
         low_memory: bool,
         rechunk: bool,
@@ -591,7 +592,7 @@ impl PyLazyFrame {
         separator: u8,
         line_terminator: String,
         quote_char: u8,
-        batch_size: usize,
+        batch_size: NonZeroUsize,
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
@@ -1025,7 +1026,7 @@ impl PyLazyFrame {
 
     fn drop(&self, columns: Vec<String>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_columns(columns).into()
+        ldf.drop(columns).into()
     }
 
     fn cast(&self, dtypes: HashMap<&str, Wrap<DataType>>, strict: bool) -> Self {

@@ -132,6 +132,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     import deltalake
+    from hvplot.plotting.core import hvPlotTabularPolars
     from xlsxwriter import Workbook
 
     from polars import DataType, Expr, LazyFrame, Series
@@ -1118,7 +1119,7 @@ class DataFrame:
         return self
 
     @property
-    def plot(self) -> Any:
+    def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
 
@@ -3254,6 +3255,8 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO:
         ...
 
@@ -3262,6 +3265,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> None:
         ...
 
@@ -3269,6 +3274,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path | None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3282,6 +3289,11 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+        future
+            WARNING: this argument is unstable and will be removed without it being
+            considered a breaking change.
+            Setting this to `True` will write polars' internal data-structures that
+            might not be available by other Arrow implementations.
 
         Examples
         --------
@@ -3306,7 +3318,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc(file, compression)
+        self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3906,9 +3918,9 @@ class DataFrame:
         ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.String)],
         ... )
         >>> df.estimated_size()
-        25888898
+        28000000
         >>> df.estimated_size("mb")
-        24.689577102661133
+        26.702880859375
         """
         sz = self._df.estimated_size()
         return scale_bytes(sz, unit)
@@ -4058,14 +4070,15 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str]) -> DataFrame:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> DataFrame:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Examples
         --------
@@ -4083,6 +4096,17 @@ class DataFrame:
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> df.rename(lambda column_name: "c" + column_name[1:])
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
         return self.lazy().rename(mapping).collect(_eager=True)
 
@@ -4423,7 +4447,7 @@ class DataFrame:
                 expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
                 expr = expr.alias(f"{p}:{c}")
                 percentile_exprs.append(expr)
-            metrics.append(f"{p*100:g}%")
+            metrics.append(f"{p * 100:g}%")
         metrics.append("max")
 
         mean_exprs = [
@@ -5272,10 +5296,10 @@ class DataFrame:
         └──────┴─────┴─────┘
 
         An index column can also be created using the expressions :func:`int_range`
-        and :func:`count`.
+        and :func:`len`.
 
         >>> df.select(
-        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
         ...     pl.all(),
         ... )
         shape: (3, 3)
@@ -5298,7 +5322,7 @@ class DataFrame:
 
     @deprecate_function(
         "Use `with_row_index` instead."
-        "Note that the default column name has changed from 'row_nr' to 'index'.",
+        " Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
@@ -5306,7 +5330,7 @@ class DataFrame:
         Add a column at index 0 that counts the rows.
 
         .. deprecated::
-            Use `meth`:with_row_index` instead.
+            Use :meth:`with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
@@ -7260,9 +7284,8 @@ class DataFrame:
 
             - None: no aggregation takes place, will raise error if multiple values are in group.
             - A predefined aggregate function string, one of
-              {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
+              {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len'}
             - An expression to do the aggregation.
-
         maintain_order
             Sort the grouped keys so that the output order is predictable.
         sort_columns
@@ -7392,8 +7415,15 @@ class DataFrame:
                 aggregate_expr = F.element().median()._pyexpr
             elif aggregate_function == "last":
                 aggregate_expr = F.element().last()._pyexpr
+            elif aggregate_function == "len":
+                aggregate_expr = F.len()._pyexpr
             elif aggregate_function == "count":
-                aggregate_expr = F.count()._pyexpr
+                issue_deprecation_warning(
+                    "`aggregate_function='count'` input for `pivot` is deprecated."
+                    " Please use `aggregate_function='len'`.",
+                    version="0.20.5",
+                )
+                aggregate_expr = F.len()._pyexpr
             else:
                 msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 raise ValueError(msg)
@@ -10220,7 +10250,10 @@ class DataFrame:
         │ 1.0  ┆ -1.0 ┆ 1.0  │
         └──────┴──────┴──────┘
         """
-        return DataFrame(np.corrcoef(self.to_numpy().T, **kwargs), schema=self.columns)
+        correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
+        if self.width == 1:
+            correlation_matrix = np.array([correlation_matrix])
+        return DataFrame(correlation_matrix, schema=self.columns)
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """

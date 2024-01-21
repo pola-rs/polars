@@ -150,8 +150,7 @@ def test_bool_numeric_supertype() -> None:
         pl.Int64,
     ]:
         assert (
-            df.select([(pl.col("v") < 3).sum().cast(dt) / pl.count()]).item()
-            - 0.3333333
+            df.select([(pl.col("v") < 3).sum().cast(dt) / pl.len()]).item() - 0.3333333
             <= 0.00001
         )
 
@@ -631,5 +630,5 @@ def test_literal_subtract_schema_13284() -> None:
         pl.LazyFrame({"a": [23, 30]}, schema={"a": pl.UInt8})
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by(by="a")
-        .count()
-    ).schema == OrderedDict([("a", pl.UInt8), ("count", pl.UInt32)])
+        .len()
+    ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])

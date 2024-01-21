@@ -187,7 +187,7 @@ impl StringGroupbySink {
                             .collect::<Vec<_>>();
 
                         let cap = std::cmp::min(slice_len, agg_map.len());
-                        let mut key_builder = StringChunkedBuilder::new("", cap, cap * 8);
+                        let mut key_builder = StringChunkedBuilder::new("", cap);
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;

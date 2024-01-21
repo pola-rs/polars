@@ -1190,7 +1190,7 @@ mod test {
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
-                DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
             (ArrowDataType::Utf8, DataType::String),

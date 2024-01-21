@@ -14,7 +14,6 @@ impl AnonymousScan for LazyJsonLineReader {
             .low_memory(self.low_memory)
             .with_n_rows(scan_opts.n_rows)
             .with_ignore_errors(self.ignore_errors)
-            .with_chunk_size(self.batch_size)
             .finish()
     }
 

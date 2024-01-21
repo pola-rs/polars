@@ -7,7 +7,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
-use crate::prelude::consts::{COUNT, LITERAL_NAME};
+use crate::prelude::consts::{LEN, LITERAL_NAME};
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -151,8 +151,17 @@ pub(crate) fn all_return_scalar(e: &Expr) -> bool {
         Expr::Literal(lv) => lv.projects_as_scalar(),
         Expr::Function { options: opt, .. } => opt.returns_scalar,
         Expr::Agg(_) => true,
-        Expr::Column(_) => false,
-        _ => expr_to_leaf_column_exprs_iter(e).all(all_return_scalar),
+        Expr::Column(_) | Expr::Wildcard => false,
+        _ => {
+            let mut empty = true;
+            for leaf in expr_to_leaf_column_exprs_iter(e) {
+                if !all_return_scalar(leaf) {
+                    return false;
+                }
+                empty = false;
+            }
+            !empty
+        },
     }
 }
 
@@ -178,7 +187,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 ComputeError:
                 "this expression may produce multiple output names"
             ),
-            Expr::Count => return Ok(Arc::from(COUNT)),
+            Expr::Len => return Ok(Arc::from(LEN)),
             Expr::Literal(val) => {
                 return match val {
                     LiteralValue::Series(s) => Ok(Arc::from(s.name())),
@@ -204,7 +213,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
-            Expr::Count => return Ok(Arc::from(COUNT)),
+            Expr::Len => return Ok(Arc::from(LEN)),
             _ => {},
         }
     }

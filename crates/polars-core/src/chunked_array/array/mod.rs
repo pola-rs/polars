@@ -32,7 +32,7 @@ impl ArrayChunked {
     /// Get the inner values as `Series`
     pub fn get_inner(&self) -> Series {
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow();
+        let inner_dtype = self.inner_dtype().to_arrow(true);
         let arr = ca.downcast_iter().next().unwrap();
         unsafe {
             Series::_try_from_arrow_unchecked(
@@ -51,7 +51,7 @@ impl ArrayChunked {
     ) -> PolarsResult<ArrayChunked> {
         // Rechunk or the generated Series will have wrong length.
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow();
+        let inner_dtype = self.inner_dtype().to_arrow(true);
 
         let chunks = ca.downcast_iter().map(|arr| {
             let elements = unsafe {
@@ -73,7 +73,7 @@ impl ArrayChunked {
             let values = out.chunks()[0].clone();
 
             let inner_dtype =
-                FixedSizeListArray::default_datatype(out.dtype().to_arrow(), ca.width());
+                FixedSizeListArray::default_datatype(out.dtype().to_arrow(true), ca.width());
             let arr = FixedSizeListArray::new(inner_dtype, values, arr.validity().cloned());
             Ok(arr)
         });

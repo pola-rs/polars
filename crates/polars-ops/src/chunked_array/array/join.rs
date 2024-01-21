@@ -1,21 +1,16 @@
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
 use polars_core::prelude::ArrayChunked;
 
 use super::*;
 
 fn join_literal(ca: &ArrayChunked, separator: &str) -> PolarsResult<StringChunked> {
-    let DataType::Array(_, width) = ca.dtype() else {
+    let DataType::Array(_, _) = ca.dtype() else {
         unreachable!()
     };
 
     let mut buf = String::with_capacity(128);
-    let mut builder = StringChunkedBuilder::new(
-        ca.name(),
-        ca.len(),
-        ca.get_values_size() + separator.len() * (*width - 1) * ca.len(),
-    );
+    let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
 
     ca.for_each_amortized(|opt_s| {
         let opt_val = opt_s.map(|s| {
@@ -39,9 +34,8 @@ fn join_literal(ca: &ArrayChunked, separator: &str) -> PolarsResult<StringChunke
 }
 
 fn join_many(ca: &ArrayChunked, separator: &StringChunked) -> PolarsResult<StringChunked> {
-    let mut buf = String::with_capacity(128);
-    let mut builder =
-        StringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size() + ca.len());
+    let mut buf = String::new();
+    let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
 
     ca.amortized_iter()
         .zip(separator)

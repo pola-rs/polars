@@ -282,9 +282,10 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool) -> Self {
+    pub fn sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.sort_with(SortOptions {
             descending,
+            nulls_last,
             ..Default::default()
         })
     }
@@ -867,7 +868,7 @@ impl Series {
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-        let data_type = LargeListArray::default_datatype(s.dtype().to_physical().to_arrow());
+        let data_type = LargeListArray::default_datatype(s.dtype().to_physical().to_arrow(true));
         let new_arr = LargeListArray::new(data_type, offsets.into(), values, None);
         let mut out = ListChunked::with_chunk(s.name(), new_arr);
         out.set_inner_dtype(s.dtype().clone());

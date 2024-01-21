@@ -283,6 +283,10 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     pub fn capacity(&self) -> usize {
         self.values.capacity()
     }
+
+    pub fn freeze(self) -> PrimitiveArray<T> {
+        self.into()
+    }
 }
 
 /// Accessors

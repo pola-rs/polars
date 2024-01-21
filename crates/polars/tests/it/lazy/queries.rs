@@ -26,7 +26,7 @@ fn test_drop() -> PolarsResult<()> {
         "a" => [1],
     ]?
     .lazy()
-    .drop_columns(["a"])
+    .drop(["a"])
     .collect()?;
     assert_eq!(out.width(), 0);
     Ok(())

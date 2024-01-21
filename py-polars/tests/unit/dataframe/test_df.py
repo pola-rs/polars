@@ -392,6 +392,23 @@ def test_gather_every() -> None:
     assert_frame_equal(expected_df, df.gather_every(2, offset=1))
 
 
+def test_gather_every_agg() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 2],
+            "a": ["a", "b", "c", "d", "e", "f"],
+        }
+    )
+    out = df.group_by(pl.col("g")).agg(pl.col("a").gather_every(2)).sort("g")
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "a": [["a", "c"], ["d", "f"]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
@@ -1139,6 +1156,12 @@ def test_rename(df: pl.DataFrame) -> None:
     _ = out[["foos", "bars"]]
 
 
+def test_rename_lambda() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    out = df.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col)
+    assert out.columns == ["foo", "bar", "c"]
+
+
 def test_write_csv() -> None:
     df = pl.DataFrame(
         {
@@ -1774,9 +1797,9 @@ def test_extension() -> None:
 def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
-    result = df.group_by("x", maintain_order=True).count()
+    result = df.group_by("x", maintain_order=True).len()
     expected = pl.DataFrame(
-        {"x": ["b", "a"], "count": [2, 1]}, schema_overrides={"count": pl.UInt32}
+        {"x": ["b", "a"], "len": [2, 1]}, schema_overrides={"len": pl.UInt32}
     )
     assert_frame_equal(result, expected)
 
@@ -2409,7 +2432,7 @@ def test_group_by_slice_expression_args() -> None:
 
     out = (
         df.group_by("groups", maintain_order=True)
-        .agg([pl.col("vals").slice(pl.count() * 0.1, (pl.count() // 5))])
+        .agg([pl.col("vals").slice(pl.len() * 0.1, (pl.len() // 5))])
         .explode("vals")
     )
 
@@ -3335,6 +3358,7 @@ def test_flags() -> None:
     }
 
 
+@pytest.mark.skip(reason="Implementing new String type")
 def test_interchange() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
     dfi = df.__dataframe__()

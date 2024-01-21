@@ -25,3 +25,4 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.last
     Expr.arr.join
     Expr.arr.contains
+    Expr.arr.count_matches

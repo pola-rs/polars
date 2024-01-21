@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
     from polars import Series
     from polars.polars import PySeries
-    from polars.type_aliases import IntoExprColumn
+    from polars.type_aliases import IntoExpr, IntoExprColumn
 
 
 @expr_dispatch
@@ -178,7 +178,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False) -> Series:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -186,6 +186,8 @@ class ArrayNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -401,6 +403,28 @@ class ArrayNameSpace:
             true
             true
             false
+        ]
+
+        """
+
+    def count_matches(self, element: IntoExpr) -> Series:
+        """
+        Count how often the value produced by `element` occurs.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [2, 2, 2]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.count_matches(2)
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            1
+            3
         ]
 
         """

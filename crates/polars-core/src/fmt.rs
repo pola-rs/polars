@@ -363,6 +363,15 @@ impl Debug for Series {
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
             },
+            DataType::BinaryOffset => {
+                format_array!(
+                    f,
+                    self.binary_offset().unwrap(),
+                    "binary[offset]",
+                    self.name(),
+                    "Series"
+                )
+            },
             dt => panic!("{dt:?} not impl"),
         }
     }
@@ -488,6 +497,14 @@ fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     )
 }
 
+fn get_str_width() -> usize {
+    std::env::var(FMT_STR_LEN)
+        .as_deref()
+        .unwrap_or("")
+        .parse()
+        .unwrap_or(32)
+}
+
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -497,11 +514,7 @@ impl Display for DataFrame {
                 self.columns.iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
-            let str_truncate = std::env::var(FMT_STR_LEN)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .unwrap_or(32);
+            let str_truncate = get_str_width();
 
             let max_n_cols = std::env::var(FMT_MAX_COLS)
                 .as_deref()
@@ -513,7 +526,9 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                .map_or(8, |n: i64| if n < 0 { height } else { n as usize });
+                // Note: see "https://github.com/pola-rs/polars/pull/13699" for
+                // the rationale behind choosing 10 as the default value ;)
+                .map_or(10, |n: i64| if n < 0 { height } else { n as usize });
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
@@ -972,7 +987,20 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
+            AnyValue::Binary(d) => {
+                let max_width = get_str_width() * 2;
+                if d.len() > max_width {
+                    let s = String::from_utf8_lossy(&d[..max_width]);
+                    write!(f, "{}", format_args!("b\"{s}...\""))
+                } else {
+                    let s = String::from_utf8_lossy(d);
+                    write!(f, "{}", format_args!("b\"{s}\""))
+                }
+            },
+            AnyValue::BinaryOwned(d) => {
+                let s = String::from_utf8_lossy(d);
+                write!(f, "{}", format_args!("b\"{s}\""))
+            },
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]

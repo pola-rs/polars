@@ -83,8 +83,7 @@ where
 }
 
 type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
-type LargeListUtf8Builder = MutableListArray<i64, MutableUtf8Array<i64>>;
-type LargeListBinaryBuilder = MutableListArray<i64, MutableBinaryArray<i64>>;
+type LargeListBinViewBuilder<T> = MutableListArray<i64, MutableBinaryViewArray<T>>;
 type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
 type LargeListNullBuilder = MutableListArray<i64, MutableNullArray>;
 
@@ -130,6 +129,13 @@ pub fn get_list_builder(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
+        ))),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => Ok(Box::new(ListPrimitiveChunkedBuilder::<Int128Type>::new(
+            name,
+            list_capacity,
+            value_capacity,
+            inner_type_logical.clone(),
         ))),
         _ => {
             macro_rules! get_primitive_builder {
