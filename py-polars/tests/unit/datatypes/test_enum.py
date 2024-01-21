@@ -29,7 +29,7 @@ def test_enum_creation() -> None:
 
 @pytest.mark.parametrize("categories", [[], pl.Series("foo", dtype=pl.Int16), None])
 def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
-    dtype = pl.Enum(categories)  # type: ignore[arg-type]
+    dtype = pl.Enum(categories)
     expected = pl.Series("category", dtype=pl.String)
     assert_series_equal(dtype.categories, expected)
 
@@ -193,14 +193,6 @@ def test_extend_to_an_enum() -> None:
     s.extend(s2)
     assert s.len() == 8
     assert s.null_count() == 1
-
-
-def test_series_init_uninstantiated_enum() -> None:
-    with pytest.raises(
-        pl.ComputeError,
-        match="can not cast / initialize Enum without categories present",
-    ):
-        pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
 
 @pytest.mark.parametrize(
@@ -402,3 +394,26 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
         pl.ComputeError, match="conversion from `u64` to `u32` failed in column"
     ):
         series.cast(enum_dtype)
+
+def test_enum_creating_col_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": ["a", "b", "c"],
+            "col2": ["d", "e", "f"],
+            "col3": ["g", "h", "i"],
+        },
+        schema={
+            "col1": pl.Enum(["a", "b", "c"]),
+            "col2": pl.String,
+            "col3": pl.Enum(["g", "h", "i"]),
+        },
+    )
+
+    out = df.select(pl.col(pl.Enum))
+    assert out.columns == ["col1", "col3"]
+    assert "col2" not in out.columns
+
+    expected_col1 = pl.Series("col1", ["a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    expected_col3 = pl.Series("col3", ["g", "h", "i"], dtype=pl.Enum(["g", "h", "i"]))
+    assert_series_equal(out.get_column("col1"), expected_col1)
+    assert_series_equal(out.get_column("col3"), expected_col3)

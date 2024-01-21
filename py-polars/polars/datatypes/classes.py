@@ -546,7 +546,7 @@ class Enum(DataType):
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]):
+    def __init__(self, categories: Series | Iterable[str] | None = None):
         """
         A fixed set categorical encoding of a set of strings.
 
@@ -554,6 +554,7 @@ class Enum(DataType):
         ----------
         categories
             Valid categories in the dataset.
+            If None, it will be set equal to the empty set.
         """
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
@@ -563,6 +564,9 @@ class Enum(DataType):
             "The Enum data type is considered unstable."
             " It is a work-in-progress feature and may not always work as expected."
         )
+        if categories is None:
+            self.categories = pl.Series(name="category", dtype=String)
+            return
 
         if not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
