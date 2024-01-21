@@ -373,25 +373,36 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn maybe_gc(self) -> Self {
-        if self.total_buffer_len == 0 {
+        const GC_MINIMUM_SAVINGS: usize = 16 * 1024; // At least 16 KiB.
+
+        if self.total_buffer_len <= GC_MINIMUM_SAVINGS {
             return self;
         }
-        let total_bytes_len = self.total_bytes_len.load(Ordering::Relaxed) as usize;
-        // Subtract the maximum amount of inlined strings.
-        let min_in_buffer = total_bytes_len.saturating_sub(self.len() * 12);
-        let frac = (min_in_buffer as f64) / ((self.total_buffer_len() + 1) as f64);
 
-        if frac < 0.25 {
-            return self.gc();
+        // Subtract the maximum amount of inlined strings to get a lower bound
+        // on the number of buffer bytes needed (assuming no dedup).
+        let total_bytes_len = self.total_bytes_len.load(Ordering::Relaxed) as usize;
+        let buffer_req_lower_bound = total_bytes_len.saturating_sub(self.len() * 12);
+
+        let lower_bound_mem_usage_post_gc = self.len() * 16 + buffer_req_lower_bound;
+        let cur_mem_usage = self.len() * 16 + self.total_buffer_len();
+        let savings_upper_bound = cur_mem_usage.saturating_sub(lower_bound_mem_usage_post_gc);
+
+        if savings_upper_bound >= GC_MINIMUM_SAVINGS
+            && cur_mem_usage >= 4 * lower_bound_mem_usage_post_gc
+        {
+            self.gc()
+        } else {
+            self
         }
-        self
     }
 }
 
 impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
-        validate_utf8_only(&self.views, &self.buffers)
+        // SAFETY: views are correct
+        unsafe { validate_utf8_only(&self.views, &self.buffers) }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].

@@ -15,7 +15,7 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     validity: Option<MutableBitmap>,
     views: Vec<u128>,
     buffers: Vec<Buffer<u8>>,
-    buffers_offsets: Vec<u32>,
+    buffers_idx_offsets: Vec<u32>,
     total_bytes_len: usize,
     total_buffer_len: usize,
 }
@@ -63,7 +63,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             validity: prepare_validity(use_validity, capacity),
             views: Vec::with_capacity(capacity),
             buffers,
-            buffers_offsets: cum_offset,
+            buffers_idx_offsets: cum_offset,
             total_bytes_len: 0,
             total_buffer_len,
         }
@@ -101,13 +101,40 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                 self.total_bytes_len += len;
 
                 if len > 12 {
-                    let buffer_offset = *self.buffers_offsets.get_unchecked(index);
+                    // Take the buffer index of the View.
+                    let current_buffer_idx = (view >> 64) as u32;
+                    // And add the offset of the buffers.
+                    let buffer_idx =
+                        *self.buffers_idx_offsets.get_unchecked(index) + current_buffer_idx;
+                    // Mask out the old buffer-idx and OR in the new.
                     let mask = (u32::MAX as u128) << 64;
-                    (view & !mask) | ((buffer_offset as u128) << 64)
+                    (view & !mask) | ((buffer_idx as u128) << 64)
                 } else {
                     view
                 }
             }));
+    }
+
+    #[inline]
+    pub(crate) unsafe fn extend_unchecked_no_buffers(
+        &mut self,
+        index: usize,
+        start: usize,
+        len: usize,
+    ) {
+        let array = *self.arrays.get_unchecked(index);
+
+        extend_validity(&mut self.validity, array, start, len);
+
+        let range = start..start + len;
+
+        self.views
+            .extend(array.views().get_unchecked(range).iter().map(|view| {
+                let len = (*view as u32) as usize;
+                self.total_bytes_len += len;
+
+                *view
+            }))
     }
 }
 

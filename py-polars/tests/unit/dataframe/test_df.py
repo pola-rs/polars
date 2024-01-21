@@ -1156,6 +1156,12 @@ def test_rename(df: pl.DataFrame) -> None:
     _ = out[["foos", "bars"]]
 
 
+def test_rename_lambda() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    out = df.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col)
+    assert out.columns == ["foo", "bar", "c"]
+
+
 def test_write_csv() -> None:
     df = pl.DataFrame(
         {
@@ -3352,7 +3358,6 @@ def test_flags() -> None:
     }
 
 
-@pytest.mark.skip(reason="Implementing new String type")
 def test_interchange() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
     dfi = df.__dataframe__()

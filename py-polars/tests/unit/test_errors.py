@@ -30,8 +30,8 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(6\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(6\); consider using `apply` instead"
         ),
     ):
         df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
@@ -40,8 +40,8 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(4\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(4\); consider using `apply` instead"
         ),
     ):
         df.select(

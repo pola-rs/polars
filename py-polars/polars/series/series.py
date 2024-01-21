@@ -137,6 +137,7 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        SeriesBuffers,
         SizeUnit,
         TemporalLiteral,
     )
@@ -393,50 +394,46 @@ class Series:
 
         Raises
         ------
+        TypeError
+            If the `Series` data type is not physical.
         ComputeError
             If the `Series` contains multiple chunks.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
         return self._s._get_buffer_info()
 
-    @overload
-    def _get_buffer(self, index: Literal[0]) -> Self:
-        ...
-
-    @overload
-    def _get_buffer(self, index: Literal[1, 2]) -> Self | None:
-        ...
-
-    def _get_buffer(self, index: Literal[0, 1, 2]) -> Self | None:
+    def _get_buffers(self) -> SeriesBuffers:
         """
-        Return the underlying data, validity, or offsets buffer as a Series.
+        Return the underlying values, validity, and offsets buffers as Series.
 
-        The data buffer always exists.
+        The values buffer always exists.
         The validity buffer may not exist if the column contains no null values.
         The offsets buffer only exists for Series of data type `String` and `List`.
 
-        Parameters
-        ----------
-        index
-            An index indicating the buffer to return:
-
-            - `0` -> data buffer
-            - `1` -> validity buffer
-            - `2` -> offsets buffer
-
         Returns
         -------
-        Series or None
-            `Series` if the specified buffer exists, `None` otherwise.
+        dict
+            Dictionary with `"values"`, `"validity"`, and `"offsets"` keys mapping
+            to the corresponding buffer or `None` if the buffer doesn't exist.
 
-        Raises
-        ------
-        ComputeError
-            If the `Series` contains multiple chunks.
+        Warnings
+        --------
+        The underlying buffers for `String` Series cannot be represented in this
+        format. Instead, the buffers are converted to a values and offsets buffer.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
-        buffer = self._s._get_buffer(index)
-        if buffer is None:
-            return None
-        return self._from_pyseries(buffer)
+        buffers = self._s._get_buffers()
+        keys = ("values", "validity", "offsets")
+        return {  # type: ignore[return-value]
+            k: self._from_pyseries(b) if b is not None else b
+            for k, b in zip(keys, buffers)
+        }
 
     @classmethod
     def _from_buffer(
@@ -449,6 +446,7 @@ class Series:
         ----------
         dtype
             The data type of the buffer.
+            Must be a physical type (integer, float, or boolean).
         buffer_info
             Tuple containing buffer information in the form `(pointer, offset, length)`.
         owner
@@ -457,6 +455,15 @@ class Series:
         Returns
         -------
         Series
+
+        Raises
+        ------
+        TypeError
+            When the given `dtype` is not supported.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
         return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
 
@@ -479,13 +486,31 @@ class Series:
             the physical data type of `dtype`. Some data types require multiple buffers:
 
             - `String`: A data buffer of type `UInt8` and an offsets buffer
-                        of type `Int64`.
+                        of type `Int64`. Note that this does not match how the data
+                        is represented internally and data copy is required to construct
+                        the Series.
         validity
             Validity buffer. If specified, must be a Series of data type `Boolean`.
 
         Returns
         -------
         Series
+
+        Raises
+        ------
+        TypeError
+            When the given `dtype` is not supported or the other inputs do not match
+            the requirements for constructing a Series of the given `dtype`.
+
+        Warnings
+        --------
+        Constructing a `String` Series requires specifying a values and offsets buffer,
+        which does not match the actual underlying buffers. The values and offsets
+        buffer are converted into the actual buffers, which copies data.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
         if isinstance(data, Series):
             data = [data._s]
