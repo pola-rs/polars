@@ -14,6 +14,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypedDict,
     TypeVar,
     Union,
 )
@@ -209,6 +210,14 @@ PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
 
 BufferInfo: TypeAlias = Tuple[int, int, int]
+
+
+class SeriesBuffers(TypedDict):
+    """Underlying buffers of a Series."""
+
+    values: Series
+    validity: Series | None
+    offsets: Series | None
 
 
 # minimal protocol definitions that can reasonably represent
