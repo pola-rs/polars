@@ -3370,10 +3370,22 @@ def test_from_dicts_undeclared_column_dtype() -> None:
 
 
 def test_from_dicts_with_override() -> None:
-    data = [{"a": "1", "b": "2"}, {"a": 1, "b": 2}]
-    override = {"a": pl.Int32, "b": pl.UInt8}
+    data = [
+        {"a": "1", "b": str(2**64-1), "c": "1"},
+        {"a": "1", "b": "1", "c": "-5.0"},
+    ]
+    override = {"a": pl.Int32, "b": pl.UInt64, "c": pl.Float32}
     result = pl.from_dicts(data, schema_overrides=override)  # type: ignore[arg-type]
-    assert result.schema == {"a": pl.Int32, "b": pl.UInt8}
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "a": pl.Series([1, 1], dtype=pl.Int32),
+                "b": pl.Series([2**64-1, 1], dtype=pl.UInt64),
+                "c": pl.Series([1.0, -5.0], dtype=pl.Float32),
+            }
+        )
+    )
 
 
 def test_from_records_u64_12329() -> None:

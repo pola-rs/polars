@@ -408,14 +408,11 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(f? / 10f64.powi(*scale as _))
                 }
             },
-            Boolean(v) => {
-                if *v {
-                    NumCast::from(1)
-                } else {
-                    NumCast::from(0)
-                }
+            Boolean(v) => NumCast::from(if *v { 1 } else { 0 }),
+            String(v) => match (*v).parse::<i128>() {
+                Ok(val) => NumCast::from(val),
+                Err(_) => NumCast::from((*v).parse::<f64>().ok()?),
             },
-            String(v) => NumCast::from((*v).parse::<i64>().ok()?),
             _ => None,
         }
     }
