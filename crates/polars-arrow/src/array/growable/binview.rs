@@ -129,7 +129,12 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         let range = start..start + len;
 
         self.views
-            .extend_from_slice(array.views().get_unchecked(range))
+            .extend(array.views().get_unchecked(range).iter().map(|view| {
+                let len = (*view as u32) as usize;
+                self.total_bytes_len += len;
+
+                *view
+            }))
     }
 }
 
