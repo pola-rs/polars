@@ -119,6 +119,7 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dataframes(
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
+            pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Polars copies the categories to construct a mapping
             pl.Boolean,  # pyarrow exports boolean buffers as byte-packed: https://github.com/apache/arrow/issues/37991
         ],

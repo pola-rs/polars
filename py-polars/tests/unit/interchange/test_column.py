@@ -169,7 +169,53 @@ def test_get_chunks_subdivided_chunks() -> None:
         next(out)
 
 
-def test_get_buffers() -> None:
+@pytest.mark.parametrize(
+    ("series", "expected_data", "expected_dtype"),
+    [
+        (
+            pl.Series([1, None, 3], dtype=pl.Int16),
+            pl.Series([1, 0, 3], dtype=pl.Int16),
+            (DtypeKind.INT, 16, "s", "="),
+        ),
+        (
+            pl.Series([-1.5, 3.0, None], dtype=pl.Float64),
+            pl.Series([-1.5, 3.0, 0.0], dtype=pl.Float64),
+            (DtypeKind.FLOAT, 64, "g", "="),
+        ),
+        (
+            pl.Series(["a", "bc", None, "éâç"], dtype=pl.String),
+            pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8),
+            (DtypeKind.UINT, 8, "C", "="),
+        ),
+        (
+            pl.Series(
+                [datetime(1988, 1, 2), None, datetime(2022, 12, 3)], dtype=pl.Datetime
+            ),
+            pl.Series([568080000000000, 0, 1670025600000000], dtype=pl.Int64),
+            (DtypeKind.INT, 64, "l", "="),
+        ),
+        (
+            pl.Series(["a", "b", None, "a"], dtype=pl.Categorical),
+            pl.Series([0, 1, 0, 0], dtype=pl.UInt32),
+            (DtypeKind.UINT, 32, "I", "="),
+        ),
+    ],
+)
+def test_get_buffers_data(
+    series: pl.Series,
+    expected_data: pl.Series,
+    expected_dtype: Dtype,
+) -> None:
+    col = PolarsColumn(series)
+
+    out = col.get_buffers()
+
+    data_buffer, data_dtype = out["data"]
+    assert_series_equal(data_buffer._data, expected_data)
+    assert data_dtype == expected_dtype
+
+
+def test_get_buffers_int() -> None:
     s = pl.Series([1, 2, 3], dtype=pl.Int8)
     col = PolarsColumn(s)
 
@@ -242,98 +288,59 @@ def test_get_buffers_chunked_zero_copy_fails() -> None:
         col.get_buffers()
 
 
-@pytest.mark.parametrize(
-    ("series", "expected_data", "expected_dtype"),
-    [
-        (
-            pl.Series([1, None, 3], dtype=pl.Int16),
-            pl.Series([1, 0, 3], dtype=pl.Int16),
-            (DtypeKind.INT, 16, "s", "="),
-        ),
-        (
-            pl.Series([-1.5, 3.0, None], dtype=pl.Float64),
-            pl.Series([-1.5, 3.0, 0.0], dtype=pl.Float64),
-            (DtypeKind.FLOAT, 64, "g", "="),
-        ),
-        (
-            pl.Series(["a", "bc", None, "éâç"], dtype=pl.String),
-            pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8),
-            (DtypeKind.UINT, 8, "C", "="),
-        ),
-        (
-            pl.Series(
-                [datetime(1988, 1, 2), None, datetime(2022, 12, 3)], dtype=pl.Datetime
-            ),
-            pl.Series([568080000000000, 0, 1670025600000000], dtype=pl.Int64),
-            (DtypeKind.INT, 64, "l", "="),
-        ),
-        (
-            pl.Series(["a", "b", None, "a"], dtype=pl.Categorical),
-            pl.Series([0, 1, 0, 0], dtype=pl.UInt32),
-            (DtypeKind.UINT, 32, "I", "="),
-        ),
-    ],
-)
-def test_get_data_buffer(
-    series: pl.Series,
-    expected_data: pl.Series,
-    expected_dtype: Dtype,
-) -> None:
-    col = PolarsColumn(series)
+def test_wrap_data_buffer() -> None:
+    values = pl.Series([1, 2, 3])
+    col = PolarsColumn(pl.Series())
 
-    result_buffer, result_dtype = col._get_data_buffer()
+    result_buffer, result_dtype = col._wrap_data_buffer(values)
 
-    assert_series_equal(result_buffer._data, expected_data)
-    assert result_dtype == expected_dtype
-
-
-def test_get_validity_buffer() -> None:
-    s = pl.Series(["a", None, "b"])
-    col = PolarsColumn(s)
-
-    validity = col._get_validity_buffer()
-
-    assert validity is not None
-
-    result_buffer, result_dtype = validity
-    expected = pl.Series([True, False, True])
-    assert_series_equal(result_buffer._data, expected)
-    assert result_dtype == (DtypeKind.BOOL, 1, "b", "=")
-
-
-def test_get_validity_buffer_no_nulls() -> None:
-    s = pl.Series([1.0, 3.0, 2.0])
-    col = PolarsColumn(s)
-
-    assert col._get_validity_buffer() is None
-
-
-def test_get_offsets_buffer() -> None:
-    s = pl.Series(["a", "bc", None, "éâç"])
-    col = PolarsColumn(s)
-
-    offsets = col._get_offsets_buffer()
-
-    assert offsets is not None
-
-    result_buffer, result_dtype = offsets
-    expected = pl.Series([0, 1, 3, 3, 9], dtype=pl.Int64)
-    assert_series_equal(result_buffer._data, expected)
+    assert_series_equal(result_buffer._data, values)
     assert result_dtype == (DtypeKind.INT, 64, "l", "=")
 
 
-def test_get_offsets_buffer_nonstring_dtype() -> None:
-    s = pl.Series([1, 2, 3], dtype=pl.Int32)
-    col = PolarsColumn(s)
-    assert col._get_validity_buffer() is None
+def test_wrap_validity_buffer() -> None:
+    validity = pl.Series([True, False, True])
+    col = PolarsColumn(pl.Series())
+
+    result = col._wrap_validity_buffer(validity)
+
+    assert validity is not None
+
+    result_buffer, result_dtype = result
+    assert_series_equal(result_buffer._data, validity)
+    assert result_dtype == (DtypeKind.BOOL, 1, "b", "=")
 
 
-def test_column_unsupported_types() -> None:
+def test_wrap_validity_buffer_no_nulls() -> None:
+    col = PolarsColumn(pl.Series())
+    assert col._wrap_validity_buffer(None) is None
+
+
+def test_wrap_offsets_buffer() -> None:
+    offsets = pl.Series([0, 1, 3, 3, 9], dtype=pl.Int64)
+    col = PolarsColumn(pl.Series())
+
+    result = col._wrap_offsets_buffer(offsets)
+
+    assert result is not None
+
+    result_buffer, result_dtype = result
+    assert_series_equal(result_buffer._data, offsets)
+    assert result_dtype == (DtypeKind.INT, 64, "l", "=")
+
+
+def test_wrap_offsets_buffer_none() -> None:
+    col = PolarsColumn(pl.Series())
+    assert col._wrap_validity_buffer(None) is None
+
+
+def test_column_unsupported_type() -> None:
     s = pl.Series("a", [[4], [5, 6]])
     col = PolarsColumn(s)
 
     # Certain column operations work
     assert col.num_chunks() == 1
+    assert col.null_count == 0
 
     # Error is raised when unsupported operations are requested
     with pytest.raises(ValueError, match="not supported"):
