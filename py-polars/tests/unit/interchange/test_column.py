@@ -304,7 +304,7 @@ def test_wrap_validity_buffer() -> None:
 
     result = col._wrap_validity_buffer(validity)
 
-    assert validity is not None
+    assert result is not None
 
     result_buffer, result_dtype = result
     assert_series_equal(result_buffer._data, validity)

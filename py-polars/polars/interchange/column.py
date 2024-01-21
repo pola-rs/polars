@@ -69,9 +69,9 @@ class PolarsColumn(Column):
         dtype = self._col.dtype
         if dtype == Categorical:
             categories = self._col.cat.get_categories()
-            is_ordered = dtype.ordering == "physical"
+            is_ordered = dtype.ordering == "physical"  # type: ignore[attr-defined]
         elif dtype == Enum:
-            categories = dtype.categories
+            categories = dtype.categories  # type: ignore[attr-defined]
             is_ordered = True
         else:
             msg = "`describe_categorical` only works on categorical columns"
