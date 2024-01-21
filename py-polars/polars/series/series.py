@@ -394,9 +394,14 @@ class Series:
 
         Raises
         ------
+        TypeError
+            If the `Series` data type is not physical.
         ComputeError
-            If the `Series` contains multiple chunks or if its data type is not
-            physical.
+            If the `Series` contains multiple chunks.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
         return self._s._get_buffer_info()
 
@@ -416,9 +421,12 @@ class Series:
 
         Warnings
         --------
-        The underlying buffers for `String` Series can not be represented in this
+        The underlying buffers for `String` Series cannot be represented in this
         format. Instead, the buffers are converted to a values and offsets buffer.
-        This is used for the dataframe interchange protocol.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
         buffers = self._s._get_buffers()
         keys = ("values", "validity", "offsets")
@@ -438,6 +446,7 @@ class Series:
         ----------
         dtype
             The data type of the buffer.
+            Must be a physical type (integer, float, or boolean).
         buffer_info
             Tuple containing buffer information in the form `(pointer, offset, length)`.
         owner
@@ -446,6 +455,15 @@ class Series:
         Returns
         -------
         Series
+
+        Raises
+        ------
+        TypeError
+            When the given `dtype` is not supported.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
         return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
 
@@ -477,6 +495,22 @@ class Series:
         Returns
         -------
         Series
+
+        Raises
+        ------
+        TypeError
+            When the given `dtype` is not supported or the other inputs do not match
+            the requirements for constructing a Series of the given `dtype`.
+
+        Warnings
+        --------
+        Constructing a `String` Series requires specifying a values and offsets buffer,
+        which does not match the actual underlying buffers. The values and offsets
+        buffer are converted into the actual buffers, which copies data.
+
+        Notes
+        -----
+        This method is mainly intended for use with the dataframe interchange protocol.
         """
         if isinstance(data, Series):
             data = [data._s]

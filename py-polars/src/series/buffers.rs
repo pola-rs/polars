@@ -1,3 +1,17 @@
+//! Construct and deconstruct Series based on the underlying buffers.
+//!
+//! This functionality is mainly intended for use with the Python dataframe
+//! interchange protocol.
+//!
+//! As Polars has no Buffer concept in Python, each buffer is represented as
+//! a Series of its physical type.
+//!
+//! Note that String Series have underlying `Utf8View` buffers, which
+//! currently cannot be represented as Series. Since the interchange protocol
+//! cannot handle these buffers anyway and expects bytes and offsets buffers,
+//! operations on String Series will convert from/to such buffers. This
+//! conversion requires data to be copied.
+
 use polars::export::arrow;
 use polars::export::arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
 use polars::export::arrow::bitmap::Bitmap;
@@ -98,6 +112,9 @@ fn get_buffers_from_primitive(
     Ok((values, validity, offsets))
 }
 
+/// The underlying buffers for `String` Series cannot be represented in this
+/// format. Instead, the buffers are converted to a values and offsets buffer.
+/// This copies data.
 fn get_buffers_from_string(s: &Series) -> PyResult<(PySeries, Option<PySeries>, Option<PySeries>)> {
     // We cannot do this zero copy anyway, so rechunk first
     let s = s.rechunk();
@@ -342,6 +359,9 @@ fn from_buffers_bool_impl(data: Bitmap, validity: Option<Bitmap>) -> PyResult<Se
     let s = s_result.map_err(PyPolarsErr::from)?;
     Ok(s)
 }
+/// Constructing a `String` Series requires specifying a values and offsets buffer,
+/// which does not match the actual underlying buffers. The values and offsets
+/// buffer are converted into the actual buffers, which copies data.
 fn from_buffers_string_impl(
     data: Buffer<u8>,
     validity: Option<Bitmap>,
