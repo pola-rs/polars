@@ -339,11 +339,18 @@ impl DataType {
                 polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
             },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => Ok(ArrowDataType::Dictionary(
-                IntegerType::UInt32,
-                Box::new(ArrowDataType::LargeUtf8),
-                false,
-            )),
+            Categorical(_, _) => {
+                let values = if pl_flavor {
+                    ArrowDataType::Utf8View
+                } else {
+                    ArrowDataType::LargeUtf8
+                };
+                Ok(ArrowDataType::Dictionary(
+                    IntegerType::UInt32,
+                    Box::new(values),
+                    false,
+                ))
+            },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let fields = fields.iter().map(|fld| fld.to_arrow(pl_flavor)).collect();
@@ -492,7 +499,7 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
 
 #[cfg(feature = "dtype-categorical")]
 pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
-    let rev_map = RevMapping::build_enum(categories.clone());
+    let rev_map = RevMapping::build_enum(categories);
     DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
 }
 
