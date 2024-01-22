@@ -2664,6 +2664,7 @@ dependencies = [
  "bytemuck",
  "num-traits",
  "polars-arrow",
+ "polars-error",
  "polars-utils",
  "version_check",
 ]

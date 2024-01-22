@@ -1,15 +1,14 @@
 //! Contains operators to filter arrays such as [`filter`].
-use polars_error::PolarsResult;
-
-use crate::array::growable::{make_growable, Growable};
-use crate::array::*;
-use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
-use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::chunk::Chunk;
-use crate::datatypes::ArrowDataType;
-use crate::types::simd::Simd;
-use crate::types::{BitChunkOnes, NativeType};
-use crate::with_match_primitive_type_full;
+use arrow::array::growable::{make_growable, Growable};
+use arrow::array::*;
+use arrow::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::chunk::Chunk;
+use arrow::datatypes::ArrowDataType;
+use arrow::types::simd::Simd;
+use arrow::types::{BitChunkOnes, NativeType};
+use arrow::with_match_primitive_type_full;
+use polars_error::*;
 
 /// Function that can filter arbitrary arrays
 pub type Filter<'a> = Box<dyn Fn(&dyn Array) -> Box<dyn Array> + 'a + Send + Sync>;
@@ -217,7 +216,7 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
     let filter_count = iter.slots();
     let chunks = iter.collect::<Vec<_>>();
 
-    use crate::datatypes::PhysicalType::*;
+    use arrow::datatypes::PhysicalType::*;
     Ok(Box::new(move |array: &dyn Array| {
         match array.data_type().to_physical_type() {
             Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
@@ -246,34 +245,34 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
     }))
 }
 
-pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
+pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
     // The validities may be masking out `true` bits, making the filter operation
     // based on the values incorrect
-    if let Some(validities) = filter.validity() {
-        let values = filter.values();
+    if let Some(validities) = mask.validity() {
+        let values = mask.values();
         let new_values = values & validities;
-        let filter = BooleanArray::new(ArrowDataType::Boolean, new_values, None);
-        return crate::compute::filter::filter(array, &filter);
+        let mask = BooleanArray::new(ArrowDataType::Boolean, new_values, None);
+        return filter(array, &mask);
     }
 
-    let false_count = filter.values().unset_bits();
-    if false_count == filter.len() {
-        assert_eq!(array.len(), filter.len());
+    let false_count = mask.values().unset_bits();
+    if false_count == mask.len() {
+        assert_eq!(array.len(), mask.len());
         return Ok(new_empty_array(array.data_type().clone()));
     }
     if false_count == 0 {
-        assert_eq!(array.len(), filter.len());
+        assert_eq!(array.len(), mask.len());
         return Ok(array.to_boxed());
     }
 
-    use crate::datatypes::PhysicalType::*;
+    use arrow::datatypes::PhysicalType::*;
     match array.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array.as_any().downcast_ref().unwrap();
-            Ok(Box::new(filter_primitive::<$T>(array, filter)))
+            Ok(Box::new(filter_primitive::<$T>(array, mask)))
         }),
         BinaryView => {
-            let iter = SlicesIterator::new(filter.values());
+            let iter = SlicesIterator::new(mask.values());
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             let mut mutable =
                 growable::GrowableBinaryViewArray::new(vec![array], false, iter.slots());
@@ -289,7 +288,7 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn 
             unreachable!()
         },
         _ => {
-            let iter = SlicesIterator::new(filter.values());
+            let iter = SlicesIterator::new(mask.values());
             let mut mutable = make_growable(&[array], false, iter.slots());
             iter.for_each(|(start, len)| mutable.extend(0, start, len));
             Ok(mutable.as_box())

@@ -139,7 +139,6 @@ compute_boolean = []
 compute_boolean_kleene = []
 compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
-compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
 compute_take = []
@@ -152,7 +151,6 @@ compute = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_filter",
   "compute_hash",
   "compute_if_then_else",
   "compute_take",
