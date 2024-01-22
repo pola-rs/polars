@@ -26,7 +26,9 @@ pub fn concatenate_owned_unchecked(arrays: &[ArrayRef]) -> PolarsResult<ArrayRef
     let mut mutable = make_growable(&arrays_ref, false, capacity);
 
     for (i, len) in lengths.iter().enumerate() {
-        mutable.extend(i, 0, *len)
+        // SAFETY:
+        // len is within bounds
+        unsafe { mutable.extend(i, 0, *len) }
     }
 
     Ok(mutable.as_box())

@@ -18,7 +18,6 @@
 //! Defines take kernel for [`Array`]
 
 use crate::array::{new_empty_array, Array, NullArray, PrimitiveArray};
-use crate::datatypes::ArrowDataType;
 use crate::types::Index;
 
 mod binary;
@@ -31,106 +30,57 @@ mod primitive;
 mod structure;
 mod utf8;
 
-use polars_error::PolarsResult;
-
 use crate::{match_integer_type, with_match_primitive_type};
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
-pub fn take<O: Index>(
+/// # Safety
+/// Doesn't do bound checks
+pub unsafe fn take_unchecked<O: Index>(
     values: &dyn Array,
     indices: &PrimitiveArray<O>,
-) -> PolarsResult<Box<dyn Array>> {
+) -> Box<dyn Array> {
     if indices.len() == 0 {
-        return Ok(new_empty_array(values.data_type().clone()));
+        return new_empty_array(values.data_type().clone());
     }
 
     use crate::datatypes::PhysicalType::*;
     match values.data_type().to_physical_type() {
-        Null => Ok(Box::new(NullArray::new(
-            values.data_type().clone(),
-            indices.len(),
-        ))),
+        Null => Box::new(NullArray::new(values.data_type().clone(), indices.len())),
         Boolean => {
             let values = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(boolean::take::<O>(values, indices)))
+            Box::new(boolean::take_unchecked::<O>(values, indices))
         },
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let values = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(primitive::take::<$T, _>(&values, indices)))
+            Box::new(primitive::take_unchecked::<$T, _>(&values, indices))
         }),
         LargeUtf8 => {
             let values = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(utf8::take::<i64, _>(values, indices)))
+            Box::new(utf8::take_unchecked::<i64, _>(values, indices))
         },
         LargeBinary => {
             let values = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(binary::take::<i64, _>(values, indices)))
+            Box::new(binary::take_unchecked::<i64, _>(values, indices))
         },
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 let values = values.as_any().downcast_ref().unwrap();
-                Ok(Box::new(dict::take::<$T, _>(&values, indices)))
+                Box::new(dict::take_unchecked::<$T, _>(&values, indices))
             })
         },
         Struct => {
             let array = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(structure::take::<_>(array, indices)?))
+            structure::take_unchecked::<_>(array, indices).boxed()
         },
         LargeList => {
             let array = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(list::take::<i64, O>(array, indices)))
+            Box::new(list::take_unchecked::<i64, O>(array, indices))
         },
         FixedSizeList => {
             let array = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(fixed_size_list::take::<O>(array, indices)))
+            Box::new(fixed_size_list::take_unchecked::<O>(array, indices))
         },
         t => unimplemented!("Take not supported for data type {:?}", t),
     }
-}
-
-/// Checks if an array of type `datatype` can perform take operation
-///
-/// # Examples
-/// ```
-/// use polars_arrow::compute::take::can_take;
-/// use polars_arrow::datatypes::{ArrowDataType};
-///
-/// let data_type = ArrowDataType::Int8;
-/// assert_eq!(can_take(&data_type), true);
-/// ```
-pub fn can_take(data_type: &ArrowDataType) -> bool {
-    matches!(
-        data_type,
-        ArrowDataType::Null
-            | ArrowDataType::Boolean
-            | ArrowDataType::Int8
-            | ArrowDataType::Int16
-            | ArrowDataType::Int32
-            | ArrowDataType::Date32
-            | ArrowDataType::Time32(_)
-            | ArrowDataType::Interval(_)
-            | ArrowDataType::Int64
-            | ArrowDataType::Date64
-            | ArrowDataType::Time64(_)
-            | ArrowDataType::Duration(_)
-            | ArrowDataType::Timestamp(_, _)
-            | ArrowDataType::UInt8
-            | ArrowDataType::UInt16
-            | ArrowDataType::UInt32
-            | ArrowDataType::UInt64
-            | ArrowDataType::Float16
-            | ArrowDataType::Float32
-            | ArrowDataType::Float64
-            | ArrowDataType::Decimal(_, _)
-            | ArrowDataType::Utf8
-            | ArrowDataType::LargeUtf8
-            | ArrowDataType::Binary
-            | ArrowDataType::LargeBinary
-            | ArrowDataType::Struct(_)
-            | ArrowDataType::List(_)
-            | ArrowDataType::LargeList(_)
-            | ArrowDataType::FixedSizeList(_, _)
-            | ArrowDataType::Dictionary(..)
-    )
 }

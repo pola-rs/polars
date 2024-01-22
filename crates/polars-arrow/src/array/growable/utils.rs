@@ -1,18 +1,20 @@
+use polars_utils::slice::GetSaferUnchecked;
+
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 use crate::offset::Offset;
 
 #[inline]
-pub(super) fn extend_offset_values<O: Offset>(
+pub(super) unsafe fn extend_offset_values<O: Offset>(
     buffer: &mut Vec<u8>,
     offsets: &[O],
     values: &[u8],
     start: usize,
     len: usize,
 ) {
-    let start_values = offsets[start].to_usize();
-    let end_values = offsets[start + len].to_usize();
-    let new_values = &values[start_values..end_values];
+    let start_values = offsets.get_unchecked_release(start).to_usize();
+    let end_values = offsets.get_unchecked_release(start + len).to_usize();
+    let new_values = &values.get_unchecked_release(start_values..end_values);
     buffer.extend_from_slice(new_values);
 }
 
