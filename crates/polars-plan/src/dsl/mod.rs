@@ -1608,7 +1608,8 @@ impl Expr {
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
     pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
-        self.apply_private(FunctionExpr::SetSortedFlag(sorted))
+        // This is `map`. If a column is sorted. Chunks of that column are also sorted.
+        self.map_private(FunctionExpr::SetSortedFlag(sorted))
     }
 
     #[cfg(feature = "row_hash")]
