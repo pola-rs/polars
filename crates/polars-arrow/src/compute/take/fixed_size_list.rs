@@ -44,7 +44,7 @@ pub fn take<O: Index>(
 
         for index in 0..indices.len() {
             if validity.get_bit(index) {
-                growable.extend(index, 0, 1);
+                unsafe { growable.extend(index, 0, 1) };
             } else {
                 growable.extend_validity(1)
             }
@@ -55,7 +55,7 @@ pub fn take<O: Index>(
         let mut growable: GrowableFixedSizeList =
             GrowableFixedSizeList::new(arrays, false, capacity);
         for index in 0..indices.len() {
-            growable.extend(index, 0, 1);
+            unsafe { growable.extend(index, 0, 1) };
         }
 
         growable.into()

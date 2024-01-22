@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use polars_utils::slice::GetSaferUnchecked;
 
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
@@ -6,7 +7,7 @@ use crate::array::{Array, ListArray};
 use crate::bitmap::MutableBitmap;
 use crate::offset::{Offset, Offsets};
 
-fn extend_offset_values<O: Offset>(
+unsafe fn extend_offset_values<O: Offset>(
     growable: &mut GrowableList<'_, O>,
     index: usize,
     start: usize,
@@ -20,8 +21,8 @@ fn extend_offset_values<O: Offset>(
         .try_extend_from_slice(offsets, start, len)
         .unwrap();
 
-    let end = offsets.buffer()[start + len].to_usize();
-    let start = offsets.buffer()[start].to_usize();
+    let end = offsets.buffer().get_unchecked_release(start + len).to_usize();
+    let start = offsets.buffer().get_unchecked_release(start).to_usize();
     let len = end - start;
     growable.values.extend(index, start, len);
 }
@@ -74,8 +75,8 @@ impl<'a, O: Offset> GrowableList<'a, O> {
 }
 
 impl<'a, O: Offset> Growable<'a> for GrowableList<'a, O> {
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let array = self.arrays[index];
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
+        let array = *self.arrays.get_unchecked_release(index);
         extend_validity(&mut self.validity, array, start, len);
         extend_offset_values::<O>(self, index, start, len);
     }
