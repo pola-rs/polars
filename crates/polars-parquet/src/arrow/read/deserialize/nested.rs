@@ -562,7 +562,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
         LargeUtf8 | LargeBinary => primitive(binary::NestedDictIter::<K, i64, _>::new(
             iter, init, data_type, num_rows, chunk_size,
         )),
-        Utf8View => primitive(binview::NestedDictIter::<K, _>::new(
+        Utf8View | BinaryView => primitive(binview::NestedDictIter::<K, _>::new(
             iter, init, data_type, num_rows, chunk_size,
         )),
         FixedSizeBinary(_) => primitive(fixed_size_binary::NestedDictIter::<K, _>::new(

@@ -64,6 +64,7 @@ fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
 
     match data_type.to_physical_type() {
         PhysicalType::Utf8View => data.freeze().to_utf8view().unwrap().boxed(),
+        PhysicalType::BinaryView => data.freeze().boxed(),
         _ => unreachable!(),
     }
 }
