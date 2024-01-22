@@ -24,7 +24,7 @@ unsafe fn nonnull_filter_impl<I>(
 where
     I: BitChunkIterExact<u64>,
 {
-    // TOOO! we might use ChunksExact here if offset = 0.
+    // TODO! we might use ChunksExact here if offset = 0.
     let mut chunks = values.chunks::<u64>();
     let mut new = MutableBitmap::with_capacity(filter_count);
 
