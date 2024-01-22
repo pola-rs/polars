@@ -116,12 +116,10 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
     }
 
     #[inline]
-    pub(crate) unsafe fn extend_unchecked_no_buffers(
-        &mut self,
-        index: usize,
-        start: usize,
-        len: usize,
-    ) {
+    /// Ignores the buffers and doesn't update the view. This is only correct in a filter.
+    /// # Safety
+    /// doesn't check bounds
+    pub unsafe fn extend_unchecked_no_buffers(&mut self, index: usize, start: usize, len: usize) {
         let array = *self.arrays.get_unchecked(index);
 
         extend_validity(&mut self.validity, array, start, len);
