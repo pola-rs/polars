@@ -28,7 +28,7 @@ Dash is the original low-code framework for rapidly building data apps in Python
 
 #### [Seaborn](https://seaborn.pydata.org/)
 
-Seaborn is a Python data visualization library based on matplotlib. It provides a high-level interface for drawing attractive and informative statistical graphics.
+Seaborn is a Python data visualization library based on Matplotlib. It provides a high-level interface for drawing attractive and informative statistical graphics.
 
 ### Machine Learning
 
@@ -52,9 +52,13 @@ Read how to use Delta Lake with Polars [at Delta Lake](https://delta-io.github.i
 
 ### Other
 
-#### [Great Tables]()
+#### [Great Tables](https://posit-dev.github.io/great-tables/articles/intro.html)
 
 With Great Tables anyone can make wonderful-looking tables in Python. Here is a [blog post](https://posit-dev.github.io/great-tables/blog/polars-styling/) on how to use Great Tables with Polars.
+
+#### [LanceDB](https://lancedb.com/)
+
+LanceDB is a developer-friendly, serverless vector database for AI applications. They have added a direct integration with Polars. LanceDB can ingest Polars dataframes, return results as polars dataframes, and export the entire table as a polars lazyframe. Read more about in their blog [LanceDB + Polars](https://blog.lancedb.com/lancedb-polars-2d5eb32a8aa3)
 
 #### [Mage](https://www.mage.ai)
 
