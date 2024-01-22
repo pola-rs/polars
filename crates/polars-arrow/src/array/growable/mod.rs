@@ -8,8 +8,6 @@ use crate::datatypes::*;
 
 mod binary;
 pub use binary::GrowableBinary;
-mod union;
-pub use union::GrowableUnion;
 mod boolean;
 pub use boolean::GrowableBoolean;
 mod fixed_binary;
@@ -20,8 +18,6 @@ mod primitive;
 pub use primitive::GrowablePrimitive;
 mod list;
 pub use list::GrowableList;
-mod map;
-pub use map::GrowableMap;
 mod structure;
 pub use structure::GrowableStruct;
 mod fixed_size_list;
@@ -41,11 +37,13 @@ mod utils;
 pub trait Growable<'a> {
     /// Extends this [`Growable`] with elements from the bounded [`Array`] at index `index` from
     /// a slice starting at `start` and length `len`.
-    /// # Panic
-    /// This function panics if the range is out of bounds, i.e. if `start + len >= array.len()`.
-    fn extend(&mut self, index: usize, start: usize, len: usize);
+    /// # Safety
+    /// Doesn't do any bound checks
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize);
 
     /// Extends this [`Growable`] with null elements, disregarding the bound arrays
+    /// # Safety
+    /// Doesn't do any bound checks
     fn extend_validity(&mut self, additional: usize);
 
     /// The current length of the [`Growable`].
@@ -155,13 +153,6 @@ pub fn make_growable<'a>(
                 ))
             })
         },
-        Map => dyn_growable!(map::GrowableMap, arrays, use_validity, capacity),
-        Union => {
-            let arrays = arrays
-                .iter()
-                .map(|array| array.as_any().downcast_ref().unwrap())
-                .collect::<Vec<_>>();
-            Box::new(union::GrowableUnion::new(arrays, capacity))
-        },
+        Union | Map => unimplemented!(),
     }
 }

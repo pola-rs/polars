@@ -137,8 +137,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
 }
 
 impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        assert!(index < self.arrays.len());
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
         unsafe { self.extend_unchecked(index, start, len) }
     }
 

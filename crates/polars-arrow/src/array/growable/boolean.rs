@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, BooleanArray};
@@ -48,8 +50,8 @@ impl<'a> GrowableBoolean<'a> {
 }
 
 impl<'a> Growable<'a> for GrowableBoolean<'a> {
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let array = self.arrays[index];
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
+        let array = *self.arrays.get_unchecked_release(index);
         extend_validity(&mut self.validity, array, start, len);
 
         let values = array.values();
