@@ -389,6 +389,10 @@ pub fn list_set_operation(
         b = b.rechunk();
     }
 
+    // We will OOB in the kernel otherwise.
+    a.prune_empty_chunks();
+    b.prune_empty_chunks();
+
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {
         arity::try_binary_unchecked_same_type(
