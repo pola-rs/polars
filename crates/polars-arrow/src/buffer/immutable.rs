@@ -244,6 +244,15 @@ impl<T> Buffer<T> {
     }
 }
 
+impl<T: Clone> Buffer<T> {
+    pub fn make_mut(self) -> Vec<T> {
+        match self.into_mut() {
+            Either::Right(v) => v,
+            Either::Left(same) => same.as_slice().to_vec(),
+        }
+    }
+}
+
 impl<T: Zero + Copy> Buffer<T> {
     pub fn zeroed(len: usize) -> Self {
         vec![T::zero(); len].into()

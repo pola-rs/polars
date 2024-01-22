@@ -334,6 +334,10 @@ impl MutableBitmap {
     pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
     }
+
+    pub fn freeze(self) -> Bitmap {
+        self.into()
+    }
 }
 
 impl From<MutableBitmap> for Bitmap {

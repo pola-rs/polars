@@ -1,7 +1,11 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
 use polars_lazy::dsl::Expr;
+#[cfg(feature = "list_eval")]
+use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_plan::dsl::{coalesce, concat_str, len, when};
 use polars_plan::logical_plan::LiteralValue;
+#[cfg(feature = "list_eval")]
+use polars_plan::prelude::col;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{lit, StrptimeOptions};
 use sqlparser::ast::{
@@ -520,7 +524,8 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'array_to_string' function
     /// Takes all elements of the array and joins them into one string.
     /// ```sql
-    /// SELECT ARRAY_TO_STRING(column_1, ', ') from df;
+    /// SELECT ARRAY_TO_STRING(column_1, ',') from df;
+    /// SELECT ARRAY_TO_STRING(column_1, ',', 'n/a') from df;
     /// ```
     ArrayToString,
     /// SQL 'array_get' function
@@ -839,14 +844,14 @@ impl SQLFunctionVisitor<'_> {
             Concat => if function.args.is_empty() {
                 polars_bail!(InvalidOperation: "Invalid number of arguments for Concat: 0");
             } else {
-                self.visit_variadic(|exprs: &[Expr]| concat_str(exprs, ""))
+                self.visit_variadic(|exprs: &[Expr]| concat_str(exprs, "", true))
             },
             ConcatWS => if function.args.len() < 2 {
                 polars_bail!(InvalidOperation: "Invalid number of arguments for ConcatWS: {}", function.args.len());
             } else {
                 self.try_visit_variadic(|exprs: &[Expr]| {
                     match &exprs[0] {
-                        Expr::Literal(LiteralValue::String(s)) => Ok(concat_str(&exprs[1..], s)),
+                        Expr::Literal(LiteralValue::String(s)) => Ok(concat_str(&exprs[1..], s, true)),
                         _ => polars_bail!(InvalidOperation: "ConcatWS 'separator' must be a literal string; found {:?}", exprs[0]),
                     }
                 })
@@ -969,9 +974,23 @@ impl SQLFunctionVisitor<'_> {
             ArrayMin => self.visit_unary(|e| e.list().min()),
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
-            ArrayToString => self.try_visit_binary(|e, s| {
-                Ok(e.list().join(s))
-            }),
+            ArrayToString => match function.args.len() {
+                2 => self.try_visit_binary(|e, sep| { Ok(e.list().join(sep, true)) }),
+                #[cfg(feature = "list_eval")]
+                3 => self.try_visit_ternary(|e, sep, null_value| {
+                    match null_value {
+                        Expr::Literal(LiteralValue::String(v)) => {
+                            Ok(if v.is_empty() {
+                                e.list().join(sep, true)
+                            } else {
+                                e.list().eval(col("").fill_null(lit(v)), false).list().join(sep, false)
+                            })
+                        },
+                        _ => polars_bail!(InvalidOperation: "Invalid null value for ArrayToString: {}", function.args[2]),
+                    }
+                }),
+                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for ArrayToString: {}", function.args.len()),
+            }
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
             Udf(func_name) => self.visit_udf(&func_name)
@@ -1169,10 +1188,7 @@ impl SQLFunctionVisitor<'_> {
                         .iter()
                         .map(|o| {
                             let e = parse_sql_expr(&o.expr, self.ctx)?;
-                            match o.asc {
-                                Some(b) => Ok(e.sort(!b)),
-                                None => Ok(e),
-                            }
+                            Ok(o.asc.map_or(e.clone(), |b| e.sort(!b)))
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
                     expr.over(exprs)
@@ -1233,6 +1249,21 @@ impl FromSQLExpr for f64 {
                 _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
             },
             _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),
+        }
+    }
+}
+
+impl FromSQLExpr for bool {
+    fn from_sql_expr(expr: &SQLExpr, _ctx: &mut SQLContext) -> PolarsResult<Self>
+    where
+        Self: Sized,
+    {
+        match expr {
+            SQLExpr::Value(v) => match v {
+                SQLValue::Boolean(v) => Ok(*v),
+                _ => polars_bail!(ComputeError: "can't parse boolean {:?}", v),
+            },
+            _ => polars_bail!(ComputeError: "can't parse boolean {:?}", expr),
         }
     }
 }

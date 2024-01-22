@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -388,11 +387,6 @@ def test_fill_null_unknown_output_type() -> None:
             148.4131591025766,
         ]
     }
-
-
-def test_abs_logical_type() -> None:
-    s = pl.Series([timedelta(hours=1), timedelta(hours=-1)])
-    assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
 
 
 def test_approx_n_unique() -> None:

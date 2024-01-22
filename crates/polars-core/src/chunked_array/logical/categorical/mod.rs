@@ -125,7 +125,7 @@ impl CategoricalChunked {
     }
 
     // Convert to fixed enum. In case a value is not in the categories return Error
-    pub fn to_enum(&self, categories: &Utf8Array<i64>, hash: u128) -> PolarsResult<Self> {
+    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> PolarsResult<Self> {
         // Fast paths
         match self.get_rev_map().as_ref() {
             RevMapping::Enum(_, cur_hash) if hash == *cur_hash => return Ok(self.clone()),
@@ -306,8 +306,7 @@ impl LogicalType for CategoricalChunked {
             DataType::String => {
                 let mapping = &**self.get_rev_map();
 
-                let mut builder =
-                    StringChunkedBuilder::new(self.physical.name(), self.len(), self.len() * 5);
+                let mut builder = StringChunkedBuilder::new(self.physical.name(), self.len());
 
                 let f = |idx: u32| mapping.get(idx);
 
@@ -411,8 +410,8 @@ mod test {
         let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
-        let arr: DictionaryArray<u32> = (ca).into();
-        let s = Series::try_from(("foo", Box::new(arr) as ArrayRef))?;
+        let arr = ca.to_arrow(true, false);
+        let s = Series::try_from(("foo", arr))?;
         assert!(matches!(s.dtype(), &DataType::Categorical(_, _)));
         assert_eq!(s.null_count(), 1);
         assert_eq!(s.len(), 6);

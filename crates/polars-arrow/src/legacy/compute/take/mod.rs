@@ -3,13 +3,14 @@ mod boolean;
 #[cfg(feature = "dtype-array")]
 mod fixed_size_list;
 
+use polars_utils::slice::GetSaferUnchecked;
+
 use crate::array::*;
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::buffer::Buffer;
-use crate::datatypes::{ArrowDataType, PhysicalType};
+use crate::datatypes::PhysicalType;
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::prelude::*;
-use crate::legacy::trusted_len::{TrustedLen, TrustedLenPush};
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
 use crate::types::NativeType;
@@ -25,16 +26,8 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
     match arr.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let arr: &PrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
-            if arr.null_count() > 0 {
-                take_primitive_unchecked::<$T>(arr, idx)
-            } else {
-                take_no_null_primitive_unchecked::<$T>(arr, idx)
-            }
+            take_primitive_unchecked::<$T>(arr, idx).boxed()
         }),
-        LargeUtf8 => {
-            let arr = arr.as_any().downcast_ref().unwrap();
-            take_utf8_unchecked(arr, idx)
-        },
         Boolean => {
             let arr = arr.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(arr, idx))
@@ -44,11 +37,22 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
             let arr = arr.as_any().downcast_ref().unwrap();
             Box::new(fixed_size_list::take_unchecked(arr, idx))
         },
+        BinaryView => take_binview_unchecked(arr.as_any().downcast_ref().unwrap(), idx).boxed(),
+        Utf8View => {
+            let arr: &Utf8ViewArray = arr.as_any().downcast_ref().unwrap();
+            take_binview_unchecked(&arr.to_binview(), idx)
+                .to_utf8view_unchecked()
+                .boxed()
+        },
+        Struct => {
+            let array = arr.as_any().downcast_ref().unwrap();
+            take_struct_unchecked(array, idx).boxed()
+        },
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
         _ => {
-            use crate::compute::take::take;
-            take(arr, idx).unwrap()
+            use crate::compute::take::take_unchecked;
+            take_unchecked(arr, idx)
         },
         #[cfg(not(feature = "compute"))]
         _ => {
@@ -57,637 +61,117 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
     }
 }
 
+unsafe fn take_validity_unchecked(validity: Option<&Bitmap>, indices: &IdxArr) -> Option<Bitmap> {
+    let indices_validity = indices.validity();
+    match (validity, indices_validity) {
+        (None, _) => indices_validity.cloned(),
+        (Some(validity), None) => {
+            let iter = indices
+                .values()
+                .iter()
+                .map(|index| validity.get_bit_unchecked(*index as usize));
+            MutableBitmap::from_trusted_len_iter(iter).into()
+        },
+        (Some(validity), _) => {
+            let iter = indices.iter().map(|x| match x {
+                Some(index) => validity.get_bit_unchecked(*index as usize),
+                None => false,
+            });
+            MutableBitmap::from_trusted_len_iter(iter).into()
+        },
+    }
+}
+
+/// # Safety
+/// No bound checks
+pub unsafe fn take_struct_unchecked(array: &StructArray, indices: &IdxArr) -> StructArray {
+    let values: Vec<Box<dyn Array>> = array
+        .values()
+        .iter()
+        .map(|a| take_unchecked(a.as_ref(), indices))
+        .collect();
+    let validity = take_validity_unchecked(array.validity(), indices);
+    StructArray::new(array.data_type().clone(), values, validity)
+}
+
+/// # Safety
+/// No bound checks
+unsafe fn take_binview_unchecked(arr: &BinaryViewArray, indices: &IdxArr) -> BinaryViewArray {
+    let views = arr.views().clone();
+    // PrimitiveArray<u128> is not supported, so we go via i128
+    let views = std::mem::transmute::<Buffer<u128>, Buffer<i128>>(views);
+    let views = PrimitiveArray::from_data_default(views, arr.validity().cloned());
+    let taken_views = take_primitive_unchecked(&views, indices);
+    let taken_views_values = taken_views.values().clone();
+    let taken_views_values = std::mem::transmute::<Buffer<i128>, Buffer<u128>>(taken_views_values);
+    BinaryViewArray::new_unchecked_unknown_md(
+        arr.data_type().clone(),
+        taken_views_values,
+        arr.data_buffers().clone(),
+        taken_views.validity().cloned(),
+        Some(arr.total_buffer_len()),
+    )
+    .maybe_gc()
+}
+
 /// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
 /// # Safety
 /// caller must ensure indices are in bounds
 pub unsafe fn take_primitive_unchecked<T: NativeType>(
     arr: &PrimitiveArray<T>,
     indices: &IdxArr,
-) -> Box<PrimitiveArray<T>> {
+) -> PrimitiveArray<T> {
     let array_values = arr.values().as_slice();
     let index_values = indices.values().as_slice();
-    let validity_values = arr.validity().expect("should have nulls");
 
     // first take the values, these are always needed
     let values: Vec<T> = index_values
         .iter()
-        .map(|idx| {
-            debug_assert!((*idx as usize) < array_values.len());
-            *array_values.get_unchecked(*idx as usize)
-        })
+        .map(|idx| *array_values.get_unchecked_release(*idx as usize))
         .collect_trusted();
 
-    // the validity buffer we will fill with all valid. And we unset the ones that are null
-    // in later checks
-    // this is in the assumption that most values will be valid.
-    // Maybe we could add another branch based on the null count
-    let mut validity = MutableBitmap::with_capacity(indices.len());
-    validity.extend_constant(indices.len(), true);
-    let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+    let arr = if arr.null_count() > 0 {
+        let validity_values = arr.validity().unwrap();
+        // the validity buffer we will fill with all valid. And we unset the ones that are null
+        // in later checks
+        // this is in the assumption that most values will be valid.
+        // Maybe we could add another branch based on the null count
+        let mut validity = MutableBitmap::with_capacity(indices.len());
+        validity.extend_constant(indices.len(), true);
+        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
 
-    if let Some(validity_indices) = indices.validity().as_ref() {
-        index_values.iter().enumerate().for_each(|(i, idx)| {
-            // i is iteration count
-            // idx is the index that we take from the values array.
-            let idx = *idx as usize;
-            if !validity_indices.get_bit_unchecked(i) || !validity_values.get_bit_unchecked(idx) {
-                unset_bit_raw(validity_ptr, i);
-            }
-        });
+        if let Some(validity_indices) = indices.validity().as_ref() {
+            index_values.iter().enumerate().for_each(|(i, idx)| {
+                // i is iteration count
+                // idx is the index that we take from the values array.
+                let idx = *idx as usize;
+                if !validity_indices.get_bit_unchecked(i) || !validity_values.get_bit_unchecked(idx)
+                {
+                    unset_bit_raw(validity_ptr, i);
+                }
+            });
+        } else {
+            index_values.iter().enumerate().for_each(|(i, idx)| {
+                let idx = *idx as usize;
+                if !validity_values.get_bit_unchecked(idx) {
+                    unset_bit_raw(validity_ptr, i);
+                }
+            });
+        };
+        PrimitiveArray::new_unchecked(
+            arr.data_type().clone(),
+            values.into(),
+            Some(validity.into()),
+        )
     } else {
-        index_values.iter().enumerate().for_each(|(i, idx)| {
-            let idx = *idx as usize;
-            if !validity_values.get_bit_unchecked(idx) {
-                unset_bit_raw(validity_ptr, i);
-            }
-        });
-    };
-    let arr = PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), Some(validity.into()));
-
-    Box::new(arr)
-}
-
-/// Take kernel for single chunk without nulls and arrow array as index.
-/// # Safety
-/// caller must ensure indices are in bounds
-pub unsafe fn take_no_null_primitive_unchecked<T: NativeType>(
-    arr: &PrimitiveArray<T>,
-    indices: &IdxArr,
-) -> Box<PrimitiveArray<T>> {
-    debug_assert!(arr.null_count() == 0);
-    let array_values = arr.values().as_slice();
-    let index_values = indices.values().as_slice();
-
-    let iter = index_values.iter().map(|idx| {
-        debug_assert!((*idx as usize) < array_values.len());
-        *array_values.get_unchecked(*idx as usize)
-    });
-
-    let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
-    let validity = indices.validity().cloned();
-    Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), values, validity))
-}
-
-/// Take kernel for single chunk without nulls and an iterator as index.
-///
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_primitive_iter_unchecked<T: NativeType, I: TrustedLen<Item = usize>>(
-    arr: &PrimitiveArray<T>,
-    indices: I,
-) -> Box<PrimitiveArray<T>> {
-    debug_assert!(!arr.has_validity());
-    let array_values = arr.values().as_slice();
-
-    let iter = indices.into_iter().map(|idx| {
-        debug_assert!((idx) < array_values.len());
-        *array_values.get_unchecked(idx)
-    });
-
-    let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
-    Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), values, None))
-}
-
-/// Take kernel for a single chunk with null values and an iterator as index.
-///
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_primitive_iter_unchecked<T: NativeType, I: IntoIterator<Item = usize>>(
-    arr: &PrimitiveArray<T>,
-    indices: I,
-) -> Box<PrimitiveArray<T>> {
-    let array_values = arr.values().as_slice();
-    let validity = arr.validity().expect("should have nulls");
-
-    let iter = indices.into_iter().map(|idx| {
-        if validity.get_bit_unchecked(idx) {
-            Some(*array_values.get_unchecked(idx))
-        } else {
-            None
-        }
-    });
-
-    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter);
-    Box::new(arr)
-}
-
-/// Take kernel for a single chunk without nulls and an iterator that can produce None values.
-/// This is used in join operations.
-///
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_primitive_opt_iter_unchecked<
-    T: NativeType,
-    I: IntoIterator<Item = Option<usize>>,
->(
-    arr: &PrimitiveArray<T>,
-    indices: I,
-) -> Box<PrimitiveArray<T>> {
-    let array_values = arr.values().as_slice();
-
-    let iter = indices.into_iter().map(|opt_idx| {
-        opt_idx.map(|idx| {
-            debug_assert!(idx < array_values.len());
-            *array_values.get_unchecked(idx)
-        })
-    });
-    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::PRIMITIVE.into());
-
-    Box::new(arr)
-}
-
-/// Take kernel for a single chunk and an iterator that can produce None values.
-/// This is used in join operations.
-///
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_primitive_opt_iter_unchecked<
-    T: NativeType,
-    I: IntoIterator<Item = Option<usize>>,
->(
-    arr: &PrimitiveArray<T>,
-    indices: I,
-) -> Box<PrimitiveArray<T>> {
-    let array_values = arr.values().as_slice();
-    let validity = arr.validity().expect("should have nulls");
-
-    let iter = indices.into_iter().map(|opt_idx| {
-        opt_idx.and_then(|idx| {
-            if validity.get_bit_unchecked(idx) {
-                debug_assert!(idx < array_values.len());
-                Some(*array_values.get_unchecked(idx))
-            } else {
-                None
-            }
-        })
-    });
-    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::PRIMITIVE.into());
-
-    Box::new(arr)
-}
-
-/// Take kernel for single chunk without nulls and an iterator as index.
-///
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
-    arr: &BooleanArray,
-    indices: I,
-) -> Box<BooleanArray> {
-    debug_assert!(!arr.has_validity());
-    let values = arr.values();
-
-    let iter = indices.into_iter().map(|idx| {
-        debug_assert!(idx < values.len());
-        values.get_bit_unchecked(idx)
-    });
-    let mutable = MutableBitmap::from_trusted_len_iter_unchecked(iter);
-    Box::new(BooleanArray::new(
-        ArrowDataType::Boolean,
-        mutable.into(),
-        None,
-    ))
-}
-
-/// Take kernel for single chunk and an iterator as index.
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
-    arr: &BooleanArray,
-    indices: I,
-) -> Box<BooleanArray> {
-    let validity = arr.validity().expect("should have nulls");
-
-    let iter = indices.into_iter().map(|idx| {
-        if validity.get_bit_unchecked(idx) {
-            Some(arr.value_unchecked(idx))
-        } else {
-            None
-        }
-    });
-
-    Box::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// Take kernel for single chunk and an iterator as index.
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_bool_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
-    arr: &BooleanArray,
-    indices: I,
-) -> Box<BooleanArray> {
-    let validity = arr.validity().expect("should have nulls");
-    let iter = indices.into_iter().map(|opt_idx| {
-        opt_idx.and_then(|idx| {
-            if validity.get_bit_unchecked(idx) {
-                Some(arr.value_unchecked(idx))
-            } else {
-                None
-            }
-        })
-    });
-
-    Box::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// Take kernel for single chunk without null values and an iterator as index that may produce None values.
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_bool_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
-    arr: &BooleanArray,
-    indices: I,
-) -> Box<BooleanArray> {
-    let iter = indices
-        .into_iter()
-        .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
-
-    Box::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
-    arr: &LargeStringArray,
-    indices: I,
-) -> Box<LargeStringArray> {
-    let iter = indices.into_iter().map(|idx| {
-        debug_assert!(idx < arr.len());
-        arr.value_unchecked(idx)
-    });
-    Box::new(MutableUtf8Array::<i64>::from_trusted_len_values_iter_unchecked(iter).into())
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_binary_iter_unchecked<I: IntoIterator<Item = usize>>(
-    arr: &LargeBinaryArray,
-    indices: I,
-) -> Box<LargeBinaryArray> {
-    let iter = indices.into_iter().map(|idx| {
-        debug_assert!(idx < arr.len());
-        arr.value_unchecked(idx)
-    });
-    Box::new(MutableBinaryArray::<i64>::from_trusted_len_values_iter_unchecked(iter).into())
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
-    arr: &LargeStringArray,
-    indices: I,
-) -> Box<LargeStringArray> {
-    let validity = arr.validity().expect("should have nulls");
-    let iter = indices.into_iter().map(|idx| {
-        debug_assert!(idx < arr.len());
-        if validity.get_bit_unchecked(idx) {
-            Some(arr.value_unchecked(idx))
-        } else {
-            None
-        }
-    });
-
-    Box::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_binary_iter_unchecked<I: IntoIterator<Item = usize>>(
-    arr: &LargeBinaryArray,
-    indices: I,
-) -> Box<LargeBinaryArray> {
-    let validity = arr.validity().expect("should have nulls");
-    let iter = indices.into_iter().map(|idx| {
-        debug_assert!(idx < arr.len());
-        if validity.get_bit_unchecked(idx) {
-            Some(arr.value_unchecked(idx))
-        } else {
-            None
-        }
-    });
-
-    Box::new(LargeBinaryArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
-    arr: &LargeStringArray,
-    indices: I,
-) -> Box<LargeStringArray> {
-    let iter = indices
-        .into_iter()
-        .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
-
-    Box::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_no_null_binary_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
-    arr: &LargeBinaryArray,
-    indices: I,
-) -> Box<LargeBinaryArray> {
-    let iter = indices
-        .into_iter()
-        .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
-
-    Box::new(LargeBinaryArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
-    arr: &LargeStringArray,
-    indices: I,
-) -> Box<LargeStringArray> {
-    let validity = arr.validity().expect("should have nulls");
-    let iter = indices.into_iter().map(|opt_idx| {
-        opt_idx.and_then(|idx| {
-            if validity.get_bit_unchecked(idx) {
-                Some(arr.value_unchecked(idx))
-            } else {
-                None
-            }
-        })
-    });
-    Box::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// # Safety
-/// - no bounds checks
-/// - iterator must be TrustedLen
-#[inline]
-pub unsafe fn take_binary_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
-    arr: &LargeBinaryArray,
-    indices: I,
-) -> Box<LargeBinaryArray> {
-    let validity = arr.validity().expect("should have nulls");
-    let iter = indices.into_iter().map(|opt_idx| {
-        opt_idx.and_then(|idx| {
-            if validity.get_bit_unchecked(idx) {
-                Some(arr.value_unchecked(idx))
-            } else {
-                None
-            }
-        })
-    });
-    Box::new(LargeBinaryArray::from_trusted_len_iter_unchecked(iter))
-}
-
-/// # Safety
-/// caller must ensure indices are in bounds
-pub unsafe fn take_utf8_unchecked(
-    arr: &LargeStringArray,
-    indices: &IdxArr,
-) -> Box<LargeStringArray> {
-    let data_len = indices.len();
-
-    let mut offset_buf = vec![0; data_len + 1];
-    let offset_typed = offset_buf.as_mut_slice();
-
-    let mut length_so_far = 0;
-    offset_typed[0] = length_so_far;
-
-    let validity;
-
-    // The required size is yet unknown
-    // Allocate 2.0 times the expected size.
-    // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
-    let mut values_capacity = if arr.len() > 0 {
-        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len()
-    } else {
-        0
+        PrimitiveArray::new_unchecked(
+            arr.data_type().clone(),
+            values.into(),
+            indices.validity().cloned(),
+        )
     };
 
-    // 16 bytes per string as default alloc
-    let mut values_buf = Vec::<u8>::with_capacity(values_capacity);
-
-    // both 0 nulls
-    if !arr.has_validity() && !indices.has_validity() {
-        offset_typed
-            .iter_mut()
-            .skip(1)
-            .enumerate()
-            .for_each(|(idx, offset)| {
-                let index = indices.value_unchecked(idx) as usize;
-                let s = arr.value_unchecked(index);
-                length_so_far += s.len() as i64;
-                *offset = length_so_far;
-
-                if length_so_far as usize >= values_capacity {
-                    values_buf.reserve(values_capacity);
-                    values_capacity *= 2;
-                }
-
-                values_buf.extend_from_slice(s.as_bytes())
-            });
-        validity = None;
-    } else if !arr.has_validity() {
-        offset_typed
-            .iter_mut()
-            .skip(1)
-            .enumerate()
-            .for_each(|(idx, offset)| {
-                if indices.is_valid(idx) {
-                    let index = indices.value_unchecked(idx) as usize;
-                    let s = arr.value_unchecked(index);
-                    length_so_far += s.len() as i64;
-
-                    if length_so_far as usize >= values_capacity {
-                        values_buf.reserve(values_capacity);
-                        values_capacity *= 2;
-                    }
-
-                    values_buf.extend_from_slice(s.as_bytes())
-                }
-                *offset = length_so_far;
-            });
-        validity = indices.validity().cloned();
-    } else {
-        let mut builder = MutableUtf8Array::with_capacities(data_len, length_so_far as usize);
-        let validity_arr = arr.validity().expect("should have nulls");
-
-        if !indices.has_validity() {
-            (0..data_len).for_each(|idx| {
-                let index = indices.value_unchecked(idx) as usize;
-                builder.push(if validity_arr.get_bit_unchecked(index) {
-                    let s = arr.value_unchecked(index);
-                    Some(s)
-                } else {
-                    None
-                });
-            });
-        } else {
-            let validity_indices = indices.validity().expect("should have nulls");
-            (0..data_len).for_each(|idx| {
-                if validity_indices.get_bit_unchecked(idx) {
-                    let index = indices.value_unchecked(idx) as usize;
-
-                    if validity_arr.get_bit_unchecked(index) {
-                        let s = arr.value_unchecked(index);
-                        builder.push(Some(s));
-                    } else {
-                        builder.push_null();
-                    }
-                } else {
-                    builder.push_null();
-                }
-            });
-        }
-
-        let array: Utf8Array<i64> = builder.into();
-        return Box::new(array);
-    }
-
-    // Safety: all "values" are &str, and thus valid utf8
-    Box::new(Utf8Array::<i64>::from_data_unchecked_default(
-        offset_buf.into(),
-        values_buf.into(),
-        validity,
-    ))
-}
-
-/// # Safety
-/// caller must ensure indices are in bounds
-pub unsafe fn take_binary_unchecked(
-    arr: &LargeBinaryArray,
-    indices: &IdxArr,
-) -> Box<LargeBinaryArray> {
-    let data_len = indices.len();
-
-    let mut offset_buf = vec![0; data_len + 1];
-    let offset_typed = offset_buf.as_mut_slice();
-
-    let mut length_so_far = 0;
-    offset_typed[0] = length_so_far;
-
-    let validity;
-
-    // The required size is yet unknown
-    // Allocate 2.0 times the expected size.
-    // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
-    let mut values_capacity = if arr.len() > 0 {
-        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len()
-    } else {
-        0
-    };
-
-    // 16 bytes per string as default alloc
-    let mut values_buf = Vec::<u8>::with_capacity(values_capacity);
-
-    // both 0 nulls
-    if !arr.has_validity() && !indices.has_validity() {
-        offset_typed
-            .iter_mut()
-            .skip(1)
-            .enumerate()
-            .for_each(|(idx, offset)| {
-                let index = indices.value_unchecked(idx) as usize;
-                let s = arr.value_unchecked(index);
-                length_so_far += s.len() as i64;
-                *offset = length_so_far;
-
-                if length_so_far as usize >= values_capacity {
-                    values_buf.reserve(values_capacity);
-                    values_capacity *= 2;
-                }
-
-                values_buf.extend_from_slice(s)
-            });
-        validity = None;
-    } else if !arr.has_validity() {
-        offset_typed
-            .iter_mut()
-            .skip(1)
-            .enumerate()
-            .for_each(|(idx, offset)| {
-                if indices.is_valid(idx) {
-                    let index = indices.value_unchecked(idx) as usize;
-                    let s = arr.value_unchecked(index);
-                    length_so_far += s.len() as i64;
-
-                    if length_so_far as usize >= values_capacity {
-                        values_buf.reserve(values_capacity);
-                        values_capacity *= 2;
-                    }
-
-                    values_buf.extend_from_slice(s)
-                }
-                *offset = length_so_far;
-            });
-        validity = indices.validity().cloned();
-    } else {
-        let mut builder = MutableBinaryArray::with_capacities(data_len, length_so_far as usize);
-        let validity_arr = arr.validity().expect("should have nulls");
-
-        if !indices.has_validity() {
-            (0..data_len).for_each(|idx| {
-                let index = indices.value_unchecked(idx) as usize;
-                builder.push(if validity_arr.get_bit_unchecked(index) {
-                    let s = arr.value_unchecked(index);
-                    Some(s)
-                } else {
-                    None
-                });
-            });
-        } else {
-            let validity_indices = indices.validity().expect("should have nulls");
-            (0..data_len).for_each(|idx| {
-                if validity_indices.get_bit_unchecked(idx) {
-                    let index = indices.value_unchecked(idx) as usize;
-
-                    if validity_arr.get_bit_unchecked(index) {
-                        let s = arr.value_unchecked(index);
-                        builder.push(Some(s));
-                    } else {
-                        builder.push_null();
-                    }
-                } else {
-                    builder.push_null();
-                }
-            });
-        }
-
-        let array: BinaryArray<i64> = builder.into();
-        return Box::new(array);
-    }
-
-    // Safety: all "values" are &str, and thus valid utf8
-    Box::new(BinaryArray::<i64>::from_data_unchecked_default(
-        offset_buf.into(),
-        values_buf.into(),
-        validity,
-    ))
+    arr
 }
 
 /// Forked and adapted from arrow-rs
@@ -764,26 +248,5 @@ pub unsafe fn take_value_indices_from_list(
             IdxArr::from_data_default(values.into(), None),
             Offsets::new_unchecked(new_offsets),
         )
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_utf8_kernel() {
-        let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
-        unsafe {
-            let out = take_utf8_unchecked(&s, &IdxArr::from_slice([1, 2]));
-            assert!(out.is_null(0));
-            assert!(out.is_valid(1));
-            let out = take_utf8_unchecked(&s, &IdxArr::from(vec![None, Some(2)]));
-            assert!(out.is_null(0));
-            assert!(out.is_valid(1));
-            let out = take_utf8_unchecked(&s, &IdxArr::from(vec![None, None]));
-            assert!(out.is_null(0));
-            assert!(out.is_null(1));
-        }
     }
 }

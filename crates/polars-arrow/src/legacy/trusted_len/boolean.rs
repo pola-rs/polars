@@ -3,8 +3,9 @@ use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::default_arrays::FromData;
 use crate::legacy::bit_util::{set_bit_raw, unset_bit_raw};
-use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLen};
+use crate::legacy::trusted_len::FromIteratorReversed;
 use crate::legacy::utils::FromTrustedLenIterator;
+use crate::trusted_len::TrustedLen;
 
 impl FromTrustedLenIterator<Option<bool>> for BooleanArray {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self

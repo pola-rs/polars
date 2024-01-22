@@ -32,7 +32,7 @@ impl Serialize for DataType {
 struct Wrap<T>(T);
 
 #[cfg(feature = "dtype-categorical")]
-impl serde::Serialize for Wrap<Utf8Array<i64>> {
+impl serde::Serialize for Wrap<Utf8ViewArray> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -42,7 +42,7 @@ impl serde::Serialize for Wrap<Utf8Array<i64>> {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'de> serde::Deserialize<'de> for Wrap<Utf8Array<i64>> {
+impl<'de> serde::Deserialize<'de> for Wrap<Utf8ViewArray> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -50,7 +50,7 @@ impl<'de> serde::Deserialize<'de> for Wrap<Utf8Array<i64>> {
         struct Utf8Visitor;
 
         impl<'de> Visitor<'de> for Utf8Visitor {
-            type Value = Wrap<Utf8Array<i64>>;
+            type Value = Wrap<Utf8ViewArray>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str("Utf8Visitor string sequence.")
@@ -60,7 +60,7 @@ impl<'de> serde::Deserialize<'de> for Wrap<Utf8Array<i64>> {
             where
                 A: SeqAccess<'de>,
             {
-                let mut utf8array = MutableUtf8Array::with_capacity(seq.size_hint().unwrap_or(10));
+                let mut utf8array = MutablePlString::with_capacity(seq.size_hint().unwrap_or(10));
                 while let Some(key) = seq.next_element()? {
                     let key: Option<&str> = key;
                     utf8array.push(key)
@@ -107,7 +107,7 @@ enum SerializableDataType {
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
     #[cfg(feature = "dtype-categorical")]
-    Categorical(Option<Wrap<Utf8Array<i64>>>, CategoricalOrdering),
+    Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
     #[cfg(feature = "object")]
     Object(String),
 }

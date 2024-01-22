@@ -10,7 +10,6 @@ pub trait PolarsRound {
         Self: Sized;
 }
 
-#[cfg(feature = "dtype-datetime")]
 impl PolarsRound for DatetimeChunked {
     fn round(&self, every: Duration, offset: Duration, tz: Option<&Tz>) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
@@ -26,7 +25,6 @@ impl PolarsRound for DatetimeChunked {
     }
 }
 
-#[cfg(feature = "dtype-date")]
 impl PolarsRound for DateChunked {
     fn round(&self, every: Duration, offset: Duration, _tz: Option<&Tz>) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);

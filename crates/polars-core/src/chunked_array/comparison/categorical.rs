@@ -193,7 +193,7 @@ fn cat_str_compare_helper<'a, CompareCat, ComparePhys, CompareStringSingle, Comp
     str_compare_function: CompareString,
 ) -> PolarsResult<BooleanChunked>
 where
-    CompareStringSingle: Fn(&Utf8Array<i64>, &str) -> Bitmap,
+    CompareStringSingle: Fn(&Utf8ViewArray, &str) -> Bitmap,
     ComparePhys: Fn(&UInt32Chunked, u32) -> BooleanChunked,
     CompareCat: Fn(&CategoricalChunked, &CategoricalChunked) -> PolarsResult<BooleanChunked>,
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
@@ -273,7 +273,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::gt(s1, s2),
             UInt32Chunked::gt,
-            Utf8Array::tot_gt_kernel_broadcast,
+            Utf8ViewArray::tot_gt_kernel_broadcast,
             StringChunked::gt,
         )
     }
@@ -284,7 +284,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::gt_eq(s1, s2),
             UInt32Chunked::gt_eq,
-            Utf8Array::tot_ge_kernel_broadcast,
+            Utf8ViewArray::tot_ge_kernel_broadcast,
             StringChunked::gt_eq,
         )
     }
@@ -295,7 +295,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::lt(s1, s2),
             UInt32Chunked::lt,
-            Utf8Array::tot_lt_kernel_broadcast,
+            Utf8ViewArray::tot_lt_kernel_broadcast,
             StringChunked::lt,
         )
     }
@@ -306,7 +306,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::lt_eq(s1, s2),
             UInt32Chunked::lt_eq,
-            Utf8Array::tot_le_kernel_broadcast,
+            Utf8ViewArray::tot_le_kernel_broadcast,
             StringChunked::lt_eq,
         )
     }
@@ -348,7 +348,7 @@ fn cat_single_str_compare_helper<'a, ComparePhys, CompareStringSingle>(
     str_single_compare_function: CompareStringSingle,
 ) -> PolarsResult<BooleanChunked>
 where
-    CompareStringSingle: Fn(&Utf8Array<i64>, &str) -> Bitmap,
+    CompareStringSingle: Fn(&Utf8ViewArray, &str) -> Bitmap,
     ComparePhys: Fn(&UInt32Chunked, u32) -> BooleanChunked,
 {
     let rev_map = lhs.get_rev_map();
@@ -421,7 +421,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::gt,
-            Utf8Array::tot_gt_kernel_broadcast,
+            Utf8ViewArray::tot_gt_kernel_broadcast,
         )
     }
 
@@ -430,7 +430,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::gt_eq,
-            Utf8Array::tot_ge_kernel_broadcast,
+            Utf8ViewArray::tot_ge_kernel_broadcast,
         )
     }
 
@@ -439,7 +439,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::lt,
-            Utf8Array::tot_lt_kernel_broadcast,
+            Utf8ViewArray::tot_lt_kernel_broadcast,
         )
     }
 
@@ -448,7 +448,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::lt_eq,
-            Utf8Array::tot_le_kernel_broadcast,
+            Utf8ViewArray::tot_le_kernel_broadcast,
         )
     }
 }

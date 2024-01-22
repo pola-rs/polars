@@ -386,11 +386,9 @@ impl StringChunked {
     where
         F: FnMut(&'a str) -> &'a str,
     {
-        use arrow::legacy::array::utf8::Utf8FromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
-            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-            let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+            let new = Utf8ViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
         StringChunked::from_chunk_iter(self.name(), chunks)
@@ -417,11 +415,9 @@ impl BinaryChunked {
     where
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
-        use arrow::legacy::array::utf8::BinaryFromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
-            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-            let new = BinaryArray::<i64>::from_values_iter(iter, arr.len(), value_size);
+            let new = BinaryViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
         BinaryChunked::from_chunk_iter(self.name(), chunks)
@@ -548,12 +544,12 @@ where
     }
 }
 
-impl ChunkApplyKernel<LargeStringArray> for StringChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> Self {
+impl ChunkApplyKernel<Utf8ViewArray> for StringChunked {
+    fn apply_kernel(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {
@@ -562,12 +558,12 @@ impl ChunkApplyKernel<LargeStringArray> for StringChunked {
     }
 }
 
-impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> Self {
+impl ChunkApplyKernel<BinaryViewArray> for BinaryChunked {
+    fn apply_kernel(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {

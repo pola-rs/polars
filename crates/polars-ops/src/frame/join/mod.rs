@@ -16,7 +16,7 @@ use std::hash::Hash;
 
 use ahash::RandomState;
 pub use args::*;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
 #[cfg(feature = "dtype-categorical")]

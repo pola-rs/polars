@@ -46,6 +46,8 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
+        ("millennium", pl.Series(values=[2, 3, 3], dtype=pl.Int32)),
+        ("century", pl.Series(values=[20, 21, 21], dtype=pl.Int32)),
         ("year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
         ("iso_year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
         ("quarter", pl.Series(values=[2, 4, 1], dtype=pl.Int8)),
@@ -155,15 +157,25 @@ def test_local_time_sortedness(time_zone: str | None) -> None:
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.time()
     assert result.flags["SORTED_ASC"]
-    assert result.flags["SORTED_DESC"] is False
+    assert not result.flags["SORTED_DESC"]
 
     # two elements - not sorted
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.time()
-    assert result.flags["SORTED_ASC"] is False
-    assert result.flags["SORTED_DESC"] is False
+    assert not result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
+    ser = pl.Series([datetime(1969, 7, 21, 2, 56, 2, 123000)]).dt.cast_time_unit(
+        time_unit
+    )
+    result = ser.dt.time().item()
+    expected = time(2, 56, 2, 123000)
+    assert result == expected
 
 
 @pytest.mark.parametrize(

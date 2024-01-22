@@ -21,7 +21,7 @@ use crate::array::{ListArray, PrimitiveArray};
 use crate::offset::Offset;
 
 /// `take` implementation for ListArrays
-pub fn take<I: Offset, O: Index>(
+pub(super) unsafe fn take_unchecked<I: Offset, O: Index>(
     values: &ListArray<I>,
     indices: &PrimitiveArray<O>,
 ) -> ListArray<I> {
@@ -43,7 +43,7 @@ pub fn take<I: Offset, O: Index>(
         let mut growable: GrowableList<I> = GrowableList::new(arrays, true, capacity);
 
         for index in 0..indices.len() {
-            if validity.get_bit(index) {
+            if validity.get_bit_unchecked(index) {
                 growable.extend(index, 0, 1);
             } else {
                 growable.extend_validity(1)

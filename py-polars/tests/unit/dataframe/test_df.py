@@ -392,6 +392,23 @@ def test_gather_every() -> None:
     assert_frame_equal(expected_df, df.gather_every(2, offset=1))
 
 
+def test_gather_every_agg() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 2],
+            "a": ["a", "b", "c", "d", "e", "f"],
+        }
+    )
+    out = df.group_by(pl.col("g")).agg(pl.col("a").gather_every(2)).sort("g")
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "a": [["a", "c"], ["d", "f"]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
@@ -1137,6 +1154,12 @@ def test_rename(df: pl.DataFrame) -> None:
     out = df.rename({"strings": "bars", "int": "foos"})
     # check if we can select these new columns
     _ = out[["foos", "bars"]]
+
+
+def test_rename_lambda() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    out = df.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col)
+    assert out.columns == ["foo", "bar", "c"]
 
 
 def test_write_csv() -> None:

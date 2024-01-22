@@ -1,10 +1,12 @@
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::Index;
 use crate::array::{GenericBinaryArray, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::buffer::Buffer;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
-pub fn take_values<O: Offset>(
+pub(super) unsafe fn take_values<O: Offset>(
     length: O,
     starts: &[O],
     offsets: &OffsetsBuffer<O>,
@@ -18,7 +20,7 @@ pub fn take_values<O: Offset>(
         .zip(offsets.lengths())
         .for_each(|(start, length)| {
             let end = start + length;
-            buffer.extend_from_slice(&values[start..end]);
+            buffer.extend_from_slice(values.get_unchecked(start..end));
         });
     buffer.into()
 }
@@ -42,7 +44,7 @@ pub fn take_no_validity<O: Offset, I: Index>(
 }
 
 // take implementation when only values contain nulls
-pub fn take_values_validity<O: Offset, I: Index, A: GenericBinaryArray<O>>(
+pub(super) unsafe fn take_values_validity<O: Offset, I: Index, A: GenericBinaryArray<O>>(
     values: &A,
     indices: &[I],
 ) -> (OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
@@ -60,8 +62,8 @@ pub fn take_values_validity<O: Offset, I: Index, A: GenericBinaryArray<O>>(
     let mut starts = Vec::<O>::with_capacity(indices.len());
     let offsets = indices.iter().map(|index| {
         let index = index.to_usize();
-        let start = offsets[index];
-        length += offsets[index + 1] - start;
+        let start = *offsets.get_unchecked(index);
+        length += *offsets.get_unchecked(index + 1) - start;
         starts.push(start);
         length
     });
@@ -77,7 +79,7 @@ pub fn take_values_validity<O: Offset, I: Index, A: GenericBinaryArray<O>>(
 }
 
 // take implementation when only indices contain nulls
-pub fn take_indices_validity<O: Offset, I: Index>(
+pub(super) unsafe fn take_indices_validity<O: Offset, I: Index>(
     offsets: &OffsetsBuffer<O>,
     values: &[u8],
     indices: &PrimitiveArray<I>,
@@ -91,7 +93,7 @@ pub fn take_indices_validity<O: Offset, I: Index>(
         let index = index.to_usize();
         match offsets.get(index + 1) {
             Some(&next) => {
-                let start = offsets[index];
+                let start = *offsets.get_unchecked(index);
                 length += next - start;
                 starts.push(start);
             },
@@ -111,7 +113,7 @@ pub fn take_indices_validity<O: Offset, I: Index>(
 }
 
 // take implementation when both indices and values contain nulls
-pub fn take_values_indices_validity<O: Offset, I: Index, A: GenericBinaryArray<O>>(
+pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: GenericBinaryArray<O>>(
     values: &A,
     indices: &PrimitiveArray<I>,
 ) -> (OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
@@ -129,8 +131,9 @@ pub fn take_values_indices_validity<O: Offset, I: Index, A: GenericBinaryArray<O
                 let index = index.to_usize();
                 if values_validity.get_bit(index) {
                     validity.push(true);
-                    length += offsets[index + 1] - offsets[index];
-                    starts.push(offsets[index]);
+                    length += *offsets.get_unchecked_release(index + 1)
+                        - *offsets.get_unchecked_release(index);
+                    starts.push(*offsets.get_unchecked_release(index));
                 } else {
                     validity.push(false);
                     starts.push(O::default());

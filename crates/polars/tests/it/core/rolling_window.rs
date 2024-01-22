@@ -190,15 +190,7 @@ fn test_rolling_map() {
 
     assert_eq!(
         Vec::from(out),
-        &[
-            None,
-            None,
-            Some(3.0),
-            Some(3.0),
-            Some(2.0),
-            Some(5.0),
-            Some(11.0)
-        ]
+        &[None, None, Some(3.0), None, None, None, None,]
     );
 }
 

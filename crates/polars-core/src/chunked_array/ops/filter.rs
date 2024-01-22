@@ -1,6 +1,6 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::compute::filter::filter as filter_fn;
+use polars_compute::filter::filter as filter_fn;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
@@ -77,6 +77,28 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
                 _ => Ok(BinaryChunked::full_null(self.name(), 0)),
+            };
+        }
+        check_filter_len!(self, filter);
+        Ok(unsafe {
+            arity::binary_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
+    }
+}
+
+impl ChunkFilter<BinaryOffsetType> for BinaryOffsetChunked {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<BinaryOffsetChunked> {
+        // Broadcast.
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => Ok(BinaryOffsetChunked::full_null(self.name(), 0)),
             };
         }
         check_filter_len!(self, filter);

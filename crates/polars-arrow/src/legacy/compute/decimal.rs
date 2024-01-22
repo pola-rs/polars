@@ -35,7 +35,7 @@ pub fn infer_scale(bytes: &[u8]) -> u8 {
 /// requires precision >= 7 and scale >= 3.  Returns None if the number is not well-formed, or does not
 /// fit. Only b'.' is allowed as a decimal separator (issue #6698).
 #[inline]
-pub(super) fn deserialize_decimal(
+pub(crate) fn deserialize_decimal(
     mut bytes: &[u8],
     precision: Option<u8>,
     scale: u8,

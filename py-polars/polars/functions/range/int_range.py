@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, overload
 from polars import functions as F
 from polars.datatypes import Int64
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
+from polars.utils._wrap import wrap_expr, wrap_s
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -55,7 +55,7 @@ def arange(
 
 
 def arange(
-    start: int | IntoExprColumn = 1,
+    start: int | IntoExprColumn = 0,
     end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
@@ -93,9 +93,9 @@ def arange(
 
     Examples
     --------
-    >>> pl.arange(0, 3, eager=True).alias("int")
+    >>> pl.arange(0, 3, eager=True)
     shape: (3,)
-    Series: 'int' [i64]
+    Series: 'literal' [i64]
     [
             0
             1
@@ -178,9 +178,9 @@ def int_range(
 
     Examples
     --------
-    >>> pl.int_range(0, 3, eager=True).alias("int")
+    >>> pl.int_range(0, 3, eager=True)
     shape: (3,)
-    Series: 'int' [i64]
+    Series: 'literal' [i64]
     [
             0
             1
@@ -189,9 +189,9 @@ def int_range(
 
     `end` can be omitted for a shorter syntax.
 
-    >>> pl.int_range(3, eager=True).alias("int")
+    >>> pl.int_range(3, eager=True)
     shape: (3,)
-    Series: 'int' [i64]
+    Series: 'literal' [i64]
     [
             0
             1
@@ -220,6 +220,9 @@ def int_range(
         end = start
         start = 0
 
+    if isinstance(start, int) and isinstance(end, int) and eager:
+        return wrap_s(plr.eager_int_range(start, end, step, dtype))
+
     start = parse_as_expression(start)
     end = parse_as_expression(end)
     result = wrap_expr(plr.int_range(start, end, step, dtype))
@@ -232,8 +235,8 @@ def int_range(
 
 @overload
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -244,8 +247,8 @@ def int_ranges(
 
 @overload
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -256,8 +259,8 @@ def int_ranges(
 
 @overload
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = ...,
+    end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -267,8 +270,8 @@ def int_ranges(
 
 
 def int_ranges(
-    start: int | IntoExprColumn,
-    end: int | IntoExprColumn,
+    start: int | IntoExprColumn = 0,
+    end: int | IntoExprColumn | None = None,
     step: int | IntoExprColumn = 1,
     *,
     dtype: PolarsIntegerType = Int64,
@@ -280,9 +283,10 @@ def int_ranges(
     Parameters
     ----------
     start
-        Start of the range (inclusive).
+        Start of the range (inclusive). Defaults to 0.
     end
-        End of the range (exclusive).
+        End of the range (exclusive). If set to `None` (default),
+        the value of `start` is used and `start` is set to `0`.
     step
         Step size of the range.
     dtype
@@ -313,7 +317,24 @@ def int_ranges(
     │ 1     ┆ 3   ┆ [1, 2]     │
     │ -1    ┆ 2   ┆ [-1, 0, 1] │
     └───────┴─────┴────────────┘
+
+    `end` can be omitted for a shorter syntax.
+
+    >>> df.select("end", int_range=pl.int_ranges("end"))
+    shape: (2, 2)
+    ┌─────┬───────────┐
+    │ end ┆ int_range │
+    │ --- ┆ ---       │
+    │ i64 ┆ list[i64] │
+    ╞═════╪═══════════╡
+    │ 3   ┆ [0, 1, 2] │
+    │ 2   ┆ [0, 1]    │
+    └─────┴───────────┘
     """
+    if end is None:
+        end = start
+        start = 0
+
     start = parse_as_expression(start)
     end = parse_as_expression(end)
     step = parse_as_expression(step)

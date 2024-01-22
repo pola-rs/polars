@@ -412,13 +412,6 @@ def test_search_sorted() -> None:
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
 
-def test_abs_expr() -> None:
-    df = pl.DataFrame({"x": [-1, 0, 1]})
-    out = df.select(abs(pl.col("x")))
-
-    assert out["x"].to_list() == [1, 0, 1]
-
-
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)

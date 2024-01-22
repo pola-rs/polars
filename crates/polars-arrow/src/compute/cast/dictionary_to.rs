@@ -3,7 +3,7 @@ use polars_error::{polars_bail, PolarsResult};
 use super::{primitive_as_primitive, primitive_to_primitive, CastOptions};
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use crate::compute::cast::cast;
-use crate::compute::take::take;
+use crate::compute::take::take_unchecked;
 use crate::datatypes::ArrowDataType;
 use crate::match_integer_type;
 
@@ -168,7 +168,7 @@ where
     // take requires first casting i32
     let indices = primitive_to_primitive::<_, i32>(keys, &ArrowDataType::Int32);
 
-    take(values.as_ref(), &indices)
+    Ok(unsafe { take_unchecked(values.as_ref(), &indices) })
 }
 
 /// Casts a [`DictionaryArray`] to its values' [`ArrowDataType`], also known as unpacking.
@@ -180,6 +180,7 @@ where
     // take requires first casting i64
     let indices = primitive_to_primitive::<_, i64>(from.keys(), &ArrowDataType::Int64);
 
-    // unwrap: The dictionary guarantees that the keys are not out-of-bounds.
-    take(from.values().as_ref(), &indices).unwrap()
+    // SAFETY:
+    // The dictionary guarantees that the keys are not out-of-bounds.
+    unsafe { take_unchecked(from.values().as_ref(), &indices) }
 }

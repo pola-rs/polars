@@ -200,7 +200,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Get the length of the string values as number of bytes.
     fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&string_len_bytes)
+        ca.apply_kernel_cast(&utf8view_len_bytes)
     }
 
     /// Pad the start of the string until it reaches the given length.
@@ -232,7 +232,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    fn zfill(&self, length: usize) -> StringChunked {
+    fn zfill(&self, length: &UInt64Chunked) -> StringChunked {
         let ca = self.as_string();
         pad::zfill(ca, length)
     }
@@ -299,20 +299,6 @@ pub trait StringNameSpaceImpl: AsString {
             return Ok(ca.clone());
         }
 
-        // for single bytes we can replace on the whole values buffer
-        if pat.len() == 1 && val.len() == 1 {
-            let pat = pat.as_bytes()[0];
-            let val = val.as_bytes()[0];
-            return Ok(
-                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_n_char(arr, n, pat, val)))
-            );
-        }
-        if pat.len() == val.len() {
-            return Ok(
-                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_n_str(arr, n, pat, val)))
-            );
-        }
-
         // amortize allocation
         let mut buf = String::new();
 
@@ -354,19 +340,6 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         if ca.is_empty() {
             return Ok(ca.clone());
-        }
-        // for single bytes we can replace on the whole values buffer
-        if pat.len() == 1 && val.len() == 1 {
-            let pat = pat.as_bytes()[0];
-            let val = val.as_bytes()[0];
-            return Ok(
-                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_single_char(arr, pat, val)))
-            );
-        }
-        if pat.len() == val.len() {
-            return Ok(ca.apply_kernel(&|arr| {
-                Box::new(replace::replace_lit_n_str(arr, usize::MAX, pat, val))
-            }));
         }
 
         // Amortize allocation.

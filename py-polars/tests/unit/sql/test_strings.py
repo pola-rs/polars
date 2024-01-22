@@ -63,10 +63,10 @@ def test_string_concat() -> None:
     assert res.to_dict(as_series=False) == {
         "c0": ["aad", None, "ccf"],
         "c1": ["ad1", None, "cf3"],
-        "c2": ["a-d", None, "c-f"],
-        "c3": ["aad", None, "ccf"],
-        "c4": ["ad2", None, "cf6"],
-        "c5": ["a:d:1", None, "c:f:3"],
+        "c2": ["a-d", "e", "c-f"],
+        "c3": ["aad", "e", "ccf"],
+        "c4": ["ad2", "e4", "cf6"],
+        "c5": ["a:d:1", "e:2", "c:f:3"],
         "c6": ["d1!", "e2!", "f3!"],
     }
 

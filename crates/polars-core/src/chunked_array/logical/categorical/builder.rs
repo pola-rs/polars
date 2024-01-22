@@ -16,7 +16,7 @@ pub struct CategoricalChunkedBuilder {
     cat_builder: UInt32Vec,
     name: String,
     ordering: CategoricalOrdering,
-    categories: MutableUtf8Array<i64>,
+    categories: MutablePlString,
     // hashmap utilized by the local builder
     local_mapping: PlHashMap<KeyWrapper, ()>,
 }
@@ -27,7 +27,7 @@ impl CategoricalChunkedBuilder {
             cat_builder: UInt32Vec::with_capacity(capacity),
             name: name.to_string(),
             ordering,
-            categories: MutableUtf8Array::<i64>::with_capacity(_HASHMAP_INIT_SIZE),
+            categories: MutablePlString::with_capacity(_HASHMAP_INIT_SIZE),
             local_mapping: PlHashMap::with_capacity_and_hasher(
                 capacity / 10,
                 StringCache::get_hash_builder(),
@@ -125,7 +125,7 @@ impl CategoricalChunkedBuilder {
             }
         }
 
-        let categories: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
+        let categories = std::mem::take(&mut self.categories).freeze();
 
         // we will create a mapping from our local categoricals to global categoricals
         // and a mapping from global categoricals to our local categoricals
@@ -237,7 +237,7 @@ impl CategoricalChunked {
 
         let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), _HASHMAP_INIT_SIZE);
         let mut rev_map = PlHashMap::with_capacity(cap);
-        let mut str_values = MutableUtf8Array::with_capacities(cap, cap * 24);
+        let mut str_values = MutablePlString::with_capacity(cap);
 
         for arr in cats.downcast_iter() {
             for cat in arr.into_iter().flatten().copied() {
@@ -260,7 +260,7 @@ impl CategoricalChunked {
         name: &str,
         keys: impl IntoIterator<Item = Option<u32>> + Send,
         capacity: usize,
-        values: &Utf8Array<i64>,
+        values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> Self {
         // Vec<u32> where the index is local and the value is the global index
@@ -304,7 +304,7 @@ impl CategoricalChunked {
     pub(crate) unsafe fn from_keys_and_values_local(
         name: &str,
         keys: &PrimitiveArray<u32>,
-        values: &Utf8Array<i64>,
+        values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> CategoricalChunked {
         CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -319,7 +319,7 @@ impl CategoricalChunked {
     pub(crate) unsafe fn from_keys_and_values(
         name: &str,
         keys: &PrimitiveArray<u32>,
-        values: &Utf8Array<i64>,
+        values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> Self {
         if !using_string_cache() {
@@ -339,7 +339,7 @@ impl CategoricalChunked {
     /// This will error if a string is not in the fixed list of categories
     pub fn from_string_to_enum(
         values: &StringChunked,
-        categories: &Utf8Array<i64>,
+        categories: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> PolarsResult<CategoricalChunked> {
         polars_ensure!(categories.null_count()  == 0, ComputeError: "categories can not contain null values");

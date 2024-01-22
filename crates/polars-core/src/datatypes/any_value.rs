@@ -72,7 +72,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-categorical")]
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
-    Categorical(u32, &'a RevMapping, SyncPtr<Utf8Array<i64>>),
+    Categorical(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
@@ -1190,7 +1190,7 @@ mod test {
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
-                DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
             (ArrowDataType::Utf8, DataType::String),

@@ -51,23 +51,10 @@ pub fn read_binview<T: ViewType + ?Sized, R: Read + Seek>(
         || polars_err!(ComputeError: "IPC: unable to fetch the variadic buffers\n\nThe file or stream is corrupted.")
     )?;
 
-    let variadic_buffer_lengths: Buffer<i64> = read_buffer(
-        buffers,
-        n_variadic,
-        reader,
-        block_offset,
-        is_little_endian,
-        compression,
-        scratch,
-    )?;
-
-    let variadic_buffers = variadic_buffer_lengths
-        .iter()
-        .map(|length| {
-            let length = *length as usize;
-            read_buffer(
+    let variadic_buffers = (0..n_variadic)
+        .map(|_| {
+            read_bytes(
                 buffers,
-                length,
                 reader,
                 block_offset,
                 is_little_endian,

@@ -64,6 +64,16 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
         self.0.agg_list(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_max(groups)
+    }
+
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         NumOpsDispatch::subtract(&self.0, rhs)
     }

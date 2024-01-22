@@ -4,7 +4,7 @@ use polars_ops::pivot::{pivot, pivot_stable, PivotAgg};
 
 #[test]
 #[cfg(feature = "dtype-date")]
-fn test_pivot_date() -> PolarsResult<()> {
+fn test_pivot_date_() -> PolarsResult<()> {
     let mut df = df![
         "A" => [1, 1, 1, 1, 1, 1, 1, 1],
         "B" => [8, 2, 3, 6, 3, 6, 2, 2],

@@ -37,8 +37,8 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
             }
             Struct(fields)
         },
-        Binary => LargeBinary,
-        Utf8 => LargeUtf8,
+        Binary | LargeBinary => BinaryView,
+        Utf8 | LargeUtf8 => Utf8View,
         Dictionary(it, data_type, sorted) => {
             let dtype = convert_data_type(*data_type);
             Dictionary(it, Box::new(dtype), sorted)
