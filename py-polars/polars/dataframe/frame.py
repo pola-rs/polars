@@ -2282,13 +2282,16 @@ class DataFrame:
         ]
         object_columns_set = set(object_columns)
 
-        # Export columns that aren't pl.Object:
-        df_without_objects = self.select(
-            [col(name) for name in self.columns if name not in object_columns_set]
-        )
-        pandas_df = self._to_pandas_without_object_columns(
-            df_without_objects, use_pyarrow_extension_array, **kwargs
-        )
+        if len(object_columns) == len(self.columns):
+            pandas_df = pd.DataFrame()
+        else:
+            # Export columns that aren't pl.Object:
+            df_without_objects = self.select(
+                [col(name) for name in self.columns if name not in object_columns_set]
+            )
+            pandas_df = self._to_pandas_without_object_columns(
+                df_without_objects, use_pyarrow_extension_array, **kwargs
+            )
 
         # Add columns that are pl.Object. We do this in order, so the index for
         # the next column in this dataframe is correct for the partially
@@ -2304,12 +2307,7 @@ class DataFrame:
     def _to_pandas_without_object_columns(
         self, df_without_objects, use_pyarrow_extension_array, **kwargs
     ):
-        if (
-            not df_without_objects.width
-        ):  # 0x0 dataframe, cannot infer schema from batches
-            return pd.DataFrame()
-
-        record_batches = df_without_objects.to_pandas()
+        record_batches = df_without_objects._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
             return tbl.to_pandas(
