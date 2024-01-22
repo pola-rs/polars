@@ -131,6 +131,7 @@ debug = true
 incremental = true
 codegen-units = 16
 lto = "thin"
+overflow-checks = true
 
 [profile.release]
 codegen-units = 1
