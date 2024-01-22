@@ -89,15 +89,18 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
 
 
 @given(
-    column_types=lists(one_of(just(pl.Object), just(pl.Int32)), min_size=1, max_size=8)
+    column_type_names=lists(
+        one_of(just("Object"), just("Int32")), min_size=1, max_size=8
+    )
 )
-def test_object_to_pandas(column_types: list[Literal[pl.Object, pl.Int32]]) -> None:
+def test_object_to_pandas(column_type_names: list[Literal["Object", "Int32"]]) -> None:
     """
     Converting ``pl.Object`` dtype columns to Pandas is handled correctly.
 
     This edge case is handled with a separate code path than other data types,
     so we test it more thoroughly.
     """
+    column_types = [getattr(pl, name) for name in column_type_names]
     data = {
         f"col_{i}": [object()] if dtype == pl.Object else [-i]
         for i, dtype in enumerate(column_types)
@@ -168,7 +171,7 @@ def test_to_pandas_datetime() -> None:
 
 
 @pytest.mark.parametrize("use_pyarrow_extension_array", [True, False])
-def test_object_to_pandas_series(use_pyarrow_extension_array) -> None:
+def test_object_to_pandas_series(use_pyarrow_extension_array: bool) -> None:
     values = [object(), [1, 2, 3]]
     assert (
         pl.Series("a", values, dtype=pl.Object).to_pandas(

@@ -2307,7 +2307,7 @@ class DataFrame:
     def _to_pandas_without_object_columns(
         self,
         df_without_objects: DataFrame,
-        use_pyarrow_extension_array: bool,
+        use_pyarrow_extension_array: bool = False,  # noqa: FBT001
         **kwargs: Any,
     ) -> pd.DataFrame:
         record_batches = df_without_objects._df.to_pandas()
