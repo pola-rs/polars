@@ -184,6 +184,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         };
         self.slice(-(len as i64), len)
     }
+
+    /// Remove empty chunks.
+    pub fn prune_empty_chunks(&mut self) {
+        let mut count = 0u32;
+        unsafe {
+            self.chunks_mut().retain(|arr| {
+                count += 1;
+                // Always keep at least one chunk
+                if count == 1 {
+                    true
+                } else {
+                    // Remove the empty chunks
+                    arr.len() > 0
+                }
+            })
+        }
+    }
 }
 
 #[cfg(feature = "object")]
