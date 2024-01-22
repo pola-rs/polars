@@ -14,7 +14,9 @@ In contrast, Polars is optimised for high-performance multithreaded computing on
 
 Dask extends Pandas' capabilities to large, distributed datasets. Dask mimics Pandas' API, offering a familiar environment for Pandas users, but with the added benefit of parallel and distributed computing.
 
-While Dask excels in scaling Pandas workflows across clusters, Polars offers superior performance for data processing tasks that can be handled within the constraints of a single node. The choice between Dask and Polars often hinges on the familiarity with the Pandas API and the need for distributed processing for extremely large datasets versus the need for speed and efficiency in a vertical scaled environment.
+While Dask excels at scaling Pandas workflows across clusters, it only supports a subset of the Pandas API and therefore cannot be used for all use cases. Polars offers a more versatile API that delivers strong performance within the constraints of a single node. 
+
+The choice between Dask and Polars often comes down to familiarity with the Pandas API and the need for distributed processing for extremely large datasets versus the need for efficiency and speed in a vertically scaled environment for a wide range of use cases.
 
 ### Modin
 
