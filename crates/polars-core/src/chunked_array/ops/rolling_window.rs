@@ -111,6 +111,12 @@ mod inner_mod {
                         // we are in bounds
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
+                        // ensure we still meet window size criteria after removing null values
+                        if size - arr_window.null_count() < options.min_periods {
+                            builder.append_null();
+                            continue;
+                        }
+
                         // Safety.
                         // ptr is not dropped as we are in scope
                         // We are also the only owner of the contents of the Arc
@@ -158,6 +164,12 @@ mod inner_mod {
                         // safety:
                         // we are in bounds
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
+
+                        // ensure we still meet window size criteria after removing null values
+                        if size - arr_window.null_count() < options.min_periods {
+                            builder.append_null();
+                            continue;
+                        }
 
                         // Safety.
                         // ptr is not dropped as we are in scope
