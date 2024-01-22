@@ -383,7 +383,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 
         // Subtract the maximum amount of inlined strings to get a lower bound
         // on the number of buffer bytes needed (assuming no dedup).
-        let total_bytes_len = self.total_bytes_len.load(Ordering::Relaxed) as usize;
+        let total_bytes_len = self.total_bytes_len();
         let buffer_req_lower_bound = total_bytes_len.saturating_sub(self.len() * 12);
 
         let lower_bound_mem_usage_post_gc = self.len() * 16 + buffer_req_lower_bound;

@@ -233,6 +233,8 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             let views = array.views();
             let validity = array.validity();
+            // TODO! we might opt for a filter that maintains the bytes_count
+            // currently we don't do that and bytes_len is set to UNKNOWN.
             let (views, validity) = filter_values_and_validity(views, validity, mask.values());
             Ok(unsafe {
                 BinaryViewArray::new_unchecked_unknown_md(
