@@ -1,9 +1,8 @@
 //! Contains operators to filter arrays such as [`filter`].
-use arrow::array::growable::{make_growable, Growable};
+use arrow::array::growable::make_growable;
 use arrow::array::*;
 use arrow::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::chunk::Chunk;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::simd::Simd;
 use arrow::types::{BitChunkOnes, NativeType};
@@ -27,7 +26,7 @@ fn get_leading_ones(chunk: u64) -> u32 {
 /// to `filter_count`
 unsafe fn nonnull_filter_impl<T, I>(values: &[T], mut mask_chunks: I, filter_count: usize) -> Vec<T>
 where
-    T: NativeType + Simd,
+    T: NativeType,
     I: BitChunkIterExact<u64>,
 {
     let mut chunks = values.chunks_exact(64);
@@ -84,7 +83,7 @@ unsafe fn null_filter_impl<T, I>(
     filter_count: usize,
 ) -> (Vec<T>, MutableBitmap)
 where
-    T: NativeType + Simd,
+    T: NativeType,
     I: BitChunkIterExact<u64>,
 {
     let mut chunks = values.chunks_exact(64);
@@ -147,7 +146,7 @@ where
     (new, new_validity)
 }
 
-fn null_filter_simd<T: NativeType + Simd>(
+fn null_filter<T: NativeType>(
     values: &[T],
     validity: &Bitmap,
     mask: &Bitmap,
@@ -165,7 +164,7 @@ fn null_filter_simd<T: NativeType + Simd>(
     }
 }
 
-fn nonnull_filter_simd<T: NativeType + Simd>(values: &[T], mask: &Bitmap) -> Vec<T> {
+fn nonnull_filter<T: NativeType>(values: &[T], mask: &Bitmap) -> Vec<T> {
     assert_eq!(values.len(), mask.len());
     let filter_count = mask.len() - mask.unset_bits();
 
@@ -179,70 +178,29 @@ fn nonnull_filter_simd<T: NativeType + Simd>(values: &[T], mask: &Bitmap) -> Vec
     }
 }
 
-fn filter_nonnull_primitive<T: NativeType + Simd>(
-    array: &PrimitiveArray<T>,
+fn filter_values_and_validity<T: NativeType>(
+    values: &[T],
+    validity: Option<&Bitmap>,
     mask: &Bitmap,
-) -> PrimitiveArray<T> {
-    assert_eq!(array.len(), mask.len());
-
-    if let Some(validity) = array.validity() {
-        let (values, validity) = null_filter_simd(array.values(), validity, mask);
-        PrimitiveArray::<T>::new(array.data_type().clone(), values.into(), validity.into())
+) -> (Vec<T>, Option<MutableBitmap>) {
+    if let Some(validity) = validity {
+        let (values, validity) = null_filter(values, validity, mask);
+        (values, Some(validity))
     } else {
-        let values = nonnull_filter_simd(array.values(), mask);
-        PrimitiveArray::<T>::new(array.data_type().clone(), values.into(), None)
+        (nonnull_filter(values, mask), None)
     }
 }
 
 fn filter_primitive<T: NativeType + Simd>(
     array: &PrimitiveArray<T>,
-    mask: &BooleanArray,
+    mask: &Bitmap,
 ) -> PrimitiveArray<T> {
-    // todo: branch on mask.validity()
-    filter_nonnull_primitive(array, mask.values())
-}
-
-fn filter_growable<'a>(growable: &mut impl Growable<'a>, chunks: &[(usize, usize)]) {
-    chunks
-        .iter()
-        .for_each(|(start, len)| growable.extend(0, *start, *len));
-}
-
-/// Returns a prepared function optimized to filter multiple arrays.
-/// Creating this function requires time, but using it is faster than [filter] when the
-/// same filter needs to be applied to multiple arrays (e.g. a multiple columns).
-pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
-    let iter = SlicesIterator::new(filter.values());
-    let filter_count = iter.slots();
-    let chunks = iter.collect::<Vec<_>>();
-
-    use arrow::datatypes::PhysicalType::*;
-    Ok(Box::new(move |array: &dyn Array| {
-        match array.data_type().to_physical_type() {
-            Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-                let array = array.as_any().downcast_ref().unwrap();
-                let mut growable =
-                    growable::GrowablePrimitive::<$T>::new(vec![array], false, filter_count);
-                filter_growable(&mut growable, &chunks);
-                let array: PrimitiveArray<$T> = growable.into();
-                Box::new(array)
-            }),
-            LargeUtf8 => {
-                let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-                let mut growable = growable::GrowableUtf8::new(vec![array], false, filter_count);
-                filter_growable(&mut growable, &chunks);
-                let array: Utf8Array<i64> = growable.into();
-                Box::new(array)
-            },
-            _ => {
-                let mut mutable = make_growable(&[array], false, filter_count);
-                chunks
-                    .iter()
-                    .for_each(|(start, len)| mutable.extend(0, *start, *len));
-                mutable.as_box()
-            },
-        }
-    }))
+    assert_eq!(array.len(), mask.len());
+    let (values, validity) = filter_values_and_validity(array.values(), array.validity(), mask);
+    let validity = validity.map(|validity| validity.freeze());
+    unsafe {
+        PrimitiveArray::<T>::new_unchecked(array.data_type().clone(), values.into(), validity)
+    }
 }
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
@@ -269,19 +227,25 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
     match array.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array.as_any().downcast_ref().unwrap();
-            Ok(Box::new(filter_primitive::<$T>(array, mask)))
+            Ok(Box::new(filter_primitive::<$T>(array, mask.values())))
         }),
         BinaryView => {
-            let iter = SlicesIterator::new(mask.values());
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            let mut mutable =
-                growable::GrowableBinaryViewArray::new(vec![array], false, iter.slots());
-            unsafe {
-                // We don't have to correct buffers as there is only one array.
-                iter.for_each(|(start, len)| mutable.extend_unchecked_no_buffers(0, start, len));
+            let views = array.views();
+            let validity = array.validity();
+            // TODO! we might opt for a filter that maintains the bytes_count
+            // currently we don't do that and bytes_len is set to UNKNOWN.
+            let (views, validity) = filter_values_and_validity(views, validity, mask.values());
+            Ok(unsafe {
+                BinaryViewArray::new_unchecked_unknown_md(
+                    array.data_type().clone(),
+                    views.into(),
+                    array.data_buffers().clone(),
+                    validity.map(|v| v.freeze()),
+                    Some(array.total_buffer_len()),
+                )
             }
-
-            Ok(mutable.as_box())
+            .boxed())
         },
         // Should go via BinaryView
         Utf8View => {
@@ -294,26 +258,4 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
             Ok(mutable.as_box())
         },
     }
-}
-
-/// Returns a new [Chunk] with arrays containing only values matching the filter.
-/// This is a convenience function: filter multiple columns is embarrassingly parallel.
-pub fn filter_chunk<A: AsRef<dyn Array>>(
-    columns: &Chunk<A>,
-    filter_values: &BooleanArray,
-) -> PolarsResult<Chunk<Box<dyn Array>>> {
-    let arrays = columns.arrays();
-
-    let num_columns = arrays.len();
-
-    let filtered_arrays = match num_columns {
-        1 => {
-            vec![filter(columns.arrays()[0].as_ref(), filter_values)?]
-        },
-        _ => {
-            let filter = build_filter(filter_values)?;
-            arrays.iter().map(|a| filter(a.as_ref())).collect()
-        },
-    };
-    Chunk::try_new(filtered_arrays)
 }

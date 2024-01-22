@@ -71,6 +71,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
                 views,
                 Arc::from([]),
                 validity,
+                None,
             ));
         }
 
@@ -94,6 +95,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             views,
             Arc::from(variadic_buffers),
             validity,
+            None,
         ))
     }
 }
