@@ -409,9 +409,12 @@ impl<'a> AnyValue<'a> {
                 }
             },
             Boolean(v) => NumCast::from(if *v { 1 } else { 0 }),
-            String(v) => match (*v).parse::<i128>() {
-                Ok(val) => NumCast::from(val),
-                Err(_) => NumCast::from((*v).parse::<f64>().ok()?),
+            String(v) => {
+                if let Ok(val) = (*v).parse::<i128>() {
+                    NumCast::from(val)
+                } else {
+                    NumCast::from((*v).parse::<f64>().ok()?)
+                }
             },
             _ => None,
         }
