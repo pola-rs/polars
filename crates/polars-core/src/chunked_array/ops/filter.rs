@@ -1,6 +1,6 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::compute::filter::filter as filter_fn;
+use polars_compute::filter::filter as filter_fn;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
