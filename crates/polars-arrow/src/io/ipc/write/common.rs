@@ -254,6 +254,13 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             set_variadic_buffer_counts(counts, array.values().as_ref())
         },
+        ArrowDataType::Dictionary(_, _, _) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<DictionaryArray<u32>>()
+                .unwrap();
+            set_variadic_buffer_counts(counts, array.values().as_ref())
+        },
         _ => (),
     }
 }
@@ -326,6 +333,14 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
     let mut nodes: Vec<arrow_format::ipc::FieldNode> = vec![];
     let mut buffers: Vec<arrow_format::ipc::Buffer> = vec![];
     let mut arrow_data: Vec<u8> = vec![];
+    let mut variadic_buffer_counts = vec![];
+    set_variadic_buffer_counts(&mut variadic_buffer_counts, array.values().as_ref());
+
+    let variadic_buffer_counts = if variadic_buffer_counts.is_empty() {
+        None
+    } else {
+        Some(variadic_buffer_counts)
+    };
 
     let length = write_dictionary(
         array,
@@ -350,7 +365,7 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
                     nodes: Some(nodes),
                     buffers: Some(buffers),
                     compression,
-                    variadic_buffer_counts: None,
+                    variadic_buffer_counts,
                 })),
                 is_delta: false,
             },

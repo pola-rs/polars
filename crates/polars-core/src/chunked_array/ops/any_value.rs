@@ -141,7 +141,7 @@ impl<'a> AnyValue<'a> {
                                 let keys = arr.keys();
                                 let values = arr.values();
                                 let values =
-                                    values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                                    values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
                                 let arr = &*(keys as *const dyn Array as *const UInt32Array);
 
                                 if arr.is_valid_unchecked(idx) {

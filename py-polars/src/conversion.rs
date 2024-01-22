@@ -16,7 +16,6 @@ use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
-use polars_rs::export::arrow;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
 use polars_utils::total_ord::TotalEq;
@@ -515,9 +514,8 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(categories)?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
-                let arr = ca.downcast_iter().next().unwrap();
-                let categories = arrow::compute::cast::utf8view_to_utf8(arr);
-                create_enum_data_type(categories)
+                let categories = ca.downcast_iter().next().unwrap();
+                create_enum_data_type(categories.clone())
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,

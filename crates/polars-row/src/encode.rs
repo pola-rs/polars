@@ -1,6 +1,6 @@
 use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, PrimitiveArray,
-    StructArray, Utf8Array, Utf8ViewArray,
+    StructArray, Utf8ViewArray,
 };
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
@@ -128,7 +128,7 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
                 .downcast_ref::<DictionaryArray<u32>>()
                 .unwrap();
             let iter = array
-                .iter_typed::<Utf8Array<i64>>()
+                .iter_typed::<Utf8ViewArray>()
                 .unwrap()
                 .map(|opt_s| opt_s.map(|s| s.as_bytes()));
             crate::variable::encode_iter(iter, out, field)
@@ -225,7 +225,7 @@ pub fn allocate_rows_buf(
                         .downcast_ref::<DictionaryArray<u32>>()
                         .unwrap();
                     let iter = array
-                        .iter_typed::<Utf8Array<i64>>()
+                        .iter_typed::<Utf8ViewArray>()
                         .unwrap()
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
                     if processed_count == 0 {
