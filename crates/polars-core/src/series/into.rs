@@ -73,8 +73,7 @@ impl Series {
                     )
                 };
 
-                let arr: DictionaryArray<u32> = (&new).into();
-                Box::new(arr) as ArrayRef
+                new.to_arrow(pl_flavor, false)
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => cast(

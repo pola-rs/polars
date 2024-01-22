@@ -290,7 +290,10 @@ impl Series {
 
                 if !matches!(
                     value_type.as_ref(),
-                    ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Null
+                    ArrowDataType::Utf8
+                        | ArrowDataType::LargeUtf8
+                        | ArrowDataType::Utf8View
+                        | ArrowDataType::Null
                 ) {
                     polars_bail!(
                         ComputeError: "only string-like values are supported in dictionaries"
@@ -303,7 +306,7 @@ impl Series {
                         let keys = arr.keys();
                         let keys = cast(keys, &ArrowDataType::UInt32).unwrap();
                         let values = arr.values();
-                        let values = cast(&**values, &ArrowDataType::LargeUtf8)?;
+                        let values = cast(&**values, &ArrowDataType::Utf8View)?;
                         (keys, values)
                     }};
                 }
@@ -335,7 +338,7 @@ impl Series {
                     ),
                 };
                 let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
-                let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
 
                 // Safety
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds

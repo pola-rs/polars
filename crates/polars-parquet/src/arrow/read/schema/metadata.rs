@@ -20,13 +20,13 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option
 fn convert_field(field: Field) -> Field {
     Field {
         name: field.name,
-        data_type: convert_data_type(field.data_type, false),
+        data_type: convert_data_type(field.data_type),
         is_nullable: field.is_nullable,
         metadata: field.metadata,
     }
 }
 
-fn convert_data_type(data_type: ArrowDataType, in_dict: bool) -> ArrowDataType {
+fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
     use ArrowDataType::*;
     match data_type {
         List(field) => LargeList(Box::new(convert_field(*field))),
@@ -37,16 +37,14 @@ fn convert_data_type(data_type: ArrowDataType, in_dict: bool) -> ArrowDataType {
             }
             Struct(fields)
         },
-        Binary | LargeBinary if in_dict => LargeBinary,
         Binary | LargeBinary => BinaryView,
-        Utf8 | LargeUtf8 if in_dict => LargeUtf8,
         Utf8 | LargeUtf8 => Utf8View,
         Dictionary(it, data_type, sorted) => {
-            let dtype = convert_data_type(*data_type, true);
+            let dtype = convert_data_type(*data_type);
             Dictionary(it, Box::new(dtype), sorted)
         },
         Extension(name, data_type, metadata) => {
-            let data_type = convert_data_type(*data_type, false);
+            let data_type = convert_data_type(*data_type);
             Extension(name, Box::new(data_type), metadata)
         },
         Map(field, _ordered) => {
@@ -72,7 +70,7 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchem
             let mut schema = deserialize_schema(slice).map(|x| x.0)?;
             // Convert the data types to the data types we support.
             for field in schema.fields.iter_mut() {
-                field.data_type = convert_data_type(std::mem::take(&mut field.data_type), false)
+                field.data_type = convert_data_type(std::mem::take(&mut field.data_type))
             }
             Ok(schema)
         },

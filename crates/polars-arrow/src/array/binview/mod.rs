@@ -396,6 +396,21 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             self
         }
     }
+
+    pub fn make_mut(self) -> MutableBinaryViewArray<T> {
+        let views = self.views.make_mut();
+        let completed_buffers = self.buffers.to_vec();
+        let validity = self.validity.map(|bitmap| bitmap.make_mut());
+        MutableBinaryViewArray {
+            views,
+            completed_buffers,
+            in_progress_buffer: vec![],
+            validity,
+            phantom: Default::default(),
+            total_bytes_len: self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            total_buffer_len: self.total_buffer_len,
+        }
+    }
 }
 
 impl BinaryViewArray {
