@@ -184,9 +184,11 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         views: Buffer<u128>,
         buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
+        total_buffer_len: Option<usize>,
     ) -> Self {
-        let total_bytes_len = views.iter().map(|v| (*v as u32) as usize).sum();
-        let total_buffer_len = buffers.iter().map(|b| b.len()).sum();
+        let total_bytes_len = UNKNOWN_LEN as usize;
+        let total_buffer_len =
+            total_buffer_len.unwrap_or_else(|| buffers.iter().map(|b| b.len()).sum());
         Self::new_unchecked(
             data_type,
             views,
@@ -227,7 +229,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 
         unsafe {
             Ok(Self::new_unchecked_unknown_md(
-                data_type, views, buffers, validity,
+                data_type, views, buffers, validity, None,
             ))
         }
     }

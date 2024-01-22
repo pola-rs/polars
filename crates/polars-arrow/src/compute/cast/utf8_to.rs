@@ -105,6 +105,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             views.into(),
             buffers,
             arr.validity().cloned(),
+            None,
         )
     }
 }

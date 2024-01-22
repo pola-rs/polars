@@ -109,6 +109,7 @@ unsafe fn take_binview_unchecked(arr: &BinaryViewArray, indices: &IdxArr) -> Bin
         taken_views_values,
         arr.data_buffers().clone(),
         taken_views.validity().cloned(),
+        Some(arr.total_buffer_len()),
     )
     .maybe_gc()
 }
