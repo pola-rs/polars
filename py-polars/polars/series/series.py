@@ -4497,6 +4497,7 @@ class Series:
             series = pd.Series(self.to_numpy(), dtype=object)
             series.name = self.name
             return series
+
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}'
