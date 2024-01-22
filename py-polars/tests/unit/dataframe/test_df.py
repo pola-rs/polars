@@ -3380,7 +3380,7 @@ def test_from_dicts_with_override() -> None:
         {"a": "1", "b": "1", "c": "-5.0"},
     ]
     override = {"a": pl.Int32, "b": pl.UInt64, "c": pl.Float32}
-    result = pl.from_dicts(data, schema_overrides=override)  # type: ignore[arg-type]
+    result = pl.from_dicts(data, schema_overrides=override)
     assert_frame_equal(
         result,
         pl.DataFrame(
