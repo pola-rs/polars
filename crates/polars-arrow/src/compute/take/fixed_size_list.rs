@@ -20,7 +20,7 @@ use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::{FixedSizeListArray, PrimitiveArray};
 
 /// `take` implementation for FixedSizeListArrays
-pub fn take<O: Index>(
+pub(super) unsafe fn take_unchecked<O: Index>(
     values: &FixedSizeListArray,
     indices: &PrimitiveArray<O>,
 ) -> FixedSizeListArray {
@@ -43,8 +43,8 @@ pub fn take<O: Index>(
             GrowableFixedSizeList::new(arrays, true, capacity);
 
         for index in 0..indices.len() {
-            if validity.get_bit(index) {
-                unsafe { growable.extend(index, 0, 1) };
+            if validity.get_bit_unchecked(index) {
+                growable.extend(index, 0, 1);
             } else {
                 growable.extend_validity(1)
             }
@@ -55,7 +55,7 @@ pub fn take<O: Index>(
         let mut growable: GrowableFixedSizeList =
             GrowableFixedSizeList::new(arrays, false, capacity);
         for index in 0..indices.len() {
-            unsafe { growable.extend(index, 0, 1) };
+            growable.extend(index, 0, 1);
         }
 
         growable.into()

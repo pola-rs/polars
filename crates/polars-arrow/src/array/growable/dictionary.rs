@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::{make_growable, Growable};
@@ -99,7 +100,9 @@ impl<'a, T: DictionaryKey> Growable<'a> for GrowableDictionary<'a, T> {
         let keys_array = *self.keys.get_unchecked_release(index);
         extend_validity(&mut self.validity, keys_array, start, len);
 
-        let values = &keys_array.values().get_unchecked_release(start..start + len);
+        let values = &keys_array
+            .values()
+            .get_unchecked_release(start..start + len);
         let offset = self.offsets.get_unchecked_release(index);
         self.key_values.extend(
             values

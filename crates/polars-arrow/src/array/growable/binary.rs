@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::utils::extend_offset_values;

@@ -153,6 +153,6 @@ pub fn make_growable<'a>(
                 ))
             })
         },
-        Union | Map => unimplemented!()
+        Union | Map => unimplemented!(),
     }
 }

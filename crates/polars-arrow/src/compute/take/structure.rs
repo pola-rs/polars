@@ -15,53 +15,47 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use polars_error::PolarsResult;
-
 use super::Index;
 use crate::array::{Array, PrimitiveArray, StructArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
 
 #[inline]
-fn take_validity<I: Index>(
+unsafe fn take_validity<I: Index>(
     validity: Option<&Bitmap>,
     indices: &PrimitiveArray<I>,
-) -> PolarsResult<Option<Bitmap>> {
+) -> Option<Bitmap> {
     let indices_validity = indices.validity();
     match (validity, indices_validity) {
-        (None, _) => Ok(indices_validity.cloned()),
+        (None, _) => indices_validity.cloned(),
         (Some(validity), None) => {
             let iter = indices.values().iter().map(|index| {
                 let index = index.to_usize();
-                validity.get_bit(index)
+                validity.get_bit_unchecked(index)
             });
-            Ok(MutableBitmap::from_trusted_len_iter(iter).into())
+            MutableBitmap::from_trusted_len_iter(iter).into()
         },
         (Some(validity), _) => {
             let iter = indices.iter().map(|x| match x {
                 Some(index) => {
                     let index = index.to_usize();
-                    validity.get_bit(index)
+                    validity.get_bit_unchecked(index)
                 },
                 None => false,
             });
-            Ok(MutableBitmap::from_trusted_len_iter(iter).into())
+            MutableBitmap::from_trusted_len_iter(iter).into()
         },
     }
 }
 
-pub fn take<I: Index>(
+pub(super) unsafe fn take_unchecked<I: Index>(
     array: &StructArray,
     indices: &PrimitiveArray<I>,
-) -> PolarsResult<StructArray> {
+) -> StructArray {
     let values: Vec<Box<dyn Array>> = array
         .values()
         .iter()
-        .map(|a| super::take(a.as_ref(), indices))
-        .collect::<PolarsResult<_>>()?;
-    let validity = take_validity(array.validity(), indices)?;
-    Ok(StructArray::new(
-        array.data_type().clone(),
-        values,
-        validity,
-    ))
+        .map(|a| super::take_unchecked(a.as_ref(), indices))
+        .collect();
+    let validity = take_validity(array.validity(), indices);
+    StructArray::new(array.data_type().clone(), values, validity)
 }

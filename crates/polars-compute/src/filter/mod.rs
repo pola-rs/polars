@@ -88,7 +88,9 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
         _ => {
             let iter = SlicesIterator::new(mask.values());
             let mut mutable = make_growable(&[array], false, iter.slots());
-            iter.for_each(|(start, len)| mutable.extend(0, start, len));
+            // SAFETY:
+            // we are in bounds
+            iter.for_each(|(start, len)| unsafe { mutable.extend(0, start, len) });
             Ok(mutable.as_box())
         },
     }

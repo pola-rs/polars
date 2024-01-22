@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use super::primitive::take as take_primitive;
+use super::primitive::take_unchecked as take_primitive;
 use super::Index;
 use crate::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 
@@ -23,7 +23,10 @@ use crate::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 ///
 /// applies `take` to the keys of the dictionary array and returns a new dictionary array
 /// with the same dictionary values and reordered keys
-pub fn take<K, I>(values: &DictionaryArray<K>, indices: &PrimitiveArray<I>) -> DictionaryArray<K>
+pub(super) unsafe fn take_unchecked<K, I>(
+    values: &DictionaryArray<K>,
+    indices: &PrimitiveArray<I>,
+) -> DictionaryArray<K>
 where
     K: DictionaryKey,
     I: Index,

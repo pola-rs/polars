@@ -1,4 +1,5 @@
 use polars_utils::slice::GetSaferUnchecked;
+
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 use crate::offset::Offset;

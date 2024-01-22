@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::Growable;
@@ -57,8 +58,9 @@ impl<'a> Growable<'a> for GrowableFixedSizeBinary<'a> {
 
         let values = array.values();
 
-        self.values
-            .extend_from_slice(values.get_unchecked_release(start * self.size..start * self.size + len * self.size));
+        self.values.extend_from_slice(
+            values.get_unchecked_release(start * self.size..start * self.size + len * self.size),
+        );
     }
 
     fn extend_validity(&mut self, additional: usize) {

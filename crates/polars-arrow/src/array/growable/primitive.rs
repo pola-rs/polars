@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::Growable;
@@ -61,7 +62,8 @@ impl<'a, T: NativeType> Growable<'a> for GrowablePrimitive<'a, T> {
         extend_validity(&mut self.validity, array, start, len);
 
         let values = array.values().as_slice();
-        self.values.extend_from_slice(&values.get_unchecked_release(start..start + len));
+        self.values
+            .extend_from_slice(values.get_unchecked_release(start..start + len));
     }
 
     #[inline]
