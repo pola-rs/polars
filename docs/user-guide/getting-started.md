@@ -22,7 +22,7 @@ This chapter is here to help you get started with Polars. It covers all the fund
 
 ## Reading & writing
 
-Polars supports reading and writing to all common files (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below we use csv as example to demonstrate foundational read/write operations.
+Polars supports reading and writing for common file formats (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below we show the concept of reading and writing to disk.
 
 {{code_block('user-guide/basics/reading-writing','dataframe',['DataFrame'])}}
 
@@ -30,9 +30,7 @@ Polars supports reading and writing to all common files (e.g. csv, json, parquet
 --8<-- "python/user-guide/basics/reading-writing.py:dataframe"
 ```
 
-### CSV example
-
-In this example we write the DataFrame to `output.csv`. After that we can read it back with `read_csv` and `print` the result for inspection.
+In the example below we write the DataFrame to a csv file called `output.csv`. After thatread it back with `read_csv` and `print` the result for inspection.
 
 {{code_block('user-guide/basics/reading-writing','csv',['read_csv','write_csv'])}}
 
@@ -40,11 +38,11 @@ In this example we write the DataFrame to `output.csv`. After that we can read i
 --8<-- "python/user-guide/basics/reading-writing.py:csv"
 ```
 
-For more examples on the CSV file format and other data formats, start here [IO section on CSV](io/csv.md) of the User Guide.
+For more examples on the CSV file format and other data formats, start with the [IO section](io/index.md) of the User Guide.
 
 ## Expressions
 
-`Expressions` are the core strength of Polars. The `expressions` offer a versatile structure that both solves easy queries and is easily extended to complex ones. Below we cover the basic components that serve as building block (or in Polars terminology contexts) for all your queries:
+`Expressions` are the core strength of Polars. The `expressions` offer a modular structure that allows you to combine simple concepts into complex queries. Below we cover the basic components that serve as building block (or in Polars terminology contexts) for all your queries:
 
 - `select`
 - `filter`
@@ -53,7 +51,7 @@ For more examples on the CSV file format and other data formats, start here [IO 
 
 To learn more about expressions and the context in which they operate, see the User Guide sections: [Contexts](concepts/contexts.md) and [Expressions](concepts/expressions.md).
 
-### Select statement
+### Select
 
 To select a column we need to do two things:
 
@@ -105,7 +103,7 @@ print(
 )
 ```
 
-### With_columns
+### Add columns
 
 `with_columns` allows you to create new columns for your analyses. We create two new columns `e` and `b+42`. First we sum all values from column `b` and store the results in column `e`. After that we add `42` to the values of `b`. Creating a new column `b+42` to store these results.
 
@@ -144,7 +142,7 @@ print(
 )
 ```
 
-### Combining operations
+### Combination
 
 Below are some examples on how to combine operations to create the `DataFrame` you require.
 
