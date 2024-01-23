@@ -80,7 +80,7 @@ def test_streaming_group_by_types() -> None:
             "str_sum": pl.String,
             "bool_first": pl.Boolean,
             "bool_last": pl.Boolean,
-            "bool_mean": pl.Boolean,
+            "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
             "date_mean": pl.Date,
