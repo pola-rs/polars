@@ -93,9 +93,9 @@ impl ArrayNameSpace {
     /// Join all string items in a sub-array and place a separator between them.
     /// # Error
     /// Raise if inner type of array is not `DataType::String`.
-    pub fn join(self, separator: Expr) -> Expr {
+    pub fn join(self, separator: Expr, ignore_nulls: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ArrayExpr(ArrayFunction::Join),
+            FunctionExpr::ArrayExpr(ArrayFunction::Join(ignore_nulls)),
             &[separator],
             false,
             false,

@@ -400,7 +400,7 @@ class ListNameSpace:
             Ignore null values (default).
 
             If set to ``False``, null values will be propagated.
-            if the sub-list contains any null values, the output is ``None``.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
