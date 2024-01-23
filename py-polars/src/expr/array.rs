@@ -65,8 +65,12 @@ impl PyExpr {
         self.inner.clone().arr().get(index.inner).into()
     }
 
-    fn arr_join(&self, separator: PyExpr) -> Self {
-        self.inner.clone().arr().join(separator.inner).into()
+    fn arr_join(&self, separator: PyExpr, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .join(separator.inner, ignore_nulls)
+            .into()
     }
 
     #[cfg(feature = "is_in")]

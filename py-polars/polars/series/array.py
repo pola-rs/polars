@@ -346,7 +346,7 @@ class ArrayNameSpace:
 
         """
 
-    def join(self, separator: IntoExprColumn) -> Series:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:
         """
         Join all string items in a sub-array and place a separator between them.
 
@@ -356,6 +356,11 @@ class ArrayNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------

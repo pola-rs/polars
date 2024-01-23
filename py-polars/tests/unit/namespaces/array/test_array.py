@@ -228,13 +228,36 @@ def test_array_join() -> None:
         },
     )
     out = df.select(pl.col("a").arr.join("-"))
-    assert out.to_dict(as_series=False) == {
-        "a": ["ab-c-d", "e-f-g", "null-null-null", None]
-    }
+    assert out.to_dict(as_series=False) == {"a": ["ab-c-d", "e-f-g", "", None]}
     out = df.select(pl.col("a").arr.join(pl.col("separator")))
-    assert out.to_dict(as_series=False) == {
-        "a": ["ab&c&d", None, "null*null*null", None]
-    }
+    assert out.to_dict(as_series=False) == {"a": ["ab&c&d", None, "", None]}
+
+    # test ignore_nulls argument
+    df = pl.DataFrame(
+        {
+            "a": [
+                ["a", None, "b", None],
+                None,
+                [None, None, None, None],
+                ["c", "d", "e", "f"],
+            ],
+            "separator": ["-", "&", " ", "@"],
+        },
+        schema={
+            "a": pl.Array(pl.String, 4),
+            "separator": pl.String,
+        },
+    )
+    # ignore nulls
+    out = df.select(pl.col("a").arr.join("-", ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c-d-e-f"]}
+    out = df.select(pl.col("a").arr.join(pl.col("separator"), ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c@d@e@f"]}
+    # propagate nulls
+    out = df.select(pl.col("a").arr.join("-", ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c-d-e-f"]}
+    out = df.select(pl.col("a").arr.join(pl.col("separator"), ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c@d@e@f"]}
 
 
 @pytest.mark.parametrize(
