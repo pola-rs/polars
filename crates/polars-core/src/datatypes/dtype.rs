@@ -450,7 +450,10 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
                     merger.merge_map(rev_map_r)?;
                     Categorical(Some(merger.finish()), *ordering)
                 },
-                (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => {
+                (RevMapping::Local(_, idl), RevMapping::Local(_, idr))
+                | (RevMapping::Enum(_, idl), RevMapping::Enum(_, idr))
+                    if idl == idr =>
+                {
                     left.clone()
                 },
                 _ => polars_bail!(string_cache_mismatch),
