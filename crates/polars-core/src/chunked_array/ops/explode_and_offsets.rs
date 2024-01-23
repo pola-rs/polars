@@ -1,5 +1,6 @@
 use arrow::bitmap::MutableBitmap;
 use arrow::compute::cast::utf8view_to_utf8;
+#[cfg(feature = "dtype-array")]
 use arrow::legacy::compute::take::take_unchecked;
 use polars_utils::vec::PushUnchecked;
 
