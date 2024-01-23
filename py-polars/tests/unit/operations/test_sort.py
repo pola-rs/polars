@@ -694,7 +694,7 @@ def test_sorted_flag_singletons(value: Any) -> None:
 
 
 def test_sorted_flag_null() -> None:
-    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"] is False
+    assert pl.DataFrame({"x": [None] * 2})["x"].flags["SORTED_ASC"] is False
 
 
 def test_sorted_update_flags_10327() -> None:
