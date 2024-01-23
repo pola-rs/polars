@@ -4462,7 +4462,7 @@ class DataFrame:
             return dt.is_nested() or dt in (Object, Null, Unknown, Categorical, Enum)
 
         # determine which columns get std/mean/percentile stats
-        numeric_result = set()
+        has_numeric_result, sort_cols = set(), set()
         metric_exprs = []
         null = F.lit(None)
 
@@ -4494,15 +4494,15 @@ class DataFrame:
 
             # percentiles
             for p in quantiles:
-                pct_expr = (
-                    (
+                if is_numeric or is_temporal:
+                    pct_expr = (
                         F.col(c).to_physical().quantile(p, interpolation).cast(dt)
                         if is_temporal
                         else F.col(c).quantile(p, interpolation)
                     )
-                    if (is_numeric or is_temporal)
-                    else null
-                )
+                    sort_cols.add(c)
+                else:
+                    pct_expr = null
                 metric_exprs.append(pct_expr.alias(f"{p}:{c}"))
 
             # max
@@ -4511,10 +4511,18 @@ class DataFrame:
             )
 
             if is_numeric or dt.is_nested() or dt in (Null, Boolean):
-                numeric_result.add(c)
+                has_numeric_result.add(c)
+
+        # if more than one quantile requested, sort relevant columns to make them O(1)
+        # TODO: remove once we have engine support for retrieving multiples quantiles
+        lf = (
+            self.lazy().with_columns(F.col(c).sort() for c in sort_cols)
+            if sort_cols
+            else self.lazy()
+        )
 
         # calculate metrics in parallel
-        df_metrics = self.select(*metric_exprs)
+        df_metrics = lf.select(*metric_exprs).collect()
 
         # reshape wide result
         n_metrics = len(metrics)
@@ -4529,7 +4537,7 @@ class DataFrame:
             summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
-                else (float(v) if (c in numeric_result) else str(v))
+                else (float(v) if (c in has_numeric_result) else str(v))
                 for v in summary[c]
             ]
 
