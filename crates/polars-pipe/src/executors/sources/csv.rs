@@ -7,6 +7,7 @@ use polars_io::csv::read_impl::{BatchedCsvReaderMmap, BatchedCsvReaderRead};
 use polars_io::csv::{CsvEncoding, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::{CsvParserOptions, FileScanOptions};
+use polars_utils::iter::EnumerateIdxTrait;
 
 use super::*;
 use crate::pipeline::determine_chunk_size;
@@ -19,7 +20,6 @@ pub(crate) struct CsvSource {
     batched_reader:
         Option<Either<*mut BatchedCsvReaderMmap<'static>, *mut BatchedCsvReaderRead<'static>>>,
     n_threads: usize,
-    chunk_index: IdxSize,
     path: Option<PathBuf>,
     options: Option<CsvParserOptions>,
     file_options: Option<FileScanOptions>,
@@ -112,7 +112,6 @@ impl CsvSource {
             reader: None,
             batched_reader: None,
             n_threads: POOL.current_num_threads(),
-            chunk_index: get_source_offset(),
             path: Some(path),
             options: Some(options),
             file_options: Some(file_options),
@@ -164,19 +163,19 @@ impl Source for CsvSource {
         };
         Ok(match batches {
             None => SourceResult::Finished,
-            Some(batches) => SourceResult::GotMoreData(
-                batches
+            Some(batches) => {
+                let index = get_source_index(0);
+                let out = batches
                     .into_iter()
-                    .map(|data| {
-                        let out = DataChunk {
-                            chunk_index: self.chunk_index,
-                            data,
-                        };
-                        self.chunk_index += 1;
-                        out
+                    .enumerate_u32()
+                    .map(|(i, data)| DataChunk {
+                        chunk_index: (index + i) as IdxSize,
+                        data,
                     })
-                    .collect(),
-            ),
+                    .collect::<Vec<_>>();
+                get_source_index(out.len() as u32);
+                SourceResult::GotMoreData(out)
+            },
         })
     }
     fn fmt(&self) -> &str {

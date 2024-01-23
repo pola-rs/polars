@@ -24,9 +24,6 @@ use super::*;
 
 static CHUNK_INDEX: AtomicU32 = AtomicU32::new(0);
 
-pub(super) fn get_source_offset() -> IdxSize {
-    // New pipelines are ~1M chunks apart before they have the same count.
-    // We don't want chunks with the same count from different pipelines are fed
-    // into the same sink as we cannot determine the order.
-    (CHUNK_INDEX.fetch_add(1, Ordering::Relaxed).wrapping_shl(20)) as IdxSize
+pub(super) fn get_source_index(add: u32) -> u32 {
+    CHUNK_INDEX.fetch_add(add, Ordering::Relaxed)
 }

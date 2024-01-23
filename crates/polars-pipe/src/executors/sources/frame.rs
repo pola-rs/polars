@@ -7,13 +7,12 @@ use polars_core::utils::split_df;
 use polars_core::POOL;
 use polars_utils::IdxSize;
 
-use crate::executors::sources::get_source_offset;
+use crate::executors::sources::get_source_index;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 
 pub struct DataFrameSource {
     dfs: Enumerate<IntoIter<DataFrame>>,
     n_threads: usize,
-    source_offset: IdxSize,
 }
 
 impl DataFrameSource {
@@ -21,23 +20,21 @@ impl DataFrameSource {
         let n_threads = POOL.current_num_threads();
         let dfs = split_df(&mut df, n_threads).unwrap();
         let dfs = dfs.into_iter().enumerate();
-        Self {
-            dfs,
-            n_threads,
-            source_offset: get_source_offset(),
-        }
+        Self { dfs, n_threads }
     }
 }
 
 impl Source for DataFrameSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+        let idx_offset = get_source_index(0);
         let chunks = (&mut self.dfs)
             .map(|(chunk_index, data)| DataChunk {
-                chunk_index: chunk_index as IdxSize + self.source_offset,
+                chunk_index: (chunk_index as u32 + idx_offset) as IdxSize,
                 data,
             })
             .take(self.n_threads)
             .collect::<Vec<_>>();
+        get_source_index(chunks.len() as u32);
 
         if chunks.is_empty() {
             Ok(SourceResult::Finished)
