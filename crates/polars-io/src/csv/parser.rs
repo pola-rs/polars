@@ -396,19 +396,10 @@ pub(super) fn parse_lines(
             return Ok(end - start);
         }
 
-        // only when we have one column \n should not be skipped
-        // other widths should have commas.
-        bytes = if schema_len > 1 {
-            skip_whitespace_line_ending_exclude(bytes, separator, eol_char)
-        } else {
-            skip_whitespace_exclude(bytes, separator)
-        };
         if bytes.is_empty() {
             return Ok(original_bytes_len);
-        }
-
-        // deal with comments
-        if is_comment_line(bytes, comment_prefix) {
+        } else if is_comment_line(bytes, comment_prefix) {
+            // deal with comments
             let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
             bytes = bytes_rem;
             continue;
