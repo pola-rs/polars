@@ -41,13 +41,14 @@ impl ListChunked {
     /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow(true);
+        let field = self.inner_dtype().to_arrow_field("item", true);
         let arr = ca.downcast_iter().next().unwrap();
         unsafe {
-            Series::_try_from_arrow_unchecked(
+            Series::_try_from_arrow_unchecked_with_md(
                 self.name(),
                 vec![(*arr.values()).clone()],
-                &inner_dtype,
+                &field.data_type,
+                Some(&field.metadata),
             )
             .unwrap()
         }
@@ -60,14 +61,15 @@ impl ListChunked {
     ) -> PolarsResult<ListChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow(true);
+        let field = self.inner_dtype().to_arrow_field("item", true);
         let arr = ca.downcast_iter().next().unwrap();
 
         let elements = unsafe {
-            Series::_try_from_arrow_unchecked(
+            Series::_try_from_arrow_unchecked_with_md(
                 self.name(),
                 vec![(*arr.values()).clone()],
-                &inner_dtype,
+                &field.data_type,
+                Some(&field.metadata),
             )
             .unwrap()
         };

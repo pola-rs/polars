@@ -164,6 +164,7 @@ def test_ipc_schema_from_file(
         "datetime": pl.Datetime(),
         "time": pl.Time(),
         "cat": pl.Categorical(),
+        "enum": pl.Enum([]) # at schema inference categories are not read an empty Enum is returned
     }
     assert schema == expected
 
@@ -216,3 +217,25 @@ def test_binview_ipc_mmap(tmp_path: Path) -> None:
     df.write_ipc(file_path, future=True)
     read = pl.read_ipc(file_path, memory_map=True)
     assert_frame_equal(df, read)
+
+
+def test_list_nested_enum() -> None:
+    dtype = pl.List(pl.Enum(["a", "b", "c"]))
+    df = pl.DataFrame(pl.Series("list_cat", [["a", "b", "c", None]], dtype=dtype))
+    buffer = io.BytesIO()
+    df.write_ipc(buffer)
+    df = pl.read_ipc(buffer)
+    assert df.get_column("list_cat").dtype == dtype
+
+
+def test_struct_nested_enum() -> None:
+    dtype = pl.Struct({"enum": pl.Enum(["a", "b", "c"])})
+    df = pl.DataFrame(
+        pl.Series(
+            "struct_cat", [{"enum": "a"}, {"enum": "b"}, {"enum": None}], dtype=dtype
+        )
+    )
+    buffer = io.BytesIO()
+    df.write_ipc(buffer)
+    df = pl.read_ipc(buffer)
+    assert df.get_column("struct_cat").dtype == dtype

@@ -1,3 +1,6 @@
+#[cfg(feature = "dtype-categorical")]
+use std::collections::BTreeMap;
+
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
@@ -274,6 +277,36 @@ impl DataType {
         }
     }
 
+    /// Convert to an Arrow Field
+    pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
+        let metadata = match self {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(Some(rev_map), _) => {
+                if rev_map.is_enum() {
+                    Some(BTreeMap::from([(
+                        "POLARS.CATEGORICAL_TYPE".to_string(),
+                        "ENUM".to_string(),
+                    )]))
+                } else {
+                    None
+                }
+            },
+            DataType::BinaryOffset => Some(BTreeMap::from([(
+                "pl".to_string(),
+                "maintain_type".to_string(),
+            )])),
+            _ => None,
+        };
+
+        let field = ArrowField::new(name, self.to_arrow(pl_flavor), true);
+
+        if let Some(metadata) = metadata {
+            field.with_metadata(metadata)
+        } else {
+            field
+        }
+    }
+
     /// Convert to an Arrow data type.
     #[inline]
     pub fn to_arrow(&self, pl_flavor: bool) -> ArrowDataType {
@@ -323,15 +356,11 @@ impl DataType {
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(arrow::datatypes::Field::new(
-                    "item",
-                    dt.try_to_arrow(pl_flavor)?,
-                    true,
-                )),
+                Box::new(dt.to_arrow_field("item", true)),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                arrow::datatypes::Field::new("item", dt.to_arrow(pl_flavor), true),
+                dt.to_arrow_field("item", true),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
