@@ -21,6 +21,7 @@ use polars_plan::logical_plan::FileInfo;
 use polars_plan::prelude::{FileScanOptions, ParquetOptions};
 use polars_utils::IdxSize;
 
+use crate::executors::sources::get_source_offset;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 use crate::pipeline::determine_chunk_size;
 
@@ -209,7 +210,7 @@ impl ParquetSource {
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
             n_threads,
-            chunk_index: 0,
+            chunk_index: get_source_offset(),
             processed_paths: 0,
             options,
             file_options,

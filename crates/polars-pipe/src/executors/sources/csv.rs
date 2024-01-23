@@ -112,7 +112,7 @@ impl CsvSource {
             reader: None,
             batched_reader: None,
             n_threads: POOL.current_num_threads(),
-            chunk_index: 0,
+            chunk_index: get_source_offset(),
             path: Some(path),
             options: Some(options),
             file_options: Some(file_options),
