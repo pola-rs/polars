@@ -174,18 +174,6 @@ pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
 }
 
 #[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(crate) fn skip_whitespace_line_ending_exclude(
-    input: &[u8],
-    exclude: u8,
-    eol_char: u8,
-) -> &[u8] {
-    skip_condition(input, |b| {
-        b != exclude && (is_whitespace(b) || is_line_ending(b, eol_char))
-    })
-}
-
-#[inline]
 pub(crate) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
     skip_condition(input, |b| is_line_ending(b, eol_char))
 }
