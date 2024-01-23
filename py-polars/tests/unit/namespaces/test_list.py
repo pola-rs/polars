@@ -586,6 +586,34 @@ def test_list_set_oob() -> None:
     ) == {"a": [[], []]}
 
 
+def test_list_set_operations_float() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]},
+        schema={"a": pl.List(pl.Float32), "b": pl.List(pl.Float32)},
+    )
+
+    assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
+        [1.0, 2.0, 3.0, 4.0],
+        [1.0, 2.0, 12.0],
+        [4.0],
+    ]
+    assert df.select(pl.col("a").list.set_intersection("b"))["a"].to_list() == [
+        [1.0, 2.0],
+        [1.0],
+        [4.0],
+    ]
+    assert df.select(pl.col("a").list.set_difference("b"))["a"].to_list() == [
+        [3.0],
+        [],
+        [],
+    ]
+    assert df.select(pl.col("b").list.set_difference("a"))["b"].to_list() == [
+        [4.0],
+        [2.0, 12.0],
+        [],
+    ]
+
+
 def test_list_set_operations() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]}
