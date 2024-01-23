@@ -94,7 +94,7 @@ struct ListLocalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
     idx_lookup: PlHashMap<KeyWrapper, ()>,
     ordering: CategoricalOrdering,
-    categories: MutableUtf8Array<i64>,
+    categories: MutablePlString,
     categories_hash: u128,
 }
 
@@ -126,7 +126,7 @@ impl ListLocalCategoricalChunkedBuilder {
                 ListLocalCategoricalChunkedBuilder::get_hash_builder(),
             ),
             ordering,
-            categories: MutableUtf8Array::with_capacity(capacity),
+            categories: MutablePlString::with_capacity(capacity),
             categories_hash: hash,
         }
     }
@@ -206,7 +206,7 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
     }
 
     fn finish(&mut self) -> ListChunked {
-        let categories: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
+        let categories: Utf8ViewArray = std::mem::take(&mut self.categories).into();
         let rev_map = RevMapping::build_local(categories);
         let inner_dtype = DataType::Categorical(Some(Arc::new(rev_map)), self.ordering);
         let mut ca = self.inner.finish();

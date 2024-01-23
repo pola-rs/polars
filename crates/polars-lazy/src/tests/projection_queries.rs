@@ -123,7 +123,7 @@ fn concat_str_regex_expansion() -> PolarsResult<()> {
     ]?
     .lazy();
     let out = df
-        .select([concat_str([col(r"^b_a_\d$")], ";").alias("concatenated")])
+        .select([concat_str([col(r"^b_a_\d$")], ";", false).alias("concatenated")])
         .collect()?;
     let s = out.column("concatenated")?;
     assert_eq!(s, &Series::new("concatenated", ["a--;;", ";b--;", ";;c--"]));

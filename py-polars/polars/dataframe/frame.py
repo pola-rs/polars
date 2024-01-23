@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import warnings
 from collections import OrderedDict, defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -132,6 +131,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     import deltalake
+    from hvplot.plotting.core import hvPlotTabularPolars
     from xlsxwriter import Workbook
 
     from polars import DataType, Expr, LazyFrame, Series
@@ -1118,7 +1118,7 @@ class DataFrame:
         return self
 
     @property
-    def plot(self) -> Any:
+    def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
 
@@ -2289,33 +2289,15 @@ class DataFrame:
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
-            with warnings.catch_warnings():
-                # Needs fixing upstream in pyarrow
-                # Silence here as it's something Polars users can't do
-                # anything about.
-                warnings.filterwarnings(
-                    "ignore",
-                    message="make_block is deprecated and will be removed",
-                    category=DeprecationWarning,
-                )
-                return tbl.to_pandas(
-                    self_destruct=True,
-                    split_blocks=True,
-                    types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
-                    **kwargs,
-                )
+            return tbl.to_pandas(
+                self_destruct=True,
+                split_blocks=True,
+                types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
+                **kwargs,
+            )
 
         date_as_object = kwargs.pop("date_as_object", False)
-        with warnings.catch_warnings():
-            # Needs fixing upstream in pyarrow
-            # Silence here as it's something Polars users can't do
-            # anything about.
-            warnings.filterwarnings(
-                "ignore",
-                message="make_block is deprecated and will be removed",
-                category=DeprecationWarning,
-            )
-            return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
+        return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
 
     def to_series(self, index: int = 0) -> Series:
         """
@@ -3254,6 +3236,8 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO:
         ...
 
@@ -3262,6 +3246,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> None:
         ...
 
@@ -3269,6 +3255,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path | None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3282,6 +3270,11 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+        future
+            WARNING: this argument is unstable and will be removed without it being
+            considered a breaking change.
+            Setting this to `True` will write polars' internal data-structures that
+            might not be available by other Arrow implementations.
 
         Examples
         --------
@@ -3306,7 +3299,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc(file, compression)
+        self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3906,9 +3899,9 @@ class DataFrame:
         ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.String)],
         ... )
         >>> df.estimated_size()
-        25888898
+        28000000
         >>> df.estimated_size("mb")
-        24.689577102661133
+        26.702880859375
         """
         sz = self._df.estimated_size()
         return scale_bytes(sz, unit)
@@ -4058,14 +4051,15 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str]) -> DataFrame:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> DataFrame:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Examples
         --------
@@ -4083,6 +4077,17 @@ class DataFrame:
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> df.rename(lambda column_name: "c" + column_name[1:])
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
         return self.lazy().rename(mapping).collect(_eager=True)
 
@@ -4418,12 +4423,14 @@ class DataFrame:
         # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
-        for p in parse_percentiles(percentiles):
+
+        percentiles = parse_percentiles(percentiles)
+        for p in percentiles:
             for c in self.columns:
                 expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
                 expr = expr.alias(f"{p}:{c}")
                 percentile_exprs.append(expr)
-            metrics.append(f"{p*100:g}%")
+            metrics.append(f"{p * 100:g}%")
         metrics.append("max")
 
         mean_exprs = [
@@ -4450,8 +4457,16 @@ class DataFrame:
             for c in self.columns
         ]
 
+        # If more than one quantile is requested,
+        # sort numerical columns to make them O(1).
+        # TODO: Should be removed once Polars supports
+        # getting multiples quantiles at once.
+        sort_exprs = [
+            (F.col(c).sort() if len(percentiles) > 1 and c in stat_cols else F.col(c))
+            for c in self.columns
+        ]
         # Calculate metrics in parallel
-        df_metrics = self.select(
+        df_metrics = self.select(*sort_exprs).select(
             F.all().count().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
             *mean_exprs,

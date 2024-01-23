@@ -639,6 +639,9 @@ fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
         (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => dyn_iter(
             binary::DictIter::<K, i64, _>::new(iter, data_type, num_rows, chunk_size),
         ),
+        (PhysicalType::ByteArray, Utf8View | BinaryView) => dyn_iter(
+            binview::DictIter::<K, _>::new(iter, data_type, num_rows, chunk_size),
+        ),
         (PhysicalType::FixedLenByteArray(_), FixedSizeBinary(_)) => dyn_iter(
             fixed_size_binary::DictIter::<K, _>::new(iter, data_type, num_rows, chunk_size),
         ),

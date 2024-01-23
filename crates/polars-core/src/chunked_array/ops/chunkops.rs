@@ -98,10 +98,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             .iter()
             .map(|arr| arr.null_count())
             .sum::<usize>() as IdxSize;
-
-        if self.length <= 1 {
-            self.set_sorted_flag(IsSorted::Ascending)
-        }
     }
 
     pub fn rechunk(&self) -> Self {
@@ -183,6 +179,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             None => std::cmp::min(10, self.len()),
         };
         self.slice(-(len as i64), len)
+    }
+
+    /// Remove empty chunks.
+    pub fn prune_empty_chunks(&mut self) {
+        let mut count = 0u32;
+        unsafe {
+            self.chunks_mut().retain(|arr| {
+                count += 1;
+                // Always keep at least one chunk
+                if count == 1 {
+                    true
+                } else {
+                    // Remove the empty chunks
+                    arr.len() > 0
+                }
+            })
+        }
     }
 }
 

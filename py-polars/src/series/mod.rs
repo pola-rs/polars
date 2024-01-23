@@ -282,8 +282,8 @@ impl PySeries {
         }
     }
 
-    fn sort(&mut self, descending: bool) -> Self {
-        self.series.sort(descending).into()
+    fn sort(&mut self, descending: bool, nulls_last: bool) -> Self {
+        self.series.sort(descending, nulls_last).into()
     }
 
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
@@ -602,6 +602,7 @@ impl PySeries {
         // IPC only support DataFrames so we need to convert it
         let mut df = self.series.clone().into_frame();
         IpcStreamWriter::new(&mut buf)
+            .with_pl_flavor(true)
             .finish(&mut df)
             .expect("ipc writer");
         Ok(PyBytes::new(py, &buf).to_object(py))

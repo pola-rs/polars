@@ -93,6 +93,20 @@ impl<T: NativeType> PrimitiveArray<T> {
         })
     }
 
+    /// # Safety
+    /// Doesn't check invariants
+    pub unsafe fn new_unchecked(
+        data_type: ArrowDataType,
+        values: Buffer<T>,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self {
+            data_type,
+            values,
+            validity,
+        }
+    }
+
     /// Returns a new [`PrimitiveArray`] with a different logical type.
     ///
     /// This function is useful to assign a different [`ArrowDataType`] to the array.

@@ -224,11 +224,8 @@ class Expr:
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq(other))
 
-    def __neg__(self) -> Expr:
-        neg_expr = F.lit(0) - self
-        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
-            neg_expr = neg_expr.alias(name)
-        return neg_expr
+    def __neg__(self) -> Self:
+        return self._from_pyexpr(-self._pyexpr)
 
     def __or__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
@@ -239,10 +236,7 @@ class Expr:
         return self._from_pyexpr(other_expr._or(self._pyexpr))
 
     def __pos__(self) -> Expr:
-        pos_expr = F.lit(0) + self
-        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
-            pos_expr = pos_expr.alias(name)
-        return pos_expr
+        return self
 
     def __pow__(self, exponent: IntoExprColumn | int | float) -> Self:
         exponent = parse_as_expression(exponent)
@@ -5119,6 +5113,28 @@ class Expr:
         └─────┴─────┴────────┘
         """
         return self.__sub__(other)
+
+    def neg(self) -> Self:
+        """
+        Method equivalent of unary minus operator `-expr`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 2, None]})
+        >>> df.with_columns(pl.col("a").neg())
+        shape: (4, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        │ 0    │
+        │ -2   │
+        │ null │
+        └──────┘
+        """
+        return self.__neg__()
 
     def truediv(self, other: Any) -> Self:
         """

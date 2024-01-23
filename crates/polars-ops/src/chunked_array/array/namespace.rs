@@ -119,9 +119,9 @@ pub trait ArrayNameSpace: AsArray {
         array_get(ca, index)
     }
 
-    fn array_join(&self, separator: &StringChunked) -> PolarsResult<Series> {
+    fn array_join(&self, separator: &StringChunked, ignore_nulls: bool) -> PolarsResult<Series> {
         let ca = self.as_array();
-        array_join(ca, separator).map(|ok| ok.into_series())
+        array_join(ca, separator, ignore_nulls).map(|ok| ok.into_series())
     }
 
     #[cfg(feature = "array_count")]

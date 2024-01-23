@@ -135,7 +135,7 @@ impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
 impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
-        let mut builder = StringChunkedBuilder::new("", len, len * 25);
+        let mut builder = StringChunkedBuilder::new("", len);
 
         for res in obj.iter()? {
             let item = res?;
@@ -151,7 +151,7 @@ impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
 impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
-        let mut builder = BinaryChunkedBuilder::new("", len, len * 25);
+        let mut builder = BinaryChunkedBuilder::new("", len);
 
         for res in obj.iter()? {
             let item = res?;
@@ -428,6 +428,9 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Unknown")).unwrap();
                 class.call0().unwrap().into()
             },
+            DataType::BinaryOffset => {
+                unimplemented!()
+            },
         }
     }
 }
@@ -511,8 +514,8 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(categories)?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
-                let arr = ca.downcast_iter().next().unwrap();
-                create_enum_data_type(arr.clone())
+                let categories = ca.downcast_iter().next().unwrap();
+                create_enum_data_type(categories.clone())
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,

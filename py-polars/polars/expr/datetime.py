@@ -535,6 +535,92 @@ class ExprDateTimeNameSpace:
         """
         return self.to_string(format)
 
+    def millennium(self) -> Expr:
+        """
+        Extract the millennium from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the millennium number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [
+        ...             date(999, 12, 31),
+        ...             date(1897, 5, 7),
+        ...             date(2000, 1, 1),
+        ...             date(2001, 7, 5),
+        ...             date(3002, 10, 20),
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(mlnm=pl.col("date").dt.millennium())
+        shape: (5, 2)
+        ┌────────────┬──────┐
+        │ date       ┆ mlnm │
+        │ ---        ┆ ---  │
+        │ date       ┆ i32  │
+        ╞════════════╪══════╡
+        │ 0999-12-31 ┆ 1    │
+        │ 1897-05-07 ┆ 2    │
+        │ 2000-01-01 ┆ 2    │
+        │ 2001-07-05 ┆ 3    │
+        │ 3002-10-20 ┆ 4    │
+        └────────────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.dt_millennium())
+
+    def century(self) -> Expr:
+        """
+        Extract the century from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the century number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [
+        ...             date(999, 12, 31),
+        ...             date(1897, 5, 7),
+        ...             date(2000, 1, 1),
+        ...             date(2001, 7, 5),
+        ...             date(3002, 10, 20),
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(cent=pl.col("date").dt.century())
+        shape: (5, 2)
+        ┌────────────┬──────┐
+        │ date       ┆ cent │
+        │ ---        ┆ ---  │
+        │ date       ┆ i32  │
+        ╞════════════╪══════╡
+        │ 0999-12-31 ┆ 10   │
+        │ 1897-05-07 ┆ 19   │
+        │ 2000-01-01 ┆ 20   │
+        │ 2001-07-05 ┆ 21   │
+        │ 3002-10-20 ┆ 31   │
+        └────────────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.dt_century())
+
     def year(self) -> Expr:
         """
         Extract year from underlying Date representation.
@@ -554,10 +640,9 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {"date": [date(1977, 1, 1), date(1978, 1, 1), date(1979, 1, 1)]}
         ... )
-        >>> df.select(
-        ...     "date",
-        ...     pl.col("date").dt.year().alias("calendar_year"),
-        ...     pl.col("date").dt.iso_year().alias("iso_year"),
+        >>> df.with_columns(
+        ...     calendar_year=pl.col("date").dt.year(),
+        ...     iso_year=pl.col("date").dt.iso_year(),
         ... )
         shape: (3, 3)
         ┌────────────┬───────────────┬──────────┐
@@ -589,17 +674,19 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {"date": [date(2000, 1, 1), date(2001, 1, 1), date(2002, 1, 1)]}
         ... )
-        >>> df.select(pl.col("date").dt.is_leap_year())
-        shape: (3, 1)
-        ┌───────┐
-        │ date  │
-        │ ---   │
-        │ bool  │
-        ╞═══════╡
-        │ true  │
-        │ false │
-        │ false │
-        └───────┘
+        >>> df.with_columns(
+        ...     leap_year=pl.col("date").dt.is_leap_year(),
+        ... )
+        shape: (3, 2)
+        ┌────────────┬───────────┐
+        │ date       ┆ leap_year │
+        │ ---        ┆ ---       │
+        │ date       ┆ bool      │
+        ╞════════════╪═══════════╡
+        │ 2000-01-01 ┆ true      │
+        │ 2001-01-01 ┆ false     │
+        │ 2002-01-01 ┆ false     │
+        └────────────┴───────────┘
         """
         return wrap_expr(self._pyexpr.dt_is_leap_year())
 

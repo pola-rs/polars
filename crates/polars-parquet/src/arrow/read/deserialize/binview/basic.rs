@@ -144,6 +144,8 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 );
             },
             BinaryState::FilteredRequiredDictionary(page) => {
+                // TODO! directly set the dict as buffers and only insert the proper views.
+                // This will save a lot of memory.
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;
@@ -159,6 +161,8 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
             BinaryState::FilteredOptionalDictionary(page_validity, page_values) => {
                 // Already done on the dict.
                 validate_utf8 = false;
+                // TODO! directly set the dict as buffers and only insert the proper views.
+                // This will save a lot of memory.
                 let page_dict = &page_values.dict;
                 extend_from_decoder(
                     validity,

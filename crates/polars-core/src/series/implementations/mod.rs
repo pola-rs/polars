@@ -1,6 +1,7 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+mod binary_offset;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
@@ -472,6 +473,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
 
 impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]
 impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}

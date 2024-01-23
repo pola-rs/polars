@@ -293,11 +293,11 @@ impl StructChunked {
         self.into()
     }
 
-    pub(crate) fn to_arrow(&self, i: usize) -> ArrayRef {
+    pub(crate) fn to_arrow(&self, i: usize, pl_flavor: bool) -> ArrayRef {
         let values = self
             .fields
             .iter()
-            .map(|s| s.to_arrow(i, true))
+            .map(|s| s.to_arrow(i, pl_flavor))
             .collect::<Vec<_>>();
 
         // we determine fields from arrays as there might be object arrays

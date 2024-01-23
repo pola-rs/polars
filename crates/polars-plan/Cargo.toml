@@ -59,7 +59,14 @@ cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 csv = ["polars-io/csv"]
-temporal = ["polars-core/temporal", "dtype-date", "dtype-datetime", "dtype-time", "dtype-i8", "dtype-i16"]
+temporal = [
+  "polars-core/temporal",
+  "polars-core/dtype-date",
+  "polars-core/dtype-datetime",
+  "polars-core/dtype-time",
+  "polars-core/dtype-i8",
+  "polars-core/dtype-i16",
+]
 # debugging purposes
 fmt = ["polars-core/fmt"]
 strings = ["polars-core/strings", "polars-ops/strings"]
@@ -69,10 +76,10 @@ dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-decimal = ["polars-core/dtype-decimal"]
-dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date", "temporal"]
-dtype-datetime = ["polars-core/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
+dtype-date = ["polars-time/dtype-date", "temporal"]
+dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal"]
-dtype-time = ["polars-core/dtype-time", "polars-time/dtype-time"]
+dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
@@ -126,6 +133,7 @@ log = ["polars-ops/log"]
 chunked_ids = ["polars-core/chunked_ids"]
 list_to_struct = ["polars-ops/list_to_struct"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
+reinterpret = ["polars-core/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-ops/string_pad"]
 string_reverse = ["polars-ops/string_reverse"]
 string_to_integer = ["polars-ops/string_to_integer"]

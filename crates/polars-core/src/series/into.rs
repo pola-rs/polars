@@ -4,7 +4,8 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use arrow::legacy::compute::cast::cast;
+use arrow::compute::cast::cast_default as cast;
+use arrow::compute::cast::cast_unchecked;
 
 use crate::prelude::*;
 
@@ -22,7 +23,7 @@ impl Series {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx),
+            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx, pl_flavor),
             // special list branch to
             // make sure that we recursively apply all logical types.
             DataType::List(inner) => {
@@ -44,10 +45,10 @@ impl Series {
                         .unwrap()
                     };
 
-                    s.to_arrow(0, true)
+                    s.to_arrow(0, pl_flavor)
                 };
 
-                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(true));
+                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(pl_flavor));
                 let arr = ListArray::<i64>::new(
                     data_type,
                     arr.offsets().clone(),
@@ -72,25 +73,32 @@ impl Series {
                     )
                 };
 
-                let arr: DictionaryArray<u32> = (&new).into();
-                Box::new(arr) as ArrayRef
+                new.to_arrow(pl_flavor, false)
             },
             #[cfg(feature = "dtype-date")]
-            DataType::Date => {
-                cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow(true)).unwrap()
-            },
+            DataType::Date => cast(
+                &*self.chunks()[chunk_idx],
+                &DataType::Date.to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(true)).unwrap()
-            },
+            DataType::Datetime(_, _) => cast(
+                &*self.chunks()[chunk_idx],
+                &self.dtype().to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow(true)).unwrap()
-            },
+            DataType::Duration(_) => cast(
+                &*self.chunks()[chunk_idx],
+                &self.dtype().to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-time")]
-            DataType::Time => {
-                cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow(true)).unwrap()
-            },
+            DataType::Time => cast(
+                &*self.chunks()[chunk_idx],
+                &DataType::Time.to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "object")]
             DataType::Object(_, None) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;
@@ -107,13 +115,21 @@ impl Series {
                     object_series_to_arrow_array(&s)
                 }
             },
-            DataType::String if pl_flavor => {
-                // TODO: implement Utf8ViewCast Here
-                self.array_ref(chunk_idx).clone()
+            DataType::String => {
+                if pl_flavor {
+                    self.array_ref(chunk_idx).clone()
+                } else {
+                    let arr = self.array_ref(chunk_idx);
+                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
+                }
             },
-            DataType::Binary if pl_flavor => {
-                // TODO: implement BinViewCast Here
-                self.array_ref(chunk_idx).clone()
+            DataType::Binary => {
+                if pl_flavor {
+                    self.array_ref(chunk_idx).clone()
+                } else {
+                    let arr = self.array_ref(chunk_idx);
+                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
+                }
             },
             _ => self.array_ref(chunk_idx).clone(),
         }

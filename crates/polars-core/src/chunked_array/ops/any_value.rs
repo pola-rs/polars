@@ -32,8 +32,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         }};
     }
     match dtype {
-        DataType::String => downcast_and_pack!(LargeStringArray, String),
-        DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
+        DataType::String => downcast_and_pack!(Utf8ViewArray, String),
+        DataType::Binary => downcast_and_pack!(BinaryViewArray, Binary),
         DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
         DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
@@ -119,6 +119,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             PolarsExtension::arr_to_av(arr, idx)
         },
         DataType::Null => AnyValue::Null,
+        DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
         dt => panic!("not implemented for {dt:?}"),
     }
 }
@@ -140,7 +141,7 @@ impl<'a> AnyValue<'a> {
                                 let keys = arr.keys();
                                 let values = arr.values();
                                 let values =
-                                    values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                                    values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
                                 let arr = &*(keys as *const dyn Array as *const UInt32Array);
 
                                 if arr.is_valid_unchecked(idx) {
@@ -233,6 +234,17 @@ impl ChunkAnyValue for StringChunked {
 }
 
 impl ChunkAnyValue for BinaryChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        get_any_value!(self, index)
+    }
+}
+
+impl ChunkAnyValue for BinaryOffsetChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)

@@ -1,49 +1,14 @@
-use chrono::Datelike;
+use std::sync::Arc;
+
 use polars_error::PolarsResult;
+use polars_utils::slice::GetSaferUnchecked;
+use polars_utils::vec::PushUnchecked;
 
 use crate::array::*;
-use crate::datatypes::{ArrowDataType, TimeUnit};
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
-use crate::temporal_conversions::{
-    utf8_to_naive_timestamp as utf8_to_naive_timestamp_, utf8_to_timestamp as utf8_to_timestamp_,
-    EPOCH_DAYS_FROM_CE,
-};
 
-const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
-
-/// Casts a [`Utf8Array`] to a Date32 primitive, making any uncastable value a Null.
-pub fn utf8_to_date32<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i32> {
-    let iter = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.parse::<chrono::NaiveDate>()
-                .ok()
-                .map(|x| x.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
-        })
-    });
-    PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(ArrowDataType::Date32)
-}
-
-pub(super) fn utf8_to_date32_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
-    let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(utf8_to_date32::<O>(from)))
-}
-
-/// Casts a [`Utf8Array`] to a Date64 primitive, making any uncastable value a Null.
-pub fn utf8_to_date64<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i64> {
-    let iter = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.parse::<chrono::NaiveDate>()
-                .ok()
-                .map(|x| (x.num_days_from_ce() - EPOCH_DAYS_FROM_CE) as i64 * 86400000)
-        })
-    });
-    PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Date64)
-}
-
-pub(super) fn utf8_to_date64_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
-    let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(utf8_to_date64::<O>(from)))
-}
+pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
 pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,
@@ -63,42 +28,6 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     array.try_extend(from.iter())?;
 
     Ok(array.into())
-}
-
-pub(super) fn utf8_to_naive_timestamp_dyn<O: Offset>(
-    from: &dyn Array,
-    time_unit: TimeUnit,
-) -> PolarsResult<Box<dyn Array>> {
-    let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(utf8_to_naive_timestamp::<O>(from, time_unit)))
-}
-
-/// [`crate::temporal_conversions::utf8_to_timestamp`] applied for RFC3339 formatting
-pub fn utf8_to_naive_timestamp<O: Offset>(
-    from: &Utf8Array<O>,
-    time_unit: TimeUnit,
-) -> PrimitiveArray<i64> {
-    utf8_to_naive_timestamp_(from, RFC3339, time_unit)
-}
-
-pub(super) fn utf8_to_timestamp_dyn<O: Offset>(
-    from: &dyn Array,
-    timezone: String,
-    time_unit: TimeUnit,
-) -> PolarsResult<Box<dyn Array>> {
-    let from = from.as_any().downcast_ref().unwrap();
-    utf8_to_timestamp::<O>(from, timezone, time_unit)
-        .map(Box::new)
-        .map(|x| x as Box<dyn Array>)
-}
-
-/// [`crate::temporal_conversions::utf8_to_timestamp`] applied for RFC3339 formatting
-pub fn utf8_to_timestamp<O: Offset>(
-    from: &Utf8Array<O>,
-    timezone: String,
-    time_unit: TimeUnit,
-) -> PolarsResult<PrimitiveArray<i64>> {
-    utf8_to_timestamp_(from, RFC3339, timezone, time_unit)
 }
 
 /// Conversion of utf8
@@ -137,4 +66,50 @@ pub fn utf8_to_binary<O: Offset>(
             from.validity().cloned(),
         )
     }
+}
+
+pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
+    let buffer_idx = 0_u32;
+    let base_ptr = arr.values().as_ptr() as usize;
+
+    let mut views = Vec::with_capacity(arr.len());
+    let mut uses_buffer = false;
+    for bytes in arr.values_iter() {
+        let len: u32 = bytes.len().try_into().unwrap();
+
+        let mut payload = [0; 16];
+        payload[0..4].copy_from_slice(&len.to_le_bytes());
+
+        if len <= 12 {
+            payload[4..4 + bytes.len()].copy_from_slice(bytes);
+        } else {
+            uses_buffer = true;
+            unsafe { payload[4..8].copy_from_slice(bytes.get_unchecked_release(0..4)) };
+            let offset = (bytes.as_ptr() as usize - base_ptr) as u32;
+            payload[0..4].copy_from_slice(&len.to_le_bytes());
+            payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
+            payload[12..16].copy_from_slice(&offset.to_le_bytes());
+        }
+
+        let value = u128::from_le_bytes(payload);
+        unsafe { views.push_unchecked(value) };
+    }
+    let buffers = if uses_buffer {
+        Arc::from([arr.values().clone()])
+    } else {
+        Arc::from([])
+    };
+    unsafe {
+        BinaryViewArray::new_unchecked_unknown_md(
+            ArrowDataType::BinaryView,
+            views.into(),
+            buffers,
+            arr.validity().cloned(),
+            None,
+        )
+    }
+}
+
+pub fn utf8_to_utf8view<O: Offset>(arr: &Utf8Array<O>) -> Utf8ViewArray {
+    unsafe { binary_to_binview(&arr.to_binary()).to_utf8view_unchecked() }
 }

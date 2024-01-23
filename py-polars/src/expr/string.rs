@@ -157,8 +157,8 @@ impl PyExpr {
         self.inner.clone().str().pad_end(length, fill_char).into()
     }
 
-    fn str_zfill(&self, length: usize) -> Self {
-        self.inner.clone().str().zfill(length).into()
+    fn str_zfill(&self, length: Self) -> Self {
+        self.inner.clone().str().zfill(length.inner).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]

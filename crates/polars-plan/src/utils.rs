@@ -151,8 +151,17 @@ pub(crate) fn all_return_scalar(e: &Expr) -> bool {
         Expr::Literal(lv) => lv.projects_as_scalar(),
         Expr::Function { options: opt, .. } => opt.returns_scalar,
         Expr::Agg(_) => true,
-        Expr::Column(_) => false,
-        _ => expr_to_leaf_column_exprs_iter(e).all(all_return_scalar),
+        Expr::Column(_) | Expr::Wildcard => false,
+        _ => {
+            let mut empty = true;
+            for leaf in expr_to_leaf_column_exprs_iter(e) {
+                if !all_return_scalar(leaf) {
+                    return false;
+                }
+                empty = false;
+            }
+            !empty
+        },
     }
 }
 

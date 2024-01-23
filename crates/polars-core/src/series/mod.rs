@@ -189,6 +189,9 @@ impl Series {
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
+        if self.len() <= 1 {
+            return IsSorted::Ascending;
+        }
         let flags = self.get_flags();
         if flags.contains(Settings::SORTED_DSC) {
             IsSorted::Descending
@@ -282,9 +285,10 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool) -> Self {
+    pub fn sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.sort_with(SortOptions {
             descending,
+            nulls_last,
             ..Default::default()
         })
     }

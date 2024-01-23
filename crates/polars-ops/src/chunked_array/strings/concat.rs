@@ -1,4 +1,5 @@
 use arrow::array::{Utf8Array, ValueSize};
+use arrow::compute::cast::utf8_to_utf8view;
 use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
@@ -38,8 +39,11 @@ pub fn str_concat(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> St
     });
 
     let buf = buf.into_bytes();
+    assert!(capacity >= buf.len());
     let offsets = vec![0, buf.len() as i64];
     let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
+    // conversion is cheap with one value.
+    let arr = utf8_to_utf8view(&arr);
     StringChunked::with_chunk(ca.name(), arr)
 }
 
@@ -51,12 +55,21 @@ enum ColumnIter<I, T> {
 /// Horizontally concatenate all strings.
 ///
 /// Each array should have length 1 or a length equal to the maximum length.
-pub fn hor_str_concat(cas: &[&StringChunked], delimiter: &str) -> PolarsResult<StringChunked> {
+pub fn hor_str_concat(
+    cas: &[&StringChunked],
+    delimiter: &str,
+    ignore_nulls: bool,
+) -> PolarsResult<StringChunked> {
     if cas.is_empty() {
         return Ok(StringChunked::full_null("", 0));
     }
     if cas.len() == 1 {
-        return Ok(cas[0].clone());
+        let ca = cas[0];
+        return if !ignore_nulls || ca.null_count() == 0 {
+            Ok(ca.clone())
+        } else {
+            Ok(ca.apply_generic(|val| Some(val.unwrap_or(""))))
+        };
     }
 
     // Calculate the post-broadcast length and ensure everything is consistent.
@@ -71,20 +84,7 @@ pub fn hor_str_concat(cas: &[&StringChunked], delimiter: &str) -> PolarsResult<S
         ComputeError: "all series in `hor_str_concat` should have equal or unit length"
     );
 
-    // Calculate total capacity needed.
-    let tot_strings_bytes: usize = cas
-        .iter()
-        .map(|ca| {
-            let bytes = ca.get_values_size();
-            if ca.len() == 1 {
-                len * bytes
-            } else {
-                bytes
-            }
-        })
-        .sum();
-    let capacity = tot_strings_bytes + (cas.len() - 1) * delimiter.len() * len;
-    let mut builder = StringChunkedBuilder::new(cas[0].name(), len, capacity);
+    let mut builder = StringChunkedBuilder::new(cas[0].name(), len);
 
     // Broadcast if appropriate.
     let mut cols: Vec<_> = cas
@@ -102,23 +102,31 @@ pub fn hor_str_concat(cas: &[&StringChunked], delimiter: &str) -> PolarsResult<S
     let mut buf = String::with_capacity(1024);
     for _row in 0..len {
         let mut has_null = false;
-        for (i, col) in cols.iter_mut().enumerate() {
-            if i > 0 {
-                buf.push_str(delimiter);
-            }
-
+        let mut found_not_null_value = false;
+        for col in cols.iter_mut() {
             let val = match col {
                 ColumnIter::Iter(i) => i.next().unwrap(),
                 ColumnIter::Broadcast(s) => *s,
             };
+
+            if has_null && !ignore_nulls {
+                // We know that the result must be null, but we can't just break out of the loop,
+                // because all cols iterator has to be moved correctly.
+                continue;
+            }
+
             if let Some(s) = val {
+                if found_not_null_value {
+                    buf.push_str(delimiter);
+                }
                 buf.push_str(s);
+                found_not_null_value = true;
             } else {
                 has_null = true;
             }
         }
 
-        if has_null {
+        if !ignore_nulls && has_null {
             builder.append_null();
         } else {
             builder.append_value(&buf)
@@ -148,11 +156,11 @@ mod test {
         let a = StringChunked::new("a", &["foo", "bar"]);
         let b = StringChunked::new("b", &["spam", "ham"]);
 
-        let out = hor_str_concat(&[&a, &b], "_").unwrap();
+        let out = hor_str_concat(&[&a, &b], "_", true).unwrap();
         assert_eq!(Vec::from(&out), &[Some("foo_spam"), Some("bar_ham")]);
 
         let c = StringChunked::new("b", &["literal"]);
-        let out = hor_str_concat(&[&a, &b, &c], "_").unwrap();
+        let out = hor_str_concat(&[&a, &b, &c], "_", true).unwrap();
         assert_eq!(
             Vec::from(&out),
             &[Some("foo_spam_literal"), Some("bar_ham_literal")]
