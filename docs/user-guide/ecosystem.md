@@ -8,7 +8,6 @@ On this page you can find a non-exhaustive list of libraries and tools that supp
 
 - [Apache Arrow](#apache-arrow)
 - [Data visualisation](#data-visualisation)
-- [Geospatial](#geospatial)
 - [IO](#io)
 - [Machine learning](#machine-learning)
 - [Other](#other)
@@ -38,12 +37,6 @@ Dash is the original low-code framework for rapidly building data apps in Python
 #### [Seaborn](https://seaborn.pydata.org/)
 
 Seaborn is a Python data visualization library based on Matplotlib. It provides a high-level interface for drawing attractive and informative statistical graphics.
-
-### Geospatial
-
-#### [GeoPolars](https://github.com/geopolars/geopolars)
-
-GeoPolars extends the Polars DataFrame library for use with geospatial data.
 
 ### IO
 
