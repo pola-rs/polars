@@ -5,6 +5,7 @@ pub mod atomic;
 pub mod cache;
 pub mod cell;
 pub mod contention_pool;
+pub mod cpuid;
 mod error;
 pub mod floor_divmod;
 pub mod functions;

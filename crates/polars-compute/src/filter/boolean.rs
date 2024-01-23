@@ -1,5 +1,54 @@
 use super::*;
 
+
+fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
+    assert_eq!(values.len(), mask.len());
+    
+    let (values_slice, values_offset, len) = values.as_slice();
+    let (mask_slice, mask_offset, _) = mask.as_slice();
+    let out_len = mask.len() - mask.unset_bits();
+    let out_storage_len = out_len.next_multiple_of(64);
+    
+    let mut out: Vec<u64> = Vec::with_capacity(out_storage_len / 8);
+    
+    let mut values_ptr = values_slice.as_ptr();
+    let mut mask_ptr = mask_slice.as_ptr();
+    let mut out_ptr = out.as_mut_ptr();
+
+    let mut len_remaining = out_len;
+    let loop_mask = (1 << 56) - 1;
+    
+    let mut out_offset = 0;
+    while len_remaining >= 64 {
+        let (vw, mw);
+        unsafe {
+            vw = (values_ptr as *const u64).read_unaligned() >> values_offset;
+            mw = (mask_ptr as *const u64).read_unaligned() >> mask_offset;
+            values_ptr = values_ptr.add(7);
+            mask_ptr = mask_ptr.add(7);
+            len_remaining -= 56;
+        
+            let out_val: u64 = todo!();
+
+            out.as_mut_ptr().add(out_offset / 8).write_unaligned(out_val);
+            out_offset += (mw & loop_mask).count_ones() as usize;
+        }
+        
+        
+
+
+
+    }
+
+
+    todo!()
+}
+
+
+
+
+
+
 pub(super) fn filter_bitmap_and_validity(
     values: &Bitmap,
     validity: Option<&Bitmap>,
@@ -158,3 +207,6 @@ fn nonnull_filter(values: &Bitmap, mask: &Bitmap) -> MutableBitmap {
         unsafe { nonnull_filter_impl(values, mask_chunks, filter_count) }
     }
 }
+
+
+
