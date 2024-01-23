@@ -232,7 +232,7 @@ def numpy_to_pyseries(
 
     if len(values.shape) == 1:
         values, dtype = numpy_values_and_dtype(values)
-        constructor = numpy_type_to_constructor(dtype)
+        constructor = numpy_type_to_constructor(values, dtype)
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )

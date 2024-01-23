@@ -419,6 +419,11 @@ def test_from_numpy() -> None:
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
+    data2 = np.array(["foo", "bar"], dtype=object)
+    df2 = pl.from_numpy(data2)
+    assert df2.shape == (2, 1)
+    assert df2.rows() == [("foo",), ("bar",)]
+    assert df2.schema == {"column_0": pl.String}
     with pytest.raises(
         ValueError,
         match="cannot create DataFrame from array with more than two dimensions",
