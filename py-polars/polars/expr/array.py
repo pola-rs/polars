@@ -432,7 +432,7 @@ class ExprArrayNameSpace:
         """
         return self.get(-1)
 
-    def join(self, separator: IntoExprColumn) -> Expr:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
         Join all string items in a sub-array and place a separator between them.
 
@@ -442,6 +442,11 @@ class ExprArrayNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -470,7 +475,7 @@ class ExprArrayNameSpace:
 
         """
         separator = parse_as_expression(separator, str_as_lit=True)
-        return wrap_expr(self._pyexpr.arr_join(separator))
+        return wrap_expr(self._pyexpr.arr_join(separator, ignore_nulls))
 
     def contains(
         self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
