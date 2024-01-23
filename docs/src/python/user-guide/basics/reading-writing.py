@@ -11,7 +11,7 @@ df = pl.DataFrame(
             datetime(2025, 1, 3),
         ],
         "float": [4.0, 5.0, 6.0],
-        "string": ["a", "b", "c"]
+        "string": ["a", "b", "c"],
     }
 )
 
