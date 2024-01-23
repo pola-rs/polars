@@ -214,8 +214,10 @@ def test_dt_datetime_date_time_invalid() -> None:
         pl.Series([time(23)]).dt.date()
     with pytest.raises(ComputeError, match="expected Datetime or Date"):
         pl.Series([timedelta(1)]).dt.date()
-    with pytest.raises(ComputeError, match="expected Datetime, Date, or Time"):
+    with pytest.raises(ComputeError, match="expected Datetime or Time"):
         pl.Series([timedelta(1)]).dt.time()
+    with pytest.raises(ComputeError, match="expected Datetime or Time"):
+        pl.Series([date(2020, 1, 1)]).dt.time()
 
 
 @pytest.mark.parametrize(
