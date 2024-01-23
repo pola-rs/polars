@@ -452,6 +452,8 @@ pub fn cast(
             Utf8 => Ok(
                 utf8_to_utf8view(array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap()).boxed(),
             ),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Ok(decimal_to_utf8view_dyn(array).boxed()),
             _ => from_to_binview(array, from_type, to_type)
                 .map(|arr| unsafe { arr.to_utf8view_unchecked() }.boxed()),
         },
@@ -778,8 +780,6 @@ fn from_to_binview(
         Binary => binary_to_binview::<i32>(array.as_any().downcast_ref().unwrap()),
         FixedSizeBinary(_) => fixed_size_binary_to_binview(array.as_any().downcast_ref().unwrap()),
         LargeBinary => binary_to_binview::<i64>(array.as_any().downcast_ref().unwrap()),
-        #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => decimal_to_binview_dyn(array),
         _ => polars_bail!(InvalidOperation:
             "casting from {from_type:?} to {to_type:?} not supported",
         ),

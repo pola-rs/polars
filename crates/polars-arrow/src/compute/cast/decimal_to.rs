@@ -140,7 +140,7 @@ where
 
 /// Returns a [`Utf8Array`] where every element is the utf8 representation of the decimal.
 #[cfg(feature = "dtype-decimal")]
-pub(super) fn decimal_to_binview(from: &PrimitiveArray<i128>) -> BinaryViewArray {
+pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray {
     let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.data_type().to_logical_type() {
         (*p, *s)
     } else {
@@ -151,14 +151,14 @@ pub(super) fn decimal_to_binview(from: &PrimitiveArray<i128>) -> BinaryViewArray
 
     for &x in from.values().iter() {
         let buf = crate::legacy::compute::decimal::format_decimal(x, from_scale, false);
-        mutable.push_value_ignore_validity(buf.as_str().as_bytes())
+        mutable.push_value_ignore_validity(buf.as_str())
     }
 
     mutable.freeze().with_validity(from.validity().cloned())
 }
 
 #[cfg(feature = "dtype-decimal")]
-pub(super) fn decimal_to_binview_dyn(from: &dyn Array) -> BinaryViewArray {
+pub(super) fn decimal_to_utf8view_dyn(from: &dyn Array) -> Utf8ViewArray {
     let from = from.as_any().downcast_ref().unwrap();
-    decimal_to_binview(from)
+    decimal_to_utf8view(from)
 }
