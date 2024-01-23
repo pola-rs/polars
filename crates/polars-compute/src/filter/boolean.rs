@@ -46,6 +46,68 @@ fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
 
 
 
+/*
+
+pub fn carryless_mullo64(x: u64, y: u64) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        use core::arch::aarch64::*;
+        vmull_p64(x, y) as u64
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        use core::arch::x86_64::*;
+        _mm_cvtsi128_si64(_mm_clmulepi64_si128(
+            _mm_cvtsi64_si128(x as i64),
+            _mm_cvtsi64_si128(y as i64),
+            0
+        )) as u64
+    }
+}
+
+pub fn pext(v: u64, m: u64) -> u64 {
+    let mut mm = !m;
+    let prefix = u64::MAX - 1;
+
+    let mut a = v & m;
+    for i in 0..5 {
+        let bit = carryless_mullo64(mm, prefix);
+        a = (!bit & a) | ((bit & a) >> (1 << i));
+        mm &= bit;
+    }
+    let bit = u64::wrapping_sub(0, mm) * 2;
+    a = (!bit & a) | ((bit & a) >> (1 << 5));
+
+    a
+}
+
+
+pub fn pext_loop(mut v: u64, mut m: u64, lut: &[u8]) -> u64 {
+    let mut out = 0u64;
+    let mut popcnt = v.count_ones();
+    let mut i = 0;
+    while m > 0 {
+        let lsb_m = m & u64::wrapping_sub(0, m);
+        out = out.rotate_right(1) | (v & lsb_m > 0) as u64;
+        m ^= lsb_m;
+        i += 1;
+    }
+    out.rotate_left(popcnt)
+}
+
+
+*/
+
+
+
+
+
+
+
+
+
+
 
 
 
