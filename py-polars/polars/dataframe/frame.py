@@ -2277,30 +2277,37 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        object_columns = [
-            name for (name, dtype) in zip(self.columns, self.dtypes) if dtype == Object
-        ]
-        object_columns_set = set(object_columns)
-
-        if len(object_columns) == len(self.columns):
-            pandas_df = pd.DataFrame()
-        else:
-            # Export columns that aren't pl.Object:
-            df_without_objects = self.select(
-                [col(name) for name in self.columns if name not in object_columns_set]
-            )
-            pandas_df = self._to_pandas_without_object_columns(
-                df_without_objects, use_pyarrow_extension_array, **kwargs
+        # A faster path for the case where there are no pl.Object columns:
+        if Object not in self.dtypes:
+            return self._to_pandas_without_object_columns(
+                self, use_pyarrow_extension_array, **kwargs
             )
 
-        # Add columns that are pl.Object. We do this in order, so the index for
+        # Find which columns are of type pl.Object, and which aren't:
+        object_columns = []
+        not_object_columns = []
+        for i, dtype in enumerate(self.dtypes):
+            if dtype == Object:
+                object_columns.append(i)
+            else:
+                not_object_columns.append(i)
+
+        # Export columns that aren't pl.Object, in the same order:
+        df_without_objects = self.select(
+            [col(self.columns[i]) for i in not_object_columns]
+        )
+        pandas_df = self._to_pandas_without_object_columns(
+            df_without_objects, use_pyarrow_extension_array, **kwargs
+        )
+
+        # Add columns that are pl.Object, using Series' custom to_pandas()
+        # logic for this case. We do this in order, so the original index for
         # the next column in this dataframe is correct for the partially
         # constructed Pandas dataframe, since there are no additional or
-        # missing columns to its left.
-        for name in object_columns:
-            pandas_df.insert(
-                self.get_column_index(name), name, self.get_column(name).to_pandas()
-            )
+        # missing columns to the inserted column's left.
+        for i in object_columns:
+            name = self.columns[i]
+            pandas_df.insert(i, name, self.get_column(name).to_pandas())
 
         return pandas_df
 
@@ -2310,6 +2317,10 @@ class DataFrame:
         use_pyarrow_extension_array: bool = False,  # noqa: FBT001
         **kwargs: Any,
     ) -> pd.DataFrame:
+        if not df_without_objects.width:
+            # Empty dataframe, cannot infer schema from batches:
+            return pd.DataFrame()
+
         record_batches = df_without_objects._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
