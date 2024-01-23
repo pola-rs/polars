@@ -39,9 +39,6 @@ pub(super) fn init_writer_thread(
                 if maintain_order {
                     chunks.sort_by_key(|chunk| chunk.chunk_index);
                 }
-                dbg!(maintain_order);
-                let idx = chunks.iter().map(|c| c.chunk_index).collect::<Vec<_>>();
-                dbg!(idx);
 
                 for chunk in chunks.iter() {
                     writer._write_batch(&chunk.data).unwrap()

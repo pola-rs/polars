@@ -15,6 +15,7 @@ pub(crate) use frame::*;
 pub(crate) use ipc_one_shot::*;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::*;
+use polars_utils::IdxSize;
 pub(crate) use reproject::*;
 pub(crate) use union::*;
 
