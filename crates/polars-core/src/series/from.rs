@@ -596,7 +596,7 @@ unsafe fn to_physical_and_dtype(
                 (arrays, DataType::Array(Box::new(dtype), *size))
             })
         },
-        ArrowDataType::LargeList(_) => {
+        ArrowDataType::LargeList(field) => {
             let values = arrays
                 .iter()
                 .map(|arr| {
@@ -605,7 +605,7 @@ unsafe fn to_physical_and_dtype(
                 })
                 .collect::<Vec<_>>();
 
-            let (converted_values, dtype) = to_physical_and_dtype(values, md);
+            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
 
             let arrays = arrays
                 .iter()

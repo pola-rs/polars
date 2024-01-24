@@ -356,11 +356,11 @@ impl DataType {
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(dt.to_arrow_field("item", true)),
+                Box::new(dt.to_arrow_field("item", pl_flavor)),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                dt.to_arrow_field("item", true),
+                dt.to_arrow_field("item", pl_flavor),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
