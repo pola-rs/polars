@@ -7,8 +7,6 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
