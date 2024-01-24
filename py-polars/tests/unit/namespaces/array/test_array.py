@@ -260,6 +260,60 @@ def test_array_join() -> None:
     assert out.to_dict(as_series=False) == {"a": [None, None, None, "c@d@e@f"]}
 
 
+def test_array_explode() -> None:
+    df = pl.DataFrame(
+        {
+            "str": [["a", "b"], ["c", None], None],
+            "nested": [[[1, 2], [3]], [[], [4, None]], None],
+            "logical": [
+                [datetime.date(1998, 1, 1), datetime.date(2000, 10, 1)],
+                [datetime.date(2024, 1, 1), None],
+                None,
+            ],
+        },
+        schema={
+            "str": pl.Array(pl.String, 2),
+            "nested": pl.Array(pl.List(pl.Int64), 2),
+            "logical": pl.Array(pl.Date, 2),
+        },
+    )
+    out = df.select(pl.all().arr.explode())
+    expected = pl.DataFrame(
+        {
+            "str": ["a", "b", "c", None, None],
+            "nested": [[1, 2], [3], [], [4, None], None],
+            "logical": [
+                datetime.date(1998, 1, 1),
+                datetime.date(2000, 10, 1),
+                datetime.date(2024, 1, 1),
+                None,
+                None,
+            ],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    # test no-null fast path
+    s = pl.Series(
+        [
+            [datetime.date(1998, 1, 1), datetime.date(1999, 1, 3)],
+            [datetime.date(2000, 1, 1), datetime.date(2023, 10, 1)],
+        ],
+        dtype=pl.Array(pl.Date, 2),
+    )
+    out_s = s.arr.explode()
+    expected_s = pl.Series(
+        [
+            datetime.date(1998, 1, 1),
+            datetime.date(1999, 1, 3),
+            datetime.date(2000, 1, 1),
+            datetime.date(2023, 10, 1),
+        ],
+        dtype=pl.Date,
+    )
+    assert_series_equal(out_s, expected_s)
+
+
 @pytest.mark.parametrize(
     ("array", "data", "expected", "dtype"),
     [
