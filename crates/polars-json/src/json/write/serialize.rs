@@ -112,12 +112,12 @@ where
     materialize_serializer(f, array.iter(), offset, take)
 }
 
-fn dictionary_utf8_serializer<'a, K: DictionaryKey, O: Offset>(
+fn dictionary_utf8view_serializer<'a, K: DictionaryKey>(
     array: &'a DictionaryArray<K>,
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    let iter = array.iter_typed::<Utf8Array<O>>().unwrap().skip(offset);
+    let iter = array.iter_typed::<Utf8ViewArray>().unwrap().skip(offset);
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             utf8::write_str(buf, x).unwrap();
@@ -130,6 +130,21 @@ fn dictionary_utf8_serializer<'a, K: DictionaryKey, O: Offset>(
 
 fn utf8_serializer<'a, O: Offset>(
     array: &'a Utf8Array<O>,
+    offset: usize,
+    take: usize,
+) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+    let f = |x: Option<&str>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            utf8::write_str(buf, x).unwrap();
+        } else {
+            buf.extend_from_slice(b"null")
+        }
+    };
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
+fn utf8view_serializer<'a>(
+    array: &'a Utf8ViewArray,
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
@@ -406,11 +421,11 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Float64 => {
             float_serializer::<f64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        ArrowDataType::Utf8 => {
-            utf8_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        },
         ArrowDataType::LargeUtf8 => {
             utf8_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::Utf8View => {
+            utf8view_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Struct(_) => {
             struct_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
@@ -421,16 +436,17 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::LargeList(_) => {
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        other @ ArrowDataType::Dictionary(k, v, _) => match (k, &**v) {
-            (IntegerType::UInt32, ArrowDataType::LargeUtf8) => {
+        ArrowDataType::Dictionary(k, v, _) => match (k, &**v) {
+            (IntegerType::UInt32, ArrowDataType::Utf8View) => {
                 let array = array
                     .as_any()
                     .downcast_ref::<DictionaryArray<u32>>()
                     .unwrap();
-                dictionary_utf8_serializer::<u32, i64>(array, offset, take)
+                dictionary_utf8view_serializer::<u32>(array, offset, take)
             },
             _ => {
-                todo!("Writing {:?} to JSON", other)
+                // Not produced by polars
+                unreachable!()
             },
         },
         ArrowDataType::Date32 => date_serializer(

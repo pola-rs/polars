@@ -195,7 +195,7 @@ fn deserialize_all<'a>(
                 if ignore_errors {
                     return Ok(AnyValue::Null);
                 }
-                polars_bail!(ComputeError: "expected list/array in json value, got {}", dtype);
+                polars_bail!(ComputeError: "expected dtype '{}' in JSON value, got dtype: Array\n\nEncountered value: {}", dtype, json);
             };
             let vals: Vec<AnyValue> = arr
                 .iter()

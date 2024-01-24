@@ -136,7 +136,7 @@ def test_cse_9630() -> None:
 
 
 @pytest.mark.write_disk()
-def test_schema_row_count_cse() -> None:
+def test_schema_row_index_cse() -> None:
     csv_a = NamedTemporaryFile()
     csv_a.write(
         b"""
@@ -469,7 +469,7 @@ def test_cse_count_in_group_by() -> None:
     q = (
         pl.LazyFrame({"a": [1, 1, 2], "b": [1, 2, 3], "c": [40, 51, 12]})
         .group_by("a")
-        .agg(pl.all().slice(0, pl.count() - 1))
+        .agg(pl.all().slice(0, pl.len() - 1))
     )
 
     assert "POLARS_CSER" not in q.explain()
@@ -527,8 +527,8 @@ def test_cse_slice_11594() -> None:
     df = pl.LazyFrame({"a": [1, 2, 1, 2, 1, 2]})
 
     q = df.select(
-        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
-        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("2"),
+        pl.col("a").slice(offset=1, length=pl.len() - 1).alias("1"),
+        pl.col("a").slice(offset=1, length=pl.len() - 1).alias("2"),
     )
 
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
@@ -539,8 +539,8 @@ def test_cse_slice_11594() -> None:
     }
 
     q = df.select(
-        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
-        pl.col("a").slice(offset=0, length=pl.count() - 1).alias("2"),
+        pl.col("a").slice(offset=1, length=pl.len() - 1).alias("1"),
+        pl.col("a").slice(offset=0, length=pl.len() - 1).alias("2"),
     )
 
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)

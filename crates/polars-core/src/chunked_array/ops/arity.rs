@@ -78,7 +78,7 @@ where
     V::Array: ArrayFromIter<<F as UnaryFnMut<T::Physical<'a>>>::Ret>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(true));
         return ChunkedArray::with_chunk(ca.name(), arr);
     }
 
@@ -102,7 +102,7 @@ where
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(true));
         return Ok(ChunkedArray::with_chunk(ca.name(), arr));
     }
 
@@ -142,6 +142,21 @@ where
     F: FnMut(&T::Array) -> Arr,
 {
     ChunkedArray::from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
+}
+
+#[inline]
+pub fn try_unary_mut_with_options<T, V, F, Arr, E>(
+    ca: &ChunkedArray<T>,
+    op: F,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array + StaticArray,
+    F: FnMut(&T::Array) -> Result<Arr, E>,
+    E: Error,
+{
+    ChunkedArray::try_from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
 }
 
 #[inline]
@@ -265,7 +280,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return ChunkedArray::with_chunk(lhs.name(), arr);
     }
@@ -304,7 +319,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
     }
@@ -379,6 +394,29 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
     ChunkedArray::from_chunk_iter(name, iter)
+}
+
+#[inline]
+pub fn try_binary_mut_with_options<T, U, V, F, Arr, E>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: &str,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
+    E: Error,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
+    ChunkedArray::try_from_chunk_iter(name, iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -585,9 +623,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            let mut out = unary_elementwise(rhs, |b| op(a.clone(), b));
-            out.rename(lhs.name());
-            out
+            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -612,9 +648,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            let mut out = try_unary_elementwise(rhs, |b| op(a.clone(), b))?;
-            out.rename(lhs.name());
-            Ok(out)
+            Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -640,7 +674,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return ChunkedArray::with_chunk(lhs.name(), arr);
     }
@@ -648,9 +682,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.value_unchecked(0) };
-            let mut out = unary_elementwise_values(rhs, |b| op(a.clone(), b));
-            out.rename(lhs.name());
-            out
+            unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
         },
         (_, 1) => {
             let b = unsafe { rhs.value_unchecked(0) };
@@ -676,7 +708,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
     }
@@ -684,9 +716,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.value_unchecked(0) };
-            let mut out = try_unary_elementwise_values(rhs, |b| op(a.clone(), b))?;
-            out.rename(lhs.name());
-            Ok(out)
+            Ok(try_unary_elementwise_values(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
         },
         (_, 1) => {
             let b = unsafe { rhs.value_unchecked(0) };

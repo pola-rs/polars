@@ -146,6 +146,7 @@ select = [
   "PIE", # flake8-pie
   "TD", # flake8-todos
   "TRY", # tryceratops
+  "EM", # flake8-errmsg
   "FBT001", # flake8-boolean-trap
 ]
 

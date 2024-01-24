@@ -27,7 +27,7 @@ impl GrowableNull {
 }
 
 impl<'a> Growable<'a> for GrowableNull {
-    fn extend(&mut self, _: usize, _: usize, len: usize) {
+    unsafe fn extend(&mut self, _: usize, _: usize, len: usize) {
         self.length += len;
     }
 

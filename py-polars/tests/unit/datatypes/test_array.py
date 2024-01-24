@@ -73,9 +73,8 @@ def test_array_in_group_by() -> None:
         ]
     )
 
-    assert next(iter(df.group_by("id", maintain_order=True)))[1]["list"].to_list() == [
-        [1, 2]
-    ]
+    result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
+    assert result.to_list() == [[1, 2]]
 
     df = pl.DataFrame(
         {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
@@ -214,3 +213,15 @@ def test_array_repeat() -> None:
     expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
     assert s.dtype == dtype
     assert_series_equal(s, expected)
+
+
+def test_create_nested_array() -> None:
+    data = [[[1, 2], [3]], [[], [4, None]], None]
+    s1 = pl.Series(data, dtype=pl.Array(pl.List(pl.Int64), 2))
+    assert s1.to_list() == data
+    data = [[[1, 2], [3, None]], [[None, None], [4, None]], None]
+    s2 = pl.Series(
+        [[[1, 2], [3, None]], [[None, None], [4, None]], None],
+        dtype=pl.Array(pl.Array(pl.Int64, 2), 2),
+    )
+    assert s2.to_list() == data

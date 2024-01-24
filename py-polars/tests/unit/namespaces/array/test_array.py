@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import datetime
+from typing import Any
 
 import numpy as np
 import pytest
@@ -39,9 +42,22 @@ def test_array_min_max_dtype_12123() -> None:
     assert_frame_equal(out, pl.DataFrame({"max": [3.0, 10.0], "min": [1.0, 4.0]}))
 
 
-def test_arr_sum() -> None:
-    s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
-    assert s.arr.sum().to_list() == [3, 7]
+@pytest.mark.parametrize(
+    ("data", "expected_sum", "dtype"),
+    [
+        ([[1, 2], [4, 3]], [3, 7], pl.Int64),
+        ([[1, None], [None, 3], [None, None]], [1, 3, 0], pl.Int64),
+        ([[1.0, 2.0], [4.0, 3.0]], [3.0, 7.0], pl.Float32),
+        ([[1.0, None], [None, 3.0], [None, None]], [1.0, 3.0, 0], pl.Float32),
+        ([[True, False], [True, True], [False, False]], [1, 2, 0], pl.Boolean),
+        ([[True, None], [None, False], [None, None]], [1, 0, 0], pl.Boolean),
+    ],
+)
+def test_arr_sum(
+    data: list[list[Any]], expected_sum: list[Any], dtype: pl.DataType
+) -> None:
+    s = pl.Series("a", data, dtype=pl.Array(dtype, 2))
+    assert s.arr.sum().to_list() == expected_sum
 
 
 def test_arr_unique() -> None:
@@ -88,6 +104,17 @@ def test_array_sort() -> None:
     asc = s.arr.sort(descending=False)
     expected = pl.Series([[None, 1, 2], [1, 2, 3]], dtype=pl.Array(pl.UInt32, 3))
     assert_series_equal(asc, expected)
+
+    # test nulls_last
+    s = pl.Series([[None, 1, 2], [-1, None, 9]], dtype=pl.Array(pl.Int8, 3))
+    assert_series_equal(
+        s.arr.sort(nulls_last=True),
+        pl.Series([[1, 2, None], [-1, 9, None]], dtype=pl.Array(pl.Int8, 3)),
+    )
+    assert_series_equal(
+        s.arr.sort(nulls_last=False),
+        pl.Series([[None, 1, 2], [None, -1, 9]], dtype=pl.Array(pl.Int8, 3)),
+    )
 
 
 def test_array_reverse() -> None:
@@ -163,3 +190,200 @@ def test_arr_first_last() -> None:
         dtype=pl.Int64,
     )
     assert_series_equal(last, expected_last)
+
+
+@pytest.mark.parametrize(
+    ("data", "set", "dtype"),
+    [
+        ([1, 2], [[1, 2], [3, 4]], pl.Int64),
+        ([True, False], [[True, False], [True, True]], pl.Boolean),
+        (["a", "b"], [["a", "b"], ["c", "d"]], pl.String),
+        ([b"a", b"b"], [[b"a", b"b"], [b"c", b"d"]], pl.Binary),
+        (
+            [{"a": 1}, {"a": 2}],
+            [[{"a": 1}, {"a": 2}], [{"b": 1}, {"a": 3}]],
+            pl.Struct([pl.Field("a", pl.Int64)]),
+        ),
+    ],
+)
+def test_is_in_array(data: list[Any], set: list[list[Any]], dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {"a": data, "arr": set},
+        schema={"a": dtype, "arr": pl.Array(dtype, 2)},
+    )
+    out = df.select(is_in=pl.col("a").is_in(pl.col("arr"))).to_series()
+    expected = pl.Series("is_in", [True, False])
+    assert_series_equal(out, expected)
+
+
+def test_array_join() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["ab", "c", "d"], ["e", "f", "g"], [None, None, None], None],
+            "separator": ["&", None, "*", "_"],
+        },
+        schema={
+            "a": pl.Array(pl.String, 3),
+            "separator": pl.String,
+        },
+    )
+    out = df.select(pl.col("a").arr.join("-"))
+    assert out.to_dict(as_series=False) == {"a": ["ab-c-d", "e-f-g", "", None]}
+    out = df.select(pl.col("a").arr.join(pl.col("separator")))
+    assert out.to_dict(as_series=False) == {"a": ["ab&c&d", None, "", None]}
+
+    # test ignore_nulls argument
+    df = pl.DataFrame(
+        {
+            "a": [
+                ["a", None, "b", None],
+                None,
+                [None, None, None, None],
+                ["c", "d", "e", "f"],
+            ],
+            "separator": ["-", "&", " ", "@"],
+        },
+        schema={
+            "a": pl.Array(pl.String, 4),
+            "separator": pl.String,
+        },
+    )
+    # ignore nulls
+    out = df.select(pl.col("a").arr.join("-", ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c-d-e-f"]}
+    out = df.select(pl.col("a").arr.join(pl.col("separator"), ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c@d@e@f"]}
+    # propagate nulls
+    out = df.select(pl.col("a").arr.join("-", ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c-d-e-f"]}
+    out = df.select(pl.col("a").arr.join(pl.col("separator"), ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c@d@e@f"]}
+
+
+def test_array_explode() -> None:
+    df = pl.DataFrame(
+        {
+            "str": [["a", "b"], ["c", None], None],
+            "nested": [[[1, 2], [3]], [[], [4, None]], None],
+            "logical": [
+                [datetime.date(1998, 1, 1), datetime.date(2000, 10, 1)],
+                [datetime.date(2024, 1, 1), None],
+                None,
+            ],
+        },
+        schema={
+            "str": pl.Array(pl.String, 2),
+            "nested": pl.Array(pl.List(pl.Int64), 2),
+            "logical": pl.Array(pl.Date, 2),
+        },
+    )
+    out = df.select(pl.all().arr.explode())
+    expected = pl.DataFrame(
+        {
+            "str": ["a", "b", "c", None, None],
+            "nested": [[1, 2], [3], [], [4, None], None],
+            "logical": [
+                datetime.date(1998, 1, 1),
+                datetime.date(2000, 10, 1),
+                datetime.date(2024, 1, 1),
+                None,
+                None,
+            ],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    # test no-null fast path
+    s = pl.Series(
+        [
+            [datetime.date(1998, 1, 1), datetime.date(1999, 1, 3)],
+            [datetime.date(2000, 1, 1), datetime.date(2023, 10, 1)],
+        ],
+        dtype=pl.Array(pl.Date, 2),
+    )
+    out_s = s.arr.explode()
+    expected_s = pl.Series(
+        [
+            datetime.date(1998, 1, 1),
+            datetime.date(1999, 1, 3),
+            datetime.date(2000, 1, 1),
+            datetime.date(2023, 10, 1),
+        ],
+        dtype=pl.Date,
+    )
+    assert_series_equal(out_s, expected_s)
+
+
+@pytest.mark.parametrize(
+    ("array", "data", "expected", "dtype"),
+    [
+        ([[1, 2], [3, 4]], [1, 5], [True, False], pl.Int64),
+        ([[True, False], [True, True]], [True, False], [True, False], pl.Boolean),
+        ([["a", "b"], ["c", "d"]], ["a", "b"], [True, False], pl.String),
+        ([[b"a", b"b"], [b"c", b"d"]], [b"a", b"b"], [True, False], pl.Binary),
+        (
+            [[{"a": 1}, {"a": 2}], [{"b": 1}, {"a": 3}]],
+            [{"a": 1}, {"a": 2}],
+            [True, False],
+            pl.Struct([pl.Field("a", pl.Int64)]),
+        ),
+    ],
+)
+def test_array_contains_expr(
+    array: list[list[Any]], data: list[Any], expected: list[bool], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame(
+        {
+            "array": array,
+            "data": data,
+        },
+        schema={
+            "array": pl.Array(dtype, 2),
+            "data": dtype,
+        },
+    )
+    out = df.select(contains=pl.col("array").arr.contains(pl.col("data"))).to_series()
+    expected_series = pl.Series("contains", expected)
+    assert_series_equal(out, expected_series)
+
+
+@pytest.mark.parametrize(
+    ("array", "data", "expected", "dtype"),
+    [
+        ([[1, 2], [3, 4]], 1, [True, False], pl.Int64),
+        ([[True, False], [True, True]], True, [True, True], pl.Boolean),
+        ([["a", "b"], ["c", "d"]], "a", [True, False], pl.String),
+        ([[b"a", b"b"], [b"c", b"d"]], b"a", [True, False], pl.Binary),
+    ],
+)
+def test_array_contains_literal(
+    array: list[list[Any]], data: Any, expected: list[bool], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame(
+        {
+            "array": array,
+        },
+        schema={
+            "array": pl.Array(dtype, 2),
+        },
+    )
+    out = df.select(contains=pl.col("array").arr.contains(data)).to_series()
+    expected_series = pl.Series("contains", expected)
+    assert_series_equal(out, expected_series)
+
+
+@pytest.mark.parametrize(
+    ("arr", "data", "expected", "dtype"),
+    [
+        ([[1, 2], [3, None], None], 1, [1, 0, None], pl.Int64),
+        ([[True, False], [True, None], None], True, [1, 1, None], pl.Boolean),
+        ([["a", "b"], ["c", None], None], "a", [1, 0, None], pl.String),
+        ([[b"a", b"b"], [b"c", None], None], b"a", [1, 0, None], pl.Binary),
+    ],
+)
+def test_array_count_matches(
+    arr: list[list[Any] | None], data: Any, expected: list[Any], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"arr": arr}, schema={"arr": pl.Array(dtype, 2)})
+    out = df.select(count_matches=pl.col("arr").arr.count_matches(data))
+    assert out.to_dict(as_series=False) == {"count_matches": expected}

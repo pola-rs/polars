@@ -1,10 +1,13 @@
+import operator
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_sqrt_neg_inf() -> None:
@@ -117,15 +120,6 @@ def test_floor_division_float_int_consistency() -> None:
     assert (pl.Series(a, dtype=pl.Int32) // 5).to_list() == list(
         (a.astype(int) // 5).astype(int)
     )
-
-
-def test_unary_plus() -> None:
-    data = [1, 2]
-    df = pl.DataFrame({"x": data})
-    assert df.select(+pl.col("x"))[:, 0].to_list() == data
-
-    with pytest.raises(pl.exceptions.ComputeError):
-        pl.select(+pl.lit(""))
 
 
 def test_series_expr_arithm() -> None:
@@ -246,3 +240,33 @@ def test_arithmetic_null_count() -> None:
         "broadcast_left": [1],
         "broadcast_right": [1],
     }
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.floordiv,
+        operator.mod,
+        operator.mul,
+        operator.sub,
+    ],
+)
+def test_operator_arithmetic_with_nulls(op: Any) -> None:
+    for dtype in FLOAT_DTYPES | INTEGER_DTYPES:
+        df = pl.DataFrame({"n": [2, 3]}, schema={"n": dtype})
+        s = df.to_series()
+
+        df_expected = pl.DataFrame({"n": [None, None]}, schema={"n": dtype})
+        s_expected = df_expected.to_series()
+
+        # validate expr, frame, and series behaviour with null value arithmetic
+        op_name = op.__name__
+        for null_expr in (None, pl.lit(None)):
+            assert_frame_equal(df_expected, df.select(op(pl.col("n"), null_expr)))
+            assert_frame_equal(
+                df_expected, df.select(getattr(pl.col("n"), op_name)(null_expr))
+            )
+
+        assert_frame_equal(df_expected, op(df, None))
+        assert_series_equal(s_expected, op(s, None))

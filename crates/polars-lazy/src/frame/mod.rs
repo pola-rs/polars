@@ -33,7 +33,7 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 #[cfg(any(
@@ -436,7 +436,7 @@ impl LazyFrame {
     /// Removes columns from the DataFrame.
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
-    pub fn drop_columns<I, T>(self, columns: I) -> Self
+    pub fn drop<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -447,7 +447,7 @@ impl LazyFrame {
             .collect::<PlHashSet<_>>();
 
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop_columns(to_drop).build();
+        let lp = self.get_plan_builder().drop(to_drop).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1202,6 +1202,8 @@ impl LazyFrame {
     /// over how columns are renamed and parallelization options, use
     /// [`join_builder`](LazyFrame::join_builder).
     ///
+    /// Any provided `args.slice` parameter is not considered, but set by the internal optimizer.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -1225,12 +1227,23 @@ impl LazyFrame {
 
         let left_on = left_on.as_ref().to_vec();
         let right_on = right_on.as_ref().to_vec();
-        self.join_builder()
+
+        let mut builder = self
+            .join_builder()
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
             .how(args.how)
-            .finish()
+            .validate(args.validation)
+            .join_nulls(args.join_nulls);
+
+        if let Some(suffix) = args.suffix {
+            builder = builder.suffix(suffix);
+        }
+
+        // Note: args.slice is set by the optimizer
+
+        builder.finish()
     }
 
     /// Consume `self` and return a [`JoinBuilder`] to customize a join on this LazyFrame.
@@ -1652,14 +1665,14 @@ impl LazyFrame {
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
     pub fn with_row_index(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
-        let add_row_count_in_map = match &mut self.logical_plan {
+        let add_row_index_in_map = match &mut self.logical_plan {
             LogicalPlan::Scan {
                 file_options: options,
                 file_info,
                 scan_type,
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
-                options.row_count = Some(RowCount {
+                options.row_index = Some(RowIndex {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
@@ -1674,13 +1687,13 @@ impl LazyFrame {
             _ => true,
         };
 
-        if add_row_count_in_map {
+        if add_row_index_in_map {
             let schema = fallible!(self.schema(), &self);
             let schema = schema
                 .new_inserting_at_index(0, name.into(), IDX_DTYPE)
                 .unwrap();
 
-            self.map_private(FunctionNode::RowCount {
+            self.map_private(FunctionNode::RowIndex {
                 name: Arc::from(name),
                 offset,
                 schema: Arc::new(schema),

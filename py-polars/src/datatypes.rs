@@ -1,5 +1,5 @@
 use polars::prelude::*;
-use polars_core::export::arrow::array::Utf8Array;
+use polars_core::utils::arrow::array::Utf8ViewArray;
 use pyo3::{FromPyObject, PyAny, PyResult};
 
 #[cfg(feature = "object")]
@@ -33,7 +33,7 @@ pub(crate) enum PyDataType {
     Binary,
     Decimal(Option<usize>, usize),
     Array(usize),
-    Enum(Utf8Array<i64>),
+    Enum(Utf8ViewArray),
 }
 
 impl From<&DataType> for PyDataType {
@@ -73,7 +73,7 @@ impl From<&DataType> for PyDataType {
                 },
             ),
             DataType::Struct(_) => Struct,
-            DataType::Null | DataType::Unknown => {
+            DataType::Null | DataType::Unknown | DataType::BinaryOffset => {
                 panic!("null or unknown not expected here")
             },
         }

@@ -83,7 +83,7 @@ impl Eval {
                 _ => s.to_physical_repr().into_owned(),
             };
             let s = prepare_key(&s, chunk);
-            keys_columns.push(s.to_arrow(0));
+            keys_columns.push(s.to_arrow(0, true));
         }
 
         polars_row::convert_columns_amortized(

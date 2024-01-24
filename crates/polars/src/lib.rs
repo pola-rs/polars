@@ -180,7 +180,7 @@
 //!
 //! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
-//!     - `lazy_regex` - Use regexes in [column selection]
+//!     - `regex` - Use regexes in [column selection]
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 //! * `sql` - Pass SQL queries to polars.
 //! * `streaming` - Be able to process datasets that are larger than RAM.
@@ -240,6 +240,7 @@
 //!     - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
 //!     - `is_first_distinct` - Check if element is first unique value.
 //!     - `is_last_distinct` - Check if element is last unique value.
+//!     - `is_between` - Check if this expression is between the given lower and upper bounds.
 //!     - `checked_arithmetic` - checked arithmetic/ returning [`None`] on invalid operations.
 //!     - `dot_product` - Dot/inner product on [`Series`] and [`Expr`].
 //!     - `concat_str` - Concat string data in linear time.

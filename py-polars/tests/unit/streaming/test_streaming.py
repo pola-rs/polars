@@ -17,8 +17,6 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from polars.type_aliases import JoinStrategy
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 def test_streaming_categoricals_5921() -> None:
     with pl.StringCache():
@@ -232,12 +230,12 @@ def test_streaming_9776() -> None:
     df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
     ordered = (
         df.group_by("col_1", "ID", maintain_order=True)
-        .count()
+        .len()
         .filter(pl.col("col_1") == "a")
     )
     unordered = (
         df.group_by("col_1", "ID", maintain_order=False)
-        .count()
+        .len()
         .filter(pl.col("col_1") == "a")
     )
     expected = [("a", None, 1), ("a", "a", 999)]

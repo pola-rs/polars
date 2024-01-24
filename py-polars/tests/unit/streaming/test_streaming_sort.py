@@ -1,13 +1,8 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
-from collections import Counter
 
 import numpy as np
 import pytest
@@ -15,7 +10,8 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
-pytestmark = pytest.mark.xdist_group("streaming")
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def assert_df_sorted_by(
@@ -232,3 +228,15 @@ def test_streaming_sort_fixed_reverse() -> None:
     assert_df_sorted_by(
         df, q.collect(streaming=False), ["a", "b"], descending=descending
     )
+
+
+def test_reverse_variable_sort_13573() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["one", "two", "three"],
+            "b": ["four", "five", "six"],
+        }
+    ).lazy()
+    assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
+        as_series=False
+    ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}

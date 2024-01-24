@@ -1,4 +1,4 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey};
+use arrow::array::{Array, DictionaryArray, DictionaryKey, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, IntegerType};
 use num_traits::ToPrimitive;
@@ -13,7 +13,7 @@ use super::fixed_len_bytes::{
 use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
-use super::{nested, Nested, WriteOptions};
+use super::{binview, nested, Nested, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
 use crate::parquet::encoding::hybrid_rle::encode_u32;
@@ -270,9 +270,26 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let array = array.as_any().downcast_ref().unwrap();
 
                         let mut buffer = vec![];
-                        binary_encode_plain::<i64>(array, false, &mut buffer);
+                        binary_encode_plain::<i64>(array, &mut buffer);
                         let stats = if options.write_statistics {
                             Some(binary_build_statistics(array, type_.clone()))
+                        } else {
+                            None
+                        };
+                        (DictPage::new(buffer, array.len(), false), stats)
+                    },
+                    ArrowDataType::Utf8View => {
+                        let array = array
+                            .values()
+                            .as_any()
+                            .downcast_ref::<Utf8ViewArray>()
+                            .unwrap()
+                            .to_binview();
+                        let mut buffer = vec![];
+                        binview::encode_plain(&array, &mut buffer);
+
+                        let stats = if options.write_statistics {
+                            Some(binview::build_statistics(&array, type_.clone()))
                         } else {
                             None
                         };
@@ -282,7 +299,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let values = array.values().as_any().downcast_ref().unwrap();
 
                         let mut buffer = vec![];
-                        binary_encode_plain::<i64>(values, false, &mut buffer);
+                        binary_encode_plain::<i64>(values, &mut buffer);
                         let stats = if options.write_statistics {
                             let mut stats = binary_build_statistics(values, type_.clone());
                             stats.null_count = Some(array.null_count() as i64);

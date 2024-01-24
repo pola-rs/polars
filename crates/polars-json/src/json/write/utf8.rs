@@ -1,7 +1,7 @@
 // Adapted from https://github.com/serde-rs/json/blob/f901012df66811354cb1d490ad59480d8fdf77b5/src/ser.rs
 use std::io;
 
-use arrow::array::{Array, MutableUtf8ValuesArray, Utf8Array};
+use arrow::array::{Array, MutableBinaryViewArray, Utf8ViewArray};
 
 use crate::json::write::new_serializer;
 
@@ -141,12 +141,12 @@ where
     writer.write_all(s)
 }
 
-pub fn serialize_to_utf8(array: &dyn Array) -> Utf8Array<i64> {
-    let mut values = MutableUtf8ValuesArray::<i64>::with_capacity(array.len());
+pub fn serialize_to_utf8(array: &dyn Array) -> Utf8ViewArray {
+    let mut values = MutableBinaryViewArray::with_capacity(array.len());
     let mut serializer = new_serializer(array, 0, usize::MAX);
 
     while let Some(v) = serializer.next() {
-        unsafe { values.push(std::str::from_utf8_unchecked(v)) }
+        unsafe { values.push_value(std::str::from_utf8_unchecked(v)) }
     }
     values.into()
 }

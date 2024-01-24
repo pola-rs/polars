@@ -11,7 +11,8 @@ from polars.testing import assert_frame_equal
 def assert_repr_equals(item: Any, expected: str) -> None:
     """Assert that the repr of an item matches the expected string."""
     if not isinstance(expected, str):
-        raise TypeError(f"'expected' must be a string; found {type(expected)}")
+        msg = f"'expected' must be a string; found {type(expected)}"
+        raise TypeError(msg)
     assert repr(item) == expected
 
 
@@ -56,6 +57,8 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         "fgg": pl.Boolean,
         "qqR": pl.String,
     }
+    assert df.select(cs.by_dtype()).schema == {}
+    assert df.select(cs.by_dtype([])).schema == {}
 
 
 def test_selector_by_name(df: pl.DataFrame) -> None:
@@ -74,6 +77,8 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
         "JJK",
         "qqR",
     ]
+    assert df.select(cs.by_name()).columns == []
+    assert df.select(cs.by_name([])).columns == []
 
 
 def test_selector_contains(df: pl.DataFrame) -> None:

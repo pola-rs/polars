@@ -158,8 +158,8 @@ def _prepare_file_arg(
         # make sure that this is before fsspec
         # as fsspec needs requests to be installed
         # to read from http
-        if file.startswith("http"):
-            return _process_http_file(file, encoding_str)
+        if _looks_like_url(file):
+            return _process_file_url(file, encoding_str)
         if _FSSPEC_AVAILABLE:
             from fsspec.utils import infer_storage_options
 
@@ -217,11 +217,16 @@ def _check_empty(
             if context in ("StringIO", "BytesIO") and read_position
             else ""
         )
-        raise NoDataError(f"empty CSV data from {context}{hint}")
+        msg = f"empty CSV data from {context}{hint}"
+        raise NoDataError(msg)
     return b
 
 
-def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
+def _looks_like_url(path: str) -> bool:
+    return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
+
+
+def _process_file_url(path: str, encoding: str | None = None) -> BytesIO:
     from urllib.request import urlopen
 
     with urlopen(path) as f:

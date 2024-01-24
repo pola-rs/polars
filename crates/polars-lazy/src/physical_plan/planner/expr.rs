@@ -91,7 +91,7 @@ pub(crate) fn create_physical_expr(
     use AExpr::*;
 
     match expr_arena.get(expression).clone() {
-        Count => Ok(Arc::new(phys_expr::CountExpr::new())),
+        Len => Ok(Arc::new(phys_expr::CountExpr::new())),
         Window {
             mut function,
             partition_by,
@@ -109,10 +109,10 @@ pub(crate) fn create_physical_expr(
             let function_expr = node_to_expr(function, expr_arena);
             let expr = node_to_expr(expression, expr_arena);
 
+            // set again as the state can be reset
+            state.set_window();
             match options {
                 WindowType::Over(mapping) => {
-                    // set again as the state can be reset
-                    state.set_window();
                     // TODO! Order by
                     let group_by = create_physical_expressions(
                         &partition_by,
@@ -129,8 +129,8 @@ pub(crate) fn create_physical_expr(
                     if apply_columns.is_empty() {
                         if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                             apply_columns.push(Arc::from("literal"))
-                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Count)) {
-                            apply_columns.push(Arc::from("count"))
+                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
+                            apply_columns.push(Arc::from("len"))
                         } else {
                             let e = node_to_expr(function, expr_arena);
                             polars_bail!(
@@ -556,8 +556,12 @@ pub(crate) fn create_physical_expr(
                 ApplyOptions::GroupWise,
             )))
         },
-        Wildcard => panic!("should be no wildcard at this point"),
-        Nth(_) => panic!("should be no nth at this point"),
+        Wildcard => {
+            polars_bail!(ComputeError: "wildcard column selection not supported at this point")
+        },
+        Nth(_) => {
+            polars_bail!(ComputeError: "nth column selection not supported at this point")
+        },
     }
 }
 

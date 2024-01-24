@@ -70,6 +70,24 @@ def test_nested_enum_creation() -> None:
     assert s.dtype == dtype
 
 
+def test_nested_enum_concat() -> None:
+    dtype = pl.List(pl.Enum(["a", "b", "c", "d"]))
+    s1 = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
+    s2 = pl.Series([["c", "d"], ["a", None]], dtype=dtype)
+    expected = pl.Series(
+        [
+            [None, "a"],
+            ["b", "c"],
+            ["c", "d"],
+            ["a", None],
+        ],
+        dtype=dtype,
+    )
+
+    assert_series_equal(pl.concat((s1, s2)), expected)
+    assert_series_equal(s1.extend(s2), expected)
+
+
 def test_casting_to_an_enum_from_utf() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, "a", "b", "c"])
@@ -358,6 +376,3 @@ def test_enum_categories_series_zero_copy() -> None:
     result_dtype = s.dtype
 
     assert result_dtype == dtype
-
-    assert categories._get_buffer_info() == dtype.categories._get_buffer_info()
-    assert categories._get_buffer_info() == result_dtype.categories._get_buffer_info()  # type: ignore[attr-defined]

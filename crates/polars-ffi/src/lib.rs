@@ -9,7 +9,7 @@ use polars_core::error::PolarsResult;
 use polars_core::prelude::{ArrowField, Series};
 
 pub const MAJOR: u16 = 0;
-pub const MINOR: u16 = 0;
+pub const MINOR: u16 = 1;
 
 pub const fn get_version() -> (u16, u16) {
     (MAJOR, MINOR)

@@ -19,8 +19,10 @@ use polars_io::utils::check_projected_arrow_schema;
 use polars_io::{is_cloud_url, SerReader};
 use polars_plan::logical_plan::FileInfo;
 use polars_plan::prelude::{FileScanOptions, ParquetOptions};
+use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::IdxSize;
 
+use crate::executors::sources::get_source_index;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 use crate::pipeline::determine_chunk_size;
 
@@ -28,7 +30,6 @@ pub struct ParquetSource {
     batched_readers: VecDeque<BatchedParquetReader>,
     n_threads: usize,
     processed_paths: usize,
-    chunk_index: IdxSize,
     iter: Range<usize>,
     paths: Arc<[PathBuf]>,
     options: ParquetOptions,
@@ -129,7 +130,7 @@ impl ParquetSource {
             ParquetReader::new(file)
                 .with_schema(reader_schema)
                 .with_n_rows(file_options.n_rows)
-                .with_row_count(file_options.row_count)
+                .with_row_index(file_options.row_index)
                 .with_predicate(predicate.clone())
                 .with_projection(projection)
                 .use_statistics(options.use_statistics)
@@ -172,7 +173,7 @@ impl ParquetSource {
             ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), reader_schema, metadata)
                 .await?
                 .with_n_rows(file_options.n_rows)
-                .with_row_count(file_options.row_count)
+                .with_row_index(file_options.row_index)
                 .with_projection(projection)
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)
@@ -209,7 +210,6 @@ impl ParquetSource {
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
             n_threads,
-            chunk_index: 0,
             processed_paths: 0,
             options,
             file_options,
@@ -289,21 +289,25 @@ impl Source for ParquetSource {
                 return self.get_batches(_context);
             },
             Some(batches) => {
-                let result = SourceResult::GotMoreData(
-                    batches
-                        .into_iter()
-                        .map(|data| {
-                            // Keep the row limit updated so the next reader will have a correct limit.
-                            if let Some(n_rows) = &mut self.file_options.n_rows {
-                                *n_rows = n_rows.saturating_sub(data.height())
-                            }
+                let idx_offset = get_source_index(0);
+                let out = batches
+                    .into_iter()
+                    .enumerate_u32()
+                    .map(|(i, data)| {
+                        // Keep the row limit updated so the next reader will have a correct limit.
+                        if let Some(n_rows) = &mut self.file_options.n_rows {
+                            *n_rows = n_rows.saturating_sub(data.height())
+                        }
 
-                            let chunk_index = self.chunk_index;
-                            self.chunk_index += 1;
-                            DataChunk { chunk_index, data }
-                        })
-                        .collect(),
-                );
+                        DataChunk {
+                            chunk_index: (idx_offset + i) as IdxSize,
+                            data,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                get_source_index(out.len() as u32);
+
+                let result = SourceResult::GotMoreData(out);
                 // We are not yet done with this reader.
                 // Ensure it is used in next iteration.
                 self.batched_readers.push_front(reader);

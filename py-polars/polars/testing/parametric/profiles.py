@@ -96,8 +96,7 @@ def set_profile(profile: ParametricProfileNames | int) -> None:
 
         valid_profile_names = get_args(ParametricProfileNames)
         if profile_name not in valid_profile_names:
-            raise ValueError(
-                f"invalid profile name {profile_name!r}; expected one of {valid_profile_names!r}"
-            )
+            msg = f"invalid profile name {profile_name!r}; expected one of {valid_profile_names!r}"
+            raise ValueError(msg)
 
     os.environ["POLARS_HYPOTHESIS_PROFILE"] = profile_name

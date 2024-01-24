@@ -178,9 +178,8 @@ class ExprBinaryNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.bin_base64_decode(strict))
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)
 
     def encode(self, encoding: TransferEncoding) -> Expr:
         r"""
@@ -207,23 +206,22 @@ class ExprBinaryNameSpace:
         ... )
         >>> colors.with_columns(
         ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
         shape: (3, 3)
-        ┌────────┬───────────────┬──────────────────┐
-        │ name   ┆ code          ┆ code_encoded_hex │
-        │ ---    ┆ ---           ┆ ---              │
-        │ str    ┆ binary        ┆ str              │
-        ╞════════╪═══════════════╪══════════════════╡
-        │ black  ┆ [binary data] ┆ 000000           │
-        │ yellow ┆ [binary data] ┆ ffff00           │
-        │ blue   ┆ [binary data] ┆ 0000ff           │
-        └────────┴───────────────┴──────────────────┘
+        ┌────────┬────────┬──────────────────┐
+        │ name   ┆ code   ┆ code_encoded_hex │
+        │ ---    ┆ ---    ┆ ---              │
+        │ str    ┆ binary ┆ str              │
+        ╞════════╪════════╪══════════════════╡
+        │ black  ┆ b""    ┆ 000000           │
+        │ yellow ┆ b"��"  ┆ ffff00           │
+        │ blue   ┆ b"�"   ┆ 0000ff           │
+        └────────┴────────┴──────────────────┘
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_encode())
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.bin_base64_encode())
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)

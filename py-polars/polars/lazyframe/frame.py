@@ -64,6 +64,7 @@ from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_parameter_as_positional,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
@@ -71,7 +72,7 @@ from polars.utils.deprecation import (
 )
 from polars.utils.various import (
     _in_notebook,
-    _prepare_row_count_args,
+    _prepare_row_index_args,
     _process_null_values,
     is_bool_sequence,
     is_sequence,
@@ -338,8 +339,8 @@ class LazyFrame:
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         try_parse_dates: bool = False,
         eol_char: str = "\n",
         raise_if_empty: bool = True,
@@ -388,7 +389,7 @@ class LazyFrame:
             rechunk,
             skip_rows_after_header,
             encoding,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             try_parse_dates,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
@@ -406,8 +407,8 @@ class LazyFrame:
         cache: bool = True,
         parallel: ParallelStrategy = "auto",
         rechunk: bool = True,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
         use_statistics: bool = True,
@@ -440,12 +441,12 @@ class LazyFrame:
             scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
-            if row_count_name is not None:
-                scan = scan.with_row_index(row_count_name, row_count_offset)
+            if row_index_name is not None:
+                scan = scan.with_row_index(row_index_name, row_index_offset)
             return scan  # type: ignore[return-value]
 
         if storage_options:
-            storage_options = list(storage_options.items())  #  type: ignore[assignment]
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
         else:
             # Handle empty dict input
             storage_options = None
@@ -458,7 +459,7 @@ class LazyFrame:
             cache,
             parallel,
             rechunk,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             low_memory,
             cloud_options=storage_options,
             use_statistics=use_statistics,
@@ -475,8 +476,8 @@ class LazyFrame:
         n_rows: int | None = None,
         cache: bool = True,
         rechunk: bool = True,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         memory_map: bool = True,
     ) -> Self:
@@ -503,8 +504,8 @@ class LazyFrame:
             scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
-            if row_count_name is not None:
-                scan = scan.with_row_index(row_count_name, row_count_offset)
+            if row_index_name is not None:
+                scan = scan.with_row_index(row_index_name, row_index_offset)
             return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
@@ -514,7 +515,7 @@ class LazyFrame:
             n_rows,
             cache,
             rechunk,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
             memory_map=memory_map,
         )
         return self
@@ -529,9 +530,10 @@ class LazyFrame:
         batch_size: int | None = None,
         n_rows: int | None = None,
         low_memory: bool = False,
-        rechunk: bool = True,
-        row_count_name: str | None = None,
-        row_count_offset: int = 0,
+        rechunk: bool = False,
+        row_index_name: str | None = None,
+        row_index_offset: int = 0,
+        ignore_errors: bool = False,
     ) -> Self:
         """
         Lazily read from a newline delimited JSON file.
@@ -559,7 +561,8 @@ class LazyFrame:
             n_rows,
             low_memory,
             rechunk,
-            _prepare_row_count_args(row_count_name, row_count_offset),
+            _prepare_row_index_args(row_index_name, row_index_offset),
+            ignore_errors,
         )
         return self
 
@@ -713,15 +716,15 @@ class LazyFrame:
         return self._ldf.width()
 
     def __bool__(self) -> NoReturn:
-        raise TypeError(
+        msg = (
             "the truth value of a LazyFrame is ambiguous"
             "\n\nLazyFrames cannot be used in boolean context with and/or/not operators."
         )
+        raise TypeError(msg)
 
     def _comparison_error(self, operator: str) -> NoReturn:
-        raise TypeError(
-            f'"{operator!r}" comparison not supported for LazyFrame objects'
-        )
+        msg = f'"{operator!r}" comparison not supported for LazyFrame objects'
+        raise TypeError(msg)
 
     def __eq__(self, other: Any) -> NoReturn:
         self._comparison_error("==")
@@ -752,10 +755,11 @@ class LazyFrame:
 
     def __getitem__(self, item: int | range | slice) -> LazyFrame:
         if not isinstance(item, slice):
-            raise TypeError(
+            msg = (
                 "'LazyFrame' object is not subscriptable (aside from slicing)"
                 "\n\nUse `select()` or `filter()` instead."
             )
+            raise TypeError(msg)
         return LazyPolarsSlice(self).apply(item)
 
     def __str__(self) -> str:
@@ -1085,7 +1089,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
             )
         except (ImportError, FileNotFoundError):
-            raise ImportError("Graphviz dot binary should be on your PATH") from None
+            msg = "Graphviz dot binary should be on your PATH"
+            raise ImportError(msg) from None
 
         if output_path:
             Path(output_path).write_bytes(graph)
@@ -1102,9 +1107,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 import matplotlib.image as mpimg
                 import matplotlib.pyplot as plt
             except ImportError:
-                raise ModuleNotFoundError(
-                    "matplotlib should be installed to show graph"
-                ) from None
+                msg = "matplotlib should be installed to show graph"
+                raise ModuleNotFoundError(msg) from None
             plt.figure(figsize=figsize)
             img = mpimg.imread(BytesIO(graph))
             plt.imshow(img)
@@ -1241,9 +1245,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
-            raise ValueError(
-                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            )
+            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            raise ValueError(msg)
         return self._from_pyldf(
             self._ldf.sort_by_exprs(by, descending, nulls_last, maintain_order)
         )
@@ -1326,9 +1329,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
-            raise ValueError(
-                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            )
+            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            raise ValueError(msg)
         return self._from_pyldf(
             self._ldf.top_k(k, by, descending, nulls_last, maintain_order)
         )
@@ -1557,9 +1559,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 plt.show()
 
             except ImportError:
-                raise ModuleNotFoundError(
-                    "matplotlib should be installed to show profiling plot"
-                ) from None
+                msg = "matplotlib should be installed to show profiling plot"
+                raise ModuleNotFoundError(msg) from None
 
         return df, timings
 
@@ -2190,11 +2191,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        no_optimization: bool = False,
         slice_pushdown: bool = True,
+        no_optimization: bool = False,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Evaluate the query in streaming mode and write to an NDJSON file.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2213,10 +2214,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Do projection pushdown optimization.
         simplify_expression
             Run simplify expressions optimization.
-        no_optimization
-            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        no_optimization
+            Turn off (certain) optimizations.
 
         Returns
         -------
@@ -2225,15 +2226,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Examples
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
-        >>> lf.sink_json("out.json")  # doctest: +SKIP
+        >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
-            no_optimization=no_optimization,
             slice_pushdown=slice_pushdown,
+            no_optimization=no_optimization,
         )
 
         return lf.sink_json(path=path, maintain_order=maintain_order)
@@ -2670,7 +2671,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     if isinstance(p, pl.Series)
                     else repr(p)
                 )
-                raise TypeError(f"invalid predicate for `filter`: {err}")
+                msg = f"invalid predicate for `filter`: {err}"
+                raise TypeError(msg)
             else:
                 all_predicates.extend(
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
@@ -2696,10 +2698,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
-            F.col(name).eq_missing(value) for name, value in constraints.items()
+            F.col(name).eq(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
-            raise TypeError("at least one predicate or constraint must be provided")
+            msg = "at least one predicate or constraint must be provided"
+            raise TypeError(msg)
 
         # if multiple predicates, combine as 'horizontal' expression
         combined_predicate = (
@@ -3599,16 +3602,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, LazyFrame):
-            raise TypeError(
-                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
-            )
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
 
         if isinstance(on, (str, pl.Expr)):
             left_on = on
             right_on = on
 
         if left_on is None or right_on is None:
-            raise ValueError("you should pass the column to join on as an argument")
+            msg = "you should pass the column to join on as an argument"
+            raise ValueError(msg)
 
         if by is not None:
             by_left_ = [by] if isinstance(by, str) else by
@@ -3800,9 +3803,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         if not isinstance(other, LazyFrame):
-            raise TypeError(
-                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
-            )
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
 
         if how == "cross":
             return self._from_pyldf(
@@ -3827,7 +3829,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             pyexprs_left = parse_as_list_of_expressions(left_on)
             pyexprs_right = parse_as_list_of_expressions(right_on)
         else:
-            raise ValueError("must specify `on` OR `left_on` and `right_on`")
+            msg = "must specify `on` OR `left_on` and `right_on`"
+            raise ValueError(msg)
 
         return self._from_pyldf(
             self._ldf.join(
@@ -4094,20 +4097,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
+    @deprecate_parameter_as_positional("columns", version="0.20.4")
     def drop(
-        self,
-        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
-        *more_columns: ColumnNameOrSelector,
+        self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
     ) -> Self:
         """
         Remove columns from the DataFrame.
 
         Parameters
         ----------
-        columns
-            Name of the column(s) that should be removed from the DataFrame.
-        *more_columns
-            Additional columns to drop, specified as positional arguments.
+        *columns
+            Names of the columns that should be removed from the dataframe.
+            Accepts column selector input.
 
         Examples
         --------
@@ -4161,17 +4162,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = _expand_selectors(self, columns, *more_columns)
+        drop_cols = _expand_selectors(self, *columns)
         return self._from_pyldf(self._ldf.drop(drop_cols))
 
-    def rename(self, mapping: dict[str, str]) -> Self:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> Self:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Notes
         -----
@@ -4198,10 +4200,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> lf.rename(lambda column_name: "c" + column_name[1:]).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
-        existing = list(mapping.keys())
-        new = list(mapping.values())
-        return self._from_pyldf(self._ldf.rename(existing, new))
+        if callable(mapping):
+            return self.select(F.all().name.map(mapping))
+        else:
+            existing = list(mapping.keys())
+            new = list(mapping.values())
+            return self._from_pyldf(self._ldf.rename(existing, new))
 
     def reverse(self) -> Self:
         """
@@ -4341,9 +4357,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         if length and length < 0:
-            raise ValueError(
-                f"negative slice lengths ({length!r}) are invalid for LazyFrame"
-            )
+            msg = f"negative slice lengths ({length!r}) are invalid for LazyFrame"
+            raise ValueError(msg)
         return self._from_pyldf(self._ldf.slice(offset, length))
 
     def limit(self, n: int = 5) -> Self:
@@ -4616,10 +4631,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴─────┘
 
         An index column can also be created using the expressions :func:`int_range`
-        and :func:`count`.
+        and :func:`len`.
 
         >>> lf.select(
-        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
         ...     pl.all(),
         ... ).collect()
         shape: (3, 3)
@@ -4642,7 +4657,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     @deprecate_function(
         "Use `with_row_index` instead."
-        "Note that the default column name has changed from 'row_nr' to 'index'.",
+        " Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
@@ -4650,7 +4665,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Add a column at index 0 that counts the rows.
 
         .. deprecated::
-            Use `meth`:with_row_index` instead.
+            Use :meth:`with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
@@ -5743,8 +5758,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             LazyFrame that will be used to update the values
         on
-            Column names that will be joined on; if given `None` the implicit row
-            index is used as a join key instead.
+            Column names that will be joined on. If set to `None` (default),
+            the implicit row index of each frame is used as a join key.
         how : {'left', 'inner', 'outer'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
@@ -5858,27 +5873,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┘
         """
         if how not in ("left", "inner", "outer"):
-            raise ValueError(
-                f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
-            )
+            msg = f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
+            raise ValueError(msg)
         if how == "outer":
             how = "outer_coalesce"  # type: ignore[assignment]
 
-        row_count_used = False
+        row_index_used = False
         if on is None:
             if left_on is None and right_on is None:
-                # no keys provided--use row count
-                row_count_used = True
-                row_count_name = "__POLARS_ROW_COUNT"
-                self = self.with_row_index(row_count_name)
-                other = other.with_row_index(row_count_name)
-                left_on = right_on = [row_count_name]
+                # no keys provided--use row index
+                row_index_used = True
+                row_index_name = "__POLARS_ROW_INDEX"
+                self = self.with_row_index(row_index_name)
+                other = other.with_row_index(row_index_name)
+                left_on = right_on = [row_index_name]
             else:
                 # one of left or right is missing, raise error
                 if left_on is None:
-                    raise ValueError("missing join columns for left frame")
+                    msg = "missing join columns for left frame"
+                    raise ValueError(msg)
                 if right_on is None:
-                    raise ValueError("missing join columns for right frame")
+                    msg = "missing join columns for right frame"
+                    raise ValueError(msg)
         else:
             # move on into left/right_on to simplify logic
             left_on = right_on = on
@@ -5891,16 +5907,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         left_names = self.columns
         for name in left_on:
             if name not in left_names:
-                raise ValueError(f"left join column {name!r} not found")
+                msg = f"left join column {name!r} not found"
+                raise ValueError(msg)
         right_names = other.columns
         for name in right_on:
             if name not in right_names:
-                raise ValueError(f"right join column {name!r} not found")
+                msg = f"right join column {name!r} not found"
+                raise ValueError(msg)
 
         # no need to join if *only* join columns are in other (inner/left update only)
         if how != "outer_coalesce" and len(other.columns) == len(right_on):  # type: ignore[comparison-overlap, redundant-expr]
-            if row_count_used:
-                return self.drop(row_count_name)
+            if row_index_used:
+                return self.drop(row_index_name)
             return self
 
         # only use non-idx right columns present in left frame
@@ -5939,8 +5957,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             .drop(drop_columns)
         )
-        if row_count_used:
-            result = result.drop(row_count_name)
+        if row_index_used:
+            result = result.drop(row_index_name)
 
         return self._from_pyldf(result._ldf)
 

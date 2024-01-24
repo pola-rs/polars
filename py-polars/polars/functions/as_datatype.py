@@ -475,6 +475,7 @@ def concat_str(
     exprs: IntoExpr | Iterable[IntoExpr],
     *more_exprs: IntoExpr,
     separator: str = "",
+    ignore_nulls: bool = False,
 ) -> Expr:
     """
     Horizontally concatenate columns into a single string column.
@@ -492,6 +493,11 @@ def concat_str(
         positional arguments.
     separator
         String that will be used to separate the values of each column.
+    ignore_nulls
+        Ignore null values (default).
+
+        If set to ``False``, null values will be propagated.
+        if the row contains any null values, the output is ``None``.
 
     Examples
     --------
@@ -524,7 +530,7 @@ def concat_str(
     └─────┴──────┴──────┴───────────────┘
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.concat_str(exprs, separator))
+    return wrap_expr(plr.concat_str(exprs, separator, ignore_nulls))
 
 
 def format(f_string: str, *args: Expr | str) -> Expr:
@@ -564,7 +570,8 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     └─────────────┘
     """
     if f_string.count("{}") != len(args):
-        raise ValueError("number of placeholders should equal the number of arguments")
+        msg = "number of placeholders should equal the number of arguments"
+        raise ValueError(msg)
 
     exprs = []
 

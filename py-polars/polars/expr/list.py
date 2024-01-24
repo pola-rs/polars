@@ -179,7 +179,8 @@ class ExprListNameSpace:
         └───────────┴─────┴───────────┘
         """
         if n is not None and fraction is not None:
-            raise ValueError("cannot specify both `n` and `fraction`")
+            msg = "cannot specify both `n` and `fraction`"
+            raise ValueError(msg)
 
         if fraction is not None:
             fraction = parse_as_expression(fraction)
@@ -274,7 +275,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_mean())
 
-    def sort(self, *, descending: bool = False) -> Expr:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
 
@@ -282,6 +283,8 @@ class ExprListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -311,7 +314,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [9, 2, 1] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_sort(descending))
+        return wrap_expr(self._pyexpr.list_sort(descending, nulls_last))
 
     def reverse(self) -> Expr:
         """
@@ -520,7 +523,7 @@ class ExprListNameSpace:
         return self.get(-1)
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | Expr
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
     ) -> Expr:
         """
         Check if sublists contain the given item.
@@ -553,7 +556,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: IntoExpr) -> Expr:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -563,6 +566,11 @@ class ExprListNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -598,7 +606,7 @@ class ExprListNameSpace:
         └─────────────────┴───────────┴───────┘
         """
         separator = parse_as_expression(separator, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_join(separator))
+        return wrap_expr(self._pyexpr.list_join(separator, ignore_nulls))
 
     def arg_min(self) -> Expr:
         """

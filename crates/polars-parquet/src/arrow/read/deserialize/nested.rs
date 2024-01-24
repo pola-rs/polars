@@ -210,10 +210,10 @@ where
                 |x: f64| x,
             ))
         },
-        Binary | Utf8 => {
+        BinaryView | Utf8View => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            remove_nested(binary::NestedIter::<i32, _>::new(
+            remove_nested(binview::NestedIter::new(
                 columns.pop().unwrap(),
                 init,
                 field.data_type().clone(),
@@ -559,10 +559,10 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             chunk_size,
             |x: f64| x,
         )),
-        Utf8 | Binary => primitive(binary::NestedDictIter::<K, i32, _>::new(
+        LargeUtf8 | LargeBinary => primitive(binary::NestedDictIter::<K, i64, _>::new(
             iter, init, data_type, num_rows, chunk_size,
         )),
-        LargeUtf8 | LargeBinary => primitive(binary::NestedDictIter::<K, i64, _>::new(
+        Utf8View | BinaryView => primitive(binview::NestedDictIter::<K, _>::new(
             iter, init, data_type, num_rows, chunk_size,
         )),
         FixedSizeBinary(_) => primitive(fixed_size_binary::NestedDictIter::<K, _>::new(

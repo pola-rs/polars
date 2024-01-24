@@ -3,10 +3,8 @@ mod batched_read;
 
 use std::fmt;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use arrow::array::ValueSize;
 pub use batched_mmap::*;
 pub use batched_read::*;
 use polars_core::config::verbose;
@@ -26,7 +24,7 @@ use crate::csv::{CsvEncoding, NullValues};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
-use crate::RowCount;
+use crate::RowIndex;
 
 pub(crate) fn cast_columns(
     df: &mut DataFrame,
@@ -116,7 +114,7 @@ pub(crate) struct CoreReader<'a> {
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     truncate_ragged_lines: bool,
 }
 
@@ -127,54 +125,6 @@ impl<'a> fmt::Debug for CoreReader<'a> {
             .field("projection", &self.projection)
             .field("line_number", &self.line_number)
             .finish()
-    }
-}
-
-pub(crate) struct RunningSize {
-    max: AtomicUsize,
-    sum: AtomicUsize,
-    count: AtomicUsize,
-    last: AtomicUsize,
-}
-
-fn compute_size_hint(max: usize, sum: usize, count: usize, last: usize) -> usize {
-    let avg = (sum as f32 / count as f32) as usize;
-    let size = std::cmp::max(last, avg) as f32;
-    if (max as f32) < (size * 1.5) {
-        max
-    } else {
-        size as usize
-    }
-}
-impl RunningSize {
-    fn new(size: usize) -> Self {
-        Self {
-            max: AtomicUsize::new(size),
-            sum: AtomicUsize::new(size),
-            count: AtomicUsize::new(1),
-            last: AtomicUsize::new(size),
-        }
-    }
-
-    pub(crate) fn update(&self, size: usize) -> (usize, usize, usize, usize) {
-        let max = self.max.fetch_max(size, Ordering::Release);
-        let sum = self.sum.fetch_add(size, Ordering::Release);
-        let count = self.count.fetch_add(1, Ordering::Release);
-        let last = self.last.fetch_add(size, Ordering::Release);
-        (
-            max,
-            sum / count,
-            last,
-            compute_size_hint(max, sum, count, last),
-        )
-    }
-
-    pub(crate) fn size_hint(&self) -> usize {
-        let max = self.max.load(Ordering::Acquire);
-        let sum = self.sum.load(Ordering::Acquire);
-        let count = self.count.load(Ordering::Acquire);
-        let last = self.last.load(Ordering::Acquire);
-        compute_size_hint(max, sum, count, last)
     }
 }
 
@@ -206,7 +156,7 @@ impl<'a> CoreReader<'a> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
-        row_count: Option<RowCount>,
+        row_index: Option<RowIndex>,
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
@@ -233,10 +183,15 @@ impl<'a> CoreReader<'a> {
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
                     #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-                    if let Some(b) =
-                        decompress(&reader_bytes, n_rows, separator, quote_char, eol_char)
                     {
-                        reader_bytes = ReaderBytes::Owned(b);
+                        let total_n_rows = n_rows.map(|n| {
+                            skip_rows + (has_header as usize) + skip_rows_after_header + n
+                        });
+                        if let Some(b) =
+                            decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
+                        {
+                            reader_bytes = ReaderBytes::Owned(b);
+                        }
                     }
 
                     let (inferred_schema, _, _) = infer_file_schema(
@@ -306,7 +261,7 @@ impl<'a> CoreReader<'a> {
             missing_is_null,
             predicate,
             to_cast,
-            row_count,
+            row_index,
             truncate_ragged_lines,
         })
     }
@@ -486,55 +441,19 @@ impl<'a> CoreReader<'a> {
             remaining_bytes,
         ))
     }
-    fn get_projection(&mut self) -> Vec<usize> {
+    fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
         // we also need to sort the projection to have predictable output.
         // the `parse_lines` function expects this.
         self.projection
             .take()
             .map(|mut v| {
                 v.sort_unstable();
-                v
+                if let Some(idx) = v.last() {
+                    polars_ensure!(*idx < self.schema.len(), OutOfBounds: "projection index: {} is out of bounds for csv schema with length: {}", idx, self.schema.len())
+                }
+                Ok(v)
             })
-            .unwrap_or_else(|| (0..self.schema.len()).collect())
-    }
-
-    fn get_string_columns(&self, projection: &[usize]) -> PolarsResult<StringColumns> {
-        // keep track of the maximum capacity that needs to be allocated for the utf8-builder
-        // Per string column we keep a statistic of the maximum length of string bytes per chunk
-        // We must the names, not the indexes, (the indexes are incorrect due to projection
-        // pushdown)
-
-        let mut new_projection = Vec::with_capacity(projection.len());
-
-        for i in projection {
-            let (_, dtype) = self.schema.get_at_index(*i).ok_or_else(|| {
-                polars_err!(
-                    OutOfBounds:
-                    "projection index {} is out of bounds for CSV schema with {} columns",
-                    i, self.schema.len(),
-                )
-            })?;
-
-            if dtype == &DataType::String {
-                new_projection.push(*i)
-            }
-        }
-
-        Ok(StringColumns::new(self.schema.clone(), new_projection))
-    }
-
-    fn init_string_size_stats(
-        &self,
-        str_columns: &StringColumns,
-        capacity: usize,
-    ) -> Vec<RunningSize> {
-        // assume 10 chars per str
-        // this is not updated in low memory mode
-        let init_str_bytes = capacity * 10;
-        str_columns
-            .iter()
-            .map(|_| RunningSize::new(init_str_bytes))
-            .collect()
+            .unwrap_or_else(|| Ok((0..self.schema.len()).collect()))
     }
 
     fn parse_csv(
@@ -546,14 +465,13 @@ impl<'a> CoreReader<'a> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
-        let projection = self.get_projection();
-        let str_columns = self.get_string_columns(&projection)?;
+        let projection = self.get_projection()?;
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             let mut df = DataFrame::from(self.schema.as_ref());
-            if let Some(ref row_count) = self.row_count {
-                df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
+            if let Some(ref row_index) = self.row_index {
+                df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
             }
             return Ok(df);
         }
@@ -562,7 +480,6 @@ impl<'a> CoreReader<'a> {
         // Structure:
         //      the inner vec has got buffers from all the columns.
         if let Some(predicate) = predicate {
-            let str_capacities = self.init_string_size_stats(&str_columns, chunk_size);
             let dfs = POOL.install(|| {
                 file_chunks
                     .into_par_iter()
@@ -583,10 +500,8 @@ impl<'a> CoreReader<'a> {
                                 projection,
                                 chunk_size,
                                 schema,
-                                &str_capacities,
                                 self.quote_char,
                                 self.encoding,
-                                self.ignore_errors,
                             )?;
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -618,8 +533,8 @@ impl<'a> CoreReader<'a> {
                                     .collect::<PolarsResult<_>>()?,
                             );
                             let current_row_count = local_df.height() as IdxSize;
-                            if let Some(rc) = &self.row_count {
-                                local_df.with_row_count_mut(&rc.name, Some(rc.offset));
+                            if let Some(rc) = &self.row_index {
+                                local_df.with_row_index_mut(&rc.name, Some(rc.offset));
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
@@ -627,10 +542,6 @@ impl<'a> CoreReader<'a> {
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
 
-                            // update the running str bytes statistics
-                            if !self.low_memory {
-                                update_string_stats(&str_capacities, &str_columns, &local_df)?;
-                            }
                             dfs.push((local_df, current_row_count));
                         }
                         Ok(dfs)
@@ -638,7 +549,7 @@ impl<'a> CoreReader<'a> {
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
             let mut dfs = flatten(&dfs, None);
-            if self.row_count.is_some() {
+            if self.row_index.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
             accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
@@ -653,8 +564,6 @@ impl<'a> CoreReader<'a> {
             } else {
                 std::cmp::min(rows_per_thread, max_proxy)
             };
-
-            let str_capacities = self.init_string_size_stats(&str_columns, capacity);
 
             let mut dfs = POOL.install(|| {
                 file_chunks
@@ -671,7 +580,6 @@ impl<'a> CoreReader<'a> {
                             self.eol_char,
                             self.comment_prefix.as_ref(),
                             capacity,
-                            &str_capacities,
                             self.encoding,
                             self.null_values.as_ref(),
                             self.missing_is_null,
@@ -681,14 +589,9 @@ impl<'a> CoreReader<'a> {
                             starting_point_offset,
                         )?;
 
-                        // update the running str bytes statistics
-                        if !self.low_memory {
-                            update_string_stats(&str_capacities, &str_columns, &df)?;
-                        }
-
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
-                        if let Some(rc) = &self.row_count {
-                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        if let Some(rc) = &self.row_index {
+                            df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
@@ -705,10 +608,8 @@ impl<'a> CoreReader<'a> {
                                 &projection,
                                 remaining_rows,
                                 self.schema.as_ref(),
-                                &str_capacities,
                                 self.quote_char,
                                 self.encoding,
-                                self.ignore_errors,
                             )?;
 
                             parse_lines(
@@ -738,15 +639,15 @@ impl<'a> CoreReader<'a> {
                         };
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
-                        if let Some(rc) = &self.row_count {
-                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        if let Some(rc) = &self.row_index {
+                            df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         (df, n_read)
                     });
                 }
             }
-            if self.row_count.is_some() {
+            if self.row_index.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
             accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
@@ -773,22 +674,6 @@ impl<'a> CoreReader<'a> {
     }
 }
 
-fn update_string_stats(
-    str_capacities: &[RunningSize],
-    str_columns: &StringColumns,
-    local_df: &DataFrame,
-) -> PolarsResult<()> {
-    // update the running str bytes statistics
-    for (str_index, name) in str_columns.iter().enumerate() {
-        let ca = local_df.column(name)?.str()?;
-        let str_bytes_len = ca.get_values_size();
-
-        let _ = str_capacities[str_index].update(str_bytes_len);
-    }
-
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 fn read_chunk(
     bytes: &[u8],
@@ -801,7 +686,6 @@ fn read_chunk(
     eol_char: u8,
     comment_prefix: Option<&CommentPrefix>,
     capacity: usize,
-    str_capacities: &[RunningSize],
     encoding: CsvEncoding,
     null_values: Option<&NullValuesCompiled>,
     missing_is_null: bool,
@@ -811,15 +695,7 @@ fn read_chunk(
     starting_point_offset: Option<usize>,
 ) -> PolarsResult<DataFrame> {
     let mut read = bytes_offset_thread;
-    let mut buffers = init_buffers(
-        projection,
-        capacity,
-        schema,
-        str_capacities,
-        quote_char,
-        encoding,
-        ignore_errors,
-    )?;
+    let mut buffers = init_buffers(projection, capacity, schema, quote_char, encoding)?;
 
     let mut last_read = usize::MAX;
     loop {
@@ -855,28 +731,4 @@ fn read_chunk(
             .map(|buf| buf.into_series())
             .collect::<PolarsResult<_>>()?,
     ))
-}
-
-/// List of strings, which are stored inside of a [Schema].
-///
-/// Conceptually it is `Vec<&str>` with `&str` tied to the lifetime of
-/// the [Schema].
-struct StringColumns {
-    schema: SchemaRef,
-    fields: Vec<usize>,
-}
-
-impl StringColumns {
-    /// New [StringColumns], where the list `fields` has indices
-    /// of fields in the `schema`.
-    fn new(schema: SchemaRef, fields: Vec<usize>) -> Self {
-        Self { schema, fields }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &str> {
-        self.fields.iter().map(|schema_i| {
-            let (name, _) = self.schema.get_at_index(*schema_i).unwrap();
-            name.as_str()
-        })
-    }
 }

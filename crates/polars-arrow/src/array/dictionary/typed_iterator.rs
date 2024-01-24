@@ -1,7 +1,7 @@
 use polars_error::{polars_err, PolarsResult};
 
 use super::DictionaryKey;
-use crate::array::{Array, PrimitiveArray, Utf8Array};
+use crate::array::{Array, PrimitiveArray, Utf8Array, Utf8ViewArray};
 use crate::trusted_len::TrustedLen;
 use crate::types::Offset;
 
@@ -21,6 +21,34 @@ pub trait DictValue {
 }
 
 impl<O: Offset> DictValue for Utf8Array<O> {
+    type IterValue<'a> = &'a str;
+
+    unsafe fn get_unchecked(&self, item: usize) -> Self::IterValue<'_> {
+        self.value_unchecked(item)
+    }
+
+    fn downcast_values(array: &dyn Array) -> PolarsResult<&Self>
+    where
+        Self: Sized,
+    {
+        array
+            .as_any()
+            .downcast_ref::<Self>()
+            .ok_or_else(
+                || polars_err!(InvalidOperation: "could not convert array to dictionary value"),
+            )
+            .map(|arr| {
+                assert_eq!(
+                    arr.null_count(),
+                    0,
+                    "null values in values not supported in iteration"
+                );
+                arr
+            })
+    }
+}
+
+impl DictValue for Utf8ViewArray {
     type IterValue<'a> = &'a str;
 
     unsafe fn get_unchecked(&self, item: usize) -> Self::IterValue<'_> {

@@ -252,9 +252,8 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
         """
         for it in items:
             if not isinstance(it, (DataType, DataTypeClass)):
-                raise TypeError(
-                    f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
-                )
+                msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
+                raise TypeError(msg)
         dtype_group = super().__new__(cls, items)  # type: ignore[arg-type]
         dtype_group._match_base_type = match_base_type
         return dtype_group
@@ -423,10 +422,11 @@ class Datetime(TemporalType):
         self.time_zone = time_zone
 
         if self.time_unit not in ("ms", "us", "ns"):
-            raise ValueError(
+            msg = (
                 "invalid `time_unit`"
                 f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
             )
+            raise ValueError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
@@ -465,10 +465,11 @@ class Duration(TemporalType):
         """
         self.time_unit = time_unit
         if self.time_unit not in ("ms", "us", "ns"):
-            raise ValueError(
+            msg = (
                 "invalid `time_unit`"
                 f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
             )
+            raise ValueError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class

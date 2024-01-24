@@ -26,7 +26,7 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
         .right_on([col("id")])
         .suffix("_sire")
         .finish()
-        .drop_columns(["sireid"])
+        .drop(["sireid"])
         .collect()?;
 
     assert_eq!(out.shape(), (1, 3));
@@ -123,7 +123,7 @@ fn concat_str_regex_expansion() -> PolarsResult<()> {
     ]?
     .lazy();
     let out = df
-        .select([concat_str([col(r"^b_a_\d$")], ";").alias("concatenated")])
+        .select([concat_str([col(r"^b_a_\d$")], ";", false).alias("concatenated")])
         .collect()?;
     let s = out.column("concatenated")?;
     assert_eq!(s, &Series::new("concatenated", ["a--;;", ";b--;", ";;c--"]));

@@ -43,7 +43,7 @@ def add_counter(val: int) -> int:
 
 out = df.select(
     pl.col("values").map_elements(add_counter).alias("solution_map_elements"),
-    (pl.col("values") + pl.int_range(1, pl.count() + 1)).alias("solution_expr"),
+    (pl.col("values") + pl.int_range(1, pl.len() + 1)).alias("solution_expr"),
 )
 print(out)
 # --8<-- [end:counter]

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from decimal import Decimal as D
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
 
 
 def test_modulo() -> None:
@@ -42,6 +48,41 @@ def test_modulo() -> None:
 
 
 @pytest.mark.parametrize(
+    ("value", "sqltype", "prec_scale", "expected_value", "expected_dtype"),
+    [
+        (64.5, "numeric", "(3,1)", D("64.5"), pl.Decimal(3, 1)),
+        (512.5, "decimal", "(3,1)", D("512.5"), pl.Decimal(3, 1)),
+        (512.5, "numeric", "(4,0)", D("512"), pl.Decimal(4, 0)),
+        (-1024.75, "decimal", "(10,0)", D("-1024"), pl.Decimal(10, 0)),
+        (-1024.75, "numeric", "(10)", D("-1024"), pl.Decimal(10, 0)),
+        (-1024.75, "dec", "", D("-1024.75"), pl.Decimal(38, 9)),
+    ],
+)
+def test_numeric_decimal_type(
+    value: float,
+    sqltype: str,
+    prec_scale: str,
+    expected_value: D,
+    expected_dtype: PolarsDataType,
+) -> None:
+    with pl.Config(activate_decimals=True):
+        df = pl.DataFrame({"n": [value]})
+        with pl.SQLContext(df=df) as ctx:
+            out = ctx.execute(
+                f"""
+                SELECT n::{sqltype}{prec_scale} AS "dec" FROM df
+                """
+            )
+            assert_frame_equal(
+                out.collect(),
+                pl.DataFrame(
+                    data={"dec": [expected_value]},
+                    schema={"dec": expected_dtype},
+                ),
+            )
+
+
+@pytest.mark.parametrize(
     ("decimals", "expected"),
     [
         (0, [-8192.0, -4.0, -2.0, 2.0, 4.0, 8193.0]),
@@ -66,10 +107,15 @@ def test_round_ndigits(decimals: int, expected: list[float]) -> None:
 
 def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
-    with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
-        InvalidOperationError, match="Invalid 'decimals' for Round: -1"
-    ):
-        ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        with pytest.raises(
+            InvalidOperationError, match="invalid 'decimals' for Round: ??"
+        ):
+            ctx.execute("SELECT ROUND(n,'??') AS n FROM df")
+        with pytest.raises(
+            InvalidOperationError, match="Round .* negative 'decimals': -1"
+        ):
+            ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
 
 def test_stddev_variance() -> None:

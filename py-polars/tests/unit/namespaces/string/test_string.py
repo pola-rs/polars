@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import cast
-
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -15,68 +13,37 @@ def test_str_slice() -> None:
     assert df.select([pl.col("a").str.slice(2, 4)])["a"].to_list() == ["obar", "rfoo"]
 
 
-def test_str_concat() -> None:
-    s = pl.Series(["1", None, "2", None])
-    # propagate null
-    assert_series_equal(
-        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.String)
+def test_str_slice_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["foobar", None, "barfoo", "abcd", ""],
+            "offset": [1, 3, None, -3, 2],
+            "length": [3, 4, 2, None, 2],
+        }
     )
-    # ignore null
-    assert_series_equal(s.str.concat(), pl.Series(["1-2"]))
-
-    # str None/null is ok
-    s = pl.Series(["1", "None", "2", "null"])
-    assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series(["1-None-2-null"]))
-    assert_series_equal(s.str.concat(), pl.Series(["1-None-2-null"]))
-
-
-def test_str_concat2() -> None:
-    df = pl.DataFrame({"foo": [1, None, 2, None]})
-
-    out = df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
-    assert cast(str, out.item()) is None
-
-    out = df.select(pl.col("foo").str.concat("-"))
-    assert cast(str, out.item()) == "1-2"
-
-
-def test_str_concat_all_null() -> None:
-    s = pl.Series([None, None, None], dtype=pl.String)
-    assert_series_equal(
-        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.String)
+    out = df.select(
+        all_expr=pl.col("a").str.slice("offset", "length"),
+        offset_expr=pl.col("a").str.slice("offset", 2),
+        length_expr=pl.col("a").str.slice(0, "length"),
+        length_none=pl.col("a").str.slice("offset", None),
+        offset_length_lit=pl.col("a").str.slice(-3, 3),
+        str_lit=pl.lit("qwert").str.slice("offset", "length"),
     )
-    assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
-
-
-def test_str_concat_empty_list() -> None:
-    s = pl.Series([], dtype=pl.String)
-    assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series([""]))
-    assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
-
-
-def test_str_concat_empty_list2() -> None:
-    s = pl.Series([], dtype=pl.String)
-    df = pl.DataFrame({"foo": s})
-    result = df.select(pl.col("foo").str.concat()).item()
-    expected = ""
-    assert result == expected
-
-
-def test_str_concat_empty_list_agg_context() -> None:
-    df = pl.DataFrame(data={"i": [1], "v": [None]}, schema_overrides={"v": pl.String})
-    result = df.group_by("i").agg(pl.col("v").drop_nulls().str.concat())["v"].item()
-    expected = ""
-    assert result == expected
-
-
-def test_str_concat_datetime() -> None:
-    df = pl.DataFrame({"d": [datetime(2020, 1, 1), None, datetime(2022, 1, 1)]})
-    out = df.select(pl.col("d").str.concat("|", ignore_nulls=True))
-    assert (
-        cast(str, out.item()) == "2020-01-01 00:00:00.000000|2022-01-01 00:00:00.000000"
+    expected = pl.DataFrame(
+        {
+            "all_expr": ["oob", None, None, "bcd", ""],
+            "offset_expr": ["oo", None, None, "bc", ""],
+            "length_expr": ["foo", None, "ba", "abcd", ""],
+            "length_none": ["oobar", None, None, "bcd", ""],
+            "offset_length_lit": ["bar", None, "foo", "bcd", ""],
+            "str_lit": ["wer", "rt", None, "ert", "er"],
+        }
     )
-    out = df.select(pl.col("d").str.concat("|", ignore_nulls=False))
-    assert cast(str, out.item()) is None
+    assert_frame_equal(out, expected)
+
+    # negative length is not allowed
+    with pytest.raises(pl.ComputeError):
+        df.select(pl.col("a").str.slice(0, -1))
 
 
 def test_str_len_bytes() -> None:
@@ -130,6 +97,7 @@ def test_str_encode() -> None:
     s = pl.Series(["foo", "bar", None])
     hex_encoded = pl.Series(["666f6f", "626172", None])
     base64_encoded = pl.Series(["Zm9v", "YmFy", None])
+
     assert_series_equal(s.str.encode("hex"), hex_encoded)
     assert_series_equal(s.str.encode("base64"), base64_encoded)
     with pytest.raises(ValueError):
@@ -153,6 +121,90 @@ def test_str_decode_exception() -> None:
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("strict", [True, False])
+def test_str_find(strict: bool) -> None:
+    df = pl.DataFrame(
+        data=[
+            ("Dubai", 3564931, "b[ai]", "ai"),
+            ("Abu Dhabi", 1807000, "b[ai]", " "),
+            ("Sharjah", 1405000, "[ai]n", "s"),
+            ("Al Ain", 846747, "[ai]n", ""),
+            ("Ajman", 490035, "[ai]n", "ma"),
+            ("Ras Al Khaimah", 191753, "a.+a", "Kha"),
+            ("Fujairah", 118933, "a.+a", None),
+            ("Umm Al Quwain", 59098, "a.+a", "wa"),
+            (None, None, None, "n/a"),
+        ],
+        schema={
+            "city": pl.String,
+            "population": pl.Int32,
+            "pat": pl.String,
+            "lit": pl.String,
+        },
+    )
+    city, pop, pat, lit = (pl.col(c) for c in ("city", "population", "pat", "lit"))
+
+    for match_lit in (True, False):
+        res = df.select(
+            find_a_regex=city.str.find("(?i)a", strict=strict),
+            find_a_lit=city.str.find("a", literal=match_lit),
+            find_00_lit=pop.cast(pl.String).str.find("00", literal=match_lit),
+            find_col_lit=city.str.find(lit, strict=strict, literal=match_lit),
+            find_col_pat=city.str.find(pat, strict=strict),
+        )
+        assert res.to_dict(as_series=False) == {
+            "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4, None],
+            "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10, None],
+            "find_00_lit": [None, 4, 4, None, 2, None, None, None, None],
+            "find_col_lit": [3, 3, None, 0, 2, 7, None, 9, None],
+            "find_col_pat": [2, 7, None, 4, 3, 1, 3, None, None],
+        }
+
+
+def test_str_find_invalid_regex() -> None:
+    # test behaviour of 'strict' with invalid regular expressions
+    df = pl.DataFrame({"txt": ["AbCdEfG"]})
+    rx_invalid = "(?i)AB.))"
+
+    with pytest.raises(pl.ComputeError):
+        df.with_columns(pl.col("txt").str.find(rx_invalid, strict=True))
+
+    res = df.with_columns(pl.col("txt").str.find(rx_invalid, strict=False))
+    assert res.item() is None
+
+
+def test_str_find_escaped_chars() -> None:
+    # test behaviour of 'literal=True' with special chars
+    df = pl.DataFrame({"txt": ["123.*465", "x(x?)x"]})
+
+    res = df.with_columns(
+        x1=pl.col("txt").str.find("(x?)", literal=True),
+        x2=pl.col("txt").str.find(".*4", literal=True),
+        x3=pl.col("txt").str.find("(x?)"),
+        x4=pl.col("txt").str.find(".*4"),
+    )
+    # ┌──────────┬──────┬──────┬─────┬──────┐
+    # │ txt      ┆ x1   ┆ x2   ┆ x3  ┆ x4   │
+    # │ ---      ┆ ---  ┆ ---  ┆ --- ┆ ---  │
+    # │ str      ┆ u32  ┆ u32  ┆ u32 ┆ u32  │
+    # ╞══════════╪══════╪══════╪═════╪══════╡
+    # │ 123.*465 ┆ null ┆ 3    ┆ 0   ┆ 0    │
+    # │ x(x?)x   ┆ 1    ┆ null ┆ 0   ┆ null │
+    # └──────────┴──────┴──────┴─────┴──────┘
+    assert_frame_equal(
+        pl.DataFrame(
+            {
+                "txt": ["123.*465", "x(x?)x"],
+                "x1": [None, 1],
+                "x2": [3, None],
+                "x3": [0, 0],
+                "x4": [0, None],
+            }
+        ).cast({cs.signed_integer(): pl.UInt32}),
+        res,
+    )
 
 
 def test_hex_decode_return_dtype() -> None:
@@ -550,6 +602,29 @@ def test_extract_regex() -> None:
     )
     expected = pl.Series(["messi", None, "ronaldo"])
     assert_series_equal(s.str.extract(r"candidate=(\w+)", 1), expected)
+
+
+def test_extract() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["aron123", "12butler", "charly*", "~david", None],
+            "pat": [r"^([a-zA-Z]+)", r"^(\d+)", None, "^(da)", r"(.*)"],
+        }
+    )
+
+    out = df.select(
+        all_expr=pl.col("s").str.extract(pl.col("pat"), 1),
+        str_expr=pl.col("s").str.extract("^([a-zA-Z]+)", 1),
+        pat_expr=pl.lit("aron123").str.extract(pl.col("pat")),
+    )
+    expected = pl.DataFrame(
+        {
+            "all_expr": ["aron", "12", None, None, None],
+            "str_expr": ["aron", None, "charly", None, None],
+            "pat_expr": ["aron", None, None, None, "aron123"],
+        }
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_extract_binary() -> None:

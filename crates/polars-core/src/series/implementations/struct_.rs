@@ -304,7 +304,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     /// Get a mask of the non-null values.
     fn is_not_null(&self) -> BooleanChunked {
         let is_not_null = self.0.fields().iter().map(|s| s.is_not_null());
-        is_not_null.reduce(|lhs, rhs| lhs.bitand(rhs)).unwrap()
+        is_not_null.reduce(|lhs, rhs| lhs.bitor(rhs)).unwrap()
     }
 
     fn shrink_to_fit(&mut self) {

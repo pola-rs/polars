@@ -61,6 +61,6 @@ pub(super) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
     Arc::new(new_schema)
 }
 
-pub(super) fn row_count_schema(schema: &mut Schema, name: &str) {
+pub(super) fn row_index_schema(schema: &mut Schema, name: &str) {
     schema.insert_at_index(0, name.into(), IDX_DTYPE).unwrap();
 }

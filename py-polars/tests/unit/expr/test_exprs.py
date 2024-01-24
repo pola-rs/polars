@@ -61,29 +61,6 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
     assert out.columns == ["reverse_A", "reverse_fruits", "reverse_B", "reverse_cars"]
 
 
-def test_cum_count() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
-
-    out = df.group_by("A", maintain_order=True).agg(
-        pl.col("A").cum_count().alias("foo")
-    )
-
-    assert out["foo"][0].to_list() == [0, 1, 2, 3]
-    assert out["foo"][1].to_list() == [0, 1]
-
-
-def test_cumcount_deprecated() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
-
-    with pytest.deprecated_call():
-        out = df.group_by("A", maintain_order=True).agg(
-            pl.col("A").cumcount().alias("foo")
-        )
-
-    assert out["foo"][0].to_list() == [0, 1, 2, 3]
-    assert out["foo"][1].to_list() == [0, 1]
-
-
 def test_filter_where() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 7, 8, 9]})
     result_filter = df.group_by("a", maintain_order=True).agg(
@@ -123,16 +100,16 @@ def test_filter_where() -> None:
     ]
 
 
-def test_count_expr() -> None:
+def test_len_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
 
-    out = df.select(pl.count())
+    out = df.select(pl.len())
     assert out.shape == (1, 1)
     assert cast(int, out.item()) == 5
 
-    out = df.group_by("b", maintain_order=True).agg(pl.count())
+    out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
-    assert out["count"].to_list() == [4, 1]
+    assert out["len"].to_list() == [4, 1]
 
 
 def test_map_alias() -> None:
@@ -435,13 +412,6 @@ def test_search_sorted() -> None:
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
 
-def test_abs_expr() -> None:
-    df = pl.DataFrame({"x": [-1, 0, 1]})
-    out = df.select(abs(pl.col("x")))
-
-    assert out["x"].to_list() == [1, 0, 1]
-
-
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
@@ -701,7 +671,7 @@ def test_head() -> None:
     assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").head(pl.len() / 2)).to_dict(as_series=False) == {
         "a": [1, 2]
     }
 
@@ -713,7 +683,7 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").tail(pl.len() / 2)).to_dict(as_series=False) == {
         "a": [4, 5]
     }
 

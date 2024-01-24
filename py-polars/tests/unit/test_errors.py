@@ -20,7 +20,7 @@ def test_error_on_empty_group_by() -> None:
     with pytest.raises(
         pl.ComputeError, match="at least one key is required in a group_by operation"
     ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.count())
+        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.len())
 
 
 def test_error_on_reducing_map() -> None:
@@ -30,8 +30,8 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(6\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(6\); consider using `apply` instead"
         ),
     ):
         df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
@@ -40,8 +40,8 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(4\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(4\); consider using `apply` instead"
         ),
     ):
         df.select(
@@ -191,7 +191,7 @@ def test_err_bubbling_up_to_lit() -> None:
     df = pl.DataFrame({"date": [date(2020, 1, 1)], "value": [42]})
 
     with pytest.raises(TypeError):
-        df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg]
+        df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg,operator]
 
 
 def test_error_on_double_agg() -> None:

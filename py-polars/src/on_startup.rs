@@ -98,7 +98,9 @@ pub fn __register_startup_deps() {
         unsafe { polars_error::set_warning_function(warning_function) };
         Python::with_gil(|py| {
             // init AnyValue LUT
-            crate::conversion::LUT.set(py, Default::default()).unwrap();
+            crate::conversion::anyvalue::LUT
+                .set(py, Default::default())
+                .unwrap();
         });
     }
 }

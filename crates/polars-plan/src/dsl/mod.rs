@@ -914,9 +914,12 @@ impl Expr {
 
     #[cfg(feature = "dynamic_group_by")]
     pub fn rolling(self, options: RollingGroupOptions) -> Self {
+        // We add the index column as `partition expr` so that the optimizer will
+        // not ignore it.
+        let index_col = col(options.index_column.as_str());
         Expr::Window {
             function: Box::new(self),
-            partition_by: vec![],
+            partition_by: vec![index_col],
             options: WindowType::Rolling(options),
         }
     }
@@ -944,6 +947,10 @@ impl Expr {
         self.fill_null_impl(fill_value.into())
     }
 
+    pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
+        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+    }
+
     /// Replace the floating point `NaN` values by a value.
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
@@ -969,6 +976,17 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_duplicated(self) -> Self {
         self.apply_private(BooleanFunction::IsDuplicated.into())
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_between")]
+    pub fn is_between<E: Into<Expr>>(self, lower: E, upper: E, closed: ClosedInterval) -> Self {
+        self.map_many_private(
+            BooleanFunction::IsBetween { closed }.into(),
+            &[lower.into(), upper.into()],
+            false,
+            true,
+        )
     }
 
     /// Get a mask of unique values.
@@ -1590,7 +1608,8 @@ impl Expr {
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
     pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
-        self.apply_private(FunctionExpr::SetSortedFlag(sorted))
+        // This is `map`. If a column is sorted. Chunks of that column are also sorted.
+        self.map_private(FunctionExpr::SetSortedFlag(sorted))
     }
 
     #[cfg(feature = "row_hash")]
@@ -1601,6 +1620,15 @@ impl Expr {
 
     pub fn to_physical(self) -> Expr {
         self.map_private(FunctionExpr::ToPhysical)
+    }
+
+    pub fn gather_every(self, n: usize, offset: usize) -> Expr {
+        self.apply_private(FunctionExpr::GatherEvery { n, offset })
+    }
+
+    #[cfg(feature = "reinterpret")]
+    pub fn reinterpret(self, signed: bool) -> Expr {
+        self.map_private(FunctionExpr::Reinterpret(signed))
     }
 
     #[cfg(feature = "strings")]
@@ -1746,21 +1774,9 @@ where
     }
 }
 
-/// Count expression.
-pub fn count() -> Expr {
-    Expr::Count
-}
-
-/// Return the cumulative count of the context.
-#[cfg(feature = "range")]
-pub fn cum_count(reverse: bool) -> Expr {
-    let start = lit(1 as IdxSize);
-    let end = count() + lit(1 as IdxSize);
-    let mut range = int_range(start, end, 1, IDX_DTYPE);
-    if reverse {
-        range = range.reverse()
-    }
-    range.alias("cum_count")
+/// Return the number of rows in the context.
+pub fn len() -> Expr {
+    Expr::Len
 }
 
 /// First column in DataFrame.

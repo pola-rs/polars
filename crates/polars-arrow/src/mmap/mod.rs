@@ -79,6 +79,11 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
 ) -> PolarsResult<Chunk<Box<dyn Array>>> {
     let (mut buffers, mut field_nodes) = get_buffers_nodes(batch)?;
+    let mut variadic_buffer_counts = batch
+        .variadic_buffer_counts()
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
+        .map(|v| v.iter().map(|v| v as usize).collect::<VecDeque<usize>>())
+        .unwrap_or_else(VecDeque::new);
 
     fields
         .iter()
@@ -93,6 +98,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
                 ipc_field,
                 dictionaries,
                 &mut field_nodes,
+                &mut variadic_buffer_counts,
                 &mut buffers,
             )
         })

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
-import polars._reexport as pl
 from polars import functions as F
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    issue_deprecation_warning,
+)
 
 if TYPE_CHECKING:
     import sys
@@ -64,15 +66,17 @@ class GroupBy:
         """
         Allows iteration over the groups of the group by operation.
 
-        Each group is represented by a tuple of (name, data).
+        Each group is represented by a tuple of `(name, data)`. The group names are
+        tuples of the distinct group values that identify each group. If a single string
+        was passed to `by`, the keys are a single value instead of a tuple.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
-        >>> for name, data in df.group_by("foo"):  # doctest: +SKIP
+        >>> for name, data in df.group_by(["foo"]):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        a
+        (a,)
         shape: (2, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -82,7 +86,7 @@ class GroupBy:
         │ a   ┆ 1   │
         │ a   ┆ 2   │
         └─────┴─────┘
-        b
+        (b,)
         shape: (1, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -102,10 +106,14 @@ class GroupBy:
 
         group_names = groups_df.select(F.all().exclude(temp_col))
 
-        # When grouping by a single column, group name is a single value
-        # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if isinstance(self.by, (str, pl.Expr)) and not self.more_by:
+        key_as_single_value = isinstance(self.by, str) and not self.more_by
+        if key_as_single_value:
+            issue_deprecation_warning(
+                "`group_by` iteration will change to always return group identifiers as tuples."
+                f" Pass `by` as a list to silence this warning, e.g. `group_by([{self.by!r}])`.",
+                version="0.20.4",
+            )
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
@@ -297,7 +305,7 @@ class GroupBy:
         It is better to implement this with an expression:
 
         >>> df.filter(
-        ...     pl.int_range(0, pl.count()).shuffle().over("color") < 2
+        ...     pl.int_range(pl.len()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
         """
         by: list[str]
@@ -307,12 +315,14 @@ class GroupBy:
         elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
             by = list(self.by)  # type: ignore[arg-type]
         else:
-            raise TypeError("cannot call `map_groups` when grouping by an expression")
+            msg = "cannot call `map_groups` when grouping by an expression"
+            raise TypeError(msg)
 
         if all(isinstance(c, str) for c in self.more_by):
             by.extend(self.more_by)  # type: ignore[arg-type]
         else:
-            raise TypeError("cannot call `map_groups` when grouping by an expression")
+            msg = "cannot call `map_groups` when grouping by an expression"
+            raise TypeError(msg)
 
         return self.df.__class__._from_pydf(
             self.df._df.group_by_map_groups(by, function, self.maintain_order)
@@ -442,6 +452,32 @@ class GroupBy:
         """
         return self.agg(F.all())
 
+    def len(self) -> DataFrame:
+        """
+        Return the number of rows in each group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["apple", "apple", "orange"],
+        ...         "b": [1, None, 2],
+        ...     }
+        ... )
+        >>> df.group_by("a").len()  # doctest: +SKIP
+        shape: (2, 2)
+        ┌────────┬─────┐
+        │ a      ┆ len │
+        │ ---    ┆ --- │
+        │ str    ┆ u32 │
+        ╞════════╪═════╡
+        │ apple  ┆ 2   │
+        │ orange ┆ 1   │
+        └────────┴─────┘
+        """
+        return self.agg(F.len())
+
+    @deprecate_renamed_function("len", version="0.20.5")
     def count(self) -> DataFrame:
         """
         Return the number of rows in each group.
@@ -467,7 +503,7 @@ class GroupBy:
         │ orange ┆ 1     │
         └────────┴───────┘
         """
-        return self.agg(F.count())
+        return self.agg(F.len().alias("count"))
 
     def first(self) -> DataFrame:
         """

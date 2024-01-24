@@ -40,9 +40,8 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
         return df._df
 
     if not hasattr(df, "__dataframe__"):
-        raise TypeError(
-            f"`df` of type {type(df).__name__!r} does not support the dataframe interchange protocol"
-        )
+        msg = f"`df` of type {type(df).__name__!r} does not support the dataframe interchange protocol"
+        raise TypeError(msg)
 
     return _from_dataframe(
         df.__dataframe__(allow_copy=allow_copy),  # type: ignore[arg-type]
@@ -97,6 +96,12 @@ def _column_to_series(
 
 
 def _string_column_to_series(column: Column, *, allow_copy: bool) -> Series:
+    if column.size() == 0:
+        return pl.Series(dtype=String)
+    elif not allow_copy:
+        msg = "string buffers must be converted"
+        raise CopyNotAllowedError(msg)
+
     buffers = column.get_buffers()
     offset = column.offset
 

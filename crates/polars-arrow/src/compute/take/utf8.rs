@@ -21,7 +21,7 @@ use crate::array::{Array, PrimitiveArray, Utf8Array};
 use crate::offset::Offset;
 
 /// `take` implementation for utf8 arrays
-pub fn take<O: Offset, I: Index>(
+pub unsafe fn take_unchecked<O: Offset, I: Index>(
     values: &Utf8Array<O>,
     indices: &PrimitiveArray<I>,
 ) -> Utf8Array<O> {
@@ -38,49 +38,4 @@ pub fn take<O: Offset, I: Index>(
         (true, true) => take_values_indices_validity(values, indices),
     };
     unsafe { Utf8Array::<O>::new_unchecked(data_type, offsets, values, validity) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::array::Int32Array;
-
-    fn _all_cases<O: Offset>() -> Vec<(Int32Array, Utf8Array<O>, Utf8Array<O>)> {
-        vec![
-            (
-                Int32Array::from(&[Some(1), Some(0)]),
-                Utf8Array::<O>::from(vec![Some("one"), Some("two")]),
-                Utf8Array::<O>::from(vec![Some("two"), Some("one")]),
-            ),
-            (
-                Int32Array::from(&[Some(1), None]),
-                Utf8Array::<O>::from(vec![Some("one"), Some("two")]),
-                Utf8Array::<O>::from(vec![Some("two"), None]),
-            ),
-            (
-                Int32Array::from(&[Some(1), Some(0)]),
-                Utf8Array::<O>::from(vec![None, Some("two")]),
-                Utf8Array::<O>::from(vec![Some("two"), None]),
-            ),
-            (
-                Int32Array::from(&[Some(1), None, Some(0)]),
-                Utf8Array::<O>::from(vec![None, Some("two")]),
-                Utf8Array::<O>::from(vec![Some("two"), None, None]),
-            ),
-        ]
-    }
-
-    #[test]
-    fn all_cases() {
-        let cases = _all_cases::<i32>();
-        for (indices, input, expected) in cases {
-            let output = take(&input, &indices);
-            assert_eq!(expected, output);
-        }
-        let cases = _all_cases::<i64>();
-        for (indices, input, expected) in cases {
-            let output = take(&input, &indices);
-            assert_eq!(expected, output);
-        }
-    }
 }

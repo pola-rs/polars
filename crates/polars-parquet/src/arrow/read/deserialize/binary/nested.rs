@@ -7,33 +7,12 @@ use arrow::offset::Offset;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
-use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::basic::{deserialize_plain, finish, Dict, ValuesDictionary};
+use super::basic::finish;
+use super::decoders::*;
 use super::utils::*;
 use crate::arrow::read::PagesIter;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
-
-#[derive(Debug)]
-enum State<'a> {
-    Optional(BinaryIter<'a>),
-    Required(BinaryIter<'a>),
-    RequiredDictionary(ValuesDictionary<'a>),
-    OptionalDictionary(ValuesDictionary<'a>),
-}
-
-impl<'a> utils::PageState<'a> for State<'a> {
-    fn len(&self) -> usize {
-        match self {
-            State::Optional(validity) => validity.size_hint().0,
-            State::Required(state) => state.size_hint().0,
-            State::RequiredDictionary(required) => required.len(),
-            State::OptionalDictionary(optional) => optional.len(),
-        }
-    }
-}
+use crate::parquet::page::{DataPage, DictPage};
 
 #[derive(Debug, Default)]
 struct BinaryDecoder<O: Offset> {
@@ -41,8 +20,8 @@ struct BinaryDecoder<O: Offset> {
 }
 
 impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
-    type State = State<'a>;
-    type Dictionary = Dict;
+    type State = BinaryNestedState<'a>;
+    type Dictionary = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
     fn build_state(
@@ -50,33 +29,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
-        let is_optional =
-            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-        let is_filtered = page.selected_rows().is_some();
-
-        match (page.encoding(), dict, is_optional, is_filtered) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
-                ValuesDictionary::try_new(page, dict).map(State::RequiredDictionary)
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
-                ValuesDictionary::try_new(page, dict).map(State::OptionalDictionary)
-            },
-            (Encoding::Plain, _, true, false) => {
-                let (_, _, values) = split_buffer(page)?;
-
-                let values = BinaryIter::new(values);
-
-                Ok(State::Optional(values))
-            },
-            (Encoding::Plain, _, false, false) => {
-                let (_, _, values) = split_buffer(page)?;
-
-                let values = BinaryIter::new(values);
-
-                Ok(State::Required(values))
-            },
-            _ => Err(utils::not_implemented(page)),
-        }
+        build_nested_state(page, dict)
     }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -93,16 +46,16 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
-            State::Optional(page) => {
+            BinaryNestedState::Optional(page) => {
                 let value = page.next().unwrap_or_default();
                 values.push(value);
                 validity.push(true);
             },
-            State::Required(page) => {
+            BinaryNestedState::Required(page) => {
                 let value = page.next().unwrap_or_default();
                 values.push(value);
             },
-            State::RequiredDictionary(page) => {
+            BinaryNestedState::RequiredDictionary(page) => {
                 let dict_values = &page.dict;
                 let item = page
                     .values
@@ -111,7 +64,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                     .unwrap_or_default();
                 values.push(item);
             },
-            State::OptionalDictionary(page) => {
+            BinaryNestedState::OptionalDictionary(page) => {
                 let dict_values = &page.dict;
                 let item = page
                     .values
@@ -141,7 +94,7 @@ pub struct NestedIter<O: Offset, I: PagesIter> {
     data_type: ArrowDataType,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (Binary<O>, MutableBitmap))>,
-    dict: Option<Dict>,
+    dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
 }

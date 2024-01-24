@@ -23,3 +23,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.get
     Expr.arr.first
     Expr.arr.last
+    Expr.arr.join
+    Expr.arr.explode
+    Expr.arr.contains
+    Expr.arr.count_matches

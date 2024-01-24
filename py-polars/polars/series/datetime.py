@@ -136,6 +136,27 @@ class DateTimeNameSpace:
             "2020/04/01"
             "2020/05/01"
         ]
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.to_string("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.to_string("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
+        ]
         """
 
     def strftime(self, format: str) -> Series:
@@ -173,8 +194,105 @@ class DateTimeNameSpace:
             "2020/04/01"
             "2020/05/01"
         ]
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.strftime("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.strftime("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
+        ]
         """
         return self.to_string(format)
+
+    def millennium(self) -> Expr:
+        """
+        Extract the millennium from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the millennium number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "dt",
+        ...     [
+        ...         date(999, 12, 31),
+        ...         date(1897, 5, 7),
+        ...         date(2000, 1, 1),
+        ...         date(2001, 7, 5),
+        ...         date(3002, 10, 20),
+        ...     ],
+        ... )
+        >>> s.dt.millennium()
+        shape: (5,)
+        Series: 'dt' [i32]
+        [
+            1
+            2
+            2
+            3
+            4
+        ]
+        """
+
+    def century(self) -> Expr:
+        """
+        Extract the century from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the century number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "dt",
+        ...     [
+        ...         date(999, 12, 31),
+        ...         date(1897, 5, 7),
+        ...         date(2000, 1, 1),
+        ...         date(2001, 7, 5),
+        ...         date(3002, 10, 20),
+        ...     ],
+        ... )
+        >>> s.dt.century()
+        shape: (5,)
+        Series: 'dt' [i32]
+        [
+            10
+            19
+            20
+            21
+            31
+        ]
+        """
 
     def year(self) -> Series:
         """
@@ -891,13 +1009,16 @@ class DateTimeNameSpace:
         """
         Set time unit a Series of dtype Datetime or Duration.
 
+        .. deprecated:: 0.20.5
+            First cast to `Int64` and then cast to the desired data type.
+
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
 
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` Series.
+            Unit of time for the `Datetime` or `Duration` Series.
 
         Examples
         --------
@@ -907,7 +1028,7 @@ class DateTimeNameSpace:
         ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)],
         ...     dtype=pl.Datetime(time_unit="ns"),
         ... )
-        >>> s.dt.with_time_unit("us")
+        >>> s.dt.with_time_unit("us")  # doctest: +SKIP
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [

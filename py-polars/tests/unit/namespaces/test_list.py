@@ -104,6 +104,24 @@ def test_list_join() -> None:
     out = df.select(pl.col("a").list.join(pl.col("separator")))
     assert out.to_dict(as_series=False) == {"a": ["ab&c&d", None, "g", "", None]}
 
+    # test ignore_nulls argument
+    df = pl.DataFrame(
+        {
+            "a": [["a", None, "b", None], None, [None, None], ["c", "d"], []],
+            "separator": ["-", "&", " ", "@", "/"],
+        }
+    )
+    # ignore nulls
+    out = df.select(pl.col("a").list.join("-", ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c-d", ""]}
+    out = df.select(pl.col("a").list.join(pl.col("separator"), ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c@d", ""]}
+    # propagate nulls
+    out = df.select(pl.col("a").list.join("-", ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c-d", ""]}
+    out = df.select(pl.col("a").list.join(pl.col("separator"), ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c@d", ""]}
+
 
 def test_list_arr_empty() -> None:
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
@@ -568,6 +586,34 @@ def test_list_set_oob() -> None:
     ) == {"a": [[], []]}
 
 
+def test_list_set_operations_float() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]},
+        schema={"a": pl.List(pl.Float32), "b": pl.List(pl.Float32)},
+    )
+
+    assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
+        [1.0, 2.0, 3.0, 4.0],
+        [1.0, 2.0, 12.0],
+        [4.0],
+    ]
+    assert df.select(pl.col("a").list.set_intersection("b"))["a"].to_list() == [
+        [1.0, 2.0],
+        [1.0],
+        [4.0],
+    ]
+    assert df.select(pl.col("a").list.set_difference("b"))["a"].to_list() == [
+        [3.0],
+        [],
+        [],
+    ]
+    assert df.select(pl.col("b").list.set_difference("a"))["b"].to_list() == [
+        [4.0],
+        [2.0, 12.0],
+        [],
+    ]
+
+
 def test_list_set_operations() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]}
@@ -763,6 +809,15 @@ def test_list_ordering() -> None:
     assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
     assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
 
+    # test nulls_last
+    s = pl.Series([[None, 1, 2], [-1, None, 9]])
+    assert_series_equal(
+        s.list.sort(nulls_last=True), pl.Series([[1, 2, None], [-1, 9, None]])
+    )
+    assert_series_equal(
+        s.list.sort(nulls_last=False), pl.Series([[None, 1, 2], [None, -1, 9]])
+    )
+
 
 def test_list_get_logical_type() -> None:
     s = pl.Series(
@@ -789,3 +844,10 @@ def test_list_get_logical_type() -> None:
         dtype=pl.Date,
     )
     assert_series_equal(out, expected)
+
+
+def test_list_eval_gater_every_13410() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
+    out = df.with_columns(result=pl.col("a").list.eval(pl.element().gather_every(2)))
+    expected = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]], "result": [[1, 3], [4, 6]]})
+    assert_frame_equal(out, expected)

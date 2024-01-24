@@ -28,7 +28,7 @@ def test_init_signature_match() -> None:
     assert signature(pl.DataFrame.__init__) == signature(pl.LazyFrame.__init__)
 
 
-def test_lazy() -> None:
+def test_lazy_misc() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     _ = ldf.with_columns(pl.lit(1).alias("foo")).select([pl.col("a"), pl.col("foo")])
 
@@ -37,9 +37,24 @@ def test_lazy() -> None:
         when(pl.col("a") > pl.lit(2)).then(pl.lit(10)).otherwise(pl.lit(1)).alias("new")
     ).collect()
 
-    # test if pl.list is available, this is `to_list` re-exported as list
-    eager = ldf.group_by("a").agg(pl.implode("b")).collect()
-    assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
+
+def test_implode() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    eager = (
+        ldf.group_by(pl.col("a").alias("grp"), maintain_order=True)
+        .agg(pl.implode("a", "b").name.suffix("_imp"))
+        .collect()
+    )
+    assert_frame_equal(
+        eager,
+        pl.DataFrame(
+            {
+                "grp": [1, 2, 3],
+                "a_imp": [[[1]], [[2]], [[3]]],
+                "b_imp": [[[1.0]], [[2.0]], [[3.0]]],
+            }
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -131,11 +146,11 @@ def test_count_suffix_10783() -> None:
         }
     )
     df_with_cnt = df.with_columns(
-        pl.count()
+        pl.len()
         .over(pl.col("a").list.sort().list.join("").hash())
         .name.suffix("_suffix")
     )
-    df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
+    df_expect = df.with_columns(pl.Series("len_suffix", [3, 3, 1, 3]))
     assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
 
 
@@ -173,7 +188,6 @@ def test_filter_multiple_predicates() -> None:
         }
     )
 
-    # using multiple predicates
     # multiple predicates
     expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
     for out in (
@@ -195,7 +209,7 @@ def test_filter_multiple_predicates() -> None:
     )
 
     # check 'predicate' keyword deprecation:
-    # note: can disambiguate new/old usage - only expect warning on old-style usage
+    # note: we can disambiguate new/old usage (only expect warning on old-style usage)
     with pytest.warns(
         DeprecationWarning,
         match="`filter` no longer takes a 'predicate' parameter",
@@ -251,16 +265,24 @@ def test_apply_custom_function() -> None:
 
 
 def test_group_by() -> None:
-    ldf = pl.LazyFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
+    ldf = pl.LazyFrame(
+        {
+            "a": [1.0, None, 3.0, 4.0],
+            "b": [5.0, 2.5, -3.0, 2.0],
+            "grp": ["a", "a", "b", "b"],
+        }
+    )
+    expected_a = pl.DataFrame({"grp": ["a", "b"], "a": [1.0, 3.5]})
+    expected_a_b = pl.DataFrame({"grp": ["a", "b"], "a": [1.0, 3.5], "b": [3.75, -0.5]})
 
-    expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
+    for out in (
+        ldf.group_by("grp").agg(pl.mean("a")).collect(),
+        ldf.group_by(pl.col("grp")).agg(pl.mean("a")).collect(),
+    ):
+        assert_frame_equal(out.sort(by="grp"), expected_a)
 
-    out = ldf.group_by("groups").agg(pl.mean("a")).collect()
-    assert_frame_equal(out.sort(by="groups"), expected)
-
-    # refer to column via pl.Expr
-    out = ldf.group_by(pl.col("groups")).agg(pl.mean("a")).collect()
-    assert_frame_equal(out.sort(by="groups"), expected)
+    out = ldf.group_by("grp").agg(pl.mean("a", "b")).collect()
+    assert_frame_equal(out.sort(by="grp"), expected_a_b)
 
 
 def test_arg_unique() -> None:
@@ -901,6 +923,14 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     assert res.columns[0] == "C"
 
 
+def test_rename_lambda() -> None:
+    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+    out = ldf.rename(
+        lambda col: "foo" if col == "a" else "bar" if col == "b" else col
+    ).collect()
+    assert out.columns == ["foo", "bar", "c"]
+
+
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
@@ -1175,7 +1205,7 @@ def test_predicate_count_vstack() -> None:
             "v": [5, 7],
         }
     )
-    assert pl.concat([l1, l2]).filter(pl.count().over("k") == 2).collect()[
+    assert pl.concat([l1, l2]).filter(pl.len().over("k") == 2).collect()[
         "v"
     ].to_list() == [3, 2, 5, 7]
 

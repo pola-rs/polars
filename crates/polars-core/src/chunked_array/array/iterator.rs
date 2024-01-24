@@ -133,6 +133,13 @@ impl ArrayChunked {
     {
         self.amortized_iter().map(f).collect_ca(self.name())
     }
+
+    pub fn for_each_amortized<'a, F>(&'a self, f: F)
+    where
+        F: FnMut(Option<UnstableSeries<'a>>),
+    {
+        self.amortized_iter().for_each(f)
+    }
 }
 
 fn to_arr(s: &Series) -> ArrayRef {

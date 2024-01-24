@@ -125,9 +125,8 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
         return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
-    raise ValueError(
-        f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
-    )
+    msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+    raise ValueError(msg)
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
@@ -165,9 +164,8 @@ def _to_python_timedelta(
     elif time_unit == "ms":
         return timedelta(milliseconds=value)
     else:
-        raise ValueError(
-            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        )
+        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+        raise ValueError(msg)
 
 
 @lru_cache(256)
@@ -190,9 +188,8 @@ def _to_python_datetime(
         elif time_unit == "ms":
             return EPOCH + timedelta(milliseconds=value)
         else:
-            raise ValueError(
-                f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-            )
+            msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+            raise ValueError(msg)
     elif _ZONEINFO_AVAILABLE:
         if time_unit == "us":
             dt = EPOCH_UTC + timedelta(microseconds=value)
@@ -201,14 +198,12 @@ def _to_python_datetime(
         elif time_unit == "ms":
             dt = EPOCH_UTC + timedelta(milliseconds=value)
         else:
-            raise ValueError(
-                f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-            )
+            msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+            raise ValueError(msg)
         return _localize(dt, time_zone)
     else:
-        raise ImportError(
-            "install polars[timezone] to handle datetimes with time zone information"
-        )
+        msg = "install polars[timezone] to handle datetimes with time zone information"
+        raise ImportError(msg)
 
 
 def _localize(dt: datetime, time_zone: str) -> datetime:
@@ -254,7 +249,8 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
         # minutes, then we can construct:
         # tzinfo=timezone(timedelta(hours=..., minutes=...))
     except ValueError:
-        raise ValueError(f"offset: {offset!r} not understood") from None
+        msg = f"offset: {offset!r} not understood"
+        raise ValueError(msg) from None
 
     return dt_offset.tzinfo  # type: ignore[return-value]
 

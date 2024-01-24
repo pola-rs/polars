@@ -275,18 +275,22 @@ def test_merge_sorted_projection_pd() -> None:
 
 
 def test_distinct_projection_pd_7578() -> None:
-    df = pl.DataFrame(
+    lf = pl.LazyFrame(
         {
             "foo": ["0", "1", "2", "1", "2"],
             "bar": ["a", "a", "a", "b", "b"],
         }
     )
 
-    q = df.lazy().unique().group_by("bar").agg(pl.count())
-    assert q.collect().sort("bar").to_dict(as_series=False) == {
-        "bar": ["a", "b"],
-        "count": [3, 2],
-    }
+    result = lf.unique().group_by("bar").agg(pl.len())
+    expected = pl.LazyFrame(
+        {
+            "bar": ["a", "b"],
+            "len": [3, 2],
+        },
+        schema_overrides={"len": pl.UInt32},
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_join_suffix_collision_9562() -> None:
@@ -351,7 +355,7 @@ def test_projection_rename_10595() -> None:
 
 
 def test_projection_count_11841() -> None:
-    pl.LazyFrame({"x": 1}).select(records=pl.count()).select(
+    pl.LazyFrame({"x": 1}).select(records=pl.len()).select(
         pl.lit(1).alias("x"), pl.all()
     ).collect()
 
@@ -376,3 +380,12 @@ def test_projection_pushdown_outer_join_duplicates() -> None:
     assert (
         df1.join(df2, on="a", how="outer").with_columns(c=0).select("a", "c").collect()
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
+
+
+def test_rolling_key_projected_13617() -> None:
+    df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
+    ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
+    plan = ldf.explain(projection_pushdown=True)
+    assert r'DF ["idx", "value"]; PROJECT 2/2 COLUMNS' in plan
+    out = ldf.collect(projection_pushdown=True)
+    assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}

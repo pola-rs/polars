@@ -94,7 +94,7 @@ impl SpillPayload {
         let hashes = hashes.cont_slice().unwrap();
         let chunk_indexes = cols[1].idx().unwrap();
         let chunk_indexes = chunk_indexes.cont_slice().unwrap();
-        let keys = cols[2].binary().unwrap();
+        let keys = cols[2].binary_offset().unwrap();
         let keys = keys.downcast_iter().next().unwrap();
         let aggs = &cols[3..];
         (hashes, chunk_indexes, keys, aggs)

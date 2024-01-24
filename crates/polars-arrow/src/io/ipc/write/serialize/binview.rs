@@ -28,17 +28,7 @@ pub(super) fn write_binview<T: ViewType + ?Sized>(
         compression,
     );
 
-    let vbl = array.variadic_buffer_lengths();
-    write_buffer(
-        &vbl,
-        buffers,
-        arrow_data,
-        offset,
-        is_little_endian,
-        compression,
-    );
-
-    for data in array.data_buffers() {
+    for data in array.data_buffers().as_ref() {
         write_bytes(data, buffers, arrow_data, offset, compression);
     }
 }

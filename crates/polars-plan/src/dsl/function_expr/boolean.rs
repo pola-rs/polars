@@ -28,6 +28,10 @@ pub enum BooleanFunction {
     IsUnique,
     #[cfg(feature = "is_unique")]
     IsDuplicated,
+    #[cfg(feature = "is_between")]
+    IsBetween {
+        closed: ClosedInterval,
+    },
     #[cfg(feature = "is_in")]
     IsIn,
     AllHorizontal,
@@ -61,6 +65,8 @@ impl Display for BooleanFunction {
             IsUnique => "is_unique",
             #[cfg(feature = "is_unique")]
             IsDuplicated => "is_duplicated",
+            #[cfg(feature = "is_between")]
+            IsBetween { .. } => "is_between",
             #[cfg(feature = "is_in")]
             IsIn => "is_in",
             AnyHorizontal => "any_horizontal",
@@ -91,6 +97,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsUnique => map!(is_unique),
             #[cfg(feature = "is_unique")]
             IsDuplicated => map!(is_duplicated),
+            #[cfg(feature = "is_between")]
+            IsBetween { closed } => map_as_slice!(is_between, closed),
             #[cfg(feature = "is_in")]
             IsIn => wrap!(is_in),
             AllHorizontal => map_as_slice!(all_horizontal),
@@ -166,6 +174,14 @@ fn is_unique(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "is_unique")]
 fn is_duplicated(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::is_duplicated(s).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "is_between")]
+fn is_between(s: &[Series], closed: ClosedInterval) -> PolarsResult<Series> {
+    let ser = &s[0];
+    let lower = &s[1];
+    let upper = &s[2];
+    polars_ops::prelude::is_between(ser, lower, upper, closed).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "is_in")]

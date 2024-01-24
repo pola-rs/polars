@@ -20,6 +20,9 @@ mod floor_divide;
 mod fused;
 mod horizontal;
 mod index;
+mod int_range;
+#[cfg(feature = "is_between")]
+mod is_between;
 #[cfg(feature = "is_first_distinct")]
 mod is_first_distinct;
 #[cfg(feature = "is_in")]
@@ -32,10 +35,13 @@ mod is_unique;
 mod log;
 #[cfg(feature = "moment")]
 mod moment;
+mod negate;
 #[cfg(feature = "pct_change")]
 mod pct_change;
 #[cfg(feature = "rank")]
 mod rank;
+#[cfg(feature = "reinterpret")]
+mod reinterpret;
 #[cfg(feature = "replace")]
 mod replace;
 #[cfg(feature = "rle")]
@@ -74,6 +80,9 @@ pub use floor_divide::*;
 pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
+pub use int_range::*;
+#[cfg(feature = "is_between")]
+pub use is_between::*;
 #[cfg(feature = "is_first_distinct")]
 pub use is_first_distinct::*;
 #[cfg(feature = "is_in")]
@@ -86,11 +95,14 @@ pub use is_unique::*;
 pub use log::*;
 #[cfg(feature = "moment")]
 pub use moment::*;
+pub use negate::*;
 #[cfg(feature = "pct_change")]
 pub use pct_change::*;
 use polars_core::prelude::*;
 #[cfg(feature = "rank")]
 pub use rank::*;
+#[cfg(feature = "reinterpret")]
+pub use reinterpret::*;
 #[cfg(feature = "replace")]
 pub use replace::*;
 #[cfg(feature = "rle")]

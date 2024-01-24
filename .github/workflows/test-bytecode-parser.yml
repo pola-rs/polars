@@ -16,7 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        # Only the versions that are not already run as part of the regular test suite
+        python-version: ['3.9', '3.10']
 
     steps:
       - uses: actions/checkout@v4

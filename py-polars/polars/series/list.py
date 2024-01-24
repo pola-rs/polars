@@ -233,7 +233,7 @@ class ListNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False) -> Series:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -241,6 +241,8 @@ class ListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -384,7 +386,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: IntoExpr) -> Series:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -394,6 +396,11 @@ class ListNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -446,7 +453,9 @@ class ListNameSpace:
         ]
         """
 
-    def contains(self, item: float | str | bool | int | date | datetime) -> Series:
+    def contains(
+        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
+    ) -> Series:
         """
         Check if sublists contain the given item.
 
@@ -691,9 +700,7 @@ class ListNameSpace:
         ]
         """
 
-    def count_matches(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_matches(self, element: IntoExpr) -> Series:
         """
         Count how often the value produced by `element` occurs.
 

@@ -23,23 +23,32 @@ use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, FileMetaDataRef, ParallelStrategy};
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
-use crate::RowCount;
+use crate::RowIndex;
 
-fn enlarge_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
+#[cfg(debug_assertions)]
+// Ensure we get the proper polars types from schema inference
+// This saves unneeded casts.
+fn assert_dtypes(data_type: &ArrowDataType) {
     match data_type {
         ArrowDataType::Utf8 => {
-            data_type = ArrowDataType::LargeUtf8;
+            unreachable!()
         },
         ArrowDataType::Binary => {
-            data_type = ArrowDataType::LargeBinary;
+            unreachable!()
         },
-        ArrowDataType::List(mut inner_field) => {
-            inner_field.data_type = enlarge_data_type(inner_field.data_type);
-            data_type = ArrowDataType::LargeList(inner_field);
+        ArrowDataType::List(_) => {
+            unreachable!()
+        },
+        ArrowDataType::LargeList(inner) => {
+            assert_dtypes(&inner.data_type);
+        },
+        ArrowDataType::Struct(fields) => {
+            for fld in fields {
+                assert_dtypes(fld.data_type())
+            }
         },
         _ => {},
     }
-    data_type
 }
 
 fn column_idx_to_series(
@@ -50,16 +59,20 @@ fn column_idx_to_series(
     store: &mmap::ColumnStore,
     chunk_size: usize,
 ) -> PolarsResult<Series> {
-    let mut field = file_schema.fields[column_i].clone();
-    field.data_type = enlarge_data_type(field.data_type);
+    let field = &file_schema.fields[column_i];
+
+    #[cfg(debug_assertions)]
+    {
+        assert_dtypes(field.data_type())
+    }
 
     let columns = mmap_columns(store, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
 
     if remaining_rows < md.num_rows() {
-        array_iter_to_series(iter, &field, Some(remaining_rows))
+        array_iter_to_series(iter, field, Some(remaining_rows))
     } else {
-        array_iter_to_series(iter, &field, None)
+        array_iter_to_series(iter, field, None)
     }
 }
 
@@ -121,7 +134,7 @@ fn rg_to_dfs(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
     use_statistics: bool,
@@ -137,7 +150,7 @@ fn rg_to_dfs(
             file_metadata,
             schema,
             predicate,
-            row_count,
+            row_index,
             parallel,
             projection,
             use_statistics,
@@ -153,7 +166,7 @@ fn rg_to_dfs(
             file_metadata,
             schema,
             predicate,
-            row_count,
+            row_index,
             projection,
             use_statistics,
             hive_partition_columns,
@@ -172,7 +185,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
     use_statistics: bool,
@@ -233,8 +246,8 @@ fn rg_to_dfs_optionally_par_over_columns(
         *remaining_rows -= projection_height;
 
         let mut df = DataFrame::new_no_checks(columns);
-        if let Some(rc) = &row_count {
-            df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
+        if let Some(rc) = &row_index {
+            df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
 
         materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
@@ -261,7 +274,7 @@ fn rg_to_dfs_par_over_rg(
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     projection: &[usize],
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
@@ -284,48 +297,54 @@ fn rg_to_dfs_par_over_rg(
         })
         .collect::<Vec<_>>();
 
-    let dfs = row_groups
-        .into_par_iter()
-        .map(|(rg_idx, md, projection_height, row_count_start)| {
-            if projection_height == 0
-                || use_statistics
-                    && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
-            {
-                return Ok(None);
-            }
-            // test we don't read the parquet file if this env var is set
-            #[cfg(debug_assertions)]
-            {
-                assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
-            }
+    let dfs = POOL.install(|| {
+        row_groups
+            .into_par_iter()
+            .map(|(rg_idx, md, projection_height, row_count_start)| {
+                if projection_height == 0
+                    || use_statistics
+                        && !read_this_row_group(
+                            predicate,
+                            &file_metadata.row_groups[rg_idx],
+                            schema,
+                        )?
+                {
+                    return Ok(None);
+                }
+                // test we don't read the parquet file if this env var is set
+                #[cfg(debug_assertions)]
+                {
+                    assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
+                }
 
-            let chunk_size = md.num_rows();
-            let columns = projection
-                .iter()
-                .map(|column_i| {
-                    column_idx_to_series(
-                        *column_i,
-                        md,
-                        projection_height,
-                        schema,
-                        store,
-                        chunk_size,
-                    )
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
+                let chunk_size = md.num_rows();
+                let columns = projection
+                    .iter()
+                    .map(|column_i| {
+                        column_idx_to_series(
+                            *column_i,
+                            md,
+                            projection_height,
+                            schema,
+                            store,
+                            chunk_size,
+                        )
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-            let mut df = DataFrame::new_no_checks(columns);
+                let mut df = DataFrame::new_no_checks(columns);
 
-            if let Some(rc) = &row_count {
-                df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
-            }
+                if let Some(rc) = &row_index {
+                    df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
+                }
 
-            materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
-            apply_predicate(&mut df, predicate, false)?;
+                materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
+                apply_predicate(&mut df, predicate, false)?;
 
-            Ok(Some(df))
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
+                Ok(Some(df))
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+    })?;
     Ok(dfs.into_iter().flatten().collect())
 }
 
@@ -338,7 +357,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     metadata: Option<FileMetaDataRef>,
     predicate: Option<&dyn PhysicalIoExpr>,
     mut parallel: ParallelStrategy,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
@@ -348,7 +367,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
-            row_count.as_ref(),
+            row_index.as_ref(),
         ));
     }
 
@@ -403,7 +422,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         &file_metadata,
         reader_schema,
         predicate,
-        row_count.clone(),
+        row_index.clone(),
         parallel,
         &materialized_projection,
         use_statistics,
@@ -415,7 +434,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
-            row_count.as_ref(),
+            row_index.as_ref(),
         ))
     } else {
         accumulate_dataframes_vertical(dfs)
@@ -502,7 +521,7 @@ pub struct BatchedParquetReader {
     schema: ArrowSchemaRef,
     metadata: FileMetaDataRef,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     rows_read: IdxSize,
     row_group_offset: usize,
     n_row_groups: usize,
@@ -524,7 +543,7 @@ impl BatchedParquetReader {
         limit: usize,
         projection: Option<Vec<usize>>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        row_count: Option<RowCount>,
+        row_index: Option<RowIndex>,
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
@@ -545,7 +564,7 @@ impl BatchedParquetReader {
             projection,
             schema,
             metadata,
-            row_count,
+            row_index,
             rows_read: 0,
             predicate,
             row_group_offset: 0,
@@ -606,7 +625,7 @@ impl BatchedParquetReader {
                 &self.metadata,
                 &self.schema,
                 self.predicate.as_deref(),
-                self.row_count.clone(),
+                self.row_index.clone(),
                 self.parallel,
                 &self.projection,
                 self.use_statistics,
@@ -622,7 +641,7 @@ impl BatchedParquetReader {
                     Some(&self.projection),
                     self.schema.as_ref(),
                     self.hive_partition_columns.as_deref(),
-                    self.row_count.as_ref(),
+                    self.row_index.as_ref(),
                 )]));
             }
 
@@ -649,7 +668,7 @@ impl BatchedParquetReader {
                     Some(self.projection.as_slice()),
                     self.schema(),
                     self.hive_partition_columns.as_deref(),
-                    self.row_count.as_ref(),
+                    self.row_index.as_ref(),
                 )]))
             } else {
                 Ok(None)

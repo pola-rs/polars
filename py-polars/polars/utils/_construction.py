@@ -232,7 +232,7 @@ def numpy_to_pyseries(
 
     if len(values.shape) == 1:
         values, dtype = numpy_values_and_dtype(values)
-        constructor = numpy_type_to_constructor(dtype)
+        constructor = numpy_type_to_constructor(values, dtype)
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
@@ -491,10 +491,11 @@ def sequence_to_pyseries(
                 else py_type_to_dtype(type(value), raise_unmatched=False)
             )
             if values_dtype is not None and values_dtype.is_float():
+                msg = f"'float' object cannot be interpreted as a {python_dtype.__name__!r}"
                 raise TypeError(
                     # we do not accept float values as temporal; if this is
                     # required, the caller should explicitly cast to int first.
-                    f"'float' object cannot be interpreted as a {python_dtype.__name__!r}"
+                    msg
                 )
 
             # we use anyvalue builder to create the datetime array
@@ -518,11 +519,12 @@ def sequence_to_pyseries(
                 if values_tz is not None and (
                     dtype_tz is not None and dtype_tz != "UTC"
                 ):
-                    raise ValueError(
+                    msg = (
                         "time-zone-aware datetimes are converted to UTC"
                         "\n\nPlease either drop the time zone from the dtype, or set it to 'UTC'."
                         " To convert to a different time zone, please use `.dt.convert_time_zone`."
                     )
+                    raise ValueError(msg)
                 if values_tz != "UTC" and dtype_tz is None:
                     warnings.warn(
                         "Constructing a Series with time-zone-aware "
@@ -633,8 +635,9 @@ def _pandas_series_to_arrow(
     else:
         # Pandas Series is actually a Pandas DataFrame when the original DataFrame
         # contains duplicated columns and a duplicated column is requested with df["a"].
+        msg = "duplicate column names found: "
         raise ValueError(
-            "duplicate column names found: ",
+            msg,
             f"{values.columns.tolist()!s}",  # type: ignore[union-attr]
         )
 
@@ -679,9 +682,8 @@ def _handle_columns_arg(
                     data[i].rename(c)
             return data
         else:
-            raise ValueError(
-                f"dimensions of columns arg ({len(columns)}) must match data dimensions ({len(data)})"
-            )
+            msg = f"dimensions of columns arg ({len(columns)}) must match data dimensions ({len(data)})"
+            raise ValueError(msg)
 
 
 def _post_apply_columns(
@@ -821,12 +823,13 @@ def _expand_dict_scalars(
     updated_data = {}
     if data:
         if any(isinstance(val, pl.Expr) for val in data.values()):
-            raise TypeError(
+            msg = (
                 "passing Expr objects to the DataFrame constructor is not supported"
                 "\n\nHint: Try evaluating the expression first using `select`,"
                 " or if you meant to create an Object column containing expressions,"
                 " pass a list of Expr objects instead."
             )
+            raise TypeError(msg)
 
         dtypes = schema_overrides or {}
         data = _expand_dict_data(data, dtypes)
@@ -884,9 +887,8 @@ def dict_to_pydf(
     """Construct a PyDataFrame from a dictionary of sequences."""
     if isinstance(schema, Mapping) and data:
         if not all((col in schema) for col in data):
-            raise ValueError(
-                "the given column-schema names do not match the data dictionary"
-            )
+            msg = "the given column-schema names do not match the data dictionary"
+            raise ValueError(msg)
         data = {col: data[col] for col in schema}
 
     column_names, schema_overrides = _unpack_schema(
@@ -1090,7 +1092,8 @@ def _sequence_of_sequence_to_pydf(
             and len(first_element) > 0
             and len(first_element) != len(column_names)
         ):
-            raise ShapeError("the row data does not match the number of columns")
+            msg = "the row data does not match the number of columns"
+            raise ShapeError(msg)
 
         unpack_nested = False
         for col, tp in local_schema_override.items():
@@ -1128,7 +1131,8 @@ def _sequence_of_sequence_to_pydf(
         ]
         return PyDataFrame(data_series)
 
-    raise ValueError(f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}")
+    msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
+    raise ValueError(msg)
 
 
 @_sequence_to_pydf_dispatcher.register(tuple)
@@ -1402,9 +1406,8 @@ def numpy_to_pydf(
         for nm in record_names:
             shape = data[nm].shape
             if len(data[nm].shape) > 2:
-                raise ValueError(
-                    f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
-                )
+                msg = f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
+                raise ValueError(msg)
         if not schema:
             schema = record_names
     else:
@@ -1441,19 +1444,19 @@ def numpy_to_pydf(
             elif orient == "col":
                 n_columns = shape[0]
             else:
-                raise ValueError(
-                    f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
-                )
+                msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
+                raise ValueError(msg)
         else:
-            raise ValueError(
-                f"cannot create DataFrame from array with more than two dimensions; shape = {shape}"
-            )
+            if shape == ():
+                msg = "cannot create DataFrame from zero-dimensional array"
+            else:
+                msg = f"cannot create DataFrame from array with more than two dimensions; shape = {shape}"
+            raise ValueError(msg)
 
     if schema is not None and len(schema) != n_columns:
         if (n_schema_cols := len(schema)) != 1:
-            raise ValueError(
-                f"dimensions of `schema` ({n_schema_cols}) must match data dimensions ({n_columns})"
-            )
+            msg = f"dimensions of `schema` ({n_schema_cols}) must match data dimensions ({n_columns})"
+            raise ValueError(msg)
         n_columns = n_schema_cols
 
     column_names, schema_overrides = _unpack_schema(
@@ -1531,7 +1534,8 @@ def arrow_to_pydf(
         if column_names != data.column_names:
             data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
-        raise ValueError("dimensions of columns arg must match data dimensions") from e
+        msg = "dimensions of columns arg must match data dimensions"
+        raise ValueError(msg) from e
 
     data_dict = {}
     # dictionaries cannot be built in different batches (categorical does not allow
@@ -1812,7 +1816,8 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
     #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
     #     to absolute indexes.
     if idxs.ndim != 1:
-        raise ValueError("only 1D numpy array is supported as index")
+        msg = "only 1D numpy array is supported as index"
+        raise ValueError(msg)
 
     idx_type = get_index_type()
 
@@ -1821,13 +1826,16 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
 
     # Numpy array with signed or unsigned integers.
     if idxs.dtype.kind not in ("i", "u"):
-        raise NotImplementedError("unsupported idxs datatype")
+        msg = "unsupported idxs datatype"
+        raise NotImplementedError(msg)
 
     if idx_type == UInt32:
         if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
-            raise ValueError("index positions should be smaller than 2^32")
+            msg = "index positions should be smaller than 2^32"
+            raise ValueError(msg)
         if idxs.dtype == np.int64 and idxs.min() < -(2**32):
-            raise ValueError("index positions should be bigger than -2^32 + 1")
+            msg = "index positions should be bigger than -2^32 + 1"
+            raise ValueError(msg)
 
     if idxs.dtype.kind == "i" and idxs.min() < 0:
         if idx_type == UInt32:

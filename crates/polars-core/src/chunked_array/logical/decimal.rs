@@ -18,7 +18,7 @@ impl Int128Chunked {
             let (_, values, validity) = default.into_inner();
 
             *arr = PrimitiveArray::new(
-                DataType::Decimal(precision, Some(scale)).to_arrow(),
+                DataType::Decimal(precision, Some(scale)).to_arrow(true),
                 values,
                 validity,
             );

@@ -1,3 +1,5 @@
+#[cfg(feature = "csv")]
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
@@ -9,7 +11,7 @@ use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
@@ -75,14 +77,27 @@ pub struct IpcWriterOptions {
 }
 
 #[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvWriterOptions {
     pub include_bom: bool,
     pub include_header: bool,
-    pub batch_size: usize,
+    pub batch_size: NonZeroUsize,
     pub maintain_order: bool,
     pub serialize_options: SerializeOptions,
+}
+
+#[cfg(feature = "csv")]
+impl Default for CsvWriterOptions {
+    fn default() -> Self {
+        Self {
+            include_bom: false,
+            include_header: true,
+            batch_size: NonZeroUsize::new(1024).unwrap(),
+            maintain_order: false,
+            serialize_options: SerializeOptions::default(),
+        }
+    }
 }
 
 #[cfg(feature = "json")]
@@ -106,7 +121,7 @@ pub struct FileScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
-    pub row_count: Option<RowCount>,
+    pub row_index: Option<RowIndex>,
     pub rechunk: bool,
     pub file_counter: FileCount,
     pub hive_partitioning: bool,

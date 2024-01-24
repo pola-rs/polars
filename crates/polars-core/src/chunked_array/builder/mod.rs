@@ -1,4 +1,3 @@
-mod binary;
 mod boolean;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
@@ -7,14 +6,12 @@ mod null;
 mod primitive;
 mod string;
 
-use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-pub use binary::*;
 pub use boolean::*;
 #[cfg(feature = "dtype-array")]
 pub(crate) use fixed_size_list::*;
@@ -71,7 +68,7 @@ where
     T: PolarsNumericType,
 {
     fn from_slice(name: &str, v: &[T::Native]) -> Self {
-        let arr = PrimitiveArray::from_slice(v).to(T::get_dtype().to_arrow());
+        let arr = PrimitiveArray::from_slice(v).to(T::get_dtype().to_arrow(true));
         ChunkedArray::with_chunk(name, arr)
     }
 
@@ -128,37 +125,24 @@ where
     S: AsRef<str>,
 {
     fn from_slice(name: &str, v: &[S]) -> Self {
-        let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
-        let mut builder = MutableUtf8Array::<i64>::with_capacities(v.len(), values_size);
-        builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
-        let imm: Utf8Array<i64> = builder.into();
-        ChunkedArray::with_chunk(name, imm)
+        let arr = Utf8ViewArray::from_slice_values(v);
+        ChunkedArray::with_chunk(name, arr)
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<S>]) -> Self {
-        let values_size = opt_v.iter().fold(0, |acc, s| match s {
-            Some(s) => acc + s.as_ref().len(),
-            None => acc,
-        });
-        let mut builder = MutableUtf8Array::<i64>::with_capacities(opt_v.len(), values_size);
-        builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
-        let imm: Utf8Array<i64> = builder.into();
-        ChunkedArray::with_chunk(name, imm)
+        let arr = Utf8ViewArray::from_slice(opt_v);
+        ChunkedArray::with_chunk(name, arr)
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
-        let cap = get_iter_capacity(&it);
-        let mut builder = StringChunkedBuilder::new(name, cap, cap * 5);
-        it.for_each(|opt| builder.append_option(opt));
-        builder.finish()
+        let arr = MutableBinaryViewArray::from_iterator(it).freeze();
+        ChunkedArray::with_chunk(name, arr)
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: &str, it: impl Iterator<Item = S>) -> Self {
-        let cap = get_iter_capacity(&it);
-        let mut builder = StringChunkedBuilder::new(name, cap, cap * 5);
-        it.for_each(|v| builder.append_value(v));
-        builder.finish()
+        let arr = MutableBinaryViewArray::from_values_iter(it).freeze();
+        ChunkedArray::with_chunk(name, arr)
     }
 }
 
@@ -167,37 +151,24 @@ where
     B: AsRef<[u8]>,
 {
     fn from_slice(name: &str, v: &[B]) -> Self {
-        let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
-        let mut builder = MutableBinaryArray::<i64>::with_capacities(v.len(), values_size);
-        builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
-        let imm: BinaryArray<i64> = builder.into();
-        ChunkedArray::with_chunk(name, imm)
+        let arr = BinaryViewArray::from_slice_values(v);
+        ChunkedArray::with_chunk(name, arr)
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<B>]) -> Self {
-        let values_size = opt_v.iter().fold(0, |acc, s| match s {
-            Some(s) => acc + s.as_ref().len(),
-            None => acc,
-        });
-        let mut builder = MutableBinaryArray::<i64>::with_capacities(opt_v.len(), values_size);
-        builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
-        let imm: BinaryArray<i64> = builder.into();
-        ChunkedArray::with_chunk(name, imm)
+        let arr = BinaryViewArray::from_slice(opt_v);
+        ChunkedArray::with_chunk(name, arr)
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<B>>) -> Self {
-        let cap = get_iter_capacity(&it);
-        let mut builder = BinaryChunkedBuilder::new(name, cap, cap * 5);
-        it.for_each(|opt| builder.append_option(opt));
-        builder.finish()
+        let arr = MutableBinaryViewArray::from_iterator(it).freeze();
+        ChunkedArray::with_chunk(name, arr)
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: &str, it: impl Iterator<Item = B>) -> Self {
-        let cap = get_iter_capacity(&it);
-        let mut builder = BinaryChunkedBuilder::new(name, cap, cap * 5);
-        it.for_each(|v| builder.append_value(v));
-        builder.finish()
+        let arr = MutableBinaryViewArray::from_values_iter(it).freeze();
+        ChunkedArray::with_chunk(name, arr)
     }
 }
 

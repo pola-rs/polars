@@ -27,6 +27,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
+from polars.utils._parse_expr_input import _parse_inputs_as_iterable
 from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import is_column
 
@@ -124,9 +125,7 @@ def expand_selector(
     return tuple(target.select(selector).columns)
 
 
-def _expand_selectors(
-    frame: DataFrame | LazyFrame, items: Any, *more_items: Any
-) -> list[Any]:
+def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.
 
@@ -149,15 +148,10 @@ def _expand_selectors(
     >>> _expand_selectors(df, cs.string(), cs.float())
     ['colw', 'colx', 'colz']
     """
+    items_iter = _parse_inputs_as_iterable(items)
+
     expanded: list[Any] = []
-    for item in (
-        *(
-            items
-            if isinstance(items, Collection) and not isinstance(items, str)
-            else [items]
-        ),
-        *more_items,
-    ):
+    for item in items_iter:
         if is_selector(item):
             selector_cols = expand_selector(frame, item)
             expanded.extend(selector_cols)
@@ -223,10 +217,8 @@ def _combine_as_selector(
         elif is_column(item):
             names.append(item.meta.output_name())  # type: ignore[union-attr]
         else:
-            raise TypeError(
-                "invalid input for `exclude`"
-                f"\n\nExpected one or more `str`, `DataType` or selector; found {item!r} instead."
-            )
+            msg = f"expected one or more `str`, `DataType` or selector; found {item!r} instead."
+            raise TypeError(msg)
 
     selected = []
     if names:
@@ -443,13 +435,13 @@ def binary() -> SelectorType:
     >>> df = pl.DataFrame({"a": [b"hello"], "b": ["world"], "c": [b"!"], "d": [":)"]})
     >>> df
     shape: (1, 4)
-    ┌───────────────┬───────┬───────────────┬─────┐
-    │ a             ┆ b     ┆ c             ┆ d   │
-    │ ---           ┆ ---   ┆ ---           ┆ --- │
-    │ binary        ┆ str   ┆ binary        ┆ str │
-    ╞═══════════════╪═══════╪═══════════════╪═════╡
-    │ [binary data] ┆ world ┆ [binary data] ┆ :)  │
-    └───────────────┴───────┴───────────────┴─────┘
+    ┌──────────┬───────┬────────┬─────┐
+    │ a        ┆ b     ┆ c      ┆ d   │
+    │ ---      ┆ ---   ┆ ---    ┆ --- │
+    │ binary   ┆ str   ┆ binary ┆ str │
+    ╞══════════╪═══════╪════════╪═════╡
+    │ b"hello" ┆ world ┆ b"!"   ┆ :)  │
+    └──────────┴───────┴────────┴─────┘
 
     Select binary columns and export as a dict:
 
@@ -592,13 +584,15 @@ def by_dtype(
         elif isinstance(tp, Collection):
             for t in tp:
                 if not is_polars_dtype(t):
-                    raise TypeError(f"invalid dtype: {t!r}")
+                    msg = f"invalid dtype: {t!r}"
+                    raise TypeError(msg)
                 all_dtypes.append(t)
         else:
-            raise TypeError(f"invalid dtype: {tp!r}")
+            msg = f"invalid dtype: {tp!r}"
+            raise TypeError(msg)
 
     return _selector_proxy_(
-        F.col(*all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
+        F.col(all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
     )
 
 
@@ -660,13 +654,14 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
         elif isinstance(nm, Collection):
             for n in nm:
                 if not isinstance(n, str):
-                    raise TypeError(f"invalid name: {n!r}")
+                    msg = f"invalid name: {n!r}"
+                    raise TypeError(msg)
                 all_names.append(n)
         else:
             TypeError(f"Invalid name: {nm!r}")
 
     return _selector_proxy_(
-        F.col(*all_names), name="by_name", parameters={"*names": all_names}
+        F.col(all_names), name="by_name", parameters={"*names": all_names}
     )
 
 

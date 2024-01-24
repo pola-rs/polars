@@ -1,9 +1,13 @@
 use super::min_max::AggType;
 use super::*;
+#[cfg(feature = "array_count")]
+use crate::chunked_array::array::count::array_count_matches;
+use crate::chunked_array::array::count::count_boolean_bits;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
 #[cfg(feature = "array_any_all")]
 use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::get::array_get;
+use crate::prelude::array::join::array_join;
 use crate::prelude::array::sum_mean::sum_array_numerical;
 use crate::series::ArgAgg;
 
@@ -41,6 +45,7 @@ pub trait ArrayNameSpace: AsArray {
         };
 
         match ca.inner_dtype() {
+            DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
             dt if dt.is_numeric() => Ok(sum_array_numerical(ca, &dt)),
             dt => sum_with_nulls(ca, &dt),
         }
@@ -97,6 +102,17 @@ pub trait ArrayNameSpace: AsArray {
     fn array_get(&self, index: &Int64Chunked) -> PolarsResult<Series> {
         let ca = self.as_array();
         array_get(ca, index)
+    }
+
+    fn array_join(&self, separator: &StringChunked, ignore_nulls: bool) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        array_join(ca, separator, ignore_nulls).map(|ok| ok.into_series())
+    }
+
+    #[cfg(feature = "array_count")]
+    fn array_count_matches(&self, element: AnyValue) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        array_count_matches(ca, element)
     }
 }
 

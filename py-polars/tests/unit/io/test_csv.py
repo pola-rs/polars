@@ -1423,7 +1423,7 @@ def test_read_csv_chunked() -> None:
     """Check that row count is properly functioning."""
     N = 10_000
     csv = "1\n" * N
-    df = pl.read_csv(io.StringIO(csv), row_count_name="count")
+    df = pl.read_csv(io.StringIO(csv), row_index_name="count")
 
     # The next value should always be higher if monotonically increasing.
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
@@ -1712,6 +1712,13 @@ def test_write_csv_bom() -> None:
     assert f.read() == b"\xef\xbb\xbfa,b\n1,1\n2,2\n3,3\n"
 
 
+def test_write_csv_batch_size_zero() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    with pytest.raises(ValueError, match="invalid zero value"):
+        df.write_csv(f, batch_size=0)
+
+
 def test_empty_csv_no_raise() -> None:
     assert pl.read_csv(io.StringIO(), raise_if_empty=False, has_header=False).shape == (
         0,
@@ -1737,3 +1744,21 @@ def test_invalid_csv_raise() -> None:
     "SK0127960V000","SK BT 0018977","
     """.strip()
         )
+
+
+@pytest.mark.write_disk()
+def test_partial_read_compressed_file(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {"idx": range(1_000), "dt": date(2025, 12, 31), "txt": "hello world"}
+    )
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "large.csv.gz"
+    bytes_io = io.BytesIO()
+    df.write_csv(bytes_io)
+    bytes_io.seek(0)
+    with gzip.open(file_path, mode="wb") as f:
+        f.write(bytes_io.getvalue())
+    df = pl.read_csv(
+        file_path, skip_rows=40, has_header=False, skip_rows_after_header=20, n_rows=30
+    )
+    assert df.shape == (30, 3)

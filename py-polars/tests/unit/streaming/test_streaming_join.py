@@ -9,8 +9,6 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 def test_streaming_joins() -> None:
     n = 100
@@ -108,3 +106,85 @@ def test_streaming_join_rechunk_12498() -> None:
         "A": [0, 1, 0, 1],
         "B": [0, 0, 1, 1],
     }
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_join_null_matches(streaming: bool) -> None:
+    # null values in joins should never find a match.
+    df_a = pl.LazyFrame(
+        {
+            "idx_a": [0, 1, 2],
+            "a": [None, 1, 2],
+        }
+    )
+
+    df_b = pl.LazyFrame(
+        {
+            "idx_b": [0, 1, 2, 3],
+            "a": [None, 2, 1, None],
+        }
+    )
+
+    expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
+    assert_frame_equal(
+        df_a.join(df_b, on="a", how="inner").collect(streaming=streaming), expected
+    )
+    expected = pl.DataFrame(
+        {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
+    )
+    assert_frame_equal(
+        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
+    )
+    expected = pl.DataFrame(
+        {
+            "idx_a": [None, 2, 1, None, 0],
+            "a": [None, 2, 1, None, None],
+            "idx_b": [0, 1, 2, 3, None],
+            "a_right": [None, 2, 1, None, None],
+        }
+    )
+    assert_frame_equal(df_a.join(df_b, on="a", how="outer").collect(), expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_join_null_matches_multiple_keys(streaming: bool) -> None:
+    df_a = pl.LazyFrame(
+        {
+            "a": [None, 1, 2],
+            "idx": [0, 1, 2],
+        }
+    )
+
+    df_b = pl.LazyFrame(
+        {
+            "a": [None, 2, 1, None, 1],
+            "idx": [0, 1, 2, 3, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+
+    expected = pl.DataFrame({"a": [1], "idx": [1], "c": [50]})
+    assert_frame_equal(
+        df_a.join(df_b, on=["a", "idx"], how="inner").collect(streaming=streaming),
+        expected,
+    )
+    expected = pl.DataFrame(
+        {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
+    )
+    assert_frame_equal(
+        df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
+        expected,
+    )
+
+    expected = pl.DataFrame(
+        {
+            "a": [None, None, None, None, None, 1, 2],
+            "idx": [None, None, None, None, 0, 1, 2],
+            "a_right": [None, 2, 1, None, None, 1, None],
+            "idx_right": [0, 1, 2, 3, None, 1, None],
+            "c": [10, 20, 30, 40, None, 50, None],
+        }
+    )
+    assert_frame_equal(
+        df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
+    )

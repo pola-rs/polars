@@ -95,6 +95,5 @@ def test_polars_import() -> None:
         # ensure that we do not have an import speed regression.
         if polars_import_time > MAX_ALLOWED_IMPORT_TIME:
             import_time_ms = polars_import_time // 1_000
-            raise AssertionError(
-                f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
-            )
+            msg = f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
+            raise AssertionError(msg)

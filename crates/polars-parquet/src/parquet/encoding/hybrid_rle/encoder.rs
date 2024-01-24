@@ -55,7 +55,10 @@ fn bitpacked_encode_u32<W: Write, I: Iterator<Item = u32>>(
     }
 
     if remainder != 0 {
-        let compressed_remainder_size = ceil8(remainder * num_bits);
+        // Must be careful here to ensure we write a multiple of `num_bits`
+        // (the bit width) to align with the spec. Some readers also rely on
+        // this - see https://github.com/pola-rs/polars/pull/13883.
+        let compressed_remainder_size = ceil8(remainder) * num_bits;
         iterator
             .by_ref()
             .take(remainder)
@@ -129,7 +132,13 @@ mod tests {
 
         assert_eq!(
             vec,
-            vec![(2 << 1 | 1), 0b01_10_01_00, 0b00_01_01_10, 0b_00_00_00_11]
+            vec![
+                (2 << 1 | 1),
+                0b01_10_01_00,
+                0b00_01_01_10,
+                0b_00_00_00_11,
+                0b0
+            ]
         );
         Ok(())
     }

@@ -392,6 +392,23 @@ def test_gather_every() -> None:
     assert_frame_equal(expected_df, df.gather_every(2, offset=1))
 
 
+def test_gather_every_agg() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 2],
+            "a": ["a", "b", "c", "d", "e", "f"],
+        }
+    )
+    out = df.group_by(pl.col("g")).agg(pl.col("a").gather_every(2)).sort("g")
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "a": [["a", "c"], ["d", "f"]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
@@ -1139,6 +1156,12 @@ def test_rename(df: pl.DataFrame) -> None:
     _ = out[["foos", "bars"]]
 
 
+def test_rename_lambda() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    out = df.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col)
+    assert out.columns == ["foo", "bar", "c"]
+
+
 def test_write_csv() -> None:
     df = pl.DataFrame(
         {
@@ -1774,9 +1797,9 @@ def test_extension() -> None:
 def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
-    result = df.group_by("x", maintain_order=True).count()
+    result = df.group_by("x", maintain_order=True).len()
     expected = pl.DataFrame(
-        {"x": ["b", "a"], "count": [2, 1]}, schema_overrides={"count": pl.UInt32}
+        {"x": ["b", "a"], "len": [2, 1]}, schema_overrides={"len": pl.UInt32}
     )
     assert_frame_equal(result, expected)
 
@@ -2409,7 +2432,7 @@ def test_group_by_slice_expression_args() -> None:
 
     out = (
         df.group_by("groups", maintain_order=True)
-        .agg([pl.col("vals").slice(pl.count() * 0.1, (pl.count() // 5))])
+        .agg([pl.col("vals").slice(pl.len() * 0.1, (pl.len() // 5))])
         .explode("vals")
     )
 
@@ -2482,79 +2505,6 @@ def test_asof_by_multiple_keys() -> None:
     ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
     assert_frame_equal(result, expected)
-
-
-def test_partition_by() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": ["A", "A", "B", "B", "C"],
-            "N": [1, 2, 2, 4, 2],
-            "bar": ["k", "l", "m", "m", "l"],
-        }
-    )
-
-    expected = [
-        {"foo": ["A"], "N": [1], "bar": ["k"]},
-        {"foo": ["A"], "N": [2], "bar": ["l"]},
-        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
-        {"foo": ["C"], "N": [2], "bar": ["l"]},
-    ]
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by("foo", "bar", maintain_order=True)
-    ] == expected
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by(cs.string(), maintain_order=True)
-    ] == expected
-
-    expected = [
-        {"N": [1]},
-        {"N": [2]},
-        {"N": [2, 4]},
-        {"N": [2]},
-    ]
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by(["foo", "bar"], maintain_order=True, include_key=False)
-    ] == expected
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by("foo", "bar", maintain_order=True, include_key=False)
-    ] == expected
-
-    assert [
-        a.to_dict(as_series=False) for a in df.partition_by("foo", maintain_order=True)
-    ] == [
-        {"foo": ["A", "A"], "N": [1, 2], "bar": ["k", "l"]},
-        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
-        {"foo": ["C"], "N": [2], "bar": ["l"]},
-    ]
-
-    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
-    assert df.partition_by(cs.all(), as_dict=True)["one", 1].to_dict(
-        as_series=False
-    ) == {
-        "a": ["one"],
-        "b": [1],
-    }
-    assert df.partition_by(["a"], as_dict=True)["one"].to_dict(as_series=False) == {
-        "a": ["one", "one"],
-        "b": [1, 3],
-    }
-
-    # test with both as_dict and include_key=False
-    df = pl.DataFrame(
-        {
-            "a": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "b": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "c": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "d": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-        }
-    ).sample(n=100_000, with_replacement=True, shuffle=True)
-
-    partitions = df.partition_by(["a", "b"], as_dict=True, include_key=False)
-    assert all(key == value.row(0) for key, value in partitions.items())
 
 
 def test_list_of_list_of_struct() -> None:
@@ -2682,12 +2632,20 @@ def test_selection_regex_and_multicol() -> None:
     expected = {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
 
     assert result.to_dict(as_series=False) == expected
-    for multi_op in (
-        pl.col("^\\w$") * pl.col("^\\w$"),
-        pl.exclude("foo") * pl.exclude("foo"),
-        pl.exclude(cs.last()) * pl.exclude(cs.by_dtype(pl.UInt8)),
-    ):
-        assert test_df.select(multi_op).to_dict(as_series=False) == expected
+    assert test_df.select(pl.exclude("foo") * pl.exclude("foo")).to_dict(
+        as_series=False
+    ) == {
+        "a": [1, 4, 9, 16],
+        "b": [25, 36, 49, 64],
+        "c": [81, 100, 121, 144],
+    }
+    assert test_df.select(pl.col("^\\w$") * pl.col("^\\w$")).to_dict(
+        as_series=False
+    ) == {
+        "a": [1, 4, 9, 16],
+        "b": [25, 36, 49, 64],
+        "c": [81, 100, 121, 144],
+    }
 
     # kwargs
     with pl.Config() as cfg:
@@ -3414,6 +3372,25 @@ def test_from_dicts_undeclared_column_dtype() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
     assert result.schema == {"x": pl.Null}
+
+
+def test_from_dicts_with_override() -> None:
+    data = [
+        {"a": "1", "b": str(2**64 - 1), "c": "1"},
+        {"a": "1", "b": "1", "c": "-5.0"},
+    ]
+    override = {"a": pl.Int32, "b": pl.UInt64, "c": pl.Float32}
+    result = pl.from_dicts(data, schema_overrides=override)
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "a": pl.Series([1, 1], dtype=pl.Int32),
+                "b": pl.Series([2**64 - 1, 1], dtype=pl.UInt64),
+                "c": pl.Series([1.0, -5.0], dtype=pl.Float32),
+            }
+        ),
+    )
 
 
 def test_from_records_u64_12329() -> None:

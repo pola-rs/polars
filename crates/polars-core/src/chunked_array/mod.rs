@@ -649,7 +649,7 @@ impl ValueSize for StringChunked {
     }
 }
 
-impl ValueSize for BinaryChunked {
+impl ValueSize for BinaryOffsetChunked {
     fn get_values_size(&self) -> usize {
         self.chunks
             .iter()
@@ -661,7 +661,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
-    PrimitiveArray::new(T::get_dtype().to_arrow(), values.into(), validity)
+    PrimitiveArray::new(T::get_dtype().to_arrow(true), values.into(), validity)
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(
@@ -847,7 +847,7 @@ pub(crate) mod test {
     #[test]
     #[ignore]
     fn test_shrink_to_fit() {
-        let mut builder = StringChunkedBuilder::new("foo", 2048, 100 * 2048);
+        let mut builder = StringChunkedBuilder::new("foo", 2048);
         builder.append_value("foo");
         let mut arr = builder.finish();
         let before = arr

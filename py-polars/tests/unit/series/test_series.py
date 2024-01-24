@@ -430,15 +430,6 @@ def test_arithmetic_datetime() -> None:
     with pytest.raises(TypeError):
         2**a
 
-    with pytest.raises(TypeError):
-        +a
-
-
-def test_arithmetic_string() -> None:
-    a = pl.Series("a", [""])
-    with pytest.raises(TypeError):
-        +a
-
 
 def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)
@@ -460,7 +451,7 @@ def test_power() -> None:
     assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
-    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
+    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))  # type: ignore[operator]
     assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt8))
     assert_series_equal(e**d, pl.Series([1, 4], dtype=Int8))
     assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt16))
@@ -1034,10 +1025,16 @@ def test_fill_null() -> None:
     b = pl.Series("b", ["a", None, "c", None, "e"])
     assert b.fill_null(strategy="min").to_list() == ["a", "a", "c", "a", "e"]
     assert b.fill_null(strategy="max").to_list() == ["a", "e", "c", "e", "e"]
+    assert b.fill_null(strategy="zero").to_list() == ["a", "", "c", "", "e"]
+    assert b.fill_null(strategy="forward").to_list() == ["a", "a", "c", "c", "e"]
+    assert b.fill_null(strategy="backward").to_list() == ["a", "c", "c", "e", "e"]
 
     c = pl.Series("c", [b"a", None, b"c", None, b"e"])
     assert c.fill_null(strategy="min").to_list() == [b"a", b"a", b"c", b"a", b"e"]
     assert c.fill_null(strategy="max").to_list() == [b"a", b"e", b"c", b"e", b"e"]
+    assert c.fill_null(strategy="zero").to_list() == [b"a", b"", b"c", b"", b"e"]
+    assert c.fill_null(strategy="forward").to_list() == [b"a", b"a", b"c", b"c", b"e"]
+    assert c.fill_null(strategy="backward").to_list() == [b"a", b"c", b"c", b"e", b"e"]
 
     df = pl.DataFrame(
         [
@@ -1654,21 +1651,6 @@ def test_temporal_comparison(
     )
 
 
-def test_abs() -> None:
-    # ints
-    s = pl.Series([1, -2, 3, -4])
-    assert_series_equal(s.abs(), pl.Series([1, 2, 3, 4]))
-    assert_series_equal(cast(pl.Series, np.abs(s)), pl.Series([1, 2, 3, 4]))
-
-    # floats
-    s = pl.Series([1.0, -2.0, 3, -4.0])
-    assert_series_equal(s.abs(), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    assert_series_equal(cast(pl.Series, np.abs(s)), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    assert_series_equal(
-        pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
-    )
-
-
 def test_to_dummies() -> None:
     s = pl.Series("a", [1, 2, 3])
     result = s.to_dummies()
@@ -1694,8 +1676,8 @@ def test_limit() -> None:
 def test_filter() -> None:
     s = pl.Series("a", [1, 2, 3])
     mask = pl.Series("", [True, False, True])
-    assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
 
+    assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
     assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
 
 
@@ -2397,11 +2379,6 @@ def test_repr_html(df: pl.DataFrame) -> None:
     # check it does not panic/error, and appears to contain a table
     html = pl.Series("misc", [123, 456, 789])._repr_html_()
     assert "<table" in html
-
-
-def test_builtin_abs() -> None:
-    s = pl.Series("s", [-1, 0, 1, None])
-    assert abs(s).to_list() == [1, 0, 1, None]
 
 
 @pytest.mark.parametrize(

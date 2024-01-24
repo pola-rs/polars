@@ -89,4 +89,47 @@ impl ArrayNameSpace {
             false,
         )
     }
+
+    /// Join all string items in a sub-array and place a separator between them.
+    /// # Error
+    /// Raise if inner type of array is not `DataType::String`.
+    pub fn join(self, separator: Expr, ignore_nulls: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Join(ignore_nulls)),
+            &[separator],
+            false,
+            false,
+        )
+    }
+
+    #[cfg(feature = "is_in")]
+    /// Check if the sub-array contains specific element
+    pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Contains),
+            &[other],
+            false,
+            false,
+        )
+    }
+
+    #[cfg(feature = "array_count")]
+    /// Count how often the value produced by ``element`` occurs.
+    pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
+        let other = element.into();
+
+        self.0
+            .map_many_private(
+                FunctionExpr::ArrayExpr(ArrayFunction::CountMatches),
+                &[other],
+                false,
+                false,
+            )
+            .with_function_options(|mut options| {
+                options.input_wildcard_expansion = true;
+                options
+            })
+    }
 }

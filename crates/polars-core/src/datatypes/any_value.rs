@@ -72,7 +72,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-categorical")]
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
-    Categorical(u32, &'a RevMapping, SyncPtr<Utf8Array<i64>>),
+    Categorical(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
@@ -408,11 +408,12 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(f? / 10f64.powi(*scale as _))
                 }
             },
-            Boolean(v) => {
-                if *v {
-                    NumCast::from(1)
+            Boolean(v) => NumCast::from(if *v { 1 } else { 0 }),
+            String(v) => {
+                if let Ok(val) = (*v).parse::<i128>() {
+                    NumCast::from(val)
                 } else {
-                    NumCast::from(0)
+                    NumCast::from((*v).parse::<f64>().ok()?)
                 }
             },
             _ => None,
@@ -431,6 +432,10 @@ impl<'a> AnyValue<'a> {
 
     pub fn is_boolean(&self) -> bool {
         matches!(self, AnyValue::Boolean(_))
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_signed_integer() || self.is_unsigned_integer() || self.is_float()
     }
 
     pub fn is_float(&self) -> bool {
@@ -914,6 +919,12 @@ impl AnyValue<'_> {
                 let avs = struct_to_avs_static(*idx, arr, fields);
                 fields_right == avs
             },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(v_l, scale_l), Decimal(v_r, scale_r)) => {
+                // Decimal equality here requires that both value and scale be equal, eg
+                // 1.2 at scale 1, and 1.20 at scale 2, are not equal.
+                *v_l == *v_r && *scale_l == *scale_r
+            },
             _ => false,
         }
     }
@@ -1180,7 +1191,7 @@ mod test {
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
-                DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
             (ArrowDataType::Utf8, DataType::String),

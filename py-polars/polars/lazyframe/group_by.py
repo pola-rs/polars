@@ -135,11 +135,12 @@ class LazyGroupBy:
         └─────┴───────┴────────────────┘
         """
         if aggs and isinstance(aggs[0], dict):
-            raise TypeError(
+            msg = (
                 "specifying aggregations as a dictionary is not supported"
                 "\n\nTry unpacking the dictionary to take advantage of the keyword syntax"
                 " of the `agg` method."
             )
+            raise TypeError(msg)
 
         pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
         return wrap_ldf(self.lgb.agg(pyexprs))
@@ -207,11 +208,9 @@ class LazyGroupBy:
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.lazy()
-        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
+        >>> df.lazy().filter(
+        ...     pl.int_range(pl.len()).shuffle().over("color") < 2
+        ... ).collect()  # doctest: +IGNORE_RESULT
         """
         return wrap_ldf(self.lgb.map_groups(function, schema))
 
@@ -334,6 +333,34 @@ class LazyGroupBy:
         """
         return self.agg(F.all())
 
+    def len(self) -> LazyFrame:
+        """
+        Return the number of rows in each group.
+
+        Rows containing null values count towards the total.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["apple", "apple", "orange"],
+        ...         "b": [1, None, 2],
+        ...     }
+        ... )
+        >>> lf.group_by("a").count().collect()  # doctest: +SKIP
+        shape: (2, 2)
+        ┌────────┬───────┐
+        │ a      ┆ count │
+        │ ---    ┆ ---   │
+        │ str    ┆ u32   │
+        ╞════════╪═══════╡
+        │ apple  ┆ 2     │
+        │ orange ┆ 1     │
+        └────────┴───────┘
+        """
+        return self.agg(F.len())
+
+    @deprecate_renamed_function("len", version="0.20.5")
     def count(self) -> LazyFrame:
         """
         Return the number of rows in each group.
@@ -359,7 +386,7 @@ class LazyGroupBy:
         │ orange ┆ 1     │
         └────────┴───────┘
         """
-        return self.agg(F.count())
+        return self.agg(F.len().alias("count"))
 
     def first(self) -> LazyFrame:
         """
