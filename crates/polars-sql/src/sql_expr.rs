@@ -67,7 +67,9 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::SmallInt(_) => DataType::Int16,
         SQLDataType::Time(_, tz) => match tz {
             TimezoneInfo::None => DataType::Time,
-            _ => polars_bail!(ComputeError: "Time with timezone is not supported; found tz={}", tz),
+            _ => {
+                polars_bail!(ComputeError: "`time` with timezone is not supported; found tz={}", tz)
+            },
         },
         SQLDataType::Timestamp(prec, tz) => {
             let tu = match prec {
@@ -76,13 +78,13 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
                 Some(6) => TimeUnit::Microseconds,
                 Some(9) => TimeUnit::Nanoseconds,
                 Some(n) => {
-                    polars_bail!(ComputeError: "Unsupported timestamp precision; expected 3, 6 or 9, found prec={}", n)
+                    polars_bail!(ComputeError: "unsupported `timestamp` precision; expected 3, 6 or 9, found prec={}", n)
                 },
             };
             match tz {
                 TimezoneInfo::None => DataType::Datetime(tu, None),
                 _ => {
-                    polars_bail!(ComputeError: "Timestamp with timezone is not (yet) supported; found tz={}", tz)
+                    polars_bail!(ComputeError: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
                 },
             }
         },
@@ -289,7 +291,7 @@ impl SQLExprVisitor<'_> {
                 }
             },
             _ => polars_bail!(
-                ComputeError: "Invalid identifier {:?}",
+                ComputeError: "invalid identifier {:?}",
                 idents
             ),
         }
@@ -370,23 +372,23 @@ impl SQLExprVisitor<'_> {
             // ----
             SQLBinaryOperator::PGRegexMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true).not(),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~*' operator: {:?}", right),
             },
             other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
         })
@@ -407,7 +409,7 @@ impl SQLExprVisitor<'_> {
             (UnaryOperator::Plus, _) => lit(0) + expr,
             (UnaryOperator::Minus, _) => lit(0) - expr,
             (UnaryOperator::Not, _) => expr.not(),
-            other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
+            other => polars_bail!(InvalidOperation: "unary operator {:?} is not supported", other),
         })
     }
 
@@ -443,7 +445,7 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
             BinaryOperator::Eq => polars_bail!(ComputeError: "ALL cannot be used with ="),
             BinaryOperator::NotEq => polars_bail!(ComputeError: "ALL cannot be used with !="),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -466,7 +468,7 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
             BinaryOperator::Eq => Ok(left.is_in(right)),
             BinaryOperator::NotEq => Ok(left.is_in(right).not()),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -910,7 +912,7 @@ pub(super) fn process_join_constraint(
             return Ok((using.clone(), using.clone()));
         }
     }
-    polars_bail!(InvalidOperation: "Unsupported SQL join constraint:\n{:?}", constraint);
+    polars_bail!(InvalidOperation: "unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression
