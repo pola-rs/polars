@@ -76,7 +76,7 @@ def test_string_concat() -> None:
 )
 def test_string_concat_errors(invalid_concat: str) -> None:
     lf = pl.LazyFrame({"x": ["a", "b", "c"]})
-    with pytest.raises(InvalidOperationError, match="Invalid number of arguments"):
+    with pytest.raises(InvalidOperationError, match="invalid number of arguments"):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
 
 
@@ -101,7 +101,7 @@ def test_string_left_right_reverse() -> None:
     for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "6.66")):
         with pytest.raises(
             InvalidOperationError,
-            match=f"Invalid 'n_chars' for {func.capitalize()}: {invalid}",
+            match=f"invalid 'n_chars' for {func.capitalize()}: {invalid}",
         ):
             ctx.execute(f"""SELECT {func}(txt,{invalid}) FROM df""").collect()
 
@@ -317,7 +317,7 @@ def test_string_replace() -> None:
         res = out["words"].to_list()
         assert res == ["English breakfast tea is the best tea", "", None]
 
-        with pytest.raises(InvalidOperationError, match="Invalid number of arguments"):
+        with pytest.raises(InvalidOperationError, match="invalid number of arguments"):
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 

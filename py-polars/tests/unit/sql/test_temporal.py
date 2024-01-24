@@ -159,6 +159,6 @@ def test_timestamp_time_unit_errors() -> None:
     with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
         for prec in (0, 4, 15):
             with pytest.raises(
-                ComputeError, match=f"Unsupported timestamp precision; .* prec={prec}"
+                ComputeError, match=f"unsupported `timestamp` precision; .* prec={prec}"
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")

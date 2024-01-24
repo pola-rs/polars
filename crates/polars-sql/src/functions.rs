@@ -904,7 +904,7 @@ impl SQLFunctionVisitor<'_> {
                         },
                         true))
                 }),
-                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
             Replace => match function.args.len() {
                 3 => self.try_visit_ternary(|e, old, new| {
