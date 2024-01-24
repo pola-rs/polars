@@ -17,7 +17,7 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     issue_deprecation_warning,
 )
-from polars.utils.unstable import unstable
+from polars.utils.unstable import issue_unstable_warning, unstable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -1636,7 +1636,17 @@ def collect_all(
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Process the query in batches to handle larger-than-memory data.
+        If set to `False` (default), the entire query is processed in a single
+        batch.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. note::
+            Use :func:`explain` to see if Polars can process the query in streaming
+            mode.
 
     Returns
     -------
@@ -1649,6 +1659,10 @@ def collect_all(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+
+    if streaming:
+        issue_unstable_warning("Streaming mode is considered unstable.")
+        comm_subplan_elim = False
 
     prepared = []
 
@@ -1762,7 +1776,17 @@ def collect_all_async(
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Process the query in batches to handle larger-than-memory data.
+        If set to `False` (default), the entire query is processed in a single
+        batch.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. note::
+            Use :func:`explain` to see if Polars can process the query in streaming
+            mode.
 
     See Also
     --------
@@ -1787,6 +1811,10 @@ def collect_all_async(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+
+    if streaming:
+        issue_unstable_warning("Streaming mode is considered unstable.")
+        comm_subplan_elim = False
 
     prepared = []
 
