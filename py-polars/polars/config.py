@@ -41,7 +41,7 @@ TableFormatNames: TypeAlias = Literal[
 
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognized, as there are other lower-level
-# and/or experimental settings that should not be saved or reset with the Config vars.
+# and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
     "POLARS_WARN_UNSTABLE",
     "POLARS_ACTIVATE_DECIMAL",

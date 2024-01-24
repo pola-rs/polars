@@ -783,17 +783,17 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
 
 
 def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
-    issue_unstable_warning("unstable")
+    issue_unstable_warning()
     assert len(recwarn) == 0
 
     pl.Config().warn_unstable(True)
 
-    issue_unstable_warning("unstable")
+    issue_unstable_warning()
     assert len(recwarn) == 1
 
     pl.Config().warn_unstable(False)
 
-    issue_unstable_warning("unstable")
+    issue_unstable_warning()
     assert len(recwarn) == 1
 
 
