@@ -25,7 +25,6 @@ comfy-table = { version = "7.0.1", default_features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
-itoap = { version = "1", optional = true, features = ["simd"] }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
@@ -109,7 +108,7 @@ dtype-time = ["temporal"]
 dtype-array = ["arrow/dtype-array", "polars-compute/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["dep:itoap", "arrow/dtype-decimal"]
+dtype-decimal = ["arrow/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
