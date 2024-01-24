@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
-use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray};
+use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray, View};
 use crate::datatypes::ArrowDataType;
 use crate::ffi::mmap::create_array;
 use crate::ffi::{export_array_to_c, try_from, ArrowArray, InternalArrowArray};
@@ -139,7 +139,7 @@ fn mmap_binview<T: AsRef<[u8]>>(
 
     let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
 
-    let views = get_buffer::<u128>(data_ref, block_offset, buffers, num_rows)?;
+    let views = get_buffer::<View>(data_ref, block_offset, buffers, num_rows)?;
 
     let n_variadic = variadic_buffer_counts
         .pop_front()

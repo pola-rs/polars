@@ -34,7 +34,7 @@ fn broadcast_inequality(
     let prefix = load_prefix(scalar);
     let be_prefix = prefix.to_be();
     Bitmap::from_trusted_len_iter((0..arr.len()).map(|i| unsafe {
-        let v_prefix = (*views.get_unchecked(i) >> 32) as u32;
+        let v_prefix = (views.get_unchecked(i).as_u128() >> 32) as u32;
         if v_prefix != prefix {
             cmp_prefix(v_prefix.to_be(), be_prefix)
         } else {
@@ -53,8 +53,8 @@ impl TotalOrdKernel for BinaryViewArray {
         let other_views = other.views().as_slice();
 
         Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-            let av = *slf_views.get_unchecked(i);
-            let bv = *other_views.get_unchecked(i);
+            let av = slf_views.get_unchecked(i).as_u128();
+            let bv = other_views.get_unchecked(i).as_u128();
 
             // First 64 bits contain length and prefix.
             let a_len_prefix = av as u64;
@@ -81,8 +81,8 @@ impl TotalOrdKernel for BinaryViewArray {
         let other_views = other.views().as_slice();
 
         Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-            let av = *slf_views.get_unchecked(i);
-            let bv = *other_views.get_unchecked(i);
+            let av = slf_views.get_unchecked(i).as_u128();
+            let bv = other_views.get_unchecked(i).as_u128();
 
             // First 64 bits contain length and prefix.
             let a_len_prefix = av as u64;
@@ -109,8 +109,8 @@ impl TotalOrdKernel for BinaryViewArray {
         let other_views = other.views().as_slice();
 
         Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-            let av = *slf_views.get_unchecked(i);
-            let bv = *other_views.get_unchecked(i);
+            let av = slf_views.get_unchecked(i).as_u128();
+            let bv = other_views.get_unchecked(i).as_u128();
 
             // First 64 bits contain length and prefix.
             // Only check prefix.
@@ -131,8 +131,8 @@ impl TotalOrdKernel for BinaryViewArray {
         let other_views = other.views().as_slice();
 
         Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-            let av = *slf_views.get_unchecked(i);
-            let bv = *other_views.get_unchecked(i);
+            let av = slf_views.get_unchecked(i).as_u128();
+            let bv = other_views.get_unchecked(i).as_u128();
 
             // First 64 bits contain length and prefix.
             // Only check prefix.
@@ -148,13 +148,13 @@ impl TotalOrdKernel for BinaryViewArray {
 
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         if let Some(val) = small_view_encoding(other) {
-            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| *v == val))
+            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| v.as_u128() == val))
         } else {
             let slf_views = self.views().as_slice();
             let prefix = u32::from_le_bytes(other[..4].try_into().unwrap());
             let prefix_len = ((prefix as u64) << 32) | other.len() as u64;
             Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-                let v_prefix_len = *slf_views.get_unchecked(i) as u64;
+                let v_prefix_len = slf_views.get_unchecked(i).as_u128() as u64;
                 if v_prefix_len != prefix_len {
                     false
                 } else {
@@ -166,13 +166,13 @@ impl TotalOrdKernel for BinaryViewArray {
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         if let Some(val) = small_view_encoding(other) {
-            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| *v != val))
+            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| v.as_u128() != val))
         } else {
             let slf_views = self.views().as_slice();
             let prefix = u32::from_le_bytes(other[..4].try_into().unwrap());
             let prefix_len = ((prefix as u64) << 32) | other.len() as u64;
             Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-                let v_prefix_len = *slf_views.get_unchecked(i) as u64;
+                let v_prefix_len = slf_views.get_unchecked(i).as_u128() as u64;
                 if v_prefix_len != prefix_len {
                     true
                 } else {
