@@ -109,7 +109,7 @@ def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
-            InvalidOperationError, match="Invalid 'decimals' for Round: ??"
+            InvalidOperationError, match="invalid 'decimals' for Round: ??"
         ):
             ctx.execute("SELECT ROUND(n,'??') AS n FROM df")
         with pytest.raises(

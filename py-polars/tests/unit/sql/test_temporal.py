@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -121,3 +122,43 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
                 schema=["c1", "c2", "c3", "c4"],
             ).cast(pl.Int32),
         )
+
+
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        ("ms", [1704589323123, 1609324245987, 1136159999555]),
+        ("us", [1704589323123456, 1609324245987654, 1136159999555555]),
+        ("ns", [1704589323123456000, 1609324245987654000, 1136159999555555000]),
+        (None, [1704589323123456, 1609324245987654, 1136159999555555]),
+    ],
+)
+def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2024, 1, 7, 1, 2, 3, 123456),
+                datetime(2020, 12, 30, 10, 30, 45, 987654),
+                datetime(2006, 1, 1, 23, 59, 59, 555555),
+            ],
+        }
+    )
+    precision = {"ms": 3, "us": 6, "ns": 9}
+
+    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+        prec = f"({precision[unit]})" if unit else ""
+        res = ctx.execute(f"SELECT ts::timestamp{prec} FROM frame_data").to_series()
+
+        assert res.dtype == pl.Datetime(time_unit=unit)  # type: ignore[arg-type]
+        assert res.to_physical().to_list() == expected
+
+
+def test_timestamp_time_unit_errors() -> None:
+    df = pl.DataFrame({"ts": [datetime(2024, 1, 7, 1, 2, 3, 123456)]})
+
+    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+        for prec in (0, 4, 15):
+            with pytest.raises(
+                ComputeError, match=f"unsupported `timestamp` precision; .* prec={prec}"
+            ):
+                ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")
