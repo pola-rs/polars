@@ -355,6 +355,27 @@ impl LogicalType for CategoricalChunked {
                 // Otherwise we do nothing
                 Ok(self.clone().set_ordering(*ordering, true).into_series())
             },
+            dt if dt.is_numeric() => {
+                // Apply the cast to to the categories and then index into the casted series
+                let categories =
+                    StringChunked::with_chunk("", self.get_rev_map().get_categories().clone());
+                let casted_series = categories.cast(dtype)?;
+
+                macro_rules! get_elements {
+                    ($ca:expr) => {{
+                        Ok(self
+                            .physical()
+                            .into_iter()
+                            .map(|opt_el| {
+                                opt_el.map(|el: u32| unsafe {
+                                    $ca.get_unchecked(el as usize).unwrap()
+                                })
+                            })
+                            .collect())
+                    }};
+                }
+                downcast_as_macro_arg_physical!(casted_series, get_elements)
+            },
             _ => self.physical.cast(dtype),
         }
     }
