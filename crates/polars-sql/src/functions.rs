@@ -773,10 +773,10 @@ impl SQLFunctionVisitor<'_> {
                                 polars_bail!(InvalidOperation: "Round does not (yet) support negative 'decimals': {}", function.args[1])
                             }
                         },
-                        _ => polars_bail!(InvalidOperation: "Invalid 'decimals' for Round: {}", function.args[1]),
+                        _ => polars_bail!(InvalidOperation: "invalid 'decimals' for Round: {}", function.args[1]),
                     }))
                 }),
-                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}", function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for Round: {}", function.args.len()),
             },
             Sign => self.visit_unary(Expr::sign),
             Sqrt => self.visit_unary(Expr::sqrt),
@@ -811,7 +811,7 @@ impl SQLFunctionVisitor<'_> {
                 3 => self.try_visit_ternary(|cond: Expr, expr1: Expr, expr2: Expr| {
                     Ok(when(cond).then(expr1).otherwise(expr2))
                 }),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for If: {}", function.args.len()
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for If: {}", function.args.len()
                 ),
             },
             IfNull => match function.args.len() {
@@ -826,13 +826,13 @@ impl SQLFunctionVisitor<'_> {
             Date => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
                 2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for Date: {}", function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for Date: {}", function.args.len()),
             },
             DatePart => self.try_visit_binary(|e, part| {
                 match part {
                     Expr::Literal(LiteralValue::String(p)) => parse_date_part(e, &p),
                     _ => {
-                        polars_bail!(InvalidOperation: "Invalid 'part' for DatePart: {}", function.args[1]);
+                        polars_bail!(InvalidOperation: "invalid 'part' for DatePart: {}", function.args[1]);
                     }
                 }
             }),
@@ -842,12 +842,12 @@ impl SQLFunctionVisitor<'_> {
             // ----
             BitLength => self.visit_unary(|e| e.str().len_bytes() * lit(8)),
             Concat => if function.args.is_empty() {
-                polars_bail!(InvalidOperation: "Invalid number of arguments for Concat: 0");
+                polars_bail!(InvalidOperation: "invalid number of arguments for Concat: 0");
             } else {
                 self.visit_variadic(|exprs: &[Expr]| concat_str(exprs, "", true))
             },
             ConcatWS => if function.args.len() < 2 {
-                polars_bail!(InvalidOperation: "Invalid number of arguments for ConcatWS: {}", function.args.len());
+                polars_bail!(InvalidOperation: "invalid number of arguments for ConcatWS: {}", function.args.len());
             } else {
                 self.try_visit_variadic(|exprs: &[Expr]| {
                     match &exprs[0] {
@@ -867,7 +867,7 @@ impl SQLFunctionVisitor<'_> {
                         let len = if n > 0 { lit(n) } else { (e.clone().str().len_chars() + lit(n)).clip_min(lit(0)) };
                         e.str().slice(lit(0), len)
                     },
-                    Expr::Literal(_) => polars_bail!(InvalidOperation: "Invalid 'n_chars' for Left: {}", function.args[1]),
+                    Expr::Literal(_) => polars_bail!(InvalidOperation: "invalid 'n_chars' for Left: {}", function.args[1]),
                     _ => {
                             when(length.clone().gt_eq(lit(0)))
                                 .then(e.clone().str().slice(lit(0), length.clone().abs()))
@@ -880,7 +880,7 @@ impl SQLFunctionVisitor<'_> {
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for LTrim: {}", function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for LTrim: {}", function.args.len()),
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             StrPos => {
@@ -894,23 +894,23 @@ impl SQLFunctionVisitor<'_> {
                         match (pat, flags) {
                             (Expr::Literal(LiteralValue::String(s)), Expr::Literal(LiteralValue::String(f))) => {
                                 if f.is_empty() {
-                                    polars_bail!(InvalidOperation: "Invalid/empty 'flags' for RegexpLike: {}", function.args[2]);
+                                    polars_bail!(InvalidOperation: "invalid/empty 'flags' for RegexpLike: {}", function.args[2]);
                                 };
                                 lit(format!("(?{}){}", f, s))
                             },
                             _ => {
-                                polars_bail!(InvalidOperation: "Invalid arguments for RegexpLike: {}, {}", function.args[1], function.args[2]);
+                                polars_bail!(InvalidOperation: "invalid arguments for RegexpLike: {}, {}", function.args[1], function.args[2]);
                             },
                         },
                         true))
                 }),
-                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
             Replace => match function.args.len() {
                 3 => self.try_visit_ternary(|e, old, new| {
                     Ok(e.str().replace_all(old, new, true))
                 }),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for Replace: {}", function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for Replace: {}", function.args.len()),
             },
             Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
@@ -921,7 +921,7 @@ impl SQLFunctionVisitor<'_> {
                         let offset = if n < 0 { lit(n.abs()) } else { e.clone().str().len_chars().cast(DataType::Int32) - lit(n) };
                         e.str().slice(offset, lit(Null))
                     },
-                    Expr::Literal(_) => polars_bail!(InvalidOperation: "Invalid 'n_chars' for Right: {}", function.args[1]),
+                    Expr::Literal(_) => polars_bail!(InvalidOperation: "invalid 'n_chars' for Right: {}", function.args[1]),
                     _ => {
                         when(length.clone().lt(lit(0)))
                             .then(e.clone().str().slice(length.clone().abs(), lit(Null)))
@@ -932,7 +932,7 @@ impl SQLFunctionVisitor<'_> {
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for RTrim: {}", function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for RTrim: {}", function.args.len()),
             },
             StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
             Substring => match function.args.len() {
@@ -942,7 +942,7 @@ impl SQLFunctionVisitor<'_> {
                         Expr::Literal(Null) => lit(Null),
                         Expr::Literal(LiteralValue::Int64(n)) if n <= 0 => e,
                         Expr::Literal(LiteralValue::Int64(n)) => e.str().slice(lit(n - 1), lit(Null)),
-                        Expr::Literal(_) => polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]),
+                        Expr::Literal(_) => polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]),
                         _ => start.clone() + lit(1),
                     })
                 }),
@@ -956,9 +956,9 @@ impl SQLFunctionVisitor<'_> {
                         (Expr::Literal(LiteralValue::Int64(n)), _) => {
                             e.str().slice(lit(0), (length.clone() + lit(n - 1)).clip_min(lit(0)))
                         },
-                        (Expr::Literal(_), _) => polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]),
+                        (Expr::Literal(_), _) => polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]),
                         (_, Expr::Literal(LiteralValue::Float64(_))) => {
-                            polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[1])
+                            polars_bail!(InvalidOperation: "invalid 'length' for Substring: {}", function.args[1])
                         },
                         _ => {
                             let adjusted_start = start.clone() - lit(1);
@@ -968,7 +968,7 @@ impl SQLFunctionVisitor<'_> {
                         }
                     })
                 }),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for Substring: {}", function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for Substring: {}", function.args.len()),
             }
             Upper => self.visit_unary(|e| e.str().to_uppercase()),
             // ----
@@ -1006,10 +1006,10 @@ impl SQLFunctionVisitor<'_> {
                                 e.list().eval(col("").fill_null(lit(v)), false).list().join(sep, false)
                             })
                         },
-                        _ => polars_bail!(InvalidOperation: "Invalid null value for ArrayToString: {}", function.args[2]),
+                        _ => polars_bail!(InvalidOperation: "invalid null value for ArrayToString: {}", function.args[2]),
                     }
                 }),
-                _ => polars_bail!(InvalidOperation: "Invalid number of arguments for ArrayToString: {}", function.args.len()),
+                _ => polars_bail!(InvalidOperation: "invalid number of arguments for ArrayToString: {}", function.args.len()),
             }
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),

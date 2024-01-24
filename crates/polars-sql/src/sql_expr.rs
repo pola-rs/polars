@@ -14,8 +14,8 @@ use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator,
-    Value as SQLValue,
+    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo, TrimWhereField,
+    UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -62,11 +62,32 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Int2(_) => DataType::Int16,
         SQLDataType::Int4(_) => DataType::Int32,
         SQLDataType::Int8(_) => DataType::Int64,
-        SQLDataType::Interval => DataType::Duration(TimeUnit::Milliseconds),
+        SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
         SQLDataType::Real => DataType::Float32,
         SQLDataType::SmallInt(_) => DataType::Int16,
-        SQLDataType::Time { .. } => DataType::Time,
-        SQLDataType::Timestamp { .. } => DataType::Datetime(TimeUnit::Milliseconds, None),
+        SQLDataType::Time(_, tz) => match tz {
+            TimezoneInfo::None => DataType::Time,
+            _ => {
+                polars_bail!(ComputeError: "`time` with timezone is not supported; found tz={}", tz)
+            },
+        },
+        SQLDataType::Timestamp(prec, tz) => {
+            let tu = match prec {
+                None => TimeUnit::Microseconds,
+                Some(3) => TimeUnit::Milliseconds,
+                Some(6) => TimeUnit::Microseconds,
+                Some(9) => TimeUnit::Nanoseconds,
+                Some(n) => {
+                    polars_bail!(ComputeError: "unsupported `timestamp` precision; expected 3, 6 or 9, found prec={}", n)
+                },
+            };
+            match tz {
+                TimezoneInfo::None => DataType::Datetime(tu, None),
+                _ => {
+                    polars_bail!(ComputeError: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
+                },
+            }
+        },
         SQLDataType::TinyInt(_) => DataType::Int8,
         SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
@@ -270,7 +291,7 @@ impl SQLExprVisitor<'_> {
                 }
             },
             _ => polars_bail!(
-                ComputeError: "Invalid identifier {:?}",
+                ComputeError: "invalid identifier {:?}",
                 idents
             ),
         }
@@ -351,23 +372,23 @@ impl SQLExprVisitor<'_> {
             // ----
             SQLBinaryOperator::PGRegexMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true).not(),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~*' operator: {:?}", right),
             },
             other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
         })
@@ -388,7 +409,7 @@ impl SQLExprVisitor<'_> {
             (UnaryOperator::Plus, _) => lit(0) + expr,
             (UnaryOperator::Minus, _) => lit(0) - expr,
             (UnaryOperator::Not, _) => expr.not(),
-            other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
+            other => polars_bail!(InvalidOperation: "unary operator {:?} is not supported", other),
         })
     }
 
@@ -424,7 +445,7 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
             BinaryOperator::Eq => polars_bail!(ComputeError: "ALL cannot be used with ="),
             BinaryOperator::NotEq => polars_bail!(ComputeError: "ALL cannot be used with !="),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -447,7 +468,7 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
             BinaryOperator::Eq => Ok(left.is_in(right)),
             BinaryOperator::NotEq => Ok(left.is_in(right).not()),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -891,7 +912,7 @@ pub(super) fn process_join_constraint(
             return Ok((using.clone(), using.clone()));
         }
     }
-    polars_bail!(InvalidOperation: "Unsupported SQL join constraint:\n{:?}", constraint);
+    polars_bail!(InvalidOperation: "unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression
