@@ -1,10 +1,15 @@
 use std::collections::BTreeMap;
+use std::convert::Into;
+use std::string::ToString;
 
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
 
 pub type TimeZone = String;
+
+pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
+pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 
 #[derive(Clone, Debug, Default)]
 pub enum DataType {
@@ -283,8 +288,8 @@ impl DataType {
             DataType::Categorical(Some(rev_map), _) => {
                 if rev_map.is_enum() {
                     Some(BTreeMap::from([(
-                        "POLARS.CATEGORICAL_TYPE".to_string(),
-                        "ENUM".to_string(),
+                        DTYPE_ENUM_KEY.into(),
+                        DTYPE_ENUM_VALUE.into(),
                     )]))
                 } else {
                     None

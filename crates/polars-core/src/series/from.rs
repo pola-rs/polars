@@ -341,7 +341,7 @@ impl Series {
                 let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
 
                 if let Some(metadata) = md {
-                    if metadata.get("POLARS.CATEGORICAL_TYPE") == Some(&"ENUM".to_string()) {
+                    if metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
                         // Safety
                         // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                         return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
