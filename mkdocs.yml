@@ -175,3 +175,10 @@ plugins:
   - material-plausible
   - macros:
       module_name: docs/_build/scripts/macro
+  - redirects:
+      redirect_maps:
+        'user-guide/index.md': 'index.md'
+        'user-guide/basics/index.md': 'user-guide/getting-started.md'
+        'user-guide/basics/reading-writing.md': 'user-guide/getting-started.md'
+        'user-guide/basics/expressions.md': 'user-guide/getting-started.md'
+        'user-guide/basics/joins.md': 'user-guide/getting-started.md'
