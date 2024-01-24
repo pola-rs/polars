@@ -1814,6 +1814,41 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_min() is None
     assert s.arg_max() is None
 
+    # categorical empty series
+    s = pl.Series([], dtype=pl.Categorical)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # categorical with physical ordering no null
+    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical)
+    assert s.arg_min() == 0
+    assert s.arg_max() == 2
+
+    # categorical with physical ordering has null
+    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical)
+    assert s.arg_min() == 1
+    assert s.arg_max() == 4
+
+    # categorical with physical all null
+    s = pl.Series([None, None], dtype=pl.Categorical)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # categorical with lexical ordering no null
+    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical"))
+    assert s.arg_min() == 2
+    assert s.arg_max() == 0
+
+    # categorical with lexical ordering has null
+    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical(ordering="lexical"))
+    assert s.arg_min() == 4
+    assert s.arg_max() == 1
+
+    # categorical with lexical ordering all null
+    s = pl.Series([None, None], dtype=pl.Categorical(ordering="lexical"))
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
 
 def test_is_null_is_not_null() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, None])
