@@ -167,7 +167,8 @@ def concat(
                         F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
                         for name in common_cols
                     ]
-                ).drop([f"{name}_PL_CONCAT_RIGHT" for name in common_cols])
+                )
+                .drop([f"{name}_PL_CONCAT_RIGHT" for name in common_cols])
             ),
             [df.lazy() for df in elems],
         ).sort(by=common_cols)
