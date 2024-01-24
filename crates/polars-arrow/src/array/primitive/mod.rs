@@ -432,12 +432,29 @@ impl<T: NativeType> PrimitiveArray<T> {
         MutablePrimitiveArray::<T>::from_trusted_len_iter(iter).into()
     }
 
+    pub fn try_from_trusted_len_iter<E, I: Iterator<Item = Result<Option<T>, E>> + TrustedLen>(
+        iter: I,
+    ) -> Result<Self, E> {
+        Ok(MutablePrimitiveArray::<T>::try_from_trusted_len_iter(iter)?.into())
+    }
+
     /// Creates a [`PrimitiveArray`] from an iterator of optional values.
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
     pub unsafe fn from_trusted_len_iter_unchecked<I: Iterator<Item = Option<T>>>(iter: I) -> Self {
         MutablePrimitiveArray::<T>::from_trusted_len_iter_unchecked(iter).into()
+    }
+
+    /// # Safety
+    /// The iterator must be [`TrustedLen`].
+    pub unsafe fn try_from_trusted_len_iter_unchecked<
+        E,
+        I: Iterator<Item = Result<Option<T>, E>>,
+    >(
+        iter: I,
+    ) -> Result<Self, E> {
+        Ok(MutablePrimitiveArray::<T>::try_from_trusted_len_iter_unchecked(iter)?.into())
     }
 
     /// Alias for `Self::try_new(..).unwrap()`.

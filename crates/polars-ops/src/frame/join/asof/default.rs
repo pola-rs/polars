@@ -2,7 +2,7 @@ use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use num_traits::Zero;
 use polars_core::prelude::*;
-use polars_utils::abs_diff::AbsDiff;
+use polars_utils::num_ext::NumExt;
 
 use super::{
     AsofJoinBackwardState, AsofJoinForwardState, AsofJoinNearestState, AsofJoinState, AsofStrategy,

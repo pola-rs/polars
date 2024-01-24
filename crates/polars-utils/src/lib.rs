@@ -1,5 +1,4 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
-pub mod abs_diff;
 pub mod arena;
 pub mod atomic;
 pub mod cache;
@@ -11,6 +10,7 @@ pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
+pub mod num_ext;
 pub mod slice;
 pub mod sort;
 pub mod sync;

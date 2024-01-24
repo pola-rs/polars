@@ -5,9 +5,9 @@ use num_traits::Zero;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::utils::{split_ca, split_df};
 use polars_core::POOL;
-use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::nulls::IsNull;
+use polars_utils::num_ext::NumExt;
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 

@@ -122,6 +122,13 @@ def test_floor_division_float_int_consistency() -> None:
     )
 
 
+def test_integer_zero_division() -> None:
+    with pytest.raises(pl.ComputeError):
+        pl.Series([1, 0]) // 0
+    with pytest.raises(pl.ComputeError):
+        pl.Series([1, 0]) // pl.Series([1, 0])
+
+
 def test_series_expr_arithm() -> None:
     s = pl.Series([1, 2, 3])
     assert (s + pl.col("a")).meta == pl.lit(s) + pl.col("a")
