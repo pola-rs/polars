@@ -1273,9 +1273,9 @@ class Config(contextlib.ContextDecorator):
         Examples
         --------
         >>> pl.Config.warn_unstable(True)  # doctest: +SKIP
-        >>> pl.col("a").qcut(5)
-        polars.warnings.UnstableWarning: `qcut` is an unstable feature.
-        """
+        >>> pl.col("a").qcut(5)  # doctest: +SKIP
+        UnstableWarning: `qcut` is considered unstable. It may be changed at any point without it being considered a breaking change.
+        """  # noqa: W505
         if active is None:
             os.environ.pop("POLARS_WARN_UNSTABLE", None)
         else:
