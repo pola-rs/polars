@@ -376,3 +376,28 @@ def test_enum_categories_series_zero_copy() -> None:
     result_dtype = s.dtype
 
     assert result_dtype == dtype
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
+def test_enum_cast_from_other_integer_dtype(dtype: pl.DataType) -> None:
+    enum_dtype = pl.Enum(["a", "b", "c", "d"])
+    series = pl.Series([1, 2, 3, 3, 2, 1], dtype=dtype)
+    series.cast(enum_dtype)
+
+
+def test_enum_cast_from_other_integer_dtype_oob() -> None:
+    enum_dtype = pl.Enum(["a", "b", "c", "d"])
+    series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
+    with pytest.raises(
+        pl.ComputeError, match="conversion from `i8` to `enum` failed in column"
+    ):
+        series.cast(enum_dtype)
+
+    series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
+    with pytest.raises(
+        pl.ComputeError, match="conversion from `u64` to `enum` failed in column"
+    ):
+        series.cast(enum_dtype)
