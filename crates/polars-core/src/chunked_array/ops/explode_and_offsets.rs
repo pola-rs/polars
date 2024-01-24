@@ -1,5 +1,7 @@
 use arrow::bitmap::MutableBitmap;
 use arrow::compute::cast::utf8view_to_utf8;
+#[cfg(feature = "dtype-array")]
+use arrow::legacy::compute::take::take_unchecked;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
@@ -101,7 +103,39 @@ impl ChunkExplode for ArrayChunked {
     fn explode(&self) -> PolarsResult<Series> {
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
-        Ok(Series::try_from((self.name(), arr.values().clone())).unwrap())
+        // fast-path for non-null array.
+        if arr.null_count() == 0 {
+            return Series::try_from((self.name(), arr.values().clone()))
+                .unwrap()
+                .cast(&ca.inner_dtype());
+        }
+
+        // we have already ensure that validity is not none.
+        let validity = arr.validity().unwrap();
+        let values = arr.values();
+        let width = arr.size();
+
+        let mut indices = MutablePrimitiveArray::<IdxSize>::with_capacity(
+            values.len() - arr.null_count() * (width - 1),
+        );
+        (0..arr.len()).for_each(|i| {
+            // Safety: we are within bounds
+            if unsafe { validity.get_bit_unchecked(i) } {
+                let start = (i * width) as IdxSize;
+                let end = start + width as IdxSize;
+                indices.extend_trusted_len_values(start..end);
+            } else {
+                indices.push_null();
+            }
+        });
+
+        // Safety: the indices we generate are in bounds
+        let chunk = unsafe { take_unchecked(&**values, &indices.into()) };
+
+        // Safety: inner_dtype should be correct
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(ca.name(), vec![chunk], &ca.inner_dtype())
+        })
     }
 
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
