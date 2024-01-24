@@ -8,10 +8,15 @@ use std::ops::Deref;
 use crate::ffi::InternalArrowArray;
 
 pub(crate) enum BytesAllocator {
+    // Dead code lint is a false positive.
+    // remove once fixed in rustc
     #[allow(dead_code)]
     InternalArrowArray(InternalArrowArray),
 
     #[cfg(feature = "arrow_rs")]
+    // Dead code lint is a false positive.
+    // remove once fixed in rustc
+    #[allow(dead_code)]
     Arrow(arrow_buffer::Buffer),
 }
 pub(crate) type BytesInner<T> = foreign_vec::ForeignVec<BytesAllocator, T>;
