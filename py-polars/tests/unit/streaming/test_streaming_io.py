@@ -198,3 +198,21 @@ def test_streaming_cross_join_schema(tmp_path: Path) -> None:
     a.join(b, how="cross").sink_parquet(file_path)
     read = pl.read_parquet(file_path, parallel="none")
     assert read.to_dict(as_series=False) == {"a": [1, 2], "b": ["b", "b"]}
+
+
+@pytest.mark.write_disk()
+def test_sink_ndjson_should_write_same_data(
+    io_files_path: Path, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    source_path = io_files_path / "foods1.csv"
+    target_path = tmp_path / "foods_test.ndjson"
+
+    expected = pl.read_csv(source_path)
+
+    lf = pl.scan_csv(source_path)
+    lf.sink_ndjson(target_path)
+    df = pl.read_ndjson(target_path)
+
+    assert_frame_equal(df, expected)
