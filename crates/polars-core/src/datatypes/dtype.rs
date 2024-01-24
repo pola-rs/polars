@@ -1,4 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
 use std::collections::BTreeMap;
 
 use super::*;

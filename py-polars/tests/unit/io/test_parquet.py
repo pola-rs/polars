@@ -573,6 +573,7 @@ def test_enum_parquet(tmp_path: Path) -> None:
     out = pl.read_parquet(path)
     assert_frame_equal(df, out)
 
+
 def test_parquet_rle_non_nullable_12814() -> None:
     column = (
         pl.select(x=pl.arange(0, 1025, dtype=pl.Int64) // 10).to_series().to_arrow()
