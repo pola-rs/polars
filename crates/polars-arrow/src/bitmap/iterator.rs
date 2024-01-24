@@ -71,6 +71,53 @@ impl<'a> Iterator for TrueIdxIter<'a> {
 
 unsafe impl<'a> TrustedLen for TrueIdxIter<'a> {}
 
+pub struct FastU32BitmapIter<'a> {
+    bytes: &'a [u8],
+    shift: usize,
+    remainder: [u32; 2],
+    remainder_len: usize,
+}
+
+impl<'a> FastU32BitmapIter<'a> {
+    fn new(bm: &'a Bitmap) -> Self {
+        let (bytes, shift, len) = bm.as_slice();
+        
+        let fast_iter_count = bytes.len().saturating_sub(4) / 4;
+        let bytes_left_over = bytes.len() - fast_iter_count * 4;
+        let remainder_len = len - 8 * 4 * fast_iter_count;
+        
+        todo!()
+    }
+    
+    fn remainder(&self) -> &[u32; 2] {
+        &self.remainder
+    }
+    
+    fn remainder_len(&self) -> usize {
+        self.remainder_len
+    }
+}
+
+impl<'a> Iterator for FastU32BitmapIter<'a> {
+    type Item = u32;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_chunk = self.bytes.get(0..8)?;
+        let ret = u64::from_le_bytes(next_chunk.try_into().unwrap());
+        self.bytes = &self.bytes[4..];
+        Some((ret >> self.shift) as u32)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.bytes.len().saturating_sub(4) / 4;
+        (len, Some(len))
+    }
+}
+
+unsafe impl<'a> TrustedLen for FastU32BitmapIter<'a> {}
+
 /// This crates' equivalent of [`std::vec::IntoIter`] for [`Bitmap`].
 #[derive(Debug, Clone)]
 pub struct IntoIter {
