@@ -6,16 +6,19 @@ import polars as pl
 
 df = pl.DataFrame(
     {
-        "a": range(5),
-        "b": np.random.rand(5),
+        "a": range(8),
+        "b": np.random.rand(8),
         "c": [
-            datetime(2025, 12, 1),
-            datetime(2025, 12, 2),
-            datetime(2025, 12, 3),
-            datetime(2025, 12, 4),
-            datetime(2025, 12, 5),
+            datetime(2022, 12, 1),
+            datetime(2022, 12, 2),
+            datetime(2022, 12, 3),
+            datetime(2022, 12, 4),
+            datetime(2022, 12, 5),
+            datetime(2022, 12, 6),
+            datetime(2022, 12, 7),
+            datetime(2022, 12, 8),
         ],
-        "d": [1, 2.0, float("nan"), -42, None],
+        "d": [1, 2.0, float("nan"), float("nan"), 0, -5, -42, None],
     }
 )
 # --8<-- [end:setup]
@@ -33,12 +36,12 @@ df.select(pl.col("a"), pl.col("b")).limit(3)
 # --8<-- [end:select3]
 
 # --8<-- [start:exclude]
-df.select(pl.exclude(["a", "c"]))
+df.select(pl.exclude("a"))
 # --8<-- [end:exclude]
 
 # --8<-- [start:filter]
 df.filter(
-    pl.col("c").is_between(datetime(2025, 12, 2), datetime(2025, 12, 3)),
+    pl.col("c").is_between(datetime(2022, 12, 2), datetime(2022, 12, 8)),
 )
 # --8<-- [end:filter]
 
