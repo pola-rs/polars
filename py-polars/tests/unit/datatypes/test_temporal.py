@@ -1579,8 +1579,8 @@ def test_convert_time_zone_lazy_schema() -> None:
 
 def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    result = ts.dt.convert_time_zone("Africa/Bamako").item()
-    expected = datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="Africa/Bamako"))
+    result = ts.dt.convert_time_zone("Asia/Kathmandu").item()
+    expected = datetime(2020, 1, 1, 5, 45, tzinfo=ZoneInfo(key="Asia/Kathmandu"))
     assert result == expected
 
 
