@@ -44,8 +44,8 @@ def unstable() -> Callable[[Callable[P, T]], Callable[P, T]]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             issue_unstable_warning(
-                f"`{function.__name__}` is considered unstable."
-                " Its API and implementation are subject to change.",
+                f"`{function.__name__}` is considered unstable"
+                " and may be changed at any point without it being considered a breaking change."
             )
             return function(*args, **kwargs)
 

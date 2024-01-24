@@ -28,7 +28,7 @@ def test_unstable_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
     def hello() -> None:
         ...
 
-    msg = "`hello` is considered unstable. Its API and implementation are subject to change."
+    msg = "`hello` is considered unstable and may be changed at any point without it being considered a breaking change."
     with pytest.warns(pl.UnstableWarning, match=msg):
         hello()
 
