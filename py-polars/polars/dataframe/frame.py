@@ -4459,59 +4459,63 @@ class DataFrame:
 
         @lru_cache
         def skip_minmax(dt: PolarsDataType) -> bool:
-            return dt.is_nested() or dt in (Object, Null, Unknown, Categorical, Enum)
+            return dt.is_nested() or dt in (Categorical, Enum, Null, Object, Unknown)
 
-        # determine which columns get std/mean/percentile stats
+        # determine which columns will produce std/mean/percentile/etc
+        # statistics in a single pass over the frame schema
         has_numeric_result, sort_cols = set(), set()
-        metric_exprs = []
+        metric_exprs: list[Expr] = []
         null = F.lit(None)
 
-        for c, dt in self.schema.items():
-            is_numeric = dt.is_numeric()
-            is_temporal = not is_numeric and dt.is_temporal()
+        for c, dtype in self.schema.items():
+            is_numeric = dtype.is_numeric()
+            is_temporal = not is_numeric and dtype.is_temporal()
 
             # counts
             count_exprs = [
                 F.col(c).count().name.prefix("count:"),
                 F.col(c).null_count().name.prefix("null_count:"),
             ]
-            metric_exprs.extend(count_exprs)
-
             # mean
-            if is_temporal:
-                mean_expr = F.col(c).to_physical().mean().cast(dt)
-            else:
-                mean_expr = F.col(c).mean() if is_numeric or dt == Boolean else null
-            metric_exprs.append(mean_expr.alias(f"mean:{c}"))
+            mean_expr = (
+                F.col(c).to_physical().mean().cast(dtype)
+                if is_temporal
+                else (F.col(c).mean() if is_numeric or dtype == Boolean else null)
+            )
 
-            # standard deviation
+            # standard deviation, min, max
             expr_std = F.col(c).std() if is_numeric else null
-            metric_exprs.append(expr_std.alias(f"std:{c}"))
-
-            # min
-            min_expr = F.col(c).min() if not skip_minmax(dt) else null
-            metric_exprs.append(min_expr.alias(f"min:{c}"))
+            min_expr = F.col(c).min() if not skip_minmax(dtype) else null
+            max_expr = F.col(c).max() if not skip_minmax(dtype) else null
 
             # percentiles
+            pct_exprs = []
             for p in quantiles:
                 if is_numeric or is_temporal:
                     pct_expr = (
-                        F.col(c).to_physical().quantile(p, interpolation).cast(dt)
+                        F.col(c).to_physical().quantile(p, interpolation).cast(dtype)
                         if is_temporal
                         else F.col(c).quantile(p, interpolation)
                     )
                     sort_cols.add(c)
                 else:
                     pct_expr = null
-                metric_exprs.append(pct_expr.alias(f"{p}:{c}"))
+                pct_exprs.append(pct_expr.alias(f"{p}:{c}"))
 
-            # max
-            metric_exprs.append(
-                (F.col(c).max() if not skip_minmax(dt) else null).alias(f"max:{c}")
-            )
-
-            if is_numeric or dt.is_nested() or dt in (Null, Boolean):
+            if is_numeric or dtype.is_nested() or dtype in (Null, Boolean):
                 has_numeric_result.add(c)
+
+            # add column expressions (in end-state 'metrics' list order)
+            metric_exprs.extend(
+                [
+                    *count_exprs,
+                    mean_expr.alias(f"mean:{c}"),
+                    expr_std.alias(f"std:{c}"),
+                    min_expr.alias(f"min:{c}"),
+                    *pct_exprs,
+                    max_expr.alias(f"max:{c}"),
+                ]
+            )
 
         # if more than one quantile requested, sort relevant columns to make them O(1)
         # TODO: remove once we have engine support for retrieving multiples quantiles
