@@ -329,16 +329,12 @@ pub(super) fn to_string(s: &Series, format: &str) -> PolarsResult<Series> {
 #[cfg(feature = "timezones")]
 pub(super) fn convert_time_zone(s: &Series, time_zone: &TimeZone) -> PolarsResult<Series> {
     match s.dtype() {
-        DataType::Datetime(_, Some(_)) => {
+        DataType::Datetime(_, _) => {
             let mut ca = s.datetime()?.clone();
             ca.set_time_zone(time_zone.clone())?;
             Ok(ca.into_series())
         },
-        _ => polars_bail!(
-            ComputeError:
-            "cannot call `convert_time_zone` on tz-naive; set a time zone first \
-            with `replace_time_zone`"
-        ),
+        dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
     }
 }
 pub(super) fn with_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {

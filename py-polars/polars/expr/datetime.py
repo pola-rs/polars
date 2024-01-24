@@ -1548,6 +1548,11 @@ class ExprDateTimeNameSpace:
         time_zone
             Time zone for the `Datetime` expression.
 
+        Notes
+        -----
+        If converting from a time-zone-naive datetime, then conversion will happen
+        as if converting from UTC, regardless of your system's time zone.
+
         Examples
         --------
         >>> from datetime import datetime

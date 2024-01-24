@@ -1579,11 +1579,9 @@ def test_convert_time_zone_lazy_schema() -> None:
 
 def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(
-        ComputeError,
-        match="cannot call `convert_time_zone` on tz-naive; set a time zone first with `replace_time_zone`",
-    ):
-        ts.dt.convert_time_zone("Africa/Bamako")
+    result = ts.dt.convert_time_zone("Africa/Bamako").item()
+    expected = datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="Africa/Bamako"))
+    assert result == expected
 
 
 def test_tz_aware_get_idx_5010() -> None:
