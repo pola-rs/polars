@@ -3598,6 +3598,7 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    @unstable()
     def cut(
         self,
         breaks: Sequence[float],
@@ -3608,6 +3609,10 @@ class Expr:
     ) -> Self:
         """
         Bin continuous values into discrete categories.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -3676,6 +3681,7 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
+    @unstable()
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -3687,6 +3693,10 @@ class Expr:
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------

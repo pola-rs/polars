@@ -2218,6 +2218,7 @@ class Series:
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
     @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
+    @unstable()
     def cut(
         self,
         breaks: Sequence[float],
@@ -2231,6 +2232,10 @@ class Series:
     ) -> Series | DataFrame:
         """
         Bin continuous values into discrete categories.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
