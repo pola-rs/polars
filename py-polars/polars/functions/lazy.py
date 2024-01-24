@@ -2031,6 +2031,7 @@ def from_epoch(
         raise ValueError(msg)
 
 
+@unstable()
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
@@ -2041,6 +2042,10 @@ def rolling_cov(
 ) -> Expr:
     """
     Compute the rolling covariance between two columns/ expressions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
@@ -2071,6 +2076,7 @@ def rolling_cov(
     )
 
 
+@unstable()
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
@@ -2081,6 +2087,10 @@ def rolling_corr(
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
