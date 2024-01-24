@@ -2436,7 +2436,7 @@ class Series:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Parameters.
+        Parameters
         ----------
         quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
