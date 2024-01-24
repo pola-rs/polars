@@ -50,7 +50,7 @@ Polars is written in Rust which gives it C/C++ performance and allows it to full
 
 {{code_block('home/example','example',['scan_csv','filter','group_by','collect'])}}
 
-A more extensive introduction can be found in the [next chapter](getting-started.md).
+A more extensive introduction can be found in the [next chapter](user-guide/getting-started.md).
 
 ## Community
 
@@ -60,7 +60,7 @@ Polars has a very active community with frequent releases (approximately weekly)
 
 ## Contributing
 
-We appreciate all contributions, from reporting bugs to implementing new features. Read our [contributing guide](../development/contributing/index.md) to learn more.
+We appreciate all contributions, from reporting bugs to implementing new features. Read our [contributing guide](development/contributing/index.md) to learn more.
 
 ## License
 
