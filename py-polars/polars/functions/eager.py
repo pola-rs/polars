@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, get_args
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.exceptions import SchemaError
 from polars.type_aliases import ConcatMethod, FrameType
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.various import ordered_unique
@@ -153,7 +154,7 @@ def concat(
         # we require at least one key column for 'align'
         if not common_cols:
             msg = "'align' strategy requires at least one common column"
-            raise ValueError(msg)
+            raise SchemaError(msg)
 
         # align the frame data using an outer join with no suffix-resolution
         # (so we raise an error in case of column collision, like "horizontal")
