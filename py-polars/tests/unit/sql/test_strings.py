@@ -98,12 +98,80 @@ def test_string_left_right_reverse() -> None:
         "r": ["de", "bc", "a", None],
         "rev": ["edcba", "cba", "a", None],
     }
-    for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "-1")):
+    for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "6.66")):
         with pytest.raises(
             InvalidOperationError,
-            match=f"Invalid 'length' for {func.capitalize()}: {invalid}",
+            match=f"Invalid 'n_chars' for {func.capitalize()}: {invalid}",
         ):
             ctx.execute(f"""SELECT {func}(txt,{invalid}) FROM df""").collect()
+
+
+def test_string_left_negative_expr() -> None:
+    # negative values and expressions
+    df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
+    with pl.SQLContext(df=df, eager_execution=True) as sql:
+        res = sql.execute(
+            """
+            SELECT
+              LEFT("s",-50)      AS l0,  -- empty string
+              LEFT("s",-3)       AS l1,  -- all but last three chars
+              LEFT("s",SIGN(-1)) AS l2,  -- all but last char (expr => -1)
+              LEFT("s",0)        AS l3,  -- empty string
+              LEFT("s",NULL)     AS l4,  -- null
+              LEFT("s",1)        AS l5,  -- first char
+              LEFT("s",SIGN(1))  AS l6,  -- first char (expr => 1)
+              LEFT("s",3)        AS l7,  -- first three chars
+              LEFT("s",50)       AS l8,  -- entire string
+              LEFT("s","n")      AS l9,  -- from other col
+            FROM df
+            """
+        )
+        assert res.to_dict(as_series=False) == {
+            "l0": ["", ""],
+            "l1": ["alpha", "alpha"],
+            "l2": ["alphabe", "alphabe"],
+            "l3": ["", ""],
+            "l4": [None, None],
+            "l5": ["a", "a"],
+            "l6": ["a", "a"],
+            "l7": ["alp", "alp"],
+            "l8": ["alphabet", "alphabet"],
+            "l9": ["al", "alphab"],
+        }
+
+
+def test_string_right_negative_expr() -> None:
+    # negative values and expressions
+    df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
+    with pl.SQLContext(df=df, eager_execution=True) as sql:
+        res = sql.execute(
+            """
+            SELECT
+              RIGHT("s",-50)      AS l0,  -- empty string
+              RIGHT("s",-3)       AS l1,  -- all but first three chars
+              RIGHT("s",SIGN(-1)) AS l2,  -- all but first char (expr => -1)
+              RIGHT("s",0)        AS l3,  -- empty string
+              RIGHT("s",NULL)     AS l4,  -- null
+              RIGHT("s",1)        AS l5,  -- last char
+              RIGHT("s",SIGN(1))  AS l6,  -- last char (expr => 1)
+              RIGHT("s",3)        AS l7,  -- last three chars
+              RIGHT("s",50)       AS l8,  -- entire string
+              RIGHT("s","n")      AS l9,  -- from other col
+            FROM df
+            """
+        )
+        assert res.to_dict(as_series=False) == {
+            "l0": ["", ""],
+            "l1": ["habet", "habet"],
+            "l2": ["lphabet", "lphabet"],
+            "l3": ["", ""],
+            "l4": [None, None],
+            "l5": ["t", "t"],
+            "l6": ["t", "t"],
+            "l7": ["bet", "bet"],
+            "l8": ["alphabet", "alphabet"],
+            "l9": ["et", "phabet"],
+        }
 
 
 def test_string_lengths() -> None:
@@ -254,21 +322,36 @@ def test_string_replace() -> None:
 
 
 def test_string_substr() -> None:
-    df = pl.DataFrame({"scol": ["abcdefg", "abcde", "abc", None]})
+    df = pl.DataFrame(
+        {"scol": ["abcdefg", "abcde", "abc", None], "n": [-2, 3, 2, None]}
+    )
     with pl.SQLContext(df=df) as ctx:
         res = ctx.execute(
             """
             SELECT
               -- note: sql is 1-indexed
-              SUBSTR(scol,1) AS s1,
-              SUBSTR(scol,2) AS s2,
-              SUBSTR(scol,3) AS s3,
-              SUBSTR(scol,1,5) AS s1_5,
-              SUBSTR(scol,2,2) AS s2_2,
-              SUBSTR(scol,3,1) AS s3_1,
+              SUBSTR(scol,1)    AS s1,
+              SUBSTR(scol,2)    AS s2,
+              SUBSTR(scol,3)    AS s3,
+              SUBSTR(scol,1,5)  AS s1_5,
+              SUBSTR(scol,2,2)  AS s2_2,
+              SUBSTR(scol,3,1)  AS s3_1,
+              SUBSTR(scol,-3)   AS "s-3",
+              SUBSTR(scol,-3,3) AS "s-3_3",
+              SUBSTR(scol,-3,4) AS "s-3_4",
+              SUBSTR(scol,-3,5) AS "s-3_5",
+              SUBSTR(scol,-10,13) AS "s-10_13",
+              SUBSTR(scol,"n",2) AS "s-n2",
+              SUBSTR(scol,2,"n"+3) AS "s-2n3"
             FROM df
             """
         ).collect()
+
+        with pytest.raises(
+            InvalidOperationError,
+            match="Substring does not support negative length: -99",
+        ):
+            ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
 
     assert res.to_dict(as_series=False) == {
         "s1": ["abcdefg", "abcde", "abc", None],
@@ -277,14 +360,14 @@ def test_string_substr() -> None:
         "s1_5": ["abcde", "abcde", "abc", None],
         "s2_2": ["bc", "bc", "bc", None],
         "s3_1": ["c", "c", "c", None],
+        "s-3": ["abcdefg", "abcde", "abc", None],
+        "s-3_3": ["", "", "", None],
+        "s-3_4": ["", "", "", None],
+        "s-3_5": ["a", "a", "a", None],
+        "s-10_13": ["ab", "ab", "ab", None],
+        "s-n2": ["", "cd", "bc", None],
+        "s-2n3": ["b", "bcde", "bc", None],
     }
-
-    # negative indexes are expected to be invalid
-    with pytest.raises(
-        InvalidOperationError,
-        match="Invalid 'start' for Substring: -1",
-    ), pl.SQLContext(df=df) as ctx:
-        ctx.execute("SELECT SUBSTR(scol,-1) FROM df")
 
 
 def test_string_trim(foods_ipc_path: Path) -> None:
