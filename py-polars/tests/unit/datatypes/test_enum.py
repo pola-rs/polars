@@ -404,7 +404,7 @@ def test_enum_creating_col_expr() -> None:
         },
         schema={
             "col1": pl.Enum(["a", "b", "c"]),
-            "col2": pl.String,
+            "col2": pl.Categorical(),
             "col3": pl.Enum(["g", "h", "i"]),
         },
     )
