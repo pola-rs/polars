@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import unittest
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -10,9 +10,6 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-pytestmark = pytest.mark.xdist_group("streaming")
 
 
 @pytest.mark.write_disk()
@@ -122,7 +119,7 @@ def test_sink_csv_with_options() -> None:
      passed into the rust-polars correctly.
     """
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with unittest.mock.patch.object(df, "_ldf") as ldf:
+    with patch.object(df, "_ldf") as ldf:
         df.sink_csv(
             "path",
             include_bom=True,

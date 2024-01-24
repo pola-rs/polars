@@ -4,12 +4,9 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-
-pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_joins() -> None:
