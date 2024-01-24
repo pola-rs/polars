@@ -6,6 +6,7 @@ import os
 import random
 from collections import OrderedDict, defaultdict
 from collections.abc import Sized
+from functools import lru_cache
 from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
 from pathlib import Path
@@ -4357,7 +4358,10 @@ class DataFrame:
         return None
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
+        self,
+        percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
+        *,
+        interpolation: RollingInterpolationMethod = "nearest",
     ) -> Self:
         """
         Summary statistics for a DataFrame.
@@ -4368,15 +4372,17 @@ class DataFrame:
             One or more percentiles to include in the summary statistics.
             All values must be in the range `[0, 1]`.
 
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method used when calculating percentiles.
+
         Notes
         -----
         The median is included by default as the 50% percentile.
 
         Warnings
         --------
-        We will never guarantee the output of describe to be stable.
-        It will show statistics that we deem informative and may
-        be updated in the future.
+        We do not guarantee the output of `describe` to be stable. It will show
+        statistics that we deem informative, and may be updated in the future.
 
         See Also
         --------
@@ -4384,117 +4390,160 @@ class DataFrame:
 
         Examples
         --------
-        >>> from datetime import date
+        >>> from datetime import date, time
         >>> df = pl.DataFrame(
         ...     {
         ...         "float": [1.0, 2.8, 3.0],
-        ...         "int": [4, 5, None],
+        ...         "int": [40, 50, None],
         ...         "bool": [True, False, True],
-        ...         "str": [None, "b", "c"],
-        ...         "str2": ["usd", "eur", None],
-        ...         "date": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
+        ...         "str": ["zz", "xx", "yy"],
+        ...         "date": [date(2020, 1, 1), date(2021, 7, 5), date(2022, 12, 31)],
+        ...         "time": [time(10, 20, 30), time(14, 45, 50), time(23, 15, 10)],
         ...     }
         ... )
+
+        Show default frame statistics:
+
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬───────┬──────┬──────┬────────────┐
-        │ describe   ┆ float    ┆ int      ┆ bool  ┆ str  ┆ str2 ┆ date       │
-        │ ---        ┆ ---      ┆ ---      ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
-        │ str        ┆ f64      ┆ f64      ┆ str   ┆ str  ┆ str  ┆ str        │
-        ╞════════════╪══════════╪══════════╪═══════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3     ┆ 2    ┆ 2    ┆ 3          │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0     ┆ 1    ┆ 1    ┆ 0          │
-        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ null       │
-        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null       │
-        │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01 │
-        └────────────┴──────────┴──────────┴───────┴──────┴──────┴────────────┘
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
+        │ 25%        ┆ 2.8      ┆ 40.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 50%        ┆ 2.8      ┆ 50.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 75%        ┆ 3.0      ┆ 50.0     ┆ null     ┆ null ┆ 2022-12-31 ┆ 23:15:10 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
+
+        Customize which percentiles are displayed, applying linear interpolation:
+
+        >>> df.describe(
+        ...     percentiles=[0.1, 0.3, 0.5, 0.7, 0.9],
+        ...     interpolation="linear",
+        ... )
+        shape: (11, 7)
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
+        │ 10%        ┆ 1.36     ┆ 41.0     ┆ null     ┆ null ┆ 2020-04-20 ┆ 11:13:34 │
+        │ 30%        ┆ 2.08     ┆ 43.0     ┆ null     ┆ null ┆ 2020-11-26 ┆ 12:59:42 │
+        │ 50%        ┆ 2.8      ┆ 45.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 70%        ┆ 2.88     ┆ 47.0     ┆ null     ┆ null ┆ 2022-02-07 ┆ 18:09:34 │
+        │ 90%        ┆ 2.96     ┆ 49.0     ┆ null     ┆ null ┆ 2022-09-13 ┆ 21:33:18 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
         """
         if not self.columns:
             msg = "cannot describe a DataFrame without any columns"
             raise TypeError(msg)
 
-        # Determine which columns should get std/mean/percentile statistics
-        stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
-
-        # Determine metrics and optional/additional percentiles
+        # create list of metrics
         metrics = ["count", "null_count", "mean", "std", "min"]
-        percentile_exprs = []
-
-        percentiles = parse_percentiles(percentiles)
-        for p in percentiles:
-            for c in self.columns:
-                expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
-                expr = expr.alias(f"{p}:{c}")
-                percentile_exprs.append(expr)
-            metrics.append(f"{p * 100:g}%")
+        if quantiles := parse_percentiles(percentiles):
+            metrics.extend(f"{q * 100:g}%" for q in quantiles)
         metrics.append("max")
 
-        mean_exprs = [
-            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
-            for c in self.columns
-        ]
-        std_exprs = [
-            (F.col(c).std() if c in stat_cols else F.lit(None)).alias(f"std:{c}")
-            for c in self.columns
-        ]
+        @lru_cache
+        def skip_minmax(dt: PolarsDataType) -> bool:
+            return dt.is_nested() or dt in (Object, Null, Unknown, Categorical, Enum)
 
-        minmax_cols = {
-            c
-            for c, dt in self.schema.items()
-            if not dt.is_nested()
-            and dt not in (Object, Null, Unknown, Categorical, Enum)
-        }
-        min_exprs = [
-            (F.col(c).min() if c in minmax_cols else F.lit(None)).alias(f"min:{c}")
-            for c in self.columns
-        ]
-        max_exprs = [
-            (F.col(c).max() if c in minmax_cols else F.lit(None)).alias(f"max:{c}")
-            for c in self.columns
-        ]
+        # determine which columns get std/mean/percentile stats
+        has_numeric_result, sort_cols = set(), set()
+        metric_exprs = []
+        null = F.lit(None)
 
-        # If more than one quantile is requested,
-        # sort numerical columns to make them O(1).
-        # TODO: Should be removed once Polars supports
-        # getting multiples quantiles at once.
-        sort_exprs = [
-            (F.col(c).sort() if len(percentiles) > 1 and c in stat_cols else F.col(c))
-            for c in self.columns
-        ]
-        # Calculate metrics in parallel
-        df_metrics = self.select(*sort_exprs).select(
-            F.all().count().name.prefix("count:"),
-            F.all().null_count().name.prefix("null_count:"),
-            *mean_exprs,
-            *std_exprs,
-            *min_exprs,
-            *percentile_exprs,
-            *max_exprs,
+        for c, dt in self.schema.items():
+            is_numeric = dt.is_numeric()
+            is_temporal = not is_numeric and dt.is_temporal()
+
+            # counts
+            count_exprs = [
+                F.col(c).count().name.prefix("count:"),
+                F.col(c).null_count().name.prefix("null_count:"),
+            ]
+            metric_exprs.extend(count_exprs)
+
+            # mean
+            if is_temporal:
+                mean_expr = F.col(c).to_physical().mean().cast(dt)
+            else:
+                mean_expr = F.col(c).mean() if is_numeric or dt == Boolean else null
+            metric_exprs.append(mean_expr.alias(f"mean:{c}"))
+
+            # standard deviation
+            expr_std = F.col(c).std() if is_numeric else null
+            metric_exprs.append(expr_std.alias(f"std:{c}"))
+
+            # min
+            min_expr = F.col(c).min() if not skip_minmax(dt) else null
+            metric_exprs.append(min_expr.alias(f"min:{c}"))
+
+            # percentiles
+            for p in quantiles:
+                if is_numeric or is_temporal:
+                    pct_expr = (
+                        F.col(c).to_physical().quantile(p, interpolation).cast(dt)
+                        if is_temporal
+                        else F.col(c).quantile(p, interpolation)
+                    )
+                    sort_cols.add(c)
+                else:
+                    pct_expr = null
+                metric_exprs.append(pct_expr.alias(f"{p}:{c}"))
+
+            # max
+            metric_exprs.append(
+                (F.col(c).max() if not skip_minmax(dt) else null).alias(f"max:{c}")
+            )
+
+            if is_numeric or dt.is_nested() or dt in (Null, Boolean):
+                has_numeric_result.add(c)
+
+        # if more than one quantile requested, sort relevant columns to make them O(1)
+        # TODO: remove once we have engine support for retrieving multiples quantiles
+        lf = (
+            self.lazy().with_columns(F.col(c).sort() for c in sort_cols)
+            if sort_cols
+            else self.lazy()
         )
 
-        # Reshape wide result
-        described = [
-            df_metrics.row(0)[(n * self.width) : (n + 1) * self.width]
-            for n in range(len(metrics))
-        ]
+        # calculate metrics in parallel
+        df_metrics = lf.select(*metric_exprs).collect()
 
-        # Cast by column type (numeric/bool -> float), (other -> string)
-        summary = dict(zip(self.columns, list(zip(*described))))
+        # reshape wide result
+        n_metrics = len(metrics)
+        column_metrics = [
+            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
+            for n in range(self.width)
+        ]
+        summary = dict(zip(self.columns, column_metrics))
+
+        # cast by column type (numeric/bool -> float), (other -> string)
         for c in self.columns:
             summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
-                else (float(v) if c in stat_cols else str(v))
+                else (float(v) if (c in has_numeric_result) else str(v))
                 for v in summary[c]
             ]
 
-        # Return results as a DataFrame
+        # return results as a DataFrame
         df_summary = self._from_dict(summary)
-        df_summary.insert_column(0, pl.Series("describe", metrics))
+        df_summary.insert_column(0, pl.Series("statistic", metrics))
         return df_summary
 
     def get_column_index(self, name: str) -> int:
