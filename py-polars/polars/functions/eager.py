@@ -150,6 +150,11 @@ def concat(
             ),
             key=lambda k: key.get(k, 0),
         )
+        # we require at least one key column for 'align'
+        if not common_cols:
+            msg = "'align' strategy requires at least one common column"
+            raise ValueError(msg)
+
         # align the frame data using an outer join with no suffix-resolution
         # (so we raise an error in case of column collision, like "horizontal")
         lf: LazyFrame = reduce(

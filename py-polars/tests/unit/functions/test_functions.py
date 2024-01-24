@@ -30,6 +30,19 @@ def test_concat_align() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_concat_align_no_common_cols() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
+    df2 = pl.DataFrame({"c": [3, 4], "d": [3, 4]})
+
+    with pytest.raises(
+        ValueError, match="'align' strategy requires at least one common column"
+    ):
+        pl.concat((df1, df2), how="align")
+
+
+data2 = pl.DataFrame({"field3": [3, 4], "field4": ["C", "D"]})
+
+
 @pytest.mark.parametrize(
     ("a", "b", "c", "strategy"),
     [
