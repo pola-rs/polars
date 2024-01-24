@@ -1,17 +1,16 @@
 # https://www.mkdocs.org/user-guide/configuration/
 
 # Project information
-site_name: Polars
-site_url: https://docs.pola.rs
+site_name: Polars User Guide
+site_url: https://docs.pola.rs/
 repo_url: https://github.com/pola-rs/polars
 repo_name: pola-rs/polars
 
 # Documentation layout
 nav:
-  - Home: index.md
-
-  - User guide:
-    - user-guide/index.md
+  - User Guide:
+    - index.md
+    - user-guide/getting-started.md
     - user-guide/installation.md
     - Basics:
       - user-guide/basics/index.md
