@@ -627,6 +627,7 @@ impl SQLContext {
         let tbl_fn = name.0.first().unwrap().value.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
+        #[allow(clippy::useless_asref)]
         let tbl_name = alias
             .as_ref()
             .map(|a| a.name.value.clone())

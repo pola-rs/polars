@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;
-use crate::array::binview::ViewType;
+use crate::array::binview::{View, ViewType};
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
 use crate::ffi;
@@ -60,7 +60,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         let data_type = array.data_type().clone();
 
         let validity = unsafe { array.validity() }?;
-        let views = unsafe { array.buffer::<u128>(1) }?;
+        let views = unsafe { array.buffer::<View>(1) }?;
 
         // 2 - validity + views
         let n_buffers = array.n_buffers();

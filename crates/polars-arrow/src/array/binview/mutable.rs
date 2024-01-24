@@ -8,17 +8,18 @@ use polars_utils::slice::GetSaferUnchecked;
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
-use crate::array::{Array, MutableArray};
+use crate::array::{Array, MutableArray, View};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
+use crate::types::NativeType;
 
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 
 pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
-    pub(super) views: Vec<u128>,
+    pub(super) views: Vec<View>,
     pub(super) completed_buffers: Vec<Buffer<u8>>,
     pub(super) in_progress_buffer: Vec<u8>,
     pub(super) validity: Option<MutableBitmap>,
@@ -89,12 +90,12 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     #[inline]
-    pub fn views_mut(&mut self) -> &mut Vec<u128> {
+    pub fn views_mut(&mut self) -> &mut Vec<View> {
         &mut self.views
     }
 
     #[inline]
-    pub fn views(&self) -> &[u128] {
+    pub fn views(&self) -> &[View] {
         &self.views
     }
 
@@ -130,19 +131,17 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// - caller must allocate enough capacity
     /// - caller must ensure the view and buffers match.
     #[inline]
-    pub unsafe fn push_view(&mut self, v: u128, buffers: &[(*const u8, usize)]) {
-        let len = v as u32;
+    pub unsafe fn push_view(&mut self, v: View, buffers: &[(*const u8, usize)]) {
+        let len = v.length;
         self.total_bytes_len += len as usize;
         if len <= 12 {
             debug_assert!(self.views.capacity() > self.views.len());
             self.views.push_unchecked(v)
         } else {
             self.total_buffer_len += len as usize;
-            let buffer_idx = (v >> 64) as u32;
-            let offset = (v >> 96) as u32;
-            let (data_ptr, data_len) = *buffers.get_unchecked_release(buffer_idx as usize);
+            let (data_ptr, data_len) = *buffers.get_unchecked_release(v.buffer_idx as usize);
             let data = std::slice::from_raw_parts(data_ptr, data_len);
-            let offset = offset as usize;
+            let offset = v.offset as usize;
             let bytes = data.get_unchecked_release(offset..offset + len as usize);
             let t = T::from_bytes_unchecked(bytes);
             self.push_value_ignore_validity(t)
@@ -180,7 +179,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
             payload[12..16].copy_from_slice(&offset.to_le_bytes());
         }
-        let value = u128::from_le_bytes(payload);
+        let value = View::from_le_bytes(payload);
         self.views.push(value);
     }
 
@@ -200,7 +199,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     pub fn push_null(&mut self) {
-        self.views.push(0);
+        self.views.push(View::default());
         match &mut self.validity {
             Some(validity) => validity.push(false),
             None => self.init_validity(true),
@@ -211,7 +210,8 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         if self.validity.is_none() && additional > 0 {
             self.init_validity(false);
         }
-        self.views.extend(std::iter::repeat(0).take(additional));
+        self.views
+            .extend(std::iter::repeat(View::default()).take(additional));
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
@@ -234,7 +234,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
                 self.push_value_ignore_validity(v);
                 self.views.pop().unwrap()
             })
-            .unwrap_or(0);
+            .unwrap_or_default();
         self.views
             .extend(std::iter::repeat(view_value).take(additional));
     }
@@ -326,7 +326,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
         let v = *self.views.get_unchecked(i);
-        let len = v as u32;
+        let len = v.length;
 
         // view layout:
         // length: 4 bytes
@@ -341,8 +341,8 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
-            let buffer_idx = ((v >> 64) as u32) as usize;
-            let offset = (v >> 96) as u32;
+            let buffer_idx = v.buffer_idx as usize;
+            let offset = v.offset;
 
             let data = if buffer_idx == self.completed_buffers.len() {
                 self.in_progress_buffer.as_slice()
