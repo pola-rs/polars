@@ -8,6 +8,7 @@ use std::ops::Deref;
 use crate::ffi::InternalArrowArray;
 
 pub(crate) enum BytesAllocator {
+    #[allow(dead_code)]
     InternalArrowArray(InternalArrowArray),
 
     #[cfg(feature = "arrow_rs")]

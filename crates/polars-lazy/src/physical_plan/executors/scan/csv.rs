@@ -53,6 +53,7 @@ impl CsvExec {
 
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        #[allow(clippy::useless_asref)]
         let finger_print = FileFingerPrint {
             paths: Arc::new([self.path.clone()]),
             predicate: self
