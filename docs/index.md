@@ -1,5 +1,3 @@
-# Overview
-
 ![logo](https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg)
 
 <h1 style="text-align:center">Blazingly Fast DataFrame Library </h1>
