@@ -40,12 +40,15 @@ pub(crate) fn deserialize_decimal(
     precision: Option<u8>,
     scale: u8,
 ) -> Option<i128> {
-    // While parse_integer_checked will parse negative numbers, we want to handle
-    // the negative sign ourselves, and so check for it initially, then handle it
+    // While parse_integer_checked will parse positive/negative numbers, we want to
+    // handle the sign ourselves, and so check for it initially, then handle it
     // at the end.
-    let negative = bytes.first() == Some(&b'-');
-    if negative {
-        bytes = &bytes[1..];
+    let negative = match bytes.first() {
+        Some(s @ (b'+' | b'-')) => {
+            bytes = &bytes[1..];
+            *s == b'-'
+        },
+        _ => false,
     };
     let (lhs, rhs) = split_decimal_bytes(bytes);
     let precision = precision.unwrap_or(38);
@@ -72,11 +75,11 @@ pub(crate) fn deserialize_decimal(
 
                 if (lhs_s + scale > precision)
                     || (scale_adjust < 0)
-                    || (rhs_b.first() == Some(&b'-'))
+                    || matches!(rhs_b.first(), Some(b'+' | b'-'))
                 {
                     // LHS significant figures and scale exceed precision,
                     // RHS significant figures (all digits in RHS) exceed scale, or
-                    // RHS starts with a '-' and the number is not well-formed.
+                    // RHS starts with a '+'/'-' sign and the number is not well-formed.
                     None
                 } else if (rhs_b.len() as u8) == scale {
                     // RHS has exactly scale significant digits, so no adjustment
@@ -233,6 +236,12 @@ mod test {
         assert_eq!(
             deserialize_decimal(val.as_bytes(), precision, scale),
             Some(14390)
+        );
+
+        let val = "+000000.5";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(50)
         );
 
         let val = "-0.5";
