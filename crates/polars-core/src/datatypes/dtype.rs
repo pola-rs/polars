@@ -206,6 +206,21 @@ impl DataType {
         matches!(self, DataType::Binary)
     }
 
+    pub fn contains_views(&self) -> bool {
+        use DataType::*;
+        match self {
+            Binary | String => true,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) => true,
+            List(inner) => inner.contains_views(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_views(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_views()),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
