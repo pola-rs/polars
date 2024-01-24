@@ -378,10 +378,16 @@ impl SQLExprVisitor<'_> {
     /// e.g. +column or -column
     fn visit_unary_op(&mut self, op: &UnaryOperator, expr: &SQLExpr) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
-        Ok(match op {
-            UnaryOperator::Plus => lit(0) + expr,
-            UnaryOperator::Minus => lit(0) - expr,
-            UnaryOperator::Not => expr.not(),
+        Ok(match (op, expr.clone()) {
+            // simplify the parse tree by special-casing common unary +/- ops
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int64(n))) => lit(n),
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Float64(n))) => lit(n),
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Int64(n))) => lit(-n),
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Float64(n))) => lit(-n),
+            // general case
+            (UnaryOperator::Plus, _) => lit(0) + expr,
+            (UnaryOperator::Minus, _) => lit(0) - expr,
+            (UnaryOperator::Not, _) => expr.not(),
             other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
         })
     }
@@ -609,27 +615,20 @@ impl SQLExprVisitor<'_> {
     /// Visit a SQL `ARRAY_AGG` expression.
     fn visit_arr_agg(&mut self, expr: &ArrayAgg) -> PolarsResult<Expr> {
         let mut base = self.visit_expr(&expr.expr)?;
-
         if let Some(order_by) = expr.order_by.as_ref() {
             let (order_by, descending) = self.visit_order_by(order_by)?;
             base = base.sort_by(order_by, descending);
         }
-
         if let Some(limit) = &expr.limit {
             let limit = match self.visit_expr(limit)? {
-                Expr::Literal(LiteralValue::UInt32(n)) => n as usize,
-                Expr::Literal(LiteralValue::UInt64(n)) => n as usize,
-                Expr::Literal(LiteralValue::Int32(n)) => n as usize,
                 Expr::Literal(LiteralValue::Int64(n)) => n as usize,
                 _ => polars_bail!(ComputeError: "limit in ARRAY_AGG must be a positive integer"),
             };
             base = base.head(Some(limit));
         }
-
         if expr.distinct {
             base = base.unique_stable();
         }
-
         polars_ensure!(
             !expr.within_group,
             ComputeError: "ARRAY_AGG WITHIN GROUP is not yet supported"
