@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import SchemaError
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -36,7 +36,8 @@ def test_concat_align_no_common_cols() -> None:
     df2 = pl.DataFrame({"c": [3, 4], "d": [3, 4]})
 
     with pytest.raises(
-        SchemaError, match="'align' strategy requires at least one common column"
+        InvalidOperationError,
+        match="'align' strategy requires at least one common column",
     ):
         pl.concat((df1, df2), how="align")
 
