@@ -573,6 +573,17 @@ def test_empty_line_with_multiple_columns() -> None:
     assert_frame_equal(df, expected)
 
 
+def test_preserve_whitespace_at_line_start() -> None:
+    df = pl.read_csv(
+        b"a\n  b  \n    c\nd",
+        new_columns=["A"],
+        has_header=False,
+        use_pyarrow=False,
+    )
+    expected = pl.DataFrame({"A": ["a", "  b  ", "    c", "d"]})
+    assert_frame_equal(df, expected)
+
+
 def test_csv_multi_char_comment() -> None:
     csv = textwrap.dedent(
         """\
