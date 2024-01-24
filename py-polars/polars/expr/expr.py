@@ -56,6 +56,7 @@ from polars.utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars.utils.meta import threadpool_size
+from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
     no_default,
     sphinx_accessor,
@@ -4152,7 +4153,7 @@ class Expr:
         pass_name
             Pass the Series name to the custom function (this is more expensive).
         strategy : {'thread_local', 'threading'}
-            This functionality is considered experimental and may be removed/changed.
+            The threading strategy to use.
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with
@@ -4160,6 +4161,15 @@ class Expr:
               your code if the amount of work per element is significant
               and the python function releases the GIL (e.g. via calling
               a c function)
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Warnings
+        --------
+        If `return_dtype` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the user's query.
 
         Notes
         -----
@@ -4173,11 +4183,6 @@ class Expr:
 
         * Window function application using `over` is considered a GroupBy context
           here, so `map_elements` can be used to map functions over window groups.
-
-        Warnings
-        --------
-        If `return_dtype` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
 
         Examples
         --------
@@ -4287,6 +4292,11 @@ class Expr:
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
         ... ).sort("key")  # doctest: +IGNORE_RESULT
         """
+        if strategy == "threading":
+            issue_unstable_warning(
+                "The 'threading' strategy for `map_elements` is considered unstable."
+            )
+
         # input x: Series of type list containing the group values
         from polars.utils.udfs import warn_on_inefficient_map
 
@@ -5638,6 +5648,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
+    @unstable()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
@@ -5651,6 +5662,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling min (moving min) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5720,12 +5735,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -5854,6 +5863,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_max(
         self,
         window_size: int | timedelta | str,
@@ -5867,6 +5877,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling max (moving max) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5932,12 +5946,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6095,6 +6103,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_mean(
         self,
         window_size: int | timedelta | str,
@@ -6108,6 +6117,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling mean (moving mean) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -6177,12 +6190,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6346,6 +6353,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_sum(
         self,
         window_size: int | timedelta | str,
@@ -6359,6 +6367,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling sum (moving sum) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -6424,12 +6436,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6587,6 +6593,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_std(
         self,
         window_size: int | timedelta | str,
@@ -6601,6 +6608,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling standard deviation.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -6668,12 +6679,6 @@ class Expr:
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6838,6 +6843,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_var(
         self,
         window_size: int | timedelta | str,
@@ -6852,6 +6858,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling variance.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -6919,12 +6929,6 @@ class Expr:
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -7089,6 +7093,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_median(
         self,
         window_size: int | timedelta | str,
@@ -7102,6 +7107,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling median.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -7167,12 +7176,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -7250,6 +7253,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_quantile(
         self,
         quantile: float,
@@ -7265,6 +7269,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling quantile.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -7334,12 +7342,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -7453,9 +7455,14 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         The window at a given row includes the row itself and the
         `window_size - 1` elements before it.
@@ -7490,6 +7497,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
 
+    @unstable()
     def rolling_map(
         self,
         function: Callable[[Series], Any],
@@ -7503,8 +7511,8 @@ class Expr:
         Compute a custom rolling window function.
 
         .. warning::
-            Computing custom functions is extremely slow. Use specialized rolling
-            functions such as :func:`Expr.rolling_sum` if at all possible.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -7524,6 +7532,11 @@ class Expr:
             - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window.
+
+        Warnings
+        --------
+        Computing custom functions is extremely slow. Use specialized rolling
+        functions such as :func:`Expr.rolling_sum` if at all possible.
 
         Examples
         --------
@@ -8974,11 +8987,16 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
+    @unstable()
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -8993,9 +9011,6 @@ class Expr:
 
         Warnings
         --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
-
         This can be really slow as it can have `O(n^2)` complexity. Don't use this
         for operations that visit all elements.
 
@@ -9091,6 +9106,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
+    @unstable()
     def hist(
         self,
         bins: IntoExpr | None = None,
@@ -9101,6 +9117,10 @@ class Expr:
     ) -> Self:
         """
         Bin values into buckets and count their occurrences.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -9118,11 +9138,6 @@ class Expr:
         Returns
         -------
         DataFrame
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Examples
         --------

@@ -106,6 +106,7 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
     _prepare_row_index_args,
     _process_null_values,
@@ -3272,10 +3273,12 @@ class DataFrame:
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
         future
-            WARNING: this argument is unstable and will be removed without it being
-            considered a breaking change.
-            Setting this to `True` will write polars' internal data-structures that
+            Setting this to `True` will write Polars' internal data structures that
             might not be available by other Arrow implementations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -3299,6 +3302,11 @@ class DataFrame:
 
         if compression is None:
             compression = "uncompressed"
+
+        if future:
+            issue_unstable_warning(
+                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
+            )
 
         self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
@@ -7549,6 +7557,7 @@ class DataFrame:
             self._df.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @unstable()
     def unstack(
         self,
         step: int,
@@ -7559,12 +7568,11 @@ class DataFrame:
         """
         Unstack a long table to a wide form without doing an aggregation.
 
-        This can be much faster than a pivot, because it can skip the grouping phase.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
-        Warnings
-        --------
-        This functionality is experimental and may be subject to changes
-        without it being considered a breaking change.
+        This can be much faster than a pivot, because it can skip the grouping phase.
 
         Parameters
         ----------
@@ -10389,6 +10397,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @unstable()
     def update(
         self,
         other: DataFrame,
@@ -10403,8 +10412,8 @@ class DataFrame:
         Update the values in this `DataFrame` with the values in `other`.
 
         .. warning::
-            This functionality is experimental and may change without it being
-            considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         By default, null values in the right frame are ignored. Use
         `include_nulls=False` to overwrite values in this frame with

@@ -17,6 +17,7 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import unstable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -1709,6 +1710,7 @@ def collect_all_async(
     ...
 
 
+@unstable()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -1725,6 +1727,10 @@ def collect_all_async(
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Collects into a list of DataFrame (like :func:`polars.collect_all`),
     but instead of returning them directly, they are scheduled to be collected
@@ -1758,20 +1764,15 @@ def collect_all_async(
     streaming
         Run parts of the query in a streaming fashion (this is in an alpha state)
 
+    See Also
+    --------
+    polars.collect_all : Collect multiple LazyFrames at the same time.
+    LazyFrame.collect_async : To collect single frame.
+
     Notes
     -----
     In case of error `set_exception` is used on
     `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
-
-    Warnings
-    --------
-    This functionality is experimental and may change without it being considered a
-    breaking change.
-
-    See Also
-    --------
-    polars.collect_all : Collect multiple LazyFrames at the same time.
-    LazyFrame.collect_async: To collect single frame.
 
     Returns
     -------

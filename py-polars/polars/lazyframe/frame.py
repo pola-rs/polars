@@ -70,6 +70,7 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import unstable
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_index_args,
@@ -1780,6 +1781,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect DataFrame asynchronously in thread pool.
 
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
         Collects into a DataFrame (like :func:`collect`), but instead of returning
         DataFrame directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
@@ -1814,11 +1819,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -----
         In case of error `set_exception` is used on
         `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         See Also
         --------
@@ -5736,6 +5736,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             [wrap_expr(e).set_sorted(descending=descending) for e in columns]
         )
 
+    @unstable()
     def update(
         self,
         other: LazyFrame,
@@ -5750,8 +5751,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Update the values in this `LazyFrame` with the non-null values in `other`.
 
         .. warning::
-            This functionality is experimental and may change without it being
-            considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------

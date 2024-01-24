@@ -99,6 +99,7 @@ from polars.utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars.utils.meta import get_index_type
+from polars.utils.unstable import unstable
 from polars.utils.various import (
     _is_generator,
     no_default,
@@ -2410,6 +2411,7 @@ class Series:
     ) -> Series | DataFrame:
         ...
 
+    @unstable()
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -2425,7 +2427,11 @@ class Series:
         """
         Bin continuous values into discrete categories based on their quantiles.
 
-        Parameters
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters.
         ----------
         quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
@@ -2471,11 +2477,6 @@ class Series:
         Series
             Series of data type :class:`Categorical` if `include_breaks` is set to
             `False` (default), otherwise a Series of data type :class:`Struct`.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         See Also
         --------
@@ -2653,6 +2654,7 @@ class Series:
         ]
         """
 
+    @unstable()
     def hist(
         self,
         bins: list[float] | None = None,
@@ -2663,6 +2665,10 @@ class Series:
     ) -> DataFrame:
         """
         Bin values into buckets and count their occurrences.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2680,11 +2686,6 @@ class Series:
         Returns
         -------
         DataFrame
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Examples
         --------
@@ -2820,11 +2821,16 @@ class Series:
             .item()
         )
 
+    @unstable()
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2839,9 +2845,6 @@ class Series:
 
         Warnings
         --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
-
         This can be really slow as it can have `O(n^2)` complexity. Don't use this
         for operations that visit all elements.
 
