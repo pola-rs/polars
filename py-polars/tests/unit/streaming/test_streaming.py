@@ -17,6 +17,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from polars.type_aliases import JoinStrategy
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 def test_streaming_categoricals_5921() -> None:
     with pl.StringCache():

@@ -9,6 +9,8 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 @pytest.mark.slow()
 def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:

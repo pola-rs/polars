@@ -8,7 +8,8 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-def test_df_describe() -> None:
+@pytest.mark.parametrize("lazy", [False, True])
+def test_df_describe(lazy: bool) -> None:
     df = pl.DataFrame(
         {
             "a": [1.0, 2.8, 3.0],
@@ -26,7 +27,10 @@ def test_df_describe() -> None:
         },
         schema_overrides={"e": pl.Categorical},
     )
-    result = df.describe()
+
+    frame: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+    result = frame.describe()
+
     expected = pl.DataFrame(
         {
             "statistic": [
@@ -179,12 +183,14 @@ def test_df_describe_empty_column() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_df_describe_empty() -> None:
-    df = pl.DataFrame()
+@pytest.mark.parametrize("lazy", [False, True])
+def test_df_describe_empty(lazy: bool) -> None:
+    frame: pl.DataFrame | pl.LazyFrame = pl.LazyFrame() if lazy else pl.DataFrame()
+    cls_name = "LazyFrame" if lazy else "DataFrame"
     with pytest.raises(
-        TypeError, match="cannot describe a DataFrame without any columns"
+        TypeError, match=f"cannot describe a {cls_name} that has no columns"
     ):
-        df.describe()
+        frame.describe()
 
 
 def test_df_describe_quantile_precision() -> None:

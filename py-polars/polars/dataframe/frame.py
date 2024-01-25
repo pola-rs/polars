@@ -6,7 +6,6 @@ import os
 import random
 from collections import OrderedDict, defaultdict
 from collections.abc import Sized
-from functools import lru_cache
 from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
 from pathlib import Path
@@ -39,17 +38,9 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
-    Categorical,
-    Date,
-    Datetime,
-    Duration,
-    Enum,
     Float64,
-    Null,
     Object,
     String,
-    Time,
-    Unknown,
     py_type_to_dtype,
 )
 from polars.dependencies import (
@@ -118,7 +109,6 @@ from polars.utils.various import (
     is_int_sequence,
     is_str_sequence,
     normalize_filepath,
-    parse_percentiles,
     parse_version,
     range_to_slice,
     scale_bytes,
@@ -4340,7 +4330,6 @@ class DataFrame:
         # determine column layout widths
         max_col_name = max((len(col_name) for col_name, _, _ in data))
         max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
-        max_col_values = 100 - max_col_name - max_col_dtype
 
         # print header
         output = StringIO()
@@ -4351,7 +4340,7 @@ class DataFrame:
             output.write(
                 f"$ {col_name:<{max_col_name}}"
                 f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str:<{min(len(val_str), max_col_values)}}\n"
+                f" {val_str}\n"
             )
 
         s = output.getvalue()
@@ -4366,7 +4355,7 @@ class DataFrame:
         percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
         *,
         interpolation: RollingInterpolationMethod = "nearest",
-    ) -> Self:
+    ) -> DataFrame:
         """
         Summary statistics for a DataFrame.
 
@@ -4387,6 +4376,8 @@ class DataFrame:
         --------
         We do not guarantee the output of `describe` to be stable. It will show
         statistics that we deem informative, and may be updated in the future.
+        Using `describe` programmatically (versus interactive exploration) is
+        not recommended for this reason.
 
         See Also
         --------
@@ -4452,111 +4443,12 @@ class DataFrame:
         └────────────┴──────────┴──────────┴──────────┴──────┴─────────────────────┴──────────┘
         """  # noqa: W505
         if not self.columns:
-            msg = "cannot describe a DataFrame without any columns"
+            msg = "cannot describe a DataFrame that has no columns"
             raise TypeError(msg)
 
-        # create list of metrics
-        metrics = ["count", "null_count", "mean", "std", "min"]
-        if quantiles := parse_percentiles(percentiles):
-            metrics.extend(f"{q * 100:g}%" for q in quantiles)
-        metrics.append("max")
-
-        @lru_cache
-        def skip_minmax(dt: PolarsDataType) -> bool:
-            return dt.is_nested() or dt in (Categorical, Enum, Null, Object, Unknown)
-
-        # determine which columns will produce std/mean/percentile/etc
-        # statistics in a single pass over the frame schema
-        has_numeric_result, sort_cols = set(), set()
-        metric_exprs: list[Expr] = []
-        null = F.lit(None)
-
-        for c, dtype in self.schema.items():
-            is_numeric = dtype.is_numeric()
-            is_temporal = not is_numeric and dtype.is_temporal()
-
-            # counts
-            count_exprs = [
-                F.col(c).count().name.prefix("count:"),
-                F.col(c).null_count().name.prefix("null_count:"),
-            ]
-            # mean
-            mean_expr = (
-                F.col(c).to_physical().mean().cast(dtype)
-                if dtype in (Duration, Time)
-                else (
-                    F.col(c).mean()
-                    if is_numeric or dtype in (Boolean, Date, Datetime)
-                    else null
-                )
-            )
-
-            # standard deviation, min, max
-            expr_std = F.col(c).std() if is_numeric else null
-            min_expr = F.col(c).min() if not skip_minmax(dtype) else null
-            max_expr = F.col(c).max() if not skip_minmax(dtype) else null
-
-            # percentiles
-            pct_exprs = []
-            for p in quantiles:
-                if is_numeric or is_temporal:
-                    pct_expr = (
-                        F.col(c).to_physical().quantile(p, interpolation).cast(dtype)
-                        if is_temporal
-                        else F.col(c).quantile(p, interpolation)
-                    )
-                    sort_cols.add(c)
-                else:
-                    pct_expr = null
-                pct_exprs.append(pct_expr.alias(f"{p}:{c}"))
-
-            if is_numeric or dtype.is_nested() or dtype in (Null, Boolean):
-                has_numeric_result.add(c)
-
-            # add column expressions (in end-state 'metrics' list order)
-            metric_exprs.extend(
-                [
-                    *count_exprs,
-                    mean_expr.alias(f"mean:{c}"),
-                    expr_std.alias(f"std:{c}"),
-                    min_expr.alias(f"min:{c}"),
-                    *pct_exprs,
-                    max_expr.alias(f"max:{c}"),
-                ]
-            )
-
-        # if more than one quantile requested, sort relevant columns to make them O(1)
-        # TODO: remove once we have engine support for retrieving multiples quantiles
-        lf = (
-            self.lazy().with_columns(F.col(c).sort() for c in sort_cols)
-            if sort_cols
-            else self.lazy()
+        return self.lazy().describe(
+            percentiles=percentiles, interpolation=interpolation
         )
-
-        # calculate metrics in parallel
-        df_metrics = lf.select(*metric_exprs).collect()
-
-        # reshape wide result
-        n_metrics = len(metrics)
-        column_metrics = [
-            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
-            for n in range(self.width)
-        ]
-        summary = dict(zip(self.columns, column_metrics))
-
-        # cast by column type (numeric/bool -> float), (other -> string)
-        for c in self.columns:
-            summary[c] = [  # type: ignore[assignment]
-                None
-                if (v is None or isinstance(v, dict))
-                else (float(v) if (c in has_numeric_result) else str(v))
-                for v in summary[c]
-            ]
-
-        # return results as a DataFrame
-        df_summary = self._from_dict(summary)
-        df_summary.insert_column(0, pl.Series("statistic", metrics))
-        return df_summary
 
     def get_column_index(self, name: str) -> int:
         """
