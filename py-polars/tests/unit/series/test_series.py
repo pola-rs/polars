@@ -75,16 +75,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series("a").dtype == pl.Null  # Null dtype used in case of no data
     assert pl.Series().dtype == pl.Null
     assert pl.Series([]).dtype == pl.Null
-    assert pl.Series(dtype_if_empty=pl.String).dtype == pl.String
-    assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
     assert (
         pl.Series([None, None, None]).dtype == pl.Null
     )  # f32 type used for list with only None
-    assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
-    # note: "== []" will be cast to empty Series with String dtype.
-    assert_series_equal(
-        pl.Series([], dtype_if_empty=pl.String) == [], pl.Series("", dtype=pl.Boolean)
-    )
     assert pl.Series(values=[True, False]).dtype == pl.Boolean
     assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
     assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.String
@@ -185,6 +178,21 @@ def test_init_inputs(monkeypatch: Any) -> None:
     monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
     with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
+
+
+def test_init_dtype_if_empty_deprecated() -> None:
+    with pytest.deprecated_call():
+        assert pl.Series(dtype_if_empty=pl.String).dtype == pl.String
+    with pytest.deprecated_call():
+        assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
+
+    with pytest.deprecated_call():
+        assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
+
+    # note: "== []" will be cast to empty Series with String dtype.
+    with pytest.deprecated_call():
+        s = pl.Series([], dtype_if_empty=pl.String) == []
+    assert_series_equal(s, pl.Series("", dtype=pl.Boolean))
 
 
 def test_init_structured_objects() -> None:
