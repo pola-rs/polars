@@ -4450,53 +4450,59 @@ class Series:
         """
         return self._s.to_arrow()
 
-    def to_pandas(  # noqa: D417
-        self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
+    def to_pandas(
+        self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any
     ) -> pd.Series[Any]:
         """
         Convert this Series to a pandas Series.
 
-        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
-        This operation clones data, unless `use_pyarrow_extension_array=True`.
+        This operation copies data if `use_pyarrow_extension_array` is not enabled.
 
         Parameters
         ----------
         use_pyarrow_extension_array
-            Further operations on this Pandas series, might trigger conversion to numpy.
-            Use PyArrow backed-extension array instead of numpy array for pandas
-            Series. This allows zero copy operations and preservation of nulls
-            values.
-            Further operations on this pandas Series, might trigger conversion
-            to NumPy arrays if that operation is not supported by pyarrow compute
-            functions.
-        kwargs
-            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+            Use a PyArrow-backed extension array instead of a NumPy array for the pandas
+            Series. This allows zero copy operations and preservation of null values.
+            Subsequent operations on the resulting pandas Series may trigger conversion
+            to NumPy if those operations are not supported by PyArrow compute functions.
+        **kwargs
+            Additional keyword arguments to be passed to
+            :meth:`pyarrow.Array.to_pandas`.
+
+        Returns
+        -------
+        :class:`pandas.Series`
+
+        Notes
+        -----
+        This operation requires that both :mod:`pandas` and :mod:`pyarrow` are
+        installed.
 
         Examples
         --------
-        >>> s1 = pl.Series("a", [1, 2, 3])
-        >>> s1.to_pandas()
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.to_pandas()
         0    1
         1    2
         2    3
         Name: a, dtype: int64
-        >>> s1.to_pandas(use_pyarrow_extension_array=True)  # doctest: +SKIP
-        0    1
-        1    2
-        2    3
-        Name: a, dtype: int64[pyarrow]
-        >>> s2 = pl.Series("b", [1, 2, None, 4])
-        >>> s2.to_pandas()
+
+        Null values are converted to `NaN`.
+
+        >>> s = pl.Series("b", [1, 2, None])
+        >>> s.to_pandas()
         0    1.0
         1    2.0
         2    NaN
-        3    4.0
         Name: b, dtype: float64
-        >>> s2.to_pandas(use_pyarrow_extension_array=True)  # doctest: +SKIP
+
+        Pass `use_pyarrow_extension_array=True` to get a pandas Series backed by a
+        PyArrow extension array. This will preserve null values.
+
+        >>> s.to_pandas(use_pyarrow_extension_array=True)
         0       1
         1       2
         2    <NA>
-        3       4
         Name: b, dtype: int64[pyarrow]
         """
         if use_pyarrow_extension_array:
@@ -4511,16 +4517,18 @@ class Series:
                     else ""
                 )
 
-        pd_series = (
-            self.to_arrow().to_pandas(
+        pa_arr = self.to_arrow()
+        if use_pyarrow_extension_array:
+            pd_series = pa_arr.to_pandas(
                 self_destruct=True,
                 split_blocks=True,
                 types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
                 **kwargs,
             )
-            if use_pyarrow_extension_array
-            else self.to_arrow().to_pandas(**kwargs)
-        )
+        else:
+            date_as_object = kwargs.pop("date_as_object", False)
+            pd_series = pa_arr.to_pandas(date_as_object=date_as_object, **kwargs)
+
         pd_series.name = self.name
         return pd_series
 

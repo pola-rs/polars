@@ -34,16 +34,15 @@ def test_to_pandas() -> None:
     )
 
     pd_out = df.to_pandas()
-    ns_datetimes = pa.__version__ < "13"
 
     pd_out_dtypes_expected = [
         np.dtype(np.uint8),
         np.dtype(np.float64),
         np.dtype(np.float64),
-        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'ms'}]"),
+        np.dtype("datetime64[ms]"),
         np.dtype(np.object_),
         np.dtype(np.object_),
-        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'us'}]"),
+        np.dtype("datetime64[us]"),
         pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
         pd.CategoricalDtype(categories=["e", "f"], ordered=False),
     ]
@@ -53,24 +52,20 @@ def test_to_pandas() -> None:
     pd_out = df.to_pandas(date_as_object=True)
     assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
 
-    try:
-        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-        pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
-        pd_pa_dtypes_names_expected = [
-            "uint8[pyarrow]",
-            "int64[pyarrow]",
-            "double[pyarrow]",
-            "date32[day][pyarrow]",
-            "large_string[pyarrow]",
-            "large_string[pyarrow]",
-            "timestamp[us][pyarrow]",
-            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
-            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
-        ]
-        assert pd_pa_dtypes_names == pd_pa_dtypes_names_expected
-    except ModuleNotFoundError:
-        # Skip test if Pandas 1.5.x is not installed.
-        pass
+    pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+    pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
+    pd_pa_dtypes_names_expected = [
+        "uint8[pyarrow]",
+        "int64[pyarrow]",
+        "double[pyarrow]",
+        "date32[day][pyarrow]",
+        "large_string[pyarrow]",
+        "large_string[pyarrow]",
+        "timestamp[us][pyarrow]",
+        "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+        "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+    ]
+    assert pd_pa_dtypes_names == pd_pa_dtypes_names_expected
 
 
 def test_cat_to_pandas() -> None:
@@ -114,3 +109,29 @@ def test_from_empty_pandas_with_dtypes() -> None:
 
 def test_to_pandas_series() -> None:
     assert (pl.Series("a", [1, 2, 3]).to_pandas() == pd.Series([1, 2, 3])).all()
+
+
+def test_to_pandas_date() -> None:
+    data = [date(1990, 1, 1), date(2024, 12, 31)]
+    s = pl.Series("a", data)
+
+    result_series = s.to_pandas()
+    expected_series = pd.Series(data, dtype="datetime64[ms]", name="a")
+    pd.testing.assert_series_equal(result_series, expected_series)
+
+    result_df = s.to_frame().to_pandas()
+    expected_df = expected_series.to_frame()
+    pd.testing.assert_frame_equal(result_df, expected_df)
+
+
+def test_to_pandas_datetime() -> None:
+    data = [datetime(1990, 1, 1, 0, 0, 0), datetime(2024, 12, 31, 23, 59, 59)]
+    s = pl.Series("a", data)
+
+    result_series = s.to_pandas()
+    expected_series = pd.Series(data, dtype="datetime64[us]", name="a")
+    pd.testing.assert_series_equal(result_series, expected_series)
+
+    result_df = s.to_frame().to_pandas()
+    expected_df = expected_series.to_frame()
+    pd.testing.assert_frame_equal(result_df, expected_df)
