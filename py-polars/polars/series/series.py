@@ -77,6 +77,7 @@ from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.slice import PolarsSlice
 from polars.utils._construction import (
     arrow_to_pyseries,
+    dataframe_to_pyseries,
     iterable_to_pyseries,
     numpy_to_idxs,
     numpy_to_pyseries,
@@ -303,12 +304,7 @@ class Series:
             )
 
         elif _is_generator(values):
-            self._s = iterable_to_pyseries(
-                name,
-                values,
-                dtype=dtype,
-                strict=strict,
-            )
+            self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)  # type: ignore[arg-type]
 
         elif values is None:
             self._s = sequence_to_pyseries(name, [], dtype=dtype)
@@ -342,18 +338,14 @@ class Series:
             self._s = pandas_to_pyseries(name, values)
 
         elif isinstance(values, Series):
-            name = values.name if original_name is None else name
-            self._s = series_to_pyseries(name, values, dtype=dtype, strict=strict)
+            self._s = series_to_pyseries(
+                original_name, values, dtype=dtype, strict=strict
+            )
 
         elif isinstance(values, pl.DataFrame):
-            to_struct = values.width > 1
-            name = (
-                values.columns[0] if (original_name is None and not to_struct) else name
+            self._s = dataframe_to_pyseries(
+                original_name, values, dtype=dtype, strict=strict
             )
-            s = values.to_struct(name) if to_struct else values.to_series().rename(name)
-            if dtype is not None and dtype != s.dtype:
-                s = s.cast(dtype)
-            self._s = s._s
 
         else:
             msg = (

@@ -165,18 +165,44 @@ def nt_unpack(obj: Any) -> Any:
 
 
 def series_to_pyseries(
-    name: str,
+    name: str | None,
     values: Series,
     *,
     dtype: PolarsDataType | None = None,
     strict: bool = True,
 ) -> PySeries:
     """Construct a new PySeries from a Polars Series."""
-    py_s = values._s.clone()
-    if dtype is not None and dtype != py_s.dtype():
-        py_s = py_s.cast(dtype, strict=strict)
-    py_s.rename(name)
-    return py_s
+    s = values.clone()
+    if dtype is not None and dtype != s.dtype:
+        s = s.cast(dtype, strict=strict)
+    if name is not None:
+        s = s.alias(name)
+    return s._s
+
+
+def dataframe_to_pyseries(
+    name: str | None,
+    values: DataFrame,
+    *,
+    dtype: PolarsDataType | None = None,
+    strict: bool = True,
+) -> PySeries:
+    """Construct a new PySeries from a Polars DataFrame."""
+    if values.width > 1:
+        name = name or ""
+        s = values.to_struct(name)
+    elif values.width == 1:
+        s = values.to_series()
+        if name is not None:
+            s = s.alias(name)
+    else:
+        msg = "cannot initialize Series from DataFrame without any columns"
+        raise TypeError(msg)
+
+    if dtype is not None and dtype != s.dtype:
+        s = s.cast(dtype, strict=strict)
+
+    return s._s
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> PySeries:
