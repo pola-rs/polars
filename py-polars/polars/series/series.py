@@ -182,10 +182,14 @@ class Series:
     nan_to_null
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
-    dtype_if_empty=dtype_if_empty : DataType, default None
-        If no dtype is specified and values contains None, an empty list, or a
-        list with only None values, set the Polars dtype of the Series data.
-        If not specified, Float32 is used in those cases.
+    dtype_if_empty : DataType, default Null
+        Data type of the Series if `values` contains no non-null data.
+
+        .. deprecated:: 0.20.6
+            The data type for empty Series will always be Null.
+            To preserve behavior, check if the resulting Series has data type Null and
+            cast to the desired data type.
+            This parameter will be removed in the next breaking release.
 
     Examples
     --------
