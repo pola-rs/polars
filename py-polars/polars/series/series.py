@@ -182,10 +182,14 @@ class Series:
     nan_to_null
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
-    dtype_if_empty=dtype_if_empty : DataType, default None
-        If no dtype is specified and values contains None, an empty list, or a
-        list with only None values, set the Polars dtype of the Series data.
-        If not specified, Float32 is used in those cases.
+    dtype_if_empty : DataType, default Null
+        Data type of the Series if `values` contains no non-null data.
+
+        .. deprecated:: 0.20.6
+            The data type for empty Series will always be Null.
+            To preserve behavior, check if the resulting Series has data type Null and
+            cast to the desired data type.
+            This parameter will be removed in the next breaking release.
 
     Examples
     --------
@@ -255,6 +259,15 @@ class Series:
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType = Null,
     ):
+        if dtype_if_empty != Null:
+            issue_deprecation_warning(
+                "The `dtype_if_empty` parameter for the Series constructor is deprecated."
+                " The data type for empty Series will always be Null."
+                " To preserve behavior, check if the resulting Series has data type Null and cast to the desired data type."
+                " This parameter will be removed in the next breaking release.",
+                version="0.20.6",
+            )
+
         # If 'Unknown' treat as None to attempt inference
         if dtype == Unknown:
             dtype = None
@@ -712,7 +725,9 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             if self.dtype in (List, Array):
                 other = [other]
-            other = Series("", other, dtype_if_empty=self.dtype)
+            other = Series("", other)
+            if other.dtype == Null:
+                other.cast(self.dtype)
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
