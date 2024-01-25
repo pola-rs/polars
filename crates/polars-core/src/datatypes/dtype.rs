@@ -505,6 +505,8 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
             Ok(must_cast)
         },
         (DataType::Null, DataType::Null) => Ok(false),
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
         // Other way around we don't allow because we keep left dtype as is.
         // We don't go to supertype, and we certainly don't want to cast self to null type.
         (_, DataType::Null) => Ok(true),

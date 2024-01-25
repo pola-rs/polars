@@ -994,6 +994,30 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-decimal")]
+    fn series_append_decimal() {
+        let s1 = Series::new("a", &[1.1, 2.3])
+            .cast(&DataType::Decimal(None, Some(2)))
+            .unwrap();
+        let s2 = Series::new("b", &[3])
+            .cast(&DataType::Decimal(None, Some(0)))
+            .unwrap();
+
+        {
+            let mut s1 = s1.clone();
+            s1.append(&s2).unwrap();
+            assert_eq!(s1.len(), 3);
+            assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 2));
+        }
+
+        {
+            let mut s2 = s2.clone();
+            s2.append(&s1).unwrap();
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0))
+        }
+    }
+
+    #[test]
     fn series_slice_works() {
         let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
 
