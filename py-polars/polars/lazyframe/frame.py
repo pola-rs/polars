@@ -955,18 +955,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
             Interpolation method used when calculating percentiles.
 
+        Returns
+        -------
+        DataFrame
+
         Notes
         -----
-        * The median is included by default as the 50% percentile.
-        * This method does not maintain the laziness of the frame, and will
-          `collect` the final result, returning a DataFrame.
+        The median is included by default as the 50% percentile.
 
         Warnings
         --------
-        We do not guarantee the output of `describe` to be stable. It will show
-        statistics that we deem informative, and may be updated in the future.
-        Using `describe` programmatically (versus interactive exploration) is
-        not recommended for this reason.
+        * This method does *not* maintain the laziness of the frame, and will `collect`
+          the final result. This could potentially be an expensive operation.
+        * We do not guarantee the output of `describe` to be stable. It will show
+          statistics that we deem informative, and may be updated in the future.
+          Using `describe` programmatically (versus interactive exploration) is
+          not recommended for this reason.
 
         Examples
         --------
