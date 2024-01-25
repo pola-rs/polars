@@ -4336,7 +4336,6 @@ class DataFrame:
         # determine column layout widths
         max_col_name = max((len(col_name) for col_name, _, _ in data))
         max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
-        max_col_values = 100 - max_col_name - max_col_dtype
 
         # print header
         output = StringIO()
@@ -4347,7 +4346,7 @@ class DataFrame:
             output.write(
                 f"$ {col_name:<{max_col_name}}"
                 f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str:<{min(len(val_str), max_col_values)}}\n"
+                f" {val_str}\n"
             )
 
         s = output.getvalue()
