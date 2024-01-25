@@ -19,6 +19,7 @@ impl ArgAgg for Series {
         use DataType::*;
         let s = self.to_physical_repr();
         match self.dtype() {
+            #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) => {
                 let ca = self.categorical().unwrap();
                 if ca.is_empty() || ca.null_count() == ca.len() {
@@ -65,6 +66,7 @@ impl ArgAgg for Series {
         use DataType::*;
         let s = self.to_physical_repr();
         match self.dtype() {
+            #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) => {
                 let ca = self.categorical().unwrap();
                 if ca.is_empty() || ca.null_count() == ca.len() {
