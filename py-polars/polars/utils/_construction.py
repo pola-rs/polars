@@ -399,6 +399,9 @@ def sequence_to_pyseries(
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
 
+    if isinstance(values, range):
+        return range_to_series(name, values, dtype=dtype)._s
+
     # empty sequence
     if not values and dtype is None:
         # if dtype for empty sequence could be guessed

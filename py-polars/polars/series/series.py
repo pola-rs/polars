@@ -103,7 +103,6 @@ from polars.utils.various import (
     _is_generator,
     no_default,
     parse_version,
-    range_to_series,
     range_to_slice,
     scale_bytes,
     sphinx_accessor,
@@ -294,10 +293,7 @@ class Series:
                 msg = "Series name must be a string"
                 raise TypeError(msg)
 
-        if isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s
-
-        elif isinstance(values, Sequence):
+        if isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
                 name,
                 values,
