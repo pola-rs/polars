@@ -108,6 +108,8 @@ enum SerializableDataType {
     Unknown,
     #[cfg(feature = "dtype-categorical")]
     Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
+    #[cfg(feature = "dtype-decimal")]
+    Decimal(Option<usize>, Option<usize>),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -149,6 +151,8 @@ impl From<&DataType> for SerializableDataType {
                     .unwrap_or(None);
                 Self::Categorical(categories, *ordering)
             },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Self::Decimal(precision.clone(), scale.clone()),
             #[cfg(feature = "object")]
             Object(name, _) => Self::Object(name.to_string()),
             dt => panic!("{dt:?} not supported"),
@@ -187,6 +191,8 @@ impl From<SerializableDataType> for DataType {
             Categorical(categories, ordering) => categories
                 .map(|categories| create_enum_data_type(categories.0))
                 .unwrap_or_else(|| Self::Categorical(None, ordering)),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown", None),
         }
