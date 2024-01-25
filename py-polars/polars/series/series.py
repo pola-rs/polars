@@ -296,9 +296,7 @@ class Series:
                 raise TypeError(msg)
 
         if values is None:
-            self._s = sequence_to_pyseries(
-                name, [], dtype=dtype, dtype_if_empty=dtype_if_empty
-            )
+            self._s = sequence_to_pyseries(name, [], dtype=dtype)
 
         elif isinstance(values, range):
             self._s = range_to_series(name, values, dtype=dtype)._s
@@ -313,7 +311,6 @@ class Series:
                 values,
                 dtype=dtype,
                 strict=strict,
-                dtype_if_empty=dtype_if_empty,
                 nan_to_null=nan_to_null,
             )
 
@@ -350,7 +347,6 @@ class Series:
                 name,
                 values,
                 dtype=dtype,
-                dtype_if_empty=dtype_if_empty,
                 strict=strict,
             )
 
@@ -370,6 +366,10 @@ class Series:
                 " for the `values` parameter"
             )
             raise TypeError(msg)
+
+        # Implementation of deprecated `dtype_if_empty` functionality
+        if dtype_if_empty != Null and self.dtype == Null:
+            self._s = self._s.cast(dtype_if_empty, False)
 
     @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Self:

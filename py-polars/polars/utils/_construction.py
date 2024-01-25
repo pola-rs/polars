@@ -307,7 +307,6 @@ def iterable_to_pyseries(
     values: Iterable[Any],
     dtype: PolarsDataType | None = None,
     *,
-    dtype_if_empty: PolarsDataType = Null,
     chunk_size: int = 1_000_000,
     strict: bool = True,
 ) -> PySeries:
@@ -321,7 +320,6 @@ def iterable_to_pyseries(
             values=values,
             dtype=dtype,
             strict=strict,
-            dtype_if_empty=dtype_if_empty,
         )
 
     n_chunks = 0
@@ -395,7 +393,6 @@ def sequence_to_pyseries(
     values: Sequence[Any],
     dtype: PolarsDataType | None = None,
     *,
-    dtype_if_empty: PolarsDataType = Null,
     strict: bool = True,
     nan_to_null: bool = False,
 ) -> PySeries:
@@ -406,7 +403,7 @@ def sequence_to_pyseries(
     if not values and dtype is None:
         # if dtype for empty sequence could be guessed
         # (e.g comparisons between self and other), default to Null
-        dtype = dtype_if_empty
+        dtype = Null
 
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
@@ -468,12 +465,8 @@ def sequence_to_pyseries(
     else:
         if python_dtype is None:
             if value is None:
-                # Create a series with a dtype_if_empty dtype (if set) or Null
-                # (if not set) for a sequence which contains only None values.
-                constructor = polars_type_to_constructor(dtype_if_empty)
-                return _construct_series_with_fallbacks(
-                    constructor, name, values, dtype, strict=strict
-                )
+                constructor = polars_type_to_constructor(Null)
+                return constructor(name, values, strict)
 
             # generic default dtype
             python_dtype = type(value)
