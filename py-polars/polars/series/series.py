@@ -271,9 +271,8 @@ class Series:
         # If 'Unknown' treat as None to attempt inference
         if dtype == Unknown:
             dtype = None
-
         # Raise early error on invalid dtype
-        if (
+        elif (
             dtype is not None
             and not is_polars_dtype(dtype)
             and py_type_to_dtype(dtype, raise_unmatched=False) is None
@@ -295,15 +294,8 @@ class Series:
                 msg = "Series name must be a string"
                 raise TypeError(msg)
 
-        if values is None:
-            self._s = sequence_to_pyseries(name, [], dtype=dtype)
-
-        elif isinstance(values, range):
+        if isinstance(values, range):
             self._s = range_to_series(name, values, dtype=dtype)._s
-
-        elif isinstance(values, Series):
-            name = values.name if original_name is None else name
-            self._s = series_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
@@ -313,6 +305,17 @@ class Series:
                 strict=strict,
                 nan_to_null=nan_to_null,
             )
+
+        elif _is_generator(values):
+            self._s = iterable_to_pyseries(
+                name,
+                values,
+                dtype=dtype,
+                strict=strict,
+            )
+
+        elif values is None:
+            self._s = sequence_to_pyseries(name, [], dtype=dtype)
 
         elif _check_for_numpy(values) and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(
@@ -342,13 +345,9 @@ class Series:
         ):
             self._s = pandas_to_pyseries(name, values)
 
-        elif _is_generator(values):
-            self._s = iterable_to_pyseries(
-                name,
-                values,
-                dtype=dtype,
-                strict=strict,
-            )
+        elif isinstance(values, Series):
+            name = values.name if original_name is None else name
+            self._s = series_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif isinstance(values, pl.DataFrame):
             to_struct = values.width > 1
