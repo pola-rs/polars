@@ -1015,7 +1015,7 @@ mod test {
 
         {
             let mut s2 = s2.clone();
-            s2.append(&s1).unwrap();
+            s2.extend(&s1).unwrap();
             #[cfg(feature = "python")]
             assert_eq!(s2.get(2).unwrap(), AnyValue::Float64(2.29)); // 2.3 == 2.2999999999999998
             #[cfg(not(feature = "python"))]
