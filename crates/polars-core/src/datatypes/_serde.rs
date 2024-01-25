@@ -152,7 +152,7 @@ impl From<&DataType> for SerializableDataType {
                 Self::Categorical(categories, *ordering)
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(precision, scale) => Self::Decimal(precision.clone(), scale.clone()),
+            Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
             Object(name, _) => Self::Object(name.to_string()),
             dt => panic!("{dt:?} not supported"),
