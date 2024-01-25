@@ -4456,19 +4456,27 @@ class Series:
         """
         Convert this Series to a pandas Series.
 
-        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
-        This operation clones data, unless `use_pyarrow_extension_array=True`.
+        This operation copies data if `use_pyarrow_extension_array` is not enabled.
 
         Parameters
         ----------
         use_pyarrow_extension_array
-            Use PyArrow-backed extension array instead of NumPy array for pandas
+            Use a PyArrow-backed extension array instead of a NumPy array for the pandas
             Series. This allows zero copy operations and preservation of null values.
             Subsequent operations on the resulting pandas Series may trigger conversion
             to NumPy if those operations are not supported by PyArrow compute functions.
         **kwargs
             Additional keyword arguments to be passed to
             :meth:`pyarrow.Array.to_pandas`.
+
+        Returns
+        -------
+        :class:`pandas.Series`
+
+        Notes
+        -----
+        This operation requires that both :mod:`pandas` and :mod:`pyarrow` are
+        installed.
 
         Examples
         --------

@@ -2195,80 +2195,79 @@ class DataFrame:
 
         return out
 
-    def to_pandas(  # noqa: D417
+    def to_pandas(
         self,
-        *args: Any,
+        *,
         use_pyarrow_extension_array: bool = False,
         **kwargs: Any,
     ) -> pd.DataFrame:
         """
-        Cast to a pandas DataFrame.
+        Convert this DataFrame to a pandas DataFrame.
 
-        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
-        This operation clones data, unless `use_pyarrow_extension_array=True`.
+        This operation copies data if `use_pyarrow_extension_array` is not enabled.
 
         Parameters
         ----------
         use_pyarrow_extension_array
-            Use PyArrow backed-extension arrays instead of numpy arrays for each column
-            of the pandas DataFrame; this allows zero copy operations and preservation
+            Use PyArrow-backed extension arrays instead of NumPy arrays for the columns
+            of the pandas DataFrame. This allows zero copy operations and preservation
             of null values. Subsequent operations on the resulting pandas DataFrame may
-            trigger conversion to NumPy arrays if that operation is not supported by
-            pyarrow compute functions.
+            trigger conversion to NumPy if those operations are not supported by PyArrow
+            compute functions.
         **kwargs
-            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+            Additional keyword arguments to be passed to
+            :meth:`pyarrow.Table.to_pandas`.
 
         Returns
         -------
         :class:`pandas.DataFrame`
 
+        Notes
+        -----
+        This operation requires that both :mod:`pandas` and :mod:`pyarrow` are
+        installed.
+
         Examples
         --------
-        >>> import pandas
-        >>> df1 = pl.DataFrame(
+        >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
+        ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> pandas_df1 = df1.to_pandas()
-        >>> type(pandas_df1)
-        <class 'pandas.core.frame.DataFrame'>
-        >>> pandas_df1.dtypes
-        foo     int64
-        bar     int64
-        ham    object
-        dtype: object
-        >>> df2 = pl.DataFrame(
+        >>> df.to_pandas()
+           foo  bar ham
+        0    1  6.0   a
+        1    2  7.0   b
+        2    3  8.0   c
+
+        Null values are converted to `NaN`.
+
+        >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, None],
-        ...         "bar": [6, None, 8],
+        ...         "bar": [6.0, None, 8.0],
         ...         "ham": [None, "b", "c"],
         ...     }
         ... )
-        >>> pandas_df2 = df2.to_pandas()
-        >>> pandas_df2
+        >>> df.to_pandas()
            foo  bar   ham
         0  1.0  6.0  None
         1  2.0  NaN     b
         2  NaN  8.0     c
-        >>> pandas_df2.dtypes
-        foo    float64
-        bar    float64
-        ham     object
-        dtype: object
-        >>> pandas_df2_pa = df2.to_pandas(
-        ...     use_pyarrow_extension_array=True
-        ... )  # doctest: +SKIP
-        >>> pandas_df2_pa  # doctest: +SKIP
+
+        Pass `use_pyarrow_extension_array=True` to get a pandas DataFrame with columns
+        backed by PyArrow extension arrays. This will preserve null values.
+
+        >>> df.to_pandas(use_pyarrow_extension_array=True)
             foo   bar   ham
-        0     1     6  <NA>
+        0     1   6.0  <NA>
         1     2  <NA>     b
-        2  <NA>     8     c
-        >>> pandas_df2_pa.dtypes  # doctest: +SKIP
+        2  <NA>   8.0     c
+        >>> _.dtypes
         foo           int64[pyarrow]
-        bar           int64[pyarrow]
+        bar          double[pyarrow]
         ham    large_string[pyarrow]
         dtype: object
         """
