@@ -4518,16 +4518,15 @@ class Series:
                 )
 
         pa_arr = self.to_arrow()
-        date_as_object = kwargs.pop("date_as_object", False)
         if use_pyarrow_extension_array:
             pd_series = pa_arr.to_pandas(
                 self_destruct=True,
                 split_blocks=True,
                 types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
-                date_as_object=date_as_object,
                 **kwargs,
             )
         else:
+            date_as_object = kwargs.pop("date_as_object", False)
             pd_series = pa_arr.to_pandas(date_as_object=date_as_object, **kwargs)
 
         pd_series.name = self.name
