@@ -24,6 +24,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -1132,7 +1133,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ]
 
         # return results as a DataFrame
-        df_summary = type(df_metrics)._from_dict(summary)
+        df_summary = from_dict(summary)
         df_summary.insert_column(0, pl.Series("statistic", metrics))
         return df_summary
 
