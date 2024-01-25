@@ -2242,7 +2242,7 @@ class DataFrame:
         1    2  7.0   b
         2    3  8.0   c
 
-        Null values are converted to `NaN`.
+        Null values in numeric columns are converted to `NaN`.
 
         >>> df = pl.DataFrame(
         ...     {
