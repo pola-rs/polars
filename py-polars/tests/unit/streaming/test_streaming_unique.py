@@ -10,6 +10,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 @pytest.mark.write_disk()
 @pytest.mark.slow()
