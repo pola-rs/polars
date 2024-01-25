@@ -101,25 +101,22 @@ where
         match data_type {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map, ordering) => {
-                let ca = match self.dtype() {
-                    DataType::UInt32 => {
-                        // SAFETY: we are guarded by the type system
-                        unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) }
-                            .clone()
-                    },
-                    DataType::Int8
-                    | DataType::Int16
-                    | DataType::Int32
-                    | DataType::Int64
-                    | DataType::UInt8
-                    | DataType::UInt16
-                    | DataType::UInt64 => self.cast(&DataType::UInt32)?.u32()?.clone(),
-                    _ => {
-                        polars_bail!(ComputeError: "cannot cast non integer types to 'Categorical'")
-                    },
-                };
                 if let Some(rev_map) = rev_map {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
+                        let ca = match self.dtype() {
+                            DataType::UInt32 => {
+                                // SAFETY: we are guarded by the type system
+                                unsafe {
+                                    &*(self as *const ChunkedArray<T> as *const UInt32Chunked)
+                                }
+                                .clone()
+                            },
+                            dt if dt.is_integer() => self.cast(&DataType::UInt32)?.u32()?.clone(),
+                            _ => {
+                                polars_bail!(ComputeError: "cannot cast non integer types to 'Categorical'")
+                            },
+                        };
+
                         // Check if indices are in bounds
                         if let Some(m) = ca.max() {
                             if m >= categories.len() as u32 {
@@ -138,6 +135,13 @@ where
                         }
                     }
                 }
+                polars_ensure!(
+                    self.dtype() == &DataType::UInt32,
+                    ComputeError: "cannot cast numeric types to 'Categorical'"
+                );
+                // SAFETY
+                // we are guarded by the type system
+                let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
 
                 CategoricalChunked::from_global_indices(ca.clone(), *ordering)
                     .map(|ca| ca.into_series())
