@@ -206,17 +206,18 @@ class ExprBinaryNameSpace:
         ... )
         >>> colors.with_columns(
         ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
-        ... )  # doctest: +IGNORE_RESULT
+        ... )
         shape: (3, 3)
-        ┌────────┬────────┬──────────────────┐
-        │ name   ┆ code   ┆ code_encoded_hex │
-        │ ---    ┆ ---    ┆ ---              │
-        │ str    ┆ binary ┆ str              │
-        ╞════════╪════════╪══════════════════╡
-        │ black  ┆ b""    ┆ 000000           │
-        │ yellow ┆ b"��"  ┆ ffff00           │
-        │ blue   ┆ b"�"   ┆ 0000ff           │
-        └────────┴────────┴──────────────────┘
+        ┌────────┬────────────────┬──────────────────┐
+        │ name   ┆ code           ┆ code_encoded_hex │
+        │ ---    ┆ ---            ┆ ---              │
+        │ str    ┆ binary         ┆ str              │
+        ╞════════╪════════════════╪══════════════════╡
+        │ black  ┆ b"\x0\x0\x0"   ┆ 000000           │
+        │ yellow ┆ b"\xff\xff\x0" ┆ ffff00           │
+        │ blue   ┆ b"\x0\x0\xff"  ┆ 0000ff           │
+        └────────┴────────────────┴──────────────────┘
+
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_encode())
