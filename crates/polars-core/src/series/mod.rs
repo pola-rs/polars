@@ -1007,13 +1007,19 @@ mod test {
             let mut s1 = s1.clone();
             s1.append(&s2).unwrap();
             assert_eq!(s1.len(), 3);
+            #[cfg(feature = "python")]
+            assert_eq!(s1.get(2).unwrap(), AnyValue::Float64(3.0));
+            #[cfg(not(feature = "python"))]
             assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 2));
         }
 
         {
             let mut s2 = s2.clone();
             s2.append(&s1).unwrap();
-            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0))
+            #[cfg(feature = "python")]
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Float64(2.29)); // 2.3 == 2.2999999999999998
+            #[cfg(not(feature = "python"))]
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
         }
     }
 
