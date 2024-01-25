@@ -904,23 +904,17 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        match T::get_dtype() {
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(None, None) => panic!("impl error"),
-            _ => {
-                if &T::get_dtype() == self.dtype() ||
-                    // Needed because we want to get ref of List no matter what the inner type is.
-                    (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
-                {
-                    unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
-                } else {
-                    panic!(
-                        "implementation error, cannot get ref {:?} from {:?}",
-                        T::get_dtype(),
-                        self.dtype()
-                    );
-                }
-            },
+        if &T::get_dtype() == self.dtype() ||
+            // Needed because we want to get ref of List no matter what the inner type is.
+            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
+        {
+            unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
+        } else {
+            panic!(
+                "implementation error, cannot get ref {:?} from {:?}",
+                T::get_dtype(),
+                self.dtype()
+            );
         }
     }
 }
