@@ -47,13 +47,14 @@ impl ChunkReverse for BinaryChunked {
     fn reverse(&self) -> Self {
         if self.chunks.len() == 1 {
             let arr = self.downcast_iter().next().unwrap();
-            let views = arr.views().iter().copied().collect::<Vec<_>>();
+            let views = arr.views().iter().copied().rev().collect::<Vec<_>>();
+
             unsafe {
                 let arr = BinaryViewArray::new_unchecked(
                     arr.data_type().clone(),
                     views.into(),
                     arr.data_buffers().clone(),
-                    arr.validity().cloned(),
+                    arr.validity().map(|bitmap| bitmap.iter().rev().collect()),
                     arr.total_bytes_len(),
                     arr.total_buffer_len(),
                 )
