@@ -255,14 +255,15 @@ def numpy_to_pyseries(
     """Construct a PySeries from a numpy array."""
     values = np.ascontiguousarray(values)
 
-    if len(values.shape) == 1:
+    if values.ndim == 1:
         values, dtype = numpy_values_and_dtype(values)
         constructor = numpy_type_to_constructor(values, dtype)
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
-    elif len(shape := values.shape) == 2:
+    elif values.ndim == 2:
         # Optimize by ingesting 1D and reshaping in Rust
+        original_shape = values.shape
         values = values.reshape(-1)
         py_s = numpy_to_pyseries(
             name,
@@ -273,7 +274,7 @@ def numpy_to_pyseries(
         return (
             PyDataFrame([py_s])
             .lazy()
-            .select([F.col(name).reshape(shape)._pyexpr])
+            .select([F.col(name).reshape(original_shape)._pyexpr])
             .collect()
             .select_at_idx(0)
         )
