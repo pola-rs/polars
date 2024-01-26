@@ -3,12 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
+from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     from polars import LazyFrame
     from polars.dependencies import pyarrow as pa
 
 
+@unstable()
 def scan_pyarrow_dataset(
     source: pa.dataset.Dataset,
     *,
@@ -18,14 +20,11 @@ def scan_pyarrow_dataset(
     """
     Scan a pyarrow dataset.
 
-    This can be useful to connect to cloud or partitioned datasets.
-
     .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
-        This method can only can push down predicates that are allowed by PyArrow
-        (e.g. not the full Polars API).
-
-        If :func:`scan_parquet` works for your source, you should use that instead.
+    This can be useful to connect to cloud or partitioned datasets.
 
     Parameters
     ----------
@@ -40,8 +39,10 @@ def scan_pyarrow_dataset(
 
     Warnings
     --------
-    This API is experimental and may change without it being considered a breaking
-    change.
+    This method can only can push down predicates that are allowed by PyArrow
+    (e.g. not the full Polars API).
+
+    If :func:`scan_parquet` works for your source, you should use that instead.
 
     Notes
     -----

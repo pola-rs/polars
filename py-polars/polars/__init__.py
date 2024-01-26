@@ -85,6 +85,7 @@ from polars.exceptions import (
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
+    UnstableWarning,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -221,7 +222,6 @@ __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
     "ComputeError",
-    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
@@ -235,6 +235,8 @@ __all__ = [
     # warnings
     "PolarsWarning",
     "CategoricalRemappingWarning",
+    "ChronoFormatWarning",
+    "UnstableWarning",
     # core classes
     "DataFrame",
     "Expr",

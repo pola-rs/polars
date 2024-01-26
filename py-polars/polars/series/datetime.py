@@ -7,6 +7,7 @@ from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
 from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
+from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -1687,6 +1688,7 @@ class DateTimeNameSpace:
         ]
         """
 
+    @unstable()
     def round(
         self,
         every: str | dt.timedelta,
@@ -1697,38 +1699,18 @@ class DateTimeNameSpace:
         """
         Divide the date/ datetime range into buckets.
 
-        Each date/datetime in the first half of the interval
-        is mapped to the start of its bucket.
-        Each date/datetime in the second half of the interval
-        is mapped to the end of its bucket.
-        Ambiguous results are localised using the DST offset of the original timestamp -
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Each date/datetime in the first half of the interval is mapped to the start of
+        its bucket.
+        Each date/datetime in the second half of the interval is mapped to the end of
+        its bucket.
+        Ambiguous results are localized using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
         `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
-
-        The `every` and `offset` argument are created with the
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
 
         Parameters
         ----------
@@ -1751,10 +1733,30 @@ class DateTimeNameSpace:
         Series
             Series of data type :class:`Date` or :class:`Datetime`.
 
-        Warnings
-        --------
-        This functionality is currently experimental and may
-        change without it being considered a breaking change.
+        Notes
+        -----
+        The `every` and `offset` argument are created with the
+        the following string language:
+
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
+        - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
+        - 1y    (1 calendar year)
+
+        These strings can be combined:
+
+        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Examples
         --------

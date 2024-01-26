@@ -100,6 +100,7 @@ from polars.utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars.utils.meta import get_index_type
+from polars.utils.unstable import unstable
 from polars.utils.various import (
     _is_generator,
     no_default,
@@ -2219,6 +2220,7 @@ class Series:
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
     @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
+    @unstable()
     def cut(
         self,
         breaks: Sequence[float],
@@ -2232,6 +2234,10 @@ class Series:
     ) -> Series | DataFrame:
         """
         Bin continuous values into discrete categories.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2412,6 +2418,7 @@ class Series:
     ) -> Series | DataFrame:
         ...
 
+    @unstable()
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -2426,6 +2433,10 @@ class Series:
     ) -> Series | DataFrame:
         """
         Bin continuous values into discrete categories based on their quantiles.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2473,11 +2484,6 @@ class Series:
         Series
             Series of data type :class:`Categorical` if `include_breaks` is set to
             `False` (default), otherwise a Series of data type :class:`Struct`.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         See Also
         --------
@@ -2655,6 +2661,7 @@ class Series:
         ]
         """
 
+    @unstable()
     def hist(
         self,
         bins: list[float] | None = None,
@@ -2665,6 +2672,10 @@ class Series:
     ) -> DataFrame:
         """
         Bin values into buckets and count their occurrences.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2682,11 +2693,6 @@ class Series:
         Returns
         -------
         DataFrame
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Examples
         --------
@@ -2822,11 +2828,16 @@ class Series:
             .item()
         )
 
+    @unstable()
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2841,9 +2852,6 @@ class Series:
 
         Warnings
         --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
-
         This can be really slow as it can have `O(n^2)` complexity. Don't use this
         for operations that visit all elements.
 
@@ -5409,6 +5417,7 @@ class Series:
         """
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
+    @unstable()
     def rolling_min(
         self,
         window_size: int,
@@ -5419,6 +5428,10 @@ class Series:
     ) -> Series:
         """
         Apply a rolling min (moving min) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5467,6 +5480,7 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_max(
         self,
         window_size: int,
@@ -5477,6 +5491,10 @@ class Series:
     ) -> Series:
         """
         Apply a rolling max (moving max) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5525,6 +5543,7 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_mean(
         self,
         window_size: int,
@@ -5535,6 +5554,10 @@ class Series:
     ) -> Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5583,6 +5606,7 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_sum(
         self,
         window_size: int,
@@ -5593,6 +5617,10 @@ class Series:
     ) -> Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5641,6 +5669,7 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_std(
         self,
         window_size: int,
@@ -5652,6 +5681,10 @@ class Series:
     ) -> Series:
         """
         Compute a rolling std dev.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5703,6 +5736,7 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_var(
         self,
         window_size: int,
@@ -5714,6 +5748,10 @@ class Series:
     ) -> Series:
         """
         Compute a rolling variance.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5765,6 +5803,7 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_map(
         self,
         function: Callable[[Series], Any],
@@ -5778,8 +5817,8 @@ class Series:
         Compute a custom rolling window function.
 
         .. warning::
-            Computing custom functions is extremely slow. Use specialized rolling
-            functions such as :func:`Series.rolling_sum` if at all possible.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -5802,7 +5841,8 @@ class Series:
 
         Warnings
         --------
-
+        Computing custom functions is extremely slow. Use specialized rolling
+        functions such as :func:`Series.rolling_sum` if at all possible.
 
         Examples
         --------
@@ -5820,6 +5860,7 @@ class Series:
         ]
         """
 
+    @unstable()
     def rolling_median(
         self,
         window_size: int,
@@ -5830,6 +5871,10 @@ class Series:
     ) -> Series:
         """
         Compute a rolling median.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -5878,6 +5923,7 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_quantile(
         self,
         quantile: float,
@@ -5890,6 +5936,10 @@ class Series:
     ) -> Series:
         """
         Compute a rolling quantile.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5958,9 +6008,14 @@ class Series:
             .to_series()
         )
 
+    @unstable()
     def rolling_skew(self, window_size: int, *, bias: bool = True) -> Series:
         """
         Compute a rolling skew.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         The window at a given row includes the row itself and the
         `window_size - 1` elements before it.
