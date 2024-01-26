@@ -463,7 +463,7 @@ impl ChunkCast for ArrayChunked {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _) | Enum(_, _)) if !matches!(dt, String) => {
-                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
+                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
