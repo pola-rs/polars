@@ -30,6 +30,7 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
+    DataTypeGroup,
     Date,
     Datetime,
     Duration,
@@ -49,6 +50,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Unknown,
+    is_polars_dtype,
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
@@ -58,7 +60,7 @@ from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
-from polars.selectors import _expand_selectors, expand_selector
+from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
 from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
@@ -2600,7 +2602,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def cast(
         self,
-        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        dtypes: (
+            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            | PolarsDataType
+        ),
         *,
         strict: bool = True,
     ) -> Self:
@@ -2641,12 +2646,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
 
-        Cast all frame columns to the specified dtype:
+        Cast all frame columns matching one dtype (or dtype group) to another dtype:
 
-        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
-        {'foo': ['1', '2', '3'],
-         'bar': ['6.0', '7.0', '8.0'],
-         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
+        >>> lf.cast({pl.Date: pl.Datetime}).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────────────────────┐
+        │ foo ┆ bar ┆ ham                 │
+        │ --- ┆ --- ┆ ---                 │
+        │ i64 ┆ f64 ┆ datetime[μs]        │
+        ╞═════╪═════╪═════════════════════╡
+        │ 1   ┆ 6.0 ┆ 2020-01-02 00:00:00 │
+        │ 2   ┆ 7.0 ┆ 2021-03-04 00:00:00 │
+        │ 3   ┆ 8.0 ┆ 2022-05-06 00:00:00 │
+        └─────┴─────┴─────────────────────┘
 
         Use selectors to define the columns being cast:
 
@@ -2662,17 +2674,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7   ┆ 2021-03-04 │
         │ 3   ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
+
+        Cast all frame columns to the specified dtype:
+
+        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
+        {'foo': ['1', '2', '3'],
+         'bar': ['6.0', '7.0', '8.0'],
+         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         if not isinstance(dtypes, Mapping):
             return self._from_pyldf(self._ldf.cast_all(dtypes, strict))
 
         cast_map = {}
         for c, dtype in dtypes.items():
+            if (is_polars_dtype(c) or isinstance(c, DataTypeGroup)) or (
+                isinstance(c, Collection) and all(is_polars_dtype(x) for x in c)
+            ):
+                c = by_dtype(c)  # type: ignore[arg-type]
+
             dtype = py_type_to_dtype(dtype)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)
-                else {x: dtype for x in expand_selector(self, c)}
+                else {x: dtype for x in expand_selector(self, c)}  # type: ignore[arg-type]
             )
 
         return self._from_pyldf(self._ldf.cast(cast_map, strict))

@@ -52,6 +52,7 @@ from polars.dependencies import (
     _check_for_pyarrow,
     dataframe_api_compat,
     hvplot,
+    import_optional,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -3072,15 +3073,8 @@ class DataFrame:
         ...     sheet_zoom=125,
         ... )
         """  # noqa: W505
-        try:
-            import xlsxwriter
-            from xlsxwriter.utility import xl_cell_to_rowcol
-        except ImportError:
-            msg = (
-                "Excel export requires xlsxwriter"
-                "\n\nPlease run: pip install XlsxWriter"
-            )
-            raise ImportError(msg) from None
+        xlsxwriter = import_optional("xlsxwriter", err_prefix="Excel export requires")
+        from xlsxwriter.utility import xl_cell_to_rowcol
 
         # setup workbook/worksheet
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
@@ -6750,7 +6744,10 @@ class DataFrame:
 
     def cast(
         self,
-        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        dtypes: (
+            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            | PolarsDataType
+        ),
         *,
         strict: bool = True,
     ) -> DataFrame:
@@ -6791,12 +6788,19 @@ class DataFrame:
         │ 3.0 ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
 
-        Cast all frame columns to the specified dtype:
+        Cast all frame columns matching one dtype (or dtype group) to another dtype:
 
-        >>> df.cast(pl.String).to_dict(as_series=False)
-        {'foo': ['1', '2', '3'],
-         'bar': ['6.0', '7.0', '8.0'],
-         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
+        >>> df.cast({pl.Date: pl.Datetime})
+        shape: (3, 3)
+        ┌─────┬─────┬─────────────────────┐
+        │ foo ┆ bar ┆ ham                 │
+        │ --- ┆ --- ┆ ---                 │
+        │ i64 ┆ f64 ┆ datetime[μs]        │
+        ╞═════╪═════╪═════════════════════╡
+        │ 1   ┆ 6.0 ┆ 2020-01-02 00:00:00 │
+        │ 2   ┆ 7.0 ┆ 2021-03-04 00:00:00 │
+        │ 3   ┆ 8.0 ┆ 2022-05-06 00:00:00 │
+        └─────┴─────┴─────────────────────┘
 
         Use selectors to define the columns being cast:
 
@@ -6812,6 +6816,13 @@ class DataFrame:
         │ 2   ┆ 7   ┆ 2021-03-04 │
         │ 3   ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
+
+        Cast all frame columns to the specified dtype:
+
+        >>> df.cast(pl.String).to_dict(as_series=False)
+        {'foo': ['1', '2', '3'],
+         'bar': ['6.0', '7.0', '8.0'],
+         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         return self.lazy().cast(dtypes, strict=strict).collect(_eager=True)
 
