@@ -2305,8 +2305,11 @@ class DataFrame:
         return pandas_df
 
     def _to_pandas_without_object_columns(
-        self, df_without_objects, use_pyarrow_extension_array, **kwargs
-    ):
+        self,
+        df_without_objects: DataFrame,
+        use_pyarrow_extension_array: bool,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
         record_batches = df_without_objects._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:

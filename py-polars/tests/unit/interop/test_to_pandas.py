@@ -1,12 +1,14 @@
-from datetime import date, datetime
-from typing import List, Literal
+from __future__ import annotations
 
-from hypothesis import given
-from hypothesis.strategies import just, one_of, lists
+from datetime import date, datetime
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from hypothesis import given
+from hypothesis.strategies import just, lists, one_of
 
 import polars as pl
 
@@ -89,7 +91,7 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
 @given(
     column_types=lists(one_of(just(pl.Object), just(pl.Int32)), min_size=1, max_size=8)
 )
-def test_object_to_pandas(column_types: List[Literal[pl.Object, pl.Int32]]) -> None:
+def test_object_to_pandas(column_types: list[Literal[pl.Object, pl.Int32]]) -> None:
     """
     Converting ``pl.Object`` dtype columns to Pandas is handled correctly.
 
@@ -165,7 +167,7 @@ def test_to_pandas_datetime() -> None:
     pd.testing.assert_frame_equal(result_df, expected_df)
 
 
-@pytest.mark.parametrize("use_pyarrow_extension_array", (True, False))
+@pytest.mark.parametrize("use_pyarrow_extension_array", [True, False])
 def test_object_to_pandas_series(use_pyarrow_extension_array) -> None:
     values = [object(), [1, 2, 3]]
     assert (
