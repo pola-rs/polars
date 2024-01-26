@@ -215,8 +215,8 @@ def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
     df.write_parquet(file_path)
 
     path_glob = tmp_path / "small*.parquet"
-    assert pl.read_parquet(path_glob).shape == (3, 16)
-    assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
+    assert pl.read_parquet(path_glob).shape == (3, df.width)
+    assert pl.scan_parquet(path_glob).collect().shape == (3, df.width)
 
 
 def test_chunked_round_trip() -> None:
@@ -250,8 +250,8 @@ def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame, tmp_path: Path) -
 
     a = pl.scan_parquet(file_path)
     b = pl.DataFrame({"a": [1]}).lazy()
-    assert a.join(b, how="cross").collect().shape == (3, 17)
-    assert b.join(a, how="cross").collect().shape == (3, 17)
+    assert a.join(b, how="cross").collect().shape == (3, df.width + b.width)
+    assert b.join(a, how="cross").collect().shape == (3, df.width + b.width)
 
 
 def test_recursive_logical_type() -> None:
@@ -561,6 +561,17 @@ def test_decimal_parquet(tmp_path: Path) -> None:
     df.write_parquet(path, statistics=True)
     out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
     assert out == {"foo": [2], "bar": [Decimal("7")]}
+
+
+@pytest.mark.write_disk()
+def test_enum_parquet(tmp_path: Path) -> None:
+    path = tmp_path / "enum.parquet"
+    df = pl.DataFrame(
+        [pl.Series("e", ["foo", "bar", "ham"], dtype=pl.Enum(["foo", "bar", "ham"]))]
+    )
+    df.write_parquet(path)
+    out = pl.read_parquet(path)
+    assert_frame_equal(df, out)
 
 
 def test_parquet_rle_non_nullable_12814() -> None:

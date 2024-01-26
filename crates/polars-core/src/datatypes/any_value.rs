@@ -73,6 +73,8 @@ pub enum AnyValue<'a> {
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
     Categorical(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
+    #[cfg(feature = "dtype-categorical")]
+    Enum(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
@@ -366,6 +368,8 @@ impl<'a> AnyValue<'a> {
             String(_) => DataType::String,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _, _) => DataType::Enum(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
@@ -408,11 +412,12 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(f? / 10f64.powi(*scale as _))
                 }
             },
-            Boolean(v) => {
-                if *v {
-                    NumCast::from(1)
+            Boolean(v) => NumCast::from(if *v { 1 } else { 0 }),
+            String(v) => {
+                if let Ok(val) = (*v).parse::<i128>() {
+                    NumCast::from(val)
                 } else {
-                    NumCast::from(0)
+                    NumCast::from((*v).parse::<f64>().ok()?)
                 }
             },
             _ => None,
@@ -649,7 +654,7 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             Time(v) => v.hash(state),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(v, _, _) => v.hash(state),
+            Categorical(v, _, _) | Enum(v, _, _) => v.hash(state),
             #[cfg(feature = "object")]
             Object(_) => {},
             #[cfg(feature = "object")]
@@ -817,7 +822,7 @@ impl<'a> AnyValue<'a> {
             AnyValue::String(s) => Some(s),
             AnyValue::StringOwned(s) => Some(s),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev, arr) => {
+            AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
                 let s = if arr.is_null() {
                     rev.get(*idx)
                 } else {
@@ -897,6 +902,8 @@ impl AnyValue<'_> {
                 },
                 _ => false,
             },
+            #[cfg(feature = "dtype-categorical")]
+            (Enum(idx_l, _, _), Enum(idx_r, _, _)) => idx_l == idx_r,
             #[cfg(feature = "dtype-duration")]
             (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
             #[cfg(feature = "dtype-struct")]

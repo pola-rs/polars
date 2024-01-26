@@ -452,6 +452,8 @@ pub fn cast(
             Utf8 => Ok(
                 utf8_to_utf8view(array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap()).boxed(),
             ),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Ok(decimal_to_utf8view_dyn(array).boxed()),
             _ => from_to_binview(array, from_type, to_type)
                 .map(|arr| unsafe { arr.to_utf8view_unchecked() }.boxed()),
         },

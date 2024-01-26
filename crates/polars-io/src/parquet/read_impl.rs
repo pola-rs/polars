@@ -102,9 +102,9 @@ pub(super) fn array_iter_to_series(
     };
     if chunks.is_empty() {
         let arr = new_empty_array(field.data_type.clone());
-        Series::try_from((field.name.as_str(), arr))
+        Series::try_from((field, arr))
     } else {
-        Series::try_from((field.name.as_str(), chunks))
+        Series::try_from((field, chunks))
     }
 }
 

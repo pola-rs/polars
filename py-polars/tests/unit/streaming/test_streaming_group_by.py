@@ -80,7 +80,7 @@ def test_streaming_group_by_types() -> None:
             "str_sum": pl.String,
             "bool_first": pl.Boolean,
             "bool_last": pl.Boolean,
-            "bool_mean": pl.Boolean,
+            "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
             "date_mean": pl.Date,
@@ -422,3 +422,19 @@ def test_streaming_group_by_literal(literal: Any) -> None:
         "a_count": [20],
         "a_sum": [190],
     }
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_group_by_multiple_keys_one_literal(streaming: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
+
+    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
+    assert (
+        df.lazy()
+        .group_by("a", pl.lit(1))
+        .agg(pl.col("b").max())
+        .sort(["a", "b"])
+        .collect(streaming=streaming)
+        .to_dict(as_series=False)
+        == expected
+    )

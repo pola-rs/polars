@@ -229,6 +229,50 @@ def _check_for_pydantic(obj: Any, *, check_type: bool = True) -> bool:
     )
 
 
+def import_optional(
+    module_name: str,
+    err_prefix: str = "Required package",
+    err_suffix: str = "not installed",
+    min_version: str | tuple[int, ...] | None = None,
+) -> Any:
+    """
+    Import an optional dependency, returning the module.
+
+    Parameters
+    ----------
+    module_name : str
+        Name of the dependency to import.
+    err_prefix : str, optional
+        Error prefix to use in the raised exception (appears before the module name).
+    err_suffix: str, optional
+        Error suffix to use in the raised exception (follows the module name).
+    min_version : {str, tuple[int]}, optional
+        If a minimum module version is required, specify it here.
+    """
+    from polars.exceptions import ModuleUpgradeRequired
+    from polars.utils.various import parse_version
+
+    try:
+        module = import_module(module_name)
+    except ImportError:
+        prefix = f"{err_prefix.strip(' ')} " if err_prefix else ""
+        suffix = f" {err_prefix.strip(' ')}" if err_suffix else ""
+        err_message = (
+            f"{prefix}'{module_name}'{suffix}.\n"
+            f"Please install it using the command `pip install {module_name}`."
+        )
+        raise ImportError(err_message) from None
+
+    if min_version:
+        min_version = parse_version(min_version)
+        mod_version = parse_version(module.__version__)
+        if mod_version < min_version:
+            msg = f"requires module_name {min_version} or higher, found {mod_version}"
+            raise ModuleUpgradeRequired(msg)
+
+    return module
+
+
 __all__ = [
     # lazy-load rarely-used/heavy builtins (for fast startup)
     "dataclasses",

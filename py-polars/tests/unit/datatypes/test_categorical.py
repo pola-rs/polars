@@ -800,3 +800,15 @@ def test_sort_categorical_retain_none(
                 "foo",
                 "ham",
             ]
+
+
+def test_cast_from_cat_to_numeric() -> None:
+    cat_series = pl.Series(
+        "cat_series",
+        ["0.69845702", "0.69317475", "2.43642724", "-0.95303469", "0.60684237"],
+    ).cast(pl.Categorical)
+    maximum = cat_series.cast(pl.Float32).max()
+    assert abs(maximum - 2.43642724) < 1e-6  # type: ignore[operator]
+
+    s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
+    assert s.cast(pl.UInt8).sum() == 6

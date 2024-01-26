@@ -140,9 +140,9 @@ def test_schema_row_index_cse() -> None:
     csv_a = NamedTemporaryFile()
     csv_a.write(
         b"""
-    A,B
-    Gr1,A
-    Gr1,B
+A,B
+Gr1,A
+Gr1,B
     """.strip()
     )
     csv_a.seek(0)

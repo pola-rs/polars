@@ -165,18 +165,44 @@ def nt_unpack(obj: Any) -> Any:
 
 
 def series_to_pyseries(
-    name: str,
+    name: str | None,
     values: Series,
     *,
     dtype: PolarsDataType | None = None,
     strict: bool = True,
 ) -> PySeries:
     """Construct a new PySeries from a Polars Series."""
-    py_s = values._s.clone()
-    if dtype is not None and dtype != py_s.dtype():
-        py_s = py_s.cast(dtype, strict=strict)
-    py_s.rename(name)
-    return py_s
+    s = values.clone()
+    if dtype is not None and dtype != s.dtype:
+        s = s.cast(dtype, strict=strict)
+    if name is not None:
+        s = s.alias(name)
+    return s._s
+
+
+def dataframe_to_pyseries(
+    name: str | None,
+    values: DataFrame,
+    *,
+    dtype: PolarsDataType | None = None,
+    strict: bool = True,
+) -> PySeries:
+    """Construct a new PySeries from a Polars DataFrame."""
+    if values.width > 1:
+        name = name or ""
+        s = values.to_struct(name)
+    elif values.width == 1:
+        s = values.to_series()
+        if name is not None:
+            s = s.alias(name)
+    else:
+        msg = "cannot initialize Series from DataFrame without any columns"
+        raise TypeError(msg)
+
+    if dtype is not None and dtype != s.dtype:
+        s = s.cast(dtype, strict=strict)
+
+    return s._s
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> PySeries:
@@ -227,17 +253,17 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
-    if not values.flags["C_CONTIGUOUS"]:
-        values = np.array(values)
+    values = np.ascontiguousarray(values)
 
-    if len(values.shape) == 1:
+    if values.ndim == 1:
         values, dtype = numpy_values_and_dtype(values)
-        constructor = numpy_type_to_constructor(dtype)
+        constructor = numpy_type_to_constructor(values, dtype)
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
-    elif len(shape := values.shape) == 2:
-        # optimise by ingesting 1D and reshaping in Rust
+    elif values.ndim == 2:
+        # Optimize by ingesting 1D and reshaping in Rust
+        original_shape = values.shape
         values = values.reshape(-1)
         py_s = numpy_to_pyseries(
             name,
@@ -248,7 +274,7 @@ def numpy_to_pyseries(
         return (
             PyDataFrame([py_s])
             .lazy()
-            .select([F.col(name).reshape(shape)._pyexpr])
+            .select([F.col(name).reshape(original_shape)._pyexpr])
             .collect()
             .select_at_idx(0)
         )
@@ -307,7 +333,6 @@ def iterable_to_pyseries(
     values: Iterable[Any],
     dtype: PolarsDataType | None = None,
     *,
-    dtype_if_empty: PolarsDataType = Null,
     chunk_size: int = 1_000_000,
     strict: bool = True,
 ) -> PySeries:
@@ -321,7 +346,6 @@ def iterable_to_pyseries(
             values=values,
             dtype=dtype,
             strict=strict,
-            dtype_if_empty=dtype_if_empty,
         )
 
     n_chunks = 0
@@ -395,18 +419,20 @@ def sequence_to_pyseries(
     values: Sequence[Any],
     dtype: PolarsDataType | None = None,
     *,
-    dtype_if_empty: PolarsDataType = Null,
     strict: bool = True,
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
 
+    if isinstance(values, range):
+        return range_to_series(name, values, dtype=dtype)._s
+
     # empty sequence
     if not values and dtype is None:
         # if dtype for empty sequence could be guessed
         # (e.g comparisons between self and other), default to Null
-        dtype = dtype_if_empty
+        dtype = Null
 
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
@@ -468,12 +494,8 @@ def sequence_to_pyseries(
     else:
         if python_dtype is None:
             if value is None:
-                # Create a series with a dtype_if_empty dtype (if set) or Null
-                # (if not set) for a sequence which contains only None values.
-                constructor = polars_type_to_constructor(dtype_if_empty)
-                return _construct_series_with_fallbacks(
-                    constructor, name, values, dtype, strict=strict
-                )
+                constructor = polars_type_to_constructor(Null)
+                return constructor(name, values, strict)
 
             # generic default dtype
             python_dtype = type(value)

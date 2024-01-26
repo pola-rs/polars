@@ -1589,7 +1589,7 @@ impl DataFrame {
                 .collect::<PolarsResult<Vec<_>>>()?
         } else {
             cols.iter()
-                .map(|c| self.column(c).map(|s| s.clone()))
+                .map(|c| self.column(c).cloned())
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 

@@ -144,7 +144,7 @@ where
 fn interpolate_nearest(s: &Series) -> Series {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => s.clone(),
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => s.clone(),
         DataType::Binary => s.clone(),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => s.clone(),
@@ -167,7 +167,7 @@ fn interpolate_nearest(s: &Series) -> Series {
 fn interpolate_linear(s: &Series) -> Series {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => s.clone(),
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => s.clone(),
         DataType::Binary => s.clone(),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => s.clone(),

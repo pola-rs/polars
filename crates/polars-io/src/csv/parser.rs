@@ -174,18 +174,6 @@ pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
 }
 
 #[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(crate) fn skip_whitespace_line_ending_exclude(
-    input: &[u8],
-    exclude: u8,
-    eol_char: u8,
-) -> &[u8] {
-    skip_condition(input, |b| {
-        b != exclude && (is_whitespace(b) || is_line_ending(b, eol_char))
-    })
-}
-
-#[inline]
 pub(crate) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
     skip_condition(input, |b| is_line_ending(b, eol_char))
 }
@@ -396,19 +384,10 @@ pub(super) fn parse_lines(
             return Ok(end - start);
         }
 
-        // only when we have one column \n should not be skipped
-        // other widths should have commas.
-        bytes = if schema_len > 1 {
-            skip_whitespace_line_ending_exclude(bytes, separator, eol_char)
-        } else {
-            skip_whitespace_exclude(bytes, separator)
-        };
         if bytes.is_empty() {
             return Ok(original_bytes_len);
-        }
-
-        // deal with comments
-        if is_comment_line(bytes, comment_prefix) {
+        } else if is_comment_line(bytes, comment_prefix) {
+            // deal with comments
             let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
             bytes = bytes_rem;
             continue;

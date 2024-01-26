@@ -219,7 +219,9 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let list = &args[0];
     let item = &args[1];
-
+    polars_ensure!(matches!(list.dtype(), DataType::List(_)),
+        SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
+    );
     polars_ops::prelude::is_in(item, list).map(|mut ca| {
         ca.rename(list.name());
         Some(ca.into_series())

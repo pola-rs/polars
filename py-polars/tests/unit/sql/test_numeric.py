@@ -107,10 +107,15 @@ def test_round_ndigits(decimals: int, expected: list[float]) -> None:
 
 def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
-    with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
-        InvalidOperationError, match="Invalid 'decimals' for Round: -1"
-    ):
-        ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        with pytest.raises(
+            InvalidOperationError, match="invalid 'decimals' for Round: ??"
+        ):
+            ctx.execute("SELECT ROUND(n,'??') AS n FROM df")
+        with pytest.raises(
+            InvalidOperationError, match="Round .* negative 'decimals': -1"
+        ):
+            ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
 
 def test_stddev_variance() -> None:

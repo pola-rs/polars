@@ -82,12 +82,12 @@ def test_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
-            ComputeError, match="Invalid pattern for '~' operator: 12345"
+            ComputeError, match="invalid pattern for '~' operator: 12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
         with pytest.raises(
             ComputeError,
-            match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
+            match=r"""invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
 
@@ -127,18 +127,18 @@ def test_regexp_like_errors() -> None:
     with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
         with pytest.raises(
             InvalidOperationError,
-            match="Invalid/empty 'flags' for RegexpLike",
+            match="invalid/empty 'flags' for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
 
         with pytest.raises(
             InvalidOperationError,
-            match="Invalid arguments for RegexpLike",
+            match="invalid arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
 
         with pytest.raises(
             InvalidOperationError,
-            match="Invalid number of arguments for RegexpLike",
+            match="invalid number of arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")

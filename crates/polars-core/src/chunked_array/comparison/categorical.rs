@@ -44,7 +44,7 @@ where
     let rev_map_r = rhs.get_rev_map();
     polars_ensure!(rev_map_l.same_src(rev_map_r), ComputeError: "can only compare categoricals of the same type with the same categories");
 
-    if rev_map_l.is_enum() || !lhs.uses_lexical_ordering() {
+    if lhs.is_enum() || !lhs.uses_lexical_ordering() {
         Ok(compare_function(lhs.physical(), rhs.physical()))
     } else {
         match (lhs.len(), rhs.len()) {
@@ -167,8 +167,7 @@ where
     CompareCat: Fn(&CategoricalChunked, &CategoricalChunked) -> PolarsResult<BooleanChunked>,
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
-    let rev_map = lhs.get_rev_map();
-    if rev_map.is_enum() {
+    if lhs.is_enum() {
         let rhs_cat = rhs.cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
@@ -198,8 +197,7 @@ where
     CompareCat: Fn(&CategoricalChunked, &CategoricalChunked) -> PolarsResult<BooleanChunked>,
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
-    let rev_map = lhs.get_rev_map();
-    if rev_map.is_enum() {
+    if lhs.is_enum() {
         let rhs_cat = rhs.cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
@@ -324,7 +322,7 @@ where
 {
     let rev_map = lhs.get_rev_map();
     let idx = rev_map.find(rhs);
-    if rev_map.is_enum() {
+    if lhs.is_enum() {
         let Some(idx) = idx else {
             polars_bail!(
                 not_in_enum,
@@ -352,7 +350,7 @@ where
     ComparePhys: Fn(&UInt32Chunked, u32) -> BooleanChunked,
 {
     let rev_map = lhs.get_rev_map();
-    if rev_map.is_enum() {
+    if lhs.is_enum() {
         match rev_map.find(rhs) {
             None => {
                 polars_bail!(

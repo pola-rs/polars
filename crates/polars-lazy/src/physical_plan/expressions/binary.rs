@@ -389,9 +389,9 @@ mod stats {
             {
                 match (fld_l.data_type(), fld_r.data_type()) {
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::String, DataType::Categorical(_, _)) => {},
+                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {},
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _), DataType::String) => {},
+                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {},
                     (l, r) if l != r => panic!("implementation error: {l:?}, {r:?}"),
                     _ => {},
                 }

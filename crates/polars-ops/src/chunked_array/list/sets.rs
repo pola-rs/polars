@@ -10,7 +10,8 @@ use arrow::compute::utils::combine_validities_and;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_type;
+use polars_core::with_match_physical_numeric_type;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,16 @@ where
     T: NativeType,
 {
     fn extend_buf<I: Iterator<Item = Option<T>>>(&mut self, values: I) -> usize {
+        self.extend(values);
+        self.len()
+    }
+}
+
+impl<T> MaterializeValues<Option<TotalOrdWrap<T>>> for MutablePrimitiveArray<T>
+where
+    T: NativeType,
+{
+    fn extend_buf<I: Iterator<Item = Option<TotalOrdWrap<T>>>>(&mut self, values: I) -> usize {
         self.extend(values);
         self.len()
     }
@@ -91,8 +102,8 @@ where
     }
 }
 
-fn copied_opt<T: Copy>(v: Option<&T>) -> Option<T> {
-    v.copied()
+fn copied_wrapper_opt<T: Copy>(v: Option<&T>) -> Option<TotalOrdWrap<T>> {
+    v.copied().map(TotalOrdWrap)
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -125,13 +136,13 @@ fn primitive<T>(
     validity: Option<Bitmap>,
 ) -> PolarsResult<ListArray<i64>>
 where
-    T: NativeType + Hash + Copy + Eq,
+    T: NativeType + TotalHash + Copy + TotalEq,
 {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
 
     let mut set = Default::default();
-    let mut set2: PlIndexSet<Option<T>> = Default::default();
+    let mut set2: PlIndexSet<Option<TotalOrdWrap<T>>> = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
@@ -141,7 +152,7 @@ where
     offsets.push(0i64);
 
     if broadcast_rhs {
-        set2.extend(b.into_iter().map(copied_opt));
+        set2.extend(b.into_iter().map(copied_wrapper_opt));
     }
     let offsets_slice = if offsets_a.len() > offsets_b.len() {
         offsets_a
@@ -168,8 +179,8 @@ where
                 .into_iter()
                 .skip(start_a)
                 .take(end_a - start_a)
-                .map(copied_opt);
-            let b_iter = b.into_iter().map(copied_opt);
+                .map(copied_wrapper_opt);
+            let b_iter = b.into_iter().map(copied_wrapper_opt);
             set_operation(
                 &mut set,
                 &mut set2,
@@ -180,13 +191,13 @@ where
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a.into_iter().map(copied_opt);
+            let a_iter = a.into_iter().map(copied_wrapper_opt);
 
             let b_iter = b
                 .into_iter()
                 .skip(start_b)
                 .take(end_b - start_b)
-                .map(copied_opt);
+                .map(copied_wrapper_opt);
 
             set_operation(
                 &mut set,
@@ -203,13 +214,13 @@ where
                 .into_iter()
                 .skip(start_a)
                 .take(end_a - start_a)
-                .map(copied_opt);
+                .map(copied_wrapper_opt);
 
             let b_iter = b
                 .into_iter()
                 .skip(start_b)
                 .take(end_b - start_b)
-                .map(copied_opt);
+                .map(copied_wrapper_opt);
             set_operation(
                 &mut set,
                 &mut set2,
@@ -366,7 +377,7 @@ fn array_set_operation(
             polars_bail!(InvalidOperation: "boolean type not yet supported in list 'set' operations")
         },
         _ => {
-            with_match_physical_integer_type!(dtype.into(), |$T| {
+            with_match_physical_numeric_type!(dtype.into(), |$T| {
                 let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
                 let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
 

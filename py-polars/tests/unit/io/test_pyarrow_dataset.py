@@ -164,7 +164,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
         )
         helper_dataset_test(
             file_path,
-            lambda lf: lf.collect(),
+            lambda lf: lf.select(pl.exclude("enum")).collect(),
             batch_size=2,
             n_expected=3,
         )

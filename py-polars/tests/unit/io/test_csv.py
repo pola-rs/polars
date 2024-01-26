@@ -72,7 +72,11 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 
     read_df = pl.read_csv(buf, try_parse_dates=True)
     read_df = read_df.with_columns(
-        [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
+        [
+            pl.col("cat").cast(pl.Categorical),
+            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+            pl.col("time").cast(pl.Time),
+        ]
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
     with pytest.raises(AssertionError):
@@ -90,7 +94,11 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     read_df = pl.read_csv(file_path, try_parse_dates=True)
 
     read_df = read_df.with_columns(
-        [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
+        [
+            pl.col("cat").cast(pl.Categorical),
+            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+            pl.col("time").cast(pl.Time),
+        ]
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
@@ -569,7 +577,18 @@ def test_empty_line_with_multiple_columns() -> None:
         comment_prefix="#",
         use_pyarrow=False,
     )
-    expected = pl.DataFrame({"A": ["a", "c"], "B": ["b", "d"]})
+    expected = pl.DataFrame({"A": ["a", None, "c"], "B": ["b", None, "d"]})
+    assert_frame_equal(df, expected)
+
+
+def test_preserve_whitespace_at_line_start() -> None:
+    df = pl.read_csv(
+        b"a\n  b  \n    c\nd",
+        new_columns=["A"],
+        has_header=False,
+        use_pyarrow=False,
+    )
+    expected = pl.DataFrame({"A": ["a", "  b  ", "    c", "d"]})
     assert_frame_equal(df, expected)
 
 
@@ -896,11 +915,11 @@ def test_csv_overwrite_datetime_dtype(
     try_parse_dates: bool, time_unit: TimeUnit
 ) -> None:
     data = """\
-    a
-    2020-1-1T00:00:00.123456789
-    2020-1-2T00:00:00.987654321
-    2020-1-3T00:00:00.132547698
-    """
+a
+2020-1-1T00:00:00.123456789
+2020-1-2T00:00:00.987654321
+2020-1-3T00:00:00.132547698
+"""
     result = pl.read_csv(
         io.StringIO(data),
         try_parse_dates=try_parse_dates,
@@ -938,8 +957,8 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     df.write_csv(file_path)
 
     path_glob = tmp_path / "small*.csv"
-    assert pl.scan_csv(path_glob).collect().shape == (3, 11)
-    assert pl.read_csv(path_glob).shape == (3, 11)
+    assert pl.scan_csv(path_glob).collect().shape == (3, 12)
+    assert pl.read_csv(path_glob).shape == (3, 12)
 
 
 def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
@@ -1027,9 +1046,9 @@ def test_csv_write_escape_newlines() -> None:
 
 def test_skip_new_line_embedded_lines() -> None:
     csv = r"""a,b,c,d,e\n
-        1,2,3,"\n Test",\n
-        4,5,6,"Test A",\n
-        7,8,,"Test B \n",\n"""
+1,2,3,"\n Test",\n
+4,5,6,"Test A",\n
+7,8,,"Test B \n",\n"""
 
     for empty_string, missing_value in ((True, ""), (False, None)):
         df = pl.read_csv(
@@ -1591,11 +1610,11 @@ def test_csv_quote_styles() -> None:
 
 def test_ignore_errors_casting_dtypes() -> None:
     csv = """inventory
-    10
+10
 
-    400
-    90
-    """
+400
+90
+"""
 
     assert pl.read_csv(
         source=io.StringIO(csv),

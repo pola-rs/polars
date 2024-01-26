@@ -135,8 +135,17 @@ def test_dt_datetime_deprecated() -> None:
         ("UTC", True),
     ],
 )
-def test_local_datetime_sortedness(time_zone: str | None, expected: bool) -> None:
+def test_local_date_sortedness(time_zone: str | None, expected: bool) -> None:
+    # singleton - always sorted
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
+    result = ser.dt.date()
+    assert result.flags["SORTED_ASC"]
+    assert result.flags["SORTED_DESC"] is False
+
+    # 2 elements - depends on time zone
+    ser = (
+        pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
+    ).sort()
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"] == expected
     assert result.flags["SORTED_DESC"] is False
@@ -144,9 +153,18 @@ def test_local_datetime_sortedness(time_zone: str | None, expected: bool) -> Non
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
 def test_local_time_sortedness(time_zone: str | None) -> None:
+    # singleton - always sorted
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.time()
     assert result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+    # two elements - not sorted
+    ser = (
+        pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
+    ).sort()
+    result = ser.dt.time()
+    assert not result.flags["SORTED_ASC"]
     assert not result.flags["SORTED_DESC"]
 
 
@@ -196,8 +214,10 @@ def test_dt_datetime_date_time_invalid() -> None:
         pl.Series([time(23)]).dt.date()
     with pytest.raises(ComputeError, match="expected Datetime or Date"):
         pl.Series([timedelta(1)]).dt.date()
-    with pytest.raises(ComputeError, match="expected Datetime, Date, or Time"):
+    with pytest.raises(ComputeError, match="expected Datetime or Time"):
         pl.Series([timedelta(1)]).dt.time()
+    with pytest.raises(ComputeError, match="expected Datetime or Time"):
+        pl.Series([date(2020, 1, 1)]).dt.time()
 
 
 @pytest.mark.parametrize(
@@ -857,22 +877,13 @@ def test_offset_by_expressions() -> None:
             f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
         )
         assert_frame_equal(result, expected[i : i + 1])
-        if df_slice["b"].item() is None:
-            # Offset is None, so result will be all-None, so sortedness isn't preserved.
-            assert result.flags == {
-                "c": {"SORTED_ASC": False, "SORTED_DESC": False},
-                "d": {"SORTED_ASC": False, "SORTED_DESC": False},
-                "e": {"SORTED_ASC": False, "SORTED_DESC": False},
-                "f": {"SORTED_ASC": False, "SORTED_DESC": False},
-            }
-        else:
-            # For tz-aware, sortedness is not preserved.
-            assert result.flags == {
-                "c": {"SORTED_ASC": True, "SORTED_DESC": False},
-                "d": {"SORTED_ASC": True, "SORTED_DESC": False},
-                "e": {"SORTED_ASC": False, "SORTED_DESC": False},
-                "f": {"SORTED_ASC": True, "SORTED_DESC": False},
-            }
+        # single-row Series are always sorted
+        assert result.flags == {
+            "c": {"SORTED_ASC": True, "SORTED_DESC": False},
+            "d": {"SORTED_ASC": True, "SORTED_DESC": False},
+            "e": {"SORTED_ASC": True, "SORTED_DESC": False},
+            "f": {"SORTED_ASC": True, "SORTED_DESC": False},
+        }
 
 
 @pytest.mark.parametrize(

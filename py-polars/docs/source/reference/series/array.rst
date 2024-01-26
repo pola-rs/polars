@@ -24,5 +24,6 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.first
     Series.arr.last
     Series.arr.join
+    Series.arr.explode
     Series.arr.contains
     Series.arr.count_matches

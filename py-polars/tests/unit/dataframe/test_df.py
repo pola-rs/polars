@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import sys
-import textwrap
 import typing
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone
@@ -650,7 +649,7 @@ def test_to_dummies_drop_first() -> None:
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
     # pyarrow cannot convert a time64 w/ non-zero nanoseconds
-    df = df.drop(["cat", "time"])
+    df = df.drop(["cat", "time", "enum"])
     df.to_arrow()
     df.to_pandas()
     # test shifted df
@@ -3024,81 +3023,6 @@ def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
             assert divop(elem1, elem2) == df_div[i][j]
 
 
-def test_glimpse(capsys: Any) -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1.0, 2.8, 3.0],
-            "b": [4, 5, None],
-            "c": [True, False, True],
-            "d": [None, "b", "c"],
-            "e": ["usd", "eur", None],
-            "f": pl.datetime_range(
-                datetime(2023, 1, 1),
-                datetime(2023, 1, 3),
-                "1d",
-                time_unit="us",
-                eager=True,
-            ),
-            "g": pl.datetime_range(
-                datetime(2023, 1, 1),
-                datetime(2023, 1, 3),
-                "1d",
-                time_unit="ms",
-                eager=True,
-            ),
-            "h": pl.datetime_range(
-                datetime(2023, 1, 1),
-                datetime(2023, 1, 3),
-                "1d",
-                time_unit="ns",
-                eager=True,
-            ),
-            "i": [[5, 6], [3, 4], [9, 8]],
-            "j": [[5.0, 6.0], [3.0, 4.0], [9.0, 8.0]],
-            "k": [["A", "a"], ["B", "b"], ["C", "c"]],
-        }
-    )
-    result = df.glimpse(return_as_string=True)
-
-    expected = textwrap.dedent(
-        """\
-        Rows: 3
-        Columns: 11
-        $ a          <f64> 1.0, 2.8, 3.0
-        $ b          <i64> 4, 5, None
-        $ c         <bool> True, False, True
-        $ d          <str> None, 'b', 'c'
-        $ e          <str> 'usd', 'eur', None
-        $ f <datetime[μs]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
-        $ g <datetime[ms]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
-        $ h <datetime[ns]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
-        $ i    <list[i64]> [5, 6], [3, 4], [9, 8]
-        $ j    <list[f64]> [5.0, 6.0], [3.0, 4.0], [9.0, 8.0]
-        $ k    <list[str]> ['A', 'a'], ['B', 'b'], ['C', 'c']
-        """
-    )
-    assert result == expected
-
-    # the default is to print to the console
-    df.glimpse(return_as_string=False)
-    # remove the last newline on the capsys
-    assert capsys.readouterr().out[:-1] == expected
-
-    colc = "a" * 96
-    df = pl.DataFrame({colc: [11, 22, 33, 44, 55, 66]})
-    result = df.glimpse(
-        return_as_string=True, max_colname_length=20, max_items_per_column=4
-    )
-    expected = textwrap.dedent(
-        """\
-        Rows: 6
-        Columns: 1
-        $ aaaaaaaaaaaaaaaaaaa… <i64> 11, 22, 33, 44
-        """
-    )
-    assert result == expected
-
-
 @pytest.mark.parametrize(
     ("subset", "keep", "expected_mask"),
     [
@@ -3372,6 +3296,25 @@ def test_from_dicts_undeclared_column_dtype() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
     assert result.schema == {"x": pl.Null}
+
+
+def test_from_dicts_with_override() -> None:
+    data = [
+        {"a": "1", "b": str(2**64 - 1), "c": "1"},
+        {"a": "1", "b": "1", "c": "-5.0"},
+    ]
+    override = {"a": pl.Int32, "b": pl.UInt64, "c": pl.Float32}
+    result = pl.from_dicts(data, schema_overrides=override)
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "a": pl.Series([1, 1], dtype=pl.Int32),
+                "b": pl.Series([2**64 - 1, 1], dtype=pl.UInt64),
+                "c": pl.Series([1.0, -5.0], dtype=pl.Float32),
+            }
+        ),
+    )
 
 
 def test_from_records_u64_12329() -> None:

@@ -125,13 +125,21 @@ def numpy_values_and_dtype(
     return values, dtype
 
 
-def numpy_type_to_constructor(dtype: type[np.dtype[Any]]) -> Callable[..., PySeries]:
+def numpy_type_to_constructor(
+    values: np.ndarray[Any, Any], dtype: type[np.dtype[Any]]
+) -> Callable[..., PySeries]:
     """Get the right PySeries constructor for the given Polars dtype."""
     if _NUMPY_TYPE_TO_CONSTRUCTOR is None:
         _set_numpy_to_constructor()
     try:
         return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]  # type:ignore[index]
     except KeyError:
+        if len(values) > 0:
+            first_non_nan = next((v for v in values if v == v), None)
+            if isinstance(first_non_nan, str):
+                return PySeries.new_str
+            if isinstance(first_non_nan, bytes):
+                return PySeries.new_binary
         return PySeries.new_object
     except NameError:  # pragma: no cover
         msg = f"'numpy' is required to convert numpy dtype {dtype!r}"

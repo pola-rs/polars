@@ -6,19 +6,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
 
     let df: DataFrame = df!(
-        "a" => 0..8,
-        "b"=> (0..8).map(|_| rng.gen::<f64>()).collect::<Vec<f64>>(),
+        "a" => 0..5,
+        "b"=> (0..5).map(|_| rng.gen::<f64>()).collect::<Vec<f64>>(),
         "c"=> [
-            NaiveDate::from_ymd_opt(2022, 12, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 12, 2).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 12, 3).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 12, 4).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 12, 5).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 12, 6).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 12, 7).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 12, 8).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2025, 12, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2025, 12, 2).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2025, 12, 3).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2025, 12, 4).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2025, 12, 5).unwrap().and_hms_opt(0, 0, 0).unwrap(),
         ],
-        "d"=> [Some(1.0), Some(2.0), None, None, Some(0.0), Some(-5.0), Some(-42.), None]
+        "d"=> [Some(1.0), Some(2.0), None, Some(-42.), None]
     )
     .unwrap();
 
@@ -46,17 +43,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = df
         .clone()
         .lazy()
-        .select([col("*").exclude(["a"])])
+        .select([col("*").exclude(["a", "c"])])
         .collect()?;
     println!("{}", out);
     // --8<-- [end:exclude]
 
     // --8<-- [start:filter]
-    let start_date = NaiveDate::from_ymd_opt(2022, 12, 2)
+    let start_date = NaiveDate::from_ymd_opt(2025, 12, 2)
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let end_date = NaiveDate::from_ymd_opt(2022, 12, 8)
+    let end_date = NaiveDate::from_ymd_opt(2025, 12, 3)
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();

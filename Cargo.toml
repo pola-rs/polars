@@ -46,6 +46,7 @@ hashbrown = { version = "0.14", features = ["rayon", "ahash"] }
 hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
+itoap = { version = "1", features = ["simd"] }
 atoi_simd = "0.15.5"
 fast-float = { version = "0.2" }
 memchr = "2.6"

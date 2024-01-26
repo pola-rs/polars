@@ -20,7 +20,7 @@ fn compares_cat_to_string(type_left: &DataType, type_right: &DataType, op: Opera
                 type_left,
                 type_right,
                 DataType::String,
-                DataType::Categorical(_, _)
+                DataType::Categorical(_, _) | DataType::Enum(_, _)
             )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -64,7 +64,7 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
             type_left,
             type_right,
             DataType::String,
-            DataType::Categorical(_, _)
+            DataType::Categorical(_, _) | DataType::Enum(_, _)
         )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -224,6 +224,12 @@ pub(super) fn process_binary(
         },
         #[cfg(feature = "dtype-categorical")]
         (String | Categorical(_, _), dt, op) | (dt, String | Categorical(_, _), op)
+            if op.is_comparison() && dt.is_numeric() =>
+        {
+            return Ok(None)
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (String | Enum(_, _), dt, op) | (dt, String | Enum(_, _), op)
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)

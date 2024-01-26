@@ -346,7 +346,7 @@ class ArrayNameSpace:
 
         """
 
-    def join(self, separator: IntoExprColumn) -> Series:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:
         """
         Join all string items in a sub-array and place a separator between them.
 
@@ -356,6 +356,11 @@ class ArrayNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -373,6 +378,31 @@ class ArrayNameSpace:
             "a-b"
         ]
 
+        """
+
+    def explode(self) -> Series:
+        """
+        Returns a column with a separate row for every array element.
+
+        Returns
+        -------
+        Series
+            Series with the data type of the array elements.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+            6
+        ]
         """
 
     def contains(

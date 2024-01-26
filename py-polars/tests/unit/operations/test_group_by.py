@@ -831,22 +831,6 @@ def test_group_by_rolling_deprecated() -> None:
     assert_frame_equal(result_lazy, expected, check_row_order=False)
 
 
-def test_group_by_multiple_keys_one_literal() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
-
-    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
-    for streaming in [True, False]:
-        assert (
-            df.lazy()
-            .group_by("a", pl.lit(1))
-            .agg(pl.col("b").max())
-            .sort(["a", "b"])
-            .collect(streaming=streaming)
-            .to_dict(as_series=False)
-            == expected
-        )
-
-
 def test_group_by_list_scalar_11749() -> None:
     df = pl.DataFrame(
         {
