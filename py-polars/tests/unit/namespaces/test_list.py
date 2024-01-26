@@ -579,6 +579,16 @@ def test_list_count_match_boolean_nulls_9141() -> None:
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
+def test_list_count_match_categorical() -> None:
+    df = pl.DataFrame(
+        {"list": [["0"], ["1"], ["1", "2", "3", "2"], ["1", "2", "1"], ["4", "4"]]},
+        schema={"list": pl.List(pl.Categorical)},
+    )
+    assert df.select(pl.col("list").list.count_matches("2").alias("number_of_twos"))[
+        "number_of_twos"
+    ].to_list() == [0, 0, 2, 1, 0]
+
+
 def test_list_count_matches_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
 
