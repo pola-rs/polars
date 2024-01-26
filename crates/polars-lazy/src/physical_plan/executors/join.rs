@@ -98,6 +98,7 @@ impl Executor for JoinExec {
                 .map(|e| e.evaluate(&df_right, state).and_then(|s| broadcast_series_to_df(s, &df_right)))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
+            // TODO remove
             if state.verbose() {
                 eprintln!("left on series: {:?}", left_on_series);
                 eprintln!("right on series: {:?}", right_on_series);
