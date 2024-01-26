@@ -1124,7 +1124,7 @@ impl DataFrame {
 
     /// Add a new column to this [`DataFrame`] or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> PolarsResult<&mut Self> {
-        let series = broadcast_series_to_df(column.into_series(), &self)?;
+        let series = broadcast_series_to_df(column.into_series(), self)?;
         self.add_column_by_search(series)?;
         Ok(self)
     }
