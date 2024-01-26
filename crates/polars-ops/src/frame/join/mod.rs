@@ -306,7 +306,41 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
                 let ids =
                     _left_join_multiple_keys(&mut left, &mut right, None, None, args.join_nulls);
-                left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
+
+                // Quick hack for demonstration:
+                // Drop the columns in right df if left_on/right_on expressions exist in both left and right df
+                let ones_to_drop = selected_left
+                    .iter()
+                    .zip(selected_right.iter())
+                    .filter_map(|(s1, s2)| {
+                        // check if s1 is column in the left df
+                        let s1_exists = left_df
+                            .column(s1.name())
+                            .map(|s| s1.get_data_ptr() == s.get_data_ptr())
+                            .unwrap_or(false);
+
+                        // check if s2 is in the right df
+                        let s2_exists = other
+                            .column(s2.name())
+                            .map(|s| s2.get_data_ptr() == s.get_data_ptr())
+                            .unwrap_or(false);
+
+                        // only drop if both exist
+                        if s1_exists && s2_exists {
+                            Some(s2)
+                        } else {
+                            None
+                        }
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                if _verbose {
+                    let dropped_names = ones_to_drop.iter().map(|x| x.name()).collect::<Vec<_>>();
+                    eprintln!("Dropping names in right df: {:?}", dropped_names);
+                }
+
+                left_df._finish_left_join(ids, &remove_selected(other, &ones_to_drop), args)
             },
             JoinType::Outer { .. } => {
                 let df_left = DataFrame::new_no_checks(selected_left_physical);
