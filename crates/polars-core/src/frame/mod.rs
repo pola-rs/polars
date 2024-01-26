@@ -1124,30 +1124,9 @@ impl DataFrame {
 
     /// Add a new column to this [`DataFrame`] or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> PolarsResult<&mut Self> {
-        fn inner(df: &mut DataFrame, mut series: Series) -> PolarsResult<&mut DataFrame> {
-            let height = df.height();
-            if series.len() == 1 && height > 1 {
-                series = series.new_from_index(0, height);
-            }
-
-            if series.len() == height || df.is_empty() {
-                df.add_column_by_search(series)?;
-                Ok(df)
-            }
-            // special case for literals
-            else if height == 0 && series.len() == 1 {
-                let s = series.clear();
-                df.add_column_by_search(s)?;
-                Ok(df)
-            } else {
-                polars_bail!(
-                    ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
-                    series.len(), height,
-                );
-            }
-        }
-        let series = column.into_series();
-        inner(self, series)
+        let series = correct_series_against_df(column.into_series(), &self)?;
+        self.add_column_by_search(series)?;
+        Ok(self)
     }
 
     /// Adds a column to the [`DataFrame`] without doing any checks
@@ -3071,6 +3050,28 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
         left.name(), right.name(),
     );
     Ok(())
+}
+
+// # TODO dodgy name
+pub fn correct_series_against_df(mut series: Series, df: &DataFrame) -> PolarsResult<Series> {
+    let height = df.height();
+    if series.len() == 1 && height > 1 {
+        series = series.new_from_index(0, height);
+    }
+
+    if series.len() == height || df.is_empty() {
+        Ok(series)
+    }
+    // special case for literals
+    else if height == 0 && series.len() == 1 {
+        let s = series.clear();
+        Ok(s)
+    } else {
+        polars_bail!(
+            ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
+            series.len(), height,
+        );
+    }
 }
 
 #[cfg(test)]
