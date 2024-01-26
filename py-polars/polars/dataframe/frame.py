@@ -2266,9 +2266,6 @@ class DataFrame:
         ham    large_string[pyarrow]
         dtype: object
         """
-        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
-            return pd.DataFrame()
-
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
@@ -2281,7 +2278,65 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        record_batches = self._df.to_pandas()
+        # Object columns must be handled separately as Arrow does not convert them
+        # correctly
+        if Object in self.dtypes:
+            return self._to_pandas_with_object_columns(
+                use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+            )
+
+        return self._to_pandas_without_object_columns(
+            self, use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+        )
+
+    def _to_pandas_with_object_columns(
+        self,
+        *,
+        use_pyarrow_extension_array: bool,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        # Find which columns are of type pl.Object, and which aren't:
+        object_columns = []
+        not_object_columns = []
+        for i, dtype in enumerate(self.dtypes):
+            if dtype == Object:
+                object_columns.append(i)
+            else:
+                not_object_columns.append(i)
+
+        # Export columns that aren't pl.Object, in the same order:
+        if not_object_columns:
+            df_without_objects = self[:, not_object_columns]
+            pandas_df = self._to_pandas_without_object_columns(
+                df_without_objects,
+                use_pyarrow_extension_array=use_pyarrow_extension_array,
+                **kwargs,
+            )
+        else:
+            pandas_df = pd.DataFrame()
+
+        # Add columns that are pl.Object, using Series' custom to_pandas()
+        # logic for this case. We do this in order, so the original index for
+        # the next column in this dataframe is correct for the partially
+        # constructed Pandas dataframe, since there are no additional or
+        # missing columns to the inserted column's left.
+        for i in object_columns:
+            name = self.columns[i]
+            pandas_df.insert(i, name, self.to_series(i).to_pandas())
+
+        return pandas_df
+
+    def _to_pandas_without_object_columns(
+        self,
+        df: DataFrame,
+        *,
+        use_pyarrow_extension_array: bool,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        if not df.width:  # Empty dataframe, cannot infer schema from batches
+            return pd.DataFrame()
+
+        record_batches = df._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
             return tbl.to_pandas(

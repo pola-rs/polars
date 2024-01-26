@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 from datetime import date, datetime
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from hypothesis import given
+from hypothesis.strategies import just, lists, one_of
 
 import polars as pl
 
@@ -83,6 +88,32 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
     )
 
 
+@given(
+    column_type_names=lists(
+        one_of(just("Object"), just("Int32")), min_size=1, max_size=8
+    )
+)
+def test_object_to_pandas(column_type_names: list[Literal["Object", "Int32"]]) -> None:
+    """
+    Converting ``pl.Object`` dtype columns to Pandas is handled correctly.
+
+    This edge case is handled with a separate code path than other data types,
+    so we test it more thoroughly.
+    """
+    column_types = [getattr(pl, name) for name in column_type_names]
+    data = {
+        f"col_{i}": [object()] if dtype == pl.Object else [-i]
+        for i, dtype in enumerate(column_types)
+    }
+    df = pl.DataFrame(
+        data, schema={f"col_{i}": column_types[i] for i in range(len(column_types))}
+    )
+    for pyarrow in [True, False]:
+        pandas_df = df.to_pandas(use_pyarrow_extension_array=pyarrow)
+        assert isinstance(pandas_df, pd.DataFrame)
+        assert pandas_df.to_dict(orient="list") == data
+
+
 def test_from_empty_pandas_with_dtypes() -> None:
     df = pd.DataFrame(columns=["a", "b"])
     df["a"] = df["a"].astype(str)
@@ -137,3 +168,14 @@ def test_to_pandas_datetime() -> None:
     result_df = s.to_frame().to_pandas()
     expected_df = expected_series.to_frame()
     pd.testing.assert_frame_equal(result_df, expected_df)
+
+
+@pytest.mark.parametrize("use_pyarrow_extension_array", [True, False])
+def test_object_to_pandas_series(use_pyarrow_extension_array: bool) -> None:
+    values = [object(), [1, 2, 3]]
+    pd.testing.assert_series_equal(
+        pl.Series("a", values, dtype=pl.Object).to_pandas(
+            use_pyarrow_extension_array=use_pyarrow_extension_array
+        ),
+        pd.Series(values, dtype=object, name="a"),
+    )

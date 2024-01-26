@@ -4492,6 +4492,10 @@ class Series:
         2    <NA>
         Name: b, dtype: int64[pyarrow]
         """
+        if self.dtype == Object:
+            # Can't convert via PyArrow, so do it via NumPy:
+            return pd.Series(self.to_numpy(), dtype=object, name=self.name)
+
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}'
