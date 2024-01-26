@@ -3684,7 +3684,9 @@ class DataFrame:
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export *without* copying data
-            res: int | None = self.to_pandas(use_pyarrow_extension_array=True,).to_sql(
+            res: int | None = self.to_pandas(
+                use_pyarrow_extension_array=True,
+            ).to_sql(
                 name=unpacked_table_name,
                 schema=db_schema,
                 con=engine_sa,
