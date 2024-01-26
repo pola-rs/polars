@@ -193,7 +193,8 @@ pub fn infer_file_schema_inner(
             }
         }
 
-        let byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
+        let mut byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
+
         if has_header {
             let headers = byterecord
                 .map(|(slice, needs_escaping)| {
@@ -222,6 +223,16 @@ pub fn infer_file_schema_inner(
             }
             final_headers
         } else {
+            // if columns length is non uniform we need to find row with highest column length
+            let mut line_with_max_columns: &[u8] = header_line;
+            for (_i, line) in (&mut lines).enumerate() {
+                if !is_comment_line(line, comment_prefix)
+                    && line.len() > line_with_max_columns.len()
+                {
+                    line_with_max_columns = line
+                }
+            }
+            byterecord = SplitFields::new(line_with_max_columns, separator, quote_char, eol_char);
             byterecord
                 .enumerate()
                 .map(|(i, _s)| format!("column_{}", i + 1))
