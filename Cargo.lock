@@ -2663,10 +2663,12 @@ name = "polars-compute"
 version = "0.37.0"
 dependencies = [
  "bytemuck",
+ "either",
  "num-traits",
  "polars-arrow",
  "polars-error",
  "polars-utils",
+ "strength_reduce",
  "version_check",
 ]
 
