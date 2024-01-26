@@ -251,7 +251,7 @@ impl ToPyObject for Wrap<DataType> {
             },
             DataType::Enum(rev_map, _) => {
                 // we should always have an initialized rev_map coming from rust
-                let categories = rev_map.unwrap().get_categories();
+                let categories = rev_map.as_ref().unwrap().get_categories();
                 let class = pl.getattr(intern!(py, "Enum")).unwrap();
                 let s = Series::from_arrow("category", categories.to_boxed()).unwrap();
                 let series = to_series(py, s.into());

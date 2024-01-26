@@ -120,13 +120,17 @@ where
                         unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) }
                             .clone()
                     },
-                    dt if dt.is_integer() => self.cast(&DataType::UInt32)?.u32()?.clone(),
+                    dt if dt.is_integer() => self
+                        .cast(self.dtype())?
+                        .strict_cast(&DataType::UInt32)?
+                        .u32()?
+                        .clone(),
                     _ => {
-                        polars_bail!(ComputeError: "cannot cast non integer types to 'Categorical'")
+                        polars_bail!(ComputeError: "cannot cast non integer types to 'Enum'")
                     },
                 };
                 let Some(rev_map) = rev_map else {
-                    polars_bail!(ComputeError: "cannot cast to enum without categories");
+                    polars_bail!(ComputeError: "cannot cast to Enum without categories");
                 };
                 let categories = rev_map.get_categories();
                 // Check if indices are in bounds

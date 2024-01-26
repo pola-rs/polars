@@ -302,16 +302,10 @@ impl DataType {
     pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(Some(rev_map), _) => {
-                if rev_map.is_enum() {
-                    Some(BTreeMap::from([(
-                        DTYPE_ENUM_KEY.into(),
-                        DTYPE_ENUM_VALUE.into(),
-                    )]))
-                } else {
-                    None
-                }
-            },
+            DataType::Enum(_, _) => Some(BTreeMap::from([(
+                DTYPE_ENUM_KEY.into(),
+                DTYPE_ENUM_VALUE.into(),
+            )])),
             DataType::BinaryOffset => Some(BTreeMap::from([(
                 "pl".to_string(),
                 "maintain_type".to_string(),

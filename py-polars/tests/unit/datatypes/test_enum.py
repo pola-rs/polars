@@ -392,12 +392,12 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
     enum_dtype = pl.Enum(["a", "b", "c", "d"])
     series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
     with pytest.raises(
-        pl.ComputeError, match="conversion from `i8` to `enum` failed in column"
+        pl.ComputeError, match="conversion from `i8` to `u32` failed in column"
     ):
         series.cast(enum_dtype)
 
     series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
     with pytest.raises(
-        pl.ComputeError, match="conversion from `u64` to `enum` failed in column"
+        pl.ComputeError, match="conversion from `u64` to `u32` failed in column"
     ):
         series.cast(enum_dtype)

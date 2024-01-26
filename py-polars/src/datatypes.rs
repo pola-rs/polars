@@ -63,7 +63,7 @@ impl From<&DataType> for PyDataType {
             #[cfg(feature = "object")]
             DataType::Object(_, _) => Object,
             DataType::Categorical(_, _) => Categorical,
-            DataType::Enum(rev_map, _) => Enum(rev_map.unwrap().get_categories().clone()),
+            DataType::Enum(rev_map, _) => Enum(rev_map.as_ref().unwrap().get_categories().clone()),
             DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown | DataType::BinaryOffset => {
                 panic!("null or unknown not expected here")

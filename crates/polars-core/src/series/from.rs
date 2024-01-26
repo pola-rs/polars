@@ -347,7 +347,8 @@ impl Series {
                         // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                         return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                             UInt32Chunked::with_chunk(name, keys.clone()),
-                            Arc::new(RevMapping::build_enum(values.clone())),
+                            Arc::new(RevMapping::build_local(values.clone())),
+                            true,
                             Default::default(),
                         )
                         .into_series());
