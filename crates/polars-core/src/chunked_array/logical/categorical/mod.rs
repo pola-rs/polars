@@ -361,20 +361,16 @@ impl LogicalType for CategoricalChunked {
                     StringChunked::with_chunk("", self.get_rev_map().get_categories().clone());
                 let casted_series = categories.cast(dtype)?;
 
-                macro_rules! get_elements {
-                    ($ca:expr) => {{
-                        Ok(self
-                            .physical()
-                            .into_iter()
-                            .map(|opt_el| {
-                                opt_el.map(|el: u32| unsafe {
-                                    $ca.get_unchecked(el as usize).unwrap()
-                                })
-                            })
-                            .collect())
-                    }};
+                #[cfg(feature = "bigidx")]
+                {
+                    let s = self.physical.cast(&DataType::UInt64)?;
+                    Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
-                downcast_as_macro_arg_physical!(casted_series, get_elements)
+                #[cfg(not(feature = "bigidx"))]
+                {
+                    // Safety: Invariant of categorical means indices are in bound
+                    Ok(unsafe { casted_series.take_unchecked(&self.physical) })
+                }
             },
             _ => self.physical.cast(dtype),
         }
