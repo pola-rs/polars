@@ -143,14 +143,7 @@ impl Series {
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Categorical]`
     #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        match self.dtype() {
-            DataType::Categorical(_, _) | DataType::Enum(_, _) => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const CategoricalChunked))
-            },
-            dt => polars_bail!(
-                SchemaMismatch: "invalid series dtype: expected `Categorical` or `Enum`, got `{}`", dt,
-            ),
-        }
+        unpack_chunked!(self, DataType::Categorical(_, _) | DataType::Enum(_, _) => CategoricalChunked, "Enum | Categorical")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Struct]`

@@ -144,13 +144,13 @@ where
                 let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
                 // SAFETY indices are in bound
                 unsafe {
-                    return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                         ca.clone(),
                         rev_map.clone(),
                         true,
                         *ordering,
                     )
-                    .into_series());
+                    .into_series())
                 }
             },
             #[cfg(feature = "dtype-struct")]
