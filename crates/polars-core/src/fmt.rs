@@ -977,7 +977,7 @@ fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
         if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() {
             write!(f, "{}", *b as char)?;
         } else {
-            write!(f, "\\x{:x}", b)?;
+            write!(f, "\\x{:02x}", b)?;
         }
     }
     if bytes.len() > width {
