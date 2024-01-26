@@ -110,7 +110,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     v0 = df.select(pl.col(pl.String))
     v1 = df.select(pl.col(pl.Int64))
-    df_supported = df.drop(["cat", "time"])
+    df_supported = df.drop(["cat", "enum", "time"])
 
     # Case: Success (version 0)
     v0.write_delta(tmp_path)

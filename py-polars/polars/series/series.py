@@ -77,6 +77,7 @@ from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.slice import PolarsSlice
 from polars.utils._construction import (
     arrow_to_pyseries,
+    dataframe_to_pyseries,
     iterable_to_pyseries,
     numpy_to_idxs,
     numpy_to_pyseries,
@@ -103,7 +104,6 @@ from polars.utils.various import (
     _is_generator,
     no_default,
     parse_version,
-    range_to_series,
     range_to_slice,
     scale_bytes,
     sphinx_accessor,
@@ -182,10 +182,14 @@ class Series:
     nan_to_null
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
-    dtype_if_empty=dtype_if_empty : DataType, default None
-        If no dtype is specified and values contains None, an empty list, or a
-        list with only None values, set the Polars dtype of the Series data.
-        If not specified, Float32 is used in those cases.
+    dtype_if_empty : DataType, default Null
+        Data type of the Series if `values` contains no non-null data.
+
+        .. deprecated:: 0.20.6
+            The data type for empty Series will always be Null.
+            To preserve behavior, check if the resulting Series has data type Null and
+            cast to the desired data type.
+            This parameter will be removed in the next breaking release.
 
     Examples
     --------
@@ -255,12 +259,20 @@ class Series:
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType = Null,
     ):
+        if dtype_if_empty != Null:
+            issue_deprecation_warning(
+                "The `dtype_if_empty` parameter for the Series constructor is deprecated."
+                " The data type for empty Series will always be Null."
+                " To preserve behavior, check if the resulting Series has data type Null and cast to the desired data type."
+                " This parameter will be removed in the next breaking release.",
+                version="0.20.6",
+            )
+
         # If 'Unknown' treat as None to attempt inference
         if dtype == Unknown:
             dtype = None
-
         # Raise early error on invalid dtype
-        if (
+        elif (
             dtype is not None
             and not is_polars_dtype(dtype)
             and py_type_to_dtype(dtype, raise_unmatched=False) is None
@@ -282,27 +294,17 @@ class Series:
                 msg = "Series name must be a string"
                 raise TypeError(msg)
 
-        if values is None:
-            self._s = sequence_to_pyseries(
-                name, [], dtype=dtype, dtype_if_empty=dtype_if_empty
-            )
-
-        elif isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s
-
-        elif isinstance(values, Series):
-            name = values.name if original_name is None else name
-            self._s = series_to_pyseries(name, values, dtype=dtype, strict=strict)
-
-        elif isinstance(values, Sequence):
+        if isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
                 name,
                 values,
                 dtype=dtype,
                 strict=strict,
-                dtype_if_empty=dtype_if_empty,
                 nan_to_null=nan_to_null,
             )
+
+        elif values is None:
+            self._s = sequence_to_pyseries(name, [], dtype=dtype)
 
         elif _check_for_numpy(values) and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(
@@ -333,23 +335,17 @@ class Series:
             self._s = pandas_to_pyseries(name, values)
 
         elif _is_generator(values):
-            self._s = iterable_to_pyseries(
-                name,
-                values,
-                dtype=dtype,
-                dtype_if_empty=dtype_if_empty,
-                strict=strict,
+            self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
+
+        elif isinstance(values, Series):
+            self._s = series_to_pyseries(
+                original_name, values, dtype=dtype, strict=strict
             )
 
         elif isinstance(values, pl.DataFrame):
-            to_struct = values.width > 1
-            name = (
-                values.columns[0] if (original_name is None and not to_struct) else name
+            self._s = dataframe_to_pyseries(
+                original_name, values, dtype=dtype, strict=strict
             )
-            s = values.to_struct(name) if to_struct else values.to_series().rename(name)
-            if dtype is not None and dtype != s.dtype:
-                s = s.cast(dtype)
-            self._s = s._s
 
         else:
             msg = (
@@ -357,6 +353,10 @@ class Series:
                 " for the `values` parameter"
             )
             raise TypeError(msg)
+
+        # Implementation of deprecated `dtype_if_empty` functionality
+        if dtype_if_empty != Null and self.dtype == Null:
+            self._s = self._s.cast(dtype_if_empty, False)
 
     @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Self:
@@ -712,7 +712,9 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             if self.dtype in (List, Array):
                 other = [other]
-            other = Series("", other, dtype_if_empty=self.dtype)
+            other = Series("", other)
+            if other.dtype == Null:
+                other.cast(self.dtype)
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
@@ -4435,53 +4437,59 @@ class Series:
         """
         return self._s.to_arrow()
 
-    def to_pandas(  # noqa: D417
-        self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
+    def to_pandas(
+        self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any
     ) -> pd.Series[Any]:
         """
         Convert this Series to a pandas Series.
 
-        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
-        This operation clones data, unless `use_pyarrow_extension_array=True`.
+        This operation copies data if `use_pyarrow_extension_array` is not enabled.
 
         Parameters
         ----------
         use_pyarrow_extension_array
-            Further operations on this Pandas series, might trigger conversion to numpy.
-            Use PyArrow backed-extension array instead of numpy array for pandas
-            Series. This allows zero copy operations and preservation of nulls
-            values.
-            Further operations on this pandas Series, might trigger conversion
-            to NumPy arrays if that operation is not supported by pyarrow compute
-            functions.
-        kwargs
-            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+            Use a PyArrow-backed extension array instead of a NumPy array for the pandas
+            Series. This allows zero copy operations and preservation of null values.
+            Subsequent operations on the resulting pandas Series may trigger conversion
+            to NumPy if those operations are not supported by PyArrow compute functions.
+        **kwargs
+            Additional keyword arguments to be passed to
+            :meth:`pyarrow.Array.to_pandas`.
+
+        Returns
+        -------
+        :class:`pandas.Series`
+
+        Notes
+        -----
+        This operation requires that both :mod:`pandas` and :mod:`pyarrow` are
+        installed.
 
         Examples
         --------
-        >>> s1 = pl.Series("a", [1, 2, 3])
-        >>> s1.to_pandas()
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.to_pandas()
         0    1
         1    2
         2    3
         Name: a, dtype: int64
-        >>> s1.to_pandas(use_pyarrow_extension_array=True)  # doctest: +SKIP
-        0    1
-        1    2
-        2    3
-        Name: a, dtype: int64[pyarrow]
-        >>> s2 = pl.Series("b", [1, 2, None, 4])
-        >>> s2.to_pandas()
+
+        Null values are converted to `NaN`.
+
+        >>> s = pl.Series("b", [1, 2, None])
+        >>> s.to_pandas()
         0    1.0
         1    2.0
         2    NaN
-        3    4.0
         Name: b, dtype: float64
-        >>> s2.to_pandas(use_pyarrow_extension_array=True)  # doctest: +SKIP
+
+        Pass `use_pyarrow_extension_array=True` to get a pandas Series backed by a
+        PyArrow extension array. This will preserve null values.
+
+        >>> s.to_pandas(use_pyarrow_extension_array=True)
         0       1
         1       2
         2    <NA>
-        3       4
         Name: b, dtype: int64[pyarrow]
         """
         if use_pyarrow_extension_array:
@@ -4496,16 +4504,18 @@ class Series:
                     else ""
                 )
 
-        pd_series = (
-            self.to_arrow().to_pandas(
+        pa_arr = self.to_arrow()
+        if use_pyarrow_extension_array:
+            pd_series = pa_arr.to_pandas(
                 self_destruct=True,
                 split_blocks=True,
                 types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
                 **kwargs,
             )
-            if use_pyarrow_extension_array
-            else self.to_arrow().to_pandas(**kwargs)
-        )
+        else:
+            date_as_object = kwargs.pop("date_as_object", False)
+            pd_series = pa_arr.to_pandas(date_as_object=date_as_object, **kwargs)
+
         pd_series.name = self.name
         return pd_series
 

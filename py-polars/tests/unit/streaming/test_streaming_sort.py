@@ -13,6 +13,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 def assert_df_sorted_by(
     df: pl.DataFrame,

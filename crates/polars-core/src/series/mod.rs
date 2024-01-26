@@ -904,23 +904,17 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        match T::get_dtype() {
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(None, None) => panic!("impl error"),
-            _ => {
-                if &T::get_dtype() == self.dtype() ||
-                    // Needed because we want to get ref of List no matter what the inner type is.
-                    (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
-                {
-                    unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
-                } else {
-                    panic!(
-                        "implementation error, cannot get ref {:?} from {:?}",
-                        T::get_dtype(),
-                        self.dtype()
-                    );
-                }
-            },
+        if &T::get_dtype() == self.dtype() ||
+            // Needed because we want to get ref of List no matter what the inner type is.
+            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
+        {
+            unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
+        } else {
+            panic!(
+                "implementation error, cannot get ref {:?} from {:?}",
+                T::get_dtype(),
+                self.dtype()
+            );
         }
     }
 }
@@ -997,6 +991,36 @@ mod test {
         // add wrong type
         let s2 = Series::new("b", &[3.0]);
         assert!(s1.append(&s2).is_err())
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-decimal")]
+    fn series_append_decimal() {
+        let s1 = Series::new("a", &[1.1, 2.3])
+            .cast(&DataType::Decimal(None, Some(2)))
+            .unwrap();
+        let s2 = Series::new("b", &[3])
+            .cast(&DataType::Decimal(None, Some(0)))
+            .unwrap();
+
+        {
+            let mut s1 = s1.clone();
+            s1.append(&s2).unwrap();
+            assert_eq!(s1.len(), 3);
+            #[cfg(feature = "python")]
+            assert_eq!(s1.get(2).unwrap(), AnyValue::Float64(3.0));
+            #[cfg(not(feature = "python"))]
+            assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 2));
+        }
+
+        {
+            let mut s2 = s2.clone();
+            s2.extend(&s1).unwrap();
+            #[cfg(feature = "python")]
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Float64(2.29)); // 2.3 == 2.2999999999999998
+            #[cfg(not(feature = "python"))]
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
+        }
     }
 
     #[test]
