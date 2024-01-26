@@ -77,6 +77,7 @@ from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.slice import PolarsSlice
 from polars.utils._construction import (
     arrow_to_pyseries,
+    dataframe_to_pyseries,
     iterable_to_pyseries,
     numpy_to_idxs,
     numpy_to_pyseries,
@@ -103,7 +104,6 @@ from polars.utils.various import (
     _is_generator,
     no_default,
     parse_version,
-    range_to_series,
     range_to_slice,
     scale_bytes,
     sphinx_accessor,
@@ -271,9 +271,8 @@ class Series:
         # If 'Unknown' treat as None to attempt inference
         if dtype == Unknown:
             dtype = None
-
         # Raise early error on invalid dtype
-        if (
+        elif (
             dtype is not None
             and not is_polars_dtype(dtype)
             and py_type_to_dtype(dtype, raise_unmatched=False) is None
@@ -295,27 +294,17 @@ class Series:
                 msg = "Series name must be a string"
                 raise TypeError(msg)
 
-        if values is None:
-            self._s = sequence_to_pyseries(
-                name, [], dtype=dtype, dtype_if_empty=dtype_if_empty
-            )
-
-        elif isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s
-
-        elif isinstance(values, Series):
-            name = values.name if original_name is None else name
-            self._s = series_to_pyseries(name, values, dtype=dtype, strict=strict)
-
-        elif isinstance(values, Sequence):
+        if isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
                 name,
                 values,
                 dtype=dtype,
                 strict=strict,
-                dtype_if_empty=dtype_if_empty,
                 nan_to_null=nan_to_null,
             )
+
+        elif values is None:
+            self._s = sequence_to_pyseries(name, [], dtype=dtype)
 
         elif _check_for_numpy(values) and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(
@@ -346,23 +335,17 @@ class Series:
             self._s = pandas_to_pyseries(name, values)
 
         elif _is_generator(values):
-            self._s = iterable_to_pyseries(
-                name,
-                values,
-                dtype=dtype,
-                dtype_if_empty=dtype_if_empty,
-                strict=strict,
+            self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
+
+        elif isinstance(values, Series):
+            self._s = series_to_pyseries(
+                original_name, values, dtype=dtype, strict=strict
             )
 
         elif isinstance(values, pl.DataFrame):
-            to_struct = values.width > 1
-            name = (
-                values.columns[0] if (original_name is None and not to_struct) else name
+            self._s = dataframe_to_pyseries(
+                original_name, values, dtype=dtype, strict=strict
             )
-            s = values.to_struct(name) if to_struct else values.to_series().rename(name)
-            if dtype is not None and dtype != s.dtype:
-                s = s.cast(dtype)
-            self._s = s._s
 
         else:
             msg = (
@@ -370,6 +353,10 @@ class Series:
                 " for the `values` parameter"
             )
             raise TypeError(msg)
+
+        # Implementation of deprecated `dtype_if_empty` functionality
+        if dtype_if_empty != Null and self.dtype == Null:
+            self._s = self._s.cast(dtype_if_empty, False)
 
     @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Self:
