@@ -249,16 +249,13 @@ impl ToPyObject for Wrap<DataType> {
                     .unwrap()
                     .into()
             },
-            DataType::Enum(Some(rev_map), _) => {
-                let categories = rev_map.get_categories();
+            DataType::Enum(rev_map, _) => {
+                // we should always have an initialized rev_map coming from rust
+                let categories = rev_map.unwrap().get_categories();
                 let class = pl.getattr(intern!(py, "Enum")).unwrap();
                 let s = Series::from_arrow("category", categories.to_boxed()).unwrap();
                 let series = to_series(py, s.into());
                 return class.call1((series,)).unwrap().into();
-            },
-            DataType::Enum(None, _) => {
-                // TODO
-                todo!();
             },
             DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
             DataType::Struct(fields) => {
@@ -363,10 +360,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let s = get_series(categories)?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
-                DataType::Enum(
-                    Some(Arc::new(RevMapping::build_local(categories))),
-                    Default::default(),
-                )
+                create_enum_data_type(categories)
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,

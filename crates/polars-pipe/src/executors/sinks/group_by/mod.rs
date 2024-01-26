@@ -20,8 +20,7 @@ pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schem
         }
         match dtype {
             #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Categorical(rev_map, ordering)
-            | dt @ DataType::Enum(rev_map, ordering) => {
+            dt @ (DataType::Categorical(rev_map, ordering) | DataType::Enum(rev_map, ordering)) => {
                 if let Some(rev_map) = rev_map {
                     let cats = s.u32().unwrap().clone();
                     // safety:

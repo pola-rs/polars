@@ -241,7 +241,7 @@ impl CategoricalChunked {
         ordering: CategoricalOrdering,
         keep_fast_unique: bool,
     ) -> Self {
-        let new_dtype = match self.dtype() {
+        self.physical.2 = match self.dtype() {
             DataType::Enum(_, _) => {
                 Some(DataType::Enum(Some(self.get_rev_map().clone()), ordering))
             },
@@ -252,8 +252,6 @@ impl CategoricalChunked {
             _ => panic!("implementation error"),
         };
 
-        self.physical.2 = new_dtype;
-
         if !keep_fast_unique {
             self.set_fast_unique(false)
         }
@@ -263,15 +261,13 @@ impl CategoricalChunked {
     /// # Safety
     /// The existing index values must be in bounds of the new [`RevMapping`].
     pub(crate) unsafe fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
-        match self.dtype() {
-            DataType::Enum(_, _) => {
-                self.physical.2 = Some(DataType::Enum(Some(rev_map), self.get_ordering()));
-            },
+        self.physical.2 = match self.dtype() {
+            DataType::Enum(_, _) => Some(DataType::Enum(Some(rev_map), self.get_ordering())),
             DataType::Categorical(_, _) => {
-                self.physical.2 = Some(DataType::Categorical(Some(rev_map), self.get_ordering()));
+                Some(DataType::Categorical(Some(rev_map), self.get_ordering()))
             },
             _ => panic!("implementation error"),
-        }
+        };
 
         if !keep_fast_unique {
             self.set_fast_unique(false)

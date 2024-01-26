@@ -63,9 +63,7 @@ impl From<&DataType> for PyDataType {
             #[cfg(feature = "object")]
             DataType::Object(_, _) => Object,
             DataType::Categorical(_, _) => Categorical,
-            DataType::Enum(Some(rev_map), _) => Enum(rev_map.get_categories().clone()),
-            // TODO: Allow this
-            DataType::Enum(None, _) => Enum(Utf8ViewArray::new_empty(ArrowDataType::LargeUtf8)),
+            DataType::Enum(rev_map, _) => Enum(rev_map.unwrap().get_categories().clone()),
             DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown | DataType::BinaryOffset => {
                 panic!("null or unknown not expected here")
@@ -105,10 +103,7 @@ impl From<PyDataType> for DataType {
             #[cfg(feature = "object")]
             PyDataType::Object => Object(OBJECT_NAME, None),
             PyDataType::Categorical => Categorical(None, Default::default()),
-            PyDataType::Enum(categories) => Enum(
-                Some(Arc::new(RevMapping::build_local(categories))),
-                Default::default(),
-            ),
+            PyDataType::Enum(categories) => create_enum_data_type(categories),
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
             PyDataType::Array(width) => Array(DataType::Null.into(), width),

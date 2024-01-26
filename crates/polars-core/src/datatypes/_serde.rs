@@ -191,7 +191,7 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, ordering) => Self::Categorical(None, ordering),
             #[cfg(feature = "dtype-categorical")]
-            Enum(Some(categories), ordering) => create_enum_data_type(categories.0),
+            Enum(Some(categories), _) => create_enum_data_type(categories.0),
             #[cfg(feature = "dtype-categorical")]
             Enum(None, ordering) => Self::Enum(None, ordering),
             #[cfg(feature = "dtype-decimal")]

@@ -58,7 +58,7 @@ impl Series {
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Categorical(_, ordering) | dt @ DataType::Enum(_, ordering) => {
+            dt @ (DataType::Categorical(_, ordering) | DataType::Enum(_, ordering)) => {
                 let ca = self.categorical().unwrap();
                 let arr = ca.physical().chunks()[chunk_idx].clone();
                 // SAFETY: categoricals are always u32's.

@@ -556,3 +556,9 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
         },
     }
 }
+
+#[cfg(feature = "dtype-categorical")]
+pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
+    let rev_map = RevMapping::build_local(categories);
+    DataType::Enum(Some(Arc::new(rev_map)), Default::default())
+}

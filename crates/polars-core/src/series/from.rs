@@ -87,7 +87,7 @@ impl Series {
             String => StringChunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ Categorical(rev_map, ordering) | dt @ Enum(rev_map, ordering) => {
+            dt @ (Categorical(rev_map, ordering) | Enum(rev_map, ordering)) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
                 let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,

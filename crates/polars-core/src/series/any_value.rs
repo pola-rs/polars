@@ -425,7 +425,7 @@ impl Series {
             },
             DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
             #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
                         AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {

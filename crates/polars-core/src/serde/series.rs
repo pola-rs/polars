@@ -260,7 +260,7 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(s)
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
+                    dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&dt).unwrap())
                     },
