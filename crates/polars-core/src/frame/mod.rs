@@ -1124,7 +1124,7 @@ impl DataFrame {
 
     /// Add a new column to this [`DataFrame`] or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> PolarsResult<&mut Self> {
-        let series = correct_series_against_df(column.into_series(), &self)?;
+        let series = broadcast_series_to_df(column.into_series(), &self)?;
         self.add_column_by_search(series)?;
         Ok(self)
     }
@@ -3052,8 +3052,8 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
     Ok(())
 }
 
-// # TODO dodgy name
-pub fn correct_series_against_df(mut series: Series, df: &DataFrame) -> PolarsResult<Series> {
+// # TODO dodgy name and bad location
+pub fn broadcast_series_to_df(mut series: Series, df: &DataFrame) -> PolarsResult<Series> {
     let height = df.height();
     if series.len() == 1 && height > 1 {
         series = series.new_from_index(0, height);

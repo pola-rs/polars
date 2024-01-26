@@ -1,3 +1,4 @@
+use polars_core::frame::broadcast_series_to_df;
 use polars_ops::frame::DataFrameJoinOps;
 
 use super::*;
@@ -68,8 +69,8 @@ impl Executor for JoinExec {
             (input_left.execute(state), input_right.execute(state))
         };
 
-        let mut df_left = df_left?;
-        let mut df_right = df_right?;
+        let df_left = df_left?;
+        let df_right = df_right?;
 
         let profile_name = if state.has_node_timer() {
             let by = self
@@ -88,28 +89,19 @@ impl Executor for JoinExec {
             let left_on_series = self
                 .left_on
                 .iter()
-                .map(|e| e.evaluate(&df_left, state))
+                .map(|e| e.evaluate(&df_left, state).and_then(|s| broadcast_series_to_df(s, &df_left)))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             let right_on_series = self
                 .right_on
                 .iter()
-                .map(|e| e.evaluate(&df_right, state))
+                .map(|e| e.evaluate(&df_right, state).and_then(|s| broadcast_series_to_df(s, &df_right)))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             if state.verbose() {
                 eprintln!("left on series: {:?}", left_on_series);
                 eprintln!("right on series: {:?}", right_on_series);
-            };
 
-            // make sure that we can join on evaluated expressions
-            for s in &left_on_series {
-                df_left.with_column(s.clone())?;
-            }
-            for s in &right_on_series {
-                df_right.with_column(s.clone())?;
-            }
-            if state.verbose() {
                 eprintln!("left df: {:?}", df_left);
                 eprintln!("right df: {:?}", df_right);
             };
