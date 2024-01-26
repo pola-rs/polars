@@ -110,6 +110,8 @@ enum SerializableDataType {
     Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
     #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>),
+    #[cfg(feature = "dtype-categorical")]
+    Enum(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -143,14 +145,13 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(rev_map, ordering) => {
-                let categories = rev_map
-                    .as_ref()
-                    .filter(|rev_map| rev_map.is_enum())
-                    .map(|rev_map| Some(Wrap(rev_map.get_categories().clone())))
-                    .unwrap_or(None);
-                Self::Categorical(categories, *ordering)
+            Categorical(_, ordering) => Self::Categorical(None, *ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(rev_map), ordering) => {
+                Self::Enum(Some(Wrap(rev_map.get_categories().clone())), *ordering)
             },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(None, ordering) => Self::Enum(None, *ordering),
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
@@ -188,9 +189,11 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(categories, ordering) => categories
-                .map(|categories| create_enum_data_type(categories.0))
-                .unwrap_or_else(|| Self::Categorical(None, ordering)),
+            Categorical(_, ordering) => Self::Categorical(None, ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(categories), ordering) => create_enum_data_type(categories.0),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(None, ordering) => Self::Enum(None, ordering),
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]

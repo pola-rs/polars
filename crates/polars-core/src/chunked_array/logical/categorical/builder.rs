@@ -165,6 +165,7 @@ impl CategoricalChunkedBuilder {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 indices,
                 Arc::new(RevMapping::Global(global_to_local, categories, id)),
+                false,
                 self.ordering,
             )
         }
@@ -253,7 +254,12 @@ impl CategoricalChunked {
 
         let rev_map = RevMapping::Global(rev_map, str_values.into(), cache.uuid);
 
-        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, Arc::new(rev_map), ordering)
+        CategoricalChunked::from_cats_and_rev_map_unchecked(
+            cats,
+            Arc::new(rev_map),
+            false,
+            ordering,
+        )
     }
 
     pub(crate) unsafe fn from_keys_and_values_global(
@@ -296,6 +302,7 @@ impl CategoricalChunked {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 UInt32Chunked::with_chunk(name, cats.into()),
                 Arc::new(RevMapping::Global(global_to_local, values.clone(), id)),
+                false,
                 ordering,
             )
         }
@@ -310,6 +317,7 @@ impl CategoricalChunked {
         CategoricalChunked::from_cats_and_rev_map_unchecked(
             UInt32Chunked::with_chunk(name, keys.clone()),
             Arc::new(RevMapping::build_local(values.clone())),
+            false,
             ordering,
         )
     }
@@ -364,11 +372,12 @@ impl CategoricalChunked {
             })
             .collect::<Result<UInt32Chunked, PolarsError>>()?;
         keys.rename(values.name());
-        let rev_map = RevMapping::build_enum(categories.clone());
+        let rev_map = RevMapping::build_local(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                 keys,
                 Arc::new(rev_map),
+                true,
                 ordering,
             ))
         }

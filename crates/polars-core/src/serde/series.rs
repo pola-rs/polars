@@ -56,7 +56,7 @@ impl Serialize for Series {
                 ca.serialize(serializer)
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => {
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                 let ca = self.categorical().unwrap();
                 ca.serialize(serializer)
             },
@@ -260,10 +260,8 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(s)
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(opt_rev_map, ordering) => {
+                    dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
-                        let dt = enum_or_default_categorical(&opt_rev_map, ordering);
-
                         Ok(Series::new(&name, values).cast(&dt).unwrap())
                     },
                     dt => {

@@ -128,7 +128,9 @@ impl PySeries {
 
     fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
         let val = format!("{}", self.series.get(index).unwrap());
-        if let DataType::String | DataType::Categorical(_, _) = self.series.dtype() {
+        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
+            self.series.dtype()
+        {
             let v_trunc = &val[..val
                 .char_indices()
                 .take(str_lengths)
@@ -379,6 +381,7 @@ impl PySeries {
                     | DataType::Date
                     | DataType::Duration(_)
                     | DataType::Categorical(_, _)
+                    | DataType::Enum(_, _)
                     | DataType::Binary
                     | DataType::Array(_, _)
                     | DataType::Time

@@ -104,6 +104,17 @@ pub fn get_list_builder(
                 rev_map.clone(),
             ))
         },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(Some(rev_map), ordering) => {
+            let list_builder = ListEnumCategoricalChunkedBuilder::new(
+                name,
+                *ordering,
+                list_capacity,
+                value_capacity,
+                (**rev_map).clone(),
+            );
+            return Ok(Box::new(list_builder));
+        },
         _ => {},
     }
 

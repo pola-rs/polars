@@ -68,18 +68,24 @@ impl CategoricalChunked {
         &mut self.physical
     }
 
+    pub fn is_enum(&self) -> bool {
+        matches!(self.dtype(), DataType::Enum(_, _))
+    }
+
     /// Convert a categorical column to its local representation.
     pub fn to_local(&self) -> Self {
         let rev_map = self.get_rev_map();
         let (physical_map, categories) = match rev_map.as_ref() {
             RevMapping::Global(m, c, _) => (m, c),
-            RevMapping::Local(_, _) => return self.clone(),
-            RevMapping::Enum(a, h) => unsafe {
-                return Self::from_cats_and_rev_map_unchecked(
-                    self.physical().clone(),
-                    RevMapping::Local(a.clone(), *h).into(),
+            RevMapping::Local(_, _) if !self.is_enum() => return self.clone(),
+            RevMapping::Local(_, _) => {
+                // Change dtype from Enum to Categorical
+                let mut local = self.clone();
+                local.physical.2 = Some(DataType::Categorical(
+                    Some(rev_map.clone()),
                     self.get_ordering(),
-                );
+                ));
+                return local;
             },
         };
 
@@ -95,6 +101,7 @@ impl CategoricalChunked {
             Self::from_cats_and_rev_map_unchecked(
                 local_ca,
                 local_rev_map.into(),
+                false,
                 self.get_ordering(),
             )
         };
@@ -109,7 +116,6 @@ impl CategoricalChunked {
         let categories = match &**self.get_rev_map() {
             RevMapping::Global(_, _, _) => return Ok(self.clone()),
             RevMapping::Local(categories, _) => categories,
-            RevMapping::Enum(categories, _) => categories,
         };
 
         // Safety: keys and values are in bounds
@@ -128,15 +134,15 @@ impl CategoricalChunked {
     pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> PolarsResult<Self> {
         // Fast paths
         match self.get_rev_map().as_ref() {
-            RevMapping::Enum(_, cur_hash) if hash == *cur_hash => return Ok(self.clone()),
             RevMapping::Local(_, cur_hash) if hash == *cur_hash => {
                 return unsafe {
                     Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                         self.physical().clone(),
-                        RevMapping::Enum(categories.clone(), hash).into(),
+                        self.get_rev_map().clone(),
+                        true,
                         self.get_ordering(),
                     ))
-                }
+                };
             },
             _ => (),
         };
@@ -175,7 +181,8 @@ impl CategoricalChunked {
             unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     new_phys,
-                    RevMapping::Enum(categories.clone(), hash).into(),
+                    Arc::new(RevMapping::Local(categories.clone(), hash)),
+                    true,
                     self.get_ordering(),
                 )
             },
@@ -198,7 +205,9 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn get_ordering(&self) -> CategoricalOrdering {
-        if let DataType::Categorical(_, ordering) = &self.physical.2.as_ref().unwrap() {
+        if let DataType::Categorical(_, ordering) | DataType::Enum(_, ordering) =
+            &self.physical.2.as_ref().unwrap()
+        {
             *ordering
         } else {
             panic!("implementation error")
@@ -212,10 +221,15 @@ impl CategoricalChunked {
     pub unsafe fn from_cats_and_rev_map_unchecked(
         idx: UInt32Chunked,
         rev_map: Arc<RevMapping>,
+        is_enum: bool,
         ordering: CategoricalOrdering,
     ) -> Self {
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
-        logical.2 = Some(DataType::Categorical(Some(rev_map), ordering));
+        if is_enum {
+            logical.2 = Some(DataType::Enum(Some(rev_map), ordering));
+        } else {
+            logical.2 = Some(DataType::Categorical(Some(rev_map), ordering));
+        }
         Self {
             physical: logical,
             bit_settings: Default::default(),
@@ -227,10 +241,19 @@ impl CategoricalChunked {
         ordering: CategoricalOrdering,
         keep_fast_unique: bool,
     ) -> Self {
-        self.physical.2 = Some(DataType::Categorical(
-            Some(self.get_rev_map().clone()),
-            ordering,
-        ));
+        let new_dtype = match self.dtype() {
+            DataType::Enum(_, _) => {
+                Some(DataType::Enum(Some(self.get_rev_map().clone()), ordering))
+            },
+            DataType::Categorical(_, _) => Some(DataType::Categorical(
+                Some(self.get_rev_map().clone()),
+                ordering,
+            )),
+            _ => panic!("implementation error"),
+        };
+
+        self.physical.2 = new_dtype;
+
         if !keep_fast_unique {
             self.set_fast_unique(false)
         }
@@ -240,7 +263,16 @@ impl CategoricalChunked {
     /// # Safety
     /// The existing index values must be in bounds of the new [`RevMapping`].
     pub(crate) unsafe fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
-        self.physical.2 = Some(DataType::Categorical(Some(rev_map), self.get_ordering()));
+        match self.dtype() {
+            DataType::Enum(_, _) => {
+                self.physical.2 = Some(DataType::Enum(Some(rev_map), self.get_ordering()));
+            },
+            DataType::Categorical(_, _) => {
+                self.physical.2 = Some(DataType::Categorical(Some(rev_map), self.get_ordering()));
+            },
+            _ => panic!("implementation error"),
+        }
+
         if !keep_fast_unique {
             self.set_fast_unique(false)
         }
@@ -267,7 +299,9 @@ impl CategoricalChunked {
 
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_rev_map(&self) -> &Arc<RevMapping> {
-        if let DataType::Categorical(Some(rev_map), _) = &self.physical.2.as_ref().unwrap() {
+        if let DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _) =
+            &self.physical.2.as_ref().unwrap()
+        {
             rev_map
         } else {
             panic!("implementation error")
@@ -296,7 +330,13 @@ impl LogicalType for CategoricalChunked {
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         match self.physical.0.get_unchecked(i) {
-            Some(i) => AnyValue::Categorical(i, self.get_rev_map(), SyncPtr::new_null()),
+            Some(i) => match self.dtype() {
+                DataType::Enum(_, _) => AnyValue::Enum(i, self.get_rev_map(), SyncPtr::new_null()),
+                DataType::Categorical(_, _) => {
+                    AnyValue::Categorical(i, self.get_rev_map(), SyncPtr::new_null())
+                },
+                _ => unimplemented!(),
+            },
             None => AnyValue::Null,
         }
     }
@@ -330,19 +370,22 @@ impl LogicalType for CategoricalChunked {
                 Ok(ca.into_series())
             },
             #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(Some(rev_map), ordering) => {
+                let RevMapping::Local(categories, hash) = &**rev_map else {
+                    polars_bail!(ComputeError: "can not cast to enum with global mapping")
+                };
+                Ok(self
+                    .to_enum(categories, *hash)?
+                    .set_ordering(*ordering, true)
+                    .into_series())
+            },
+            DataType::Enum(None, _) => {
+                polars_bail!(ComputeError: "can not cast to enum without categories present")
+            },
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map, ordering) => {
-                // Casting to a Enum
-                if let Some(rev_map) = rev_map {
-                    if let RevMapping::Enum(categories, hash) = &**rev_map {
-                        return Ok(self
-                            .to_enum(categories, *hash)?
-                            .set_ordering(*ordering, true)
-                            .into_series());
-                    }
-                }
-
                 // Casting from an Enum to a local or global
-                if matches!(&**self.get_rev_map(), RevMapping::Enum(_, _)) && rev_map.is_none() {
+                if matches!(self.dtype(), DataType::Enum(_, _)) && rev_map.is_none() {
                     if using_string_cache() {
                         return Ok(self
                             .to_global()?

@@ -448,12 +448,9 @@ pub(crate) fn init_buffers(
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::String => Buffer::Utf8(Utf8Field::new(
-                    name,
-                    capacity,
-                    quote_char,
-                    encoding,
-                )),
+                &DataType::String => {
+                    Buffer::Utf8(Utf8Field::new(name, capacity, quote_char, encoding))
+                },
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(time_unit, time_zone) => Buffer::Datetime {
                     buf: DatetimeField::new(name, capacity),
@@ -463,13 +460,10 @@ pub(crate) fn init_buffers(
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(rev_map,ordering) => {
-                    if let Some(rev_map) = &rev_map {
-                        polars_ensure!(!rev_map.is_enum(),InvalidOperation: "user defined categoricals are not supported when reading csv")
-                    }
-
-                    Buffer::Categorical(CategoricalField::new(name, capacity, quote_char,*ordering))
-                },
+                DataType::Categorical(_, ordering) => Buffer::Categorical(CategoricalField::new(
+                    name, capacity, quote_char, *ordering,
+                )),
+                // TODO (ENUM) support writing to Enum
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
                 ),

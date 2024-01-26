@@ -80,7 +80,7 @@ unsafe fn write_anyvalue(
             Ok(())
         },
         #[cfg(feature = "dtype-categorical")]
-        AnyValue::Categorical(idx, rev_map, _) => {
+        AnyValue::Categorical(idx, rev_map, _) | AnyValue::Enum(idx, rev_map, _) => {
             let v = rev_map.get(idx);
             fmt_and_escape_str(f, v, options)?;
             Ok(())

@@ -180,7 +180,7 @@ def test_append_to_an_enum() -> None:
 def test_append_to_an_enum_with_new_category() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("enum is not compatible with other categorical / enum"),
+        match=("can not merge incompatible Enum types"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"])).append(
             pl.Series(["d", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
@@ -197,7 +197,7 @@ def test_extend_to_an_enum() -> None:
 
 def test_series_init_uninstantiated_enum() -> None:
     with pytest.raises(
-        TypeError, match="Enum types must be instantiated with a list of categories"
+        pl.ComputeError, match="can not cast / initialize Enum without categories present"
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 

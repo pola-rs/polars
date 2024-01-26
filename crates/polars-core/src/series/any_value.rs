@@ -425,7 +425,7 @@ impl Series {
             },
             DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, ordering) => {
+            dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
                         AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
@@ -441,8 +441,7 @@ impl Series {
                     StringChunked::full("", "", 0)
                 };
 
-                ca.cast(&DataType::Categorical(rev_map.clone(), *ordering))
-                    .unwrap()
+                ca.cast(dt).unwrap()
             },
             dt => panic!("{dt:?} not supported"),
         };
@@ -529,6 +528,16 @@ impl<'a> From<&AnyValue<'a>> for DataType {
                     let array = unsafe { arr.deref_unchecked().clone() };
                     let rev_map = RevMapping::build_local(array);
                     DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
+                }
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, rev_map, arr) => {
+                if arr.is_null() {
+                    DataType::Enum(Some(Arc::new((*rev_map).clone())), Default::default())
+                } else {
+                    let array = unsafe { arr.deref_unchecked().clone() };
+                    let rev_map = RevMapping::build_local(array);
+                    DataType::Enum(Some(Arc::new(rev_map)), Default::default())
                 }
             },
             #[cfg(feature = "object")]

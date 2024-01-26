@@ -32,7 +32,7 @@ impl CategoricalChunked {
         let map = &**self.get_rev_map();
         let dtype = ArrowDataType::Dictionary(IntegerType::UInt32, Box::new(values_dtype), false);
         match map {
-            RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
+            RevMapping::Local(arr, _) => {
                 let values = convert_values(arr, pl_flavor);
 
                 // Safety:
@@ -65,7 +65,7 @@ impl CategoricalChunked {
         let map = &**self.get_rev_map();
         let dtype = ArrowDataType::Dictionary(IntegerType::Int64, Box::new(values_dtype), false);
         match map {
-            RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
+            RevMapping::Local(arr, _) => {
                 let values = convert_values(arr, pl_flavor);
 
                 // Safety:
