@@ -2282,7 +2282,16 @@ class DataFrame:
             return self._to_pandas_without_object_columns(
                 self, use_pyarrow_extension_array, **kwargs
             )
+        else:
+            return self._to_pandas_with_object_columns(
+                use_pyarrow_extension_array, **kwargs
+            )
 
+    def _to_pandas_with_object_columns(
+        self,
+        use_pyarrow_extension_array: bool = False,  # noqa: FBT001
+        **kwargs: Any,
+    ) -> pd.DataFrame:
         # Find which columns are of type pl.Object, and which aren't:
         object_columns = []
         not_object_columns = []
@@ -2293,12 +2302,13 @@ class DataFrame:
                 not_object_columns.append(i)
 
         # Export columns that aren't pl.Object, in the same order:
-        df_without_objects = self.select(
-            [col(self.columns[i]) for i in not_object_columns]
-        )
-        pandas_df = self._to_pandas_without_object_columns(
-            df_without_objects, use_pyarrow_extension_array, **kwargs
-        )
+        if not_object_columns:
+            df_without_objects = self[:, not_object_columns]
+            pandas_df = self._to_pandas_without_object_columns(
+                df_without_objects, use_pyarrow_extension_array, **kwargs
+            )
+        else:
+            pandas_df = pd.DataFrame()
 
         # Add columns that are pl.Object, using Series' custom to_pandas()
         # logic for this case. We do this in order, so the original index for
@@ -2307,7 +2317,7 @@ class DataFrame:
         # missing columns to the inserted column's left.
         for i in object_columns:
             name = self.columns[i]
-            pandas_df.insert(i, name, self.get_column(name).to_pandas())
+            pandas_df.insert(i, name, self.to_series(i).to_pandas())
 
         return pandas_df
 
@@ -3674,9 +3684,7 @@ class DataFrame:
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export *without* copying data
-            res: int | None = self.to_pandas(
-                use_pyarrow_extension_array=True,
-            ).to_sql(
+            res: int | None = self.to_pandas(use_pyarrow_extension_array=True,).to_sql(
                 name=unpacked_table_name,
                 schema=db_schema,
                 con=engine_sa,

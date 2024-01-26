@@ -173,9 +173,9 @@ def test_to_pandas_datetime() -> None:
 @pytest.mark.parametrize("use_pyarrow_extension_array", [True, False])
 def test_object_to_pandas_series(use_pyarrow_extension_array: bool) -> None:
     values = [object(), [1, 2, 3]]
-    assert (
+    pd.testing.assert_series_equal(
         pl.Series("a", values, dtype=pl.Object).to_pandas(
             use_pyarrow_extension_array=use_pyarrow_extension_array
-        )
-        == pd.Series(values, dtype=object)
-    ).all()
+        ),
+        pd.Series(values, dtype=object, name="a"),
+    )
