@@ -229,8 +229,8 @@ fn test_csv_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/*.csv";
     let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
 
-    // all 6 files * 27 rows
-    assert_eq!(full_df.shape(), (162, 4));
+    // all 5 files * 27 rows
+    assert_eq!(full_df.shape(), (135, 4));
     let cal = full_df.column("calories")?;
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));
     assert_eq!(cal.get(53)?, AnyValue::Int64(194));

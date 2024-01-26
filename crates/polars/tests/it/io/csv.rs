@@ -1177,7 +1177,7 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
 
 #[test]
 fn test_read_csv_file_without_headers_and_non_uniform_col_len() {
-    let file = std::fs::File::open("../../examples/datasets/foods6.csv").unwrap();
+    let file = std::fs::File::open("../../examples/datasets/headerless/headerless.csv").unwrap();
     let df = CsvReader::new(file).has_header(false).finish().unwrap();
 
     assert_eq!(df.get(0).unwrap().len(), 4);

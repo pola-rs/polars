@@ -195,6 +195,7 @@ pub fn infer_file_schema_inner(
 
         let mut byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
 
+        println!("has header: {}", has_header);
         if has_header {
             let headers = byterecord
                 .map(|(slice, needs_escaping)| {
