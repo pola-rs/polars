@@ -2277,19 +2277,21 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        # A faster path for the case where there are no pl.Object columns:
-        if Object not in self.dtypes:
-            return self._to_pandas_without_object_columns(
-                self, use_pyarrow_extension_array, **kwargs
-            )
-        else:
+        # Object columns must be handled separately as Arrow does not convert them
+        # correctly
+        if Object in self.dtypes:
             return self._to_pandas_with_object_columns(
-                use_pyarrow_extension_array, **kwargs
+                use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
             )
+
+        return self._to_pandas_without_object_columns(
+            self, use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+        )
 
     def _to_pandas_with_object_columns(
         self,
-        use_pyarrow_extension_array: bool = False,  # noqa: FBT001
+        *,
+        use_pyarrow_extension_array: bool,
         **kwargs: Any,
     ) -> pd.DataFrame:
         # Find which columns are of type pl.Object, and which aren't:
@@ -2305,7 +2307,9 @@ class DataFrame:
         if not_object_columns:
             df_without_objects = self[:, not_object_columns]
             pandas_df = self._to_pandas_without_object_columns(
-                df_without_objects, use_pyarrow_extension_array, **kwargs
+                df_without_objects,
+                use_pyarrow_extension_array=use_pyarrow_extension_array,
+                **kwargs,
             )
         else:
             pandas_df = pd.DataFrame()
@@ -2323,15 +2327,15 @@ class DataFrame:
 
     def _to_pandas_without_object_columns(
         self,
-        df_without_objects: DataFrame,
-        use_pyarrow_extension_array: bool = False,  # noqa: FBT001
+        df: DataFrame,
+        *,
+        use_pyarrow_extension_array: bool,
         **kwargs: Any,
     ) -> pd.DataFrame:
-        if not df_without_objects.width:
-            # Empty dataframe, cannot infer schema from batches:
+        if not df.width:  # Empty dataframe, cannot infer schema from batches
             return pd.DataFrame()
 
-        record_batches = df_without_objects._df.to_pandas()
+        record_batches = df._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
             return tbl.to_pandas(
