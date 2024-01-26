@@ -70,11 +70,16 @@ def test_list_arr_get() -> None:
 
 
 def test_list_categorical_get() -> None:
-    df = pl.DataFrame({
-        'actions': pl.Series([['a','b'], ['c'],[None], None], dtype=pl.List(pl.Categorical)),
-    })
-    expected = pl.Series("actions",['a','c',None,None],dtype=pl.Categorical)
-    assert_series_equal(df['actions'].list.get(0),expected,categorical_as_str=True)
+    df = pl.DataFrame(
+        {
+            "actions": pl.Series(
+                [["a", "b"], ["c"], [None], None], dtype=pl.List(pl.Categorical)
+            ),
+        }
+    )
+    expected = pl.Series("actions", ["a", "c", None, None], dtype=pl.Categorical)
+    assert_series_equal(df["actions"].list.get(0), expected, categorical_as_str=True)
+
 
 def test_contains() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
