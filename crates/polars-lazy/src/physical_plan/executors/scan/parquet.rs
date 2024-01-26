@@ -363,6 +363,7 @@ impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             paths: self.paths.clone(),
+            #[allow(clippy::useless_asref)]
             predicate: self
                 .predicate
                 .as_ref()

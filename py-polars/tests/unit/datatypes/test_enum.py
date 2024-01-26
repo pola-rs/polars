@@ -70,6 +70,24 @@ def test_nested_enum_creation() -> None:
     assert s.dtype == dtype
 
 
+def test_nested_enum_concat() -> None:
+    dtype = pl.List(pl.Enum(["a", "b", "c", "d"]))
+    s1 = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
+    s2 = pl.Series([["c", "d"], ["a", None]], dtype=dtype)
+    expected = pl.Series(
+        [
+            [None, "a"],
+            ["b", "c"],
+            ["c", "d"],
+            ["a", None],
+        ],
+        dtype=dtype,
+    )
+
+    assert_series_equal(pl.concat((s1, s2)), expected)
+    assert_series_equal(s1.extend(s2), expected)
+
+
 def test_casting_to_an_enum_from_utf() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, "a", "b", "c"])
@@ -162,7 +180,7 @@ def test_append_to_an_enum() -> None:
 def test_append_to_an_enum_with_new_category() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("enum is not compatible with other categorical / enum"),
+        match=("can not merge incompatible Enum types"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"])).append(
             pl.Series(["d", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
@@ -179,7 +197,8 @@ def test_extend_to_an_enum() -> None:
 
 def test_series_init_uninstantiated_enum() -> None:
     with pytest.raises(
-        TypeError, match="Enum types must be instantiated with a list of categories"
+        pl.ComputeError,
+        match="can not cast / initialize Enum without categories present",
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
@@ -358,3 +377,28 @@ def test_enum_categories_series_zero_copy() -> None:
     result_dtype = s.dtype
 
     assert result_dtype == dtype
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
+def test_enum_cast_from_other_integer_dtype(dtype: pl.DataType) -> None:
+    enum_dtype = pl.Enum(["a", "b", "c", "d"])
+    series = pl.Series([1, 2, 3, 3, 2, 1], dtype=dtype)
+    series.cast(enum_dtype)
+
+
+def test_enum_cast_from_other_integer_dtype_oob() -> None:
+    enum_dtype = pl.Enum(["a", "b", "c", "d"])
+    series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
+    with pytest.raises(
+        pl.ComputeError, match="conversion from `i8` to `u32` failed in column"
+    ):
+        series.cast(enum_dtype)
+
+    series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
+    with pytest.raises(
+        pl.ComputeError, match="conversion from `u64` to `u32` failed in column"
+    ):
+        series.cast(enum_dtype)

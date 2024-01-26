@@ -76,6 +76,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let v = arr.value_unchecked(idx);
             AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
         },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(rev_map, _) => {
+            let arr = &*(arr as *const dyn Array as *const UInt32Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Enum(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
+        },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
             let arr = &*(arr as *const dyn Array as *const StructArray);
@@ -146,11 +152,19 @@ impl<'a> AnyValue<'a> {
 
                                 if arr.is_valid_unchecked(idx) {
                                     let v = arr.value_unchecked(idx);
-                                    let DataType::Categorical(Some(rev_map), _) = fld.data_type()
-                                    else {
-                                        unimplemented!()
-                                    };
-                                    AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
+                                    match fld.data_type() {
+                                        DataType::Categorical(Some(rev_map), _) => {
+                                            AnyValue::Categorical(
+                                                v,
+                                                rev_map,
+                                                SyncPtr::from_const(values),
+                                            )
+                                        },
+                                        DataType::Enum(Some(rev_map), _) => {
+                                            AnyValue::Enum(v, rev_map, SyncPtr::from_const(values))
+                                        },
+                                        _ => unimplemented!(),
+                                    }
                                 } else {
                                     AnyValue::Null
                                 }

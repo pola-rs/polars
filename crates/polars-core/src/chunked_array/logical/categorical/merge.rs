@@ -151,23 +151,26 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
             )
         },
         (RevMapping::Local(_, idl), RevMapping::Local(_, idr))
-        | (RevMapping::Enum(_, idl), RevMapping::Enum(_, idr))
-            if idl == idr =>
+            if idl == idr && cat_left.is_enum() == cat_right.is_enum() =>
         {
             (
                 merge_ops.finish(cat_left.physical(), cat_right.physical())?,
                 rev_map_left.clone(),
             )
         },
-        (RevMapping::Local(categorical, _), RevMapping::Local(_, _)) => {
+        (RevMapping::Local(categorical, _), RevMapping::Local(_, _))
+            if !cat_left.is_enum() && !cat_right.is_enum() =>
+        {
             let (rhs_physical, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             (
                 merge_ops.finish(cat_left.physical(), &rhs_physical)?,
                 rev_map,
             )
         },
-        (_, RevMapping::Enum(_, _)) | (RevMapping::Enum(_, _), _) => {
-            polars_bail!(ComputeError: "enum is not compatible with other categorical / enum")
+        (RevMapping::Local(_, _), RevMapping::Local(_, _))
+            if cat_left.is_enum() | cat_right.is_enum() =>
+        {
+            polars_bail!(ComputeError: "can not merge incompatible Enum types")
         },
         _ => polars_bail!(string_cache_mismatch),
     };
@@ -176,6 +179,7 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
         Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
             new_physical,
             new_rev_map,
+            cat_left.is_enum(),
             cat_left.get_ordering(),
         ))
     }

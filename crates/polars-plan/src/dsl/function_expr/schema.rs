@@ -262,9 +262,11 @@ impl FunctionExpr {
             Random { .. } => mapper.with_same_dtype(),
             SetSortedFlag(_) => mapper.with_same_dtype(),
             #[cfg(feature = "ffi_plugin")]
-            FfiPlugin { lib, symbol, .. } => unsafe {
-                plugin::plugin_field(fields, lib, symbol.as_ref())
-            },
+            FfiPlugin {
+                lib,
+                symbol,
+                kwargs,
+            } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
             BackwardFill { .. } => mapper.with_same_dtype(),
             ForwardFill { .. } => mapper.with_same_dtype(),
             SumHorizontal => mapper.map_to_supertype(),
@@ -313,7 +315,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map a single dtype.
-    pub fn map_dtype(&self, func: impl Fn(&DataType) -> DataType) -> PolarsResult<Field> {
+    pub fn map_dtype(&self, func: impl FnOnce(&DataType) -> DataType) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type());
         Ok(Field::new(self.fields[0].name(), dtype))
     }
@@ -325,7 +327,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map a single field with a potentially failing mapper function.
     pub fn try_map_field(
         &self,
-        func: impl Fn(&Field) -> PolarsResult<Field>,
+        func: impl FnOnce(&Field) -> PolarsResult<Field>,
     ) -> PolarsResult<Field> {
         func(&self.fields[0])
     }
@@ -360,7 +362,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map a single dtype with a potentially failing mapper function.
     pub fn try_map_dtype(
         &self,
-        func: impl Fn(&DataType) -> PolarsResult<DataType>,
+        func: impl FnOnce(&DataType) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type())?;
         Ok(Field::new(self.fields[0].name(), dtype))
@@ -369,7 +371,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map all dtypes with a potentially failing mapper function.
     pub fn try_map_dtypes(
         &self,
-        func: impl Fn(&[&DataType]) -> PolarsResult<DataType>,
+        func: impl FnOnce(&[&DataType]) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
         let mut fld = self.fields[0].clone();
         let dtypes = self

@@ -33,6 +33,7 @@ use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
+pub use view::View;
 
 pub type MutablePlString = MutableBinaryViewArray<str>;
 pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
@@ -106,7 +107,7 @@ impl ViewType for [u8] {
 
 pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     data_type: ArrowDataType,
-    views: Buffer<u128>,
+    views: Buffer<View>,
     buffers: Arc<[Buffer<u8>]>,
     // Raw buffer access. (pointer, len).
     raw_buffers: Arc<[(*const u8, usize)]>,
@@ -157,7 +158,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// - The offsets match the buffers.
     pub unsafe fn new_unchecked(
         data_type: ArrowDataType,
-        views: Buffer<u128>,
+        views: Buffer<View>,
         buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
         total_bytes_len: usize,
@@ -181,7 +182,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// The caller must ensure the invariants
     pub unsafe fn new_unchecked_unknown_md(
         data_type: ArrowDataType,
-        views: Buffer<u128>,
+        views: Buffer<View>,
         buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
         total_buffer_len: Option<usize>,
@@ -207,13 +208,13 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         self.buffers.iter().map(|buf| buf.len() as i64).collect()
     }
 
-    pub fn views(&self) -> &Buffer<u128> {
+    pub fn views(&self) -> &Buffer<View> {
         &self.views
     }
 
     pub fn try_new(
         data_type: ArrowDataType,
-        views: Buffer<u128>,
+        views: Buffer<View>,
         buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -271,7 +272,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
         let v = *self.views.get_unchecked(i);
-        let len = v as u32;
+        let len = v.length;
 
         // view layout:
         // length: 4 bytes
@@ -287,11 +288,9 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
-            let buffer_idx = (v >> 64) as u32;
-            let offset = (v >> 96) as u32;
-            let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(buffer_idx as usize);
+            let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(v.buffer_idx as usize);
             let data = std::slice::from_raw_parts(data_ptr, data_len);
-            let offset = offset as usize;
+            let offset = v.offset as usize;
             data.get_unchecked(offset..offset + len as usize)
         };
         T::from_bytes_unchecked(bytes)
@@ -308,7 +307,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn len_iter(&self) -> impl Iterator<Item = u32> + '_ {
-        self.views.iter().map(|v| *v as u32)
+        self.views.iter().map(|v| v.length)
     }
 
     /// Returns an iterator of the non-null values.
@@ -317,7 +316,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns an iterator of the non-null values.
-    pub fn non_null_views_iter(&self) -> NonNullValuesIter<'_, Buffer<u128>> {
+    pub fn non_null_views_iter(&self) -> NonNullValuesIter<'_, Buffer<View>> {
         NonNullValuesIter::new(self.views(), self.validity())
     }
 

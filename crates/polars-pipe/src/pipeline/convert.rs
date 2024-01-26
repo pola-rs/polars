@@ -17,6 +17,7 @@ use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink as SinkTrait, Source};
+use crate::pipeline::dispatcher::SinkNode;
 use crate::pipeline::PipeLine;
 
 fn exprs_to_physical<F>(
@@ -668,7 +669,7 @@ where
     let operator_offset = operator_objects.len();
     operator_objects.extend(operators);
 
-    let sink_nodes = sink_nodes
+    let sinks = sink_nodes
         .into_iter()
         .map(|(offset, node, shared_count)| {
             // ensure that shared sinks are really shared
@@ -685,8 +686,12 @@ where
                     Entry::Occupied(entry) => entry.get().split(0),
                 }
             };
-
-            Ok((offset + operator_offset, node, sink, shared_count))
+            Ok(SinkNode::new(
+                sink,
+                shared_count,
+                offset + operator_offset,
+                node,
+            ))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -694,7 +699,7 @@ where
         source_objects,
         operator_objects,
         operator_nodes,
-        sink_nodes,
+        sinks,
         operator_offset,
         verbose,
     ))

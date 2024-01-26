@@ -239,7 +239,7 @@ impl StructChunked {
             .iter()
             .find(|s| s.name() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
-            .map(|s| s.clone())
+            .cloned()
     }
 
     pub fn len(&self) -> usize {

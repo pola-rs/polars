@@ -4,7 +4,7 @@ use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 
 pub fn utf8view_len_bytes(array: &Utf8ViewArray) -> ArrayRef {
-    let values = array.views().iter().map(|v| *v as u32).collect::<Vec<_>>();
+    let values = array.len_iter().collect::<Vec<_>>();
     let values: Buffer<_> = values.into();
     let array = UInt32Array::new(ArrowDataType::UInt32, values, array.validity().cloned());
     Box::new(array)

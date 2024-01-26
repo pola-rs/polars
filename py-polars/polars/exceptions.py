@@ -26,16 +26,16 @@ except ImportError:
         """Exception raised when a specified column is not found."""
 
     class ComputeError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when polars could not finish the computation."""
+        """Exception raised when Polars could not perform an underlying computation."""
 
     class DuplicateError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when a column name is duplicated."""
 
     class InvalidOperationError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an operation is not allowed on a certain data type."""
+        """Exception raised when an operation is not allowed (or possible) against a given object or data structure."""  # noqa: W505
 
     class NoDataError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an operation can not be performed on an empty data structure."""  # noqa: W505
+        """Exception raised when an operation cannot be performed on an empty data structure."""  # noqa: W505
 
     class OutOfBoundsError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when the given index is out of bounds."""
@@ -44,19 +44,19 @@ except ImportError:
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
     class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when trying to combine data structures with mismatched schemas."""  # noqa: W505
+        """Exception raised when an unexpected schema mismatch causes an error."""
 
     class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when a specified schema field is not found."""
 
     class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when trying to combine data structures with incompatible shapes."""  # noqa: W505
+        """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
 
     class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when string caches come from different sources."""
 
     class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a specified schema field is not found."""
+        """Exception raised when a specified Struct field is not found."""
 
     class PolarsWarning(Exception):  # type: ignore[no-redef]
         """Base class for all Polars warnings."""
@@ -82,7 +82,7 @@ class TooManyRowsReturnedError(RowsError):
 
 
 class ModuleUpgradeRequired(ModuleNotFoundError):
-    """Exception raised when the module is installed but needs to be upgraded."""
+    """Exception raised when a module is installed but needs to be upgraded."""
 
 
 class ParameterCollisionError(PolarsError):  # type: ignore[misc]
@@ -95,7 +95,7 @@ class UnsuitableSQLError(PolarsError):  # type: ignore[misc]
 
 class ChronoFormatWarning(PolarsWarning):  # type: ignore[misc]
     """
-    Warning raised when a chrono format string contains dubious patterns.
+    Warning issued when a chrono format string contains dubious patterns.
 
     Polars uses Rust's chrono crate to convert between string data and temporal data.
     The patterns used by chrono differ slightly from Python's built-in datetime module.
@@ -106,15 +106,19 @@ class ChronoFormatWarning(PolarsWarning):  # type: ignore[misc]
 
 
 class PolarsInefficientMapWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning raised when a potentially slow `apply` operation is performed."""
+    """Warning issued when a potentially slow `map_*` operation is performed."""
 
 
 class TimeZoneAwareConstructorWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
+    """Warning issued when constructing Series from non-UTC time-zone-aware inputs."""
+
+
+class UnstableWarning(PolarsWarning):  # type: ignore[misc]
+    """Warning issued when unstable functionality is used."""
 
 
 class ArrowError(Exception):
-    """deprecated will be removed."""
+    """Deprecated: will be removed."""
 
 
 __all__ = [

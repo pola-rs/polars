@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import unittest
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from unittest.mock import patch
 
 import pytest
 
@@ -10,7 +10,6 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -23,7 +22,7 @@ def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
 
     path_glob = tmp_path / "small*.parquet"
     result = pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
-    assert result.shape == (1, 16)
+    assert result.shape == (1, df.width)
 
 
 def test_scan_slice_streaming(io_files_path: Path) -> None:
@@ -122,7 +121,7 @@ def test_sink_csv_with_options() -> None:
      passed into the rust-polars correctly.
     """
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with unittest.mock.patch.object(df, "_ldf") as ldf:
+    with patch.object(df, "_ldf") as ldf:
         df.sink_csv(
             "path",
             include_bom=True,
@@ -198,3 +197,61 @@ def test_streaming_cross_join_schema(tmp_path: Path) -> None:
     a.join(b, how="cross").sink_parquet(file_path)
     read = pl.read_parquet(file_path, parallel="none")
     assert read.to_dict(as_series=False) == {"a": [1, 2], "b": ["b", "b"]}
+
+
+@pytest.mark.write_disk()
+def test_sink_ndjson_should_write_same_data(
+    io_files_path: Path, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    source_path = io_files_path / "foods1.csv"
+    target_path = tmp_path / "foods_test.ndjson"
+
+    expected = pl.read_csv(source_path)
+
+    lf = pl.scan_csv(source_path)
+    lf.sink_ndjson(target_path)
+    df = pl.read_ndjson(target_path)
+
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.write_disk()
+def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    df = pl.DataFrame({"idx": pl.arange(100, 200, eager=True)}).with_columns(
+        (pl.col("idx") // 25).alias("part")
+    )
+    df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)
+    assert df.n_chunks("all") == [4, 4]
+
+    file_path = tmp_path / "stats.parquet"
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+
+    file_path = tmp_path / "stats.parquet"
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+
+    for streaming in [False, True]:
+        for pred in [
+            pl.col("idx") == 50,
+            pl.col("idx") == 150,
+            pl.col("idx") == 210,
+        ]:
+            result = (
+                pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
+            )
+            assert_frame_equal(result, df.filter(pred))
+
+        captured = capfd.readouterr().err
+        assert (
+            "parquet file must be read, statistics not sufficient for predicate."
+            in captured
+        )
+        assert (
+            "parquet file can be skipped, the statistics were sufficient"
+            " to apply the predicate." in captured
+        )

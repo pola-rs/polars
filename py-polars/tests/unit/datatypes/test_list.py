@@ -434,6 +434,35 @@ def test_list_min_max() -> None:
     }
 
 
+def test_list_min_max_13978() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2, 3]],
+            "b": [[1, 2], None],
+            "c": [[], [None, 1, 2]],
+        }
+    )
+    out = df.select(
+        min_a=pl.col("a").list.min(),
+        max_a=pl.col("a").list.max(),
+        min_b=pl.col("b").list.min(),
+        max_b=pl.col("b").list.max(),
+        min_c=pl.col("c").list.min(),
+        max_c=pl.col("c").list.max(),
+    )
+    expected = pl.DataFrame(
+        {
+            "min_a": [None, 1],
+            "max_a": [None, 3],
+            "min_b": [1, None],
+            "max_b": [2, None],
+            "min_c": [None, 1],
+            "max_c": [None, 2],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_fill_null_empty_list() -> None:
     assert pl.Series([["a"], None]).fill_null([]).to_list() == [["a"], []]
 

@@ -260,62 +260,58 @@ def test_array_join() -> None:
     assert out.to_dict(as_series=False) == {"a": [None, None, None, "c@d@e@f"]}
 
 
-@pytest.mark.parametrize(
-    ("array", "data", "expected", "dtype"),
-    [
-        ([[1, 2], [3, 4]], [1, 5], [True, False], pl.Int64),
-        ([[True, False], [True, True]], [True, False], [True, False], pl.Boolean),
-        ([["a", "b"], ["c", "d"]], ["a", "b"], [True, False], pl.String),
-        ([[b"a", b"b"], [b"c", b"d"]], [b"a", b"b"], [True, False], pl.Binary),
-        (
-            [[{"a": 1}, {"a": 2}], [{"b": 1}, {"a": 3}]],
-            [{"a": 1}, {"a": 2}],
-            [True, False],
-            pl.Struct([pl.Field("a", pl.Int64)]),
-        ),
-    ],
-)
-def test_array_contains_expr(
-    array: list[list[Any]], data: list[Any], expected: list[bool], dtype: pl.DataType
-) -> None:
+def test_array_explode() -> None:
     df = pl.DataFrame(
         {
-            "array": array,
-            "data": data,
+            "str": [["a", "b"], ["c", None], None],
+            "nested": [[[1, 2], [3]], [[], [4, None]], None],
+            "logical": [
+                [datetime.date(1998, 1, 1), datetime.date(2000, 10, 1)],
+                [datetime.date(2024, 1, 1), None],
+                None,
+            ],
         },
         schema={
-            "array": pl.Array(dtype, 2),
-            "data": dtype,
+            "str": pl.Array(pl.String, 2),
+            "nested": pl.Array(pl.List(pl.Int64), 2),
+            "logical": pl.Array(pl.Date, 2),
         },
     )
-    out = df.select(contains=pl.col("array").arr.contains(pl.col("data"))).to_series()
-    expected_series = pl.Series("contains", expected)
-    assert_series_equal(out, expected_series)
-
-
-@pytest.mark.parametrize(
-    ("array", "data", "expected", "dtype"),
-    [
-        ([[1, 2], [3, 4]], 1, [True, False], pl.Int64),
-        ([[True, False], [True, True]], True, [True, True], pl.Boolean),
-        ([["a", "b"], ["c", "d"]], "a", [True, False], pl.String),
-        ([[b"a", b"b"], [b"c", b"d"]], b"a", [True, False], pl.Binary),
-    ],
-)
-def test_array_contains_literal(
-    array: list[list[Any]], data: Any, expected: list[bool], dtype: pl.DataType
-) -> None:
-    df = pl.DataFrame(
+    out = df.select(pl.all().arr.explode())
+    expected = pl.DataFrame(
         {
-            "array": array,
-        },
-        schema={
-            "array": pl.Array(dtype, 2),
-        },
+            "str": ["a", "b", "c", None, None],
+            "nested": [[1, 2], [3], [], [4, None], None],
+            "logical": [
+                datetime.date(1998, 1, 1),
+                datetime.date(2000, 10, 1),
+                datetime.date(2024, 1, 1),
+                None,
+                None,
+            ],
+        }
     )
-    out = df.select(contains=pl.col("array").arr.contains(data)).to_series()
-    expected_series = pl.Series("contains", expected)
-    assert_series_equal(out, expected_series)
+    assert_frame_equal(out, expected)
+
+    # test no-null fast path
+    s = pl.Series(
+        [
+            [datetime.date(1998, 1, 1), datetime.date(1999, 1, 3)],
+            [datetime.date(2000, 1, 1), datetime.date(2023, 10, 1)],
+        ],
+        dtype=pl.Array(pl.Date, 2),
+    )
+    out_s = s.arr.explode()
+    expected_s = pl.Series(
+        [
+            datetime.date(1998, 1, 1),
+            datetime.date(1999, 1, 3),
+            datetime.date(2000, 1, 1),
+            datetime.date(2023, 10, 1),
+        ],
+        dtype=pl.Date,
+    )
+    assert_series_equal(out_s, expected_s)
 
 
 @pytest.mark.parametrize(

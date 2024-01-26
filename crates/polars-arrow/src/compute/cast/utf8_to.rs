@@ -7,6 +7,7 @@ use polars_utils::vec::PushUnchecked;
 use crate::array::*;
 use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
+use crate::types::NativeType;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
@@ -91,7 +92,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             payload[12..16].copy_from_slice(&offset.to_le_bytes());
         }
 
-        let value = u128::from_le_bytes(payload);
+        let value = View::from_le_bytes(payload);
         unsafe { views.push_unchecked(value) };
     }
     let buffers = if uses_buffer {

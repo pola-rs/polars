@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::Growable;
-use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
+use crate::array::binview::{BinaryViewArrayGeneric, View, ViewType};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
@@ -13,7 +13,7 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     arrays: Vec<&'a BinaryViewArrayGeneric<T>>,
     data_type: ArrowDataType,
     validity: Option<MutableBitmap>,
-    views: Vec<u128>,
+    views: Vec<View>,
     buffers: Vec<Buffer<u8>>,
     buffers_idx_offsets: Vec<u32>,
     total_bytes_len: usize,
@@ -96,22 +96,16 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         let range = start..start + len;
 
         self.views
-            .extend(array.views().get_unchecked(range).iter().map(|&view| {
-                let len = (view as u32) as usize;
+            .extend(array.views().get_unchecked(range).iter().map(|view| {
+                let mut view = *view;
+                let len = view.length as usize;
                 self.total_bytes_len += len;
 
                 if len > 12 {
-                    // Take the buffer index of the View.
-                    let current_buffer_idx = (view >> 64) as u32;
-                    // And add the offset of the buffers.
-                    let buffer_idx =
-                        *self.buffers_idx_offsets.get_unchecked(index) + current_buffer_idx;
-                    // Mask out the old buffer-idx and OR in the new.
-                    let mask = (u32::MAX as u128) << 64;
-                    (view & !mask) | ((buffer_idx as u128) << 64)
-                } else {
-                    view
+                    let buffer_idx = *self.buffers_idx_offsets.get_unchecked(index);
+                    view.buffer_idx += buffer_idx;
                 }
+                view
             }));
     }
 
@@ -128,7 +122,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
 
         self.views
             .extend(array.views().get_unchecked(range).iter().map(|view| {
-                let len = (*view as u32) as usize;
+                let len = view.length as usize;
                 self.total_bytes_len += len;
 
                 *view
@@ -142,7 +136,8 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
     }
 
     fn extend_validity(&mut self, additional: usize) {
-        self.views.extend(std::iter::repeat(0).take(additional));
+        self.views
+            .extend(std::iter::repeat(View::default()).take(additional));
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }

@@ -183,6 +183,9 @@ pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
 pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
     let array = &s[0];
     let item = &s[1];
+    polars_ensure!(matches!(array.dtype(), DataType::Array(_, _)),
+        SchemaMismatch: "invalid series dtype: expected `Array`, got `{}`", array.dtype(),
+    );
     Ok(is_in(item, array)?.with_name(array.name()).into_series())
 }
 

@@ -230,9 +230,8 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
         )?
         .cast(&DataType::Time),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
-        DataType::Date => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Time => Ok(s.clone()),
-        dtype => polars_bail!(ComputeError: "expected Datetime, Date, or Time, got {}", dtype),
+        dtype => polars_bail!(ComputeError: "expected Datetime or Time, got {}", dtype),
     }
 }
 pub(super) fn date(s: &Series) -> PolarsResult<Series> {

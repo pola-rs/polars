@@ -69,6 +69,18 @@ def test_list_arr_get() -> None:
     ) == {"lists": [None, None, 4]}
 
 
+def test_list_categorical_get() -> None:
+    df = pl.DataFrame(
+        {
+            "actions": pl.Series(
+                [["a", "b"], ["c"], [None], None], dtype=pl.List(pl.Categorical)
+            ),
+        }
+    )
+    expected = pl.Series("actions", ["a", "c", None, None], dtype=pl.Categorical)
+    assert_series_equal(df["actions"].list.get(0), expected, categorical_as_str=True)
+
+
 def test_contains() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     out = a.list.contains(2)
@@ -77,6 +89,12 @@ def test_contains() -> None:
 
     out = pl.select(pl.lit(a).list.contains(2)).to_series()
     assert_series_equal(out, expected)
+
+
+def test_list_contains_invalid_datatype() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, width=2)})
+    with pytest.raises(pl.SchemaError, match="invalid series dtype: expected `List`"):
+        df.select(pl.col("a").list.contains(2))
 
 
 def test_list_concat() -> None:
@@ -571,6 +589,16 @@ def test_list_tail_underflow_9087() -> None:
 def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
+
+
+def test_list_count_match_categorical() -> None:
+    df = pl.DataFrame(
+        {"list": [["0"], ["1"], ["1", "2", "3", "2"], ["1", "2", "1"], ["4", "4"]]},
+        schema={"list": pl.List(pl.Categorical)},
+    )
+    assert df.select(pl.col("list").list.count_matches("2").alias("number_of_twos"))[
+        "number_of_twos"
+    ].to_list() == [0, 0, 2, 1, 0]
 
 
 def test_list_count_matches_boolean_nulls_9141() -> None:

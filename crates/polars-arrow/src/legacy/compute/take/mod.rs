@@ -7,7 +7,6 @@ use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::*;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::buffer::Buffer;
 use crate::datatypes::PhysicalType;
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::prelude::*;
@@ -97,41 +96,36 @@ pub unsafe fn take_struct_unchecked(array: &StructArray, indices: &IdxArr) -> St
 /// # Safety
 /// No bound checks
 unsafe fn take_binview_unchecked(arr: &BinaryViewArray, indices: &IdxArr) -> BinaryViewArray {
-    let views = arr.views().clone();
-    // PrimitiveArray<u128> is not supported, so we go via i128
-    let views = std::mem::transmute::<Buffer<u128>, Buffer<i128>>(views);
-    let views = PrimitiveArray::from_data_default(views, arr.validity().cloned());
-    let taken_views = take_primitive_unchecked(&views, indices);
-    let taken_views_values = taken_views.values().clone();
-    let taken_views_values = std::mem::transmute::<Buffer<i128>, Buffer<u128>>(taken_views_values);
+    let (views, validity) =
+        take_values_and_validity_unchecked(arr.views(), arr.validity(), indices);
+
     BinaryViewArray::new_unchecked_unknown_md(
         arr.data_type().clone(),
-        taken_views_values,
+        views.into(),
         arr.data_buffers().clone(),
-        taken_views.validity().cloned(),
+        validity,
         Some(arr.total_buffer_len()),
     )
     .maybe_gc()
 }
 
-/// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
-/// # Safety
-/// caller must ensure indices are in bounds
-pub unsafe fn take_primitive_unchecked<T: NativeType>(
-    arr: &PrimitiveArray<T>,
+unsafe fn take_values_and_validity_unchecked<T: NativeType>(
+    values: &[T],
+    validity_values: Option<&Bitmap>,
     indices: &IdxArr,
-) -> PrimitiveArray<T> {
-    let array_values = arr.values().as_slice();
+) -> (Vec<T>, Option<Bitmap>) {
     let index_values = indices.values().as_slice();
+
+    let null_count = validity_values.map(|b| b.unset_bits()).unwrap_or(0);
 
     // first take the values, these are always needed
     let values: Vec<T> = index_values
         .iter()
-        .map(|idx| *array_values.get_unchecked_release(*idx as usize))
+        .map(|idx| *values.get_unchecked_release(*idx as usize))
         .collect_trusted();
 
-    let arr = if arr.null_count() > 0 {
-        let validity_values = arr.validity().unwrap();
+    if null_count > 0 {
+        let validity_values = validity_values.unwrap();
         // the validity buffer we will fill with all valid. And we unset the ones that are null
         // in later checks
         // this is in the assumption that most values will be valid.
@@ -158,20 +152,22 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
                 }
             });
         };
-        PrimitiveArray::new_unchecked(
-            arr.data_type().clone(),
-            values.into(),
-            Some(validity.into()),
-        )
+        (values, Some(validity.freeze()))
     } else {
-        PrimitiveArray::new_unchecked(
-            arr.data_type().clone(),
-            values.into(),
-            indices.validity().cloned(),
-        )
-    };
+        (values, indices.validity().cloned())
+    }
+}
 
-    arr
+/// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
+/// # Safety
+/// caller must ensure indices are in bounds
+pub unsafe fn take_primitive_unchecked<T: NativeType>(
+    arr: &PrimitiveArray<T>,
+    indices: &IdxArr,
+) -> PrimitiveArray<T> {
+    let (values, validity) =
+        take_values_and_validity_unchecked(arr.values(), arr.validity(), indices);
+    PrimitiveArray::new_unchecked(arr.data_type().clone(), values.into(), validity)
 }
 
 /// Forked and adapted from arrow-rs

@@ -36,6 +36,7 @@ ethnum = { workspace = true }
 atoi_simd = { workspace = true, optional = true }
 fast-float = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
+itoap = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 
 regex = { workspace = true, optional = true }
@@ -161,7 +162,7 @@ simd = []
 # polars-arrow
 timezones = []
 dtype-array = []
-dtype-decimal = ["atoi"]
+dtype-decimal = ["atoi", "itoap"]
 bigidx = []
 nightly = []
 performant = []

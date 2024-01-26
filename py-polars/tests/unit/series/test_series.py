@@ -75,16 +75,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series("a").dtype == pl.Null  # Null dtype used in case of no data
     assert pl.Series().dtype == pl.Null
     assert pl.Series([]).dtype == pl.Null
-    assert pl.Series(dtype_if_empty=pl.String).dtype == pl.String
-    assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
     assert (
         pl.Series([None, None, None]).dtype == pl.Null
     )  # f32 type used for list with only None
-    assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
-    # note: "== []" will be cast to empty Series with String dtype.
-    assert_series_equal(
-        pl.Series([], dtype_if_empty=pl.String) == [], pl.Series("", dtype=pl.Boolean)
-    )
     assert pl.Series(values=[True, False]).dtype == pl.Boolean
     assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
     assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.String
@@ -185,6 +178,21 @@ def test_init_inputs(monkeypatch: Any) -> None:
     monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
     with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
+
+
+def test_init_dtype_if_empty_deprecated() -> None:
+    with pytest.deprecated_call():
+        assert pl.Series(dtype_if_empty=pl.String).dtype == pl.String
+    with pytest.deprecated_call():
+        assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
+
+    with pytest.deprecated_call():
+        assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
+
+    # note: "== []" will be cast to empty Series with String dtype.
+    with pytest.deprecated_call():
+        s = pl.Series([], dtype_if_empty=pl.String) == []
+    assert_series_equal(s, pl.Series("", dtype=pl.Boolean))
 
 
 def test_init_structured_objects() -> None:
@@ -1806,6 +1814,41 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_min() is None
     assert s.arg_max() is None
 
+    # categorical empty series
+    s = pl.Series([], dtype=pl.Categorical)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # categorical with physical ordering no null
+    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical)
+    assert s.arg_min() == 0
+    assert s.arg_max() == 2
+
+    # categorical with physical ordering has null
+    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical)
+    assert s.arg_min() == 1
+    assert s.arg_max() == 4
+
+    # categorical with physical all null
+    s = pl.Series([None, None], dtype=pl.Categorical)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # categorical with lexical ordering no null
+    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical"))
+    assert s.arg_min() == 2
+    assert s.arg_max() == 0
+
+    # categorical with lexical ordering has null
+    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical(ordering="lexical"))
+    assert s.arg_min() == 4
+    assert s.arg_max() == 1
+
+    # categorical with lexical ordering all null
+    s = pl.Series([None, None], dtype=pl.Categorical(ordering="lexical"))
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
 
 def test_is_null_is_not_null() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, None])
@@ -2345,6 +2388,19 @@ def test_reverse() -> None:
 
     s = pl.Series("values", ["a", "b", None, "y", "x"])
     assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
+
+
+def test_reverse_binary() -> None:
+    # single chunk
+    s = pl.Series("values", ["a", "b", "c", "d"]).cast(pl.Binary)
+    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
+
+    # multiple chunks
+    chunk1 = pl.Series("values", ["a", "b"])
+    chunk2 = pl.Series("values", ["c", "d"])
+    s = chunk1.extend(chunk2).cast(pl.Binary)
+    assert s.n_chunks() == 2
+    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
 
 
 def test_clip() -> None:
