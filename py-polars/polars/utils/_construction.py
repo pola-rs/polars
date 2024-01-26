@@ -253,8 +253,7 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
-    if not values.flags["C_CONTIGUOUS"]:
-        values = np.array(values)
+    values = np.ascontiguousarray(values)
 
     if len(values.shape) == 1:
         values, dtype = numpy_values_and_dtype(values)
