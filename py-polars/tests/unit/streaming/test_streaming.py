@@ -331,6 +331,20 @@ def test_streaming_11219() -> None:
     ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
 
 
+def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
+    with Path.open(tmp_path / "header_no_data.csv", "w") as f:
+        f.write("name, age\n")
+
+    schema = {"name": pl.String, "age": pl.Int32}
+    df = (
+        pl.scan_csv(tmp_path / "header_no_data.csv", schema=schema)
+        .head()
+        .collect(streaming=True)
+    )
+    assert len(df) == 0
+    assert df.schema == schema
+
+
 @pytest.mark.write_disk()
 def test_custom_temp_dir(monkeypatch: Any) -> None:
     test_temp_dir = "test_temp_dir"
