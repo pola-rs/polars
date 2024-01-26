@@ -6404,7 +6404,7 @@ class DataFrame:
 
         Notes
         -----
-        For joining on columns with categorical data, see `pl.StringCache()`.
+        For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"

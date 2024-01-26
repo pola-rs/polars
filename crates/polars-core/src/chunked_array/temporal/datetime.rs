@@ -225,12 +225,6 @@ impl DatetimeChunked {
     }
     #[cfg(feature = "timezones")]
     pub fn convert_time_zone(mut self, time_zone: TimeZone) -> PolarsResult<Self> {
-        polars_ensure!(
-            self.time_zone().is_some(),
-            InvalidOperation:
-            "cannot call `convert_time_zone` on tz-naive; \
-            set a time zone first with `replace_time_zone`"
-        );
         self.set_time_zone(time_zone)?;
         Ok(self)
     }
