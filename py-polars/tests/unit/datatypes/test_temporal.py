@@ -1582,6 +1582,10 @@ def test_convert_time_zone_on_tz_naive() -> None:
     result = ts.dt.convert_time_zone("Asia/Kathmandu").item()
     expected = datetime(2020, 1, 1, 5, 45, tzinfo=ZoneInfo(key="Asia/Kathmandu"))
     assert result == expected
+    result = (
+        ts.dt.replace_time_zone("UTC").dt.convert_time_zone("Asia/Kathmandu").item()
+    )
+    assert result == expected
 
 
 def test_tz_aware_get_idx_5010() -> None:
