@@ -225,7 +225,7 @@ pub fn infer_file_schema_inner(
         } else {
             // if columns length is non uniform we need to find row with highest column length
             let mut line_with_max_columns: &[u8] = header_line;
-            for (_i, line) in (&mut lines).enumerate() {
+            for line in &mut lines {
                 if !is_comment_line(line, comment_prefix)
                     && line.len() > line_with_max_columns.len()
                 {
