@@ -66,7 +66,7 @@ impl ChunkReverse for BinaryChunked {
                 )
             }
         } else {
-            let ca = IdxCa::from_vec("", (0..self.len() as IdxSize).collect());
+            let ca = IdxCa::from_vec("", (0..self.len() as IdxSize).rev().collect());
             unsafe { self.take_unchecked(&ca) }
         }
     }
