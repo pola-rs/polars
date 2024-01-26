@@ -97,6 +97,11 @@ impl Executor for JoinExec {
                 .map(|e| e.evaluate(&df_right, state))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
+            if state.verbose() {
+                eprintln!("left on series: {:?}", left_on_series);
+                eprintln!("right on series: {:?}", right_on_series);
+            };
+
             // make sure that we can join on evaluated expressions
             for s in &left_on_series {
                 df_left.with_column(s.clone())?;
@@ -104,6 +109,12 @@ impl Executor for JoinExec {
             for s in &right_on_series {
                 df_right.with_column(s.clone())?;
             }
+            if state.verbose() {
+                eprintln!("left df: {:?}", df_left);
+                eprintln!("right df: {:?}", df_right);
+            };
+
+            // TODO asof
 
             // prepare the tolerance
             // we must ensure that we use the right units

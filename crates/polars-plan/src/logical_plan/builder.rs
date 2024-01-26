@@ -875,6 +875,7 @@ impl LogicalPlanBuilder {
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
     ) -> Self {
+        // TODO investigate necessity of this
         for e in left_on.iter().chain(right_on.iter()) {
             if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
                 return LogicalPlan::Error {
