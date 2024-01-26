@@ -14,3 +14,16 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.sum
     Expr.arr.to_list
     Expr.arr.unique
+    Expr.arr.all
+    Expr.arr.any
+    Expr.arr.sort
+    Expr.arr.reverse
+    Expr.arr.arg_min
+    Expr.arr.arg_max
+    Expr.arr.get
+    Expr.arr.first
+    Expr.arr.last
+    Expr.arr.join
+    Expr.arr.explode
+    Expr.arr.contains
+    Expr.arr.count_matches

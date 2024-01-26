@@ -1,6 +1,9 @@
+"""
+# --8<-- [start:setup]
 import polars as pl
 
-"""
+# --8<-- [end:setup]
+
 # --8<-- [start:df]
 q1 = (
     pl.scan_csv("docs/data/reddit.csv")

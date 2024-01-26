@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import Any, cast
 
 import numpy as np
@@ -28,10 +28,10 @@ from polars.testing import assert_frame_equal, assert_series_equal
         ("float64", [21.7, 21.8, 21], pl.Float64, np.float64),
         ("bool", [True, False, False], pl.Boolean, np.bool_),
         ("object", [21.7, "string1", object()], pl.Object, np.object_),
-        ("str", ["string1", "string2", "string3"], pl.Utf8, np.str_),
+        ("str", ["string1", "string2", "string3"], pl.String, np.str_),
         ("intc", [1, 3, 2], pl.Int32, np.intc),
         ("uintc", [1, 3, 2], pl.UInt32, np.uintc),
-        ("str_fixed", ["string1", "string2", "string3"], pl.Utf8, np.str_),
+        ("str_fixed", ["string1", "string2", "string3"], pl.String, np.str_),
         (
             "bytes",
             [b"byte_string1", b"byte_string2", b"byte_string3"],
@@ -69,11 +69,11 @@ def test_to_numpy(numpy_interop_test_data: Any, use_pyarrow: bool) -> None:
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("has_null", [True, False])
-@pytest.mark.parametrize("dtype", [pl.Time, pl.Boolean, pl.Utf8])
+@pytest.mark.parametrize("dtype", [pl.Time, pl.Boolean, pl.String])
 def test_to_numpy_no_zero_copy(
     use_pyarrow: bool, has_null: bool, dtype: pl.PolarsDataType
 ) -> None:
-    data: list[Any] = ["a", None] if dtype == pl.Utf8 else [0, None]
+    data: list[Any] = ["a", None] if dtype == pl.String else [0, None]
     series = pl.Series(data if has_null else data[:1], dtype=dtype)
     with pytest.raises(ValueError):
         series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
@@ -112,8 +112,8 @@ def test_from_pandas() -> None:
         "int_nulls": pl.Float64,
         "floats": pl.Float64,
         "floats_nulls": pl.Float64,
-        "strings": pl.Utf8,
-        "strings_nulls": pl.Utf8,
+        "strings": pl.String,
+        "strings_nulls": pl.String,
         "strings-cat": pl.Categorical,
     }
     assert out.rows() == [
@@ -176,7 +176,7 @@ def test_from_pandas_datetime() -> None:
     assert s.dt.minute()[0] == 20
     assert s.dt.second()[0] == 20
 
-    date_times = pd.date_range("2021-06-24 00:00:00", "2021-06-24 09:00:00", freq="1H")
+    date_times = pd.date_range("2021-06-24 00:00:00", "2021-06-24 09:00:00", freq="1h")
     s = pl.from_pandas(date_times)
     assert s[0] == datetime(2021, 6, 24, 0, 0)
     assert s[-1] == datetime(2021, 6, 24, 9, 0)
@@ -280,12 +280,12 @@ def test_from_pandas_null() -> None:
     # null column is an object dtype, so pl.Utf8 is most close
     df = pd.DataFrame([{"a": None}, {"a": None}])
     out = pl.DataFrame(df)
-    assert out.dtypes == [pl.Utf8]
+    assert out.dtypes == [pl.String]
     assert out["a"][0] is None
 
     df = pd.DataFrame([{"a": None, "b": 1}, {"a": None, "b": 2}])
     out = pl.DataFrame(df)
-    assert out.dtypes == [pl.Utf8, pl.Int64]
+    assert out.dtypes == [pl.String, pl.Int64]
 
 
 def test_from_pandas_nested_list() -> None:
@@ -339,16 +339,16 @@ def test_from_dicts() -> None:
 
 
 def test_from_dict_no_inference() -> None:
-    schema = {"a": pl.Utf8}
+    schema = {"a": pl.String}
     data = [{"a": "aa"}]
     pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
 
 
 def test_from_dicts_schema_override() -> None:
     schema = {
-        "a": pl.Utf8,
+        "a": pl.String,
         "b": pl.Int64,
-        "c": pl.List(pl.Struct({"x": pl.Int64, "y": pl.Utf8, "z": pl.Float64})),
+        "c": pl.List(pl.Struct({"x": pl.Int64, "y": pl.String, "z": pl.Float64})),
     }
 
     # initial data matches the expected schema
@@ -419,6 +419,20 @@ def test_from_numpy() -> None:
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
+    data2 = np.array(["foo", "bar"], dtype=object)
+    df2 = pl.from_numpy(data2)
+    assert df2.shape == (2, 1)
+    assert df2.rows() == [("foo",), ("bar",)]
+    assert df2.schema == {"column_0": pl.String}
+    with pytest.raises(
+        ValueError,
+        match="cannot create DataFrame from array with more than two dimensions",
+    ):
+        _ = pl.from_numpy(np.array([[[1]]]))
+    with pytest.raises(
+        ValueError, match="cannot create DataFrame from zero-dimensional array"
+    ):
+        _ = pl.from_numpy(np.array(1))
 
 
 def test_from_numpy_structured() -> None:
@@ -448,7 +462,7 @@ def test_from_numpy_structured() -> None:
         df = pl.DataFrame(data=arr).sort(by="price_usd", descending=True)
 
         assert df.schema == {
-            "product": pl.Utf8,
+            "product": pl.String,
             "price_usd": pl.Float64,
             "in_stock": pl.Boolean,
         }
@@ -465,7 +479,7 @@ def test_from_numpy_structured() -> None:
             ),
         ):
             assert df.schema == {
-                "phone": pl.Utf8,
+                "phone": pl.String,
                 "price_usd": pl.Float32,
                 "available": pl.Boolean,
             }
@@ -553,78 +567,6 @@ def test_no_rechunk() -> None:
     assert pl.from_arrow(table["x"], rechunk=False).n_chunks() == 2
 
 
-def test_cat_to_pandas() -> None:
-    df = pl.DataFrame({"a": ["best", "test"]})
-    df = df.with_columns(pl.all().cast(pl.Categorical))
-
-    pd_out = df.to_pandas()
-    assert isinstance(pd_out["a"].dtype, pd.CategoricalDtype)
-
-    pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-    assert pd_pa_out["a"].dtype == pd.ArrowDtype(
-        pa.dictionary(pa.int64(), pa.large_string())
-    )
-
-
-def test_to_pandas() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": [6, None, 8],
-            "c": [10.0, 25.0, 50.5],
-            "d": [date(2023, 7, 5), None, date(1999, 12, 13)],
-            "e": ["a", "b", "c"],
-            "f": [None, "e", "f"],
-            "g": [datetime.now(), datetime.now(), None],
-        },
-        schema_overrides={"a": pl.UInt8},
-    ).with_columns(
-        [
-            pl.col("e").cast(pl.Categorical).alias("h"),
-            pl.col("f").cast(pl.Categorical).alias("i"),
-        ]
-    )
-
-    pd_out = df.to_pandas()
-    ns_datetimes = pa.__version__ < "13"
-
-    pd_out_dtypes_expected = [
-        np.dtype(np.uint8),
-        np.dtype(np.float64),
-        np.dtype(np.float64),
-        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'ms'}]"),
-        np.dtype(np.object_),
-        np.dtype(np.object_),
-        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'us'}]"),
-        pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
-        pd.CategoricalDtype(categories=["e", "f"], ordered=False),
-    ]
-    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
-
-    pd_out_dtypes_expected[3] = np.dtype("O")
-    pd_out = df.to_pandas(date_as_object=True)
-    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
-
-    try:
-        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-        pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
-        pd_pa_dtypes_names_expected = [
-            "uint8[pyarrow]",
-            "int64[pyarrow]",
-            "double[pyarrow]",
-            "date32[day][pyarrow]",
-            "large_string[pyarrow]",
-            "large_string[pyarrow]",
-            "timestamp[us][pyarrow]",
-            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
-            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
-        ]
-        assert pd_pa_dtypes_names == pd_pa_dtypes_names_expected
-    except ModuleNotFoundError:
-        # Skip test if Pandas 1.5.x is not installed.
-        pass
-
-
 def test_numpy_to_lit() -> None:
     out = pl.select(pl.lit(np.array([1, 2, 3]))).to_series().to_list()
     assert out == [1, 2, 3]
@@ -642,32 +584,6 @@ def test_from_empty_pandas() -> None:
     polars_df = pl.from_pandas(pandas_df)
     assert polars_df.columns == ["A", "fruits"]
     assert polars_df.dtypes == [pl.Float64, pl.Float64]
-
-
-def test_from_empty_pandas_with_dtypes() -> None:
-    df = pd.DataFrame(columns=["a", "b"])
-    df["a"] = df["a"].astype(str)
-    df["b"] = df["b"].astype(float)
-    assert pl.from_pandas(df).dtypes == [pl.Utf8, pl.Float64]
-
-    df = pl.DataFrame(
-        data=[],
-        schema={
-            "a": pl.Int32,
-            "b": pl.Datetime,
-            "c": pl.Float32,
-            "d": pl.Duration,
-            "e": pl.Utf8,
-        },
-    ).to_pandas()
-
-    assert pl.from_pandas(df).dtypes == [
-        pl.Int32,
-        pl.Datetime,
-        pl.Float32,
-        pl.Duration,
-        pl.Utf8,
-    ]
 
 
 def test_from_empty_arrow() -> None:
@@ -699,10 +615,6 @@ def test_from_null_column() -> None:
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
     assert df.dtypes[0] == pl.Null
-
-
-def test_to_pandas_series() -> None:
-    assert (pl.Series("a", [1, 2, 3]).to_pandas() == pd.Series([1, 2, 3])).all()
 
 
 def test_respect_dtype_with_series_from_numpy() -> None:
@@ -862,7 +774,7 @@ def test_dataframe_from_repr() -> None:
             "b": pl.Float64,
             "c": pl.Categorical,
             "d": pl.Boolean,
-            "e": pl.Utf8,
+            "e": pl.String,
             "f": pl.Date,
             "g": pl.Time,
             "h": pl.Datetime("ns"),
@@ -887,7 +799,7 @@ def test_dataframe_from_repr() -> None:
     assert df.shape == (0, 6)
     assert df.rows() == []
     assert df.schema == {
-        "id": pl.Utf8,
+        "id": pl.String,
         "q1": pl.Int8,
         "q2": pl.Int16,
         "q3": pl.Int32,
@@ -907,7 +819,7 @@ def test_dataframe_from_repr() -> None:
         """
         ),
     )
-    assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.Utf8, "other": pl.Utf8}))
+    assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.String, "other": pl.String}))
 
     # empty frame with non-standard/blank 'null'
     df = cast(
@@ -1013,7 +925,7 @@ def test_dataframe_from_repr() -> None:
     assert df.schema == {
         "source_actor_id": pl.Int32,
         "source_channel_id": pl.Int64,
-        "ident": pl.Utf8,
+        "ident": pl.String,
         "timestamp": pl.Datetime("us", "Asia/Tokyo"),
     }
 
@@ -1140,11 +1052,13 @@ def test_to_init_repr() -> None:
 
 
 def test_untrusted_categorical_input() -> None:
-    df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).group_by("x").count().to_dict(as_series=False) == {
-        "x": ["x"],
-        "count": [1],
-    }
+    df_pd = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
+    df = pl.from_pandas(df_pd)
+    result = df.group_by("x").len()
+    expected = pl.DataFrame(
+        {"x": ["x"], "len": [1]}, schema={"x": pl.Categorical, "len": pl.UInt32}
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_sliced_struct_from_arrow() -> None:
@@ -1175,10 +1089,36 @@ def test_sliced_struct_from_arrow() -> None:
 
 def test_from_arrow_invalid_time_zone() -> None:
     arr = pa.array(
-        [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="+01:00")
+        [datetime(2021, 1, 1, 0, 0, 0, 0)],
+        type=pa.timestamp("ns", tz="this-is-not-a-time-zone"),
     )
-    with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
+    with pytest.raises(
+        ComputeError, match=r"unable to parse time zone: 'this-is-not-a-time-zone'"
+    ):
         pl.from_arrow(arr)
+
+
+@pytest.mark.parametrize(
+    ("fixed_offset", "etc_tz"),
+    [
+        ("+10:00", "Etc/GMT-10"),
+        ("10:00", "Etc/GMT-10"),
+        ("-10:00", "Etc/GMT+10"),
+        ("+05:00", "Etc/GMT-5"),
+        ("05:00", "Etc/GMT-5"),
+        ("-05:00", "Etc/GMT+5"),
+    ],
+)
+def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
+    arr = pa.array(
+        [datetime(2021, 1, 1, 0, 0, 0, 0)],
+        type=pa.timestamp("us", tz=fixed_offset),
+    )
+    result = cast(pl.Series, pl.from_arrow(arr))
+    expected = pl.Series(
+        [datetime(2021, 1, 1, tzinfo=timezone.utc)]
+    ).dt.convert_time_zone(etc_tz)
+    assert_series_equal(result, expected)
 
 
 def test_from_avro_valid_time_zone_13032() -> None:

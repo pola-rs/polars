@@ -265,13 +265,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match (data_type, self.0.time_unit()) {
-            (DataType::Utf8, TimeUnit::Milliseconds) => {
+            (DataType::String, TimeUnit::Milliseconds) => {
                 Ok(self.0.to_string("%F %T%.3f")?.into_series())
             },
-            (DataType::Utf8, TimeUnit::Microseconds) => {
+            (DataType::String, TimeUnit::Microseconds) => {
                 Ok(self.0.to_string("%F %T%.6f")?.into_series())
             },
-            (DataType::Utf8, TimeUnit::Nanoseconds) => {
+            (DataType::String, TimeUnit::Nanoseconds) => {
                 Ok(self.0.to_string("%F %T%.9f")?.into_series())
             },
             _ => self.0.cast(data_type),
@@ -356,12 +356,18 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .max_as_series()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
     }
+
     fn min_as_series(&self) -> PolarsResult<Series> {
         Ok(self
             .0
             .min_as_series()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
     }
+
+    fn median_as_series(&self) -> PolarsResult<Series> {
+        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+    }
+
     fn quantile_as_series(
         &self,
         _quantile: f64,

@@ -1,3 +1,6 @@
+import datetime
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -24,7 +27,7 @@ def test_cast_list_array() -> None:
 
 
 def test_array_construction() -> None:
-    payload = [[1, 2, 3], [4, 2, 3]]
+    payload = [[1, 2, 3], None, [4, 2, 3]]
 
     dtype = pl.Array(pl.Int64, 3)
     s = pl.Series(payload, dtype=dtype)
@@ -33,7 +36,7 @@ def test_array_construction() -> None:
 
     # inner type
     dtype = pl.Array(pl.UInt8, 2)
-    payload = [[1, 2], [3, 4]]
+    payload = [[1, 2], None, [3, 4]]
     s = pl.Series(payload, dtype=dtype)
     assert s.dtype == dtype
     assert s.to_list() == payload
@@ -51,6 +54,16 @@ def test_array_construction() -> None:
     ]
     assert df.rows() == []
 
+    # from dicts
+    rows = [
+        {"row_id": "a", "data": [1, 2, 3]},
+        {"row_id": "b", "data": [2, 3, 4]},
+    ]
+    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, width=3)}
+    df = pl.from_dicts(rows, schema=schema)
+    assert df.schema == schema
+    assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
+
 
 def test_array_in_group_by() -> None:
     df = pl.DataFrame(
@@ -60,9 +73,8 @@ def test_array_in_group_by() -> None:
         ]
     )
 
-    assert next(iter(df.group_by("id", maintain_order=True)))[1]["list"].to_list() == [
-        [1, 2]
-    ]
+    result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
+    assert result.to_list() == [[1, 2]]
 
     df = pl.DataFrame(
         {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
@@ -147,5 +159,69 @@ def test_array_data_type_equality() -> None:
     assert pl.Array(pl.Int64, 2) == pl.Array
     assert pl.Array(pl.Int64, 2) == pl.Array(pl.Int64, 2)
     assert pl.Array(pl.Int64, 2) != pl.Array(pl.Int64, 3)
-    assert pl.Array(pl.Int64, 2) != pl.Array(pl.Utf8, 2)
+    assert pl.Array(pl.Int64, 2) != pl.Array(pl.String, 2)
     assert pl.Array(pl.Int64, 2) != pl.List(pl.Int64)
+
+
+@pytest.mark.parametrize(
+    ("data", "inner_type"),
+    [
+        ([[1, 2], None, [3, None], [None, None]], pl.Int64),
+        ([[True, False], None, [True, None], [None, None]], pl.Boolean),
+        ([[1.0, 2.0], None, [3.0, None], [None, None]], pl.Float32),
+        ([["a", "b"], None, ["c", None], [None, None]], pl.String),
+        (
+            [
+                [datetime.datetime(2021, 1, 1), datetime.datetime(2022, 1, 1, 10, 30)],
+                None,
+                [datetime.datetime(2023, 12, 25), None],
+                [None, None],
+            ],
+            pl.Datetime,
+        ),
+        (
+            [
+                [datetime.date(2021, 1, 1), datetime.date(2022, 1, 15)],
+                None,
+                [datetime.date(2023, 12, 25), None],
+                [None, None],
+            ],
+            pl.Date,
+        ),
+        (
+            [
+                [datetime.timedelta(10), datetime.timedelta(1, 22)],
+                None,
+                [datetime.timedelta(20), None],
+                [None, None],
+            ],
+            pl.Duration,
+        ),
+        ([[[1, 2], None], None, [[3], None], [None, None]], pl.List(pl.Int32)),
+    ],
+)
+def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
+    s = pl.Series(data, dtype=pl.List(inner_type))
+    s = s.cast(pl.Array(inner_type, 2))
+    assert s.dtype == pl.Array(inner_type, width=2)
+    assert s.to_list() == data
+
+
+def test_array_repeat() -> None:
+    dtype = pl.Array(pl.UInt8, width=1)
+    s = pl.repeat([42], n=3, dtype=dtype, eager=True)
+    expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
+    assert s.dtype == dtype
+    assert_series_equal(s, expected)
+
+
+def test_create_nested_array() -> None:
+    data = [[[1, 2], [3]], [[], [4, None]], None]
+    s1 = pl.Series(data, dtype=pl.Array(pl.List(pl.Int64), 2))
+    assert s1.to_list() == data
+    data = [[[1, 2], [3, None]], [[None, None], [4, None]], None]
+    s2 = pl.Series(
+        [[[1, 2], [3, None]], [[None, None], [4, None]], None],
+        dtype=pl.Array(pl.Array(pl.Int64, 2), 2),
+    )
+    assert s2.to_list() == data

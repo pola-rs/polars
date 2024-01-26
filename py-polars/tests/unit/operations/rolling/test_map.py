@@ -21,6 +21,13 @@ def test_rolling_map_window_size_9160(input: list[int], output: list[int]) -> No
     assert_series_equal(result, expected)
 
 
+def testing_rolling_map_window_size_with_nulls() -> None:
+    s = pl.Series([0, 1, None, 3, 4, 5])
+    result = s.rolling_map(lambda x: sum(x), window_size=3, min_periods=3)
+    expected = pl.Series([None, None, None, None, None, 12])
+    assert_series_equal(result, expected)
+
+
 def test_rolling_map_clear_reuse_series_state_10681() -> None:
     df = pl.DataFrame(
         {
@@ -86,7 +93,7 @@ def test_rolling_map_sum_int_cast_to_float() -> None:
         function=lambda s: s.sum(), window_size=3, weights=[1.0, 2.0, 3.0]
     )
 
-    expected = pl.Series("A", [None, None, 32.0, 20.0, 48.0], dtype=pl.Float64)
+    expected = pl.Series("A", [None, None, 32.0, None, None], dtype=pl.Float64)
     assert_series_equal(result, expected)
 
 

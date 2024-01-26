@@ -5,4 +5,4 @@ pub mod deserialize;
 mod file;
 pub mod write;
 
-pub use file::{infer, infer_iter};
+pub use file::{infer_iter, iter_unique_dtypes};

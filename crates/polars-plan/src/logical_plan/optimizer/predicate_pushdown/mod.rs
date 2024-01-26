@@ -240,7 +240,7 @@ impl<'a> PredicatePushDown<'a> {
                 let tmp_key = Arc::<str>::from(&*temporary_unique_key(&acc_predicates));
                 acc_predicates.insert(tmp_key.clone(), predicate);
 
-                let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &vec![], &acc_predicates, expr_arena)?.0 {
+                let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &[], &acc_predicates, expr_arena)?.0 {
                     PushdownEligibility::Full => vec![],
                     PushdownEligibility::Partial { to_local } => {
                         let mut out = Vec::<Node>::with_capacity(to_local.len());
@@ -305,14 +305,14 @@ impl<'a> PredicatePushDown<'a> {
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc { .. } => vec![],
                     _ => {
-                        // Disallow row-count pushdown of other scans as they may
-                        // not update the row counts properly before applying the
+                        // Disallow row index pushdown of other scans as they may
+                        // not update the row index properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_count) = options.row_count {
-                            let row_count_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
-                                name.as_ref() == row_count.name
+                        if let Some(ref row_index) = options.row_index {
+                            let row_index_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
+                                name.as_ref() == row_index.name
                             });
-                            row_count_predicates
+                            row_index_predicates
                         } else {
                             vec![]
                         }
@@ -530,7 +530,7 @@ impl<'a> PredicatePushDown<'a> {
 
                 // a count is influenced by a Union/Vstack
                 acc_predicates.retain(|_, predicate| {
-                    if has_aexpr(*predicate, expr_arena, |ae| matches!(ae, AExpr::Count)) {
+                    if has_aexpr(*predicate, expr_arena, |ae| matches!(ae, AExpr::Len)) {
                         local_predicates.push(*predicate);
                         false
                     } else {
@@ -567,6 +567,10 @@ impl<'a> PredicatePushDown<'a> {
             // caches will be different
             | lp @ Cache { .. }
              => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            }
+            lp @ HConcat { .. }
+            => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
             #[cfg(feature = "python")]

@@ -60,12 +60,12 @@ impl ChunkShift<BooleanType> for BooleanChunked {
     }
 }
 
-impl ChunkShiftFill<Utf8Type, Option<&str>> for Utf8Chunked {
-    fn shift_and_fill(&self, periods: i64, fill_value: Option<&str>) -> Utf8Chunked {
+impl ChunkShiftFill<StringType, Option<&str>> for StringChunked {
+    fn shift_and_fill(&self, periods: i64, fill_value: Option<&str>) -> StringChunked {
         let ca = self.as_binary();
         unsafe {
             ca.shift_and_fill(periods, fill_value.map(|v| v.as_bytes()))
-                .to_utf8()
+                .to_string()
         }
     }
 }
@@ -76,13 +76,25 @@ impl ChunkShiftFill<BinaryType, Option<&[u8]>> for BinaryChunked {
     }
 }
 
-impl ChunkShift<Utf8Type> for Utf8Chunked {
+impl ChunkShiftFill<BinaryOffsetType, Option<&[u8]>> for BinaryOffsetChunked {
+    fn shift_and_fill(&self, periods: i64, fill_value: Option<&[u8]>) -> BinaryOffsetChunked {
+        impl_shift_fill!(self, periods, fill_value)
+    }
+}
+
+impl ChunkShift<StringType> for StringChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }
 }
 
 impl ChunkShift<BinaryType> for BinaryChunked {
+    fn shift(&self, periods: i64) -> Self {
+        self.shift_and_fill(periods, None)
+    }
+}
+
+impl ChunkShift<BinaryOffsetType> for BinaryOffsetChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }
@@ -215,7 +227,7 @@ mod test {
         let s = Series::new("a", ["a", "b", "c"]);
         let shifted = s.shift(-1);
         assert_eq!(
-            Vec::from(shifted.utf8().unwrap()),
+            Vec::from(shifted.str().unwrap()),
             &[Some("b"), Some("c"), None]
         );
     }

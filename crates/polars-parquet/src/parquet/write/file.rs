@@ -36,6 +36,19 @@ pub(super) fn end_file<W: Write>(mut writer: &mut W, metadata: &ThriftFileMetaDa
     Ok(metadata_len as u64 + FOOTER_SIZE)
 }
 
+fn create_column_orders(schema_desc: &SchemaDescriptor) -> Vec<parquet_format_safe::ColumnOrder> {
+    // We only include ColumnOrder for leaf nodes.
+    // Currently only supported ColumnOrder is TypeDefinedOrder so we set this
+    // for all leaf nodes.
+    // Even if the column has an undefined sort order, such as INTERVAL, this
+    // is still technically the defined TYPEORDER so it should still be set.
+    (0..schema_desc.columns().len())
+        .map(|_| {
+            parquet_format_safe::ColumnOrder::TYPEORDER(parquet_format_safe::TypeDefinedOrder {})
+        })
+        .collect()
+}
+
 /// An interface to write a parquet file.
 /// Use `start` to write the header, `write` to write a row group,
 /// and `end` to write the footer.
@@ -216,7 +229,7 @@ impl<W: Write> FileWriter<W> {
             self.row_groups.clone(),
             key_value_metadata,
             self.created_by.clone(),
-            None,
+            Some(create_column_orders(&self.schema)),
             None,
             None,
         );
@@ -237,43 +250,5 @@ impl<W: Write> FileWriter<W> {
     /// This function panics if [`Self::end`] has not yet been called
     pub fn into_inner_and_metadata(self) -> (W, ThriftFileMetaData) {
         (self.writer, self.metadata.expect("File to have ended"))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs::File;
-    use std::io::Cursor;
-
-    use super::*;
-    use crate::parquet::error::Result;
-    use crate::parquet::read::read_metadata;
-    use crate::parquet::tests::get_path;
-
-    #[test]
-    fn empty_file() -> Result<()> {
-        let mut testdata = get_path();
-        testdata.push("alltypes_plain.parquet");
-        let mut file = File::open(testdata).unwrap();
-
-        let mut metadata = read_metadata(&mut file)?;
-
-        // take away all groups and rows
-        metadata.row_groups = vec![];
-        metadata.num_rows = 0;
-
-        let mut writer = Cursor::new(vec![]);
-
-        // write the file
-        start_file(&mut writer)?;
-        end_file(&mut writer, &metadata.into_thrift())?;
-
-        let a = writer.into_inner();
-
-        // read it again:
-        let result = read_metadata(&mut Cursor::new(a));
-        assert!(result.is_ok());
-
-        Ok(())
     }
 }

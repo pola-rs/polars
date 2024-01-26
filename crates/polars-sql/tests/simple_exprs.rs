@@ -118,7 +118,7 @@ fn test_cast_exprs() {
             col("a").cast(DataType::Float32).alias("floats"),
             col("a").cast(DataType::Int32).alias("ints"),
             col("a").cast(DataType::Int64).alias("bigints"),
-            col("a").cast(DataType::Utf8).alias("strings"),
+            col("a").cast(DataType::String).alias("strings"),
             col("a").cast(DataType::Binary).alias("binary"),
         ])
         .collect()
@@ -291,7 +291,7 @@ fn binary_functions() {
         col("a").and(col("b")).alias("and"),
         col("a").or(col("b")).alias("or"),
         col("a").xor(col("b")).alias("xor"),
-        (col("a").cast(DataType::Utf8) + col("b").cast(DataType::Utf8)).alias("concat"),
+        (col("a").cast(DataType::String) + col("b").cast(DataType::String)).alias("concat"),
     ]);
     let df_pl = df_pl.collect().unwrap();
     assert_eq!(df_sql, df_pl);

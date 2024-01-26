@@ -26,7 +26,7 @@ fn test_drop() -> PolarsResult<()> {
         "a" => [1],
     ]?
     .lazy()
-    .drop_columns(["a"])
+    .drop(["a"])
     .collect()?;
     assert_eq!(out.width(), 0);
     Ok(())
@@ -142,13 +142,13 @@ fn test_sorted_path() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_index("index", None)
         .explode(["a"])
-        .group_by(["row_nr"])
+        .group_by(["index"])
         .agg([col("a").count().alias("count")])
         .collect()?;
 
-    let s = out.column("row_nr")?;
+    let s = out.column("index")?;
     assert_eq!(s.is_sorted_flag(), IsSorted::Ascending);
 
     Ok(())

@@ -1,16 +1,14 @@
-use arrow::array::Utf8Array;
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::prelude::FromDataUtf8;
+use arrow::array::MutableBinaryViewArray;
 use polars_core::prelude::*;
+use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::chunkedarray::utf8::Pattern;
+use polars_time::chunkedarray::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{
+use polars_time::prelude::string::infer::{
     infer_pattern_single, DatetimeInfer, StrpTimeParser, TryFromWithUnit,
 };
 
 use crate::csv::parser::{is_whitespace, skip_whitespace};
-use crate::csv::read_impl::RunningSize;
 use crate::csv::utils::escape_field;
 use crate::csv::CsvEncoding;
 
@@ -121,44 +119,22 @@ where
 
 pub(crate) struct Utf8Field {
     name: String,
-    // buffer that holds the string data
-    data: Vec<u8>,
-    // offsets in the string data buffer
-    offsets: Vec<i64>,
-    validity: MutableBitmap,
+    mutable: MutableBinaryViewArray<str>,
+    scratch: Vec<u8>,
     quote_char: u8,
     encoding: CsvEncoding,
-    ignore_errors: bool,
 }
 
 impl Utf8Field {
-    fn new(
-        name: &str,
-        capacity: usize,
-        str_capacity: usize,
-        quote_char: Option<u8>,
-        encoding: CsvEncoding,
-        ignore_errors: bool,
-    ) -> Self {
-        let mut offsets = Vec::with_capacity(capacity + 1);
-        offsets.push(0);
+    fn new(name: &str, capacity: usize, quote_char: Option<u8>, encoding: CsvEncoding) -> Self {
         Self {
             name: name.to_string(),
-            data: Vec::with_capacity(str_capacity),
-            offsets,
-            validity: MutableBitmap::with_capacity(capacity),
+            mutable: MutableBinaryViewArray::with_capacity(capacity),
+            scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
             encoding,
-            ignore_errors,
         }
     }
-}
-
-/// We delay validation if we expect utf8 and no errors
-/// In case of `ignore-error`
-#[inline]
-fn delay_utf8_validation(encoding: CsvEncoding, ignore_errors: bool) -> bool {
-    !(matches!(encoding, CsvEncoding::LossyUtf8) || ignore_errors)
 }
 
 #[inline]
@@ -177,69 +153,46 @@ impl ParsedBuffer for Utf8Field {
         _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
         if bytes.is_empty() {
-            // append null
-            self.offsets.push(self.data.len() as i64);
-            self.validity.push(!missing_is_null);
+            if missing_is_null {
+                self.mutable.push_null()
+            } else {
+                self.mutable.push(Some(""))
+            }
             return Ok(());
         }
 
-        // Only for lossy utf8 we check utf8 now. Otherwise we check all utf8 at the end.
-        let parse_result = if delay_utf8_validation(self.encoding, ignore_errors) {
-            true
-        } else {
-            validate_utf8(bytes)
-        };
-        let data_len = self.data.len();
-
-        // check if field fits in the str data buffer
-        let remaining_capacity = self.data.capacity() - data_len;
-        if remaining_capacity < bytes.len() {
-            // exponential growth strategy
-            self.data
-                .reserve(std::cmp::max(self.data.capacity(), bytes.len()))
-        }
+        let parse_result = validate_utf8(bytes);
 
         // note that one branch writes without updating the length, so we must do that later.
-        let n_written = if needs_escaping {
+        let bytes = if needs_escaping {
+            self.scratch.clear();
+            self.scratch.reserve(bytes.len());
+            polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+
             // Safety:
             // we just allocated enough capacity and data_len is correct.
-            unsafe { escape_field(bytes, self.quote_char, self.data.spare_capacity_mut()) }
+            unsafe {
+                let n_written =
+                    escape_field(bytes, self.quote_char, self.scratch.spare_capacity_mut());
+                self.scratch.set_len(n_written);
+            }
+            self.scratch.as_slice()
         } else {
-            self.data.extend_from_slice(bytes);
-            bytes.len()
+            bytes
         };
 
         match parse_result {
             true => {
-                // Soundness
-                // the n_written from csv-core are now valid bytes so we can update the length.
-                unsafe { self.data.set_len(data_len + n_written) }
-                self.offsets.push(self.data.len() as i64);
-                self.validity.push(true);
+                let value = unsafe { std::str::from_utf8_unchecked(bytes) };
+                self.mutable.push_value(value)
             },
             false => {
                 if matches!(self.encoding, CsvEncoding::LossyUtf8) {
-                    // Safety:
-                    // we extended to data_len + n_written
-                    // so the bytes are initialized
-                    debug_assert!(self.data.capacity() >= data_len + n_written);
-                    let slice = unsafe {
-                        self.data
-                            .as_slice()
-                            .get_unchecked(data_len..data_len + n_written)
-                    };
-                    let s = String::from_utf8_lossy(slice).into_owned();
-                    let b = s.as_bytes();
-                    // Make sure that we extend at the proper location,
-                    // otherwise we append valid bytes to invalid utf8 bytes.
-                    unsafe { self.data.set_len(data_len) }
-                    self.data.extend_from_slice(b);
-                    self.offsets.push(self.data.len() as i64);
-                    self.validity.push(true);
+                    // TODO! do this without allocating
+                    let s = String::from_utf8_lossy(bytes);
+                    self.mutable.push_value(s.as_ref())
                 } else if ignore_errors {
-                    // append null
-                    self.offsets.push(self.data.len() as i64);
-                    self.validity.push(false);
+                    self.mutable.push_null()
                 } else {
                     polars_bail!(ComputeError: "invalid utf-8 sequence");
                 }
@@ -251,20 +204,19 @@ impl ParsedBuffer for Utf8Field {
 }
 
 #[cfg(not(feature = "dtype-categorical"))]
-pub(crate) struct CategoricalField<'a> {
-    phantom: std::marker::PhantomData<&'a u8>,
+pub(crate) struct CategoricalField {
+    phantom: std::marker::PhantomData<u8>,
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub(crate) struct CategoricalField<'a> {
+pub(crate) struct CategoricalField {
     escape_scratch: Vec<u8>,
     quote_char: u8,
-    builder: CategoricalChunkedBuilder<'a>,
-    owned_strings: Vec<String>,
+    builder: CategoricalChunkedBuilder,
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'a> CategoricalField<'a> {
+impl CategoricalField {
     fn new(
         name: &str,
         capacity: usize,
@@ -277,14 +229,13 @@ impl<'a> CategoricalField<'a> {
             escape_scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
             builder,
-            owned_strings: vec![],
         }
     }
 
     #[inline]
     fn parse_bytes(
         &mut self,
-        bytes: &'a [u8],
+        bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
@@ -297,6 +248,7 @@ impl<'a> CategoricalField<'a> {
 
         if validate_utf8(bytes) {
             if needs_escaping {
+                polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
                 self.escape_scratch.clear();
                 self.escape_scratch.reserve(bytes.len());
                 // Safety:
@@ -313,40 +265,7 @@ impl<'a> CategoricalField<'a> {
                 // safety:
                 // just did utf8 check
                 let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
-
-                // now it gets a bit complicated
-                // the categorical map has keys that have a lifetime in the `&bytes`
-                // but we just wrote to a `escape_scratch`. The string values
-                // there will be cleared next iteration/call, so we cannot use the
-                // `key` naively
-                //
-                // if the `key` does not exist yet, we allocate a `String` and we store that in a
-                // `Vec` that may grow. If the `Vec` reallocates, the pointers to the `String` will
-                // still be valid.
-                //
-                // if the `key` does exist, we can simply insert the value, because the pointer of
-                // the key will not be stored by the builder and may be short-lived
-                if self.builder.exits(key) {
-                    // Safety:
-                    // extend lifetime, see rationale from above
-                    let key = unsafe { std::mem::transmute::<&str, &'a str>(key) };
-                    self.builder.append_value(key)
-                } else {
-                    let key_owned = key.to_string();
-
-                    // ptr to the string value on the heap
-                    let heap_ptr = key_owned.as_str().as_ptr();
-                    let len = key_owned.len();
-                    self.owned_strings.push(key_owned);
-                    unsafe {
-                        let str_slice = std::slice::from_raw_parts(heap_ptr, len);
-                        let key = std::str::from_utf8_unchecked(str_slice);
-                        // Safety:
-                        // extend lifetime, see rationale from above
-                        let key = std::mem::transmute::<&str, &'a str>(key);
-                        self.builder.append_value(key)
-                    }
-                }
+                self.builder.append_value(key);
             } else {
                 // safety:
                 // just did utf8 check
@@ -510,30 +429,17 @@ where
     }
 }
 
-pub(crate) fn init_buffers<'a>(
+pub(crate) fn init_buffers(
     projection: &[usize],
     capacity: usize,
     schema: &Schema,
-    // The running statistic of the amount of bytes we must allocate per str column
-    str_capacities: &[RunningSize],
     quote_char: Option<u8>,
     encoding: CsvEncoding,
-    ignore_errors: bool,
-) -> PolarsResult<Vec<Buffer<'a>>> {
-    // we keep track of the string columns we have seen so that we can increment the index
-    let mut str_index = 0;
-
+) -> PolarsResult<Vec<Buffer>> {
     projection
         .iter()
         .map(|&i| {
             let (name, dtype) = schema.get_at_index(i).unwrap();
-            let mut str_capacity = 0;
-            // determine the needed capacity for this column
-            if dtype == &DataType::Utf8 {
-                str_capacity = str_capacities[str_index].size_hint();
-                str_index += 1;
-            }
-
             let builder = match dtype {
                 &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
                 &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
@@ -542,14 +448,9 @@ pub(crate) fn init_buffers<'a>(
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
-                    name,
-                    capacity,
-                    str_capacity,
-                    quote_char,
-                    encoding,
-                    ignore_errors,
-                )),
+                &DataType::String => {
+                    Buffer::Utf8(Utf8Field::new(name, capacity, quote_char, encoding))
+                },
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(time_unit, time_zone) => Buffer::Datetime {
                     buf: DatetimeField::new(name, capacity),
@@ -559,13 +460,10 @@ pub(crate) fn init_buffers<'a>(
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(rev_map,ordering) => {
-                    if let Some(rev_map) = &rev_map {
-                        polars_ensure!(!rev_map.is_enum(),InvalidOperation: "user defined categoricals are not supported when reading csv")
-                    }
-
-                    Buffer::Categorical(CategoricalField::new(name, capacity, quote_char,*ordering))
-                },
+                DataType::Categorical(_, ordering) => Buffer::Categorical(CategoricalField::new(
+                    name, capacity, quote_char, *ordering,
+                )),
+                // TODO (ENUM) support writing to Enum
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
                 ),
@@ -576,7 +474,7 @@ pub(crate) fn init_buffers<'a>(
 }
 
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum Buffer<'a> {
+pub(crate) enum Buffer {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -595,10 +493,10 @@ pub(crate) enum Buffer<'a> {
     #[cfg(feature = "dtype-date")]
     Date(DatetimeField<Int32Type>),
     #[allow(dead_code)]
-    Categorical(CategoricalField<'a>),
+    Categorical(CategoricalField),
 }
 
-impl<'a> Buffer<'a> {
+impl Buffer {
     pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
@@ -627,43 +525,9 @@ impl<'a> Buffer<'a> {
                 .cast(&DataType::Date)
                 .unwrap(),
 
-            Buffer::Utf8(mut v) => {
-                v.offsets.shrink_to_fit();
-                v.data.shrink_to_fit();
-
-                let mut valid_utf8 = true;
-                if delay_utf8_validation(v.encoding, v.ignore_errors) {
-                    // Check if the whole buffer is utf8. This alone is not enough,
-                    // we must also check byte starts, see: https://github.com/jorgecarleitao/arrow2/pull/823
-                    simdutf8::basic::from_utf8(&v.data)
-                        .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence in csv"))?;
-
-                    for i in (0..v.offsets.len() - 1).step_by(2) {
-                        // SAFETY: we iterate over offsets.len().
-                        let start = unsafe { *v.offsets.get_unchecked(i) as usize };
-                        let first = v.data.get(start);
-
-                        // A valid code-point iff it does not start with 0b10xxxxxx
-                        // Bit-magic taken from `std::str::is_char_boundary`
-                        if let Some(&b) = first {
-                            if (b as i8) < -0x40 {
-                                valid_utf8 = false;
-                                break;
-                            }
-                        }
-                    }
-                    polars_ensure!(valid_utf8, ComputeError: "invalid utf-8 sequence in CSV");
-                }
-
-                // SAFETY: we already checked utf8 validity during parsing, or just now.
-                let arr = unsafe {
-                    Utf8Array::<i64>::from_data_unchecked_default(
-                        v.offsets.into(),
-                        v.data.into(),
-                        Some(v.validity.into()),
-                    )
-                };
-                Utf8Chunked::with_chunk(v.name.as_str(), arr).into_series()
+            Buffer::Utf8(v) => {
+                let arr = v.mutable.freeze();
+                StringChunked::with_chunk(v.name.as_str(), arr).into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {
@@ -690,8 +554,11 @@ impl<'a> Buffer<'a> {
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
             Buffer::Utf8(v) => {
-                v.offsets.push(v.data.len() as i64);
-                v.validity.push(valid);
+                if valid {
+                    v.mutable.push_value("")
+                } else {
+                    v.mutable.push_null()
+                }
             },
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { buf, .. } => buf.builder.append_null(),
@@ -720,7 +587,7 @@ impl<'a> Buffer<'a> {
             Buffer::UInt64(_) => DataType::UInt64,
             Buffer::Float32(_) => DataType::Float32,
             Buffer::Float64(_) => DataType::Float64,
-            Buffer::Utf8(_) => DataType::Utf8,
+            Buffer::Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
             #[cfg(feature = "dtype-date")]
@@ -742,7 +609,7 @@ impl<'a> Buffer<'a> {
     #[inline]
     pub(crate) fn add(
         &mut self,
-        bytes: &'a [u8],
+        bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
         missing_is_null: bool,

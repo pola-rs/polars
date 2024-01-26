@@ -27,7 +27,8 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     // restore logical type
     match (logical_type, s.dtype()) {
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(Some(rev_map), ordering), _) => {
+        (dt @ DataType::Categorical(Some(rev_map), ordering), _)
+        | (dt @ DataType::Enum(Some(rev_map), ordering), _) => {
             let cats = s.u32().unwrap().clone();
             // safety:
             // the rev-map comes from these categoricals
@@ -35,6 +36,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     rev_map.clone(),
+                    matches!(dt, DataType::Enum(_, _)),
                     *ordering,
                 )
                 .into_series()
@@ -242,8 +244,8 @@ fn pivot_impl(
                     }
                 };
 
-                let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
-                let mut headers = headers.utf8().unwrap().clone();
+                let headers = column_agg.unique_stable()?.cast(&DataType::String)?;
+                let mut headers = headers.str().unwrap().clone();
                 if values.len() > 1 {
                     headers = headers.apply_values(|v| Cow::from(format!("{value_col_name}{sep}{column_column_name}{sep}{v}")))
                 }

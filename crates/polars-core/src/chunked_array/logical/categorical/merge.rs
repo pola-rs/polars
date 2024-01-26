@@ -1,39 +1,14 @@
 use std::sync::Arc;
 
-use arrow::bitmap::MutableBitmap;
-use arrow::offset::Offsets;
-
 use super::*;
 
-fn slots_to_mut(slots: &Utf8Array<i64>) -> MutableUtf8Array<i64> {
-    // safety: invariants don't change, just the type
-    let offset_buf = unsafe { Offsets::new_unchecked(slots.offsets().as_slice().to_vec()) };
-    let values_buf = slots.values().as_slice().to_vec();
-
-    let validity_buf = if let Some(validity) = slots.validity() {
-        let mut validity_buf = MutableBitmap::new();
-        let (b, offset, len) = validity.as_slice();
-        validity_buf.extend_from_slice(b, offset, len);
-        Some(validity_buf)
-    } else {
-        None
-    };
-
-    // Safety
-    // all offsets are valid and the u8 data is valid utf8
-    unsafe {
-        MutableUtf8Array::new_unchecked(
-            DataType::Utf8.to_arrow(),
-            offset_buf,
-            values_buf,
-            validity_buf,
-        )
-    }
+fn slots_to_mut(slots: &Utf8ViewArray) -> MutablePlString {
+    slots.clone().make_mut()
 }
 
 struct State {
     map: PlHashMap<u32, u32>,
-    slots: MutableUtf8Array<i64>,
+    slots: MutablePlString,
 }
 
 #[derive(Default)]
@@ -111,7 +86,7 @@ impl GlobalRevMapMerger {
 }
 
 fn merge_local_rhs_categorical<'a>(
-    categories: &'a Utf8Array<i64>,
+    categories: &'a Utf8ViewArray,
     ca_right: &'a CategoricalChunked,
 ) -> Result<(UInt32Chunked, Arc<RevMapping>), PolarsError> {
     // Counterpart of the GlobalRevmapMerger.
@@ -176,23 +151,26 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
             )
         },
         (RevMapping::Local(_, idl), RevMapping::Local(_, idr))
-        | (RevMapping::Enum(_, idl), RevMapping::Enum(_, idr))
-            if idl == idr =>
+            if idl == idr && cat_left.is_enum() == cat_right.is_enum() =>
         {
             (
                 merge_ops.finish(cat_left.physical(), cat_right.physical())?,
                 rev_map_left.clone(),
             )
         },
-        (RevMapping::Local(categorical, _), RevMapping::Local(_, _)) => {
+        (RevMapping::Local(categorical, _), RevMapping::Local(_, _))
+            if !cat_left.is_enum() && !cat_right.is_enum() =>
+        {
             let (rhs_physical, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             (
                 merge_ops.finish(cat_left.physical(), &rhs_physical)?,
                 rev_map,
             )
         },
-        (_, RevMapping::Enum(_, _)) | (RevMapping::Enum(_, _), _) => {
-            polars_bail!(ComputeError: "enum is not compatible with other categorical / enum")
+        (RevMapping::Local(_, _), RevMapping::Local(_, _))
+            if cat_left.is_enum() | cat_right.is_enum() =>
+        {
+            polars_bail!(ComputeError: "can not merge incompatible Enum types")
         },
         _ => polars_bail!(string_cache_mismatch),
     };
@@ -201,6 +179,7 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
         Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
             new_physical,
             new_rev_map,
+            cat_left.is_enum(),
             cat_left.get_ordering(),
         ))
     }

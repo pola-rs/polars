@@ -166,6 +166,36 @@ where
     out
 }
 
+fn search_sorted_bin_array_with_binary_offset(
+    ca: &BinaryChunked,
+    search_values: &BinaryOffsetChunked,
+    side: SearchSortedSide,
+    descending: bool,
+) -> Vec<IdxSize> {
+    let ca = ca.rechunk();
+    let arr = ca.downcast_iter().next().unwrap();
+
+    let mut out = Vec::with_capacity(search_values.len());
+
+    for search_arr in search_values.downcast_iter() {
+        if search_arr.null_count() == 0 {
+            for search_value in search_arr.values_iter() {
+                binary_search_array(side, &mut out, arr, ca.len(), search_value, descending)
+            }
+        } else {
+            for opt_v in search_arr.into_iter() {
+                match opt_v {
+                    None => out.push(0),
+                    Some(search_value) => {
+                        binary_search_array(side, &mut out, arr, ca.len(), search_value, descending)
+                    },
+                }
+            }
+        }
+    }
+    out
+}
+
 fn search_sorted_bin_array(
     ca: &BinaryChunked,
     search_values: &BinaryChunked,
@@ -207,10 +237,10 @@ pub fn search_sorted(
     let phys_dtype = s.dtype();
 
     match phys_dtype {
-        DataType::Utf8 => {
-            let ca = s.utf8().unwrap();
+        DataType::String => {
+            let ca = s.str().unwrap();
             let ca = ca.as_binary();
-            let search_values = search_values.utf8()?;
+            let search_values = search_values.str()?;
             let search_values = search_values.as_binary();
             let idx = search_sorted_bin_array(&ca, &search_values, side, descending);
 
@@ -218,8 +248,18 @@ pub fn search_sorted(
         },
         DataType::Binary => {
             let ca = s.binary().unwrap();
-            let search_values = search_values.binary().unwrap();
-            let idx = search_sorted_bin_array(ca, search_values, side, descending);
+
+            let idx = match search_values.dtype() {
+                DataType::BinaryOffset => {
+                    let search_values = search_values.binary_offset().unwrap();
+                    search_sorted_bin_array_with_binary_offset(ca, search_values, side, descending)
+                },
+                DataType::Binary => {
+                    let search_values = search_values.binary().unwrap();
+                    search_sorted_bin_array(ca, search_values, side, descending)
+                },
+                _ => unreachable!(),
+            };
 
             Ok(IdxCa::new_vec(s.name(), idx))
         },

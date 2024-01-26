@@ -9,8 +9,8 @@ from polars.datatypes import (
     Decimal,
     Float64,
     List,
+    String,
     Struct,
-    Utf8,
     unpack_dtypes,
 )
 from polars.exceptions import ComputeError
@@ -84,7 +84,6 @@ def assert_series_equal(
     AssertionError: Series are different (value mismatch)
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
-
     """
     if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
         raise_assertion_error(
@@ -126,9 +125,9 @@ def _assert_series_values_equal(
     # Handle categoricals
     if categorical_as_str:
         if left.dtype == Categorical:
-            left = left.cast(Utf8)
+            left = left.cast(String)
         if right.dtype == Categorical:
-            right = right.cast(Utf8)
+            right = right.cast(String)
 
     # Handle decimals
     # TODO: Delete this branch when Decimal equality is implemented
@@ -349,7 +348,6 @@ def assert_series_not_equal(
     Traceback (most recent call last):
     ...
     AssertionError: Series are equal
-
     """
     try:
         assert_series_equal(

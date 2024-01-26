@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn test_slice_args() -> PolarsResult<()> {
-    let groups: Utf8Chunked = std::iter::repeat("a")
+    let groups: StringChunked = std::iter::repeat("a")
         .take(10)
         .chain(std::iter::repeat("b").take(20))
         .collect();
@@ -15,7 +15,7 @@ fn test_slice_args() -> PolarsResult<()> {
     ]?
     .lazy()
     .group_by_stable([col("groups")])
-    .agg([col("vals").slice(lit(0i64), count() * lit(0.2))])
+    .agg([col("vals").slice(lit(0i64), len() * lit(0.2))])
     .collect()?;
 
     let out = df.column("vals")?.explode()?;

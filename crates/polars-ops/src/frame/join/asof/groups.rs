@@ -318,9 +318,9 @@ where
             ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", left_dtype, right_dtype
         );
         match left_dtype {
-            DataType::Utf8 => {
-                let left_by = &left_by_s.utf8().unwrap().as_binary();
-                let right_by = right_by_s.utf8().unwrap().as_binary();
+            DataType::String => {
+                let left_by = &left_by_s.str().unwrap().as_binary();
+                let right_by = right_by_s.str().unwrap().as_binary();
                 asof_join_by_binary::<T, A, F>(left_by, &right_by, left_asof, right_asof, filter)
             },
             DataType::Binary => {
@@ -466,8 +466,8 @@ fn dispatch_join_type(
             let ca = left_asof.binary().unwrap();
             dispatch_join_strategy::<BinaryType>(ca, right_asof, left_by, right_by, strategy)
         },
-        DataType::Utf8 => {
-            let ca = left_asof.utf8().unwrap();
+        DataType::String => {
+            let ca = left_asof.str().unwrap();
             let right_binary = right_asof.cast(&DataType::Binary).unwrap();
             dispatch_join_strategy::<BinaryType>(
                 &ca.as_binary(),

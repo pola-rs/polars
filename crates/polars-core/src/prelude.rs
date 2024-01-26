@@ -7,13 +7,13 @@ pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 #[cfg(feature = "ewma")]
 pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
-pub(crate) use arrow::legacy::trusted_len::TrustedLen;
+pub(crate) use arrow::trusted_len::TrustedLen;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
     ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
-    ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
+    ListStringChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, StringChunkedBuilder,
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
 pub use crate::chunked_array::iterator::PolarsIterator;
@@ -41,7 +41,7 @@ pub use crate::frame::explode::MeltArgs;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
-pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
+pub use crate::frame::group_by::*;
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
 pub use crate::hashing::VecHash;
 pub use crate::named_from::{NamedFrom, NamedFromOwned};

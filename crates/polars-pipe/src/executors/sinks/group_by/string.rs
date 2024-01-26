@@ -52,7 +52,7 @@ impl Hash for Key {
 // those indexes point into the keys buffer and the values buffer
 // the keys buffer are buffers of AnyValue per partition
 // and the values are buffer of Aggregation functions per partition
-pub struct Utf8GroupbySink {
+pub struct StringGroupbySink {
     thread_no: usize,
     // idx is the offset in the array with keys
     // idx is the offset in the array with aggregators
@@ -83,7 +83,7 @@ pub struct Utf8GroupbySink {
     ooc_state: OocState,
 }
 
-impl Utf8GroupbySink {
+impl StringGroupbySink {
     pub(crate) fn new(
         key_column: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -187,7 +187,7 @@ impl Utf8GroupbySink {
                             .collect::<Vec<_>>();
 
                         let cap = std::cmp::min(slice_len, agg_map.len());
-                        let mut key_builder = Utf8ChunkedBuilder::new("", cap, cap * 8);
+                        let mut key_builder = StringChunkedBuilder::new("", cap);
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
@@ -271,7 +271,7 @@ impl Utf8GroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.str().unwrap().downcast_iter().next().unwrap().clone();
 
         // set all bits to false
         self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
@@ -324,7 +324,7 @@ impl Utf8GroupbySink {
     }
 }
 
-impl Sink for Utf8GroupbySink {
+impl Sink for StringGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         if chunk.is_empty() {
             return Ok(SinkResult::CanHaveMoreInput);
@@ -349,7 +349,7 @@ impl Sink for Utf8GroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.str().unwrap().downcast_iter().next().unwrap().clone();
 
         for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&hashes).enumerate() {
             let current_partition = self.get_partitions(h);
@@ -516,7 +516,7 @@ impl Sink for Utf8GroupbySink {
         self
     }
     fn fmt(&self) -> &str {
-        "utf8_group_by"
+        "string_group_by"
     }
 }
 
@@ -537,19 +537,19 @@ pub(super) fn apply_aggregate(
                 ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
                     match $self.dtype() {
                         #[cfg(feature = "dtype-u8")]
-                        DataType::UInt8 => $macro!($self.u8().unwrap(), pre_agg_u8 $(, $opt_args)*),
+                        DataType::UInt8 => $macro!($self.u8().unwrap(), pre_agg_primitive $(, $opt_args)*),
                         #[cfg(feature = "dtype-u16")]
-                        DataType::UInt16 => $macro!($self.u16().unwrap(), pre_agg_u16 $(, $opt_args)*),
-                        DataType::UInt32 => $macro!($self.u32().unwrap(), pre_agg_u32 $(, $opt_args)*),
-                        DataType::UInt64 => $macro!($self.u64().unwrap(), pre_agg_u64 $(, $opt_args)*),
+                        DataType::UInt16 => $macro!($self.u16().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::UInt32 => $macro!($self.u32().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::UInt64 => $macro!($self.u64().unwrap(), pre_agg_primitive $(, $opt_args)*),
                         #[cfg(feature = "dtype-i8")]
-                        DataType::Int8 => $macro!($self.i8().unwrap(), pre_agg_i8 $(, $opt_args)*),
+                        DataType::Int8 => $macro!($self.i8().unwrap(), pre_agg_primitive $(, $opt_args)*),
                         #[cfg(feature = "dtype-i16")]
-                        DataType::Int16 => $macro!($self.i16().unwrap(), pre_agg_i16 $(, $opt_args)*),
-                        DataType::Int32 => $macro!($self.i32().unwrap(), pre_agg_i32 $(, $opt_args)*),
-                        DataType::Int64 => $macro!($self.i64().unwrap(), pre_agg_i64 $(, $opt_args)*),
-                        DataType::Float32 => $macro!($self.f32().unwrap(), pre_agg_f32 $(, $opt_args)*),
-                        DataType::Float64 => $macro!($self.f64().unwrap(), pre_agg_f64 $(, $opt_args)*),
+                        DataType::Int16 => $macro!($self.i16().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Int32 => $macro!($self.i32().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Int64 => $macro!($self.i64().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Float32 => $macro!($self.f32().unwrap(), pre_agg_primitive $(, $opt_args)*),
+                        DataType::Float64 => $macro!($self.f64().unwrap(), pre_agg_primitive $(, $opt_args)*),
                         dt => panic!("not implemented for {:?}", dt),
                     }
                 }};

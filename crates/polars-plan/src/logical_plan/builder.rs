@@ -19,7 +19,7 @@ use polars_io::pl_async::get_runtime;
     feature = "csv",
     feature = "ipc"
 ))]
-use polars_io::RowCount;
+use polars_io::RowIndex;
 #[cfg(feature = "csv")]
 use polars_io::{
     csv::utils::{infer_file_schema, is_compressed},
@@ -86,8 +86,8 @@ macro_rules! try_delayed {
 }
 
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
-fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
-    if let Some(rc) = row_count {
+fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
+    if let Some(rc) = row_index {
         let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
     }
     Arc::new(schema)
@@ -112,7 +112,7 @@ impl LogicalPlanBuilder {
             n_rows,
             with_columns: None,
             cache: false,
-            row_count: None,
+            row_index: None,
             rechunk: false,
             file_counter: Default::default(),
             hive_partitioning: false,
@@ -141,7 +141,7 @@ impl LogicalPlanBuilder {
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::ParallelStrategy,
-        row_count: Option<RowCount>,
+        row_index: Option<RowIndex>,
         rechunk: bool,
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
@@ -173,7 +173,7 @@ impl LogicalPlanBuilder {
                     let num_rows = reader.num_rows().await?;
                     let metadata = reader.get_metadata().await?.clone();
 
-                    let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
+                    let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
                     PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
                 })?
             }
@@ -181,7 +181,7 @@ impl LogicalPlanBuilder {
             let file = polars_utils::open_file(path)?;
             let mut reader = ParquetReader::new(file);
             let reader_schema = reader.schema()?;
-            let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
+            let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
             (
                 schema,
                 reader_schema,
@@ -207,7 +207,7 @@ impl LogicalPlanBuilder {
             cache,
             n_rows,
             rechunk,
-            row_count,
+            row_index,
             file_counter: Default::default(),
             hive_partitioning,
         };
@@ -235,7 +235,7 @@ impl LogicalPlanBuilder {
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
-        row_count: Option<RowCount>,
+        row_index: Option<RowIndex>,
         rechunk: bool,
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
@@ -246,7 +246,7 @@ impl LogicalPlanBuilder {
 
         let reader_schema = reader.schema()?;
         let mut schema: Schema = (&reader_schema).into();
-        if let Some(rc) = &row_count {
+        if let Some(rc) = &row_index {
             let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
         }
 
@@ -258,7 +258,7 @@ impl LogicalPlanBuilder {
             cache,
             n_rows,
             rechunk,
-            row_count,
+            row_index,
             file_counter: Default::default(),
             // TODO! add
             hive_partitioning: false,
@@ -294,7 +294,7 @@ impl LogicalPlanBuilder {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: CsvEncoding,
-        row_count: Option<RowCount>,
+        row_index: Option<RowIndex>,
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
@@ -304,15 +304,19 @@ impl LogicalPlanBuilder {
 
         let paths = Arc::new([path]);
 
-        let mut magic_nr = [0u8; 2];
-        let res = file.read_exact(&mut magic_nr);
-        if raise_if_empty {
-            res.map_err(|_| polars_err!(NoData: "empty CSV"))?;
-        };
-        polars_ensure!(
+        let mut magic_nr = [0u8; 4];
+        let res_len = file.read(&mut magic_nr)?;
+        if res_len < 2 {
+            if raise_if_empty {
+                polars_bail!(NoData: "empty CSV")
+            }
+        } else {
+            polars_ensure!(
             !is_compressed(&magic_nr),
             ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
-        );
+            );
+        }
+
         file.rewind()?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
@@ -334,7 +338,7 @@ impl LogicalPlanBuilder {
             raise_if_empty,
         )?;
 
-        if let Some(rc) = &row_count {
+        if let Some(rc) = &row_index {
             match schema {
                 None => {
                     let _ = inferred_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
@@ -361,7 +365,7 @@ impl LogicalPlanBuilder {
             cache,
             n_rows,
             rechunk,
-            row_count,
+            row_index,
             file_counter: Default::default(),
             // TODO! add
             hive_partitioning: false,
@@ -403,7 +407,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn drop_columns(self, to_drop: PlHashSet<String>) -> Self {
+    pub fn drop(self, to_drop: PlHashSet<String>) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
 
         let mut output_schema = Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
@@ -529,6 +533,7 @@ impl LogicalPlanBuilder {
             let field = e
                 .to_field_amortized(&schema, Context::Default, &mut arena)
                 .unwrap();
+
             if !output_names.insert(field.name().clone()) {
                 let msg = format!(
                     "The name: '{}' passed to `LazyFrame.with_columns` is duplicate",
@@ -830,14 +835,14 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn row_count(self, name: &str, offset: Option<IdxSize>) -> Self {
+    pub fn row_index(self, name: &str, offset: Option<IdxSize>) -> Self {
         let mut schema = try_delayed!(self.0.schema(), &self.0, into).into_owned();
         let schema_mut = Arc::make_mut(&mut schema);
-        row_count_schema(schema_mut, name);
+        row_index_schema(schema_mut, name);
 
         LogicalPlan::MapFunction {
             input: Box::new(self.0),
-            function: FunctionNode::RowCount {
+            function: FunctionNode::RowIndex {
                 name: Arc::from(name),
                 offset,
                 schema,

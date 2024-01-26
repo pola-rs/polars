@@ -76,6 +76,12 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         },
         Operator::And => left.bitand(right),
         Operator::Or => left.bitor(right),
+        Operator::LogicalOr => left
+            .cast(&DataType::Boolean)?
+            .bitor(&right.cast(&DataType::Boolean)?),
+        Operator::LogicalAnd => left
+            .cast(&DataType::Boolean)?
+            .bitand(&right.cast(&DataType::Boolean)?),
         Operator::Xor => left.bitxor(right),
         Operator::Modulus => Ok(left % right),
         Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_series()),
@@ -383,9 +389,9 @@ mod stats {
             {
                 match (fld_l.data_type(), fld_r.data_type()) {
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Utf8, DataType::Categorical(_, _)) => {},
+                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {},
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _), DataType::Utf8) => {},
+                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {},
                     (l, r) if l != r => panic!("implementation error: {l:?}, {r:?}"),
                     _ => {},
                 }
@@ -439,13 +445,14 @@ mod stats {
                 return Ok(true);
             }
 
+            use Operator::*;
             match (
                 self.left.as_stats_evaluator(),
                 self.right.as_stats_evaluator(),
             ) {
                 (Some(l), Some(r)) => match self.op {
-                    Operator::And => Ok(l.should_read(stats)? && r.should_read(stats)?),
-                    Operator::Or => Ok(l.should_read(stats)? || r.should_read(stats)?),
+                    And | LogicalAnd => Ok(l.should_read(stats)? && r.should_read(stats)?),
+                    Or | LogicalOr => Ok(l.should_read(stats)? || r.should_read(stats)?),
                     _ => Ok(true),
                 },
                 _ => self.impl_should_read(stats),

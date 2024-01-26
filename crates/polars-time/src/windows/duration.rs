@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 use std::ops::Mul;
 
 #[cfg(feature = "timezones")]
@@ -14,7 +15,6 @@ use polars_core::prelude::{
     PolarsResult,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
-use polars_error::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ use super::calendar::{
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
-use crate::windows::calendar::{is_leap_year, last_day_of_month};
+use crate::windows::calendar::{is_leap_year, DAYS_PER_MONTH};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -51,6 +51,40 @@ impl PartialOrd<Self> for Duration {
 impl Ord for Duration {
     fn cmp(&self, other: &Self) -> Ordering {
         self.duration_ns().cmp(&other.duration_ns())
+    }
+}
+
+impl Display for Duration {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_zero() {
+            return write!(f, "0s");
+        }
+        if self.negative {
+            write!(f, "-")?
+        }
+        if self.months > 0 {
+            write!(f, "{}m", self.months)?
+        }
+        if self.weeks > 0 {
+            write!(f, "{}w", self.weeks)?
+        }
+        if self.days > 0 {
+            write!(f, "{}d", self.days)?
+        }
+        if self.nsecs > 0 {
+            let secs = self.nsecs / 1_000_000;
+            if secs * 1_000_000 == self.nsecs {
+                write!(f, "{}s", secs)?
+            } else {
+                let us = self.nsecs / 1_000;
+                if us * 1_000 == self.nsecs {
+                    write!(f, "{}us", us)?
+                } else {
+                    write!(f, "{}ns", self.nsecs)?
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -388,10 +422,8 @@ impl Duration {
         }
 
         // Normalize the day if we are past the end of the month.
-        let mut last_day_of_month = last_day_of_month(month);
-        if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
-            last_day_of_month += 1;
-        }
+        let last_day_of_month =
+            DAYS_PER_MONTH[is_leap_year(year) as usize][(month - 1) as usize] as u32;
 
         if day > last_day_of_month {
             day = last_day_of_month
@@ -544,6 +576,7 @@ impl Duration {
         tz: Option<&Tz>,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
+        daily_duration: i64,
     ) -> PolarsResult<i64>
     where
         G: Fn(i64) -> NaiveDateTime,
@@ -551,41 +584,73 @@ impl Duration {
     {
         let original_dt_utc;
         let original_dt_local;
-        match tz {
+        let t = match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
                 original_dt_utc = timestamp_to_datetime(t);
                 original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                datetime_to_timestamp(original_dt_local)
             },
             _ => {
                 original_dt_utc = timestamp_to_datetime(t);
                 original_dt_local = original_dt_utc;
+                datetime_to_timestamp(original_dt_local)
             },
         };
-        let (year, month) = (original_dt_local.year(), original_dt_local.month());
 
-        // determine the total number of months and truncate
-        // the number of months by the duration amount
-        let mut total = (year * 12) + (month as i32 - 1);
-        let remainder = total % self.months as i32;
-        total -= remainder;
+        // Remove the time of day from the timestamp
+        // e.g. 2020-01-01 12:34:56 -> 2020-01-01 00:00:00
+        let mut remainder_time = t % daily_duration;
+        if remainder_time < 0 {
+            remainder_time += daily_duration
+        }
+        let t = t - remainder_time;
 
-        // recreate a new time from the year and month combination
-        let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
+        // Calculate how many months we need to subtract...
+        let (mut year, mut month) = (
+            original_dt_local.year() as i64,
+            original_dt_local.month() as i64,
+        );
+        let total = (year * 12) + (month - 1);
+        let mut remainder_months = total % self.months;
+        if remainder_months < 0 {
+            remainder_months += self.months
+        }
 
-        let result_dt_local = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
-            ComputeError: format!("date '{}-{}-1' does not exist", year, month)
-        ))?;
+        // ...and translate that to how many days we need to subtract.
+        let mut _is_leap_year = is_leap_year(year as i32);
+        let mut remainder_days = (original_dt_local.day() - 1) as i64;
+        while remainder_months > 12 {
+            let prev_year_is_leap_year = is_leap_year((year - 1) as i32);
+            let add_extra_day =
+                (_is_leap_year && month > 2) || (prev_year_is_leap_year && month <= 2);
+            remainder_days += 365 + add_extra_day as i64;
+            remainder_months -= 12;
+            year -= 1;
+            _is_leap_year = prev_year_is_leap_year;
+        }
+        while remainder_months > 0 {
+            month -= 1;
+            if month == 0 {
+                year -= 1;
+                _is_leap_year = is_leap_year(year as i32);
+                month = 12;
+            }
+            remainder_days += DAYS_PER_MONTH[_is_leap_year as usize][(month - 1) as usize];
+            remainder_months -= 1;
+        }
+
         match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
+                let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
                 let result_dt_utc =
                     self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz);
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
-            _ => Ok(datetime_to_timestamp(result_dt_local)),
+            _ => Ok(t - remainder_days * daily_duration),
         }
     }
 
@@ -640,7 +705,14 @@ impl Duration {
             },
             // truncate by months
             (_, 0, 0, 0) => {
-                self.truncate_monthly(t, tz, timestamp_to_datetime, datetime_to_timestamp)
+                let duration = nsecs_to_unit(NS_DAY);
+                self.truncate_monthly(
+                    t,
+                    tz,
+                    timestamp_to_datetime,
+                    datetime_to_timestamp,
+                    duration,
+                )
             },
             _ => {
                 polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")

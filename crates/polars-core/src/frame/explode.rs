@@ -14,7 +14,6 @@ use crate::POOL;
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
-        DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(),
         _ => polars_bail!(opq = explode, series.dtype()),
@@ -293,13 +292,9 @@ impl DataFrame {
             st = try_get_supertype(&st, dt?)?;
         }
 
-        let values_len = value_vars.iter().map(|name| name.len()).sum::<usize>();
-
         // The column name of the variable that is melted
-        let mut variable_col = MutableUtf8Array::<i64>::with_capacities(
-            len * value_vars.len() + 1,
-            len * values_len + 1,
-        );
+        let mut variable_col =
+            MutableBinaryViewArray::<str>::with_capacity(len * value_vars.len() + 1);
         // prepare ids
         let ids_ = self.select_with_schema_unchecked(id_vars, &schema)?;
         let mut ids = ids_.clone();
@@ -314,7 +309,7 @@ impl DataFrame {
         let mut values = Vec::with_capacity(value_vars.len());
 
         for value_column_name in &value_vars {
-            variable_col.extend_trusted_len_values(std::iter::repeat(value_column_name).take(len));
+            variable_col.extend_constant(len, Some(value_column_name.as_str()));
             // ensure we go via the schema so we are O(1)
             // self.column() is linear
             // together with this loop that would make it O^2 over value_vars
@@ -335,7 +330,7 @@ impl DataFrame {
             Series::from_chunks_and_dtype_unchecked(
                 variable_name,
                 vec![variable_col],
-                &DataType::Utf8,
+                &DataType::String,
             )
         };
 
@@ -369,16 +364,6 @@ mod test {
         assert_eq!(
             exploded.column("foo").unwrap().i8().unwrap().get(8),
             Some(2)
-        );
-
-        let str = Series::new("foo", &["abc", "de", "fg"]);
-        let df = DataFrame::new(vec![str, s0, s1]).unwrap();
-        let exploded = df.explode(["foo"]).unwrap();
-        assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(6), Some(1));
-        assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(6), Some(3));
-        assert_eq!(
-            exploded.column("foo").unwrap().utf8().unwrap().get(6),
-            Some("g")
         );
     }
 
@@ -457,8 +442,8 @@ mod test {
 
         let melted = df.melt2(args).unwrap();
         let value = melted.column("value")?;
-        // utf8 because of supertype
-        let value = value.utf8()?;
+        // String because of supertype
+        let value = value.str()?;
         let value = value.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(
             value,
@@ -477,7 +462,7 @@ mod test {
         let value = value.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(value, &[1, 3, 5, 10, 11, 12, 2, 4, 6]);
         let variable = melted.column("variable")?;
-        let variable = variable.utf8()?;
+        let variable = variable.str()?;
         let variable = variable.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(variable, &["B", "B", "B", "C", "C", "C", "D", "D", "D"]);
         assert!(melted.column("A").is_ok());

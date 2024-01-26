@@ -28,9 +28,7 @@ pub enum RangeFunction {
         step: i64,
         dtype: DataType,
     },
-    IntRanges {
-        step: i64,
-    },
+    IntRanges,
     #[cfg(feature = "temporal")]
     DateRange {
         interval: Duration,
@@ -74,9 +72,9 @@ pub enum RangeFunction {
 impl RangeFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use RangeFunction::*;
-        let field = match self {
-            IntRange { dtype, .. } => Field::new("int", dtype.clone()),
-            IntRanges { .. } => Field::new("int_range", DataType::List(Box::new(DataType::Int64))),
+        match self {
+            IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
+            IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
             #[cfg(feature = "temporal")]
             DateRange {
                 interval,
@@ -90,7 +88,7 @@ impl RangeFunction {
                     time_unit.as_ref(),
                     time_zone.as_deref(),
                 )?;
-                return Ok(Field::new("date", dtype));
+                mapper.with_dtype(dtype)
             },
             #[cfg(feature = "temporal")]
             DateRanges {
@@ -105,10 +103,7 @@ impl RangeFunction {
                     time_unit.as_ref(),
                     time_zone.as_deref(),
                 )?;
-                return Ok(Field::new(
-                    "date_range",
-                    DataType::List(Box::new(inner_dtype)),
-                ));
+                mapper.with_dtype(DataType::List(Box::new(inner_dtype)))
             },
             #[cfg(feature = "temporal")]
             DatetimeRange {
@@ -120,7 +115,7 @@ impl RangeFunction {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let dtype =
                     mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
-                return Ok(Field::new("datetime", dtype));
+                mapper.with_dtype(dtype)
             },
             #[cfg(feature = "temporal")]
             DatetimeRanges {
@@ -132,24 +127,13 @@ impl RangeFunction {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let inner_dtype =
                     mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
-                return Ok(Field::new(
-                    "datetime_range",
-                    DataType::List(Box::new(inner_dtype)),
-                ));
+                mapper.with_dtype(DataType::List(Box::new(inner_dtype)))
             },
             #[cfg(feature = "dtype-time")]
-            TimeRange { .. } => {
-                return Ok(Field::new("time", DataType::Time));
-            },
+            TimeRange { .. } => mapper.with_dtype(DataType::Time),
             #[cfg(feature = "dtype-time")]
-            TimeRanges { .. } => {
-                return Ok(Field::new(
-                    "time_range",
-                    DataType::List(Box::new(DataType::Time)),
-                ));
-            },
-        };
-        Ok(field)
+            TimeRanges { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::Time))),
+        }
     }
 }
 
@@ -158,7 +142,7 @@ impl Display for RangeFunction {
         use RangeFunction::*;
         let s = match self {
             IntRange { .. } => "int_range",
-            IntRanges { .. } => "int_ranges",
+            IntRanges => "int_ranges",
             #[cfg(feature = "temporal")]
             DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
@@ -183,8 +167,8 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IntRange { step, dtype } => {
                 map_as_slice!(int_range::int_range, step, dtype.clone())
             },
-            IntRanges { step } => {
-                map_as_slice!(int_range::int_ranges, step)
+            IntRanges => {
+                map_as_slice!(int_range::int_ranges)
             },
             #[cfg(feature = "temporal")]
             DateRange {

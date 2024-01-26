@@ -38,22 +38,22 @@ pub fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a,
     })
 }
 
-pub trait Utf8JsonPathImpl: AsUtf8 {
+pub trait Utf8JsonPathImpl: AsString {
     /// Extract json path, first match
     /// Refer to <https://goessner.net/articles/JsonPath/>
-    fn json_path_match(&self, json_path: &str) -> PolarsResult<Utf8Chunked> {
+    fn json_path_match(&self, json_path: &str) -> PolarsResult<StringChunked> {
         let pat = PathCompiled::compile(json_path)
             .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression {}", e))?;
         Ok(self
-            .as_utf8()
+            .as_string()
             .apply(|opt_s| opt_s.and_then(|s| extract_json(&pat, s))))
     }
 
     /// Returns the inferred DataType for JSON values for each row
-    /// in the Utf8Chunked, with an optional number of rows to inspect.
+    /// in the StringChunked, with an optional number of rows to inspect.
     /// When None is passed for the number of rows, all rows are inspected.
     fn json_infer(&self, number_of_rows: Option<usize>) -> PolarsResult<DataType> {
-        let ca = self.as_utf8();
+        let ca = self.as_string();
         let values_iter = ca
             .into_iter()
             .map(|x| x.unwrap_or("null"))
@@ -64,13 +64,13 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 
-    /// Extracts a typed-JSON value for each row in the Utf8Chunked
+    /// Extracts a typed-JSON value for each row in the StringChunked
     fn json_decode(
         &self,
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
-        let ca = self.as_utf8();
+        let ca = self.as_string();
         let dtype = match dtype {
             Some(dt) => dt,
             None => ca.json_infer(infer_schema_len)?,
@@ -80,7 +80,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
 
         let array = polars_json::ndjson::deserialize::deserialize_iter(
             iter,
-            dtype.to_arrow(),
+            dtype.to_arrow(true),
             buf_size,
             ca.len(),
         )
@@ -88,11 +88,11 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
         Series::try_from(("", array))
     }
 
-    fn json_path_select(&self, json_path: &str) -> PolarsResult<Utf8Chunked> {
+    fn json_path_select(&self, json_path: &str) -> PolarsResult<StringChunked> {
         let pat = PathCompiled::compile(json_path)
             .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression: {}", e))?;
         Ok(self
-            .as_utf8()
+            .as_string()
             .apply(|opt_s| opt_s.and_then(|s| select_json(&pat, s))))
     }
 
@@ -102,12 +102,12 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
-        let selected_json = self.as_utf8().json_path_select(json_path)?;
+        let selected_json = self.as_string().json_path_select(json_path)?;
         selected_json.json_decode(dtype, infer_schema_len)
     }
 }
 
-impl Utf8JsonPathImpl for Utf8Chunked {}
+impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {
@@ -148,7 +148,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.str().unwrap();
 
         let inner_dtype = DataType::Struct(vec![Field::new("c", DataType::Int64)]);
         let expected_dtype = DataType::Struct(vec![
@@ -173,7 +173,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.str().unwrap();
 
         let expected_series = StructChunked::new(
             "",
@@ -207,7 +207,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.str().unwrap();
 
         assert!(ca
             .json_path_select("$")
@@ -249,7 +249,7 @@ mod tests {
                 None,
             ],
         );
-        let ca = s.utf8().unwrap();
+        let ca = s.str().unwrap();
 
         let c_series = Series::new(
             "",

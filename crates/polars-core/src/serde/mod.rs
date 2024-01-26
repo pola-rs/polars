@@ -17,7 +17,7 @@ mod test {
         let out = serde_json::from_str::<Series>(&json).unwrap();
         assert!(ca.into_series().equals_missing(&out));
 
-        let ca = Utf8Chunked::new("foo", &[Some("foo"), None, Some("bar")]);
+        let ca = StringChunked::new("foo", &[Some("foo"), None, Some("bar")]);
 
         let json = serde_json::to_string(&ca).unwrap();
 
@@ -41,7 +41,7 @@ mod test {
     fn sample_dataframe() -> DataFrame {
         let s1 = Series::new("foo", &[1, 2, 3]);
         let s2 = Series::new("bar", &[Some(true), None, Some(false)]);
-        let s3 = Series::new("utf8", &["mouse", "elephant", "dog"]);
+        let s3 = Series::new("string", &["mouse", "elephant", "dog"]);
         let s_list = Series::new("list", &[s1.clone(), s1.clone(), s1.clone()]);
 
         DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
@@ -107,28 +107,32 @@ mod test {
     #[cfg(feature = "dtype-struct")]
     fn test_serde_struct_series_owned_json() {
         let row_1 = AnyValue::StructOwned(Box::new((
-            vec![AnyValue::Utf8("1:1"), AnyValue::Null, AnyValue::Utf8("1:3")],
             vec![
-                Field::new("fld_1", DataType::Utf8),
-                Field::new("fld_2", DataType::Utf8),
-                Field::new("fld_3", DataType::Utf8),
+                AnyValue::String("1:1"),
+                AnyValue::Null,
+                AnyValue::String("1:3"),
+            ],
+            vec![
+                Field::new("fld_1", DataType::String),
+                Field::new("fld_2", DataType::String),
+                Field::new("fld_3", DataType::String),
             ],
         )));
         let dtype = DataType::Struct(vec![
-            Field::new("fld_1", DataType::Utf8),
-            Field::new("fld_2", DataType::Utf8),
-            Field::new("fld_3", DataType::Utf8),
+            Field::new("fld_1", DataType::String),
+            Field::new("fld_2", DataType::String),
+            Field::new("fld_3", DataType::String),
         ]);
         let row_2 = AnyValue::StructOwned(Box::new((
             vec![
-                AnyValue::Utf8("2:1"),
-                AnyValue::Utf8("2:2"),
-                AnyValue::Utf8("2:3"),
+                AnyValue::String("2:1"),
+                AnyValue::String("2:2"),
+                AnyValue::String("2:3"),
             ],
             vec![
-                Field::new("fld_1", DataType::Utf8),
-                Field::new("fld_2", DataType::Utf8),
-                Field::new("fld_3", DataType::Utf8),
+                Field::new("fld_1", DataType::String),
+                Field::new("fld_2", DataType::String),
+                Field::new("fld_3", DataType::String),
             ],
         )));
         let row_3 = AnyValue::Null;

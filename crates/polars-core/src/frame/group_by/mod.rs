@@ -32,7 +32,9 @@ fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
         by.iter()
             .map(|s| match s.dtype() {
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_, _) => s.cast(&DataType::UInt32).unwrap(),
+                DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                    s.cast(&DataType::UInt32).unwrap()
+                },
                 _ => {
                     if s.dtype().to_physical().is_numeric() {
                         let s = s.to_physical_repr();
@@ -1066,7 +1068,7 @@ mod test {
         // is equal, then, the grouped columns shall be equal and in the same order.
         for series_name in &series_names {
             assert_eq!(
-                Vec::from(&adf.column(series_name).unwrap().utf8().unwrap().sort(false)),
+                Vec::from(&adf.column(series_name).unwrap().str().unwrap().sort(false)),
                 &[Some("A"), Some("B"), Some("C")]
             );
         }

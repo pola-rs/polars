@@ -85,11 +85,7 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
     out = (
         pl.DataFrame({"col_to_group_by": [2], "flt": [1672740910.967138], "col3": [1]})
         .group_by("col_to_group_by")
-        .agg(
-            (pl.col("flt").filter(pl.col("col3") == 0).diff() * 1000)
-            .diff()
-            .alias("calc")
-        )
+        .agg((pl.col("flt").filter(col3=0).diff() * 1000).diff().alias("calc"))
     )
 
     assert out.schema == {"col_to_group_by": pl.Int64, "calc": pl.List(pl.Float64)}
@@ -378,3 +374,27 @@ def test_int16_max_12904(dtype: pl.PolarsDataType) -> None:
 
     assert s.min() == 1
     assert s.max() == 1
+
+
+def test_agg_filter_over_empty_df_13610() -> None:
+    ldf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 2, 3],
+            "b": [True, True, True, True, True],
+            "c": [None, None, None, None, None],
+        }
+    )
+
+    out = (
+        ldf.drop_nulls()
+        .group_by(by=["a"], maintain_order=True)
+        .agg(pl.col("b").filter(pl.col("b").shift(1)))
+        .collect()
+    )
+    expected = pl.DataFrame(schema={"a": pl.Int64, "b": pl.List(pl.Boolean)})
+    assert_frame_equal(out, expected)
+
+    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Boolean})
+    out = df.group_by("a").agg(pl.col("b").filter(pl.col("b").shift()))
+    expected = pl.DataFrame(schema={"a": pl.Int64, "b": pl.List(pl.Boolean)})
+    assert_frame_equal(out, expected)

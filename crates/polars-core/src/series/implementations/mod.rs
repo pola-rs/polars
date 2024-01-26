@@ -1,6 +1,7 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+mod binary_offset;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
@@ -21,11 +22,10 @@ mod list;
 pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;
+mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-mod utf8;
 
-#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor, Deref};
@@ -43,8 +43,6 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -429,7 +427,6 @@ macro_rules! impl_dyn_series {
                 self.0.checked_div(rhs)
             }
 
-            #[cfg(feature = "object")]
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }
@@ -466,8 +463,9 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]
 impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}

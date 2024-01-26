@@ -39,7 +39,6 @@ def _scan_parquet_impl(  # noqa: D417
         Source URI
     columns
         Columns that are projected
-
     """
     from polars import read_parquet
 

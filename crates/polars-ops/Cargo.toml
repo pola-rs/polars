@@ -16,6 +16,7 @@ polars-json = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
+aho-corasick = { workspace = true, optional = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
@@ -68,6 +69,7 @@ is_first_distinct = []
 is_last_distinct = []
 is_unique = []
 unique_counts = []
+is_between = []
 approx_unique = []
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
@@ -75,6 +77,7 @@ rle = ["dtype-struct"]
 timezones = ["chrono-tz", "chrono"]
 random = ["rand", "rand_distr"]
 rank = ["rand"]
+find_many = ["aho-corasick"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -94,6 +97,7 @@ string_to_integer = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
+reinterpret = ["polars-core/reinterpret"]
 group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
 moment = []
@@ -106,6 +110,8 @@ cross_join = []
 chunked_ids = ["polars-core/chunked_ids"]
 asof_join = ["polars-core/asof_join"]
 semi_anti_join = []
+array_any_all = ["dtype-array"]
+array_count = ["dtype-array"]
 list_gather = []
 list_sets = []
 list_any_all = []
@@ -114,7 +120,6 @@ list_sample = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
 hist = ["dtype-categorical", "dtype-struct"]
-convert_index = []
 repeat_by = []
 peaks = []
 cum_agg = []

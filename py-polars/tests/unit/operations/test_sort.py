@@ -119,14 +119,10 @@ def test_sort_nans_3740() -> None:
 
 
 def test_sort_by_exps_nulls_last() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 3, -2, None, 1],
-        }
-    ).with_row_count()
+    df = pl.DataFrame({"a": [1, 3, -2, None, 1]}).with_row_index()
 
     assert df.sort(pl.col("a") ** 2, nulls_last=True).to_dict(as_series=False) == {
-        "row_nr": [0, 4, 2, 1, 3],
+        "index": [0, 4, 2, 1, 3],
         "a": [1, 1, -2, 3, None],
     }
 
@@ -183,7 +179,7 @@ def test_sorted_join_and_dtypes() -> None:
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int16]:
         df_a = (
             pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
-            .with_row_count()
+            .with_row_index()
             .with_columns(pl.col("a").cast(dt).set_sorted())
         )
 
@@ -192,11 +188,11 @@ def test_sorted_join_and_dtypes() -> None:
     )
 
     assert df_a.join(df_b, on="a", how="inner").to_dict(as_series=False) == {
-        "row_nr": [1, 2, 3, 5],
+        "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
     assert df_a.join(df_b, on="a", how="left").to_dict(as_series=False) == {
-        "row_nr": [0, 1, 2, 3, 4, 5],
+        "index": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
     }
 
@@ -399,7 +395,7 @@ def test_sorted_join_query_5406() -> None:
             }
         )
         .with_columns(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
-        .with_row_count("RowId")
+        .with_row_index("RowId")
     )
 
     df1 = df.sort(by=["Datetime", "RowId"])
@@ -441,7 +437,7 @@ def test_merge_sorted() -> None:
             datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
         )
         .to_frame("range")
-        .with_row_count()
+        .with_row_index()
     )
 
     df_b = (
@@ -449,13 +445,13 @@ def test_merge_sorted() -> None:
             datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo", eager=True
         )
         .to_frame("range")
-        .with_row_count()
-        .with_columns(pl.col("row_nr") * 10)
+        .with_row_index()
+        .with_columns(pl.col("index") * 10)
     )
     out = df_a.merge_sorted(df_b, key="range")
     assert out["range"].is_sorted()
     assert out.to_dict(as_series=False) == {
-        "row_nr": [0, 0, 1, 2, 10, 3, 4, 20, 5, 6, 30, 7, 8, 40, 9, 10, 50, 11],
+        "index": [0, 0, 1, 2, 10, 3, 4, 20, 5, 6, 30, 7, 8, 40, 9, 10, 50, 11],
         "range": [
             datetime(2022, 1, 1, 0, 0),
             datetime(2022, 1, 1, 0, 0),
@@ -577,9 +573,9 @@ def test_limit_larger_than_sort() -> None:
 
 
 def test_sort_by_struct() -> None:
-    df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_count()
+    df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_index()
     assert df.sort("st").to_dict(as_series=False) == {
-        "row_nr": [1, 2, 0],
+        "index": [1, 2, 0],
         "st": [{"a": 20}, {"a": 55}, {"a": 300}],
     }
 
@@ -698,7 +694,7 @@ def test_sorted_flag_singletons(value: Any) -> None:
 
 
 def test_sorted_flag_null() -> None:
-    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"] is False
+    assert pl.DataFrame({"x": [None] * 2})["x"].flags["SORTED_ASC"] is False
 
 
 def test_sorted_update_flags_10327() -> None:
@@ -778,3 +774,18 @@ def test_sort_with_null_12272() -> None:
     assert out.sort("product").to_dict(as_series=False) == {
         "product": [None, -1.0, 2.0]
     }
+
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
+        ([1, None, 3], [1, 3, None]),
+        (
+            [date(2024, 1, 1), None, date(2024, 1, 3)],
+            [date(2024, 1, 1), date(2024, 1, 3), None],
+        ),
+        (["a", None, "c"], ["a", "c", None]),
+    ],
+)
+def test_sort_series_nulls_last(input: list[Any], expected: list[Any]) -> None:
+    assert pl.Series(input).sort(nulls_last=True).to_list() == expected

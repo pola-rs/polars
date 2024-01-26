@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, get_args
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.exceptions import InvalidOperationError
 from polars.type_aliases import ConcatMethod, FrameType
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.various import ordered_unique
@@ -35,7 +36,6 @@ def concat(
         DataFrames, LazyFrames, or Series to concatenate.
     how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}
         Series only support the `vertical` strategy.
-        LazyFrames do not support the `horizontal` strategy.
 
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
@@ -124,13 +124,13 @@ def concat(
     │ 2   ┆ 4    ┆ 5    ┆ null │
     │ 3   ┆ null ┆ 6    ┆ 8    │
     └─────┴──────┴──────┴──────┘
-
     """  # noqa: W505
     # unpack/standardise (handles generator input)
     elems = list(items)
 
     if not len(elems) > 0:
-        raise ValueError("cannot concat empty list")
+        msg = "cannot concat empty list"
+        raise ValueError(msg)
     elif len(elems) == 1 and isinstance(
         elems[0], (pl.DataFrame, pl.Series, pl.LazyFrame)
     ):
@@ -138,9 +138,8 @@ def concat(
 
     if how == "align":
         if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
-            raise TypeError(
-                f"'align' strategy is not supported for {type(elems[0]).__name__!r}"
-            )
+            msg = f"'align' strategy is not supported for {type(elems[0]).__name__!r}"
+            raise TypeError(msg)
 
         # establish common columns, maintaining the order in which they appear
         all_columns = list(chain.from_iterable(e.columns for e in elems))
@@ -152,6 +151,11 @@ def concat(
             ),
             key=lambda k: key.get(k, 0),
         )
+        # we require at least one key column for 'align'
+        if not common_cols:
+            msg = "'align' strategy requires at least one common column"
+            raise InvalidOperationError(msg)
+
         # align the frame data using an outer join with no suffix-resolution
         # (so we raise an error in case of column collision, like "horizontal")
         lf: LazyFrame = reduce(
@@ -203,9 +207,8 @@ def concat(
             out = wrap_df(plr.concat_df_horizontal(elems))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
-            raise ValueError(
-                f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
-            )
+            msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
+            raise ValueError(msg)
 
     elif isinstance(first, pl.LazyFrame):
         if how in ("vertical", "vertical_relaxed"):
@@ -226,24 +229,30 @@ def concat(
                     to_supertypes=how.endswith("relaxed"),
                 )
             )
+        elif how == "horizontal":
+            return wrap_ldf(
+                plr.concat_lf_horizontal(
+                    elems,
+                    parallel=parallel,
+                )
+            )
         else:
-            allowed = ", ".join(
-                repr(m) for m in get_args(ConcatMethod) if m != "horizontal"
-            )
-            raise ValueError(
-                f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
-            )
+            allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
+            msg = f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
+            raise ValueError(msg)
 
     elif isinstance(first, pl.Series):
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
-            raise ValueError("Series only supports 'vertical' concat strategy")
+            msg = "Series only supports 'vertical' concat strategy"
+            raise ValueError(msg)
 
     elif isinstance(first, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
-        raise TypeError(f"did not expect type: {type(first).__name__!r} in `concat`")
+        msg = f"did not expect type: {type(first).__name__!r} in `concat`"
+        raise TypeError(msg)
 
     if rechunk:
         return out.rechunk()
@@ -415,14 +424,14 @@ def align_frames(
     ├╌╌╌╌╌╌╌┤
     │ 47.0  │
     └───────┘
-
     """  # noqa: W505
     if not frames:
         return []
     elif len({type(f) for f in frames}) != 1:
-        raise TypeError(
+        msg = (
             "input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
+        raise TypeError(msg)
 
     eager = isinstance(frames[0], pl.DataFrame)
     on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on

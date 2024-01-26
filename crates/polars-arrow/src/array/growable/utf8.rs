@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
-use super::utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits};
+use polars_utils::slice::GetSaferUnchecked;
+
+use super::utils::extend_offset_values;
 use super::Growable;
+use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, Utf8Array};
 use crate::bitmap::MutableBitmap;
 use crate::offset::{Offset, Offsets};
@@ -9,10 +12,9 @@ use crate::offset::{Offset, Offsets};
 /// Concrete [`Growable`] for the [`Utf8Array`].
 pub struct GrowableUtf8<'a, O: Offset> {
     arrays: Vec<&'a Utf8Array<O>>,
-    validity: MutableBitmap,
+    validity: Option<MutableBitmap>,
     values: Vec<u8>,
     offsets: Offsets<O>,
-    extend_null_bits: Vec<ExtendNullBits<'a>>,
 }
 
 impl<'a, O: Offset> GrowableUtf8<'a, O> {
@@ -26,17 +28,11 @@ impl<'a, O: Offset> GrowableUtf8<'a, O> {
             use_validity = true;
         };
 
-        let extend_null_bits = arrays
-            .iter()
-            .map(|array| build_extend_null_bits(*array, use_validity))
-            .collect();
-
         Self {
             arrays: arrays.to_vec(),
             values: Vec::with_capacity(0),
             offsets: Offsets::with_capacity(capacity),
-            validity: MutableBitmap::with_capacity(capacity),
-            extend_null_bits,
+            validity: prepare_validity(use_validity, capacity),
         }
     }
 
@@ -55,17 +51,17 @@ impl<'a, O: Offset> GrowableUtf8<'a, O> {
                 self.arrays[0].data_type().clone(),
                 offsets.into(),
                 values.into(),
-                validity.into(),
+                validity.map(|v| v.into()),
             )
         }
     }
 }
 
 impl<'a, O: Offset> Growable<'a> for GrowableUtf8<'a, O> {
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        (self.extend_null_bits[index])(&mut self.validity, start, len);
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
+        let array = *self.arrays.get_unchecked_release(index);
+        extend_validity(&mut self.validity, array, start, len);
 
-        let array = self.arrays[index];
         let offsets = array.offsets();
         let values = array.values();
 
@@ -79,7 +75,9 @@ impl<'a, O: Offset> Growable<'a> for GrowableUtf8<'a, O> {
 
     fn extend_validity(&mut self, additional: usize) {
         self.offsets.extend_constant(additional);
-        self.validity.extend_constant(additional, false);
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false);
+        }
     }
 
     #[inline]

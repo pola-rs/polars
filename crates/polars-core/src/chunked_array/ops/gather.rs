@@ -1,8 +1,10 @@
 use arrow::array::Array;
 use arrow::bitmap::bitmask::BitMask;
+use arrow::legacy::compute::take::take_unchecked;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::index::check_bounds;
 
+use crate::chunked_array::collect::prepare_collect_dtype;
 use crate::chunked_array::ops::{ChunkTake, ChunkTakeUnchecked};
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{IdxCa, PolarsDataType, StaticArray};
@@ -33,7 +35,7 @@ pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
             check_bounds_nulls(a, len).is_ok()
         }
     });
-    polars_ensure!(all_valid, ComputeError: "gather indices are out of bounds");
+    polars_ensure!(all_valid, OutOfBounds: "gather indices are out of bounds");
     Ok(())
 }
 
@@ -111,7 +113,7 @@ unsafe fn target_get_unchecked<'a, A: StaticArray>(
 }
 
 unsafe fn gather_idx_array_unchecked<A: StaticArray>(
-    dtype: DataType,
+    dtype: ArrowDataType,
     targets: &[&A],
     has_nulls: bool,
     indices: &[IdxSize],
@@ -153,7 +155,7 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
         }
         let targets: Vec<_> = ca.downcast_iter().collect();
         let arr = gather_idx_array_unchecked(
-            ca.dtype().clone(),
+            prepare_collect_dtype(ca.dtype()),
             &targets,
             ca.null_count() > 0,
             indices.as_ref(),
@@ -162,7 +164,30 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
     }
 }
 
-impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
+trait NotSpecialized {}
+impl NotSpecialized for Int8Type {}
+impl NotSpecialized for Int16Type {}
+impl NotSpecialized for Int32Type {}
+impl NotSpecialized for Int64Type {}
+#[cfg(feature = "dtype-decimal")]
+impl NotSpecialized for Int128Type {}
+impl NotSpecialized for UInt8Type {}
+impl NotSpecialized for UInt16Type {}
+impl NotSpecialized for UInt32Type {}
+impl NotSpecialized for UInt64Type {}
+impl NotSpecialized for Float32Type {}
+impl NotSpecialized for Float64Type {}
+impl NotSpecialized for BooleanType {}
+impl NotSpecialized for ListType {}
+#[cfg(feature = "dtype-array")]
+impl NotSpecialized for FixedSizeListType {}
+impl NotSpecialized for BinaryOffsetType {}
+#[cfg(feature = "dtype-decimal")]
+impl NotSpecialized for DecimalType {}
+#[cfg(feature = "object")]
+impl<T> NotSpecialized for ObjectType<T> {}
+
+impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let rechunked;
@@ -175,7 +200,7 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().clone();
+            let dtype = prepare_collect_dtype(ca.dtype());
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(dtype, &targets, targets_have_nulls, idx_arr.values())
             } else if targets.len() == 1 {
@@ -220,5 +245,39 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
         };
         out.set_sorted_flag(sorted_flag);
         out
+    }
+}
+
+impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
+    /// Gather values from ChunkedArray by index.
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
+        let rechunked = self.rechunk();
+        let indices = indices.rechunk();
+        let indices_arr = indices.downcast_iter().next().unwrap();
+        let chunks = rechunked
+            .chunks()
+            .iter()
+            .map(|arr| take_unchecked(arr.as_ref(), indices_arr))
+            .collect::<Vec<_>>();
+
+        let mut out = ChunkedArray::from_chunks(self.name(), chunks);
+
+        use crate::series::IsSorted::*;
+        let sorted_flag = match (self.is_sorted_flag(), indices.is_sorted_flag()) {
+            (_, Not) => Not,
+            (Not, _) => Not,
+            (Ascending, Ascending) => Ascending,
+            (Ascending, Descending) => Descending,
+            (Descending, Ascending) => Descending,
+            (Descending, Descending) => Ascending,
+        };
+        out.set_sorted_flag(sorted_flag);
+        out
+    }
+}
+
+impl ChunkTakeUnchecked<IdxCa> for StringChunked {
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
+        self.as_binary().take_unchecked(indices).to_string()
     }
 }

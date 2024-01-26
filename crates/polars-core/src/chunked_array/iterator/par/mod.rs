@@ -1,2 +1,2 @@
 pub mod list;
-pub mod utf8;
+pub mod string;

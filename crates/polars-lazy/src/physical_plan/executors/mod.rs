@@ -6,6 +6,7 @@ mod group_by;
 mod group_by_dynamic;
 mod group_by_partitioned;
 pub(super) mod group_by_rolling;
+mod hconcat;
 mod join;
 mod projection;
 mod projection_utils;
@@ -37,6 +38,7 @@ pub(super) use self::group_by_dynamic::*;
 pub(super) use self::group_by_partitioned::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(super) use self::group_by_rolling::GroupByRollingExec;
+pub(super) use self::hconcat::*;
 pub(super) use self::join::*;
 pub(super) use self::projection::*;
 #[cfg(feature = "python")]

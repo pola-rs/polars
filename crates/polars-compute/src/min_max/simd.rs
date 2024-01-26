@@ -1,10 +1,10 @@
-use std::simd::*;
+use std::simd::prelude::*;
+use std::simd::{LaneCount, SimdElement, SupportedLaneCount};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use num_traits::AsPrimitive;
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;
@@ -29,9 +29,6 @@ where
     T: SimdElement + NativeType,
     F: FnMut(Simd<T, N>, Simd<T, N>) -> Simd<T, N>,
     LaneCount<N>: SupportedLaneCount,
-    Mask<<T as SimdElement>::Mask, N>: ToBitMask,
-    <Mask<<T as SimdElement>::Mask, N> as ToBitMask>::BitMask: Copy + 'static,
-    u64: AsPrimitive<<Mask<<T as SimdElement>::Mask, N> as ToBitMask>::BitMask>,
 {
     let mut arr_chunks = arr.chunks_exact(N);
 
@@ -51,7 +48,8 @@ where
         }
         if arr.len() % N > 0 {
             let mut rest: [T; N] = identity.to_array();
-            rest.copy_from_slice(arr_chunks.remainder());
+            let arr_rest = arr_chunks.remainder();
+            rest[..arr_rest.len()].copy_from_slice(arr_rest);
             let m: Mask<_, N> = mask.get_simd(offset);
             state = simd_f(state, m.select(Simd::from_array(rest), identity));
         }
@@ -61,7 +59,8 @@ where
         }
         if arr.len() % N > 0 {
             let mut rest: [T; N] = identity.to_array();
-            rest.copy_from_slice(arr_chunks.remainder());
+            let arr_rest = arr_chunks.remainder();
+            rest[..arr_rest.len()].copy_from_slice(arr_rest);
             state = simd_f(state, Simd::from_array(rest));
         }
     }

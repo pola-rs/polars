@@ -84,7 +84,7 @@ Examples
                     self._df = df
 
                 def by_alternate_rows(self) -> list[pl.DataFrame]:
-                    df = self._df.with_row_count(name="n")
+                    df = self._df.with_row_index(name="n")
                     return [
                         df.filter((pl.col("n") % 2) == 0).drop("n"),
                         df.filter((pl.col("n") % 2) != 0).drop("n"),
@@ -93,7 +93,7 @@ Examples
 
             pl.DataFrame(
                 data=["aaa", "bbb", "ccc", "ddd", "eee", "fff"],
-                columns=[("txt", pl.Utf8)],
+                schema=[("txt", pl.String)],
             ).split.by_alternate_rows()
 
             # [┌─────┐  ┌─────┐
@@ -124,7 +124,7 @@ Examples
 
             ldf = pl.DataFrame(
                 data={"a": [1, 2], "b": [3, 4], "c": [5.6, 6.7]},
-                columns=[("a", pl.Int16), ("b", pl.Int32), ("c", pl.Float32)],
+                schema=[("a", pl.Int16), ("b", pl.Int32), ("c", pl.Float32)],
             ).lazy()
 
             ldf.types.upcast_integer_types()
@@ -157,8 +157,8 @@ Examples
 
             s = pl.Series("n", [1, 2, 3, 4, 5])
 
-            s2 = s.math.square().rename("n2", in_place=True)
-            s3 = s.math.cube().rename("n3", in_place=True)
+            s2 = s.math.square().rename("n2")
+            s3 = s.math.cube().rename("n3")
 
             # shape: (5,)          shape: (5,)           shape: (5,)
             # Series: 'n' [i64]    Series: 'n2' [i64]    Series: 'n3' [i64]

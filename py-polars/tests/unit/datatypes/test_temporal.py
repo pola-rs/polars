@@ -467,11 +467,12 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = (
-        pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
-        .cast(pl.Datetime)
-        .dt.with_time_unit("ns")
-    )
+    with pytest.deprecated_call(match="`with_time_unit` is deprecated"):
+        s1 = (
+            pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
+            .cast(pl.Datetime)
+            .dt.with_time_unit("ns")
+        )
     df = pl.DataFrame([s0, s1])
 
     rows = df.rows()
@@ -782,7 +783,7 @@ def test_read_utc_times_parquet() -> None:
     df = pd.DataFrame(
         data={
             "Timestamp": pd.date_range(
-                "2022-01-01T00:00+00:00", "2022-01-01T10:00+00:00", freq="H"
+                "2022-01-01T00:00+00:00", "2022-01-01T10:00+00:00", freq="h"
             )
         }
     )
@@ -938,7 +939,7 @@ def test_asof_join() -> None:
     ).set_sorted("dates")
     assert trades.schema == {
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
+        "ticker": pl.String,
         "bid": pl.Float64,
     }
     out = trades.join_asof(quotes, on="dates", strategy="backward")
@@ -947,8 +948,8 @@ def test_asof_join() -> None:
         "bid": pl.Float64,
         "bid_right": pl.Float64,
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
-        "ticker_right": pl.Utf8,
+        "ticker": pl.String,
+        "ticker_right": pl.String,
     }
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int)).to_list() == [
@@ -1252,27 +1253,6 @@ def test_datetime_instance_selection() -> None:
     assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
 
 
-def test_unique_counts_on_dates() -> None:
-    assert pl.DataFrame(
-        {
-            "dt_ns": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 3, 1), "1mo", eager=True
-            ),
-        }
-    ).with_columns(
-        [
-            pl.col("dt_ns").dt.cast_time_unit("us").alias("dt_us"),
-            pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
-            pl.col("dt_ns").cast(pl.Date).alias("date"),
-        ]
-    ).select(pl.all().unique_counts().sum()).to_dict(as_series=False) == {
-        "dt_ns": [3],
-        "dt_us": [3],
-        "dt_ms": [3],
-        "date": [3],
-    }
-
-
 def test_rolling_by_ordering() -> None:
     # we must check that the keys still match the time labels after the rolling window
     # with a `by` argument.
@@ -1331,13 +1311,13 @@ def test_rolling_by_() -> None:
     out = (
         df.sort("datetime")
         .rolling(index_column="datetime", by="group", period=timedelta(days=3))
-        .agg([pl.count().alias("count")])
+        .agg([pl.len().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
         .rolling(index_column="datetime", by="group", period="3d")
-        .agg([pl.count().alias("count")])
+        .agg([pl.len().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
     assert out.to_dict(as_series=False) == {
@@ -1361,16 +1341,6 @@ def test_rolling_by_() -> None:
         ],
         "count": [1, 2, 3, 3, 3, 1, 2, 3, 3, 3, 1, 2, 3, 3, 3],
     }
-
-
-def test_sorted_unique() -> None:
-    assert (
-        pl.DataFrame(
-            [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
-        )
-        .sort("dt")
-        .unique()
-    ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
 def test_date_to_time_cast_5111() -> None:
@@ -1556,7 +1526,11 @@ def test_strptime_with_tz() -> None:
     ],
 )
 def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
-    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(time_unit, time_zone))
+    ts = (
+        pl.Series([None])
+        .cast(pl.String)
+        .str.strptime(pl.Datetime(time_unit, time_zone))
+    )
     assert ts.dtype == pl.Datetime(time_unit, time_zone)
 
 
@@ -2245,7 +2219,7 @@ def test_truncate_propagate_null() -> None:
     ) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
     assert df.select(
         pl.col("date").dt.truncate(
-            every=pl.lit(None, dtype=pl.Utf8),
+            every=pl.lit(None, dtype=pl.String),
         )
     ).to_dict(as_series=False) == {"date": [None, None, None]}
 
@@ -2342,36 +2316,48 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
 
 
 def test_truncate_use_earliest() -> None:
-    ser = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).dt.offset_by("15m")
+    ser = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .dt.offset_by("15m")
+    )
     df = ser.to_frame()
     df = df.with_columns(
         use_earliest=pl.col("datetime").dt.dst_offset() == pl.duration(hours=1)
     )
     result = df.select(pl.col("datetime").dt.truncate("30m"))
-    expected = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).to_frame()
+    expected = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .to_frame()
+    )
     assert_frame_equal(result, expected)
 
 
 def test_truncate_ambiguous() -> None:
-    ser = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).dt.offset_by("15m")
+    ser = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .dt.offset_by("15m")
+    )
     result = ser.dt.truncate("30m")
     expected = (
         pl.Series(
@@ -2393,13 +2379,17 @@ def test_truncate_ambiguous() -> None:
 
 
 def test_round_ambiguous() -> None:
-    t = pl.datetime_range(
-        date(2020, 10, 25),
-        datetime(2020, 10, 25, 2),
-        "30m",
-        eager=True,
-        time_zone="Europe/London",
-    ).dt.offset_by("15m")
+    t = (
+        pl.datetime_range(
+            date(2020, 10, 25),
+            datetime(2020, 10, 25, 2),
+            "30m",
+            eager=True,
+            time_zone="Europe/London",
+        )
+        .alias("datetime")
+        .dt.offset_by("15m")
+    )
     result = t.dt.round("30m")
     expected = (
         pl.Series(
@@ -2584,30 +2574,18 @@ def test_datetime_cum_agg_schema() -> None:
 
 
 def test_rolling_group_by_empty_groups_by_take_6330() -> None:
-    df = (
-        pl.DataFrame({"Event": ["Rain", "Sun"]})
-        .join(
-            pl.DataFrame(
-                {
-                    "Date": [1, 2, 3, 4],
-                }
-            ),
-            how="cross",
-        )
-        .set_sorted("Date")
-    )
-    assert (
-        df.rolling(
-            index_column="Date",
-            period="2i",
-            offset="-2i",
-            by="Event",
-            closed="left",
-        ).agg([pl.count()])
-    ).to_dict(as_series=False) == {
+    df1 = pl.DataFrame({"Event": ["Rain", "Sun"]})
+    df2 = pl.DataFrame({"Date": [1, 2, 3, 4]})
+    df = df1.join(df2, how="cross").set_sorted("Date")
+
+    result = df.rolling(
+        index_column="Date", period="2i", offset="-2i", by="Event", closed="left"
+    ).agg(pl.len())
+
+    assert result.to_dict(as_series=False) == {
         "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
-        "count": [0, 1, 2, 2, 0, 1, 2, 2],
+        "len": [0, 1, 2, 2, 0, 1, 2, 2],
     }
 
 

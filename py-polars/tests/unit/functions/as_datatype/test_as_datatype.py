@@ -341,7 +341,7 @@ def test_struct_from_schema_only() -> None:
     s = df.select(
         pl.struct(
             schema={
-                "str": pl.Utf8,
+                "str": pl.String,
                 "u8": pl.UInt8,
                 "i32": pl.Int32,
                 "f64": pl.Float64,
@@ -356,7 +356,7 @@ def test_struct_from_schema_only() -> None:
     # check dtypes
     assert s.dtype == pl.Struct(
         [
-            pl.Field("str", pl.Utf8),
+            pl.Field("str", pl.String),
             pl.Field("u8", pl.UInt8),
             pl.Field("i32", pl.Int32),
             pl.Field("f64", pl.Float64),
@@ -498,34 +498,6 @@ def test_suffix_in_struct_creation() -> None:
             }
         ).select(pl.struct(pl.col(["a", "c"]).name.suffix("_foo")).alias("bar"))
     ).unnest("bar").to_dict(as_series=False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
-
-
-def test_concat_str() -> None:
-    df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-
-    out = df.select([pl.concat_str(["a", "b"], separator="-")])
-    assert out["a"].to_list() == ["a-1", "b-2", "c-3"]
-
-
-def test_concat_str_wildcard_expansion() -> None:
-    # one function requires wildcard expansion the other need
-    # this tests the nested behavior
-    # see: #2867
-
-    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
-    assert df.select(
-        pl.concat_str(pl.all()).str.to_lowercase()
-    ).to_series().to_list() == ["xs", "yo", "zs"]
-
-
-def test_concat_str_with_non_utf8_col() -> None:
-    out = (
-        pl.LazyFrame({"a": [0], "b": ["x"]})
-        .select(pl.concat_str(["a", "b"], separator="-").fill_null(pl.col("a")))
-        .collect()
-    )
-    expected = pl.Series("a", ["0-x"], dtype=pl.Utf8)
-    assert_series_equal(out.to_series(), expected)
 
 
 def test_format() -> None:

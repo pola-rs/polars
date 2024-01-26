@@ -1,6 +1,7 @@
 mod functions;
 mod generic;
 mod group_by;
+mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
@@ -10,7 +11,7 @@ mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
 
@@ -18,6 +19,7 @@ use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
+use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
@@ -39,7 +41,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
-    row_count: Option<&RowCount>,
+    row_index: Option<&RowIndex>,
 ) -> Option<Arc<Vec<String>>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
@@ -48,7 +50,7 @@ fn get_scan_columns(
             for name in aexpr_to_leaf_names(*expr, expr_arena) {
                 // we shouldn't project the row-count column, as that is generated
                 // in the scan
-                let push = match row_count {
+                let push = match row_index {
                     Some(rc) if name.as_ref() != rc.name.as_str() => true,
                     None => true,
                     _ => false,
@@ -394,7 +396,7 @@ impl ProjectionPushDown {
                     file_options.with_columns = get_scan_columns(
                         &mut acc_projections,
                         expr_arena,
-                        file_options.row_count.as_ref(),
+                        file_options.row_index.as_ref(),
                     );
 
                     output_schema = if file_options.with_columns.is_none() {
@@ -642,6 +644,20 @@ impl ProjectionPushDown {
                 function,
                 acc_projections,
                 projected_names,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
+            HConcat {
+                inputs,
+                schema,
+                options,
+            } => process_hconcat(
+                self,
+                inputs,
+                schema,
+                options,
+                acc_projections,
                 projections_seen,
                 lp_arena,
                 expr_arena,

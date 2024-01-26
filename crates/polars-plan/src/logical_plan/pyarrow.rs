@@ -68,7 +68,7 @@ pub(super) fn predicate_to_pa(
             let av = lv.to_anyvalue()?;
             let dtype = av.dtype();
             match av.as_borrowed() {
-                AnyValue::Utf8(s) => Some(format!("'{s}'")),
+                AnyValue::String(s) => Some(format!("'{s}'")),
                 AnyValue::Boolean(val) => {
                     // python bools are capitalized
                     if val {

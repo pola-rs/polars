@@ -40,9 +40,43 @@ macro_rules! impl_reverse {
 }
 
 impl_reverse!(BooleanType, BooleanChunked);
-impl_reverse!(Utf8Type, Utf8Chunked);
-impl_reverse!(BinaryType, BinaryChunked);
+impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
 impl_reverse!(ListType, ListChunked);
+
+impl ChunkReverse for BinaryChunked {
+    fn reverse(&self) -> Self {
+        if self.chunks.len() == 1 {
+            let arr = self.downcast_iter().next().unwrap();
+            let views = arr.views().iter().copied().rev().collect::<Vec<_>>();
+
+            unsafe {
+                let arr = BinaryViewArray::new_unchecked(
+                    arr.data_type().clone(),
+                    views.into(),
+                    arr.data_buffers().clone(),
+                    arr.validity().map(|bitmap| bitmap.iter().rev().collect()),
+                    arr.total_bytes_len(),
+                    arr.total_buffer_len(),
+                )
+                .boxed();
+                BinaryChunked::from_chunks_and_dtype_unchecked(
+                    self.name(),
+                    vec![arr],
+                    self.dtype().clone(),
+                )
+            }
+        } else {
+            let ca = IdxCa::from_vec("", (0..self.len() as IdxSize).rev().collect());
+            unsafe { self.take_unchecked(&ca) }
+        }
+    }
+}
+
+impl ChunkReverse for StringChunked {
+    fn reverse(&self) -> Self {
+        unsafe { self.as_binary().reverse().to_string() }
+    }
+}
 
 #[cfg(feature = "dtype-array")]
 impl ChunkReverse for ArrayChunked {

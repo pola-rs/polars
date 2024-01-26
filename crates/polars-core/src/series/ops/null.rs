@@ -12,8 +12,9 @@ impl Series {
                 ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, _) => {
-                let mut ca = CategoricalChunked::full_null(name, size);
+            dt @ (DataType::Categorical(rev_map, _) | DataType::Enum(rev_map, _)) => {
+                let mut ca =
+                    CategoricalChunked::full_null(name, matches!(dt, DataType::Enum(_, _)), size);
                 // ensure we keep the rev-map of a cleared series
                 if let Some(rev_map) = rev_map {
                     unsafe { ca.set_rev_map(rev_map.clone(), false) }
@@ -63,9 +64,9 @@ impl Series {
                         ChunkedArray::<BooleanType>::full_null(name, size).into_series()
                     }};
                 }
-                macro_rules! utf8 {
+                macro_rules! string {
                     () => {{
-                        ChunkedArray::<Utf8Type>::full_null(name, size).into_series()
+                        ChunkedArray::<StringType>::full_null(name, size).into_series()
                     }};
                 }
                 macro_rules! binary {
@@ -73,7 +74,7 @@ impl Series {
                         ChunkedArray::<BinaryType>::full_null(name, size).into_series()
                     }};
                 }
-                match_dtype_to_logical_apply_macro!(dtype, primitive, utf8, binary, bool)
+                match_dtype_to_logical_apply_macro!(dtype, primitive, string, binary, bool)
             },
         }
     }

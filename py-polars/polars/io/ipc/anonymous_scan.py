@@ -40,7 +40,6 @@ def _scan_ipc_impl(  # noqa: D417
         Source URI
     columns
         Columns that are projected
-
     """
     from polars import read_ipc
 

@@ -14,3 +14,16 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.sum
     Series.arr.to_list
     Series.arr.unique
+    Series.arr.all
+    Series.arr.any
+    Series.arr.sort
+    Series.arr.reverse
+    Series.arr.arg_min
+    Series.arr.arg_max
+    Series.arr.get
+    Series.arr.first
+    Series.arr.last
+    Series.arr.join
+    Series.arr.explode
+    Series.arr.contains
+    Series.arr.count_matches

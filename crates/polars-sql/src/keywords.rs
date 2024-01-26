@@ -5,14 +5,14 @@
 //! This module defines:
 //! - all Polars SQL keywords [`all_keywords`]
 //! - all of polars SQL functions [`all_functions`]
-use crate::functions::PolarsSqlFunctions;
+use crate::functions::PolarsSQLFunctions;
 use crate::table_functions::PolarsTableFunctions;
 
 /// Get all keywords that are supported by Polars SQL
 pub fn all_keywords() -> Vec<&'static str> {
     let mut keywords = vec![];
     keywords.extend_from_slice(PolarsTableFunctions::keywords());
-    keywords.extend_from_slice(PolarsSqlFunctions::keywords());
+    keywords.extend_from_slice(PolarsSQLFunctions::keywords());
     use sqlparser::keywords;
     let sql_keywords = &[
         keywords::AND,
@@ -49,7 +49,9 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::OR,
         keywords::ORDER,
         keywords::OUTER,
+        keywords::REGEXP,
         keywords::RIGHT,
+        keywords::RLIKE,
         keywords::SELECT,
         keywords::SEMI,
         keywords::SHOW,
@@ -71,6 +73,6 @@ pub fn all_keywords() -> Vec<&'static str> {
 pub fn all_functions() -> Vec<&'static str> {
     let mut functions = vec![];
     functions.extend_from_slice(PolarsTableFunctions::keywords());
-    functions.extend_from_slice(PolarsSqlFunctions::keywords());
+    functions.extend_from_slice(PolarsSQLFunctions::keywords());
     functions
 }

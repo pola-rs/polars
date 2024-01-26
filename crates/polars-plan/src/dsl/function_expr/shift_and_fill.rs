@@ -68,10 +68,10 @@ pub(super) fn shift_and_fill(args: &[Series]) -> PolarsResult<Series> {
                 };
                 ca.shift_and_fill(n, fill_value).into_series().cast(logical)
             },
-            Utf8 => {
-                let ca = s.utf8()?;
+            String => {
+                let ca = s.str()?;
                 let fill_value = match fill_value {
-                    AnyValue::Utf8(v) => Some(v),
+                    AnyValue::String(v) => Some(v),
                     AnyValue::Null => None,
                     v => polars_bail!(ComputeError: "fill value '{}' is not supported", v),
                 };
@@ -89,11 +89,11 @@ pub(super) fn shift_and_fill(args: &[Series]) -> PolarsResult<Series> {
                     .cast(logical)
             },
             #[cfg(feature = "object")]
-            Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
+            Object(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
+            Categorical(_, _) | Enum(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
             dt if dt.is_numeric() || dt.is_logical() => {
                 macro_rules! dispatch {
                     ($ca:expr, $n:expr, $fill_value:expr) => {{

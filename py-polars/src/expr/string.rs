@@ -94,8 +94,12 @@ impl PyExpr {
         self.inner.clone().str().strip_suffix(suffix.inner).into()
     }
 
-    fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
-        self.inner.clone().str().slice(start, length).into()
+    fn str_slice(&self, offset: Self, length: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .slice(offset.inner, length.inner)
+            .into()
     }
 
     fn str_explode(&self) -> Self {
@@ -123,7 +127,7 @@ impl PyExpr {
         self.inner.clone().str().len_chars().into()
     }
 
-    #[cfg(feature = "lazy_regex")]
+    #[cfg(feature = "regex")]
     fn str_replace_n(&self, pat: Self, val: Self, literal: bool, n: i64) -> Self {
         self.inner
             .clone()
@@ -132,7 +136,7 @@ impl PyExpr {
             .into()
     }
 
-    #[cfg(feature = "lazy_regex")]
+    #[cfg(feature = "regex")]
     fn str_replace_all(&self, pat: Self, val: Self, literal: bool) -> Self {
         self.inner
             .clone()
@@ -153,16 +157,25 @@ impl PyExpr {
         self.inner.clone().str().pad_end(length, fill_char).into()
     }
 
-    fn str_zfill(&self, length: usize) -> Self {
-        self.inner.clone().str().zfill(length).into()
+    fn str_zfill(&self, length: Self) -> Self {
+        self.inner.clone().str().zfill(length.inner).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]
-    #[cfg(feature = "lazy_regex")]
+    #[cfg(feature = "regex")]
     fn str_contains(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
         match literal {
             Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
             _ => self.inner.clone().str().contains(pat.inner, strict).into(),
+        }
+    }
+
+    #[pyo3(signature = (pat, literal, strict))]
+    #[cfg(feature = "regex")]
+    fn str_find(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
+        match literal {
+            Some(true) => self.inner.clone().str().find_literal(pat.inner).into(),
+            _ => self.inner.clone().str().find(pat.inner, strict).into(),
         }
     }
 
@@ -218,7 +231,7 @@ impl PyExpr {
     #[cfg(feature = "extract_jsonpath")]
     fn str_json_path_match(&self, pat: String) -> Self {
         let function = move |s: Series| {
-            let ca = s.utf8()?;
+            let ca = s.str()?;
             match ca.json_path_match(&pat) {
                 Ok(ca) => Ok(Some(ca.into_series())),
                 Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
@@ -226,13 +239,17 @@ impl PyExpr {
         };
         self.inner
             .clone()
-            .map(function, GetOutput::from_type(DataType::Utf8))
+            .map(function, GetOutput::from_type(DataType::String))
             .with_fmt("str.json_path_match")
             .into()
     }
 
-    fn str_extract(&self, pat: &str, group_index: usize) -> Self {
-        self.inner.clone().str().extract(pat, group_index).into()
+    fn str_extract(&self, pat: Self, group_index: usize) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .extract(pat.inner, group_index)
+            .into()
     }
 
     fn str_extract_all(&self, pat: Self) -> Self {
@@ -284,5 +301,27 @@ impl PyExpr {
 
     fn str_to_decimal(&self, infer_len: usize) -> Self {
         self.inner.clone().str().to_decimal(infer_len).into()
+    }
+
+    #[cfg(feature = "find_many")]
+    fn str_contains_any(&self, patterns: PyExpr, ascii_case_insensitive: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .contains_any(patterns.inner, ascii_case_insensitive)
+            .into()
+    }
+    #[cfg(feature = "find_many")]
+    fn str_replace_many(
+        &self,
+        patterns: PyExpr,
+        replace_with: PyExpr,
+        ascii_case_insensitive: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .into()
     }
 }

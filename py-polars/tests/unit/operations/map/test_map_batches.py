@@ -36,8 +36,8 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(6\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(6\); consider using `apply` instead"
         ),
     ):
         df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
@@ -47,17 +47,27 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(4\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(4\); consider using `apply` instead"
         ),
     ):
         df.select(
             pl.col("x")
             .map_batches(
-                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
+                is_elementwise=True,
             )
             .over("group")
         )
+
+
+def test_map_batches_group() -> None:
+    df = pl.DataFrame(
+        {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
+    )
+    assert df.group_by("id").agg(pl.col("t").map_batches(lambda s: s.sum())).sort(
+        "id"
+    ).to_dict(as_series=False) == {"id": [0, 1], "t": [[11], [35]]}
 
 
 def test_map_deprecated() -> None:

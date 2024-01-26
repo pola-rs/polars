@@ -23,7 +23,10 @@ use crate::{map, map_as_slice};
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
     #[cfg(feature = "concat_str")]
-    ConcatHorizontal(String),
+    ConcatHorizontal {
+        delimiter: String,
+        ignore_nulls: bool,
+    },
     #[cfg(feature = "concat_str")]
     ConcatVertical {
         delimiter: String,
@@ -37,15 +40,16 @@ pub enum StringFunction {
     CountMatches(bool),
     EndsWith,
     Explode,
-    Extract {
-        pat: String,
-        group_index: usize,
-    },
+    Extract(usize),
     ExtractAll,
     #[cfg(feature = "extract_groups")]
     ExtractGroups {
         dtype: DataType,
         pat: String,
+    },
+    Find {
+        literal: bool,
+        strict: bool,
     },
     #[cfg(feature = "string_to_integer")]
     ToInteger(u32, bool),
@@ -76,7 +80,7 @@ pub enum StringFunction {
         length: usize,
         fill_char: char,
     },
-    Slice(i64, Option<u64>),
+    Slice,
     #[cfg(feature = "string_encoding")]
     HexEncode,
     #[cfg(feature = "binary_encoding")]
@@ -107,7 +111,15 @@ pub enum StringFunction {
     Titlecase,
     Uppercase,
     #[cfg(feature = "string_pad")]
-    ZFill(usize),
+    ZFill,
+    #[cfg(feature = "find_many")]
+    ContainsMany {
+        ascii_case_insensitive: bool,
+    },
+    #[cfg(feature = "find_many")]
+    ReplaceMany {
+        ascii_case_insensitive: bool,
+    },
 }
 
 impl StringFunction {
@@ -115,18 +127,19 @@ impl StringFunction {
         use StringFunction::*;
         match self {
             #[cfg(feature = "concat_str")]
-            ConcatVertical { .. } | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
+            ConcatVertical { .. } | ConcatHorizontal { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
-            Extract { .. } => mapper.with_same_dtype(),
-            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            Extract(_) => mapper.with_same_dtype(),
+            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => mapper.with_dtype(DataType::Int64),
+            Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             LenBytes => mapper.with_dtype(DataType::UInt32),
@@ -137,7 +150,7 @@ impl StringFunction {
             Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
-            Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
@@ -150,28 +163,26 @@ impl StringFunction {
             Base64Encode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => mapper.with_dtype(DataType::Binary),
-            Uppercase
-            | Lowercase
-            | StripChars
-            | StripCharsStart
-            | StripCharsEnd
-            | StripPrefix
-            | StripSuffix
-            | Slice(_, _) => mapper.with_same_dtype(),
+            Uppercase | Lowercase | StripChars | StripCharsStart | StripCharsEnd | StripPrefix
+            | StripSuffix | Slice => mapper.with_same_dtype(),
             #[cfg(feature = "string_pad")]
-            PadStart { .. } | PadEnd { .. } | ZFill { .. } => mapper.with_same_dtype(),
+            PadStart { .. } | PadEnd { .. } | ZFill => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
             SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
                 (0..n + 1)
-                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
+                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::String))
                     .collect(),
             )),
             #[cfg(feature = "dtype-struct")]
             SplitN(n) => mapper.with_dtype(DataType::Struct(
                 (0..*n)
-                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
+                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::String))
                     .collect(),
             )),
+            #[cfg(feature = "find_many")]
+            ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "find_many")]
+            ReplaceMany { .. } => mapper.with_same_dtype(),
         }
     }
 }
@@ -184,9 +195,9 @@ impl Display for StringFunction {
             Contains { .. } => "contains",
             CountMatches(_) => "count_matches",
             EndsWith { .. } => "ends_with",
-            Extract { .. } => "extract",
+            Extract(_) => "extract",
             #[cfg(feature = "concat_str")]
-            ConcatHorizontal(_) => "concat_horizontal",
+            ConcatHorizontal { .. } => "concat_horizontal",
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } => "concat_vertical",
             Explode => "explode",
@@ -195,6 +206,7 @@ impl Display for StringFunction {
             ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => "to_integer",
+            Find { .. } => "find",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
             LenBytes => "len_bytes",
@@ -216,7 +228,7 @@ impl Display for StringFunction {
             Base64Encode => "base64_encode",
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => "base64_decode",
-            Slice(_, _) => "slice",
+            Slice => "slice",
             StartsWith { .. } => "starts_with",
             StripChars => "strip_chars",
             StripCharsStart => "strip_chars_start",
@@ -248,7 +260,11 @@ impl Display for StringFunction {
             ToDecimal(_) => "to_decimal",
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
-            ZFill(_) => "zfill",
+            ZFill => "zfill",
+            #[cfg(feature = "find_many")]
+            ContainsMany { .. } => "contains_many",
+            #[cfg(feature = "find_many")]
+            ReplaceMany { .. } => "replace_many",
         };
         write!(f, "str.{s}")
     }
@@ -265,9 +281,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
-            Extract { pat, group_index } => {
-                map!(strings::extract, &pat, group_index)
-            },
+            Extract(group_index) => map_as_slice!(strings::extract, group_index),
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
             },
@@ -275,6 +289,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractGroups { pat, dtype } => {
                 map!(strings::extract_groups, &pat, &dtype)
             },
+            Find { literal, strict } => map_as_slice!(strings::find, literal, strict),
             LenBytes => map!(strings::len_bytes),
             LenChars => map!(strings::len_chars),
             #[cfg(feature = "string_pad")]
@@ -286,8 +301,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(strings::pad_start, length, fill_char)
             },
             #[cfg(feature = "string_pad")]
-            ZFill(alignment) => {
-                map!(strings::zfill, alignment)
+            ZFill => {
+                map_as_slice!(strings::zfill)
             },
             #[cfg(feature = "temporal")]
             Strptime(dtype, options) => {
@@ -306,13 +321,16 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 ignore_nulls,
             } => map!(strings::concat, &delimiter, ignore_nulls),
             #[cfg(feature = "concat_str")]
-            ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
+            ConcatHorizontal {
+                delimiter,
+                ignore_nulls,
+            } => map_as_slice!(strings::concat_hor, &delimiter, ignore_nulls),
             #[cfg(feature = "regex")]
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
             #[cfg(feature = "string_reverse")]
             Reverse => map!(strings::reverse),
-            Uppercase => map!(strings::uppercase),
-            Lowercase => map!(strings::lowercase),
+            Uppercase => map!(uppercase),
+            Lowercase => map!(lowercase),
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
             StripChars => map_as_slice!(strings::strip_chars),
@@ -322,7 +340,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_to_integer")]
             ToInteger(base, strict) => map!(strings::to_integer, base, strict),
-            Slice(start, length) => map!(strings::str_slice, start, length),
+            Slice => map_as_slice!(strings::str_slice),
             #[cfg(feature = "string_encoding")]
             HexEncode => map!(strings::hex_encode),
             #[cfg(feature = "binary_encoding")]
@@ -339,118 +357,161 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 dtype,
                 infer_schema_len,
             } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            #[cfg(feature = "find_many")]
+            ContainsMany {
+                ascii_case_insensitive,
+            } => {
+                map_as_slice!(contains_many, ascii_case_insensitive)
+            },
+            #[cfg(feature = "find_many")]
+            ReplaceMany {
+                ascii_case_insensitive,
+            } => {
+                map_as_slice!(replace_many, ascii_case_insensitive)
+            },
         }
     }
 }
 
-pub(super) fn uppercase(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+#[cfg(feature = "find_many")]
+fn contains_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let patterns = s[1].str()?;
+    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
+        .map(|out| out.into_series())
+}
+
+#[cfg(feature = "find_many")]
+fn replace_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let patterns = s[1].str()?;
+    let replace_with = s[2].str()?;
+    polars_ops::chunked_array::strings::replace_all(
+        ca,
+        patterns,
+        replace_with,
+        ascii_case_insensitive,
+    )
+    .map(|out| out.into_series())
+}
+
+fn uppercase(s: &Series) -> PolarsResult<Series> {
+    let ca = s.str()?;
     Ok(ca.to_uppercase().into_series())
 }
 
-pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+fn lowercase(s: &Series) -> PolarsResult<Series> {
+    let ca = s.str()?;
     Ok(ca.to_lowercase().into_series())
 }
 
 #[cfg(feature = "nightly")]
 pub(super) fn titlecase(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     Ok(ca.to_titlecase().into_series())
 }
 
 pub(super) fn len_chars(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     Ok(ca.str_len_chars().into_series())
 }
 
 pub(super) fn len_bytes(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     Ok(ca.str_len_bytes().into_series())
 }
 
 #[cfg(feature = "regex")]
 pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let pat = s[1].utf8()?;
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
     ca.contains_chunked(pat, literal, strict)
         .map(|ok| ok.into_series())
 }
 
+#[cfg(feature = "regex")]
+pub(super) fn find(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    ca.find_chunked(pat, literal, strict)
+        .map(|ok| ok.into_series())
+}
+
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?.as_binary();
-    let suffix = &s[1].utf8()?.as_binary();
+    let ca = &s[0].str()?.as_binary();
+    let suffix = &s[1].str()?.as_binary();
 
     Ok(ca.ends_with_chunked(suffix).into_series())
 }
 
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?.as_binary();
-    let prefix = &s[1].utf8()?.as_binary();
+    let ca = &s[0].str()?.as_binary();
+    let prefix = &s[1].str()?.as_binary();
 
     Ok(ca.starts_with_chunked(prefix).into_series())
 }
 
 /// Extract a regex pattern from the a string value.
-pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult<Series> {
-    let pat = pat.to_string();
-
-    let ca = s.utf8()?;
-    ca.extract(&pat, group_index).map(|ca| ca.into_series())
+pub(super) fn extract(s: &[Series], group_index: usize) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    ca.extract(pat, group_index).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "extract_groups")]
 /// Extract all capture groups from a regex pattern as a struct
 pub(super) fn extract_groups(s: &Series, pat: &str, dtype: &DataType) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     ca.extract_groups(pat, dtype)
 }
 
 #[cfg(feature = "string_pad")]
 pub(super) fn pad_start(s: &Series, length: usize, fill_char: char) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     Ok(ca.pad_start(length, fill_char).into_series())
 }
 
 #[cfg(feature = "string_pad")]
 pub(super) fn pad_end(s: &Series, length: usize, fill_char: char) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     Ok(ca.pad_end(length, fill_char).into_series())
 }
 
 #[cfg(feature = "string_pad")]
-pub(super) fn zfill(s: &Series, length: usize) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+pub(super) fn zfill(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let length_s = s[1].strict_cast(&DataType::UInt64)?;
+    let length = length_s.u64()?;
     Ok(ca.zfill(length).into_series())
 }
 
 pub(super) fn strip_chars(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
+    let ca = s[0].str()?;
     let pat_s = &s[1];
     ca.strip_chars(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_chars_start(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
+    let ca = s[0].str()?;
     let pat_s = &s[1];
     ca.strip_chars_start(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_chars_end(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
+    let ca = s[0].str()?;
     let pat_s = &s[1];
     ca.strip_chars_end(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_prefix(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let prefix = s[1].utf8()?;
+    let ca = s[0].str()?;
+    let prefix = s[1].str()?;
     Ok(ca.strip_prefix(prefix).into_series())
 }
 
 pub(super) fn strip_suffix(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let suffix = s[1].utf8()?;
+    let ca = s[0].str()?;
+    let suffix = s[1].str()?;
     Ok(ca.strip_suffix(suffix).into_series())
 }
 
@@ -458,8 +519,8 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
     let pat = &args[1];
 
-    let ca = s.utf8()?;
-    let pat = pat.utf8()?;
+    let ca = s.str()?;
+    let pat = pat.str()?;
 
     if pat.len() == 1 {
         if let Some(pat) = pat.get(0) {
@@ -468,7 +529,7 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
             Ok(Series::full_null(
                 ca.name(),
                 ca.len(),
-                &DataType::List(Box::new(DataType::Utf8)),
+                &DataType::List(Box::new(DataType::String)),
             ))
         }
     } else {
@@ -480,8 +541,8 @@ pub(super) fn count_matches(args: &[Series], literal: bool) -> PolarsResult<Seri
     let s = &args[0];
     let pat = &args[1];
 
-    let ca = s.utf8()?;
-    let pat = pat.utf8()?;
+    let ca = s.str()?;
+    let pat = pat.str()?;
     if pat.len() == 1 {
         if let Some(pat) = pat.get(0) {
             ca.count_matches(pat, literal).map(|ca| ca.into_series())
@@ -501,10 +562,13 @@ pub(super) fn strptime(
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
     match dtype {
+        #[cfg(feature = "dtype-date")]
         DataType::Date => to_date(&s[0], options),
+        #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(time_unit, time_zone) => {
             to_datetime(s, &time_unit, time_zone.as_ref(), options)
         },
+        #[cfg(feature = "dtype-time")]
         DataType::Time => to_time(&s[0], options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
@@ -512,8 +576,8 @@ pub(super) fn strptime(
 
 #[cfg(feature = "dtype-struct")]
 pub(super) fn split_exact(s: &[Series], n: usize, inclusive: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let by = s[1].utf8()?;
+    let ca = s[0].str()?;
+    let by = s[1].str()?;
 
     if inclusive {
         ca.split_exact_inclusive(by, n).map(|ca| ca.into_series())
@@ -524,15 +588,15 @@ pub(super) fn split_exact(s: &[Series], n: usize, inclusive: bool) -> PolarsResu
 
 #[cfg(feature = "dtype-struct")]
 pub(super) fn splitn(s: &[Series], n: usize) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let by = s[1].utf8()?;
+    let ca = s[0].str()?;
+    let by = s[1].str()?;
 
     ca.splitn(by, n).map(|ca| ca.into_series())
 }
 
 pub(super) fn split(s: &[Series], inclusive: bool) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let by = s[1].utf8()?;
+    let ca = s[0].str()?;
+    let by = s[1].str()?;
 
     if inclusive {
         Ok(ca.split_inclusive(by).into_series())
@@ -543,7 +607,7 @@ pub(super) fn split(s: &[Series], inclusive: bool) -> PolarsResult<Series> {
 
 #[cfg(feature = "dtype-date")]
 fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     let out = {
         if options.exact {
             ca.as_date(options.format.as_deref(), options.cache)?
@@ -567,8 +631,8 @@ fn to_datetime(
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
-    let datetime_strings = &s[0].utf8().unwrap();
-    let ambiguous = &s[1].utf8().unwrap();
+    let datetime_strings = &s[0].str()?;
+    let ambiguous = &s[1].str()?;
     let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
         Some(format) => TZ_AWARE_RE.is_match(format),
@@ -619,7 +683,7 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         options.exact, ComputeError: "non-exact not implemented for Time data type"
     );
 
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     let out = ca
         .as_time(options.format.as_deref(), options.cache)?
         .into_series();
@@ -632,19 +696,23 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 
 #[cfg(feature = "concat_str")]
 pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
-    let str_s = s.cast(&DataType::Utf8)?;
-    let concat = polars_ops::chunked_array::str_concat(str_s.utf8()?, delimiter, ignore_nulls);
+    let str_s = s.cast(&DataType::String)?;
+    let concat = polars_ops::chunked_array::str_concat(str_s.str()?, delimiter, ignore_nulls);
     Ok(concat.into_series())
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn concat_hor(series: &[Series], delimiter: &str) -> PolarsResult<Series> {
+pub(super) fn concat_hor(
+    series: &[Series],
+    delimiter: &str,
+    ignore_nulls: bool,
+) -> PolarsResult<Series> {
     let str_series: Vec<_> = series
         .iter()
-        .map(|s| s.cast(&DataType::Utf8))
+        .map(|s| s.cast(&DataType::String))
         .collect::<PolarsResult<_>>()?;
-    let cas: Vec<_> = str_series.iter().map(|s| s.utf8().unwrap()).collect();
-    Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter)?.into_series())
+    let cas: Vec<_> = str_series.iter().map(|s| s.str().unwrap()).collect();
+    Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter, ignore_nulls)?.into_series())
 }
 
 impl From<StringFunction> for FunctionExpr {
@@ -654,7 +722,7 @@ impl From<StringFunction> for FunctionExpr {
 }
 
 #[cfg(feature = "regex")]
-fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
+fn get_pat(pat: &StringChunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(
         || polars_err!(ComputeError: "pattern cannot be 'null' in 'replace' expression"),
     )
@@ -662,11 +730,11 @@ fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
 
 // used only if feature="regex"
 #[allow(dead_code)]
-fn iter_and_replace<'a, F>(ca: &'a Utf8Chunked, val: &'a Utf8Chunked, f: F) -> Utf8Chunked
+fn iter_and_replace<'a, F>(ca: &'a StringChunked, val: &'a StringChunked, f: F) -> StringChunked
 where
     F: Fn(&'a str, &'a str) -> Cow<'a, str>,
 {
-    let mut out: Utf8Chunked = ca
+    let mut out: StringChunked = ca
         .into_iter()
         .zip(val)
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
@@ -686,12 +754,12 @@ fn is_literal_pat(pat: &str) -> bool {
 
 #[cfg(feature = "regex")]
 fn replace_n<'a>(
-    ca: &'a Utf8Chunked,
-    pat: &'a Utf8Chunked,
-    val: &'a Utf8Chunked,
+    ca: &'a StringChunked,
+    pat: &'a StringChunked,
+    val: &'a StringChunked,
     literal: bool,
     n: usize,
-) -> PolarsResult<Utf8Chunked> {
+) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
@@ -747,11 +815,11 @@ fn replace_n<'a>(
 
 #[cfg(feature = "regex")]
 fn replace_all<'a>(
-    ca: &'a Utf8Chunked,
-    pat: &'a Utf8Chunked,
-    val: &'a Utf8Chunked,
+    ca: &'a StringChunked,
+    pat: &'a StringChunked,
+    val: &'a StringChunked,
     literal: bool,
-) -> PolarsResult<Utf8Chunked> {
+) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
@@ -795,12 +863,11 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
     let column = &s[0];
     let pat = &s[1];
     let val = &s[2];
-
     let all = n < 0;
 
-    let column = column.utf8()?;
-    let pat = pat.utf8()?;
-    let val = val.utf8()?;
+    let column = column.str()?;
+    let pat = pat.str()?;
+    let val = val.str()?;
 
     if all {
         replace_all(column, pat, val, literal)
@@ -812,48 +879,61 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
 
 #[cfg(feature = "string_reverse")]
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     Ok(ca.str_reverse().into_series())
 }
 
 #[cfg(feature = "string_to_integer")]
 pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     ca.to_integer(base, strict).map(|ok| ok.into_series())
 }
-pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca.str_slice(start, length).into_series())
+pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
+    // Calculate the post-broadcast length and ensure everything is consistent.
+    let len = s
+        .iter()
+        .map(|series| series.len())
+        .filter(|l| *l != 1)
+        .max()
+        .unwrap_or(1);
+    polars_ensure!(
+        s.iter().all(|series| series.len() == 1 || series.len() == len),
+        ComputeError: "all series in `str_slice` should have equal or unit length"
+    );
+    let ca = s[0].str()?;
+    let offset = &s[1];
+    let length = &s[2];
+    Ok(ca.str_slice(offset, length)?.into_series())
 }
 
 #[cfg(feature = "string_encoding")]
 pub(super) fn hex_encode(s: &Series) -> PolarsResult<Series> {
-    Ok(s.utf8()?.hex_encode().into_series())
+    Ok(s.str()?.hex_encode().into_series())
 }
 
 #[cfg(feature = "binary_encoding")]
 pub(super) fn hex_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
-    s.utf8()?.hex_decode(strict).map(|ca| ca.into_series())
+    s.str()?.hex_decode(strict).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "string_encoding")]
 pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
-    Ok(s.utf8()?.base64_encode().into_series())
+    Ok(s.str()?.base64_encode().into_series())
 }
 
 #[cfg(feature = "binary_encoding")]
 pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
-    s.utf8()?.base64_decode(strict).map(|ca| ca.into_series())
+    s.str()?.base64_decode(strict).map(|ca| ca.into_series())
 }
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     ca.explode()
 }
 
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     ca.to_decimal(infer_len)
 }
 
@@ -863,6 +943,6 @@ pub(super) fn json_decode(
     dtype: Option<DataType>,
     infer_schema_len: Option<usize>,
 ) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     ca.json_decode(dtype, infer_schema_len)
 }

@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
-use super::utils::{build_extend_null_bits, ExtendNullBits};
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::{make_growable, Growable};
+use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, StructArray};
 use crate::bitmap::MutableBitmap;
 
 /// Concrete [`Growable`] for the [`StructArray`].
 pub struct GrowableStruct<'a> {
     arrays: Vec<&'a StructArray>,
-    validity: MutableBitmap,
+    validity: Option<MutableBitmap>,
     values: Vec<Box<dyn Growable<'a> + 'a>>,
-    extend_null_bits: Vec<ExtendNullBits<'a>>,
 }
 
 impl<'a> GrowableStruct<'a> {
@@ -25,11 +26,6 @@ impl<'a> GrowableStruct<'a> {
         if arrays.iter().any(|array| array.null_count() > 0) {
             use_validity = true;
         };
-
-        let extend_null_bits = arrays
-            .iter()
-            .map(|array| build_extend_null_bits(*array, use_validity))
-            .collect();
 
         let arrays = arrays
             .iter()
@@ -53,8 +49,7 @@ impl<'a> GrowableStruct<'a> {
         Self {
             arrays,
             values,
-            validity: MutableBitmap::with_capacity(capacity),
-            extend_null_bits,
+            validity: prepare_validity(use_validity, capacity),
         }
     }
 
@@ -63,15 +58,19 @@ impl<'a> GrowableStruct<'a> {
         let values = std::mem::take(&mut self.values);
         let values = values.into_iter().map(|mut x| x.as_box()).collect();
 
-        StructArray::new(self.arrays[0].data_type().clone(), values, validity.into())
+        StructArray::new(
+            self.arrays[0].data_type().clone(),
+            values,
+            validity.map(|v| v.into()),
+        )
     }
 }
 
 impl<'a> Growable<'a> for GrowableStruct<'a> {
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        (self.extend_null_bits[index])(&mut self.validity, start, len);
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
+        let array = *self.arrays.get_unchecked_release(index);
+        extend_validity(&mut self.validity, array, start, len);
 
-        let array = self.arrays[index];
         if array.null_count() == 0 {
             self.values
                 .iter_mut()
@@ -95,18 +94,17 @@ impl<'a> Growable<'a> for GrowableStruct<'a> {
         self.values
             .iter_mut()
             .for_each(|child| child.extend_validity(additional));
-        self.validity.extend_constant(additional, false);
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false);
+        }
     }
 
     #[inline]
     fn len(&self) -> usize {
-        // All children should have the same indexing, so just use the first
-        // one. If we don't have children, we might still have a validity
-        // array, so use that.
         if let Some(child) = self.values.first() {
             child.len()
         } else {
-            self.validity.len()
+            unreachable!()
         }
     }
 
@@ -126,7 +124,7 @@ impl<'a> From<GrowableStruct<'a>> for StructArray {
         StructArray::new(
             val.arrays[0].data_type().clone(),
             values,
-            val.validity.into(),
+            val.validity.map(|v| v.into()),
         )
     }
 }

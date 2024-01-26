@@ -9,7 +9,7 @@ use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
 
 #[inline]
-fn slice(
+pub(crate) fn slice(
     chunks: &[ArrayRef],
     offset: i64,
     slice_length: usize,
@@ -60,10 +60,22 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.length as usize
     }
 
-    /// Count the null values.
+    /// Return the number of null values in the ChunkedArray.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.null_count as usize
+    }
+
+    /// Set the null count directly.
+    ///
+    /// This can be useful after mutably adjusting the validity of the
+    /// underlying arrays.
+    ///
+    /// # Safety
+    /// The new null count must match the total null count of the underlying
+    /// arrays.
+    pub unsafe fn set_null_count(&mut self, null_count: IdxSize) {
+        self.null_count = null_count;
     }
 
     /// Check if ChunkedArray is empty.
@@ -86,16 +98,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             .iter()
             .map(|arr| arr.null_count())
             .sum::<usize>() as IdxSize;
-
-        if self.length <= 1 {
-            self.set_sorted_flag(IsSorted::Ascending)
-        }
     }
 
     pub fn rechunk(&self) -> Self {
         match self.dtype() {
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 panic!("implementation error")
             },
             _ => {
@@ -132,7 +140,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         match length {
             0 => match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_) => exec(),
+                DataType::Object(_, _) => exec(),
                 _ => self.clear(),
             },
             _ => exec(),
@@ -171,6 +179,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             None => std::cmp::min(10, self.len()),
         };
         self.slice(-(len as i64), len)
+    }
+
+    /// Remove empty chunks.
+    pub fn prune_empty_chunks(&mut self) {
+        let mut count = 0u32;
+        unsafe {
+            self.chunks_mut().retain(|arr| {
+                count += 1;
+                // Always keep at least one chunk
+                if count == 1 {
+                    true
+                } else {
+                    // Remove the empty chunks
+                    arr.len() > 0
+                }
+            })
+        }
     }
 }
 

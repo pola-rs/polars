@@ -18,16 +18,12 @@ pub fn time_to_time64ns(time: &NaiveTime) -> i64 {
 }
 
 impl TimeChunked {
-    /// Convert from Time into Utf8 with the given format.
+    /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn to_string(&self, format: &str) -> Utf8Chunked {
-        let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-        let fmted = format!("{}", time.format(format));
-
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
+    pub fn to_string(&self, format: &str) -> StringChunked {
+        let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
-            let mut mutarr =
-                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+            let mut mutarr = MutablePlString::with_capacity(arr.len());
 
             for opt in arr.into_iter() {
                 match opt {
@@ -36,28 +32,27 @@ impl TimeChunked {
                         buf.clear();
                         let timefmt = time64ns_to_time(*v).format(format);
                         write!(buf, "{timefmt}").unwrap();
-                        mutarr.push(Some(&buf))
+                        mutarr.push_value(&buf)
                     },
                 }
             }
 
-            let arr: Utf8Array<i64> = mutarr.into();
-            Box::new(arr)
+            mutarr.freeze().boxed()
         });
 
         ca.rename(self.name());
         ca
     }
 
-    /// Convert from Time into Utf8 with the given format.
+    /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.
-    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+    pub fn strftime(&self, format: &str) -> StringChunked {
         self.to_string(format)
     }
 
-    pub fn as_time_iter(&self) -> impl Iterator<Item = Option<NaiveTime>> + TrustedLen + '_ {
+    pub fn as_time_iter(&self) -> impl TrustedLen<Item = Option<NaiveTime>> + '_ {
         // we know the iterators len
         unsafe {
             self.downcast_iter()

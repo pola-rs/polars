@@ -5,8 +5,6 @@ use crate::types::NativeType;
 
 pub mod arithmetics;
 pub mod bitwise;
-#[cfg(feature = "compute_cast")]
-pub mod cast;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
 pub mod take;

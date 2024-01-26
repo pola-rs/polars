@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence, TextIO
 
 import polars._reexport as pl
-from polars.datatypes import N_INFER_DEFAULT, Utf8
+from polars.datatypes import N_INFER_DEFAULT, String
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 @deprecate_renamed_parameter(
     old_name="comment_char", new_name="comment_prefix", version="0.19.14"
 )
@@ -43,12 +45,12 @@ def read_csv(
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
-    rechunk: bool = True,
+    rechunk: bool = False,
     use_pyarrow: bool = False,
     storage_options: dict[str, Any] | None = None,
     skip_rows_after_header: int = 0,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
@@ -107,12 +109,12 @@ def read_csv(
         Before using this option, try to increase the number of lines used for schema
         inference with e.g `infer_schema_length=10000` or override automatic dtype
         inference for specific columns with the `dtypes` option or use
-        `infer_schema_length=0` to read all columns as `pl.Utf8` to check which
+        `infer_schema_length=0` to read all columns as `pl.String` to check which
         values might cause an issue.
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.Utf8`.
+        the column remains of data type `pl.String`.
         If `use_pyarrow=True`, dates will always be parsed.
     n_threads
         Number of threads to use in csv parsing.
@@ -122,7 +124,7 @@ def read_csv(
         If schema is inferred wrongly (e.g. as `pl.Int64` instead of `pl.Float64`),
         try to increase the number of lines used to infer the schema or override
         inferred dtype for those columns with `dtypes`.
-        If set to 0, all columns will be read as `pl.Utf8`.
+        If set to 0, all columns will be read as `pl.String`.
         If set to `None`, a full table scan will be done (slow).
     batch_size
         Number of lines to read into the buffer at once.
@@ -154,11 +156,12 @@ def read_csv(
         e.g. host, port, username, password, etc.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
-    row_count_name
-        If not None, this will insert a row count column with the given name into
-        the DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set).
+    row_index_name
+        Insert a row index column with the given name into the DataFrame as the first
+        column. If set to `None` (default), no row index column is created.
+    row_index_offset
+        Start the row index at this offset. Cannot be negative.
+        Only used if `row_index_name` is set.
     sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
@@ -187,6 +190,30 @@ def read_csv(
     Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
     an expensive operation.
 
+    Examples
+    --------
+    >>> pl.read_csv("data.csv", separator="|")  # doctest: +SKIP
+
+    Demonstrate use against a BytesIO object, parsing string dates.
+
+    >>> from io import BytesIO
+    >>> data = BytesIO(
+    ...     b"ID,Name,Birthday\n"
+    ...     b"1,Alice,1995-07-12\n"
+    ...     b"2,Bob,1990-09-20\n"
+    ...     b"3,Charlie,2002-03-08\n"
+    ... )
+    >>> pl.read_csv(data, try_parse_dates=True)
+    shape: (3, 3)
+    ┌─────┬─────────┬────────────┐
+    │ ID  ┆ Name    ┆ Birthday   │
+    │ --- ┆ ---     ┆ ---        │
+    │ i64 ┆ str     ┆ date       │
+    ╞═════╪═════════╪════════════╡
+    │ 1   ┆ Alice   ┆ 1995-07-12 │
+    │ 2   ┆ Bob     ┆ 1990-09-20 │
+    │ 3   ┆ Charlie ┆ 2002-03-08 │
+    └─────┴─────────┴────────────┘
     """
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
@@ -198,10 +225,11 @@ def read_csv(
     if columns and not has_header:
         for column in columns:
             if not column.startswith("column_"):
-                raise ValueError(
+                msg = (
                     "specified column names do not start with 'column_',"
                     " but autogenerated header names were requested"
                 )
+                raise ValueError(msg)
 
     if (
         use_pyarrow
@@ -273,13 +301,12 @@ def read_csv(
 
     if projection and dtypes and isinstance(dtypes, list):
         if len(projection) < len(dtypes):
-            raise ValueError(
-                "more dtypes overrides are specified than there are selected columns"
-            )
+            msg = "more dtypes overrides are specified than there are selected columns"
+            raise ValueError(msg)
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -289,9 +316,8 @@ def read_csv(
 
     if columns and dtypes and isinstance(dtypes, list):
         if len(columns) < len(dtypes):
-            raise ValueError(
-                "more dtypes overrides are specified than there are selected columns"
-            )
+            msg = "more dtypes overrides are specified than there are selected columns"
+            raise ValueError(msg)
 
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
@@ -306,10 +332,11 @@ def read_csv(
         # CSV parsing.
         if columns:
             if len(columns) < len(new_columns):
-                raise ValueError(
+                msg = (
                     "more new column names are specified than there are selected"
                     " columns"
                 )
+                raise ValueError(msg)
 
             # Get column names of requested columns.
             current_columns = columns[0 : len(new_columns)]
@@ -318,10 +345,11 @@ def read_csv(
 
             if projection:
                 if columns and len(columns) < len(new_columns):
-                    raise ValueError(
+                    msg = (
                         "more new column names are specified than there are selected"
                         " columns"
                     )
+                    raise ValueError(msg)
                 # Convert column indices from projection to 'column_1', 'column_2', ...
                 # column names.
                 current_columns = [
@@ -388,8 +416,8 @@ def read_csv(
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
-            row_count_name=row_count_name,
-            row_count_offset=row_count_offset,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
@@ -401,6 +429,8 @@ def read_csv(
     return df
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 @deprecate_renamed_parameter(
     old_name="comment_char", new_name="comment_prefix", version="0.19.14"
 )
@@ -427,8 +457,8 @@ def read_csv_batched(
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
@@ -484,17 +514,17 @@ def read_csv_batched(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema_length=0` to read all columns as
-        `pl.Utf8` to check which values might cause an issue.
+        `pl.String` to check which values might cause an issue.
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.Utf8`.
+        the column remains of data type `pl.String`.
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
     infer_schema_length
         Maximum number of lines to read to infer schema.
-        If set to 0, all columns will be read as `pl.Utf8`.
+        If set to 0, all columns will be read as `pl.String`.
         If set to `None`, a full table scan will be done (slow).
     batch_size
         Number of lines to read into the buffer at once.
@@ -516,11 +546,12 @@ def read_csv_batched(
         aggregating the chunks into a single array.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
-    row_count_name
-        If not None, this will insert a row count column with the given name into
-        the DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set).
+    row_index_name
+        Insert a row index column with the given name into the DataFrame as the first
+        column. If set to `None` (default), no row index column is created.
+    row_index_offset
+        Start the row index at this offset. Cannot be negative.
+        Only used if `row_index_name` is set.
     sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
@@ -550,7 +581,6 @@ def read_csv_batched(
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
     ...     print(df)
-    ...
 
     Read big CSV file in batches and write a CSV file for each "group" of interest.
 
@@ -571,28 +601,26 @@ def read_csv_batched(
     ...         seen_groups.add(group)
     ...
     ...     batches = reader.next_batches(100)
-    ...
-
     """
     projection, columns = handle_projection_columns(columns)
 
     if columns and not has_header:
         for column in columns:
             if not column.startswith("column_"):
-                raise ValueError(
+                msg = (
                     "specified column names do not start with 'column_',"
                     " but autogenerated header names were requested"
                 )
+                raise ValueError(msg)
 
     if projection and dtypes and isinstance(dtypes, list):
         if len(projection) < len(dtypes):
-            raise ValueError(
-                "more dtypes overrides are specified than there are selected columns"
-            )
+            msg = "more dtypes overrides are specified than there are selected columns"
+            raise ValueError(msg)
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -602,9 +630,8 @@ def read_csv_batched(
 
     if columns and dtypes and isinstance(dtypes, list):
         if len(columns) < len(dtypes):
-            raise ValueError(
-                "more dtypes overrides are specified than there are selected columns"
-            )
+            msg = "more dtypes overrides are specified than there are selected columns"
+            raise ValueError(msg)
 
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
@@ -619,9 +646,8 @@ def read_csv_batched(
         # CSV parsing.
         if columns:
             if len(columns) < len(new_columns):
-                raise ValueError(
-                    "more new column names are specified than there are selected columns"
-                )
+                msg = "more new column names are specified than there are selected columns"
+                raise ValueError(msg)
 
             # Get column names of requested columns.
             current_columns = columns[0 : len(new_columns)]
@@ -630,9 +656,8 @@ def read_csv_batched(
 
             if projection:
                 if columns and len(columns) < len(new_columns):
-                    raise ValueError(
-                        "more new column names are specified than there are selected columns"
-                    )
+                    msg = "more new column names are specified than there are selected columns"
+                    raise ValueError(msg)
                 # Convert column indices from projection to 'column_1', 'column_2', ...
                 # column names.
                 current_columns = [
@@ -691,8 +716,8 @@ def read_csv_batched(
         low_memory=low_memory,
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         sample_size=sample_size,
         eol_char=eol_char,
         new_columns=new_columns,
@@ -700,6 +725,8 @@ def read_csv_batched(
     )
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 @deprecate_renamed_parameter(
     old_name="comment_char", new_name="comment_prefix", version="0.19.14"
 )
@@ -724,8 +751,8 @@ def scan_csv(
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     try_parse_dates: bool = False,
     eol_char: str = "\n",
     new_columns: Sequence[str] | None = None,
@@ -780,7 +807,7 @@ def scan_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema_length=0` to read all columns as
-        `pl.Utf8` to check which values might cause an issue.
+        `pl.String` to check which values might cause an issue.
     cache
         Cache the result after reading.
     with_column_names
@@ -788,7 +815,7 @@ def scan_csv(
         this function will receive (and should return) a list of column names.
     infer_schema_length
         Maximum number of lines to read to infer schema.
-        If set to 0, all columns will be read as `pl.Utf8`.
+        If set to 0, all columns will be read as `pl.String`.
         If set to `None`, a full table scan will be done (slow).
     n_rows
         Stop reading from CSV file after reading `n_rows`.
@@ -801,15 +828,15 @@ def scan_csv(
         Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
-    row_count_name
-        If not None, this will insert a row count column with the given name into
+    row_index_name
+        If not None, this will insert a row index column with the given name into
         the DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set).
+    row_index_offset
+        Offset to start the row index column (only used if the name is set).
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats
         can be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.Utf8`.
+        the column remains of data type `pl.String`.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -876,7 +903,7 @@ def scan_csv(
     >>> pl.scan_csv(
     ...     path,
     ...     new_columns=["idx", "txt"],
-    ...     dtypes=[pl.UInt16, pl.Utf8],
+    ...     dtypes=[pl.UInt16, pl.String],
     ... ).collect()
     shape: (4, 2)
     ┌─────┬──────┐
@@ -889,15 +916,14 @@ def scan_csv(
     │ 3   ┆ to   │
     │ 4   ┆ read │
     └─────┴──────┘
-
     """
     if not new_columns and isinstance(dtypes, Sequence):
-        raise TypeError(f"expected 'dtypes' dict, found {type(dtypes).__name__!r}")
+        msg = f"expected 'dtypes' dict, found {type(dtypes).__name__!r}"
+        raise TypeError(msg)
     elif new_columns:
         if with_column_names:
-            raise ValueError(
-                "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
-            )
+            msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
+            raise ValueError(msg)
         if dtypes and isinstance(dtypes, Sequence):
             dtypes = dict(zip(new_columns, dtypes))
 
@@ -936,8 +962,8 @@ def scan_csv(
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
         encoding=encoding,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         try_parse_dates=try_parse_dates,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,

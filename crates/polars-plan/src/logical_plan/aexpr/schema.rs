@@ -1,7 +1,9 @@
 use super::*;
 
 fn float_type(field: &mut Field) {
-    if field.dtype.is_numeric() && !matches!(&field.dtype, DataType::Float32) {
+    if (field.dtype.is_numeric() || field.dtype == DataType::Boolean)
+        && field.dtype != DataType::Float32
+    {
         field.coerce(DataType::Float64)
     }
 }
@@ -17,7 +19,7 @@ impl AExpr {
         use AExpr::*;
         use DataType::*;
         match self {
-            Count => Ok(Field::new(COUNT, IDX_DTYPE)),
+            Len => Ok(Field::new(LEN, IDX_DTYPE)),
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)
@@ -81,7 +83,18 @@ impl AExpr {
                 Ok(field)
             },
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
-            Gather { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
+            Gather {
+                expr,
+                returns_scalar,
+                ..
+            } => {
+                let ctxt = if *returns_scalar {
+                    Context::Default
+                } else {
+                    ctxt
+                };
+                arena.get(*expr).to_field(schema, ctxt, arena)
+            },
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
@@ -210,8 +223,12 @@ impl AExpr {
                 function.get_field(schema, ctxt, &fields)
             },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
-            Wildcard => panic!("should be no wildcard at this point"),
-            Nth(_) => panic!("should be no nth at this point"),
+            Wildcard => {
+                polars_bail!(ComputeError: "wildcard column selection not supported at this point")
+            },
+            Nth(_) => {
+                polars_bail!(ComputeError: "nth column selection not supported at this point")
+            },
         }
     }
 }
@@ -239,7 +256,7 @@ fn get_arithmetic_field(
     let mut left_field = left_ae.to_field(schema, ctxt, arena)?;
 
     let super_type = match op {
-        Operator::Minus => {
+        Operator::Minus if left_field.dtype.is_temporal() => {
             let right_type = right_ae.get_type(schema, ctxt, arena)?;
             match (&left_field.dtype, right_type) {
                 // T - T != T if T is a datetime / date

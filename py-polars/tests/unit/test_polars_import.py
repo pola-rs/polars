@@ -10,10 +10,10 @@ import pytest
 import polars as pl
 from polars import selectors as cs
 
-# set a maximum cutoff at 0.2 secs; note that we are typically much faster
+# set a maximum cutoff at 0.25 secs; note that we are typically much faster
 # than this (more like ~0.07 secs, depending on hardware), but we allow a
 # margin of error to account for frequent noise from slow/contended CI.
-MAX_ALLOWED_IMPORT_TIME = 200_000  # << microseconds
+MAX_ALLOWED_IMPORT_TIME = 250_000  # << microseconds
 
 
 def _import_time_from_frame(tm: pl.DataFrame) -> int:
@@ -27,7 +27,7 @@ def _import_time_from_frame(tm: pl.DataFrame) -> int:
 def _import_timings() -> bytes:
     # assemble suitable command to get polars module import timing;
     # run in a separate process to ensure clean timing results.
-    cmd = f'{sys.executable} -X importtime -c "import polars"'
+    cmd = f'{sys.executable} -S -X importtime -c "import polars"'
     return (
         subprocess.run(cmd, shell=True, capture_output=True)
         .stderr.replace(b"import time:", b"")
@@ -95,6 +95,5 @@ def test_polars_import() -> None:
         # ensure that we do not have an import speed regression.
         if polars_import_time > MAX_ALLOWED_IMPORT_TIME:
             import_time_ms = polars_import_time // 1_000
-            raise AssertionError(
-                f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
-            )
+            msg = f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
+            raise AssertionError(msg)

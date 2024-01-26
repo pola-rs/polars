@@ -46,6 +46,7 @@ Polars development flow relies on both Rust and Python, which means setting up y
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
 _Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
+_Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links._
 
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
@@ -96,7 +97,6 @@ Note that we do not actually use the [pre-commit](https://pre-commit.com/) tool.
 We use the Makefile to conveniently run the following formatting and linting tools:
 
 - [ruff](https://github.com/charliermarsh/ruff)
-- [blackdoc](https://github.com/keewis/blackdoc)
 - [mypy](http://mypy-lang.org/)
 - [rustfmt](https://github.com/rust-lang/rustfmt)
 - [clippy](https://doc.rust-lang.org/nightly/clippy/index.html)
@@ -142,7 +142,7 @@ If you are stuck or unsure about your solution, feel free to open a draft pull r
 
 ## Contributing to documentation
 
-The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
+The most important components of Polars documentation are the [user guide](https://docs.pola.rs/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 
@@ -208,7 +208,7 @@ Before committing, install `dprint` (see above) and run `dprint fmt` from the `d
 
 ### API reference
 
-Polars has separate API references for [Rust](https://pola-rs.github.io/polars/docs/rust/dev/polars/) and [Python](https://pola-rs.github.io/polars/docs/python/dev/reference/index.html).
+Polars has separate API references for [Rust](https://docs.pola.rs/docs/rust/dev/polars/) and [Python](https://docs.pola.rs/docs/python/dev/reference/index.html).
 These are generated directly from the codebase, so in order to contribute, you will have to follow the steps outlined in [this section](#contributing-to-the-codebase) above.
 
 #### Rust

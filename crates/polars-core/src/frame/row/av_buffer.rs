@@ -38,7 +38,7 @@ pub enum AnyValueBuffer<'a> {
     Time(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
-    Utf8(Utf8ChunkedBuilder),
+    String(StringChunkedBuilder),
     Null(NullChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
@@ -66,9 +66,9 @@ impl<'a> AnyValueBuffer<'a> {
             (Float64(builder), AnyValue::Null) => builder.append_null(),
             (Float32(builder), val) => builder.append_value(val.extract()?),
             (Float64(builder), val) => builder.append_value(val.extract()?),
-            (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
-            (Utf8(builder), AnyValue::Utf8Owned(v)) => builder.append_value(v),
-            (Utf8(builder), AnyValue::Null) => builder.append_null(),
+            (String(builder), AnyValue::String(v)) => builder.append_value(v),
+            (String(builder), AnyValue::StringOwned(v)) => builder.append_value(v),
+            (String(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-i8")]
             (Int8(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-i8")]
@@ -89,6 +89,8 @@ impl<'a> AnyValueBuffer<'a> {
             (Date(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Date(v)) => builder.append_value(v),
+            #[cfg(feature = "dtype-date")]
+            (Date(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
@@ -98,6 +100,10 @@ impl<'a> AnyValueBuffer<'a> {
                 let v = convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(builder, _, _), val) if val.is_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-duration")]
             (Duration(builder, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-duration")]
@@ -105,16 +111,20 @@ impl<'a> AnyValueBuffer<'a> {
                 let v = convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
+            #[cfg(feature = "dtype-duration")]
+            (Duration(builder, _), val) if val.is_numeric() => builder.append_value(val.extract()?),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Null) => builder.append_null(),
+            #[cfg(feature = "dtype-time")]
+            (Time(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
             (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
             (All(_, vals), v) => vals.push(v),
 
             // dynamic types
-            (Utf8(builder), av) => match av {
+            (String(builder), av) => match av {
                 AnyValue::Int64(v) => builder.append_value(&format!("{v}")),
                 AnyValue::Float64(v) => builder.append_value(&format!("{v}")),
                 AnyValue::Boolean(true) => builder.append_value("true"),
@@ -204,15 +214,8 @@ impl<'a> AnyValueBuffer<'a> {
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
-            Utf8(b) => {
-                let avg_values_len = b
-                    .builder
-                    .values()
-                    .len()
-                    .saturating_div(b.builder.capacity() + 1)
-                    + 1;
-                let mut new =
-                    Utf8ChunkedBuilder::new(b.field.name(), capacity, avg_values_len * capacity);
+            String(b) => {
+                let mut new = StringChunkedBuilder::new(b.field.name(), capacity);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
@@ -294,7 +297,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
-            Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBuffer::String(StringChunkedBuilder::new("", len)),
             Null => AnyValueBuffer::Null(NullChunkedBuilder::new("", 0)),
             // Struct and List can be recursive so use anyvalues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
@@ -320,7 +323,7 @@ pub enum AnyValueBufferTrusted<'a> {
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
-    Utf8(Utf8ChunkedBuilder),
+    String(StringChunkedBuilder),
     #[cfg(feature = "dtype-struct")]
     // not the trusted variant!
     Struct(Vec<(AnyValueBuffer<'a>, SmartString)>),
@@ -352,7 +355,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             UInt64(builder) => builder.append_null(),
             Float32(builder) => builder.append_null(),
             Float64(builder) => builder.append_null(),
-            Utf8(builder) => builder.append_null(),
+            String(builder) => builder.append_null(),
             #[cfg(feature = "dtype-struct")]
             Struct(builders) => {
                 for (b, _) in builders.iter_mut() {
@@ -453,7 +456,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type
     /// belonging to [`Self`]. This should only be used with physical buffers
     ///
-    /// If a type is not primitive or utf8, the anyvalue will be converted to static
+    /// If a type is not primitive or String, the anyvalue will be converted to static
     ///
     /// # Safety
     /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is owned.
@@ -464,8 +467,8 @@ impl<'a> AnyValueBufferTrusted<'a> {
             AnyValue::Null => self.add_null(),
             _ => {
                 match self {
-                    Utf8(builder) => {
-                        let AnyValue::Utf8Owned(v) = val else {
+                    String(builder) => {
+                        let AnyValue::StringOwned(v) = val else {
                             unreachable_unchecked_release!()
                         };
                         builder.append_value(v)
@@ -503,8 +506,8 @@ impl<'a> AnyValueBufferTrusted<'a> {
             AnyValue::Null => self.add_null(),
             _ => {
                 match self {
-                    Utf8(builder) => {
-                        let AnyValue::Utf8(v) = val else {
+                    String(builder) => {
+                        let AnyValue::String(v) = val else {
                             unreachable_unchecked_release!()
                         };
                         builder.append_value(v)
@@ -573,12 +576,8 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
-            Utf8(b) => {
-                let avg_values_len =
-                    (b.builder.values().len() as f64) / ((b.builder.capacity() + 1) as f64) + 1.0;
-                // alloc some extra to reduce realloc prob.
-                let new_values_len = (avg_values_len * capacity as f64 * 1.3) as usize;
-                let mut new = Utf8ChunkedBuilder::new(b.field.name(), capacity, new_values_len);
+            String(b) => {
+                let mut new = StringChunkedBuilder::new(b.field.name(), capacity);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
@@ -656,7 +655,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
             UInt16 => AnyValueBufferTrusted::UInt16(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBufferTrusted::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBufferTrusted::Float64(PrimitiveChunkedBuilder::new("", len)),
-            Utf8 => AnyValueBufferTrusted::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBufferTrusted::String(StringChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let buffers = fields

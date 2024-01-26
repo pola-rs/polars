@@ -12,7 +12,6 @@ from polars.utils.deprecation import deprecate_renamed_function
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
-
 if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import IntoExpr
@@ -49,7 +48,6 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ true  ┆ null  ┆ y   ┆ null  │
     │ true  ┆ true  ┆ z   ┆ true  │
     └───────┴───────┴─────┴───────┘
-
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
     return wrap_expr(plr.all_horizontal(pyexprs))
@@ -86,7 +84,6 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ true  ┆ null  ┆ y   ┆ true  │
     │ null  ┆ null  ┆ z   ┆ null  │
     └───────┴───────┴─────┴───────┘
-
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
     return wrap_expr(plr.any_horizontal(pyexprs))
@@ -111,7 +108,7 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.max_horizontal("a", "b"))
+    >>> df.with_columns(max=pl.max_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ max │
@@ -122,7 +119,6 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 8   ┆ 5    ┆ y   ┆ 8   │
     │ 3   ┆ null ┆ z   ┆ 3   │
     └─────┴──────┴─────┴─────┘
-
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
     return wrap_expr(plr.max_horizontal(pyexprs))
@@ -147,7 +143,7 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.min_horizontal("a", "b"))
+    >>> df.with_columns(min=pl.min_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ min │
@@ -158,7 +154,6 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 8   ┆ 5    ┆ y   ┆ 5   │
     │ 3   ┆ null ┆ z   ┆ 3   │
     └─────┴──────┴─────┴─────┘
-
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
     return wrap_expr(plr.min_horizontal(pyexprs))
@@ -183,7 +178,7 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.sum_horizontal("a", "b"))
+    >>> df.with_columns(sum=pl.sum_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ sum │
@@ -194,7 +189,6 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 8   ┆ 5    ┆ y   ┆ 13  │
     │ 3   ┆ null ┆ z   ┆ 3   │
     └─────┴──────┴─────┴─────┘
-
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
     return wrap_expr(plr.sum_horizontal(pyexprs))
@@ -230,7 +224,6 @@ def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 8   ┆ 5    ┆ y   ┆ {8,13}    │
     │ 3   ┆ null ┆ z   ┆ {3,null}  │
     └─────┴──────┴─────┴───────────┘
-
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
     exprs_wrapped = [wrap_expr(e) for e in pyexprs]
@@ -254,6 +247,5 @@ def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     *exprs
         Column(s) to use in the aggregation. Accepts expression input. Strings are
         parsed as column names, other non-expression inputs are parsed as literals.
-
     """
     return cum_sum_horizontal(*exprs).alias("cumsum")

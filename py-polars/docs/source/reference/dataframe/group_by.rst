@@ -16,6 +16,7 @@ This namespace is available after calling :code:`DataFrame.group_by(...)`.
     GroupBy.first
     GroupBy.head
     GroupBy.last
+    GroupBy.len
     GroupBy.map_groups
     GroupBy.max
     GroupBy.mean

@@ -5,7 +5,6 @@ pub mod arg_sort_multiple;
 mod categorical;
 
 use std::cmp::Ordering;
-use std::iter::FromIterator;
 
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::array::ValueSize;
@@ -157,7 +156,7 @@ where
         };
 
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(),
+            T::get_dtype().to_arrow(true),
             vals.into(),
             Some(validity.into()),
         );
@@ -289,12 +288,12 @@ fn ordering_other_columns<'a>(
     Ordering::Equal
 }
 
-impl ChunkSort<Utf8Type> for Utf8Chunked {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
-        unsafe { self.as_binary().sort_with(options).to_utf8() }
+impl ChunkSort<StringType> for StringChunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<StringType> {
+        unsafe { self.as_binary().sort_with(options).to_string() }
     }
 
-    fn sort(&self, descending: bool) -> Utf8Chunked {
+    fn sort(&self, descending: bool) -> StringChunked {
         self.sort_with(SortOptions {
             descending,
             nulls_last: false,
@@ -323,11 +322,89 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
 impl ChunkSort<BinaryType> for BinaryChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BinaryType> {
         sort_with_fast_path!(self, options);
-        let mut v: Vec<&[u8]> = if self.null_count() > 0 {
-            Vec::from_iter(self.into_iter().flatten())
+
+        let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
+        for arr in self.downcast_iter() {
+            v.extend(arr.non_null_values_iter());
+        }
+        sort_unstable_by_branch(
+            v.as_mut_slice(),
+            options.descending,
+            Ord::cmp,
+            options.multithreaded,
+        );
+
+        let len = self.len();
+        let null_count = self.null_count();
+        let mut mutable = MutableBinaryViewArray::with_capacity(len);
+
+        if options.nulls_last {
+            for row in v {
+                mutable.push_value_ignore_validity(row)
+            }
+            mutable.extend_null(null_count);
         } else {
-            Vec::from_iter(self.into_no_null_iter())
+            mutable.extend_null(null_count);
+            for row in v {
+                mutable.push_value(row)
+            }
+        }
+        let mut ca = ChunkedArray::with_chunk(self.name(), mutable.into());
+
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
         };
+        ca.set_sorted_flag(s);
+        ca
+    }
+
+    fn sort(&self, descending: bool) -> ChunkedArray<BinaryType> {
+        self.sort_with(SortOptions {
+            descending,
+            nulls_last: false,
+            multithreaded: true,
+            maintain_order: false,
+        })
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort::arg_sort(
+            self.name(),
+            self.downcast_iter().map(|arr| arr.iter()),
+            options,
+            self.null_count(),
+            self.len(),
+        )
+    }
+
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        args_validate(self, &options.other, &options.descending)?;
+
+        let mut count: IdxSize = 0;
+
+        let mut vals = Vec::with_capacity(self.len());
+        for arr in self.downcast_iter() {
+            for v in arr {
+                let i = count;
+                count += 1;
+                vals.push((i, v))
+            }
+        }
+
+        arg_sort_multiple_impl(vals, options)
+    }
+}
+
+impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
+    fn sort_with(&self, options: SortOptions) -> BinaryOffsetChunked {
+        sort_with_fast_path!(self, options);
+
+        let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
+        for arr in self.downcast_iter() {
+            v.extend(arr.non_null_values_iter());
+        }
 
         sort_unstable_by_branch(
             v.as_mut_slice(),
@@ -410,7 +487,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         ca
     }
 
-    fn sort(&self, descending: bool) -> BinaryChunked {
+    fn sort(&self, descending: bool) -> BinaryOffsetChunked {
         self.sort_with(SortOptions {
             descending,
             nulls_last: false,
@@ -440,14 +517,16 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         args_validate(self, &options.other, &options.descending)?;
 
         let mut count: IdxSize = 0;
-        let vals: Vec<_> = self
-            .into_iter()
-            .map(|v| {
+
+        let mut vals = Vec::with_capacity(self.len());
+        for arr in self.downcast_iter() {
+            for v in arr {
                 let i = count;
                 count += 1;
-                (i, v)
-            })
-            .collect_trusted();
+                vals.push((i, v))
+            }
+        }
+
         arg_sort_multiple_impl(vals, options)
     }
 }
@@ -538,9 +617,9 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
     use DataType::*;
     let out = match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        Categorical(_, _) => s.rechunk(),
+        Categorical(_, _) | Enum(_, _) => s.rechunk(),
         Binary | Boolean => s.clone(),
-        Utf8 => s.cast(&Binary).unwrap(),
+        String => s.cast(&Binary).unwrap(),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap();
@@ -687,7 +766,7 @@ mod test {
     fn test_arg_sort_multiple() -> PolarsResult<()> {
         let a = Int32Chunked::new("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
         let b = Int64Chunked::new("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
-        let c = Utf8Chunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
+        let c = StringChunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
         let df = DataFrame::new(vec![a.into_series(), b.into_series(), c.into_series()])?;
 
         let out = df.sort(["a", "b", "c"], false, false)?;
@@ -706,7 +785,7 @@ mod test {
         );
 
         // now let the first sort be a string
-        let a = Utf8Chunked::new("a", &["a", "b", "c", "a", "b", "c"]).into_series();
+        let a = StringChunked::new("a", &["a", "b", "c", "a", "b", "c"]).into_series();
         let b = Int32Chunked::new("b", &[5, 4, 2, 3, 4, 5]).into_series();
         let df = DataFrame::new(vec![a, b])?;
 
@@ -740,8 +819,8 @@ mod test {
     }
 
     #[test]
-    fn test_sort_utf8() {
-        let ca = Utf8Chunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
+    fn test_sort_string() {
+        let ca = StringChunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
@@ -780,7 +859,7 @@ mod test {
         assert_eq!(Vec::from(&out), expected);
 
         // no nulls
-        let ca = Utf8Chunked::new("a", &[Some("a"), Some("c"), Some("b")]);
+        let ca = StringChunked::new("a", &[Some("a"), Some("c"), Some("b")]);
         let out = ca.sort(false);
         let expected = &[Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);

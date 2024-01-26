@@ -14,7 +14,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    // Applies a function to all elements , regardless of whether they
+    // Applies a function to all elements, regardless of whether they
     // are null or not, after which the null mask is copied from the
     // original array.
     pub fn apply_values_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
@@ -68,13 +68,13 @@ where
                 let out: U::Array = arr
                     .values_iter()
                     .map(&mut op)
-                    .collect_arr_with_dtype(dtype.clone());
+                    .collect_arr_with_dtype(dtype.to_arrow(true));
                 out.with_validity_typed(arr.validity().cloned())
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op))
-                    .collect_arr_with_dtype(dtype.clone());
+                    .collect_arr_with_dtype(dtype.to_arrow(true));
                 out.with_validity_typed(arr.validity().cloned())
             }
         });
@@ -159,7 +159,7 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow())
+            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow(true))
         };
 
         if owned_arr.values().is_sliced() {
@@ -381,19 +381,17 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     }
 }
 
-impl Utf8Chunked {
+impl StringChunked {
     pub fn apply_mut<'a, F>(&'a self, mut f: F) -> Self
     where
         F: FnMut(&'a str) -> &'a str,
     {
-        use arrow::legacy::array::utf8::Utf8FromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
-            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-            let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+            let new = Utf8ViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
-        Utf8Chunked::from_chunk_iter(self.name(), chunks)
+        StringChunked::from_chunk_iter(self.name(), chunks)
     }
 
     /// Utility that reuses an string buffer to amortize allocations.
@@ -417,18 +415,16 @@ impl BinaryChunked {
     where
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
-        use arrow::legacy::array::utf8::BinaryFromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
-            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-            let new = BinaryArray::<i64>::from_values_iter(iter, arr.len(), value_size);
+            let new = BinaryViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
         BinaryChunked::from_chunk_iter(self.name(), chunks)
     }
 }
 
-impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
+impl<'a> ChunkApply<'a, &'a str> for StringChunked {
     type FuncRet = Cow<'a, str>;
 
     fn apply_values<F>(&'a self, f: F) -> Self
@@ -548,12 +544,12 @@ where
     }
 }
 
-impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
-    fn apply_kernel(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> Self {
+impl ChunkApplyKernel<Utf8ViewArray> for StringChunked {
+    fn apply_kernel(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {
@@ -562,12 +558,12 @@ impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     }
 }
 
-impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> Self {
+impl ChunkApplyKernel<BinaryViewArray> for BinaryChunked {
+    fn apply_kernel(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {

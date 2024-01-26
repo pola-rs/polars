@@ -1,6 +1,7 @@
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_projection_on_semi_join_4789() -> None:
@@ -22,13 +23,13 @@ def test_projection_on_semi_join_4789() -> None:
 def test_melt_projection_pd_block_4997() -> None:
     assert (
         pl.DataFrame({"col1": ["a"], "col2": ["b"]})
-        .with_row_count()
+        .with_row_index()
         .lazy()
-        .melt(id_vars="row_nr")
-        .group_by("row_nr")
+        .melt(id_vars="index")
+        .group_by("index")
         .agg(pl.col("variable").alias("result"))
         .collect()
-    ).to_dict(as_series=False) == {"row_nr": [0], "result": [["col1", "col2"]]}
+    ).to_dict(as_series=False) == {"index": [0], "result": [["col1", "col2"]]}
 
 
 def test_double_projection_pushdown() -> None:
@@ -82,6 +83,34 @@ def test_unnest_projection_pushdown() -> None:
         "col": ["z", "z", "c", "c"],
         "value": [1, 2, 2, 3],
     }
+
+
+def test_hconcat_projection_pushdown() -> None:
+    lf1 = pl.LazyFrame({"a": [0, 1, 2], "b": [3, 4, 5]})
+    lf2 = pl.LazyFrame({"c": [6, 7, 8], "d": [9, 10, 11]})
+    query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
+
+    explanation = query.explain()
+    assert explanation.count("PROJECT 1/2 COLUMNS") == 2
+
+    out = query.collect()
+    expected = pl.DataFrame({"a": [0, 1, 2], "d": [9, 10, 11]})
+    assert_frame_equal(out, expected)
+
+
+def test_hconcat_projection_pushdown_length_maintained() -> None:
+    # We can't eliminate the second input completely as this affects
+    # the length of the result, even though no columns are used.
+    lf1 = pl.LazyFrame({"a": [0, 1], "b": [2, 3]})
+    lf2 = pl.LazyFrame({"c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
+    query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
+
+    explanation = query.explain()
+    assert "PROJECT 1/2 COLUMNS" in explanation
+
+    out = query.collect()
+    expected = pl.DataFrame({"a": [0, 1, None, None]})
+    assert_frame_equal(out, expected)
 
 
 def test_unnest_columns_available() -> None:
@@ -246,18 +275,22 @@ def test_merge_sorted_projection_pd() -> None:
 
 
 def test_distinct_projection_pd_7578() -> None:
-    df = pl.DataFrame(
+    lf = pl.LazyFrame(
         {
             "foo": ["0", "1", "2", "1", "2"],
             "bar": ["a", "a", "a", "b", "b"],
         }
     )
 
-    q = df.lazy().unique().group_by("bar").agg(pl.count())
-    assert q.collect().sort("bar").to_dict(as_series=False) == {
-        "bar": ["a", "b"],
-        "count": [3, 2],
-    }
+    result = lf.unique().group_by("bar").agg(pl.len())
+    expected = pl.LazyFrame(
+        {
+            "bar": ["a", "b"],
+            "len": [3, 2],
+        },
+        schema_overrides={"len": pl.UInt32},
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_join_suffix_collision_9562() -> None:
@@ -309,9 +342,9 @@ def test_projection_join_names_9955() -> None:
     q = q.select(batting.columns)
 
     assert q.collect().schema == {
-        "playerID": pl.Utf8,
+        "playerID": pl.String,
         "yearID": pl.Int64,
-        "lgID": pl.Utf8,
+        "lgID": pl.String,
     }
 
 
@@ -322,6 +355,37 @@ def test_projection_rename_10595() -> None:
 
 
 def test_projection_count_11841() -> None:
-    pl.LazyFrame({"x": 1}).select(records=pl.count()).select(
+    pl.LazyFrame({"x": 1}).select(records=pl.len()).select(
         pl.lit(1).alias("x"), pl.all()
     ).collect()
+
+
+def test_schema_outer_join_projection_pd_13287() -> None:
+    lf = pl.LazyFrame({"a": [1, 1], "b": [2, 3]})
+    lf2 = pl.LazyFrame({"a": [1, 1], "c": [2, 3]})
+
+    assert lf.join(
+        lf2,
+        how="outer",
+        left_on="a",
+        right_on="c",
+    ).with_columns(
+        pl.col("a").fill_null(pl.col("c")),
+    ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
+
+
+def test_projection_pushdown_outer_join_duplicates() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    assert (
+        df1.join(df2, on="a", how="outer").with_columns(c=0).select("a", "c").collect()
+    ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
+
+
+def test_rolling_key_projected_13617() -> None:
+    df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
+    ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
+    plan = ldf.explain(projection_pushdown=True)
+    assert r'DF ["idx", "value"]; PROJECT 2/2 COLUMNS' in plan
+    out = ldf.collect(projection_pushdown=True)
+    assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}

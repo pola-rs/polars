@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -29,6 +29,20 @@ def test_concat_align() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_concat_align_no_common_cols() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
+    df2 = pl.DataFrame({"c": [3, 4], "d": [3, 4]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="'align' strategy requires at least one common column",
+    ):
+        pl.concat((df1, df2), how="align")
+
+
+data2 = pl.DataFrame({"field3": [3, 4], "field4": ["C", "D"]})
 
 
 @pytest.mark.parametrize(
@@ -75,11 +89,16 @@ def test_concat_diagonal(
         assert_frame_equal(out, expected)
 
 
-def test_concat_horizontal() -> None:
+@pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal(lazy: bool) -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
     b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "e": [1, 2, 1, 2]})
 
-    out = pl.concat([a, b], how="horizontal")
+    if lazy:
+        out = pl.concat([a.lazy(), b.lazy()], how="horizontal").collect()
+    else:
+        out = pl.concat([a, b], how="horizontal")
+
     expected = pl.DataFrame(
         {
             "a": ["a", "b", None, None],
@@ -90,6 +109,57 @@ def test_concat_horizontal() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal_three_dfs(lazy: bool) -> None:
+    a = pl.DataFrame({"a1": [1, 2, 3], "a2": ["a", "b", "c"]})
+    b = pl.DataFrame({"b1": [0.25, 0.5]})
+    c = pl.DataFrame({"c1": [1, 2, 3, 4], "c2": [5, 6, 7, 8], "c3": [9, 10, 11, 12]})
+
+    if lazy:
+        out = pl.concat([a.lazy(), b.lazy(), c.lazy()], how="horizontal").collect()
+    else:
+        out = pl.concat([a, b, c], how="horizontal")
+
+    expected = pl.DataFrame(
+        {
+            "a1": [1, 2, 3, None],
+            "a2": ["a", "b", "c", None],
+            "b1": [0.25, 0.5, None, None],
+            "c1": [1, 2, 3, 4],
+            "c2": [5, 6, 7, 8],
+            "c3": [9, 10, 11, 12],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal_single_df(lazy: bool) -> None:
+    a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
+
+    if lazy:
+        out = pl.concat([a.lazy()], how="horizontal").collect()
+    else:
+        out = pl.concat([a], how="horizontal")
+
+    expected = a
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal_duplicate_col(lazy: bool) -> None:
+    a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
+    b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "a": [1, 2, 1, 2]})
+
+    if lazy:
+        dfs: list[pl.DataFrame] | list[pl.LazyFrame] = [a.lazy(), b.lazy()]
+    else:
+        dfs = [a, b]
+
+    with pytest.raises(pl.DuplicateError):
+        pl.concat(dfs, how="horizontal")  # type: ignore[type-var]
 
 
 def test_concat_vertical() -> None:
@@ -334,21 +404,11 @@ def test_fill_null_unknown_output_type() -> None:
     }
 
 
-def test_abs_logical_type() -> None:
-    s = pl.Series([timedelta(hours=1), timedelta(hours=-1)])
-    assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
-
-
 def test_approx_n_unique() -> None:
     df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
 
     assert_frame_equal(
         df1.select(pl.approx_n_unique("b")),
-        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
-    )
-
-    assert_frame_equal(
-        df1.select(pl.approx_n_unique(pl.col("b"))),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
@@ -359,62 +419,66 @@ def test_approx_n_unique() -> None:
 
 
 def test_lazy_functions() -> None:
-    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.select(pl.count("a"))
-    assert list(out["a"]) == [3]
-    out = df.select(
-        [
-            pl.var("b").alias("1"),
-            pl.std("b").alias("2"),
-            pl.max("b").alias("3"),
-            pl.min("b").alias("4"),
-            pl.sum("b").alias("5"),
-            pl.mean("b").alias("6"),
-            pl.median("b").alias("7"),
-            pl.n_unique("b").alias("8"),
-            pl.first("b").alias("9"),
-            pl.last("b").alias("10"),
-        ]
+    df = pl.DataFrame(
+        {
+            "a": ["foo", "bar", "foo"],
+            "b": [1, 2, 3],
+            "c": [-1, 2.0, 4.0],
+        }
     )
-    expected = 1.0
-    assert np.isclose(out.to_series(0), expected)
-    assert np.isclose(df["b"].var(), expected)  # type: ignore[arg-type]
 
-    expected = 1.0
-    assert np.isclose(out.to_series(1), expected)
-    assert np.isclose(df["b"].std(), expected)  # type: ignore[arg-type]
+    # test function expressions against frame
+    out = df.select(
+        pl.var("b").name.suffix("_var"),
+        pl.std("b").name.suffix("_std"),
+        pl.max("a", "b").name.suffix("_max"),
+        pl.min("a", "b").name.suffix("_min"),
+        pl.sum("b", "c").name.suffix("_sum"),
+        pl.mean("b", "c").name.suffix("_mean"),
+        pl.median("c", "b").name.suffix("_median"),
+        pl.n_unique("b", "a").name.suffix("_n_unique"),
+        pl.first("a").name.suffix("_first"),
+        pl.first("b", "c").name.suffix("_first"),
+        pl.last("c", "b", "a").name.suffix("_last"),
+    )
+    expected: dict[str, list[Any]] = {
+        "b_var": [1.0],
+        "b_std": [1.0],
+        "a_max": ["foo"],
+        "b_max": [3],
+        "a_min": ["bar"],
+        "b_min": [1],
+        "b_sum": [6],
+        "c_sum": [5.0],
+        "b_mean": [2.0],
+        "c_mean": [5 / 3],
+        "c_median": [2.0],
+        "b_median": [2.0],
+        "b_n_unique": [3],
+        "a_n_unique": [2],
+        "a_first": ["foo"],
+        "b_first": [1],
+        "c_first": [-1.0],
+        "c_last": [4.0],
+        "b_last": [3],
+        "a_last": ["foo"],
+    }
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            data=expected,
+            schema_overrides={
+                "a_n_unique": pl.UInt32,
+                "b_n_unique": pl.UInt32,
+            },
+        ),
+    )
 
-    expected = 3
-    assert np.isclose(out.to_series(2), expected)
-    assert np.isclose(df["b"].max(), expected)  # type: ignore[arg-type]
-
-    expected = 1
-    assert np.isclose(out.to_series(3), expected)
-    assert np.isclose(df["b"].min(), expected)  # type: ignore[arg-type]
-
-    expected = 6
-    assert np.isclose(out.to_series(4), expected)
-    assert np.isclose(df["b"].sum(), expected)
-
-    expected = 2
-    assert np.isclose(out.to_series(5), expected)
-    assert np.isclose(df["b"].mean(), expected)  # type: ignore[arg-type]
-
-    expected = 2
-    assert np.isclose(out.to_series(6), expected)
-    assert np.isclose(df["b"].median(), expected)  # type: ignore[arg-type]
-
-    expected = 3
-    assert np.isclose(out.to_series(7), expected)
-    assert np.isclose(df["b"].n_unique(), expected)
-
-    expected = 1
-    assert np.isclose(out.to_series(8), expected)
-    assert np.isclose(df["b"][0], expected)
-
-    expected = 3
-    assert np.isclose(out.to_series(9), expected)
-    assert np.isclose(df["b"][-1], expected)
+    # test function expressions against series
+    for name, value in expected.items():
+        col, fn = name.split("_", 1)
+        if series_fn := getattr(df[col], fn, None):
+            assert series_fn() == value[0]
 
     # regex selection
     out = df.select(
@@ -425,8 +489,21 @@ def test_lazy_functions() -> None:
         ]
     )
     assert out.rows() == [
-        ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
+        ({"a": "foo", "b": 3}, {"b": 1, "c": -1.0}, {"a": None, "c": 5.0})
     ]
+
+
+def test_count() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1], "b": [None, "xx", "yy"]})
+    out = df.select(pl.count("a"))
+    assert list(out["a"]) == [3]
+
+    for count_expr in (
+        pl.count("b", "a"),
+        [pl.count("b"), pl.count("a")],
+    ):
+        out = df.select(count_expr)  # type: ignore[arg-type]
+        assert out.rows() == [(2, 3)]
 
 
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:

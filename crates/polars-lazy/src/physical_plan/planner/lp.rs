@@ -38,7 +38,7 @@ fn partitionable_gb(
                 let depth = (expr_arena).iter(*agg).count();
 
                 // These single expressions are partitionable
-                if matches!(aexpr, AExpr::Count) {
+                if matches!(aexpr, AExpr::Len) {
                     continue;
                 }
                 // col()
@@ -55,7 +55,7 @@ fn partitionable_gb(
                     // count().alias() is allowed: count of 2
                     if depth <= 2 {
                         match expr_arena.get(*input) {
-                            AExpr::Count => {},
+                            AExpr::Len => {},
                             _ => {
                                 partitionable = false;
                                 break;
@@ -103,7 +103,7 @@ fn partitionable_gb(
                         Ternary {truthy, falsy, predicate,..} => {
                             !has_aggregation(*truthy) && !has_aggregation(*falsy) && !has_aggregation(*predicate)
                         }
-                        Column(_) | Alias(_, _) | Count | Literal(_) | Cast {..} => {
+                        Column(_) | Alias(_, _) | Len | Literal(_) | Cast {..} => {
                             true
                         }
                         _ => {
@@ -123,7 +123,7 @@ fn partitionable_gb(
                     for name in aexpr_to_leaf_names(*agg, expr_arena) {
                         let dtype = _input_schema.get(&name).unwrap();
 
-                        if let DataType::Object(_) = dtype {
+                        if let DataType::Object(_, _) = dtype {
                             partitionable = false;
                             break;
                         }
@@ -171,6 +171,15 @@ pub fn create_physical_plan(
                 .map(|node| create_physical_plan(node, lp_arena, expr_arena))
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
+        },
+        HConcat {
+            inputs, options, ..
+        } => {
+            let inputs = inputs
+                .into_iter()
+                .map(|node| create_physical_plan(node, lp_arena, expr_arena))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            Ok(Box::new(executors::HConcatExec { inputs, options }))
         },
         Slice { input, offset, len } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;

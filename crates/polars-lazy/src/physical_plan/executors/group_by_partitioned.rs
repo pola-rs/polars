@@ -187,7 +187,9 @@ fn can_run_partitioned(
 
         let (unique_estimate, sampled_method) = match (keys.len(), keys[0].dtype()) {
             #[cfg(feature = "dtype-categorical")]
-            (1, DataType::Categorical(Some(rev_map), _)) => (rev_map.len(), "known"),
+            (1, DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _)) => {
+                (rev_map.len(), "known")
+            },
             _ => {
                 // sqrt(N) is a good sample size as it remains low on large numbers
                 // it is better than taking a fraction as it saturates
@@ -363,6 +365,7 @@ impl PartitionGroupByExec {
 
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        state.should_stop()?;
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

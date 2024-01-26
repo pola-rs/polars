@@ -30,7 +30,8 @@ class StructNameSpace:
         elif isinstance(item, str):
             return self.field(item)
         else:
-            raise TypeError(f"expected type 'int | str', got {type(item).__name__!r}")
+            msg = f"expected type 'int | str', got {type(item).__name__!r}"
+            raise TypeError(msg)
 
     def _ipython_key_completions_(self) -> list[str]:
         return self.fields
@@ -50,7 +51,6 @@ class StructNameSpace:
         ----------
         name
             Name of the field
-
         """
 
     def rename_fields(self, names: Sequence[str]) -> Series:
@@ -61,7 +61,6 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields
-
         """
 
     @property
@@ -88,7 +87,6 @@ class StructNameSpace:
         │ 1   ┆ 2   │
         │ 3   ┆ 4   │
         └─────┴─────┘
-
         """
         return wrap_df(self._s.struct_unnest())
 
@@ -106,5 +104,4 @@ class StructNameSpace:
             "{"a":[1,2],"b"…
             "{"a":[9,1,3],"…
         ]
-
         """

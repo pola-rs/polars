@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
 use super::*;
 
@@ -40,6 +40,14 @@ impl Rem for Expr {
 
     fn rem(self, rhs: Self) -> Self::Output {
         binary_expr(self, Operator::Modulus, rhs)
+    }
+}
+
+impl Neg for Expr {
+    type Output = Expr;
+
+    fn neg(self) -> Self::Output {
+        self.map_private(FunctionExpr::Negate)
     }
 }
 

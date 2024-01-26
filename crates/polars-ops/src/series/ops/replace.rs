@@ -1,3 +1,5 @@
+use std::ops::BitOr;
+
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
@@ -13,6 +15,11 @@ pub fn replace(
     default: &Series,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
+    polars_ensure!(
+        old.n_unique()? == old.len(),
+        ComputeError: "`old` input for `replace` must not contain duplicates"
+    );
+
     let return_dtype = match return_dtype {
         Some(dtype) => dtype,
         None => try_get_supertype(new.dtype(), default.dtype())?,
@@ -33,10 +40,18 @@ pub fn replace(
         return Ok(default);
     }
 
+    let old = match (s.dtype(), old.dtype()) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(_, ord), DataType::String) => {
+            let dt = DataType::Categorical(None, *ord);
+            old.strict_cast(&dt)?
+        },
+        _ => old.strict_cast(s.dtype())?,
+    };
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
-        replace_by_single(s, old, &new, &default)
+        replace_by_single(s, &old, &new, &default)
     } else {
         replace_by_multiple(s, old, new, &default)
     }
@@ -49,15 +64,24 @@ fn replace_by_single(
     new: &Series,
     default: &Series,
 ) -> PolarsResult<Series> {
-    let mask = is_in(s, old)?;
-    let new_broadcast = new.new_from_index(0, default.len());
-    new_broadcast.zip_with(&mask, default)
+    let mask = if old.null_count() == old.len() {
+        s.is_null()
+    } else {
+        let mask = is_in(s, old)?;
+
+        if old.null_count() == 0 {
+            mask
+        } else {
+            mask.bitor(s.is_null())
+        }
+    };
+    new.zip_with(&mask, default)
 }
 
 /// General case for replacing by multiple values
 fn replace_by_multiple(
     s: &Series,
-    old: &Series,
+    old: Series,
     new: Series,
     default: &Series,
 ) -> PolarsResult<Series> {
@@ -67,7 +91,7 @@ fn replace_by_multiple(
     );
 
     let df = DataFrame::new_no_checks(vec![s.clone()]);
-    let replacer = create_replacer(s, old, new)?;
+    let replacer = create_replacer(old, new)?;
 
     let joined = df.join(
         &replacer,
@@ -82,9 +106,13 @@ fn replace_by_multiple(
 
     let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();
 
+    if replaced.null_count() == 0 {
+        return Ok(replaced.clone());
+    }
+
     match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {
-            let mask = col.bool()?;
+            let mask = col.bool().unwrap();
             replaced.zip_with(mask, default)
         },
         Err(_) => {
@@ -95,8 +123,7 @@ fn replace_by_multiple(
 }
 
 // Build replacer dataframe
-fn create_replacer(s: &Series, old: &Series, mut new: Series) -> PolarsResult<DataFrame> {
-    let mut old = old.cast(s.dtype())?;
+fn create_replacer(mut old: Series, mut new: Series) -> PolarsResult<DataFrame> {
     old.rename("__POLARS_REPLACE_OLD");
     new.rename("__POLARS_REPLACE_NEW");
 

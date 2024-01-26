@@ -155,7 +155,7 @@ where
             unsafe { unset_bit_raw(validity_slice, i) }
         }
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(),
+            T::get_dtype().to_arrow(true),
             new_values.into(),
             Some(validity.into()),
         );
@@ -274,7 +274,7 @@ impl ExplodeByOffsets for ListChunked {
             last = o;
         }
         process_range(start, last, &mut builder);
-        let arr = builder.finish(Some(&inner_type.to_arrow())).unwrap();
+        let arr = builder.finish(Some(&inner_type.to_arrow(true))).unwrap();
         unsafe { self.copy_with_chunks(vec![Box::new(arr)], true, true) }.into_series()
     }
 }
@@ -332,12 +332,12 @@ impl ExplodeByOffsets for ArrayChunked {
     }
 }
 
-impl ExplodeByOffsets for Utf8Chunked {
+impl ExplodeByOffsets for StringChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         unsafe {
             self.as_binary()
                 .explode_by_offsets(offsets)
-                .cast_unchecked(&DataType::Utf8)
+                .cast_unchecked(&DataType::String)
                 .unwrap()
         }
     }
@@ -349,8 +349,7 @@ impl ExplodeByOffsets for BinaryChunked {
         let arr = self.downcast_iter().next().unwrap();
 
         let cap = get_capacity(offsets);
-        let bytes_size = self.get_values_size();
-        let mut builder = BinaryChunkedBuilder::new(self.name(), cap, bytes_size);
+        let mut builder = BinaryChunkedBuilder::new(self.name(), cap);
 
         let mut start = offsets[0] as usize;
         let mut last = start;
@@ -361,10 +360,10 @@ impl ExplodeByOffsets for BinaryChunked {
                     let vals = arr.slice_typed(start, last - start);
                     if vals.null_count() == 0 {
                         builder
-                            .builder
+                            .chunk_builder
                             .extend_trusted_len_values(vals.values_iter())
                     } else {
-                        builder.builder.extend_trusted_len(vals.into_iter());
+                        builder.chunk_builder.extend_trusted_len(vals.into_iter());
                     }
                 }
                 builder.append_null();
@@ -375,10 +374,10 @@ impl ExplodeByOffsets for BinaryChunked {
         let vals = arr.slice_typed(start, last - start);
         if vals.null_count() == 0 {
             builder
-                .builder
+                .chunk_builder
                 .extend_trusted_len_values(vals.values_iter())
         } else {
-            builder.builder.extend_trusted_len(vals.into_iter());
+            builder.chunk_builder.extend_trusted_len(vals.into_iter());
         }
         builder.finish().into()
     }
@@ -470,10 +469,10 @@ mod test {
             &[None, Some(true), Some(false), None]
         );
 
-        let ca = Utf8Chunked::from_slice_options("", &[None, Some("b"), Some("c")]);
+        let ca = StringChunked::from_slice_options("", &[None, Some("b"), Some("c")]);
         let out = ca.explode_by_offsets(offsets);
         assert_eq!(
-            Vec::from(out.utf8().unwrap()),
+            Vec::from(out.str().unwrap()),
             &[None, Some("b"), Some("c"), None]
         );
         Ok(())
@@ -515,26 +514,26 @@ mod test {
             &[Some(1), None, Some(2), None, Some(3), Some(4)]
         );
 
-        // utf8
-        let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a")?;
+        // string
+        let mut builder = get_list_builder(&DataType::String, 5, 5, "a")?;
         builder.append_series(&Series::new("", &["abc"])).unwrap();
         builder
             .append_series(
-                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();
         builder.append_series(&Series::new("", &["de"])).unwrap();
         builder
             .append_series(
-                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();
         builder.append_series(&Series::new("", &["fg"])).unwrap();
         builder
             .append_series(
-                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice("", &[])
                     .into_series(),
             )
             .unwrap();
@@ -542,7 +541,7 @@ mod test {
         let ca = builder.finish();
         let exploded = ca.explode()?;
         assert_eq!(
-            Vec::from(exploded.utf8()?),
+            Vec::from(exploded.str()?),
             &[Some("abc"), None, Some("de"), None, Some("fg"), None]
         );
 

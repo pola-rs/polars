@@ -1,6 +1,15 @@
+use std::collections::BTreeMap;
+use std::convert::Into;
+use std::string::ToString;
+
 use super::*;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::ObjectRegistry;
 
 pub type TimeZone = String;
+
+pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
+pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 
 #[derive(Clone, Debug, Default)]
 pub enum DataType {
@@ -20,8 +29,9 @@ pub enum DataType {
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
     Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
     /// String data
-    Utf8,
+    String,
     Binary,
+    BinaryOffset,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -40,12 +50,14 @@ pub enum DataType {
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
-    Object(&'static str),
+    Object(&'static str, Option<Arc<ObjectRegistry>>),
     Null,
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
     // This is ignored with comparisons, hashing etc.
     Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
+    #[cfg(feature = "dtype-categorical")]
+    Enum(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
@@ -70,13 +82,13 @@ impl PartialEq for DataType {
             match (self, other) {
                 // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_, _), Categorical(_, _)) => true,
+                (Categorical(_, _), Categorical(_, _)) | (Enum(_, _), Enum(_, _)) => true,
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "object")]
-                (Object(lhs), Object(rhs)) => lhs == rhs,
+                (Object(lhs, _), Object(rhs, _)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
                 (Struct(lhs), Struct(rhs)) => Vec::as_ptr(lhs) == Vec::as_ptr(rhs) || lhs == rhs,
                 #[cfg(feature = "dtype-array")]
@@ -92,6 +104,17 @@ impl PartialEq for DataType {
 impl Eq for DataType {}
 
 impl DataType {
+    /// Standardize timezones to consistent values.
+    pub(crate) fn canonical_timezone(tz: &Option<String>) -> Option<TimeZone> {
+        match tz.as_deref() {
+            Some("") => None,
+            #[cfg(feature = "timezones")]
+            Some("+00:00") | Some("00:00") => Some("UTC"),
+            _ => tz.as_deref(),
+        }
+        .map(|s| s.to_string())
+    }
+
     pub fn value_within_range(&self, other: AnyValue) -> bool {
         use DataType::*;
         match self {
@@ -107,6 +130,17 @@ impl DataType {
             Int32 => other.extract::<i32>().is_some(),
             Int64 => other.extract::<i64>().is_some(),
             _ => false,
+        }
+    }
+
+    /// Check if the whole dtype is known.
+    pub fn is_known(&self) -> bool {
+        match self {
+            DataType::List(inner) => inner.is_known(),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
+            DataType::Unknown => false,
+            _ => true,
         }
     }
 
@@ -130,7 +164,9 @@ impl DataType {
             Duration(_) => Int64,
             Time => Int64,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => UInt32,
+            Categorical(_, _) | Enum(_, _) => UInt32,
+            #[cfg(feature = "dtype-array")]
+            Array(dt, width) => Array(Box::new(dt.to_physical()), *width),
             List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
@@ -158,7 +194,11 @@ impl DataType {
     /// Check if datatype is a primitive type. By that we mean that
     /// it is not a container type.
     pub fn is_primitive(&self) -> bool {
-        self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
+        self.is_numeric()
+            | matches!(
+                self,
+                DataType::Boolean | DataType::String | DataType::Binary
+            )
     }
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
@@ -171,15 +211,38 @@ impl DataType {
         matches!(self, DataType::Boolean)
     }
 
+    pub fn is_binary(&self) -> bool {
+        matches!(self, DataType::Binary)
+    }
+
+    pub fn contains_views(&self) -> bool {
+        use DataType::*;
+        match self {
+            Binary | String => true,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) | Enum(_, _) => true,
+            List(inner) => inner.contains_views(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_views(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_views()),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
-        let is_cat = matches!(self, DataType::Categorical(_, _));
+        let is_cat = matches!(self, DataType::Categorical(_, _) | DataType::Enum(_, _));
         #[cfg(not(feature = "dtype-categorical"))]
         let is_cat = false;
 
         let phys = self.to_physical();
-        (phys.is_numeric() || matches!(phys, DataType::Binary | DataType::Utf8 | DataType::Boolean))
+        (phys.is_numeric()
+            || matches!(
+                phys,
+                DataType::Binary | DataType::String | DataType::Boolean
+            ))
             && !is_cat
     }
 
@@ -235,14 +298,38 @@ impl DataType {
         }
     }
 
+    /// Convert to an Arrow Field
+    pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
+        let metadata = match self {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(_, _) => Some(BTreeMap::from([(
+                DTYPE_ENUM_KEY.into(),
+                DTYPE_ENUM_VALUE.into(),
+            )])),
+            DataType::BinaryOffset => Some(BTreeMap::from([(
+                "pl".to_string(),
+                "maintain_type".to_string(),
+            )])),
+            _ => None,
+        };
+
+        let field = ArrowField::new(name, self.to_arrow(pl_flavor), true);
+
+        if let Some(metadata) = metadata {
+            field.with_metadata(metadata)
+        } else {
+            field
+        }
+    }
+
     /// Convert to an Arrow data type.
     #[inline]
-    pub fn to_arrow(&self) -> ArrowDataType {
-        self.try_to_arrow().unwrap()
+    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowDataType {
+        self.try_to_arrow(pl_flavor).unwrap()
     }
 
     #[inline]
-    pub fn try_to_arrow(&self) -> PolarsResult<ArrowDataType> {
+    pub fn try_to_arrow(&self, pl_flavor: bool) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
             Boolean => Ok(ArrowDataType::Boolean),
@@ -262,40 +349,58 @@ impl DataType {
                 (*precision).unwrap_or(38),
                 scale.unwrap_or(0), // and what else can we do here?
             )),
-            Utf8 => Ok(ArrowDataType::LargeUtf8),
-            Binary => Ok(ArrowDataType::LargeBinary),
+            String => {
+                let dt = if pl_flavor {
+                    ArrowDataType::Utf8View
+                } else {
+                    ArrowDataType::LargeUtf8
+                };
+                Ok(dt)
+            },
+            Binary => {
+                let dt = if pl_flavor {
+                    ArrowDataType::BinaryView
+                } else {
+                    ArrowDataType::LargeBinary
+                };
+                Ok(dt)
+            },
             Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(arrow::datatypes::Field::new(
-                    "item",
-                    dt.try_to_arrow()?,
-                    true,
-                )),
+                Box::new(dt.to_arrow_field("item", pl_flavor)),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                arrow::datatypes::Field::new("item", dt.to_arrow(), true),
+                dt.to_arrow_field("item", pl_flavor),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_) => {
+            Object(_, _) => {
                 polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
             },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => Ok(ArrowDataType::Dictionary(
-                IntegerType::UInt32,
-                Box::new(ArrowDataType::LargeUtf8),
-                false,
-            )),
+            Categorical(_, _) | Enum(_, _) => {
+                let values = if pl_flavor {
+                    ArrowDataType::Utf8View
+                } else {
+                    ArrowDataType::LargeUtf8
+                };
+                Ok(ArrowDataType::Dictionary(
+                    IntegerType::UInt32,
+                    Box::new(values),
+                    false,
+                ))
+            },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
-                let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
+                let fields = fields.iter().map(|fld| fld.to_arrow(pl_flavor)).collect();
                 Ok(ArrowDataType::Struct(fields))
             },
+            BinaryOffset => Ok(ArrowDataType::LargeBinary),
             Unknown => {
                 polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
             },
@@ -346,7 +451,7 @@ impl Display for DataType {
                     _ => f.write_str("decimal[?]"), // shouldn't happen
                 };
             },
-            DataType::Utf8 => "str",
+            DataType::String => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
             DataType::Datetime(tu, tz) => {
@@ -362,12 +467,15 @@ impl Display for DataType {
             DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
-            DataType::Object(s) => s,
+            DataType::Object(s, _) => s,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => "cat",
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
+            DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
     }
@@ -389,6 +497,15 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
                     left.clone()
                 },
                 _ => polars_bail!(string_cache_mismatch),
+            }
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (Enum(Some(rev_map_l), _), Enum(Some(rev_map_r), _)) => {
+            match (&**rev_map_l, &**rev_map_r) {
+                (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => {
+                    left.clone()
+                },
+                _ => polars_bail!(ComputeError: "can not combine with different categories"),
             }
         },
         (List(inner_l), List(inner_r)) => {
@@ -422,6 +539,8 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
             Ok(must_cast)
         },
         (DataType::Null, DataType::Null) => Ok(false),
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
         // Other way around we don't allow because we keep left dtype as is.
         // We don't go to supertype, and we certainly don't want to cast self to null type.
         (_, DataType::Null) => Ok(true),
@@ -433,7 +552,7 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub fn create_enum_data_type(categories: Utf8Array<i64>) -> DataType {
-    let rev_map = RevMapping::build_enum(categories.clone());
-    DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
+pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
+    let rev_map = RevMapping::build_local(categories);
+    DataType::Enum(Some(Arc::new(rev_map)), Default::default())
 }

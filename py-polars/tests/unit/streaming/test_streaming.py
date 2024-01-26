@@ -232,12 +232,12 @@ def test_streaming_9776() -> None:
     df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
     ordered = (
         df.group_by("col_1", "ID", maintain_order=True)
-        .count()
+        .len()
         .filter(pl.col("col_1") == "a")
     )
     unordered = (
         df.group_by("col_1", "ID", maintain_order=False)
-        .count()
+        .len()
         .filter(pl.col("col_1") == "a")
     )
     expected = [("a", None, 1), ("a", "a", 999)]
@@ -249,7 +249,7 @@ def test_streaming_9776() -> None:
 def test_stream_empty_file(tmp_path: Path) -> None:
     p = tmp_path / "in.parquet"
     schema = {
-        "KLN_NR": pl.Utf8,
+        "KLN_NR": pl.String,
     }
 
     df = pl.DataFrame(
@@ -345,3 +345,53 @@ def test_custom_temp_dir(monkeypatch: Any) -> None:
     df.lazy().sort("idx").collect(streaming=True)
 
     assert os.listdir(temp_dir), f"Temp directory '{temp_dir}' is empty"
+
+
+@pytest.mark.write_disk()
+def test_streaming_with_hconcat(tmp_path: Path) -> None:
+    df1 = pl.DataFrame(
+        {
+            "id": [0, 0, 1, 1, 2, 2],
+            "x": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+    df1.write_parquet(tmp_path / "df1.parquet")
+
+    df2 = pl.DataFrame(
+        {
+            "y": [6.0, 7.0, 8.0, 9.0, 10.0, 11.0],
+        }
+    )
+    df2.write_parquet(tmp_path / "df2.parquet")
+
+    lf1 = pl.scan_parquet(tmp_path / "df1.parquet")
+    lf2 = pl.scan_parquet(tmp_path / "df2.parquet")
+    query = (
+        pl.concat([lf1, lf2], how="horizontal")
+        .group_by("id")
+        .agg(pl.all().mean())
+        .sort(pl.col("id"))
+    )
+
+    plan_lines = [line.strip() for line in query.explain(streaming=True).splitlines()]
+
+    # Each input of the concatenation should be a streaming section,
+    # as these might be streamable even though the horizontal concatenation itself
+    # doesn't yet support streaming.
+    for i, line in enumerate(plan_lines):
+        if line.startswith("PLAN"):
+            assert plan_lines[i + 1].startswith(
+                "--- STREAMING"
+            ), f"{line} does not contain a streaming section"
+
+    result = query.collect(streaming=True)
+
+    expected = pl.DataFrame(
+        {
+            "id": [0, 1, 2],
+            "x": [0.5, 2.5, 4.5],
+            "y": [6.5, 8.5, 10.5],
+        }
+    )
+
+    assert_frame_equal(result, expected)

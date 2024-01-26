@@ -123,7 +123,6 @@ def read_delta(
     >>> pl.read_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... )  # doctest: +SKIP
-
     """
     if pyarrow_options is None:
         pyarrow_options = {}
@@ -252,7 +251,6 @@ def scan_delta(
     >>> pl.scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
-
     """
     if pyarrow_options is None:
         pyarrow_options = {}
@@ -294,7 +292,6 @@ def _get_delta_lake_table(
     -----
     Make sure to install deltalake>=0.8.0. Read the documentation
     `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
-
     """
     _check_if_delta_available()
 
@@ -313,9 +310,8 @@ def _get_delta_lake_table(
 
 def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
-        raise ModuleNotFoundError(
-            "deltalake is not installed" "\n\nPlease run: pip install deltalake"
-        )
+        msg = "deltalake is not installed" "\n\nPlease run: pip install deltalake"
+        raise ModuleNotFoundError(msg)
 
 
 def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
@@ -324,4 +320,5 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
-        raise TypeError(f"dataframe contains unsupported data types: {overlap!r}")
+        msg = f"dataframe contains unsupported data types: {overlap!r}"
+        raise TypeError(msg)

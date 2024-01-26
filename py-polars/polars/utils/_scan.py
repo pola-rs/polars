@@ -23,6 +23,5 @@ def _execute_from_rust(
         Columns that are projected
     *args
         Additional function arguments.
-
     """
     return function(with_columns, *args)

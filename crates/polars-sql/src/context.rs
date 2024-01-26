@@ -7,7 +7,7 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, GroupByExpr, JoinOperator,
+    Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinOperator,
     ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
     SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
     WildcardAdditionalOptions,
@@ -194,9 +194,9 @@ impl SQLContext {
                 right,
             } => self.process_union(left, right, set_quantifier, query),
             SetExpr::SetOperation { op, .. } => {
-                polars_bail!(InvalidOperation: "{} operation not yet supported", op)
+                polars_bail!(InvalidOperation: "'{}' operation not yet supported", op)
             },
-            op => polars_bail!(InvalidOperation: "{} operation not yet supported", op),
+            op => polars_bail!(InvalidOperation: "'{}' operation not yet supported", op),
         }
     }
 
@@ -232,7 +232,7 @@ impl SQLContext {
                 concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
             },
             #[allow(unreachable_patterns)]
-            _ => polars_bail!(InvalidOperation: "UNION {} is not yet supported", quantifier),
+            _ => polars_bail!(InvalidOperation: "'UNION {}' is not yet supported", quantifier),
         }
     }
 
@@ -391,7 +391,7 @@ impl SQLContext {
         if let GroupByExpr::Expressions(group_by_exprs) = &select_stmt.group_by {
             group_by_keys = group_by_exprs.iter()
                 .map(|e| match e {
-                    SqlExpr::Value(SQLValue::Number(idx, _)) => {
+                    SQLExpr::Value(SQLValue::Number(idx, _)) => {
                         let idx = match idx.parse::<usize>() {
                             Ok(0) | Err(_) => Err(polars_err!(
                                 ComputeError:
@@ -402,7 +402,7 @@ impl SQLContext {
                         }?;
                         Ok(projections[idx].clone())
                     },
-                    SqlExpr::Value(_) => Err(polars_err!(
+                    SQLExpr::Value(_) => Err(polars_err!(
                         ComputeError:
                         "group_by error: a positive number or an expression expected",
                     )),
@@ -451,7 +451,7 @@ impl SQLContext {
                 lf = self.process_order_by(lf, &query.order_by)?;
 
                 column_names.retain(|&name| !retained_names.contains(name));
-                lf.drop_columns(column_names)
+                lf.drop(column_names)
             } else if contains_wildcard_exclude {
                 let mut dropped_names = Vec::with_capacity(projections.len());
 
@@ -471,7 +471,7 @@ impl SQLContext {
                 if exclude_expr.is_some() {
                     lf = lf.with_columns(projections);
                     lf = self.process_order_by(lf, &query.order_by)?;
-                    lf.drop_columns(dropped_names)
+                    lf.drop(dropped_names)
                 } else {
                     lf = lf.select(projections);
                     self.process_order_by(lf, &query.order_by)?
@@ -610,11 +610,11 @@ impl SQLContext {
                     self.table_map.insert(alias.name.value.clone(), lf.clone());
                     Ok((alias.name.value.clone(), lf))
                 } else {
-                    polars_bail!(ComputeError: "Derived tables must have aliases");
+                    polars_bail!(ComputeError: "derived tables must have aliases");
                 }
             },
             // Support bare table, optional with alias for now
-            _ => polars_bail!(ComputeError: "not implemented"),
+            _ => polars_bail!(ComputeError: "not yet implemented: {}", relation),
         }
     }
 
@@ -627,6 +627,7 @@ impl SQLContext {
         let tbl_fn = name.0.first().unwrap().value.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
+        #[allow(clippy::useless_asref)]
         let tbl_name = alias
             .as_ref()
             .map(|a| a.name.value.clone())
@@ -713,16 +714,16 @@ impl SQLContext {
     fn process_limit_offset(
         &self,
         lf: LazyFrame,
-        limit: &Option<SqlExpr>,
+        limit: &Option<SQLExpr>,
         offset: &Option<Offset>,
     ) -> PolarsResult<LazyFrame> {
         match (offset, limit) {
             (
                 Some(Offset {
-                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    value: SQLExpr::Value(SQLValue::Number(offset, _)),
                     ..
                 }),
-                Some(SqlExpr::Value(SQLValue::Number(limit, _))),
+                Some(SQLExpr::Value(SQLValue::Number(limit, _))),
             ) => Ok(lf.slice(
                 offset
                     .parse()
@@ -733,7 +734,7 @@ impl SQLContext {
             )),
             (
                 Some(Offset {
-                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    value: SQLExpr::Value(SQLValue::Number(offset, _)),
                     ..
                 }),
                 None,
@@ -743,7 +744,7 @@ impl SQLContext {
                     .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
                 IdxSize::MAX,
             )),
-            (None, Some(SqlExpr::Value(SQLValue::Number(limit, _)))) => Ok(lf.limit(
+            (None, Some(SQLExpr::Value(SQLValue::Number(limit, _)))) => Ok(lf.limit(
                 limit
                     .parse()
                     .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
@@ -774,7 +775,7 @@ impl SQLContext {
                 cols(schema.iter_names())
             },
             e => polars_bail!(
-                ComputeError: "Invalid wildcard expression: {:?}",
+                ComputeError: "invalid wildcard expression: {:?}",
                 e
             ),
         };

@@ -1,4 +1,4 @@
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use super::*;
 
@@ -201,7 +201,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             n_rows: None,
             cache: true,
             rechunk: false,
-            row_count: None,
+            row_index: None,
             memmap: true,
         },
     )?
@@ -362,53 +362,53 @@ fn skip_rows_and_slice() -> PolarsResult<()> {
         .finish()?
         .limit(1)
         .collect()?;
-    assert_eq!(out.column("fruit")?.get(0)?, AnyValue::Utf8("seafood"));
+    assert_eq!(out.column("fruit")?.get(0)?, AnyValue::String("seafood"));
     assert_eq!(out.shape(), (1, 4));
     Ok(())
 }
 
 #[test]
-fn test_row_count_on_files() -> PolarsResult<()> {
+fn test_row_index_on_files() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
-            .with_row_count(Some(RowCount {
-                name: "rc".into(),
+            .with_row_index(Some(RowIndex {
+                name: "index".into(),
                 offset,
             }))
             .finish()?;
 
-        assert!(row_count_at_scan(lf.clone()));
+        assert!(row_index_at_scan(lf.clone()));
         let df = lf.collect()?;
-        let rc = df.column("rc")?;
+        let idx = df.column("index")?;
         assert_eq!(
-            rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+            idx.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
         let lf = LazyFrame::scan_parquet(FOODS_PARQUET, Default::default())?
-            .with_row_count("rc", Some(offset));
-        assert!(row_count_at_scan(lf.clone()));
+            .with_row_index("index", Some(offset));
+        assert!(row_index_at_scan(lf.clone()));
         let df = lf.collect()?;
-        let rc = df.column("rc")?;
+        let idx = df.column("index")?;
         assert_eq!(
-            rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+            idx.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf =
-            LazyFrame::scan_ipc(FOODS_IPC, Default::default())?.with_row_count("rc", Some(offset));
+        let lf = LazyFrame::scan_ipc(FOODS_IPC, Default::default())?
+            .with_row_index("index", Some(offset));
 
-        assert!(row_count_at_scan(lf.clone()));
+        assert!(row_index_at_scan(lf.clone()));
         let df = lf.clone().collect()?;
-        let rc = df.column("rc")?;
+        let idx = df.column("index")?;
         assert_eq!(
-            rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+            idx.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
         let out = lf
-            .filter(col("rc").gt(lit(-1)))
+            .filter(col("index").gt(lit(-1)))
             .select([col("calories")])
             .collect()?;
         assert!(out.column("calories").is_ok());

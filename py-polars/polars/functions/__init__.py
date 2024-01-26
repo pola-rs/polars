@@ -39,6 +39,7 @@ from polars.functions.lazy import (
     corr,
     count,
     cov,
+    cum_count,
     cum_fold,
     cum_reduce,
     cumfold,
@@ -68,6 +69,7 @@ from polars.functions.lazy import (
     tail,
     var,
 )
+from polars.functions.len import len
 from polars.functions.lit import lit
 from polars.functions.random import set_random_seed
 from polars.functions.range import (
@@ -130,6 +132,7 @@ __all__ = [
     "corr",
     "count",
     "cov",
+    "cum_count",
     "cum_fold",
     "cum_reduce",
     "cumfold",
@@ -166,6 +169,8 @@ __all__ = [
     "tail",
     "time",
     "var",
+    # polars.functions.len
+    "len",
     # polars.functions.whenthen
     "when",
     "sql_expr",

@@ -48,7 +48,7 @@ pub(super) fn collect_trails(
             trails.insert(*id, new_trail);
             collect_trails(*input_right, lp_arena, trails, id, true)?;
         },
-        Union { inputs, .. } => {
+        Union { inputs, .. } | HConcat { inputs, .. } => {
             if inputs.len() > 200 {
                 // don't even bother with cse on this many inputs
                 return None;

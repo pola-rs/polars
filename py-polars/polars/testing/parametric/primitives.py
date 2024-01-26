@@ -98,8 +98,7 @@ class column:
     >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
     column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
-    column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
-
+    column(name='ccy', dtype=String, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
     """  # noqa: W505
 
     name: str
@@ -112,9 +111,8 @@ class column:
         if (self.null_probability is not None) and (
             self.null_probability < 0 or self.null_probability > 1
         ):
-            raise InvalidArgument(
-                f"`null_probability` should be between 0.0 and 1.0, or None; found {self.null_probability!r}"
-            )
+            msg = f"`null_probability` should be between 0.0 and 1.0, or None; found {self.null_probability!r}"
+            raise InvalidArgument(msg)
 
         if self.dtype is None:
             tp = getattr(self.strategy, "_dtype", None)
@@ -136,9 +134,8 @@ class column:
 
         elif self.dtype not in scalar_strategies:
             if self.dtype is not None:
-                raise InvalidArgument(
-                    f"no strategy (currently) available for {self.dtype!r} type"
-                )
+                msg = f"no strategy (currently) available for {self.dtype!r} type"
+                raise InvalidArgument(msg)
             else:
                 # given a custom strategy, but no explicit dtype. infer one
                 # from the first non-None value that the strategy produces.
@@ -160,9 +157,8 @@ class column:
                             )
                         )
                     except StopIteration:
-                        raise InvalidArgument(
-                            "unable to determine dtype for strategy"
-                        ) from None
+                        msg = "unable to determine dtype for strategy"
+                        raise InvalidArgument(msg) from None
 
                 if sample_value_type is not None:
                     value_dtype = py_type_to_dtype(sample_value_type)
@@ -227,8 +223,6 @@ def columns(
     ...     df = pl.DataFrame(schema=[(c.name, c.dtype) for c in columns(punctuation)])
     ...     assert len(cols) == len(df.columns)
     ...     assert 0 == len(df.rows())
-    ...
-
     """
     # create/assign named columns
     if cols is None:
@@ -243,14 +237,16 @@ def columns(
 
     if isinstance(dtype, Sequence):
         if len(dtype) != len(names):
-            raise InvalidArgument(f"given {len(dtype)} dtypes for {len(names)} names")
+            msg = f"given {len(dtype)} dtypes for {len(names)} names"
+            raise InvalidArgument(msg)
         dtypes = list(dtype)
     elif dtype is None:
         dtypes = [random.choice(strategy_dtypes) for _ in range(len(names))]
     elif is_polars_dtype(dtype):
         dtypes = [dtype] * len(names)
     else:
-        raise InvalidArgument(f"{dtype!r} is not a valid polars datatype")
+        msg = f"{dtype!r} is not a valid polars datatype"
+        raise InvalidArgument(msg)
 
     # init list of named/typed columns
     return [column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)]
@@ -333,7 +329,7 @@ def series(
     >>> from polars.testing.parametric import create_list_strategy
     >>> s = series(
     ...     strategy=create_list_strategy(
-    ...         inner_dtype=pl.Utf8,
+    ...         inner_dtype=pl.String,
     ...         select_from=["xx", "yy", "zz"],
     ...     ),
     ...     min_size=2,
@@ -348,7 +344,6 @@ def series(
         ["zz", "yy", "zz"]
         ["xx"]
     ]
-
     """
     if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
         allowed_dtypes = [allowed_dtypes]
@@ -361,9 +356,8 @@ def series(
         if dtype not in (excluded_dtypes or ())
     ]
     if null_probability and not (0 <= null_probability <= 1):
-        raise InvalidArgument(
-            f"`null_probability` should be between 0.0 and 1.0, or None; found {null_probability}"
-        )
+        msg = f"`null_probability` should be between 0.0 and 1.0, or None; found {null_probability}"
+        raise InvalidArgument(msg)
     null_probability = float(null_probability or 0.0)
 
     @composite
@@ -606,7 +600,6 @@ def dataframes(
     │ -15836    ┆ 1.1755e-38 │
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
-
     """
     _failed_frame_init_msgs_.clear()
 

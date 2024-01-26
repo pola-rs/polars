@@ -124,7 +124,7 @@ def time_range(
     ...     start=time(14, 0),
     ...     interval=timedelta(hours=3, minutes=15),
     ...     eager=True,
-    ... )
+    ... ).alias("time")
     shape: (4,)
     Series: 'time' [time]
     [
@@ -133,14 +133,14 @@ def time_range(
         20:30:00
         23:45:00
     ]
-
     """
     interval = deprecate_saturating(interval)
 
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)
@@ -263,7 +263,7 @@ def time_ranges(
     ...         "end": time(11, 0),
     ...     }
     ... )
-    >>> df.with_columns(pl.time_ranges("start", "end"))
+    >>> df.with_columns(time_range=pl.time_ranges("start", "end"))
     shape: (2, 3)
     ┌──────────┬──────────┬────────────────────────────────┐
     │ start    ┆ end      ┆ time_range                     │
@@ -273,13 +273,13 @@ def time_ranges(
     │ 09:00:00 ┆ 11:00:00 ┆ [09:00:00, 10:00:00, 11:00:00] │
     │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
     └──────────┴──────────┴────────────────────────────────┘
-
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)

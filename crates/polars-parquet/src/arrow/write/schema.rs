@@ -13,8 +13,52 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::schema::Repetition;
 
+fn convert_field(field: Field) -> Field {
+    Field {
+        name: field.name,
+        data_type: convert_data_type(field.data_type),
+        is_nullable: field.is_nullable,
+        metadata: field.metadata,
+    }
+}
+
+fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
+    use ArrowDataType::*;
+    match data_type {
+        LargeList(field) => LargeList(Box::new(convert_field(*field))),
+        Struct(mut fields) => {
+            for field in &mut fields {
+                *field = convert_field(std::mem::take(field))
+            }
+            Struct(fields)
+        },
+        BinaryView => LargeBinary,
+        Utf8View => LargeUtf8,
+        Dictionary(it, data_type, sorted) => {
+            let dtype = convert_data_type(*data_type);
+            Dictionary(it, Box::new(dtype), sorted)
+        },
+        Extension(name, data_type, metadata) => {
+            let data_type = convert_data_type(*data_type);
+            Extension(name, Box::new(data_type), metadata)
+        },
+        dt => dt,
+    }
+}
+
 pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
-    let serialized_schema = schema_to_bytes(schema, &default_ipc_fields(&schema.fields));
+    // Convert schema until more arrow readers are aware of binview
+    let serialized_schema = if schema.fields.iter().any(|field| field.data_type.is_view()) {
+        let fields = schema
+            .fields
+            .iter()
+            .map(|field| convert_field(field.clone()))
+            .collect::<Vec<_>>();
+        let schema = ArrowSchema::from(fields);
+        schema_to_bytes(&schema, &default_ipc_fields(&schema.fields))
+    } else {
+        schema_to_bytes(schema, &default_ipc_fields(&schema.fields))
+    };
 
     // manually prepending the length to the schema as arrow uses the legacy IPC format
     // TODO: change after addressing ARROW-9777
@@ -101,22 +145,26 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        ArrowDataType::Binary | ArrowDataType::LargeBinary => Ok(ParquetType::try_from_primitive(
-            name,
-            PhysicalType::ByteArray,
-            repetition,
-            None,
-            None,
-            None,
-        )?),
-        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => Ok(ParquetType::try_from_primitive(
-            name,
-            PhysicalType::ByteArray,
-            repetition,
-            Some(PrimitiveConvertedType::Utf8),
-            Some(PrimitiveLogicalType::String),
-            None,
-        )?),
+        ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
+            Ok(ParquetType::try_from_primitive(
+                name,
+                PhysicalType::ByteArray,
+                repetition,
+                None,
+                None,
+                None,
+            )?)
+        },
+        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View => {
+            Ok(ParquetType::try_from_primitive(
+                name,
+                PhysicalType::ByteArray,
+                repetition,
+                Some(PrimitiveConvertedType::Utf8),
+                Some(PrimitiveLogicalType::String),
+                None,
+            )?)
+        },
         ArrowDataType::Date32 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,

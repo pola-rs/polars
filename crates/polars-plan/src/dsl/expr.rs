@@ -135,8 +135,7 @@ pub enum Expr {
     Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
-    /// Special case that does not need columns
-    Count,
+    Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
     // skipped fields must be last otherwise serde fails in pickle
@@ -223,7 +222,7 @@ impl Hash for Expr {
                 options.hash(state);
             },
             // already hashed by discriminant
-            Expr::Wildcard | Expr::Count => {},
+            Expr::Wildcard | Expr::Len => {},
             #[allow(unreachable_code)]
             _ => {
                 // the panic checks if we hit this
@@ -297,6 +296,8 @@ pub enum Operator {
     And,
     Or,
     Xor,
+    LogicalAnd,
+    LogicalOr,
 }
 
 impl Display for Operator {
@@ -318,8 +319,8 @@ impl Display for Operator {
             TrueDivide => "/",
             FloorDivide => "floor_div",
             Modulus => "%",
-            And => "&",
-            Or => "|",
+            And | LogicalAnd => "&",
+            Or | LogicalOr => "|",
             Xor => "^",
         };
         write!(f, "{tkn}")

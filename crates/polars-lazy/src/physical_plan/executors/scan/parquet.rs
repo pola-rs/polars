@@ -5,7 +5,7 @@ use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::FileMetaData;
-use polars_io::{is_cloud_url, RowCount};
+use polars_io::{is_cloud_url, RowIndex};
 
 use super::*;
 
@@ -53,7 +53,7 @@ impl ParquetExec {
         let mut result = vec![];
 
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
-        let mut base_row_count = self.file_options.row_count.take();
+        let mut base_row_index = self.file_options.row_index.take();
 
         // Limit no. of files at a time to prevent open file limits.
         for paths in self
@@ -66,7 +66,7 @@ impl ParquetExec {
 
             // First initialize the readers, predicates and metadata.
             // This will be used to determine the slices. That way we can actually read all the
-            // files in parallel even when we add row counts or slices.
+            // files in parallel even if we add row index columns or slices.
             let readers_and_metadata = paths
                 .iter()
                 .map(|path| {
@@ -83,7 +83,7 @@ impl ParquetExec {
                         self.predicate.clone(),
                         &mut self.file_options.with_columns.clone(),
                         &mut self.file_info.schema.clone(),
-                        base_row_count.is_some(),
+                        base_row_index.is_some(),
                         hive_partitions.as_deref(),
                     );
 
@@ -123,14 +123,14 @@ impl ParquetExec {
                                 } else {
                                     Some(remaining_rows_to_read)
                                 };
-                            let row_count = base_row_count.as_ref().map(|rc| RowCount {
+                            let row_index = base_row_index.as_ref().map(|rc| RowIndex {
                                 name: rc.name.clone(),
                                 offset: rc.offset + *cumulative_read as IdxSize,
                             });
 
                             reader
                                 .with_n_rows(remaining_rows_to_read)
-                                .with_row_count(row_count)
+                                .with_row_index(row_index)
                                 .with_predicate(predicate.clone())
                                 .with_projection(projection.clone())
                                 .finish()
@@ -141,7 +141,7 @@ impl ParquetExec {
 
             let n_read = out.iter().map(|df| df.height()).sum();
             remaining_rows_to_read = remaining_rows_to_read.saturating_sub(n_read);
-            if let Some(rc) = &mut base_row_count {
+            if let Some(rc) = &mut base_row_index {
                 rc.offset += n_read as IdxSize;
             }
             if result.is_empty() {
@@ -177,7 +177,7 @@ impl ParquetExec {
         }
 
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
-        let mut base_row_count = self.file_options.row_count.take();
+        let mut base_row_index = self.file_options.row_index.take();
         let mut processed = 0;
         for (batch_idx, paths) in self.paths.chunks(batch_size).enumerate() {
             if remaining_rows_to_read == 0 && !result.is_empty() {
@@ -239,7 +239,7 @@ impl ParquetExec {
             let file_options = &self.file_options;
             let use_statistics = self.options.use_statistics;
             let predicate = &self.predicate;
-            let base_row_count_ref = &base_row_count;
+            let base_row_index_ref = &base_row_index;
 
             if verbose {
                 eprintln!("reading of {}/{} file...", processed, self.paths.len());
@@ -262,7 +262,7 @@ impl ParquetExec {
                         } else {
                             Some(remaining_rows_to_read)
                         };
-                        let row_count = base_row_count_ref.as_ref().map(|rc| RowCount {
+                        let row_index = base_row_index_ref.as_ref().map(|rc| RowIndex {
                             name: rc.name.clone(),
                             offset: rc.offset + *cumulative_read as IdxSize,
                         });
@@ -278,13 +278,13 @@ impl ParquetExec {
                             predicate.clone(),
                             &mut file_options.with_columns.clone(),
                             &mut file_info.schema.clone(),
-                            row_count.is_some(),
+                            row_index.is_some(),
                             hive_partitions.as_deref(),
                         );
 
                         reader
                             .with_n_rows(remaining_rows_to_read)
-                            .with_row_count(row_count)
+                            .with_row_index(row_index)
                             .with_projection(projection)
                             .use_statistics(use_statistics)
                             .with_predicate(predicate)
@@ -302,7 +302,7 @@ impl ParquetExec {
                 .map(|opt_df| opt_df.as_ref().map(|df| df.height()).unwrap_or(0))
                 .sum();
             remaining_rows_to_read = remaining_rows_to_read.saturating_sub(n_read);
-            if let Some(rc) = &mut base_row_count {
+            if let Some(rc) = &mut base_row_index {
                 rc.offset += n_read as IdxSize;
             }
             result.extend(dfs.into_iter().flatten())
@@ -324,14 +324,14 @@ impl ParquetExec {
                     None,
                     &mut self.file_options.with_columns,
                     &mut self.file_info.schema,
-                    self.file_options.row_count.is_some(),
+                    self.file_options.row_index.is_some(),
                     hive_partitions.as_deref(),
                 );
                 return Ok(materialize_empty_df(
                     projection.as_deref(),
                     self.file_info.reader_schema.as_ref().unwrap(),
                     hive_partitions.as_deref(),
-                    self.file_options.row_count.as_ref(),
+                    self.file_options.row_index.as_ref(),
                 ));
             },
         };
@@ -363,6 +363,7 @@ impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             paths: self.paths.clone(),
+            #[allow(clippy::useless_asref)]
             predicate: self
                 .predicate
                 .as_ref()

@@ -103,13 +103,15 @@ impl<'a> Deserialize<'a> for PythonFunction {
 pub struct PythonUdfExpression {
     python_function: PyObject,
     output_type: Option<DataType>,
+    is_elementwise: bool,
 }
 
 impl PythonUdfExpression {
-    pub fn new(lambda: PyObject, output_type: Option<DataType>) -> Self {
+    pub fn new(lambda: PyObject, output_type: Option<DataType>, is_elementwise: bool) -> Self {
         Self {
             python_function: lambda,
             output_type,
+            is_elementwise,
         }
     }
 
@@ -119,7 +121,7 @@ impl PythonUdfExpression {
         // skip header
         let buf = &buf[MAGIC_BYTE_MARK.len()..];
         let mut reader = Cursor::new(buf);
-        let output_type: Option<DataType> =
+        let (output_type, is_elementwise): (Option<DataType>, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
 
         let remainder = &buf[reader.position() as usize..];
@@ -135,6 +137,7 @@ impl PythonUdfExpression {
             Ok(Arc::new(PythonUdfExpression::new(
                 python_function.into(),
                 output_type,
+                is_elementwise,
             )) as Arc<dyn SeriesUdf>)
         })
     }
@@ -170,7 +173,8 @@ impl SeriesUdf for PythonUdfExpression {
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         buf.extend_from_slice(MAGIC_BYTE_MARK);
-        ciborium::ser::into_writer(&self.output_type, &mut *buf).unwrap();
+        ciborium::ser::into_writer(&(self.output_type.clone(), self.is_elementwise), &mut *buf)
+            .unwrap();
 
         Python::with_gil(|py| {
             let pickle = PyModule::import(py, "cloudpickle")
@@ -204,8 +208,10 @@ impl Expr {
     pub fn map_python(self, func: PythonUdfExpression, agg_list: bool) -> Expr {
         let (collect_groups, name) = if agg_list {
             (ApplyOptions::ApplyList, MAP_LIST_NAME)
-        } else {
+        } else if func.is_elementwise {
             (ApplyOptions::ElementWise, "python_udf")
+        } else {
+            (ApplyOptions::GroupWise, "python_udf")
         };
 
         let return_dtype = func.output_type.clone();

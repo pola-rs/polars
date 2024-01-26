@@ -675,3 +675,14 @@ def test_strptime_use_earliest(exact: bool) -> None:
             pl.Datetime("us", "Europe/London"),
             exact=exact,
         ).item()
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
+    s = pl.Series(["2020-January-01 12:34:66"])
+    with pytest.raises(pl.ComputeError, match="conversion .* failed"):
+        s.str.to_datetime("%Y-%B-%d %H:%M:%S", time_unit=time_unit)
+    assert (
+        s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()
+        is None
+    )

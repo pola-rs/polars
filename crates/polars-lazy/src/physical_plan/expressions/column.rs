@@ -77,7 +77,7 @@ impl ColumnExpr {
             // in release we fallback to linear search
             #[allow(unreachable_code)]
             {
-                df.column(&self.name).map(|s| s.clone())
+                df.column(&self.name).cloned()
             }
         } else {
             Ok(out.clone())
@@ -95,12 +95,12 @@ impl ColumnExpr {
                 && _state.ext_contexts.is_empty()
                 && std::env::var("POLARS_NO_SCHEMA_CHECK").is_err()
             {
-                panic!("invalid schema")
+                panic!("invalid schema: df {:?}; column: {}", df, &self.name)
             }
         }
         // in release we fallback to linear search
         #[allow(unreachable_code)]
-        df.column(&self.name).map(|s| s.clone())
+        df.column(&self.name).cloned()
     }
 
     fn process_from_state_schema(

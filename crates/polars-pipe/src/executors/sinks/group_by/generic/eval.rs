@@ -79,11 +79,11 @@ impl Eval {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = match s.dtype() {
                 // todo! add binary to physical repr?
-                DataType::Utf8 => unsafe { s.cast_unchecked(&DataType::Binary).unwrap() },
+                DataType::String => unsafe { s.cast_unchecked(&DataType::Binary).unwrap() },
                 _ => s.to_physical_repr().into_owned(),
             };
             let s = prepare_key(&s, chunk);
-            keys_columns.push(s.to_arrow(0));
+            keys_columns.push(s.to_arrow(0, true));
         }
 
         polars_row::convert_columns_amortized(

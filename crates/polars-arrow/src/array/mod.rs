@@ -275,6 +275,8 @@ impl std::fmt::Debug for dyn Array + '_ {
             Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
                 fmt_dyn!(self, PrimitiveArray<$T>, f)
             }),
+            BinaryView => fmt_dyn!(self, BinaryViewArray, f),
+            Utf8View => fmt_dyn!(self, Utf8ViewArray, f),
             Binary => fmt_dyn!(self, BinaryArray<i32>, f),
             LargeBinary => fmt_dyn!(self, BinaryArray<i64>, f),
             FixedSizeBinary => fmt_dyn!(self, FixedSizeBinaryArray, f),
@@ -315,6 +317,8 @@ pub fn new_empty_array(data_type: ArrowDataType) -> Box<dyn Array> {
         Struct => Box::new(StructArray::new_empty(data_type)),
         Union => Box::new(UnionArray::new_empty(data_type)),
         Map => Box::new(MapArray::new_empty(data_type)),
+        Utf8View => Box::new(Utf8ViewArray::new_empty(data_type)),
+        BinaryView => Box::new(BinaryViewArray::new_empty(data_type)),
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 Box::new(DictionaryArray::<$T>::new_empty(data_type))
@@ -345,6 +349,8 @@ pub fn new_null_array(data_type: ArrowDataType, length: usize) -> Box<dyn Array>
         Struct => Box::new(StructArray::new_null(data_type, length)),
         Union => Box::new(UnionArray::new_null(data_type, length)),
         Map => Box::new(MapArray::new_null(data_type, length)),
+        BinaryView => Box::new(BinaryViewArray::new_null(data_type, length)),
+        Utf8View => Box::new(Utf8ViewArray::new_null(data_type, length)),
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 Box::new(DictionaryArray::<$T>::new_null(data_type, length))
@@ -427,6 +433,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
             })
         },
         Map => to_data_dyn!(array, MapArray),
+        BinaryView | Utf8View => todo!(),
     }
 }
 
@@ -457,6 +464,7 @@ pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
             })
         },
         Map => Box::new(MapArray::from_data(data)),
+        BinaryView | Utf8View => todo!(),
     }
 }
 
@@ -642,6 +650,8 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
         Struct => clone_dyn!(array, StructArray),
         Union => clone_dyn!(array, UnionArray),
         Map => clone_dyn!(array, MapArray),
+        BinaryView => clone_dyn!(array, BinaryViewArray),
+        Utf8View => clone_dyn!(array, Utf8ViewArray),
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 clone_dyn!(array, DictionaryArray::<$T>)
@@ -668,6 +678,8 @@ mod map;
 mod null;
 mod primitive;
 pub mod specification;
+mod static_array;
+mod static_array_collect;
 mod struct_;
 mod total_ord;
 mod union;
@@ -680,10 +692,15 @@ mod fmt;
 pub mod indexable;
 pub mod iterator;
 
+mod binview;
 pub mod growable;
 mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
+pub use binview::{
+    BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray, MutablePlBinary,
+    MutablePlString, Utf8ViewArray, View, ViewType,
+};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use equal::equal;
@@ -697,6 +714,8 @@ pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray};
 use polars_error::PolarsResult;
 pub use primitive::*;
+pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};
+pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
 pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};

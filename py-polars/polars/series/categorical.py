@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.deprecation import deprecate_function
+from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     from polars import Series
@@ -31,6 +32,11 @@ class CatNameSpace:
         """
         Determine how this categorical series should be sorted.
 
+        .. deprecated:: 0.19.19
+            Set the ordering directly on the datatype `pl.Categorical('lexical')`
+            or `pl.Categorical('physical')` or `cast()` to the intended data type.
+            This method will be removed in the next breaking change
+
         Parameters
         ----------
         ordering : {'physical', 'lexical'}
@@ -56,7 +62,6 @@ class CatNameSpace:
             "bar"
             "ham"
         ]
-
         """
 
     def is_local(self) -> bool:
@@ -75,10 +80,8 @@ class CatNameSpace:
 
         >>> with pl.StringCache():
         ...     s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-        ...
         >>> s.cat.is_local()
         False
-
         """
         return self._s.cat_is_local()
 
@@ -98,7 +101,6 @@ class CatNameSpace:
         >>> with pl.StringCache():
         ...     _ = pl.Series("x", ["a", "b", "a"], dtype=pl.Categorical)
         ...     s = pl.Series("y", ["c", "b", "d"], dtype=pl.Categorical)
-        ...
         >>> s.to_physical()
         shape: (3,)
         Series: 'y' [u32]
@@ -115,24 +117,17 @@ class CatNameSpace:
                 1
                 2
         ]
-
         """
         return wrap_s(self._s.cat_to_local())
 
+    @unstable()
     def uses_lexical_ordering(self) -> bool:
         """
         Return whether or not the series uses lexical ordering.
 
-        This can be set using :func:`set_ordering`.
-
-        Warnings
-        --------
-        This API is experimental and may change without it being considered a breaking
-        change.
-
-        See Also
-        --------
-        set_ordering
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -142,6 +137,5 @@ class CatNameSpace:
         >>> s = s.cast(pl.Categorical("lexical"))
         >>> s.cat.uses_lexical_ordering()
         True
-
         """
         return self._s.cat_uses_lexical_ordering()

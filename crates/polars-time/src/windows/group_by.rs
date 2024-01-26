@@ -1,5 +1,5 @@
 use arrow::legacy::time_zone::Tz;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
@@ -303,7 +303,7 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
@@ -353,7 +353,7 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
@@ -403,7 +403,7 @@ pub(crate) fn group_by_values_iter_lookahead(
     tz: Option<Tz>,
     start_offset: usize,
     upper_bound: Option<usize>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let upper_bound = upper_bound.unwrap_or(time.len());
 
     let add = match tu {
@@ -457,19 +457,101 @@ pub(crate) fn group_by_values_iter(
     group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0, None)
 }
 
-/// Checks if the boundary elements don't split on duplicates
-fn check_splits(time: &[i64], thread_offsets: &[(usize, usize)]) -> bool {
-    if time.is_empty() {
-        return true;
-    }
-    let mut valid = true;
-    for window in thread_offsets.windows(2) {
-        let left_block_end = window[0].0 + window[0].1;
+/// Checks if the boundary elements don't split on duplicates.
+/// If they do we remove them
+fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usize)>) {
+    let is_valid = |window: &[(usize, usize)]| -> bool {
+        debug_assert_eq!(window.len(), 2);
+        let left_block_end = window[0].0 + window[0].1.saturating_sub(1);
         let right_block_start = window[1].0;
+        time[left_block_end] != time[right_block_start]
+    };
 
-        valid &= time[left_block_end] != time[right_block_start];
+    if time.is_empty() || thread_offsets.len() <= 1 || thread_offsets.windows(2).all(is_valid) {
+        return;
     }
-    valid
+
+    let mut new = vec![];
+    for window in thread_offsets.windows(2) {
+        let this_block_is_valid = is_valid(window);
+        if this_block_is_valid {
+            // Only push left block
+            new.push(window[0])
+        }
+    }
+    // Check last block
+    if thread_offsets.len() % 2 == 0 {
+        let window = &thread_offsets[thread_offsets.len() - 2..];
+        if is_valid(window) {
+            new.push(thread_offsets[thread_offsets.len() - 1])
+        }
+    }
+    // We pruned invalid blocks, now we must correct the lengths.
+    if new.len() <= 1 {
+        new = vec![(0, time.len())];
+    } else {
+        let mut previous_start = time.len();
+        for window in new.iter_mut().rev() {
+            window.1 = previous_start - window.0;
+            previous_start = window.0;
+        }
+        new[0].0 = 0;
+        new[0].1 = new[1].0;
+        debug_assert_eq!(new.iter().map(|w| w.1).sum::<usize>(), time.len());
+        // Call again to check.
+        prune_splits_on_duplicates(time, &mut new)
+    }
+    std::mem::swap(thread_offsets, &mut new);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn group_by_values_iter_lookbehind_collected(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+    start_offset: usize,
+    upper_bound: Option<usize>,
+) -> PolarsResult<Vec<[IdxSize; 2]>> {
+    let iter = group_by_values_iter_lookbehind(
+        period,
+        offset,
+        time,
+        closed_window,
+        tu,
+        tz,
+        start_offset,
+        upper_bound,
+    )?;
+    iter.map(|result| result.map(|(offset, len)| [offset, len]))
+        .collect::<PolarsResult<Vec<_>>>()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn group_by_values_iter_lookahead_collected(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+    start_offset: usize,
+    upper_bound: Option<usize>,
+) -> PolarsResult<Vec<[IdxSize; 2]>> {
+    let iter = group_by_values_iter_lookahead(
+        period,
+        offset,
+        time,
+        closed_window,
+        tu,
+        tz,
+        start_offset,
+        upper_bound,
+    );
+    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
+        .collect::<PolarsResult<Vec<_>>>()
 }
 
 /// Different from `group_by_windows`, where define window buckets and search which values fit that
@@ -487,9 +569,10 @@ pub fn group_by_values(
 ) -> PolarsResult<GroupsSlice> {
     let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
     // there are duplicates in the splits, so we opt for a single partition
-    if !check_splits(time, &thread_offsets) {
-        thread_offsets = _split_offsets(time.len(), 1)
-    }
+    prune_splits_on_duplicates(time, &mut thread_offsets);
+
+    // If we start from within parallel work we will do this single threaded.
+    let run_parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
 
     // we have a (partial) lookbehind window
     if offset.negative {
@@ -498,13 +581,27 @@ pub fn group_by_values(
             // t is right at the end of the window
             // ------t---
             // [------]
+            if !run_parallel {
+                let vecs = group_by_values_iter_lookbehind_collected(
+                    period,
+                    offset,
+                    time,
+                    closed_window,
+                    tu,
+                    tz,
+                    0,
+                    None,
+                )?;
+                return Ok(GroupsSlice::from(vecs));
+            }
+
             POOL.install(|| {
                 let vals = thread_offsets
                     .par_iter()
                     .copied()
                     .map(|(base_offset, len)| {
                         let upper_bound = base_offset + len;
-                        let iter = group_by_values_iter_lookbehind(
+                        group_by_values_iter_lookbehind_collected(
                             period,
                             offset,
                             time,
@@ -513,9 +610,7 @@ pub fn group_by_values(
                             tz,
                             base_offset,
                             Some(upper_bound),
-                        )?;
-                        iter.map(|result| result.map(|(offset, len)| [offset, len]))
-                            .collect::<PolarsResult<Vec<_>>>()
+                        )
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(flatten_par(&vals))
@@ -558,6 +653,21 @@ pub fn group_by_values(
         // window is completely ahead of t and t itself is not a member
         // --t-----------
         //        [---]
+
+        if !run_parallel {
+            let vecs = group_by_values_iter_lookahead_collected(
+                period,
+                offset,
+                time,
+                closed_window,
+                tu,
+                tz,
+                0,
+                None,
+            )?;
+            return Ok(GroupsSlice::from(vecs));
+        }
+
         POOL.install(|| {
             let vals = thread_offsets
                 .par_iter()
@@ -565,7 +675,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_lookahead(
+                    group_by_values_iter_lookahead_collected(
                         period,
                         offset,
                         time,
@@ -574,14 +684,26 @@ pub fn group_by_values(
                         tz,
                         lower_bound,
                         Some(upper_bound),
-                    );
-                    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
-                        .collect::<PolarsResult<Vec<_>>>()
+                    )
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(flatten_par(&vals))
         })
     } else {
+        if !run_parallel {
+            let vecs = group_by_values_iter_lookahead_collected(
+                period,
+                offset,
+                time,
+                closed_window,
+                tu,
+                tz,
+                0,
+                None,
+            )?;
+            return Ok(GroupsSlice::from(vecs));
+        }
+
         // Offset is 0 and window is closed on the left:
         // it must be that the window starts at t and t is a member
         // --t-----------
@@ -593,7 +715,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_lookahead(
+                    group_by_values_iter_lookahead_collected(
                         period,
                         offset,
                         time,
@@ -602,12 +724,25 @@ pub fn group_by_values(
                         tz,
                         lower_bound,
                         Some(upper_bound),
-                    );
-                    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
-                        .collect::<PolarsResult<Vec<_>>>()
+                    )
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(flatten_par(&vals))
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_prune_duplicates() {
+        //                     |--|------------|----|---------|
+        //                     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+        let time = &[0, 1, 1, 2, 2, 2, 3, 4, 5, 6, 5];
+        let mut splits = vec![(0, 2), (2, 4), (6, 2), (8, 3)];
+        prune_splits_on_duplicates(time, &mut splits);
+        assert_eq!(splits, &[(0, 6), (6, 2), (8, 3)]);
     }
 }

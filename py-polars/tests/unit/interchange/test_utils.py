@@ -6,7 +6,12 @@ import pytest
 
 import polars as pl
 from polars.interchange.protocol import DtypeKind, Endianness
-from polars.interchange.utils import polars_dtype_to_dtype
+from polars.interchange.utils import (
+    dtype_to_polars_dtype,
+    get_buffer_length_in_elements,
+    polars_dtype_to_data_buffer_dtype,
+    polars_dtype_to_dtype,
+)
 
 if TYPE_CHECKING:
     from polars.interchange.protocol import Dtype
@@ -28,10 +33,9 @@ NE = Endianness.NATIVE
         (pl.Float32, (DtypeKind.FLOAT, 32, "f", NE)),
         (pl.Float64, (DtypeKind.FLOAT, 64, "g", NE)),
         (pl.Boolean, (DtypeKind.BOOL, 1, "b", NE)),
-        (pl.Utf8, (DtypeKind.STRING, 8, "U", NE)),
+        (pl.String, (DtypeKind.STRING, 8, "U", NE)),
         (pl.Date, (DtypeKind.DATETIME, 32, "tdD", NE)),
         (pl.Time, (DtypeKind.DATETIME, 64, "ttu", NE)),
-        (pl.Categorical, (DtypeKind.CATEGORICAL, 32, "I", NE)),
         (pl.Duration, (DtypeKind.DATETIME, 64, "tDu", NE)),
         (pl.Duration(time_unit="ns"), (DtypeKind.DATETIME, 64, "tDn", NE)),
         (pl.Datetime, (DtypeKind.DATETIME, 64, "tsu:", NE)),
@@ -46,10 +50,96 @@ NE = Endianness.NATIVE
         ),
     ],
 )
-def test_polars_dtype_to_dtype(polars_dtype: pl.DataType, dtype: Dtype) -> None:
+def test_dtype_conversions(polars_dtype: pl.PolarsDataType, dtype: Dtype) -> None:
     assert polars_dtype_to_dtype(polars_dtype) == dtype
+    assert dtype_to_polars_dtype(dtype) == polars_dtype
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        (DtypeKind.CATEGORICAL, 32, "I", NE),
+        (DtypeKind.CATEGORICAL, 8, "C", NE),
+    ],
+)
+def test_dtype_to_polars_dtype_categorical(dtype: Dtype) -> None:
+    assert dtype_to_polars_dtype(dtype) == pl.Enum
+
+
+@pytest.mark.parametrize(
+    "polars_dtype",
+    [
+        pl.Categorical,
+        pl.Categorical("lexical"),
+        pl.Enum,
+        pl.Enum(["a", "b"]),
+    ],
+)
+def test_polars_dtype_to_dtype_categorical(polars_dtype: pl.PolarsDataType) -> None:
+    assert polars_dtype_to_dtype(polars_dtype) == (DtypeKind.CATEGORICAL, 32, "I", NE)
 
 
 def test_polars_dtype_to_dtype_unsupported_type() -> None:
+    polars_dtype = pl.List(pl.Int8)
     with pytest.raises(ValueError, match="not supported"):
-        polars_dtype_to_dtype(pl.List)
+        polars_dtype_to_dtype(polars_dtype)
+
+
+def test_dtype_to_polars_dtype_unsupported_type() -> None:
+    dtype = (DtypeKind.FLOAT, 16, "e", NE)
+    with pytest.raises(
+        NotImplementedError,
+        match="unsupported data type: \\(<DtypeKind.FLOAT: 2>, 16, 'e', '='\\)",
+    ):
+        dtype_to_polars_dtype(dtype)
+
+
+def test_dtype_to_polars_dtype_unsupported_temporal_type() -> None:
+    dtype = (DtypeKind.DATETIME, 64, "tss:", NE)
+    with pytest.raises(
+        NotImplementedError,
+        match="unsupported temporal data type: \\(<DtypeKind.DATETIME: 22>, 64, 'tss:', '='\\)",
+    ):
+        dtype_to_polars_dtype(dtype)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        ((DtypeKind.INT, 64, "l", NE), 3),
+        ((DtypeKind.UINT, 32, "I", NE), 6),
+    ],
+)
+def test_get_buffer_length_in_elements(dtype: Dtype, expected: int) -> None:
+    assert get_buffer_length_in_elements(24, dtype) == expected
+
+
+def test_get_buffer_length_in_elements_unsupported_dtype() -> None:
+    dtype = (DtypeKind.BOOL, 1, "b", NE)
+    with pytest.raises(
+        ValueError,
+        match="cannot get buffer length for buffer with dtype \\(<DtypeKind.BOOL: 20>, 1, 'b', '='\\)",
+    ):
+        get_buffer_length_in_elements(24, dtype)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        (pl.Int8, pl.Int8),
+        (pl.Date, pl.Int32),
+        (pl.Time, pl.Int64),
+        (pl.String, pl.UInt8),
+        (pl.Enum, pl.UInt32),
+    ],
+)
+def test_polars_dtype_to_data_buffer_dtype(
+    dtype: pl.PolarsDataType, expected: pl.PolarsDataType
+) -> None:
+    assert polars_dtype_to_data_buffer_dtype(dtype) == expected
+
+
+def test_polars_dtype_to_data_buffer_dtype_unsupported_dtype() -> None:
+    dtype = pl.List(pl.Int8)
+    with pytest.raises(NotImplementedError):
+        polars_dtype_to_data_buffer_dtype(dtype)

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import sys
 import warnings
 from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -16,7 +17,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import SchemaDict, SelectorType
+    from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict, SelectorType
 
 pytestmark = pytest.mark.slow()
 
@@ -32,6 +33,11 @@ def path_xlsx_empty(io_files_path: Path) -> Path:
 
 
 @pytest.fixture()
+def path_xlsx_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.xlsx"
+
+
+@pytest.fixture()
 def path_xlsb(io_files_path: Path) -> Path:
     return io_files_path / "example.xlsb"
 
@@ -39,6 +45,11 @@ def path_xlsb(io_files_path: Path) -> Path:
 @pytest.fixture()
 def path_xlsb_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.xlsb"
+
+
+@pytest.fixture()
+def path_xlsb_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.xlsb"
 
 
 @pytest.fixture()
@@ -51,12 +62,34 @@ def path_ods_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.ods"
 
 
+@pytest.fixture()
+def path_ods_mixed(io_files_path: Path) -> Path:
+    return io_files_path / "mixed.ods"
+
+
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "engine_params"),
     [
+        # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        pytest.param(
+            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+        # xlsb file (binary)
+        pytest.param(
+            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        # open document
         (pl.read_ods, "path_ods", {}),
     ],
 )
@@ -85,9 +118,26 @@ def test_read_spreadsheet(
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
+        # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        pytest.param(
+            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+        # xlsb file (binary)
+        pytest.param(
+            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        # open document
         (pl.read_ods, "path_ods", {}),
     ],
 )
@@ -123,9 +173,26 @@ def test_read_excel_multi_sheets(
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
+        # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        pytest.param(
+            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+        # xlsb file (binary)
+        pytest.param(
+            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        # open document
         (pl.read_ods, "path_ods", {}),
     ],
 )
@@ -164,11 +231,18 @@ def test_read_excel_all_sheets(
     ("engine", "schema_overrides"),
     [
         ("xlsx2csv", {"datetime": pl.Datetime}),
+        pytest.param(
+            *("calamine", None),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
         ("openpyxl", None),
     ],
 )
 def test_read_excel_basic_datatypes(
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"],
+    engine: ExcelSpreadsheetEngine,
     schema_overrides: SchemaDict | None,
 ) -> None:
     df = pl.DataFrame(
@@ -198,9 +272,26 @@ def test_read_excel_basic_datatypes(
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
+        # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        pytest.param(
+            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+        # xlsb file (binary)
+        pytest.param(
+            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        # open document
         (pl.read_ods, "path_ods", {}),
     ],
 )
@@ -225,9 +316,79 @@ def test_read_invalid_worksheet(
             )
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
-def test_write_excel_bytes(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> None:
-    df = pl.DataFrame({"A": [1, 2, 3, 4, 5]})
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "additional_params"),
+    [
+        (pl.read_excel, "path_xlsx_mixed", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb_mixed", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods_mixed", {}),
+    ],
+)
+def test_read_mixed_dtype_columns(
+    read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
+    source: str,
+    additional_params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+    schema_overrides = {
+        "Employee ID": pl.Utf8,
+        "Employee Name": pl.Utf8,
+        "Date": pl.Date,
+        "Details": pl.Categorical,
+        "Asset ID": pl.Utf8,
+    }
+
+    df = read_spreadsheet(
+        spreadsheet_path,
+        sheet_id=0,
+        schema_overrides=schema_overrides,
+        **additional_params,
+    )["Sheet1"]
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "Employee ID": ["123456", "44333", "US00011", "135967", "IN86868"],
+                "Employee Name": ["Test1", "Test2", "Test4", "Test5", "Test6"],
+                "Date": [
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                    date(2023, 7, 21),
+                ],
+                "Details": [
+                    "Healthcare",
+                    "Healthcare",
+                    "Healthcare",
+                    "Healthcare",
+                    "Something",
+                ],
+                "Asset ID": ["84444", "84444", "84444", "84444", "ABC123"],
+            },
+            schema_overrides=schema_overrides,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "engine",
+    [
+        "xlsx2csv",
+        "openpyxl",
+        pytest.param(
+            "calamine",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+    ],
+)
+def test_write_excel_bytes(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame({"A": [1.5, -2, 0, 3.0, -4.5, 5.0]})
 
     excel_bytes = BytesIO()
     df.write_excel(excel_bytes)
@@ -242,22 +403,18 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name="test4",
         schema_overrides={"cardinality": pl.UInt16},
     ).drop_nulls()
-    assert df1.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float64,
-        "iter_groups": pl.Float64,
-    }
+    assert df1.schema["cardinality"] == pl.UInt16
+    assert df1.schema["rows_by_key"] == pl.Float64
+    assert df1.schema["iter_groups"] == pl.Float64
 
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
         read_csv_options={"dtypes": {"cardinality": pl.UInt16}},
     ).drop_nulls()
-    assert df2.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float64,
-        "iter_groups": pl.Float64,
-    }
+    assert df2.schema["cardinality"] == pl.UInt16
+    assert df2.schema["rows_by_key"] == pl.Float64
+    assert df2.schema["iter_groups"] == pl.Float64
 
     df3 = pl.read_excel(
         path_xlsx,
@@ -270,11 +427,9 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             },
         },
     ).drop_nulls()
-    assert df3.schema == {
-        "cardinality": pl.UInt16,
-        "rows_by_key": pl.Float32,
-        "iter_groups": pl.Float32,
-    }
+    assert df3.schema["cardinality"] == pl.UInt16
+    assert df3.schema["rows_by_key"] == pl.Float32
+    assert df3.schema["iter_groups"] == pl.Float32
 
     for workbook_path in (path_xlsx, path_xlsb, path_ods):
         df4 = pl.read_excel(
@@ -320,7 +475,8 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name=["test4", "test4"],
         schema_overrides=overrides,
     )
-    assert df["test4"].schema == overrides
+    for col, dtype in overrides.items():
+        assert df["test4"].schema[col] == dtype
 
 
 def test_unsupported_engine() -> None:
@@ -336,7 +492,20 @@ def test_unsupported_binary_workbook(path_xlsx: Path, path_xlsb: Path) -> None:
         pl.read_excel(path_xlsb, engine="openpyxl")
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
+@pytest.mark.parametrize(
+    "engine",
+    [
+        "xlsx2csv",
+        "openpyxl",
+        pytest.param(
+            "calamine",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+    ],
+)
 def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> None:
     with pytest.raises(
         ValueError,
@@ -481,9 +650,22 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
     assert_frame_equal(df, xldf)
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
+@pytest.mark.parametrize(
+    "engine",
+    [
+        "xlsx2csv",
+        "openpyxl",
+        pytest.param(
+            "calamine",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+    ],
+)
 def test_excel_compound_types(
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]
+    engine: ExcelSpreadsheetEngine,
 ) -> None:
     df = pl.DataFrame(
         {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
@@ -500,8 +682,21 @@ def test_excel_compound_types(
     ]
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
-def test_excel_sparklines(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> None:
+@pytest.mark.parametrize(
+    "engine",
+    [
+        "xlsx2csv",
+        "openpyxl",
+        pytest.param(
+            "calamine",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+    ],
+)
+def test_excel_sparklines(engine: ExcelSpreadsheetEngine) -> None:
     from xlsxwriter import Workbook
 
     # note that we don't (quite) expect sparkline export to round-trip as we
@@ -514,7 +709,7 @@ def test_excel_sparklines(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> 
             "q3": [-50, 0, 40, 80, 80],
             "q4": [75, 55, 25, -10, -55],
         }
-    )
+    ).cast(dtypes={pl.Int64: pl.Float64})
 
     # also: confirm that we can use a Workbook directly with "write_excel"
     xls = BytesIO()
@@ -570,20 +765,22 @@ def test_excel_sparklines(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> 
     # └─────┴──────┴─────┴─────┴─────┴─────┴───────┴─────┴─────┘
 
     for sparkline_col in ("+/-", "trend"):
-        assert set(xldf[sparkline_col]) == {None}
+        assert set(xldf[sparkline_col]) in ({None}, {""})
 
     assert xldf.columns == ["id", "+/-", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
-    assert_frame_equal(df, xldf.drop("+/-", "trend", "h1", "h2"))
+    assert_frame_equal(
+        df, xldf.drop("+/-", "trend", "h1", "h2").cast(dtypes={pl.Int64: pl.Float64})
+    )
 
 
 def test_excel_write_multiple_tables() -> None:
     from xlsxwriter import Workbook
 
     # note: checks that empty tables don't error on write
-    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df4 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df4 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
 
     xls = BytesIO()
     with Workbook(xls) as wb:
@@ -619,9 +816,9 @@ def test_excel_freeze_panes() -> None:
     from xlsxwriter import Workbook
 
     # note: checks that empty tables don't error on write
-    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
-    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
 
     xls = BytesIO()
 
@@ -666,13 +863,20 @@ def test_excel_empty_sheet(
     [
         ("xlsx2csv", ["a"]),
         ("openpyxl", ["a", "b"]),
+        pytest.param(
+            *("calamine", ["a", "b"]),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
         ("xlsx2csv", cs.numeric()),
         ("openpyxl", cs.last()),
     ],
 )
 def test_excel_hidden_columns(
     hidden_columns: list[str] | SelectorType,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"],
+    engine: ExcelSpreadsheetEngine,
 ) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
 
@@ -684,16 +888,10 @@ def test_excel_hidden_columns(
 
 
 def test_invalid_engine_options() -> None:
+    # read_csv_options only applicable with 'xlsx2csv' engine
     with pytest.raises(ValueError, match="cannot specify `read_csv_options`"):
         pl.read_excel(
             "",
             engine="openpyxl",
             read_csv_options={"sep": "\t"},
-        )
-
-    with pytest.raises(ValueError, match="cannot specify `xlsx2csv_options`"):
-        pl.read_excel(
-            "",
-            engine="openpyxl",
-            xlsx2csv_options={"skip_empty_lines": True},
         )

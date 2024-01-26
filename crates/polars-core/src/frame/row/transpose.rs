@@ -18,7 +18,7 @@ impl DataFrame {
             None => Vec::<Series>::with_capacity(new_width),
             Some(name) => {
                 let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
-                tmp.push(Utf8Chunked::new(name, self.get_column_names()).into());
+                tmp.push(StringChunked::new(name, self.get_column_names()).into());
                 tmp
             },
         };
@@ -40,7 +40,7 @@ impl DataFrame {
             DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_out, &mut cols_t),
             DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 // this requires to support `Object` in Series::iter which we don't yet
                 polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
             },
@@ -93,8 +93,8 @@ impl DataFrame {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
             Some(cn) => match cn {
                 Either::Left(name) => {
-                    let new_names = self.column(&name).and_then(|x| x.utf8())?;
-                    polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
+                    let new_names = self.column(&name).and_then(|x| x.str())?;
+                    polars_ensure!(new_names.null_count() == 0, ComputeError: "Column with new names can't have null values");
                     df = Cow::Owned(self.drop(&name)?);
                     new_names
                         .into_no_null_iter()
@@ -119,11 +119,13 @@ impl DataFrame {
         let dtype = df.get_supertype().unwrap()?;
         match dtype {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => {
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                 let mut valid = true;
                 let mut rev_map: Option<&Arc<RevMapping>> = None;
                 for s in self.columns.iter() {
-                    if let DataType::Categorical(Some(col_rev_map), _) = &s.dtype() {
+                    if let DataType::Categorical(Some(col_rev_map), _)
+                    | DataType::Enum(Some(col_rev_map), _) = &s.dtype()
+                    {
                         match rev_map {
                             Some(rev_map) => valid = valid && rev_map.same_src(col_rev_map),
                             None => {
@@ -243,7 +245,7 @@ where
                 };
 
                 let arr = PrimitiveArray::<T::Native>::new(
-                    T::get_dtype().to_arrow(),
+                    T::get_dtype().to_arrow(true),
                     values.into(),
                     validity,
                 );

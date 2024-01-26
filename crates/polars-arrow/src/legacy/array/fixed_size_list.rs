@@ -1,8 +1,9 @@
 use polars_error::PolarsResult;
 
-use crate::array::{ArrayRef, FixedSizeListArray};
+use crate::array::{new_null_array, ArrayRef, FixedSizeListArray, NullArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
+use crate::legacy::array::{convert_inner_type, is_nested_null};
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 
 #[derive(Default)]
@@ -34,6 +35,8 @@ impl AnonymousBuilder {
     }
 
     pub fn push_null(&mut self) {
+        self.arrays
+            .push(NullArray::new(ArrowDataType::Null, self.width).boxed());
         match &mut self.validity {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
@@ -48,8 +51,34 @@ impl AnonymousBuilder {
     }
 
     pub fn finish(self, inner_dtype: Option<&ArrowDataType>) -> PolarsResult<FixedSizeListArray> {
-        let values = concatenate_owned_unchecked(&self.arrays)?;
-        let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
+        let mut inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
+
+        if is_nested_null(inner_dtype) {
+            for arr in &self.arrays {
+                if !is_nested_null(arr.data_type()) {
+                    inner_dtype = arr.data_type();
+                    break;
+                }
+            }
+        };
+
+        // convert nested null arrays to the correct dtype.
+        let arrays = self
+            .arrays
+            .iter()
+            .map(|arr| {
+                if matches!(arr.data_type(), ArrowDataType::Null) {
+                    new_null_array(inner_dtype.clone(), arr.len())
+                } else if is_nested_null(arr.data_type()) {
+                    convert_inner_type(&**arr, inner_dtype)
+                } else {
+                    arr.to_boxed()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let values = concatenate_owned_unchecked(&arrays)?;
+
         let data_type = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
         Ok(FixedSizeListArray::new(
             data_type,

@@ -157,15 +157,11 @@ where
     &input[read..]
 }
 
+/// Remove whitespace from the start of buffer.
 /// Makes sure that the bytes stream starts with
 ///     'field_1,field_2'
 /// and not with
 ///     '\nfield_1,field_1'
-pub(crate) fn skip_header(input: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
-    skip_this_line(input, quote, eol_char)
-}
-
-/// Remove whitespace from the start of buffer.
 #[inline]
 pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
     skip_condition(input, is_whitespace)
@@ -175,18 +171,6 @@ pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
 /// Can be used to skip whitespace, but exclude the separator
 pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
     skip_condition(input, |b| b != exclude && (is_whitespace(b)))
-}
-
-#[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(crate) fn skip_whitespace_line_ending_exclude(
-    input: &[u8],
-    exclude: u8,
-    eol_char: u8,
-) -> &[u8] {
-    skip_condition(input, |b| {
-        b != exclude && (is_whitespace(b) || is_line_ending(b, eol_char))
-    })
 }
 
 #[inline]
@@ -338,7 +322,7 @@ fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
 }
 
 #[inline]
-fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
+pub(crate) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, eol_char),
         None => bytes.iter().position(|x| *x == eol_char),
@@ -359,8 +343,8 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn parse_lines<'a>(
-    mut bytes: &'a [u8],
+pub(super) fn parse_lines(
+    mut bytes: &[u8],
     offset: usize,
     separator: u8,
     comment_prefix: Option<&CommentPrefix>,
@@ -371,7 +355,7 @@ pub(super) fn parse_lines<'a>(
     mut truncate_ragged_lines: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
-    buffers: &mut [Buffer<'a>],
+    buffers: &mut [Buffer],
     n_lines: usize,
     // length of original schema
     schema_len: usize,
@@ -400,19 +384,10 @@ pub(super) fn parse_lines<'a>(
             return Ok(end - start);
         }
 
-        // only when we have one column \n should not be skipped
-        // other widths should have commas.
-        bytes = if schema_len > 1 {
-            skip_whitespace_line_ending_exclude(bytes, separator, eol_char)
-        } else {
-            skip_whitespace_exclude(bytes, separator)
-        };
         if bytes.is_empty() {
             return Ok(original_bytes_len);
-        }
-
-        // deal with comments
-        if is_comment_line(bytes, comment_prefix) {
+        } else if is_comment_line(bytes, comment_prefix) {
+            // deal with comments
             let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
             bytes = bytes_rem;
             continue;
@@ -471,26 +446,28 @@ pub(super) fn parse_lines<'a>(
                             buf.add_null(!missing_is_null && field.is_empty())
                         } else {
                             buf.add(field, ignore_errors, needs_escaping, missing_is_null)
-                                .map_err(|_| {
+                                .map_err(|e| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
                                     let column_name = schema.get_at_index(idx as usize).unwrap().0;
                                     polars_err!(
                                         ComputeError:
-                                        "Could not parse `{}` as dtype `{}` at column '{}' (column number {}).\n\
+                                        "could not parse `{}` as dtype `{}` at column '{}' (column number {})\n\n\
                                         The current offset in the file is {} bytes.\n\
                                         \n\
                                         You might want to try:\n\
                                         - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
                                         - specifying correct dtype with the `dtypes` argument\n\
                                         - setting `ignore_errors` to `True`,\n\
-                                        - adding `{}` to the `null_values` list.",
+                                        - adding `{}` to the `null_values` list.\n\n\
+                                        Original error: ```{}```",
                                         &unparsable,
                                         buf.dtype(),
                                         column_name,
                                         idx + 1,
                                         bytes_offset,
                                         &unparsable,
+                                        e
                                     )
                                 })?;
                         }

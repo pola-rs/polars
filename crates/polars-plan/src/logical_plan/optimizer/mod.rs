@@ -27,6 +27,7 @@ mod fused;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
+mod simplify_functions;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;

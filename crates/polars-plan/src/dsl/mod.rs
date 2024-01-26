@@ -234,7 +234,7 @@ impl Expr {
         self.explode()
     }
 
-    /// Explode the utf8/ list column.
+    /// Explode the String/List column.
     pub fn explode(self) -> Self {
         Expr::Explode(Box::new(self))
     }
@@ -620,7 +620,7 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        auto_explode: bool,
+        returns_scalar: bool,
         cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
@@ -632,7 +632,7 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
-                returns_scalar: auto_explode,
+                returns_scalar,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -690,7 +690,7 @@ impl Expr {
     }
 
     /// Shift the values in the array by some period and fill the resulting empty values.
-    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+    pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.apply_many_private(
             FunctionExpr::ShiftAndFill,
             &[n.into(), fill_value.into()],
@@ -914,9 +914,12 @@ impl Expr {
 
     #[cfg(feature = "dynamic_group_by")]
     pub fn rolling(self, options: RollingGroupOptions) -> Self {
+        // We add the index column as `partition expr` so that the optimizer will
+        // not ignore it.
+        let index_col = col(options.index_column.as_str());
         Expr::Window {
             function: Box::new(self),
-            partition_by: vec![],
+            partition_by: vec![index_col],
             options: WindowType::Rolling(options),
         }
     }
@@ -944,6 +947,10 @@ impl Expr {
         self.fill_null_impl(fill_value.into())
     }
 
+    pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
+        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+    }
+
     /// Replace the floating point `NaN` values by a value.
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
@@ -969,6 +976,17 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_duplicated(self) -> Self {
         self.apply_private(BooleanFunction::IsDuplicated.into())
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_between")]
+    pub fn is_between<E: Into<Expr>>(self, lower: E, upper: E, closed: ClosedInterval) -> Self {
+        self.map_many_private(
+            BooleanFunction::IsBetween { closed }.into(),
+            &[lower.into(), upper.into()],
+            false,
+            true,
+        )
     }
 
     /// Get a mask of unique values.
@@ -1003,6 +1021,16 @@ impl Expr {
         binary_expr(self, Operator::Or, expr.into())
     }
 
+    /// "or" operation.
+    pub fn logical_or<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::LogicalOr, expr.into())
+    }
+
+    /// "or" operation.
+    pub fn logical_and<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::LogicalAnd, expr.into())
+    }
+
     /// Filter a single column.
     ///
     /// Should be used in aggregation context. If you want to filter on a
@@ -1025,7 +1053,7 @@ impl Expr {
         let has_literal = has_leaf_literal(&other);
 
         // lit(true).is_in() returns a scalar.
-        let returns_scalar = all_leaf_literal(&self);
+        let returns_scalar = all_return_scalar(&self);
 
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
@@ -1317,12 +1345,21 @@ impl Expr {
         default: Option<E>,
         return_dtype: Option<DataType>,
     ) -> Expr {
-        let default_expr = match default {
-            Some(expr) => expr.into(),
-            None => self.clone(),
-        };
-        let args: &[Expr] = &[old.into(), new.into(), default_expr];
-        self.apply_many_private(FunctionExpr::Replace { return_dtype }, args, false, false)
+        let old = old.into();
+        let new = new.into();
+        // If we search and replace by literals, we can run on batches.
+        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
+
+        let mut args = vec![old, new];
+        if let Some(default) = default {
+            args.push(default.into())
+        }
+
+        if literal_searchers {
+            self.map_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+        } else {
+            self.apply_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+        }
     }
 
     #[cfg(feature = "cutqcut")]
@@ -1571,7 +1608,8 @@ impl Expr {
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
     pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
-        self.apply_private(FunctionExpr::SetSortedFlag(sorted))
+        // This is `map`. If a column is sorted. Chunks of that column are also sorted.
+        self.map_private(FunctionExpr::SetSortedFlag(sorted))
     }
 
     #[cfg(feature = "row_hash")]
@@ -1582,6 +1620,15 @@ impl Expr {
 
     pub fn to_physical(self) -> Expr {
         self.map_private(FunctionExpr::ToPhysical)
+    }
+
+    pub fn gather_every(self, n: usize, offset: usize) -> Expr {
+        self.apply_private(FunctionExpr::GatherEvery { n, offset })
+    }
+
+    #[cfg(feature = "reinterpret")]
+    pub fn reinterpret(self, signed: bool) -> Expr {
+        self.map_private(FunctionExpr::Reinterpret(signed))
     }
 
     #[cfg(feature = "strings")]
@@ -1727,9 +1774,9 @@ where
     }
 }
 
-/// Count expression.
-pub fn count() -> Expr {
-    Expr::Count
+/// Return the number of rows in the context.
+pub fn len() -> Expr {
+    Expr::Len
 }
 
 /// First column in DataFrame.

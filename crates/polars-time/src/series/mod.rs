@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, Div};
 
 use polars_core::prelude::*;
 
@@ -120,6 +120,34 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
+    /// Calculate the millennium from the underlying NaiveDateTime representation.
+    fn millennium(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            // note: adjust by one for the years on the <n>000 boundaries.
+            // (2000 is the end of the 2nd millennium; 2001 is the beginning of the 3rd).
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
+            dt => polars_bail!(opq = century, dt),
+        }
+    }
+
+    /// Calculate the millennium from the underlying NaiveDateTime representation.
+    fn century(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            // note: adjust by one for years on the <nn>00 boundaries.
+            // (1900 is the end of the 19th century; 1901 is the beginning of the 20th).
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| (ca.year() - 1i32).div(100f64) + 1),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i32).div(100f64) + 1),
+            dt => polars_bail!(opq = century, dt),
+        }
+    }
+
     /// Extract year from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> PolarsResult<Int32Chunked> {
@@ -198,7 +226,7 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Convert Time into Utf8 with the given format.
+    /// Convert Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn to_string(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
@@ -215,7 +243,7 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Convert from Time into Utf8 with the given format.
+    /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.
@@ -223,7 +251,7 @@ pub trait TemporalMethods: AsSeries {
         self.to_string(format)
     }
 
-    #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
+    #[cfg(feature = "temporal")]
     /// Convert date(time) object to timestamp in [`TimeUnit`].
     fn timestamp(&self, tu: TimeUnit) -> PolarsResult<Int64Chunked> {
         let s = self.as_series();

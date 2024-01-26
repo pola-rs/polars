@@ -7,8 +7,6 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoTotalOrdInner, TotalOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -24,6 +22,7 @@ impl SeriesWrap<CategoricalChunked> {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 cats,
                 self.0.get_rev_map().clone(),
+                self.0.is_enum(),
                 self.0.get_ordering(),
             )
         };
@@ -112,7 +111,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         let list = self.0.physical().agg_list(groups);
         let mut list = list.list().unwrap().clone();
-        list.to_logical(self.dtype().clone());
+        unsafe { list.to_logical(self.dtype().clone()) };
         list.into_series()
     }
 

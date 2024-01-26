@@ -1,4 +1,8 @@
 use arrow::bitmap::MutableBitmap;
+use arrow::compute::cast::utf8view_to_utf8;
+#[cfg(feature = "dtype-array")]
+use arrow::legacy::compute::take::take_unchecked;
+use polars_utils::vec::PushUnchecked;
 
 use super::*;
 
@@ -80,13 +84,125 @@ impl ChunkExplode for ListChunked {
     }
 }
 
-impl ChunkExplode for Utf8Chunked {
+#[cfg(feature = "dtype-array")]
+impl ChunkExplode for ArrayChunked {
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
-        let ca = self.rechunk();
-        let array: &Utf8Array<i64> = ca.downcast_iter().next().unwrap();
-        let offsets = array.offsets().clone();
+        // fast-path for non-null array.
+        if self.null_count() == 0 {
+            let width = self.width() as i64;
+            let offsets = (0..self.len() + 1)
+                .map(|i| {
+                    let i = i as i64;
+                    i * width
+                })
+                .collect::<Vec<_>>();
+            // safety: monotonically increasing
+            let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
 
+            return Ok(offsets);
+        }
+
+        let ca = self.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+        // we have already ensure that validity is not none.
+        let validity = arr.validity().unwrap();
+        let width = arr.size();
+
+        let mut current_offset = 0i64;
+        let offsets = (0..=arr.len())
+            .map(|i| {
+                if i == 0 {
+                    return current_offset;
+                }
+                // Safety: we are within bounds
+                if unsafe { validity.get_bit_unchecked(i - 1) } {
+                    current_offset += width as i64
+                }
+                current_offset
+            })
+            .collect::<Vec<_>>();
+        // safety: monotonically increasing
+        let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
         Ok(offsets)
+    }
+
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+        let ca = self.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+        // fast-path for non-null array.
+        if arr.null_count() == 0 {
+            let s = Series::try_from((self.name(), arr.values().clone()))
+                .unwrap()
+                .cast(&ca.inner_dtype())?;
+            let width = self.width() as i64;
+            let offsets = (0..self.len() + 1)
+                .map(|i| {
+                    let i = i as i64;
+                    i * width
+                })
+                .collect::<Vec<_>>();
+            // safety: monotonically increasing
+            let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+            return Ok((s, offsets));
+        }
+
+        // we have already ensure that validity is not none.
+        let validity = arr.validity().unwrap();
+        let values = arr.values();
+        let width = arr.size();
+
+        let mut indices = MutablePrimitiveArray::<IdxSize>::with_capacity(
+            values.len() - arr.null_count() * (width - 1),
+        );
+        let mut offsets = Vec::with_capacity(arr.len() + 1);
+        let mut current_offset = 0i64;
+        offsets.push(current_offset);
+        (0..arr.len()).for_each(|i| {
+            // Safety: we are within bounds
+            if unsafe { validity.get_bit_unchecked(i) } {
+                let start = (i * width) as IdxSize;
+                let end = start + width as IdxSize;
+                indices.extend_trusted_len_values(start..end);
+                current_offset += width as i64;
+            } else {
+                indices.push_null();
+            }
+            offsets.push(current_offset);
+        });
+
+        // Safety: the indices we generate are in bounds
+        let chunk = unsafe { take_unchecked(&**values, &indices.into()) };
+        // safety: monotonically increasing
+        let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+
+        Ok((
+            // Safety: inner_dtype should be correct
+            unsafe {
+                Series::from_chunks_and_dtype_unchecked(ca.name(), vec![chunk], &ca.inner_dtype())
+            },
+            offsets,
+        ))
+    }
+}
+
+impl ChunkExplode for StringChunked {
+    fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
+        let mut offsets = Vec::with_capacity(self.len() + 1);
+        let mut length_so_far = 0;
+        offsets.push(length_so_far);
+
+        for arr in self.downcast_iter() {
+            for len in arr.len_iter() {
+                // SAFETY:
+                // pre-allocated
+                unsafe { offsets.push_unchecked(length_so_far) };
+                length_so_far += len as i64;
+            }
+        }
+
+        // SAFETY:
+        // Monotonically increasing.
+        unsafe { Ok(OffsetsBuffer::new_unchecked(offsets.into())) }
     }
 
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
@@ -94,7 +210,9 @@ impl ChunkExplode for Utf8Chunked {
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let array: &Utf8Array<i64> = ca.downcast_iter().next().unwrap();
+        let array = ca.downcast_iter().next().unwrap();
+        // TODO! maybe optimize for new utf8view?
+        let array = utf8view_to_utf8(array);
 
         let values = array.values();
         let old_offsets = array.offsets().clone();
@@ -196,34 +314,5 @@ impl ChunkExplode for Utf8Chunked {
 
         let s = Series::try_from((self.name(), new_arr)).unwrap();
         Ok((s, old_offsets))
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl ChunkExplode for ArrayChunked {
-    fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
-        let width = self.width() as i64;
-        let offsets = (0..self.len() + 1)
-            .map(|i| {
-                let i = i as i64;
-                i * width
-            })
-            .collect::<Vec<_>>();
-        // safety: monotonically increasing
-        let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
-
-        Ok(offsets)
-    }
-
-    fn explode(&self) -> PolarsResult<Series> {
-        let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
-        Ok(Series::try_from((self.name(), arr.values().clone())).unwrap())
-    }
-
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
-        let s = self.explode().unwrap();
-
-        Ok((s, self.offsets()?))
     }
 }

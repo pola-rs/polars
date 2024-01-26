@@ -12,7 +12,7 @@ pub(super) fn position_aggregates(
     col_locations: &[IdxSize],
     value_agg_phys: &Series,
     logical_type: &DataType,
-    headers: &Utf8Chunked,
+    headers: &StringChunked,
 ) -> Vec<Series> {
     let mut buf = vec![AnyValue::Null; n_rows * n_cols];
     let start_ptr = buf.as_mut_ptr() as usize;
@@ -101,7 +101,7 @@ pub(super) fn position_aggregates_numeric<T>(
     col_locations: &[IdxSize],
     value_agg_phys: &ChunkedArray<T>,
     logical_type: &DataType,
-    headers: &Utf8Chunked,
+    headers: &StringChunked,
 ) -> Vec<Series>
 where
     T: PolarsNumericType,

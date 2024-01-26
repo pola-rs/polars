@@ -53,21 +53,21 @@ def test_invalid_utf8(tmp_path: Path) -> None:
     assert_frame_equal(a, b)
 
 
-def test_row_count(foods_file_path: Path) -> None:
-    df = pl.read_csv(foods_file_path, row_count_name="row_count")
-    assert df["row_count"].to_list() == list(range(27))
+def test_row_index(foods_file_path: Path) -> None:
+    df = pl.read_csv(foods_file_path, row_index_name="row_index")
+    assert df["row_index"].to_list() == list(range(27))
 
     df = (
-        pl.scan_csv(foods_file_path, row_count_name="row_count")
+        pl.scan_csv(foods_file_path, row_index_name="row_index")
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
 
-    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+    assert df["row_index"].to_list() == [0, 6, 11, 13, 14, 20, 25]
 
     df = (
-        pl.scan_csv(foods_file_path, row_count_name="row_count")
-        .with_row_count("foo", 10)
+        pl.scan_csv(foods_file_path, row_index_name="row_index")
+        .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
@@ -82,10 +82,10 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     file_path = io_files_path / file_name
     df = pl.scan_csv(
         file_path,
-        dtypes={"calories_foo": pl.Utf8, "fats_g_foo": pl.Float32},
+        dtypes={"calories_foo": pl.String, "fats_g_foo": pl.Float32},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
     ).collect()
-    assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Float32, pl.Int64]
+    assert df.dtypes == [pl.String, pl.String, pl.Float32, pl.Int64]
     assert df.columns == [
         "category_foo",
         "calories_foo",
@@ -102,10 +102,10 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
     file_path = io_files_path / file_name
     df = pl.scan_csv(
         file_path,
-        dtypes={"calories_foo": pl.Utf8, "sugars_g_foo": dtype},
+        dtypes={"calories_foo": pl.String, "sugars_g_foo": dtype},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
     ).collect()
-    assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, dtype]
+    assert df.dtypes == [pl.String, pl.String, pl.Float64, dtype]
     assert df.columns == [
         "category_foo",
         "calories_foo",
@@ -124,16 +124,16 @@ def test_scan_csv_schema_new_columns_dtypes(
         # assign 'new_columns', providing partial dtype overrides
         df1 = pl.scan_csv(
             file_path,
-            dtypes={"calories": pl.Utf8, "sugars": dtype},
+            dtypes={"calories": pl.String, "sugars": dtype},
             new_columns=["category", "calories", "fats", "sugars"],
         ).collect()
-        assert df1.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, dtype]
+        assert df1.dtypes == [pl.String, pl.String, pl.Float64, dtype]
         assert df1.columns == ["category", "calories", "fats", "sugars"]
 
         # assign 'new_columns' with 'dtypes' list
         df2 = pl.scan_csv(
             file_path,
-            dtypes=[pl.Utf8, pl.Utf8, pl.Float64, dtype],
+            dtypes=[pl.String, pl.String, pl.Float64, dtype],
             new_columns=["category", "calories", "fats", "sugars"],
         ).collect()
         assert df1.rows() == df2.rows()
@@ -143,7 +143,7 @@ def test_scan_csv_schema_new_columns_dtypes(
         file_path,
         new_columns=["colw", "colx", "coly", "colz"],
     )
-    assert df3.dtypes == [pl.Utf8, pl.Int64, pl.Float64, pl.Int64]
+    assert df3.dtypes == [pl.String, pl.Int64, pl.Float64, pl.Int64]
     assert df3.columns == ["colw", "colx", "coly", "colz"]
     assert (
         df3.select(["colz", "colx"]).collect().rows()
@@ -153,17 +153,17 @@ def test_scan_csv_schema_new_columns_dtypes(
     # partially rename columns / overwrite dtypes
     df4 = pl.scan_csv(
         file_path,
-        dtypes=[pl.Utf8, pl.Utf8],
+        dtypes=[pl.String, pl.String],
         new_columns=["category", "calories"],
     ).collect()
-    assert df4.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, pl.Int64]
+    assert df4.dtypes == [pl.String, pl.String, pl.Float64, pl.Int64]
     assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
 
     # cannot have len(new_columns) > len(actual columns)
     with pytest.raises(pl.ShapeError):
         pl.scan_csv(
             file_path,
-            dtypes=[pl.Utf8, pl.Utf8],
+            dtypes=[pl.String, pl.String],
             new_columns=["category", "calories", "c3", "c4", "c5"],
         ).collect()
 
@@ -171,7 +171,7 @@ def test_scan_csv_schema_new_columns_dtypes(
     with pytest.raises(ValueError, match="mutually.exclusive"):
         pl.scan_csv(
             file_path,
-            dtypes=[pl.Utf8, pl.Utf8],
+            dtypes=[pl.String, pl.String],
             new_columns=["category", "calories", "fats", "sugars"],
             with_column_names=lambda cols: [col.capitalize() for col in cols],
         ).collect()
@@ -179,7 +179,7 @@ def test_scan_csv_schema_new_columns_dtypes(
 
 def test_lazy_n_rows(foods_file_path: Path) -> None:
     df = (
-        pl.scan_csv(foods_file_path, n_rows=4, row_count_name="idx")
+        pl.scan_csv(foods_file_path, n_rows=4, row_index_name="idx")
         .filter(pl.col("idx") > 2)
         .collect()
     )
@@ -192,18 +192,18 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
     }
 
 
-def test_lazy_row_count_no_push_down(foods_file_path: Path) -> None:
+def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
     plan = (
         pl.scan_csv(foods_file_path)
-        .with_row_count()
-        .filter(pl.col("row_nr") == 1)
+        .with_row_index()
+        .filter(pl.col("index") == 1)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .explain(predicate_pushdown=True)
     )
     # related to row count is not pushed.
-    assert 'FILTER [(col("row_nr")) == (1)] FROM' in plan
+    assert 'FILTER [(col("index")) == (1)] FROM' in plan
     # unrelated to row count is pushed.
-    assert 'SELECTION: [(col("category")) == (Utf8(vegetables))]' in plan
+    assert 'SELECTION: [(col("category")) == (String(vegetables))]' in plan
 
 
 @pytest.mark.write_disk()
@@ -250,12 +250,12 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
     df = (
         pl.scan_csv(
             foods_file_path,
-            dtypes={"calories": pl.Utf8, "sugars_g": pl.Int8},
+            dtypes={"calories": pl.String, "sugars_g": pl.Int8},
         )
-        .select(pl.count())
+        .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"count": 27}, schema={"count": pl.UInt32})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.UInt32})
     assert_frame_equal(df, expected)
 
 
@@ -277,11 +277,11 @@ def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_empty_csv_with_row_count(tmp_path: Path) -> None:
+def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
     df = pl.DataFrame({"a": []})
     df.write_csv(file_path)
 
-    read = pl.scan_csv(file_path).with_row_count("idx")
-    assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Utf8)])
+    read = pl.scan_csv(file_path).with_row_index("idx")
+    assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.String)])

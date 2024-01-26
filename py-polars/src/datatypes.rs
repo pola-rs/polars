@@ -1,5 +1,5 @@
 use polars::prelude::*;
-use polars_core::export::arrow::array::Utf8Array;
+use polars_core::utils::arrow::array::Utf8ViewArray;
 use pyo3::{FromPyObject, PyAny, PyResult};
 
 #[cfg(feature = "object")]
@@ -20,7 +20,7 @@ pub(crate) enum PyDataType {
     Float32,
     Float64,
     Bool,
-    Utf8,
+    String,
     List,
     Date,
     Datetime(TimeUnit, Option<TimeZone>),
@@ -33,7 +33,7 @@ pub(crate) enum PyDataType {
     Binary,
     Decimal(Option<usize>, usize),
     Array(usize),
-    Enum(Utf8Array<i64>),
+    Enum(Utf8ViewArray),
 }
 
 impl From<&DataType> for PyDataType {
@@ -52,7 +52,7 @@ impl From<&DataType> for PyDataType {
             DataType::Float64 => Float64,
             DataType::Decimal(p, s) => Decimal(*p, s.expect("unexpected null decimal scale")),
             DataType::Boolean => Bool,
-            DataType::Utf8 => Utf8,
+            DataType::String => String,
             DataType::Binary => Binary,
             DataType::Array(_, width) => Array(*width),
             DataType::List(_) => List,
@@ -61,19 +61,11 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(tu) => Duration(*tu),
             DataType::Time => Time,
             #[cfg(feature = "object")]
-            DataType::Object(_) => Object,
-            DataType::Categorical(rev_map, _) => rev_map.as_ref().map_or_else(
-                || Categorical,
-                |rev_map| {
-                    if let RevMapping::Enum(categories, _) = &**rev_map {
-                        Enum(categories.clone())
-                    } else {
-                        Categorical
-                    }
-                },
-            ),
+            DataType::Object(_, _) => Object,
+            DataType::Categorical(_, _) => Categorical,
+            DataType::Enum(rev_map, _) => Enum(rev_map.as_ref().unwrap().get_categories().clone()),
             DataType::Struct(_) => Struct,
-            DataType::Null | DataType::Unknown => {
+            DataType::Null | DataType::Unknown | DataType::BinaryOffset => {
                 panic!("null or unknown not expected here")
             },
         }
@@ -101,7 +93,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Float32 => Float32,
             PyDataType::Float64 => Float64,
             PyDataType::Bool => Boolean,
-            PyDataType::Utf8 => Utf8,
+            PyDataType::String => String,
             PyDataType::Binary => Binary,
             PyDataType::List => List(DataType::Null.into()),
             PyDataType::Date => Date,
@@ -109,7 +101,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
-            PyDataType::Object => Object(OBJECT_NAME),
+            PyDataType::Object => Object(OBJECT_NAME, None),
             PyDataType::Categorical => Categorical(None, Default::default()),
             PyDataType::Enum(categories) => create_enum_data_type(categories),
             PyDataType::Struct => Struct(vec![]),

@@ -84,7 +84,6 @@ def assert_frame_equal(
     Traceback (most recent call last):
     ...
     AssertionError: values for column 'a' are different
-
     """
     lazy = _assert_correct_input_type(left, right)
     objects = "LazyFrames" if lazy else "DataFrames"
@@ -253,7 +252,6 @@ def assert_frame_not_equal(
     Traceback (most recent call last):
     ...
     AssertionError: frames are equal
-
     """
     try:
         assert_frame_equal(

@@ -42,7 +42,6 @@ class ExprMetaNameSpace:
         >>> foo_bar2 = pl.col("foo").alias("bar")
         >>> foo_bar.meta.eq(foo_bar2)
         True
-
         """
         return self._pyexpr.meta_eq(other._pyexpr)
 
@@ -59,33 +58,48 @@ class ExprMetaNameSpace:
         >>> foo_bar2 = pl.col("foo").alias("bar")
         >>> foo_bar.meta.ne(foo_bar2)
         False
-
         """
         return not self.eq(other)
 
     def has_multiple_outputs(self) -> bool:
         """
-        Whether this expression expands into multiple expressions.
+        Indicate if this expression expands into multiple expressions.
 
         Examples
         --------
         >>> e = pl.col(["a", "b"]).alias("bar")
         >>> e.meta.has_multiple_outputs()
         True
-
         """
         return self._pyexpr.meta_has_multiple_outputs()
 
+    def is_column(self) -> bool:
+        r"""
+        Indicate if this expression is a basic (non-regex) unaliased column.
+
+        Examples
+        --------
+        >>> e = pl.col("foo")
+        >>> e.meta.is_column()
+        True
+        >>> e = pl.col("foo") * pl.col("bar")
+        >>> e.meta.is_column()
+        False
+        >>> e = pl.col(r"^col.*\d+$")
+        >>> e.meta.is_column()
+        False
+        """
+        return self._pyexpr.meta_is_column()
+
     def is_regex_projection(self) -> bool:
         """
-        Whether this expression expands to columns that match a regex pattern.
+        Indicate if this expression expands to columns that match a regex pattern.
 
         Examples
         --------
         >>> e = pl.col("^.*$").alias("bar")
         >>> e.meta.is_regex_projection()
         True
-
         """
         return self._pyexpr.meta_is_regex_projection()
 
@@ -116,12 +130,11 @@ class ExprMetaNameSpace:
         >>> e_sum_over = pl.sum("foo").over("groups")
         >>> e_sum_over.meta.output_name()
         'foo'
-        >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
+        >>> e_sum_slice = pl.sum("foo").slice(pl.len() - 10, pl.col("bar"))
         >>> e_sum_slice.meta.output_name()
         'foo'
-        >>> pl.count().meta.output_name()
-        'count'
-
+        >>> pl.len().meta.output_name()
+        'len'
         """
         try:
             return self._pyexpr.meta_output_name()
@@ -149,7 +162,6 @@ class ExprMetaNameSpace:
         True
         >>> first.meta == pl.col("bar")
         False
-
         """
         return [wrap_expr(e) for e in self._pyexpr.meta_pop()]
 
@@ -168,10 +180,9 @@ class ExprMetaNameSpace:
         >>> e_sum_over = pl.sum("foo").over("groups")
         >>> e_sum_over.meta.root_names()
         ['foo', 'groups']
-        >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
+        >>> e_sum_slice = pl.sum("foo").slice(pl.len() - 10, pl.col("bar"))
         >>> e_sum_slice.meta.root_names()
         ['foo', 'bar']
-
         """
         return self._pyexpr.meta_root_names()
 
@@ -187,7 +198,6 @@ class ExprMetaNameSpace:
         >>> e = pl.col("foo").sum().over("bar")
         >>> e.name.keep().meta.undo_aliases().meta == e
         True
-
         """
         return wrap_expr(self._pyexpr.meta_undo_aliases())
 
@@ -256,7 +266,6 @@ class ExprMetaNameSpace:
         --------
         >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
         >>> e.meta.tree_format(return_as_string=True)  # doctest: +SKIP
-
         """
         s = self._pyexpr.meta_tree_format()
         if return_as_string:

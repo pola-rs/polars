@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use polars::io::RowCount;
+use polars::io::RowIndex;
 
 use super::*;
 
@@ -103,8 +103,8 @@ fn test_parser() -> PolarsResult<()> {
         .unwrap();
 
     let col = df.column("variety").unwrap();
-    assert_eq!(col.get(0)?, AnyValue::Utf8("Setosa"));
-    assert_eq!(col.get(2)?, AnyValue::Utf8("Setosa"));
+    assert_eq!(col.get(0)?, AnyValue::String("Setosa"));
+    assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
     assert_eq!("sepal.length", df.get_columns()[0].name());
     assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
@@ -169,9 +169,9 @@ fn test_projection() -> PolarsResult<()> {
         .finish()
         .unwrap();
     let col_1 = df.select_at_idx(0).unwrap();
-    assert_eq!(col_1.get(0)?, AnyValue::Utf8("vegetables"));
-    assert_eq!(col_1.get(1)?, AnyValue::Utf8("seafood"));
-    assert_eq!(col_1.get(2)?, AnyValue::Utf8("meat"));
+    assert_eq!(col_1.get(0)?, AnyValue::String("vegetables"));
+    assert_eq!(col_1.get(1)?, AnyValue::String("seafood"));
+    assert_eq!(col_1.get(2)?, AnyValue::String("meat"));
 
     let col_2 = df.select_at_idx(1).unwrap();
     assert_eq!(col_2.get(0)?, AnyValue::Float64(0.5));
@@ -380,7 +380,7 @@ fn test_quoted_numeric() {
 
 #[test]
 fn test_empty_bytes_to_dataframe() {
-    let fields = vec![Field::new("test_field", DataType::Utf8)];
+    let fields = vec![Field::new("test_field", DataType::String)];
     let schema = Schema::from_iter(fields);
     let file = Cursor::new(vec![]);
 
@@ -448,7 +448,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
     assert_eq!(
         df.dtypes(),
         &[
-            DataType::Utf8,
+            DataType::String,
             DataType::Datetime(TimeUnit::Nanoseconds, None),
             DataType::Float64,
             DataType::Float64,
@@ -702,7 +702,7 @@ fn test_header_inference() -> PolarsResult<()> {
 "#;
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).has_header(false).finish()?;
-    assert_eq!(df.dtypes(), vec![DataType::Utf8; 4]);
+    assert_eq!(df.dtypes(), vec![DataType::String; 4]);
     Ok(())
 }
 
@@ -734,10 +734,10 @@ fn test_ignore_parse_dates() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .with_try_parse_dates(true)
-        .with_dtypes_slice(Some(&[Utf8, Utf8, Utf8]))
+        .with_dtypes_slice(Some(&[String, String, String]))
         .finish()?;
 
-    assert_eq!(df.dtypes(), &[Utf8, Utf8, Utf8]);
+    assert_eq!(df.dtypes(), &[String, String, String]);
     Ok(())
 }
 
@@ -781,10 +781,10 @@ fn test_infer_schema_0_rows() -> PolarsResult<()> {
     assert_eq!(
         df.dtypes(),
         &[
-            DataType::Utf8,
-            DataType::Utf8,
-            DataType::Utf8,
-            DataType::Utf8
+            DataType::String,
+            DataType::String,
+            DataType::String,
+            DataType::String
         ]
     );
     Ok(())
@@ -796,7 +796,7 @@ fn test_infer_schema_eol() -> PolarsResult<()> {
     let no_eol = "colx,coly\nabcdef,1234";
     let file = Cursor::new(no_eol);
     let df = CsvReader::new(file).finish()?;
-    assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64,]);
+    assert_eq!(df.dtypes(), &[DataType::String, DataType::Int64,]);
     Ok(())
 }
 
@@ -845,9 +845,9 @@ fn test_tsv_header_offset() -> PolarsResult<()> {
         .finish()?;
 
     assert_eq!(df.shape(), (3, 2));
-    assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64]);
+    assert_eq!(df.dtypes(), &[DataType::String, DataType::Int64]);
     let a = df.column("foo")?;
-    let a = a.utf8()?;
+    let a = a.str()?;
     assert_eq!(a.get(0), None);
 
     Ok(())
@@ -873,7 +873,7 @@ fn test_comma_separated_field_in_tsv() -> PolarsResult<()> {
     let csv = "first\tsecond\n1\t2.3,2.4\n3\t4.5,4.6\n";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).with_separator(b'\t').finish()?;
-    assert_eq!(df.dtypes(), &[DataType::Int64, DataType::Utf8]);
+    assert_eq!(df.dtypes(), &[DataType::Int64, DataType::String]);
     Ok(())
 }
 
@@ -948,9 +948,9 @@ foo,bar
 }
 
 #[test]
-fn test_with_row_count() -> PolarsResult<()> {
+fn test_with_row_index() -> PolarsResult<()> {
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_index(Some(RowIndex {
             name: "rc".into(),
             offset: 0,
         }))
@@ -961,7 +961,7 @@ fn test_with_row_count() -> PolarsResult<()> {
         (0 as IdxSize..27).collect::<Vec<_>>()
     );
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_index(Some(RowIndex {
             name: "rc_2".into(),
             offset: 10,
         }))
@@ -980,7 +980,7 @@ fn test_empty_string_cols() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).has_header(false).finish()?;
     let s = df.column("column_1")?;
-    let ca = s.utf8()?;
+    let ca = s.str()?;
     assert_eq!(
         ca.into_iter().collect::<Vec<_>>(),
         &[None, Some("abc"), None, Some("xyz")]
@@ -998,12 +998,56 @@ fn test_empty_string_cols() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_empty_col_names() -> PolarsResult<()> {
+    let csv = "a,b,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish()?;
+    assert_eq!(df_result.shape(), (1, 4));
+
+    let csv = "a,b\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish();
+    assert!(df_result.is_err());
+    Ok(())
+}
+
+#[test]
 fn test_trailing_empty_string_cols() -> PolarsResult<()> {
     let csv = "colx\nabc\nxyz\n\"\"";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish()?;
     let col = df.column("colx")?;
-    let col = col.utf8()?;
+    let col = col.str()?;
     assert_eq!(
         col.into_no_null_iter().collect::<Vec<_>>(),
         &["abc", "xyz", ""]
@@ -1015,7 +1059,7 @@ fn test_trailing_empty_string_cols() -> PolarsResult<()> {
 
     assert_eq!(
         df.get(1).unwrap(),
-        &[AnyValue::Utf8("xyz"), AnyValue::Utf8("mno")]
+        &[AnyValue::String("xyz"), AnyValue::String("mno")]
     );
     assert_eq!(df.get(2).unwrap(), &[AnyValue::Null, AnyValue::Null]);
 
@@ -1028,7 +1072,7 @@ fn test_escaping_quotes() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish()?;
     let col = df.column("a")?;
-    let col = col.utf8()?;
+    let col = col.str()?;
     assert_eq!(col.into_no_null_iter().collect::<Vec<_>>(), &["\""]);
     Ok(())
 }
@@ -1050,7 +1094,7 @@ fn test_header_only() -> PolarsResult<()> {
         assert_eq!(df.shape(), (0, 3));
         assert_eq!(
             df.dtypes(),
-            &[DataType::Utf8, DataType::Utf8, DataType::Utf8]
+            &[DataType::String, DataType::String, DataType::String]
         );
     }
 

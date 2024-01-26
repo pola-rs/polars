@@ -151,7 +151,7 @@ where
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     try_parse_dates: bool,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
     raise_if_empty: bool,
@@ -173,9 +173,9 @@ where
         self
     }
 
-    /// Add a `row_count` column.
-    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
-        self.row_count = rc;
+    /// Add a row index column.
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -354,7 +354,7 @@ where
         self
     }
 
-    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
+    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::String]`.
     pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
         self.try_parse_dates = toggle;
         self
@@ -417,7 +417,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.predicate),
             to_cast,
             self.skip_rows_after_header,
-            std::mem::take(&mut self.row_count),
+            std::mem::take(&mut self.row_index),
             self.try_parse_dates,
             self.raise_if_empty,
             self.truncate_ragged_lines,
@@ -460,7 +460,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                     Decimal(precision, scale) => match (precision, scale) {
                         (_, Some(_)) => {
                             to_cast.push(fld.clone());
-                            fld.coerce(Utf8);
+                            fld.coerce(String);
                             Some(fld)
                         },
                         _ => {
@@ -603,7 +603,7 @@ where
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,
             try_parse_dates: false,
-            row_count: None,
+            row_index: None,
             raise_if_empty: true,
             truncate_ragged_lines: false,
         }
@@ -687,8 +687,8 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
         .into_par_iter()
         .map(|s| {
             match s.dtype() {
-                DataType::Utf8 => {
-                    let ca = s.utf8().unwrap();
+                DataType::String => {
+                    let ca = s.str().unwrap();
                     // don't change columns that are in the fixed schema.
                     if fixed_schema.index_of(s.name()).is_some() {
                         return s;

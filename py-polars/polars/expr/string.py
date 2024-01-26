@@ -12,6 +12,7 @@ from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -46,7 +47,7 @@ class ExprStringNameSpace:
         cache: bool = True,
     ) -> Expr:
         """
-        Convert a Utf8 column into a Date column.
+        Convert a String column into a Date column.
 
         Parameters
         ----------
@@ -78,7 +79,6 @@ class ExprStringNameSpace:
                 2020-02-01
                 2020-03-01
         ]
-
         """
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
@@ -96,7 +96,7 @@ class ExprStringNameSpace:
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
-        Convert a Utf8 column into a Datetime column.
+        Convert a String column into a Datetime column.
 
         Parameters
         ----------
@@ -174,7 +174,7 @@ class ExprStringNameSpace:
         cache: bool = True,
     ) -> Expr:
         """
-        Convert a Utf8 column into a Time column.
+        Convert a String column into a Time column.
 
         Parameters
         ----------
@@ -199,7 +199,6 @@ class ExprStringNameSpace:
                 02:00:00
                 03:00:00
         ]
-
         """
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
@@ -216,7 +215,7 @@ class ExprStringNameSpace:
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
-        Convert a Utf8 column into a Date/Datetime/Time column.
+        Convert a String column into a Date/Datetime/Time column.
 
         Parameters
         ----------
@@ -319,14 +318,15 @@ class ExprStringNameSpace:
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
         else:
-            raise ValueError("`dtype` must be of type {Date, Datetime, Time}")
+            msg = "`dtype` must be of type {Date, Datetime, Time}"
+            raise ValueError(msg)
 
     def to_decimal(
         self,
         inference_length: int = 100,
     ) -> Expr:
         """
-        Convert a Utf8 column into a Decimal column.
+        Convert a String column into a Decimal column.
 
         This method infers the needed parameters `precision` and `scale`.
 
@@ -365,7 +365,6 @@ class ExprStringNameSpace:
         │ 143.09    ┆ 143.09          │
         │ 143.9     ┆ 143.90          │
         └───────────┴─────────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
 
@@ -407,7 +406,6 @@ class ExprStringNameSpace:
         │ 東京 ┆ 6       ┆ 2       │
         │ null ┆ null    ┆ null    │
         └──────┴─────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.str_len_bytes())
 
@@ -448,13 +446,14 @@ class ExprStringNameSpace:
         │ 東京 ┆ 2       ┆ 6       │
         │ null ┆ null    ┆ null    │
         └──────┴─────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.str_len_chars())
 
-    def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Expr:
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Expr:
         """
-        Vertically concat the values in the Series to a single string value.
+        Vertically concatenate the string values in the column to a single string value.
 
         Parameters
         ----------
@@ -462,14 +461,13 @@ class ExprStringNameSpace:
             The delimiter to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
-
-            If set to ``False``, null values will be propagated.
-            if the column contains any null values, the output is ``None``.
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -483,7 +481,6 @@ class ExprStringNameSpace:
         ╞═════╡
         │ 1-2 │
         └─────┘
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
         >>> df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
         shape: (1, 1)
         ┌──────┐
@@ -493,8 +490,14 @@ class ExprStringNameSpace:
         ╞══════╡
         │ null │
         └──────┘
-
         """
+        if delimiter is None:
+            issue_deprecation_warning(
+                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
+                " Pass a delimiter to silence this warning.",
+                version="0.20.5",
+            )
+            delimiter = "-"
         return wrap_expr(self._pyexpr.str_concat(delimiter, ignore_nulls))
 
     def to_uppercase(self) -> Expr:
@@ -514,7 +517,6 @@ class ExprStringNameSpace:
         │ cat ┆ CAT       │
         │ dog ┆ DOG       │
         └─────┴───────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_uppercase())
 
@@ -535,7 +537,6 @@ class ExprStringNameSpace:
         │ CAT ┆ cat       │
         │ DOG ┆ dog       │
         └─────┴───────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
@@ -558,7 +559,6 @@ class ExprStringNameSpace:
         │ welcome to my world     ┆ Welcome To My World     │
         │ THERE'S NO TURNING BACK ┆ There's No Turning Back │
         └─────────────────────────┴─────────────────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
 
@@ -570,8 +570,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start and end of the string. If set to
+            None (default), all leading and trailing whitespace is removed instead.
 
         Examples
         --------
@@ -615,7 +615,6 @@ class ExprStringNameSpace:
         │        ┆ rld          │
         │ world  ┆              │
         └────────┴──────────────┘
-
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
@@ -634,8 +633,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start of the string. If set to None
+            (default), all leading whitespace is removed instead.
 
         See Also
         --------
@@ -685,7 +684,6 @@ class ExprStringNameSpace:
         ╞═════════╪═════════════════╡
         │ aabcdef ┆ def             │
         └─────────┴─────────────────┘
-
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
@@ -704,8 +702,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the end of the string. If set to None
+            (default), all trailing whitespace is removed instead.
 
         See Also
         --------
@@ -767,7 +765,6 @@ class ExprStringNameSpace:
         ╞═════════╪═══════════════╡
         │ abcdeff ┆ abc           │
         └─────────┴───────────────┘
-
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
@@ -808,7 +805,6 @@ class ExprStringNameSpace:
         │ foo       ┆          │
         │ bar       ┆ bar      │
         └───────────┴──────────┘
-
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
@@ -849,7 +845,6 @@ class ExprStringNameSpace:
         │ foo       ┆ foo      │
         │ bar       ┆          │
         └───────────┴──────────┘
-
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
@@ -886,7 +881,6 @@ class ExprStringNameSpace:
         │ hippopotamus ┆ hippopotamus │
         │ null         ┆ null         │
         └──────────────┴──────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
@@ -921,12 +915,11 @@ class ExprStringNameSpace:
         │ hippopotamus ┆ hippopotamus │
         │ null         ┆ null         │
         └──────────────┴──────────────┘
-
         """
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
     @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
-    def zfill(self, length: int) -> Expr:
+    def zfill(self, length: int | IntoExprColumn) -> Expr:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
@@ -951,7 +944,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1, 123, 999999, None]})
-        >>> df.with_columns(zfill=pl.col("a").cast(pl.Utf8).str.zfill(4))
+        >>> df.with_columns(zfill=pl.col("a").cast(pl.String).str.zfill(4))
         shape: (4, 2)
         ┌────────┬────────┐
         │ a      ┆ zfill  │
@@ -963,15 +956,15 @@ class ExprStringNameSpace:
         │ 999999 ┆ 999999 │
         │ null   ┆ null   │
         └────────┴────────┘
-
         """
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_zfill(length))
 
     def contains(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
-        Check if string contains a substring that matches a regex.
+        Check if string contains a substring that matches a pattern.
 
         Parameters
         ----------
@@ -1012,18 +1005,19 @@ class ExprStringNameSpace:
         --------
         starts_with : Check if string values start with a substring.
         ends_with : Check if string values end with a substring.
+        find: Return the index of the first substring matching a pattern.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
+        >>> df = pl.DataFrame({"txt": ["Crab", "cat and dog", "rab$bit", None]})
         >>> df.select(
-        ...     pl.col("a"),
-        ...     pl.col("a").str.contains("cat|bit").alias("regex"),
-        ...     pl.col("a").str.contains("rab$", literal=True).alias("literal"),
+        ...     pl.col("txt"),
+        ...     pl.col("txt").str.contains("cat|bit").alias("regex"),
+        ...     pl.col("txt").str.contains("rab$", literal=True).alias("literal"),
         ... )
         shape: (4, 3)
         ┌─────────────┬───────┬─────────┐
-        │ a           ┆ regex ┆ literal │
+        │ txt         ┆ regex ┆ literal │
         │ ---         ┆ ---   ┆ ---     │
         │ str         ┆ bool  ┆ bool    │
         ╞═════════════╪═══════╪═════════╡
@@ -1032,10 +1026,102 @@ class ExprStringNameSpace:
         │ rab$bit     ┆ true  ┆ true    │
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
+
+    def find(
+        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
+    ) -> Expr:
+        """
+        Return the index position of the first substring matching a pattern.
+
+        If the pattern is not found, returns None.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+        literal
+            Treat `pattern` as a literal string, not as a regular expression.
+        strict
+            Raise an error if the underlying pattern is not a valid regex,
+            otherwise mask out with a null value.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with
+        flags, use the inline `(?iLmsuxU)` syntax. For example:
+
+        >>> pl.DataFrame({"s": ["AAA", "aAa", "aaa"]}).with_columns(
+        ...     default_match=pl.col("s").str.find("Aa"),
+        ...     insensitive_match=pl.col("s").str.find("(?i)Aa"),
+        ... )
+        shape: (3, 3)
+        ┌─────┬───────────────┬───────────────────┐
+        │ s   ┆ default_match ┆ insensitive_match │
+        │ --- ┆ ---           ┆ ---               │
+        │ str ┆ u32           ┆ u32               │
+        ╞═════╪═══════════════╪═══════════════════╡
+        │ AAA ┆ null          ┆ 0                 │
+        │ aAa ┆ 1             ┆ 0                 │
+        │ aaa ┆ null          ┆ 0                 │
+        └─────┴───────────────┴───────────────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "txt": ["Crab", "Lobster", None, "Crustaceon"],
+        ...         "pat": ["a[bc]", "b.t", "[aeiuo]", "(?i)A[BC]"],
+        ...     }
+        ... )
+
+        Find the index of the first substring matching a regex or literal pattern:
+
+        >>> df.select(
+        ...     pl.col("txt"),
+        ...     pl.col("txt").str.find("a|e").alias("a|e (regex)"),
+        ...     pl.col("txt").str.find("e", literal=True).alias("e (lit)"),
+        ... )
+        shape: (4, 3)
+        ┌────────────┬─────────────┬─────────┐
+        │ txt        ┆ a|e (regex) ┆ e (lit) │
+        │ ---        ┆ ---         ┆ ---     │
+        │ str        ┆ u32         ┆ u32     │
+        ╞════════════╪═════════════╪═════════╡
+        │ Crab       ┆ 2           ┆ null    │
+        │ Lobster    ┆ 5           ┆ 5       │
+        │ null       ┆ null        ┆ null    │
+        │ Crustaceon ┆ 5           ┆ 7       │
+        └────────────┴─────────────┴─────────┘
+
+        Match against a pattern found in another column or (expression):
+
+        >>> df.with_columns(pl.col("txt").str.find(pl.col("pat")).alias("find_pat"))
+        shape: (4, 3)
+        ┌────────────┬───────────┬──────────┐
+        │ txt        ┆ pat       ┆ find_pat │
+        │ ---        ┆ ---       ┆ ---      │
+        │ str        ┆ str       ┆ u32      │
+        ╞════════════╪═══════════╪══════════╡
+        │ Crab       ┆ a[bc]     ┆ 2        │
+        │ Lobster    ┆ b.t       ┆ 2        │
+        │ null       ┆ [aeiuo]   ┆ null     │
+        │ Crustaceon ┆ (?i)A[BC] ┆ 5        │
+        └────────────┴───────────┴──────────┘
+        """
+        pattern = parse_as_expression(pattern, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_find(pattern, literal, strict))
 
     def ends_with(self, suffix: str | Expr) -> Expr:
         """
@@ -1096,7 +1182,6 @@ class ExprStringNameSpace:
         ╞════════╪════════╡
         │ mango  ┆ go     │
         └────────┴────────┘
-
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
@@ -1160,7 +1245,6 @@ class ExprStringNameSpace:
         ╞════════╪════════╡
         │ apple  ┆ app    │
         └────────┴────────┘
-
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
@@ -1204,7 +1288,6 @@ class ExprStringNameSpace:
         │ null                ┆ {null,null} │
         │ {"a":2, "b": false} ┆ {2,false}   │
         └─────────────────────┴─────────────┘
-
         """
         if dtype is not None:
             dtype = py_type_to_dtype(dtype)
@@ -1215,7 +1298,7 @@ class ExprStringNameSpace:
         Extract the first match of JSON string with the provided JSONPath expression.
 
         Throws errors if invalid JSON strings are encountered.
-        All return values will be cast to :class:`Utf8` regardless of the original
+        All return values will be cast to :class:`String` regardless of the original
         value.
 
         Documentation on JSONPath standard can be found
@@ -1229,7 +1312,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`. Contains null values if original
+            Expression of data type :class:`String`. Contains null values if original
             value is null or the json_path returns nothing.
 
         Examples
@@ -1250,7 +1333,6 @@ class ExprStringNameSpace:
         │ {"a":2.1}  ┆ 2.1     │
         │ {"a":true} ┆ true    │
         └────────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
@@ -1265,16 +1347,14 @@ class ExprStringNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
-
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_decode(strict))
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)
 
     def encode(self, encoding: TransferEncoding) -> Expr:
         """
@@ -1288,7 +1368,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -1304,26 +1384,24 @@ class ExprStringNameSpace:
         │ bar     ┆ 626172      │
         │ null    ┆ null        │
         └─────────┴─────────────┘
-
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_encode())
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)
 
-    def extract(self, pattern: str, group_index: int = 1) -> Expr:
+    def extract(self, pattern: IntoExprColumn, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.
 
         Parameters
         ----------
         pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
+            A valid regular expression pattern containing at least one capture group,
+            compatible with the `regex crate <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
             Group 0 means the whole pattern, the first group begins at index 1.
@@ -1365,7 +1443,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`. Contains null values if original
+            Expression of data type :class:`String`. Contains null values if original
             value is null or the regex captures nothing.
 
         Examples
@@ -1394,8 +1472,8 @@ class ExprStringNameSpace:
         │ messi     ┆ polars  ┆ null  │
         │ ronaldo   ┆ polars  ┆ null  │
         └───────────┴─────────┴───────┘
-
         """
+        pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:
@@ -1460,7 +1538,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type `List(Utf8)`.
+            Expression of data type `List(String)`.
 
         Examples
         --------
@@ -1491,8 +1569,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
+            A valid regular expression pattern containing at least one capture group,
+            compatible with the `regex crate <https://docs.rs/regex/latest/regex/>`_.
 
         Notes
         -----
@@ -1522,7 +1600,7 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`Struct` with fields of data type
-            :class:`Utf8`.
+            :class:`String`.
 
         Examples
         --------
@@ -1568,7 +1646,6 @@ class ExprStringNameSpace:
         │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
         │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
         └───────────────────────────────────┴───────────────────────┴──────────┘
-
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
@@ -1625,7 +1702,6 @@ class ExprStringNameSpace:
         │ 1zy3\d\d   ┆ 2            │
         │ null       ┆ null         │
         └────────────┴──────────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
@@ -1682,8 +1758,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
-
+            Expression of data type :class:`String`.
         """
         by = parse_as_expression(by, str_as_lit=True)
         if inclusive:
@@ -1711,7 +1786,7 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`Struct` with fields of data type
-            :class:`Utf8`.
+            :class:`String`.
 
         Examples
         --------
@@ -1754,7 +1829,6 @@ class ExprStringNameSpace:
         │ c    ┆ c          ┆ null        │
         │ d_4  ┆ d          ┆ 4           │
         └──────┴────────────┴─────────────┘
-
         """
         by = parse_as_expression(by, str_as_lit=True)
         if inclusive:
@@ -1780,7 +1854,7 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`Struct` with fields of data type
-            :class:`Utf8`.
+            :class:`String`.
 
         Examples
         --------
@@ -1820,7 +1894,6 @@ class ExprStringNameSpace:
         │ foo-bar     ┆ foo-bar    ┆ null        │
         │ foo bar baz ┆ foo        ┆ bar baz     │
         └─────────────┴────────────┴─────────────┘
-
         """
         by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_splitn(by, n))
@@ -1899,7 +1972,6 @@ class ExprStringNameSpace:
         │ 1   ┆ 123ABC │
         │ 2   ┆ abc456 │
         └─────┴────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
@@ -1938,7 +2010,6 @@ class ExprStringNameSpace:
         │ 1   ┆ -bc-bc  │
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
@@ -1965,9 +2036,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_reverse())
 
-    def slice(self, offset: int, length: int | None = None) -> Expr:
+    def slice(
+        self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
+    ) -> Expr:
         """
-        Create subslices of the string values of a Utf8 Series.
+        Create subslices of the string values of a String Series.
 
         Parameters
         ----------
@@ -1980,7 +2053,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -2016,8 +2089,9 @@ class ExprStringNameSpace:
         │ papaya      ┆ ya       │
         │ dragonfruit ┆ onf      │
         └─────────────┴──────────┘
-
         """
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
     def explode(self) -> Expr:
@@ -2027,7 +2101,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Utf8`.
+            Expression of data type :class:`String`.
 
         Examples
         --------
@@ -2046,13 +2120,12 @@ class ExprStringNameSpace:
         │ a   │
         │ r   │
         └─────┘
-
         """
         return wrap_expr(self._pyexpr.str_explode())
 
     def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
         """
-        Convert an Utf8 column into an Int64 column with base radix.
+        Convert an String column into an Int64 column with base radix.
 
         Parameters
         ----------
@@ -2097,7 +2170,6 @@ class ExprStringNameSpace:
         │ cafe ┆ 51966  │
         │ null ┆ null   │
         └──────┴────────┘
-
         """
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
@@ -2119,7 +2191,6 @@ class ExprStringNameSpace:
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
-
         """
         if base is None:
             base = 2
@@ -2139,7 +2210,6 @@ class ExprStringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
         return self.strip_chars(characters)
 
@@ -2157,7 +2227,6 @@ class ExprStringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
         return self.strip_chars_start(characters)
 
@@ -2175,7 +2244,6 @@ class ExprStringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
         """
         return self.strip_chars_end(characters)
 
@@ -2198,7 +2266,6 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`UInt32`. Returns null if the
             original value is null.
-
         """
         return self.count_matches(pattern)
 
@@ -2209,7 +2276,6 @@ class ExprStringNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len_bytes`.
-
         """
         return self.len_bytes()
 
@@ -2220,7 +2286,6 @@ class ExprStringNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len_chars`.
-
         """
         return self.len_chars()
 
@@ -2239,7 +2304,6 @@ class ExprStringNameSpace:
             Justify left to this length.
         fill_char
             Fill with this ASCII character.
-
         """
         return self.pad_end(length, fill_char)
 
@@ -2258,7 +2322,6 @@ class ExprStringNameSpace:
             Justify right to this length.
         fill_char
             Fill with this ASCII character.
-
         """
         return self.pad_start(length, fill_char)
 
@@ -2282,6 +2345,136 @@ class ExprStringNameSpace:
             If `None` all rows are used.
         """
         return self.json_decode(dtype, infer_schema_length)
+
+    def contains_any(
+        self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
+    ) -> Expr:
+        """
+        Use the aho-corasick algorithm to find matches.
+
+        This version determines if any of the patterns find a match.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lyrics": [
+        ...             "Everybody wants to rule the world",
+        ...             "Tell me what you want, what you really really want",
+        ...             "Can you feel the love tonight",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("lyrics").str.contains_any(["you", "me"]).alias("contains_any")
+        ... )
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬──────────────┐
+        │ lyrics                                             ┆ contains_any │
+        │ ---                                                ┆ ---          │
+        │ str                                                ┆ bool         │
+        ╞════════════════════════════════════════════════════╪══════════════╡
+        │ Everybody wants to rule the world                  ┆ false        │
+        │ Tell me what you want, what you really really want ┆ true         │
+        │ Can you feel the love tonight                      ┆ true         │
+        └────────────────────────────────────────────────────┴──────────────┘
+        """
+        patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
+        return wrap_expr(
+            self._pyexpr.str_contains_any(patterns, ascii_case_insensitive)
+        )
+
+    def replace_many(
+        self,
+        patterns: IntoExpr,
+        replace_with: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+    ) -> Expr:
+        """
+
+        Use the aho-corasick algorithm to replace many matches.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search and replace.
+        replace_with
+            Strings to replace where a pattern was a match.
+            This can be broadcasted. So it supports many:one and many:many.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lyrics": [
+        ...             "Everybody wants to rule the world",
+        ...             "Tell me what you want, what you really really want",
+        ...             "Can you feel the love tonight",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("lyrics")
+        ...     .str.replace_many(
+        ...         ["me", "you", "they"],
+        ...         "",
+        ...     )
+        ...     .alias("removes_pronouns")
+        ... )
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬────────────────────────────────────────────┐
+        │ lyrics                                             ┆ removes_pronouns                           │
+        │ ---                                                ┆ ---                                        │
+        │ str                                                ┆ str                                        │
+        ╞════════════════════════════════════════════════════╪════════════════════════════════════════════╡
+        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world          │
+        │ Tell me what you want, what you really really want ┆ Tell  what  want, what  really really want │
+        │ Can you feel the love tonight                      ┆ Can  feel the love tonight                 │
+        └────────────────────────────────────────────────────┴────────────────────────────────────────────┘
+        >>> df.with_columns(
+        ...     pl.col("lyrics")
+        ...     .str.replace_many(
+        ...         ["me", "you"],
+        ...         ["you", "me"],
+        ...     )
+        ...     .alias("confusing")
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
+        │ lyrics                                             ┆ confusing                                         │
+        │ ---                                                ┆ ---                                               │
+        │ str                                                ┆ str                                               │
+        ╞════════════════════════════════════════════════════╪═══════════════════════════════════════════════════╡
+        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world                 │
+        │ Tell me what you want, what you really really want ┆ Tell you what me want, what me really really want │
+        │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
+        └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+        """  # noqa: W505
+        patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
+        replace_with = parse_as_expression(
+            replace_with, str_as_lit=True, list_as_lit=False
+        )
+        return wrap_expr(
+            self._pyexpr.str_replace_many(
+                patterns, replace_with, ascii_case_insensitive
+            )
+        )
 
 
 def _validate_format_argument(format: str | None) -> None:

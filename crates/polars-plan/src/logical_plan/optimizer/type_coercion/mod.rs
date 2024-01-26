@@ -218,10 +218,13 @@ fn modify_supertype(
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_, ordering), Utf8, _, AExpr::Literal(_))
-            | (Utf8, Categorical(_, ordering), AExpr::Literal(_), _) => {
-                st = Categorical(None, *ordering);
+            (Categorical(_, ordering), String, _, AExpr::Literal(_))
+            | (String, Categorical(_, ordering), AExpr::Literal(_), _) => {
+                st = Categorical(None, *ordering)
             },
+            #[cfg(feature = "dtype-categorical")]
+            (dt @ Enum(_, _), String, _, AExpr::Literal(_))
+            | (String, dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
             (List(inner), List(other), _, AExpr::Literal(_))
@@ -356,13 +359,9 @@ impl OptimizationRule for TypeCoercionRule {
                         data_type: type_left,
                         strict: false,
                     },
-                    // cast both local and global string cache
-                    // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, ordering), DataType::Utf8) => AExpr::Cast {
-                        expr: other_node,
-                        data_type: DataType::Categorical(None, *ordering),
-                        strict: false,
+                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {
+                        return Ok(None)
                     },
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
@@ -385,6 +384,17 @@ impl OptimizationRule for TypeCoercionRule {
                         }
                     },
                     (_, DataType::List(other_inner)) => {
+                        if other_inner.as_ref() == &type_left
+                            || (type_left == DataType::Null)
+                            || (other_inner.as_ref() == &DataType::Null)
+                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
+                        {
+                            return Ok(None);
+                        }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
+                    },
+                    #[cfg(feature = "dtype-array")]
+                    (_, DataType::Array(other_inner, _)) => {
                         if other_inner.as_ref() == &type_left
                             || (type_left == DataType::Null)
                             || (other_inner.as_ref() == &DataType::Null)
@@ -602,7 +612,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_categorical_utf8() {
+    fn test_categorical_string() {
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
         let optimizer = StackOptimizer {};
@@ -625,7 +635,7 @@ mod test {
             .unwrap();
         let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-        // we test that the fruits column is not casted to utf8 for the comparison
+        // we test that the fruits column is not cast to string for the comparison
         if let LogicalPlan::Projection { expr, .. } = lp {
             assert_eq!(expr, expr_in);
         };
@@ -640,8 +650,8 @@ mod test {
             .unwrap();
         let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-        // we test that the fruits column is casted to utf8 for the addition
-        let expected = vec![col("fruits").cast(DataType::Utf8) + lit("somestr")];
+        // we test that the fruits column is cast to string for the addition
+        let expected = vec![col("fruits").cast(DataType::String) + lit("somestr")];
         if let LogicalPlan::Projection { expr, .. } = lp {
             assert_eq!(expr, expected);
         };

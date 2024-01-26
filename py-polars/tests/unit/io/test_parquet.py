@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pandas as pd
@@ -65,7 +65,7 @@ def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
 
     # cast is necessary as pyarrow writes partitions as categorical type
     read_df = pl.read_parquet(path_to_write, use_pyarrow=True).with_columns(
-        pl.col("partition_col").cast(pl.Utf8)
+        pl.col("partition_col").cast(pl.String)
     )
     assert_frame_equal(df, read_df)
 
@@ -215,8 +215,8 @@ def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
     df.write_parquet(file_path)
 
     path_glob = tmp_path / "small*.parquet"
-    assert pl.read_parquet(path_glob).shape == (3, 16)
-    assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
+    assert pl.read_parquet(path_glob).shape == (3, df.width)
+    assert pl.scan_parquet(path_glob).collect().shape == (3, df.width)
 
 
 def test_chunked_round_trip() -> None:
@@ -250,8 +250,8 @@ def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame, tmp_path: Path) -
 
     a = pl.scan_parquet(file_path)
     b = pl.DataFrame({"a": [1]}).lazy()
-    assert a.join(b, how="cross").collect().shape == (3, 17)
-    assert b.join(a, how="cross").collect().shape == (3, 17)
+    assert a.join(b, how="cross").collect().shape == (3, df.width + b.width)
+    assert b.join(a, how="cross").collect().shape == (3, df.width + b.width)
 
 
 def test_recursive_logical_type() -> None:
@@ -563,6 +563,17 @@ def test_decimal_parquet(tmp_path: Path) -> None:
     assert out == {"foo": [2], "bar": [Decimal("7")]}
 
 
+@pytest.mark.write_disk()
+def test_enum_parquet(tmp_path: Path) -> None:
+    path = tmp_path / "enum.parquet"
+    df = pl.DataFrame(
+        [pl.Series("e", ["foo", "bar", "ham"], dtype=pl.Enum(["foo", "bar", "ham"]))]
+    )
+    df.write_parquet(path)
+    out = pl.read_parquet(path)
+    assert_frame_equal(df, out)
+
+
 def test_parquet_rle_non_nullable_12814() -> None:
     column = (
         pl.select(x=pl.arange(0, 1025, dtype=pl.Int64) // 10).to_series().to_arrow()
@@ -618,3 +629,83 @@ def test_null_parquet(tmp_path: Path) -> None:
     df.write_parquet(file_path)
     out = pl.read_parquet(file_path)
     assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk()
+def test_write_parquet_with_null_col(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df1 = pl.DataFrame({"nulls": [None] * 2, "ints": [1] * 2})
+    df2 = pl.DataFrame({"nulls": [None] * 2, "ints": [1] * 2})
+    df3 = pl.DataFrame({"nulls": [None] * 3, "ints": [1] * 3})
+    df = df1.vstack(df2)
+    df = df.vstack(df3)
+    file_path = tmp_path / "with_null.parquet"
+    df.write_parquet(file_path, row_group_size=3)
+    out = pl.read_parquet(file_path)
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk()
+def test_read_parquet_binary_buffered_reader(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with file_path.open("rb") as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk()
+def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with file_path.open("rb", buffering=0) as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
+def test_read_parquet_binary_bytes_io() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+
+    out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
+def test_read_parquet_binary_bytes() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_parquet(f)
+    bytes = f.getvalue()
+
+    out = pl.read_parquet(bytes)
+    assert_frame_equal(out, df)
+
+
+def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
+    """'+00:00' timezones becomes 'UTC' timezone."""
+    utc_path = tmp_path / "utc.parquet"
+    zero_path = tmp_path / "00_00.parquet"
+    for tz, path in [("+00:00", zero_path), ("UTC", utc_path)]:
+        pq.write_table(
+            pa.table(
+                {"c1": [1234567890123] * 10},
+                schema=pa.schema([pa.field("c1", pa.timestamp("ms", tz=tz))]),
+            ),
+            path,
+        )
+
+    df = pl.scan_parquet([utc_path, zero_path]).head(5).collect()
+    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    df = pl.scan_parquet([zero_path, utc_path]).head(5).collect()
+    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"

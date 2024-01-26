@@ -177,6 +177,23 @@ fn test_shift_and_fill() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_shift_and_fill_non_numeric() -> PolarsResult<()> {
+    let out = df![
+        "bool" => [true, false, true],
+    ]?
+    .lazy()
+    .select([col("bool").shift_and_fill(1, true)])
+    .collect()?;
+
+    let out = out.column("bool")?;
+    assert_eq!(
+        Vec::from(out.bool()?),
+        &[Some(true), Some(true), Some(false)]
+    );
+    Ok(())
+}
+
+#[test]
 fn test_lazy_ternary_and_predicates() {
     let df = get_df();
     // test if this runs. This failed because is_not_null changes the schema name, so we
@@ -1363,7 +1380,7 @@ fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
 fn test_categorical_addition() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    // test if we can do that arithmetic operation with utf8 and categorical
+    // test if we can do that arithmetic operation with String and Categorical
     let out = df
         .lazy()
         .select([
@@ -1373,7 +1390,7 @@ fn test_categorical_addition() -> PolarsResult<()> {
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;
 
-    assert_eq!(out.column("foo")?.utf8()?.get(0).unwrap(), "banana beetle");
+    assert_eq!(out.column("foo")?.str()?.get(0).unwrap(), "banana beetle");
 
     Ok(())
 }
@@ -1587,9 +1604,9 @@ pub fn test_select_by_dtypes() -> PolarsResult<()> {
     ]?;
     let out = df
         .lazy()
-        .select([dtype_cols([DataType::Float32, DataType::Utf8])])
+        .select([dtype_cols([DataType::Float32, DataType::String])])
         .collect()?;
-    assert_eq!(out.dtypes(), &[DataType::Utf8, DataType::Float32]);
+    assert_eq!(out.dtypes(), &[DataType::String, DataType::Float32]);
 
     Ok(())
 }
@@ -1790,7 +1807,7 @@ fn test_partitioned_gb_count() -> PolarsResult<()> {
     .group_by([col("col")])
     .agg([
         // we make sure to alias with a different name
-        count().alias("counted"),
+        len().alias("counted"),
         col("col").count().alias("count2"),
     ])
     .collect()?;

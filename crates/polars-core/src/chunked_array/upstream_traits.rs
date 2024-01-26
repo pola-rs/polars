@@ -5,7 +5,7 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_utils::sync::SyncPtr;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
@@ -16,6 +16,8 @@ use crate::chunked_array::builder::{
 };
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::{AnonymousOwnedFixedSizeListBuilder, FixedSizeListBuilder};
+#[cfg(feature = "object")]
+use crate::chunked_array::object::builder::get_object_type;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
@@ -80,14 +82,15 @@ impl FromIterator<bool> for NoNull<BooleanChunked> {
     }
 }
 
-// FromIterator for Utf8Chunked variants.
+// FromIterator for StringChunked variants.
 
-impl<Ptr> FromIterator<Option<Ptr>> for Utf8Chunked
+impl<Ptr> FromIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        Utf8Array::<i64>::from_iter(iter).into()
+        let arr = MutableBinaryViewArray::from_iterator(iter.into_iter()).freeze();
+        ChunkedArray::with_chunk("", arr)
     }
 }
 
@@ -98,14 +101,21 @@ impl PolarsAsRef<str> for String {}
 impl PolarsAsRef<str> for &str {}
 // &["foo", "bar"]
 impl PolarsAsRef<str> for &&str {}
-impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
 
-impl<Ptr> FromIterator<Ptr> for Utf8Chunked
+impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
+impl PolarsAsRef<[u8]> for Vec<u8> {}
+impl PolarsAsRef<[u8]> for &[u8] {}
+// TODO: remove!
+impl PolarsAsRef<[u8]> for &&[u8] {}
+impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
+
+impl<Ptr> FromIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        Utf8Array::<i64>::from_iter_values(iter.into_iter()).into()
+        let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
+        ChunkedArray::with_chunk("", arr)
     }
 }
 
@@ -115,25 +125,18 @@ where
     Ptr: AsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        BinaryArray::<i64>::from_iter(iter).into()
+        let arr = MutableBinaryViewArray::from_iter(iter).freeze();
+        ChunkedArray::with_chunk("", arr)
     }
 }
-
-impl PolarsAsRef<[u8]> for Vec<u8> {}
-
-impl PolarsAsRef<[u8]> for &[u8] {}
-
-// TODO: remove!
-impl PolarsAsRef<[u8]> for &&[u8] {}
-
-impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
 
 impl<Ptr> FromIterator<Ptr> for BinaryChunked
 where
     Ptr: PolarsAsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        BinaryArray::<i64>::from_iter_values(iter.into_iter()).into()
+        let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
+        ChunkedArray::with_chunk("", arr)
     }
 }
 
@@ -208,7 +211,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                 } else {
                     match first_s.dtype() {
                         #[cfg(feature = "object")]
-                        DataType::Object(_) => {
+                        DataType::Object(_, _) => {
                             let mut builder =
                                 first_s.get_list_builder("collected", capacity * 5, capacity);
                             for _ in 0..init_null_count {
@@ -326,7 +329,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             len,
         });
         let mut out = ChunkedArray {
-            field: Arc::new(Field::new("", DataType::Object(T::type_name()))),
+            field: Arc::new(Field::new("", get_object_type::<T>())),
             chunks: vec![arr],
             phantom: PhantomData,
             bit_settings: Default::default(),
@@ -506,25 +509,45 @@ impl FromParallelIterator<Option<bool>> for BooleanChunked {
     }
 }
 
-impl<Ptr> FromParallelIterator<Ptr> for Utf8Chunked
+impl<Ptr> FromParallelIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let cap = get_capacity_from_par_results(&vectors);
-        let mut builder = MutableUtf8ValuesArray::with_capacities(cap, cap * 10);
+
+        let mut builder = MutableBinaryViewArray::with_capacity(cap);
+        // TODO! we can do this in parallel ind just combine the buffers.
         for vec in vectors {
             for val in vec {
-                builder.push(val.as_ref())
+                builder.push_value_ignore_validity(val.as_ref())
             }
         }
-        let arr: LargeStringArray = builder.into();
-        arr.into()
+        ChunkedArray::with_chunk("", builder.freeze())
     }
 }
 
-impl<Ptr> FromParallelIterator<Option<Ptr>> for Utf8Chunked
+impl<Ptr> FromParallelIterator<Ptr> for BinaryChunked
+where
+    Ptr: PolarsAsRef<[u8]> + Send + Sync,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+        let cap = get_capacity_from_par_results(&vectors);
+
+        let mut builder = MutableBinaryViewArray::with_capacity(cap);
+        // TODO! we can do this in parallel ind just combine the buffers.
+        for vec in vectors {
+            for val in vec {
+                builder.push_value_ignore_validity(val.as_ref())
+            }
+        }
+        ChunkedArray::with_chunk("", builder.freeze())
+    }
+}
+
+impl<Ptr> FromParallelIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str> + Send + Sync,
 {
@@ -536,73 +559,65 @@ where
             .into_par_iter()
             .map(|vector| {
                 let cap = vector.len();
-                let mut builder = MutableUtf8Array::with_capacities(cap, cap * 10);
+                let mut mutable = MutableBinaryViewArray::with_capacity(cap);
                 for opt_val in vector {
-                    builder.push(opt_val)
+                    mutable.push(opt_val)
                 }
-                let arr: LargeStringArray = builder.into();
-                arr
+                mutable.freeze()
             })
             .collect::<Vec<_>>();
 
-        let mut len = 0;
-        let mut thread_offsets = Vec::with_capacity(arrays.len());
-        let values = arrays
+        // TODO!
+        // do this in parallel.
+        let arrays = arrays
             .iter()
-            .map(|arr| {
-                thread_offsets.push(len);
-                len += arr.len();
-                arr.values().as_slice()
+            .map(|arr| arr as &dyn Array)
+            .collect::<Vec<_>>();
+        let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
+        unsafe { StringChunked::from_chunks("", vec![arr]) }
+    }
+}
+
+impl<Ptr> FromParallelIterator<Option<Ptr>> for BinaryChunked
+where
+    Ptr: AsRef<[u8]> + Send + Sync,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+
+        let arrays = vectors
+            .into_par_iter()
+            .map(|vector| {
+                let cap = vector.len();
+                let mut mutable = MutableBinaryViewArray::with_capacity(cap);
+                for opt_val in vector {
+                    mutable.push(opt_val)
+                }
+                mutable.freeze()
             })
             .collect::<Vec<_>>();
-        let values = flatten_par(&values);
 
-        let validity = finish_validities(
-            arrays
-                .iter()
-                .map(|arr| {
-                    let local_len = arr.len();
-                    (arr.validity().cloned(), local_len)
-                })
-                .collect(),
-            len,
-        );
-
-        // Concat the offsets.
-        // This is single threaded as the values depend on previous ones
-        // if this proves to slow we could try parallel reduce.
-        let mut offsets = Vec::with_capacity(len + 1);
-        let mut offsets_so_far = 0;
-        let mut first = true;
-        for array in &arrays {
-            let local_offsets = array.offsets().as_slice();
-            if first {
-                offsets.extend_from_slice(local_offsets);
-                first = false;
-            } else {
-                // SAFETY: there is always a single offset.
-                let skip_first = unsafe { local_offsets.get_unchecked(1..) };
-                offsets.extend(skip_first.iter().map(|v| *v + offsets_so_far));
-            }
-            offsets_so_far = unsafe { *offsets.last().unwrap_unchecked() };
-        }
-
-        let arr = unsafe {
-            Utf8Array::<i64>::from_data_unchecked_default(offsets.into(), values.into(), validity)
-        };
-        arr.into()
+        // TODO!
+        // do this in parallel.
+        let arrays = arrays
+            .iter()
+            .map(|arr| arr as &dyn Array)
+            .collect::<Vec<_>>();
+        let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
+        unsafe { BinaryChunked::from_chunks("", vec![arr]) }
     }
 }
 
 /// From trait
-impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
-    fn from(ca: &'a Utf8Chunked) -> Self {
+impl<'a> From<&'a StringChunked> for Vec<Option<&'a str>> {
+    fn from(ca: &'a StringChunked) -> Self {
         ca.into_iter().collect()
     }
 }
 
-impl From<Utf8Chunked> for Vec<Option<String>> {
-    fn from(ca: Utf8Chunked) -> Self {
+impl From<StringChunked> for Vec<Option<String>> {
+    fn from(ca: StringChunked) -> Self {
         ca.into_iter()
             .map(|opt| opt.map(|s| s.to_string()))
             .collect()
@@ -660,7 +675,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
 
         match &dtype {
             #[cfg(feature = "object")]
-            Some(DataType::Object(_)) => {
+            Some(DataType::Object(_, _)) => {
                 let s = vectors
                     .iter()
                     .flatten()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pickle
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -79,6 +80,15 @@ def test_categorical() -> None:
     assert out.dtype.inner.is_nested() is False  # type: ignore[attr-defined]
 
 
+def test_decimal() -> None:
+    input = [[Decimal("1.23"), Decimal("4.56")], [Decimal("7.89"), Decimal("10.11")]]
+    s = pl.Series(input)
+    assert s.dtype == pl.List(pl.Decimal)
+    assert s.dtype.inner == pl.Decimal  # type: ignore[attr-defined]
+    assert s.dtype.inner.is_nested() is False  # type: ignore[attr-defined]
+    assert s.to_list() == input
+
+
 def test_cast_inner() -> None:
     a = pl.Series([[1, 2]])
     for t in [bool, pl.Boolean]:
@@ -91,13 +101,6 @@ def test_cast_inner() -> None:
     assert (
         df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[attr-defined]
     )
-
-
-def test_list_unique() -> None:
-    s = pl.Series("a", [[1, 2], [3], [1, 2], [4, 5], [2], [2]])
-    assert s.unique(maintain_order=True).to_list() == [[1, 2], [3], [4, 5], [2]]
-    assert s.arg_unique().to_list() == [0, 1, 3, 4]
-    assert s.n_unique() == 4
 
 
 def test_list_empty_group_by_result_3521() -> None:
@@ -182,7 +185,7 @@ def test_list_diagonal_concat() -> None:
 
 def test_inner_type_categorical_on_rechunk() -> None:
     df = pl.DataFrame({"cats": ["foo", "bar"]}).select(
-        pl.col(pl.Utf8).cast(pl.Categorical).implode()
+        pl.col(pl.String).cast(pl.Categorical).implode()
     )
 
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
@@ -267,11 +270,11 @@ def test_fast_explode_on_list_struct_6208() -> None:
     df = pl.DataFrame(
         data,
         schema={
-            "label": pl.Utf8,
-            "tag": pl.Utf8,
+            "label": pl.String,
+            "tag": pl.String,
             "ref": pl.Int64,
             "parents": pl.List(
-                pl.Struct({"ref": pl.Int64, "tag": pl.Utf8, "ratio": pl.Float64})
+                pl.Struct({"ref": pl.Int64, "tag": pl.String, "ratio": pl.Float64})
             ),
         },
     )
@@ -311,9 +314,6 @@ def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").list.count_matches(2).alias("number_of_twos")
     ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
-    assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").list.count_matches(2).alias("number_of_twos")
-    ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
 def test_list_sum_and_dtypes() -> None:
@@ -348,6 +348,19 @@ def test_list_sum_and_dtypes() -> None:
     ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {
         "a": [1, 6, 10, 15, None]
     }
+
+    # Booleans
+    assert pl.DataFrame(
+        {"a": [[True], [True, True], [True, False, True], [True, True, True, None]]},
+    ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {"a": [1, 2, 2, 3]}
+
+    assert pl.DataFrame(
+        {"a": [[False], [False, False], [False, False, False]]},
+    ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {"a": [0, 0, 0]}
+
+    assert pl.DataFrame(
+        {"a": [[True], [True, True], [True, True, True]]},
+    ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {"a": [1, 2, 3]}
 
 
 def test_list_mean() -> None:
@@ -421,6 +434,35 @@ def test_list_min_max() -> None:
     }
 
 
+def test_list_min_max_13978() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2, 3]],
+            "b": [[1, 2], None],
+            "c": [[], [None, 1, 2]],
+        }
+    )
+    out = df.select(
+        min_a=pl.col("a").list.min(),
+        max_a=pl.col("a").list.max(),
+        min_b=pl.col("b").list.min(),
+        max_b=pl.col("b").list.max(),
+        min_c=pl.col("c").list.min(),
+        max_c=pl.col("c").list.max(),
+    )
+    expected = pl.DataFrame(
+        {
+            "min_a": [None, 1],
+            "max_a": [None, 3],
+            "min_b": [1, None],
+            "max_b": [2, None],
+            "min_c": [None, 1],
+            "max_c": [None, 2],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_fill_null_empty_list() -> None:
     assert pl.Series([["a"], None]).fill_null([]).to_list() == [["a"], []]
 
@@ -467,7 +509,7 @@ def test_logical_parallel_list_collect() -> None:
         .explode("Values")
         .unnest("Values")
     )
-    assert out.dtypes == [pl.Utf8, pl.Categorical, pl.UInt32]
+    assert out.dtypes == [pl.String, pl.Categorical, pl.UInt32]
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
@@ -489,7 +531,7 @@ def test_list_recursive_categorical_cast() -> None:
     [
         ([None, 1, 2], [None, [1], [2]], pl.Int64),
         ([None, 1.0, 2.0], [None, [1.0], [2.0]], pl.Float64),
-        ([None, "x", "y"], [None, ["x"], ["y"]], pl.Utf8),
+        ([None, "x", "y"], [None, ["x"], ["y"]], pl.String),
         ([None, True, False], [None, [True], [False]], pl.Boolean),
     ],
 )
@@ -591,7 +633,7 @@ def test_list_inner_cast_physical_11513() -> None:
 
 
 @pytest.mark.parametrize(
-    ("dtype", "expected"), [(pl.List, True), (pl.Struct, True), (pl.Utf8, False)]
+    ("dtype", "expected"), [(pl.List, True), (pl.Struct, True), (pl.String, False)]
 )
 def test_datatype_is_nested(dtype: PolarsDataType, expected: bool) -> None:
     assert dtype.is_nested() is expected
@@ -608,7 +650,7 @@ def test_list_series_construction_with_dtype_11849_11878() -> None:
     s = pl.Series(
         "groups",
         [[{"1": "A", "2": None}], [{"1": "B", "2": "C"}, {"1": "D", "2": "E"}]],
-        dtype=pl.List(pl.Struct([pl.Field("1", pl.Utf8), pl.Field("2", pl.Utf8)])),
+        dtype=pl.List(pl.Struct([pl.Field("1", pl.String), pl.Field("2", pl.String)])),
     )
 
     assert s.to_list() == [

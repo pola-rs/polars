@@ -14,7 +14,7 @@ from polars.testing.parametric import series
     ).filter(
         lambda s: (
             getattr(s.dtype, "time_unit", None) != "ms"
-            and not (s.dtype == pl.Utf8 and s.str.contains("\x00").any())
+            and not (s.dtype == pl.String and s.str.contains("\x00").any())
             and not (s.dtype == pl.Binary and s.bin.contains(b"\x00").any())
         )
     ),

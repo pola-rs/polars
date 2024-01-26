@@ -43,9 +43,9 @@ fn test_issue_2472() -> PolarsResult<()> {
         .with_column(col("group").cast(DataType::Categorical(None, Default::default())));
 
     let extract = col("group")
-        .cast(DataType::Utf8)
+        .cast(DataType::String)
         .str()
-        .extract(r"(\d+-){4}(\w+)-", 2)
+        .extract(lit(r"(\d+-){4}(\w+)-"), 2)
         .cast(DataType::Int32)
         .alias("age");
     let predicate = col("age").is_in(lit(Series::new("", [2i32])));

@@ -18,25 +18,44 @@ impl ArgAgg for Series {
     fn arg_min(&self) -> Option<usize> {
         use DataType::*;
         let s = self.to_physical_repr();
-        match s.dtype() {
-            Utf8 => {
-                let ca = s.utf8().unwrap();
+        match self.dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) => {
+                let ca = self.categorical().unwrap();
+                if ca.is_empty() || ca.null_count() == ca.len() {
+                    return None;
+                }
+                if ca.uses_lexical_ordering() {
+                    ca.iter_str()
+                        .enumerate()
+                        .flat_map(|(idx, val)| val.map(|val| (idx, val)))
+                        .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
+                        .map(|tpl| tpl.0)
+                } else {
+                    let ca = s.u32().unwrap();
+                    arg_min_numeric_dispatch(ca)
+                }
+            },
+            String => {
+                let ca = self.str().unwrap();
                 arg_min_str(ca)
             },
             Boolean => {
-                let ca = s.bool().unwrap();
+                let ca = self.bool().unwrap();
                 arg_min_bool(ca)
+            },
+            Date => {
+                let ca = s.i32().unwrap();
+                arg_min_numeric_dispatch(ca)
+            },
+            Datetime(_, _) | Duration(_) | Time => {
+                let ca = s.i64().unwrap();
+                arg_min_numeric_dispatch(ca)
             },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    if ca.is_empty() || ca.null_count() == ca.len() { // because argminmax assumes not empty
-                        None
-                    } else if let Ok(vals) = ca.cont_slice() {
-                        arg_min_numeric_slice(vals, ca.is_sorted_flag())
-                    } else {
-                        arg_min_numeric(ca)
-                    }
+                    arg_min_numeric_dispatch(ca)
                 })
             },
             _ => None,
@@ -46,29 +65,75 @@ impl ArgAgg for Series {
     fn arg_max(&self) -> Option<usize> {
         use DataType::*;
         let s = self.to_physical_repr();
-        match s.dtype() {
-            Utf8 => {
-                let ca = s.utf8().unwrap();
+        match self.dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) => {
+                let ca = self.categorical().unwrap();
+                if ca.is_empty() || ca.null_count() == ca.len() {
+                    return None;
+                }
+                if ca.uses_lexical_ordering() {
+                    ca.iter_str()
+                        .enumerate()
+                        .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
+                        .map(|tpl| tpl.0)
+                } else {
+                    let ca_phys = s.u32().unwrap();
+                    arg_max_numeric_dispatch(ca_phys)
+                }
+            },
+            String => {
+                let ca = self.str().unwrap();
                 arg_max_str(ca)
             },
             Boolean => {
-                let ca = s.bool().unwrap();
+                let ca = self.bool().unwrap();
                 arg_max_bool(ca)
+            },
+            Date => {
+                let ca = s.i32().unwrap();
+                arg_max_numeric_dispatch(ca)
+            },
+            Datetime(_, _) | Duration(_) | Time => {
+                let ca = s.i64().unwrap();
+                arg_max_numeric_dispatch(ca)
             },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    if ca.is_empty() || ca.null_count() == ca.len(){ // because argminmax assumes not empty
-                        None
-                    } else if let Ok(vals) = ca.cont_slice() {
-                        arg_max_numeric_slice(vals, ca.is_sorted_flag())
-                    } else {
-                        arg_max_numeric(ca)
-                    }
+                    arg_max_numeric_dispatch(ca)
                 })
             },
             _ => None,
         }
+    }
+}
+
+fn arg_max_numeric_dispatch<T>(ca: &ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsNumericType,
+    for<'b> &'b [T::Native]: ArgMinMax,
+{
+    if ca.is_empty() || ca.null_count() == ca.len() {
+        None
+    } else if let Ok(vals) = ca.cont_slice() {
+        arg_max_numeric_slice(vals, ca.is_sorted_flag())
+    } else {
+        arg_max_numeric(ca)
+    }
+}
+
+fn arg_min_numeric_dispatch<T>(ca: &ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsNumericType,
+    for<'b> &'b [T::Native]: ArgMinMax,
+{
+    if ca.is_empty() || ca.null_count() == ca.len() {
+        None
+    } else if let Ok(vals) = ca.cont_slice() {
+        arg_min_numeric_slice(vals, ca.is_sorted_flag())
+    } else {
+        arg_min_numeric(ca)
     }
 }
 
@@ -120,7 +185,7 @@ fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
     }
 }
 
-fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
+fn arg_min_str(ca: &StringChunked) -> Option<usize> {
     if ca.is_empty() || ca.null_count() == ca.len() {
         return None;
     }
@@ -136,7 +201,7 @@ fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
     }
 }
 
-fn arg_max_str(ca: &Utf8Chunked) -> Option<usize> {
+fn arg_max_str(ca: &StringChunked) -> Option<usize> {
     if ca.is_empty() || ca.null_count() == ca.len() {
         return None;
     }

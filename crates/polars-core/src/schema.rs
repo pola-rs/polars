@@ -343,11 +343,11 @@ impl Schema {
     }
 
     /// Convert self to `ArrowSchema` by cloning the fields
-    pub fn to_arrow(&self) -> ArrowSchema {
+    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowSchema {
         let fields: Vec<_> = self
             .inner
             .iter()
-            .map(|(name, dtype)| ArrowField::new(name.as_str(), dtype.to_arrow(), true))
+            .map(|(name, dtype)| dtype.to_arrow_field(name.as_str(), pl_flavor))
             .collect();
         ArrowSchema::from(fields)
     }
@@ -356,26 +356,24 @@ impl Schema {
     ///
     /// Note that this clones each name and dtype in order to form an owned [`Field`]. For a clone-free version, use
     /// [`iter`][Self::iter], which returns `(&name, &dtype)`.
-    pub fn iter_fields(&self) -> impl Iterator<Item = Field> + ExactSizeIterator + '_ {
+    pub fn iter_fields(&self) -> impl ExactSizeIterator<Item = Field> + '_ {
         self.inner
             .iter()
             .map(|(name, dtype)| Field::new(name, dtype.clone()))
     }
 
     /// Iterates over references to the dtypes in this schema
-    pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + '_ + ExactSizeIterator {
+    pub fn iter_dtypes(&self) -> impl '_ + ExactSizeIterator<Item = &DataType> {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 
     /// Iterates over mut references to the dtypes in this schema
-    pub fn iter_dtypes_mut(
-        &mut self,
-    ) -> impl Iterator<Item = &mut DataType> + '_ + ExactSizeIterator {
+    pub fn iter_dtypes_mut(&mut self) -> impl '_ + ExactSizeIterator<Item = &mut DataType> {
         self.inner.iter_mut().map(|(_name, dtype)| dtype)
     }
 
     /// Iterates over references to the names in this schema
-    pub fn iter_names(&self) -> impl Iterator<Item = &SmartString> + '_ + ExactSizeIterator {
+    pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &SmartString> {
         self.inner.iter().map(|(name, _dtype)| name)
     }
 

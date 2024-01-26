@@ -44,6 +44,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_favicon",
+    "sphinx_toolbox.more_autodoc.overloads",
 ]
 
 # Render docstring text in `single backticks` as code.
@@ -60,6 +61,11 @@ templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["Thumbs.db", ".DS_Store"]
+
+# Hide overload type signatures
+# sphinx_toolbox - Box of handy tools for Sphinx
+# https://sphinx-toolbox.readthedocs.io/en/latest/
+overloads_location = ["bottom"]
 
 # -- Extension settings  -----------------------------------------------------
 
@@ -98,18 +104,25 @@ html_show_sourcelink = False
 # key site root paths
 static_assets_root = "https://raw.githubusercontent.com/pola-rs/polars-static/master"
 github_root = "https://github.com/pola-rs/polars"
-web_root = "https://pola-rs.github.io"
+web_root = "https://docs.pola.rs"
 
 # Specify version for version switcher dropdown menu
 git_ref = os.environ.get("POLARS_VERSION", "main")
 version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", git_ref)
 switcher_version = version_match.group(1) if version_match is not None else "dev"
 
+html_js_files = [
+    (
+        "https://plausible.io/js/script.js",
+        {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"},
+    ),
+]
+
 html_theme_options = {
     "external_links": [
         {
             "name": "User guide",
-            "url": f"{web_root}/polars/user-guide/",
+            "url": f"{web_root}/user-guide/",
         },
     ],
     "icon_links": [
@@ -134,11 +147,11 @@ html_theme_options = {
         "image_dark": f"{static_assets_root}/logos/polars-logo-dimmed-medium.png",
     },
     "switcher": {
-        "json_url": f"{web_root}/polars/docs/python/dev/_static/version_switcher.json",
+        "json_url": f"{web_root}/docs/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
     "show_version_warning_banner": False,
-    "navbar_end": ["version-switcher", "navbar-icon-links"],
+    "navbar_end": ["theme-switcher", "version-switcher", "navbar-icon-links"],
     "check_switcher": False,
 }
 

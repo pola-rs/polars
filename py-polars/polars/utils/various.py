@@ -21,11 +21,10 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Int64,
+    String,
     Time,
-    Utf8,
-    unpack_dtypes,
 )
-from polars.dependencies import _PYARROW_AVAILABLE, _check_for_numpy
+from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
@@ -117,11 +116,19 @@ def is_str_sequence(
     elif _check_for_numpy(val) and isinstance(val, np.ndarray):
         return np.issubdtype(val.dtype, np.str_)
     elif include_series and isinstance(val, pl.Series):
-        return val.dtype == pl.Utf8
+        return val.dtype == pl.String
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
-def _warn_null_comparison(obj: Any) -> None:
+def is_column(obj: Any) -> bool:
+    """Indicate if the given object is a basic/unaliased column."""
+    from polars.expr import Expr
+
+    return isinstance(obj, Expr) and obj.meta.is_column()
+
+
+def warn_null_comparison(obj: Any) -> None:
+    """Warn for possibly unintentional comparisons with None."""
     if obj is None:
         warnings.warn(
             "Comparisons with None always result in null. Consider using `.is_null()` or `.is_not_null()`.",
@@ -163,28 +170,25 @@ def handle_projection_columns(
         elif is_int_sequence(columns):
             projection = list(columns)
         elif not is_str_sequence(columns):
-            raise TypeError(
-                "`columns` arg should contain a list of all integers or all strings values"
-            )
+            msg = "`columns` arg should contain a list of all integers or all strings values"
+            raise TypeError(msg)
         else:
             new_columns = columns
         if columns and len(set(columns)) != len(columns):
-            raise ValueError(
-                f"`columns` arg should only have unique values, got {columns!r}"
-            )
+            msg = f"`columns` arg should only have unique values, got {columns!r}"
+            raise ValueError(msg)
         if projection and len(set(projection)) != len(projection):
-            raise ValueError(
-                f"`columns` arg should only have unique values, got {projection!r}"
-            )
+            msg = f"`columns` arg should only have unique values, got {projection!r}"
+            raise ValueError(msg)
     return projection, new_columns
 
 
-def _prepare_row_count_args(
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+def _prepare_row_index_args(
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
 ) -> tuple[str, int] | None:
-    if row_count_name is not None:
-        return (row_count_name, row_count_offset)
+    if row_index_name is not None:
+        return (row_index_name, row_index_offset)
     else:
         return None
 
@@ -210,18 +214,6 @@ def arrlen(obj: Any) -> int | None:
         return None
 
 
-def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
-    """Check if the given dtypes can be used to create dicts with pyarrow fast path."""
-    # TODO: have our own fast-path for dict iteration in Rust
-    return (
-        _PYARROW_AVAILABLE
-        # note: 'ns' precision instantiates values as pandas types - avoid
-        and not any(
-            (getattr(tp, "time_unit", None) == "ns") for tp in unpack_dtypes(*dtypes)
-        )
-    )
-
-
 def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
     # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
@@ -231,7 +223,8 @@ def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) ->
         and os.path.exists(path)  # noqa: PTH110
         and os.path.isdir(path)  # noqa: PTH112
     ):
-        raise IsADirectoryError(f"expected a file path; {path!r} is a directory")
+        msg = f"expected a file path; {path!r} is a directory"
+        raise IsADirectoryError(msg)
     return path
 
 
@@ -262,9 +255,8 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
     elif unit in {"tb", "terabytes"}:
         return sz / 1024**4
     else:
-        raise ValueError(
-            f"`unit` must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
-        )
+        msg = f"`unit` must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
+        raise ValueError(msg)
 
 
 def _cast_repr_strings_with_schema(
@@ -284,15 +276,13 @@ def _cast_repr_strings_with_schema(
     -----
     Table repr strings are less strict (or different) than equivalent CSV data, so need
     special handling; as this function is only used for reprs, parsing is flexible.
-
     """
     tp: PolarsDataType | None
     if not df.is_empty():
         for tp in df.schema.values():
-            if tp != Utf8:
-                raise TypeError(
-                    f"DataFrame should contain only Utf8 string repr data; found {tp!r}"
-                )
+            if tp != String:
+                msg = f"DataFrame should contain only String repr data; found {tp!r}"
+                raise TypeError(msg)
 
     # duration string scaling
     ns_sec = 1_000_000_000
@@ -380,7 +370,7 @@ def _cast_repr_strings_with_schema(
                             separator=".",
                         )
                     )
-                    .cast(Utf8)
+                    .cast(String)
                     .cast(tp)
                 )
             elif tp != df.schema[c]:
@@ -405,8 +395,8 @@ class sphinx_accessor(property):  # noqa: D101
             return self.fget(  # type: ignore[misc]
                 instance if isinstance(instance, cls) else cls
             )
-        except AttributeError:
-            return None  # type: ignore[return-value]
+        except (AttributeError, ImportError):
+            return self  # type: ignore[return-value]
 
 
 class _NoDefault(Enum):
@@ -477,7 +467,6 @@ def _get_stack_locals(
         If specified, look at objects in the last `n` stack frames only.
     named
         If specified, only return objects matching the given name(s).
-
     """
     if isinstance(named, str):
         named = (named,)
@@ -558,7 +547,8 @@ def parse_percentiles(
     elif percentiles is None:
         percentiles = []
     if not all((0 <= p <= 1) for p in percentiles):
-        raise ValueError("`percentiles` must all be in the range [0, 1]")
+        msg = "`percentiles` must all be in the range [0, 1]"
+        raise ValueError(msg)
 
     sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
     at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)

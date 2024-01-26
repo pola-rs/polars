@@ -25,7 +25,6 @@ comfy-table = { version = "7.0.1", default_features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
-itoap = { version = "1", optional = true, features = ["simd"] }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
@@ -48,7 +47,7 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-simd = ["arrow/simd"]
+simd = ["arrow/simd", "polars-compute/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
@@ -62,7 +61,7 @@ lazy = []
 # more fast paths, slower compilation
 performant = ["arrow/performant", "reinterpret"]
 
-# extra utilities for Utf8Chunked
+# extra utilities for StringChunked
 strings = ["regex", "arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
@@ -71,8 +70,6 @@ fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
 
 # opt-in features
-# sort by multiple columns
-sort_multiple = []
 # create from row values
 # and include pivot operation
 rows = []
@@ -93,7 +90,6 @@ group_by_list = []
 # rolling window functions
 rolling_window = []
 diagonal_concat = []
-horizontal_concat = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
@@ -112,7 +108,7 @@ dtype-time = ["temporal"]
 dtype-array = ["arrow/dtype-array", "polars-compute/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["dep:itoap", "arrow/dtype-decimal"]
+dtype-decimal = ["arrow/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -145,7 +141,6 @@ docs-selection = [
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
-  "horizontal_concat",
   "dataframe_arithmetic",
   "product",
   "describe",

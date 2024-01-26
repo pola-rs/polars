@@ -96,6 +96,15 @@ impl LogicalPlan {
                 }
                 write!(f, "\n{:indent$}END {}", "", name)
             },
+            HConcat { inputs, .. } => {
+                let sub_sub_indent = sub_indent + 2;
+                write!(f, "{:indent$}HCONCAT", "")?;
+                for (i, plan) in inputs.iter().enumerate() {
+                    write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
+                    plan._format(f, sub_sub_indent)?;
+                }
+                write!(f, "\n{:indent$}END HCONCAT", "")
+            },
             Cache { input, id, count } => {
                 write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
                 input._format(f, sub_indent)
@@ -245,18 +254,30 @@ impl Debug for Expr {
             Window {
                 function,
                 partition_by,
-                ..
-            } => write!(f, "{function:?}.over({partition_by:?})"),
+                options,
+            } => match options {
+                #[cfg(feature = "dynamic_group_by")]
+                WindowType::Rolling(options) => {
+                    write!(
+                        f,
+                        "{:?}.rolling(by='{}', offset={}, period={})",
+                        function, options.index_column, options.offset, options.period
+                    )
+                },
+                _ => {
+                    write!(f, "{function:?}.over({partition_by:?})")
+                },
+            },
             Nth(i) => write!(f, "nth({i})"),
-            Count => write!(f, "count()"),
+            Len => write!(f, "len()"),
             Explode(expr) => write!(f, "{expr:?}.explode()"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => {
                 match v {
-                    LiteralValue::Utf8(v) => {
+                    LiteralValue::String(v) => {
                         // dot breaks with debug fmt due to \"
-                        write!(f, "Utf8({v})")
+                        write!(f, "String({v})")
                     },
                     _ => {
                         write!(f, "{v:?}")

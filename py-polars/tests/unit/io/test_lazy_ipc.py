@@ -15,21 +15,21 @@ def foods_ipc_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.ipc"
 
 
-def test_row_count(foods_ipc_path: Path) -> None:
-    df = pl.read_ipc(foods_ipc_path, row_count_name="row_count", use_pyarrow=False)
-    assert df["row_count"].to_list() == list(range(27))
+def test_row_index(foods_ipc_path: Path) -> None:
+    df = pl.read_ipc(foods_ipc_path, row_index_name="row_index", use_pyarrow=False)
+    assert df["row_index"].to_list() == list(range(27))
 
     df = (
-        pl.scan_ipc(foods_ipc_path, row_count_name="row_count")
+        pl.scan_ipc(foods_ipc_path, row_index_name="row_index")
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
 
-    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+    assert df["row_index"].to_list() == [0, 6, 11, 13, 14, 20, 25]
 
     df = (
-        pl.scan_ipc(foods_ipc_path, row_count_name="row_count")
-        .with_row_count("foo", 10)
+        pl.scan_ipc(foods_ipc_path, row_index_name="row_index")
+        .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
@@ -53,12 +53,12 @@ def test_is_in_type_coercion(foods_ipc_path: Path) -> None:
     assert out.shape == (7, 1)
 
 
-def test_row_count_schema(foods_ipc_path: Path) -> None:
+def test_row_index_schema(foods_ipc_path: Path) -> None:
     assert (
-        pl.scan_ipc(foods_ipc_path, row_count_name="id")
+        pl.scan_ipc(foods_ipc_path, row_index_name="id")
         .select(["id", "category"])
         .collect()
-    ).dtypes == [pl.UInt32, pl.Utf8]
+    ).dtypes == [pl.UInt32, pl.String]
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:

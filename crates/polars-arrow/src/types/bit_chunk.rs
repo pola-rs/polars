@@ -129,8 +129,7 @@ impl<T: BitChunk> BitChunkOnes<T> {
     }
 
     #[inline]
-    #[cfg(feature = "compute_filter")]
-    pub(crate) fn from_known_count(value: T, remaining: usize) -> Self {
+    pub fn from_known_count(value: T, remaining: usize) -> Self {
         Self { value, remaining }
     }
 }

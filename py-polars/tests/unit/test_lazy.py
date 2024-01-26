@@ -28,7 +28,7 @@ def test_init_signature_match() -> None:
     assert signature(pl.DataFrame.__init__) == signature(pl.LazyFrame.__init__)
 
 
-def test_lazy() -> None:
+def test_lazy_misc() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     _ = ldf.with_columns(pl.lit(1).alias("foo")).select([pl.col("a"), pl.col("foo")])
 
@@ -37,9 +37,24 @@ def test_lazy() -> None:
         when(pl.col("a") > pl.lit(2)).then(pl.lit(10)).otherwise(pl.lit(1)).alias("new")
     ).collect()
 
-    # test if pl.list is available, this is `to_list` re-exported as list
-    eager = ldf.group_by("a").agg(pl.implode("b")).collect()
-    assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
+
+def test_implode() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    eager = (
+        ldf.group_by(pl.col("a").alias("grp"), maintain_order=True)
+        .agg(pl.implode("a", "b").name.suffix("_imp"))
+        .collect()
+    )
+    assert_frame_equal(
+        eager,
+        pl.DataFrame(
+            {
+                "grp": [1, 2, 3],
+                "a_imp": [[[1]], [[2]], [[3]]],
+                "b_imp": [[[1.0]], [[2.0]], [[3.0]]],
+            }
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -47,7 +62,7 @@ def test_lazy() -> None:
     [
         ({}, "0 cols, {}"),
         ({"a": [1]}, '1 col, {"a": Int64}'),
-        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": Utf8}'),
+        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": String}'),
         ({"a": [1], "b": ["B"], "c": [0.0]}, '3 cols, {"a": Int64 … "c": Float64}'),
     ],
 )
@@ -111,6 +126,8 @@ def test_gather_every() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
     assert_frame_equal(expected_df, ldf.gather_every(2).collect())
+    expected_df = pl.DataFrame({"a": [2, 4], "b": ["x", "z"]})
+    assert_frame_equal(expected_df, ldf.gather_every(2, offset=1).collect())
 
 
 def test_agg() -> None:
@@ -129,11 +146,11 @@ def test_count_suffix_10783() -> None:
         }
     )
     df_with_cnt = df.with_columns(
-        pl.count()
+        pl.len()
         .over(pl.col("a").list.sort().list.join("").hash())
         .name.suffix("_suffix")
     )
-    df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
+    df_expect = df.with_columns(pl.Series("len_suffix", [3, 3, 1, 3]))
     assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
 
 
@@ -171,7 +188,6 @@ def test_filter_multiple_predicates() -> None:
         }
     )
 
-    # using multiple predicates
     # multiple predicates
     expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
     for out in (
@@ -193,7 +209,7 @@ def test_filter_multiple_predicates() -> None:
     )
 
     # check 'predicate' keyword deprecation:
-    # note: can disambiguate new/old usage - only expect warning on old-style usage
+    # note: we can disambiguate new/old usage (only expect warning on old-style usage)
     with pytest.warns(
         DeprecationWarning,
         match="`filter` no longer takes a 'predicate' parameter",
@@ -249,33 +265,30 @@ def test_apply_custom_function() -> None:
 
 
 def test_group_by() -> None:
-    ldf = pl.LazyFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
+    ldf = pl.LazyFrame(
+        {
+            "a": [1.0, None, 3.0, 4.0],
+            "b": [5.0, 2.5, -3.0, 2.0],
+            "grp": ["a", "a", "b", "b"],
+        }
+    )
+    expected_a = pl.DataFrame({"grp": ["a", "b"], "a": [1.0, 3.5]})
+    expected_a_b = pl.DataFrame({"grp": ["a", "b"], "a": [1.0, 3.5], "b": [3.75, -0.5]})
 
-    expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
+    for out in (
+        ldf.group_by("grp").agg(pl.mean("a")).collect(),
+        ldf.group_by(pl.col("grp")).agg(pl.mean("a")).collect(),
+    ):
+        assert_frame_equal(out.sort(by="grp"), expected_a)
 
-    out = ldf.group_by("groups").agg(pl.mean("a")).collect()
-    assert_frame_equal(out.sort(by="groups"), expected)
-
-    # refer to column via pl.Expr
-    out = ldf.group_by(pl.col("groups")).agg(pl.mean("a")).collect()
-    assert_frame_equal(out.sort(by="groups"), expected)
+    out = ldf.group_by("grp").agg(pl.mean("a", "b")).collect()
+    assert_frame_equal(out.sort(by="grp"), expected_a_b)
 
 
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]
     assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.UInt32))
-
-
-def test_is_unique() -> None:
-    df = pl.DataFrame({"a": [4, 1, 4]})
-    result = df.select(pl.col("a").is_unique())["a"]
-    assert_series_equal(result, pl.Series("a", [False, True, False]))
-
-
-def test_is_duplicated() -> None:
-    ldf = pl.LazyFrame({"a": [4, 1, 4]}).select(pl.col("a").is_duplicated())
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [True, False, True]))
 
 
 def test_arg_sort() -> None:
@@ -588,11 +601,11 @@ def test_cast_frame() -> None:
 
     # cast via col:dtype map
     assert lf.cast(
-        dtypes={"b": pl.Float32, "c": pl.Utf8, "d": pl.Datetime("ms")}
+        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")}
     ).schema == {
         "a": pl.Float64,
         "b": pl.Float32,
-        "c": pl.Utf8,
+        "c": pl.String,
         "d": pl.Datetime("ms"),
     }
 
@@ -601,10 +614,10 @@ def test_cast_frame() -> None:
         {
             cs.float(): pl.UInt8,
             cs.integer(): pl.Int32,
-            cs.temporal(): pl.Utf8,
+            cs.temporal(): pl.String,
         }
     )
-    assert lfc.schema == {"a": pl.UInt8, "b": pl.Int32, "c": pl.Boolean, "d": pl.Utf8}
+    assert lfc.schema == {"a": pl.UInt8, "b": pl.Int32, "c": pl.Boolean, "d": pl.String}
     assert lfc.collect().rows() == [
         (1, 4, True, "2020-01-02"),
         (2, 5, False, "2021-03-04"),
@@ -612,7 +625,7 @@ def test_cast_frame() -> None:
     ]
 
     # cast all fields to a single type
-    result = lf.cast(pl.Utf8)
+    result = lf.cast(pl.String)
     expected = pl.LazyFrame(
         {
             "a": ["1.0", "2.5", "3.0"],
@@ -910,6 +923,14 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     assert res.columns[0] == "C"
 
 
+def test_rename_lambda() -> None:
+    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+    out = ldf.rename(
+        lambda col: "foo" if col == "a" else "bar" if col == "b" else col
+    ).collect()
+    assert out.columns == ["foo", "bar", "c"]
+
+
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
@@ -1048,21 +1069,6 @@ def test_null_count() -> None:
     assert lf.null_count().collect().rows() == [(1, 2)]
 
 
-def test_unique() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert_frame_equal(ldf.unique(maintain_order=True).collect(), expected)
-
-    result = ldf.unique(subset="b", maintain_order=True).collect()
-    expected = pl.DataFrame({"a": [1], "b": [3]})
-    assert_frame_equal(result, expected)
-
-    s0 = pl.Series("a", [1, 2, None, 2])
-    # test if the null is included
-    assert s0.unique().to_list() == [None, 1, 2]
-
-
 def test_lazy_concat(df: pl.DataFrame) -> None:
     shape = df.shape
     shape = (shape[0] * 2, shape[1])
@@ -1167,7 +1173,7 @@ def test_lazy_schema() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
+    assert ldf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
 
     ldf = pl.LazyFrame(
         {
@@ -1176,7 +1182,7 @@ def test_lazy_schema() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
+    assert ldf.dtypes == [pl.Int64, pl.Float64, pl.String]
 
     ldfe = ldf.clear()
     assert ldfe.schema == ldf.schema
@@ -1199,7 +1205,7 @@ def test_predicate_count_vstack() -> None:
             "v": [5, 7],
         }
     )
-    assert pl.concat([l1, l2]).filter(pl.count().over("k") == 2).collect()[
+    assert pl.concat([l1, l2]).filter(pl.len().over("k") == 2).collect()[
         "v"
     ].to_list() == [3, 2, 5, 7]
 
@@ -1364,8 +1370,8 @@ def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
 def test_from_epoch_str() -> None:
     ldf = pl.LazyFrame(
         [
-            pl.Series("timestamp_ms", [1147880044 * 1_000]).cast(pl.Utf8),
-            pl.Series("timestamp_us", [1147880044 * 1_000_000]).cast(pl.Utf8),
+            pl.Series("timestamp_ms", [1147880044 * 1_000]).cast(pl.String),
+            pl.Series("timestamp_us", [1147880044 * 1_000_000]).cast(pl.String),
         ]
     )
 
@@ -1498,7 +1504,7 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     ],
 )
 def test_lazy_comparison_operators(
-    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]]
+    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]],
 ) -> None:
     # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(

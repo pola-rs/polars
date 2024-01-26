@@ -24,6 +24,7 @@ def show_versions() -> None:
     connectorx:           0.3.2
     deltalake:            0.13.0
     fsspec:               2023.10.0
+    hvplot:               0.9.1
     gevent:               23.9.1
     matplotlib:           3.8.2
     numpy:                1.26.2
@@ -36,7 +37,6 @@ def show_versions() -> None:
     sqlalchemy:           2.0.23
     xlsx2csv:             0.8.1
     xlsxwriter:           3.1.9
-
     """  # noqa: W505
     # note: we import 'platform' here (rather than at the top of the
     # module) as a micro-optimisation for polars' initial import
@@ -66,6 +66,7 @@ def _get_dependency_info() -> dict[str, str]:
         "deltalake",
         "fsspec",
         "gevent",
+        "hvplot",
         "matplotlib",
         "numpy",
         "openpyxl",

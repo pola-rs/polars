@@ -15,7 +15,7 @@ impl PySeries {
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
 
-            arrow_interop::to_py::to_py_array(self.series.to_arrow(0), py, pyarrow)
+            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, pyarrow)
         })
     }
 
@@ -44,8 +44,8 @@ impl PySeries {
                     Ok(np_arr.into_py(py))
                 }
             },
-            DataType::Utf8 => {
-                let ca = s.utf8().unwrap();
+            DataType::String => {
+                let ca = s.str().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 Ok(np_arr.into_py(py))
             },
@@ -60,7 +60,7 @@ impl PySeries {
                 Ok(np_arr.into_py(py))
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 let ca = s
                     .as_any()
                     .downcast_ref::<ObjectChunked<ObjectValue>>()
@@ -100,11 +100,11 @@ impl PySeries {
                     DataType::Int64 => PyList::new(py, series.i64().unwrap()),
                     DataType::Float32 => PyList::new(py, series.f32().unwrap()),
                     DataType::Float64 => PyList::new(py, series.f64().unwrap()),
-                    DataType::Categorical(_, _) => {
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                         PyList::new(py, series.categorical().unwrap().iter_str())
                     },
                     #[cfg(feature = "object")]
-                    DataType::Object(_) => {
+                    DataType::Object(_, _) => {
                         let v = PyList::empty(py);
                         for i in 0..series.len() {
                             let obj: Option<&ObjectValue> =
@@ -164,8 +164,8 @@ impl PySeries {
                         let ca = series.decimal().unwrap();
                         return Wrap(ca).to_object(py);
                     },
-                    DataType::Utf8 => {
-                        let ca = series.utf8().unwrap();
+                    DataType::String => {
+                        let ca = series.str().unwrap();
                         return Wrap(ca).to_object(py);
                     },
                     DataType::Struct(_) => {
@@ -205,6 +205,9 @@ impl PySeries {
                     },
                     DataType::Unknown => {
                         panic!("to_list not implemented for unknown")
+                    },
+                    DataType::BinaryOffset => {
+                        unreachable!()
                     },
                 };
                 pylist.to_object(py)

@@ -54,8 +54,10 @@ mod inner {
 
         #[inline]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
-            if self.v.is_empty() || self.finished {
+            if self.finished {
                 return None;
+            } else if self.v.is_empty() {
+                return self.finish(false);
             }
 
             let mut needs_escaping = false;
@@ -135,7 +137,7 @@ mod inner {
 #[cfg(feature = "simd")]
 mod inner {
     use std::ops::BitOr;
-    use std::simd::*;
+    use std::simd::prelude::*;
 
     use polars_utils::slice::GetSaferUnchecked;
     use polars_utils::unwrap::UnwrapUncheckedRelease;
@@ -214,8 +216,10 @@ mod inner {
 
         #[inline]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
-            if self.v.is_empty() || self.finished {
+            if self.finished {
                 return None;
+            } else if self.v.is_empty() {
+                return self.finish(false);
             }
 
             let mut needs_escaping = false;

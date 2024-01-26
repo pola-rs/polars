@@ -20,6 +20,9 @@ where
         .map(|end| {
             let current_offset = running_offset;
             running_offset = *end;
+            if current_offset == *end {
+                return None;
+            }
 
             let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
             slice.min_ignore_nan_kernel()
@@ -122,6 +125,9 @@ where
         .map(|end| {
             let current_offset = running_offset;
             running_offset = *end;
+            if current_offset == *end {
+                return None;
+            }
 
             let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
             slice.max_ignore_nan_kernel()

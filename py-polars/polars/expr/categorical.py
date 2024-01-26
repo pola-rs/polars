@@ -59,6 +59,5 @@ class ExprCatNameSpace:
         │ bar  │
         │ ham  │
         └──────┘
-
         """
         return wrap_expr(self._pyexpr.cat_get_categories())

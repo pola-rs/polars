@@ -8,7 +8,7 @@ use super::utils::{
     count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunksExactMut, BitmapIter,
 };
 use super::Bitmap;
-use crate::bitmap::utils::{merge_reversed, set_bit_unchecked};
+use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_unchecked};
 use crate::trusted_len::TrustedLen;
 
 /// A container of booleans. [`MutableBitmap`] is semantically equivalent
@@ -115,7 +115,7 @@ impl MutableBitmap {
         if self.length % 8 == 0 {
             self.buffer.push(0);
         }
-        let byte = self.buffer.as_mut_slice().last_mut().unwrap();
+        let byte = unsafe { self.buffer.as_mut_slice().last_mut().unwrap_unchecked() };
         *byte = set(*byte, self.length % 8, value);
         self.length += 1;
     }
@@ -129,7 +129,7 @@ impl MutableBitmap {
         }
 
         self.length -= 1;
-        let value = self.get(self.length);
+        let value = unsafe { self.get_unchecked(self.length) };
         if self.length % 8 == 0 {
             self.buffer.pop();
         }
@@ -142,6 +142,15 @@ impl MutableBitmap {
     #[inline]
     pub fn get(&self, index: usize) -> bool {
         get_bit(&self.buffer, index)
+    }
+
+    /// Returns whether the position `index` is set.
+    ///
+    /// # Safety
+    /// The caller must ensure `index < self.len()`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: usize) -> bool {
+        get_bit_unchecked(&self.buffer, index)
     }
 
     /// Sets the position `index` to `value`
@@ -325,6 +334,10 @@ impl MutableBitmap {
     pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
     }
+
+    pub fn freeze(self) -> Bitmap {
+        self.into()
+    }
 }
 
 impl From<MutableBitmap> for Bitmap {
@@ -339,14 +352,13 @@ impl From<MutableBitmap> for Option<Bitmap> {
     fn from(buffer: MutableBitmap) -> Self {
         let unset_bits = buffer.unset_bits();
         if unset_bits > 0 {
-            // safety:
-            // invariants of the `MutableBitmap` equal that of `Bitmap`
+            // SAFETY: invariants of the `MutableBitmap` equal that of `Bitmap`.
             let bitmap = unsafe {
                 Bitmap::from_inner_unchecked(
                     Arc::new(buffer.buffer.into()),
                     0,
                     buffer.length,
-                    unset_bits,
+                    Some(unset_bits),
                 )
             };
             Some(bitmap)

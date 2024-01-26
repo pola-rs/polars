@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(feature = "parquet")]
-pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
+pub(crate) fn row_index_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
@@ -11,7 +11,7 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
             lp,
             Scan {
                 file_options: FileScanOptions {
-                    row_count: Some(_),
+                    row_index: Some(_),
                     ..
                 },
                 ..
@@ -343,7 +343,7 @@ fn test_lazy_filter_and_rename() {
 }
 
 #[test]
-fn test_with_row_count_opts() -> PolarsResult<()> {
+fn test_with_row_index_opts() -> PolarsResult<()> {
     let df = df![
         "a" => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     ]?;
@@ -351,11 +351,11 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_index("index", None)
         .tail(5)
         .collect()?;
     let expected = df![
-        "row_nr" => [5 as IdxSize, 6, 7, 8, 9],
+        "index" => [5 as IdxSize, 6, 7, 8, 9],
         "a" => [5, 6, 7, 8, 9],
     ]?;
 
@@ -363,11 +363,11 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_index("index", None)
         .slice(1, 2)
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("index")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
@@ -377,11 +377,11 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_row_count("row_nr", None)
+        .with_row_index("index", None)
         .filter(col("a").eq(lit(3i32)))
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("index")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
@@ -392,10 +392,10 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
         .clone()
         .lazy()
         .slice(1, 2)
-        .with_row_count("row_nr", None)
+        .with_row_index("index", None)
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("index")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
@@ -405,10 +405,10 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     let out = df
         .lazy()
         .filter(col("a").eq(lit(3i32)))
-        .with_row_count("row_nr", None)
+        .with_row_index("index", None)
         .collect()?;
     assert_eq!(
-        out.column("row_nr")?
+        out.column("index")?
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
@@ -444,7 +444,7 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
 
     let out = q.collect()?;
     let s = out.column("literal")?;
-    assert_eq!(s.get(0)?, AnyValue::Utf8("fooabbar"));
+    assert_eq!(s.get(0)?, AnyValue::String("fooabbar"));
 
     Ok(())
 }

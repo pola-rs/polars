@@ -16,7 +16,7 @@ use super::utils::FixedSizeBinary;
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
+use crate::read::deserialize::utils;
 
 pub(super) type Dict = Vec<u8>;
 
@@ -165,9 +165,8 @@ impl<'a> Decoder<'a> for BinaryDecoder {
         page: &'a DataPage,
         dict: Option<&'a Self::Dict>,
     ) -> PolarsResult<Self::State> {
-        let is_optional =
-            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-        let is_filtered = page.selected_rows().is_some();
+        let is_optional = utils::page_is_optional(page);
+        let is_filtered = utils::page_is_filtered(page);
 
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::Plain, _, true, false) => {

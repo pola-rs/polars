@@ -1,8 +1,7 @@
 use std::borrow::Borrow;
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field};
+use arrow::datatypes::{ArrowDataType, Field};
 use indexmap::map::Entry;
-use indexmap::IndexMap;
 use simd_json::borrowed::Object;
 use simd_json::{BorrowedValue, StaticNode};
 
@@ -22,48 +21,6 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
         BorrowedValue::Array(array) => infer_array(array)?,
         BorrowedValue::String(_) => ArrowDataType::LargeUtf8,
         BorrowedValue::Object(inner) => infer_object(inner)?,
-    })
-}
-
-/// Infers [`ArrowSchema`] from JSON [`Value`][Value] in (pandas-compatible) records format.
-///
-/// [Value]: simd_json::value::Value
-pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<ArrowSchema> {
-    let outer_array = match json {
-        BorrowedValue::Array(array) => Ok(array),
-        _ => Err(PolarsError::ComputeError(
-            "outer type is not an array".into(),
-        )),
-    }?;
-
-    let fields = match outer_array.iter().next() {
-        Some(BorrowedValue::Object(record)) => record
-            .iter()
-            .map(|(name, json)| {
-                let data_type = infer(json)?;
-
-                Ok(Field {
-                    name: name.to_string(),
-                    data_type: ArrowDataType::LargeList(Box::new(Field {
-                        name: format!("{name}-records"),
-                        data_type,
-                        is_nullable: true,
-                        metadata: Default::default(),
-                    })),
-                    is_nullable: true,
-                    metadata: Default::default(),
-                })
-            })
-            .collect::<PolarsResult<Vec<_>>>(),
-        None => Ok(vec![]),
-        _ => Err(PolarsError::ComputeError(
-            "first element in array is not a record".into(),
-        )),
-    }?;
-
-    Ok(ArrowSchema {
-        fields,
-        metadata: Default::default(),
     })
 }
 
@@ -133,7 +90,7 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
         });
         // group fields by unique
         let fields = fields.iter().fold(
-            IndexMap::<&str, PlHashSet<&ArrowDataType>, ahash::RandomState>::default(),
+            PlIndexMap::<&str, PlHashSet<&ArrowDataType>>::default(),
             |mut acc, field| {
                 match acc.entry(field.name.as_str()) {
                     Entry::Occupied(mut v) => {
@@ -174,7 +131,13 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             true,
         )));
     } else if datatypes.len() > 2 {
-        return LargeUtf8;
+        return datatypes
+            .iter()
+            .map(|dt| dt.borrow().clone())
+            .reduce(|a, b| coerce_data_type(&[a, b]))
+            .unwrap()
+            .borrow()
+            .clone();
     }
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
 
@@ -184,7 +147,7 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             let inner = coerce_data_type(&[lhs.data_type(), rhs.data_type()]);
             LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
         },
-        (scalar, List(list)) => {
+        (scalar, LargeList(list)) => {
             let inner = coerce_data_type(&[scalar, list.data_type()]);
             LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
         },
@@ -196,6 +159,8 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
         (Int64, Float64) => Float64,
         (Int64, Boolean) => Int64,
         (Boolean, Int64) => Int64,
+        (Null, rhs) => rhs.clone(),
+        (lhs, Null) => lhs.clone(),
         (_, _) => LargeUtf8,
     };
 }

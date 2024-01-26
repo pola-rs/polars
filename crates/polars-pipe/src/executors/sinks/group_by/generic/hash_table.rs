@@ -261,7 +261,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .output_schema
             .iter_dtypes()
             .take(self.num_keys)
-            .map(|dtype| dtype.to_physical().to_arrow())
+            .map(|dtype| dtype.to_physical().to_arrow(true))
             .collect::<Vec<_>>();
         let fields = vec![Default::default(); self.num_keys];
         let key_columns =

@@ -203,7 +203,7 @@ def test_predicate_pushdown_group_by_keys() -> None:
     assert (
         'SELECTION: "None"'
         not in df.group_by("group")
-        .agg([pl.count().alias("str_list")])
+        .agg([pl.len().alias("str_list")])
         .filter(pl.col("group") == 1)
         .explain()
     )
@@ -233,13 +233,13 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
 )
 def test_invalid_filter_predicates(predicate: Any) -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
-    with pytest.raises(ValueError, match="invalid predicate"):
+    with pytest.raises(TypeError, match="invalid predicate"):
         df.filter(predicate)
 
 
 def test_fast_path_boolean_filter_predicates() -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
-    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.Utf8}))
+    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.String}))
     assert_frame_equal(df.filter(True), df)
 
 
@@ -299,10 +299,14 @@ def test_multi_alias_pushdown() -> None:
     lf = pl.LazyFrame({"a": [1], "b": [1]})
 
     actual = lf.with_columns(m="a", n="b").filter((pl.col("m") + pl.col("n")) < 2)
-
     plan = actual.explain()
+
     assert "FILTER" not in plan
     assert r'SELECTION: "[([(col(\"a\")) + (col(\"b\"))]) < (2)]' in plan
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        # confirm we aren't using `eq_missing` in the query plan (denoted as " ==v ")
+        assert " ==v " not in lf.select(pl.col("a").filter(a=None)).explain()
 
 
 def test_predicate_pushdown_with_window_projections_12637() -> None:
@@ -388,14 +392,102 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     # that only refers to the common window keys.
     actual = lf.with_columns(
         (pl.col("value") * 2).over("key").alias("value_2"),
-    ).filter(pl.count().over("key") == 1)
+    ).filter(pl.len().over("key") == 1)
 
     plan = actual.explain()
-    assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
+    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
     assert 'SELECTION: "None"' in plan
 
     # Test window in filter
-    actual = lf.filter(pl.count().over("key") == 1).filter(pl.col("key") == 1)
+    actual = lf.filter(pl.len().over("key") == 1).filter(pl.col("key") == 1)
     plan = actual.explain()
-    assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
+    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
     assert r'SELECTION: "[(col(\"key\")) == (1)]"' in plan
+
+
+def test_predicate_reduction() -> None:
+    # ensure we get clean reduction without casts
+    assert (
+        "cast"
+        not in pl.LazyFrame({"a": [1], "b": [2]})
+        .filter(
+            [
+                pl.col("a") > 1,
+                pl.col("b") > 1,
+            ]
+        )
+        .explain()
+    )
+
+
+def test_all_any_cleanup_at_single_predicate_case() -> None:
+    plan = pl.LazyFrame({"a": [1], "b": [2]}).select(["a"]).drop_nulls().explain()
+    assert "horizontal" not in plan
+    assert "all" not in plan
+
+
+def test_hconcat_predicate() -> None:
+    # Predicates shouldn't be pushed down past an hconcat as we can't filter
+    # across the different inputs
+    lf1 = pl.LazyFrame(
+        {
+            "a1": [0, 1, 2, 3, 4],
+            "a2": [5, 6, 7, 8, 9],
+        }
+    )
+    lf2 = pl.LazyFrame(
+        {
+            "b1": [0, 1, 2, 3, 4],
+            "b2": [5, 6, 7, 8, 9],
+        }
+    )
+
+    query = pl.concat(
+        [
+            lf1.filter(pl.col("a1") < 4),
+            lf2.filter(pl.col("b1") > 0),
+        ],
+        how="horizontal",
+    ).filter(pl.col("b2") < 9)
+
+    expected = pl.DataFrame(
+        {
+            "a1": [0, 1, 2],
+            "a2": [5, 6, 7],
+            "b1": [1, 2, 3],
+            "b2": [6, 7, 8],
+        }
+    )
+
+    result = query.collect(predicate_pushdown=True)
+    assert_frame_equal(result, expected)
+
+
+def test_predicate_pd_join_13300() -> None:
+    lf = pl.LazyFrame({"col3": range(10, 14), "new_col": range(11, 15)})
+    lf_other = pl.LazyFrame({"col4": [0, 11, 2, 13]})
+
+    lf = lf.join(lf_other, left_on="new_col", right_on="col4", how="left")
+    lf = lf.filter(pl.col("new_col") < 12)
+    assert lf.collect().to_dict(as_series=False) == {"col3": [10], "new_col": [11]}
+
+
+def test_filter_eq_missing_13861() -> None:
+    lf = pl.LazyFrame({"a": [1, None, 3], "b": ["xx", "yy", None]})
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        assert lf.collect().filter(a=None).rows() == []
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        lff = lf.filter(a=None)
+        assert lff.collect().rows() == []
+        assert " ==v " not in lff.explain()  # check no `eq_missing` op
+
+    with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
+        assert lf.filter(pl.col("a").eq(None)).collect().rows() == []
+
+    for filter_expr in (
+        pl.col("a").eq_missing(None),
+        pl.col("a").is_null(),
+    ):
+        assert lf.collect().filter(filter_expr).rows() == [(None, "yy")]

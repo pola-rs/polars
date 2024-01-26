@@ -26,12 +26,10 @@ where
     if is_optional {
         buffer.reserve(std::mem::size_of::<P>() * (array.len() - array.null_count()));
         // append the non-null values
-        array.iter().for_each(|x| {
-            if let Some(x) = x {
-                let parquet_native: P = x.as_();
-                buffer.extend_from_slice(parquet_native.to_le_bytes().as_ref())
-            }
-        });
+        for x in array.non_null_values_iter() {
+            let parquet_native: P = x.as_();
+            buffer.extend_from_slice(parquet_native.to_le_bytes().as_ref())
+        }
     } else {
         buffer.reserve(std::mem::size_of::<P>() * array.len());
         // append all values
@@ -56,7 +54,7 @@ where
 {
     if is_optional {
         // append the non-null values
-        let iterator = array.iter().flatten().map(|x| {
+        let iterator = array.non_null_values_iter().map(|x| {
             let parquet_native: P = x.as_();
             let integer: i64 = parquet_native.as_();
             integer
@@ -175,16 +173,14 @@ where
         null_count: Some(array.null_count() as i64),
         distinct_count: None,
         max_value: array
-            .iter()
-            .flatten()
+            .non_null_values_iter()
             .map(|x| {
                 let x: P = x.as_();
                 x
             })
             .max_by(|x, y| x.ord(y)),
         min_value: array
-            .iter()
-            .flatten()
+            .non_null_values_iter()
             .map(|x| {
                 let x: P = x.as_();
                 x

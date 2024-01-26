@@ -344,7 +344,7 @@ impl DataFrame {
     /// let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
     /// assert_eq!(df1.shape(), (4, 1));
     ///
-    /// let df2: DataFrame = df1.with_row_count("Id", None)?;
+    /// let df2: DataFrame = df1.with_row_index("Id", None)?;
     /// assert_eq!(df2.shape(), (4, 2));
     /// println!("{}", df2);
     ///
@@ -369,7 +369,7 @@ impl DataFrame {
     ///  | 3   | Patricia |
     ///  +-----+----------+
     /// ```
-    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PolarsResult<Self> {
+    pub fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> PolarsResult<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
 
@@ -384,8 +384,8 @@ impl DataFrame {
         DataFrame::new(columns)
     }
 
-    /// Add a row count in place.
-    pub fn with_row_count_mut(&mut self, name: &str, offset: Option<IdxSize>) -> &mut Self {
+    /// Add a row index column in place.
+    pub fn with_row_index_mut(&mut self, name: &str, offset: Option<IdxSize>) -> &mut Self {
         let offset = offset.unwrap_or(0);
         let mut ca = IdxCa::from_vec(
             name,
@@ -490,7 +490,7 @@ impl DataFrame {
     /// let df: DataFrame = df!("Thing" => &["Observable universe", "Human stupidity"],
     ///                         "Diameter (m)" => &[8.8e26, f64::INFINITY])?;
     ///
-    /// let f1: Field = Field::new("Thing", DataType::Utf8);
+    /// let f1: Field = Field::new("Thing", DataType::String);
     /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
     /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
@@ -614,7 +614,7 @@ impl DataFrame {
     /// let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
     ///                                "Fraction" => &[0.965, 0.035])?;
     ///
-    /// assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
+    /// assert_eq!(venus_air.dtypes(), &[DataType::String, DataType::Float64]);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn dtypes(&self) -> Vec<DataType> {
@@ -638,7 +638,7 @@ impl DataFrame {
     /// let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
     ///                            "Fraction" => &[0.708, 0.292])?;
     ///
-    /// let f1: Field = Field::new("Surface type", DataType::Utf8);
+    /// let f1: Field = Field::new("Surface type", DataType::String);
     /// let f2: Field = Field::new("Fraction", DataType::Float64);
     ///
     /// assert_eq!(earth.fields(), &[f1, f2]);
@@ -1589,7 +1589,7 @@ impl DataFrame {
                 .collect::<PolarsResult<Vec<_>>>()?
         } else {
             cols.iter()
-                .map(|c| self.column(c).map(|s| s.clone()))
+                .map(|c| self.column(c).cloned())
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
@@ -1650,17 +1650,7 @@ impl DataFrame {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
             return self.clone().filter_vertical(mask);
         }
-        let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => {
-                let ca = s.utf8().unwrap();
-                if ca.get_values_size() / 24 <= ca.len() {
-                    s.filter(mask)
-                } else {
-                    s.filter_threaded(mask, true)
-                }
-            },
-            _ => s.filter(mask),
-        })?;
+        let new_col = self.try_apply_columns_par(&|s| s.filter(mask))?;
         Ok(DataFrame::new_no_checks(new_col))
     }
 
@@ -1682,19 +1672,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
-        let new_col = POOL.install(|| {
-            self.try_apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => {
-                    let ca = s.utf8().unwrap();
-                    if ca.get_values_size() / 24 <= ca.len() {
-                        s.take(indices)
-                    } else {
-                        s.take_threaded(indices, true)
-                    }
-                },
-                _ => s.take(indices),
-            })
-        })?;
+        let new_col = POOL.install(|| self.try_apply_columns_par(&|s| s.take(indices)))?;
 
         Ok(DataFrame::new_no_checks(new_col))
     }
@@ -1707,12 +1685,7 @@ impl DataFrame {
 
     unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| {
-                self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::Utf8 => s.take_unchecked_threaded(idx, true),
-                    _ => s.take_unchecked(idx),
-                })
-            })
+            POOL.install(|| self.apply_columns_par(&|s| s.take_unchecked(idx)))
         } else {
             self.columns.iter().map(|s| s.take_unchecked(idx)).collect()
         };
@@ -1725,12 +1698,7 @@ impl DataFrame {
 
     unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| {
-                self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::Utf8 => s.take_slice_unchecked_threaded(idx, true),
-                    _ => s.take_slice_unchecked(idx),
-                })
-            })
+            POOL.install(|| self.apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
             self.columns
                 .iter()
@@ -2006,7 +1974,7 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// fn str_to_len(str_val: &Series) -> Series {
-    ///     str_val.utf8()
+    ///     str_val.str()
     ///         .unwrap()
     ///         .into_iter()
     ///         .map(|opt_name: Option<&str>| {
@@ -2128,8 +2096,8 @@ impl DataFrame {
     /// let idx = vec![0, 1, 4];
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.utf8()?
-    ///     .set_at_idx_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
+    ///     s.str()?
+    ///     .scatter_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
     /// # Ok::<(), PolarsError>(())
     /// ```
@@ -2194,7 +2162,7 @@ impl DataFrame {
     /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
     /// df.try_apply("foo", |s| {
-    ///     s.utf8()?
+    ///     s.str()?
     ///     .set(&mask, Some("not_within_bounds"))
     /// });
     /// # Ok::<(), PolarsError>(())
@@ -2386,11 +2354,12 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self) -> RecordBatchIter {
+    pub fn iter_chunks(&self, pl_flavor: bool) -> RecordBatchIter {
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
             n_chunks: self.n_chunks(),
+            pl_flavor,
         }
     }
 
@@ -2495,32 +2464,47 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their sum values.
     pub fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
-        let sum_fn =
-            |acc: &Series, s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
-                let mut acc = acc.clone();
-                let mut s = s.clone();
+        let apply_null_strategy =
+            |s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
                 if let NullStrategy::Ignore = null_strategy {
                     // if has nulls
-                    if acc.has_validity() {
-                        acc = acc.fill_null(FillNullStrategy::Zero)?;
-                    }
                     if s.has_validity() {
-                        s = s.fill_null(FillNullStrategy::Zero)?;
+                        return s.fill_null(FillNullStrategy::Zero);
                     }
                 }
+                Ok(s.clone())
+            };
+
+        let sum_fn =
+            |acc: &Series, s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
+                let acc: Series = apply_null_strategy(acc, null_strategy)?;
+                let s = apply_null_strategy(s, null_strategy)?;
                 Ok(&acc + &s)
             };
 
-        match self.columns.len() {
-            0 => Ok(None),
-            1 => Ok(Some(self.columns[0].clone())),
-            2 => sum_fn(&self.columns[0], &self.columns[1], null_strategy).map(Some),
+        let non_null_cols = self
+            .columns
+            .iter()
+            .filter(|x| x.dtype() != &DataType::Null)
+            .collect::<Vec<_>>();
+
+        match non_null_cols.len() {
+            0 => {
+                if self.columns.is_empty() {
+                    Ok(None)
+                } else {
+                    // all columns are null dtype, so result is null dtype
+                    Ok(Some(self.columns[0].clone()))
+                }
+            },
+            1 => Ok(Some(apply_null_strategy(non_null_cols[0], null_strategy)?)),
+            2 => sum_fn(non_null_cols[0], non_null_cols[1], null_strategy).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
                 POOL.install(|| {
-                    self.columns
-                        .par_iter()
+                    non_null_cols
+                        .into_par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
                         .try_reduce_with(|l, r| sum_fn(&l, &r, null_strategy).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
@@ -2837,7 +2821,7 @@ impl DataFrame {
     #[doc(hidden)]
     pub unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = self.apply_columns(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
             _ => s._take_opt_chunked_unchecked(idx),
         });
 
@@ -2849,7 +2833,7 @@ impl DataFrame {
     /// Doesn't perform any bound checks
     pub unsafe fn _take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, sorted, true),
+            DataType::String => s._take_chunked_unchecked_threaded(idx, sorted, true),
             _ => s._take_chunked_unchecked(idx, sorted),
         });
 
@@ -2861,7 +2845,7 @@ impl DataFrame {
     /// Doesn't perform any bound checks
     pub unsafe fn _take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
             _ => s._take_opt_chunked_unchecked(idx),
         });
 
@@ -3015,6 +2999,7 @@ pub struct RecordBatchIter<'a> {
     columns: &'a Vec<Series>,
     idx: usize,
     n_chunks: usize,
+    pl_flavor: bool,
 }
 
 impl<'a> Iterator for RecordBatchIter<'a> {
@@ -3025,7 +3010,11 @@ impl<'a> Iterator for RecordBatchIter<'a> {
             None
         } else {
             // create a batch of the columns with the same chunk no.
-            let batch_cols = self.columns.iter().map(|s| s.to_arrow(self.idx)).collect();
+            let batch_cols = self
+                .columns
+                .iter()
+                .map(|s| s.to_arrow(self.idx, self.pl_flavor))
+                .collect();
             self.idx += 1;
 
             Some(ArrowChunk::new(batch_cols))
@@ -3102,7 +3091,7 @@ mod test {
             "foo" => &[1, 2, 3, 4, 5]
         )
         .unwrap();
-        let mut iter = df.iter_chunks();
+        let mut iter = df.iter_chunks(true);
         assert_eq!(5, iter.next().unwrap().len());
         assert!(iter.next().is_none());
     }
@@ -3116,7 +3105,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_filter_broadcast_on_utf8_col() {
+    fn test_filter_broadcast_on_string_col() {
         let col_name = "some_col";
         let v = vec!["test".to_string()];
         let s0 = Series::new(col_name, v);

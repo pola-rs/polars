@@ -27,15 +27,13 @@ class PolarsBuffer(Buffer):
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError will be raised if data would be copied.
-
     """
 
     def __init__(self, data: Series, *, allow_copy: bool = True):
         if data.n_chunks() > 1:
             if not allow_copy:
-                raise CopyNotAllowedError(
-                    "non-contiguous buffer must be made contiguous"
-                )
+                msg = "non-contiguous buffer must be made contiguous"
+                raise CopyNotAllowedError(msg)
             data = data.rechunk()
 
         self._data = data
@@ -45,10 +43,8 @@ class PolarsBuffer(Buffer):
         """Buffer size in bytes."""
         dtype = polars_dtype_to_dtype(self._data.dtype)
 
-        if dtype[0] == DtypeKind.STRING:
-            return self._data.str.len_bytes().sum()  # type: ignore[return-value]
-        elif dtype[0] == DtypeKind.BOOL:
-            offset, length, _pointer = self._data._s.get_ptr()
+        if dtype[0] == DtypeKind.BOOL:
+            _, offset, length = self._data._get_buffer_info()
             n_bits = offset + length
             n_bytes, rest = divmod(n_bits, 8)
             # Round up to the nearest byte
@@ -62,12 +58,13 @@ class PolarsBuffer(Buffer):
     @property
     def ptr(self) -> int:
         """Pointer to start of the buffer as an integer."""
-        _offset, _length, pointer = self._data._s.get_ptr()
+        pointer, _, _ = self._data._get_buffer_info()
         return pointer
 
     def __dlpack__(self) -> NoReturn:
         """Represent this structure as DLPack interface."""
-        raise NotImplementedError("__dlpack__")
+        msg = "__dlpack__"
+        raise NotImplementedError(msg)
 
     def __dlpack_device__(self) -> tuple[DlpackDeviceType, None]:
         """Device type and device ID for where the data in the buffer resides."""

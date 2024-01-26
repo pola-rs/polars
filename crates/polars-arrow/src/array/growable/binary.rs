@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
-use super::utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits};
+use polars_utils::slice::GetSaferUnchecked;
+
+use super::utils::extend_offset_values;
 use super::Growable;
+use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, BinaryArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
@@ -11,10 +14,9 @@ use crate::offset::{Offset, Offsets};
 pub struct GrowableBinary<'a, O: Offset> {
     arrays: Vec<&'a BinaryArray<O>>,
     data_type: ArrowDataType,
-    validity: MutableBitmap,
+    validity: Option<MutableBitmap>,
     values: Vec<u8>,
     offsets: Offsets<O>,
-    extend_null_bits: Vec<ExtendNullBits<'a>>,
 }
 
 impl<'a, O: Offset> GrowableBinary<'a, O> {
@@ -30,18 +32,12 @@ impl<'a, O: Offset> GrowableBinary<'a, O> {
             use_validity = true;
         };
 
-        let extend_null_bits = arrays
-            .iter()
-            .map(|array| build_extend_null_bits(*array, use_validity))
-            .collect();
-
         Self {
             arrays,
             data_type,
             values: Vec::with_capacity(0),
             offsets: Offsets::with_capacity(capacity),
-            validity: MutableBitmap::with_capacity(capacity),
-            extend_null_bits,
+            validity: prepare_validity(use_validity, capacity),
         }
     }
 
@@ -51,15 +47,20 @@ impl<'a, O: Offset> GrowableBinary<'a, O> {
         let offsets = std::mem::take(&mut self.offsets);
         let values = std::mem::take(&mut self.values);
 
-        BinaryArray::<O>::new(data_type, offsets.into(), values.into(), validity.into())
+        BinaryArray::<O>::new(
+            data_type,
+            offsets.into(),
+            values.into(),
+            validity.map(|v| v.into()),
+        )
     }
 }
 
 impl<'a, O: Offset> Growable<'a> for GrowableBinary<'a, O> {
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        (self.extend_null_bits[index])(&mut self.validity, start, len);
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
+        let array = *self.arrays.get_unchecked_release(index);
+        extend_validity(&mut self.validity, array, start, len);
 
-        let array = self.arrays[index];
         let offsets = array.offsets();
         let values = array.values();
 
@@ -73,7 +74,9 @@ impl<'a, O: Offset> Growable<'a> for GrowableBinary<'a, O> {
 
     fn extend_validity(&mut self, additional: usize) {
         self.offsets.extend_constant(additional);
-        self.validity.extend_constant(additional, false);
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false);
+        }
     }
 
     #[inline]
@@ -96,7 +99,7 @@ impl<'a, O: Offset> From<GrowableBinary<'a, O>> for BinaryArray<O> {
             val.data_type,
             val.offsets.into(),
             val.values.into(),
-            val.validity.into(),
+            val.validity.map(|v| v.into()),
         )
     }
 }

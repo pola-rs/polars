@@ -82,7 +82,12 @@ impl PyExpr {
             .combine(time.inner, time_unit.0)
             .into()
     }
-
+    fn dt_millennium(&self) -> Self {
+        self.inner.clone().dt().millennium().into()
+    }
+    fn dt_century(&self) -> Self {
+        self.inner.clone().dt().century().into()
+    }
     fn dt_year(&self) -> Self {
         self.inner.clone().dt().year().into()
     }
@@ -140,68 +145,25 @@ impl PyExpr {
     fn dt_timestamp(&self, time_unit: Wrap<TimeUnit>) -> Self {
         self.inner.clone().dt().timestamp(time_unit.0).into()
     }
-
     fn dt_total_days(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.days().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
+        self.inner.clone().dt().total_days().into()
     }
     fn dt_total_hours(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.hours().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
+        self.inner.clone().dt().total_hours().into()
     }
     fn dt_total_minutes(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.minutes().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
+        self.inner.clone().dt().total_minutes().into()
     }
     fn dt_total_seconds(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.seconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
+        self.inner.clone().dt().total_seconds().into()
     }
     fn dt_total_milliseconds(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.milliseconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
+        self.inner.clone().dt().total_milliseconds().into()
     }
     fn dt_total_microseconds(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.microseconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
+        self.inner.clone().dt().total_microseconds().into()
     }
     fn dt_total_nanoseconds(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.nanoseconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
+        self.inner.clone().dt().total_nanoseconds().into()
     }
 }

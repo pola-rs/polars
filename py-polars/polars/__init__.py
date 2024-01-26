@@ -5,6 +5,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # ensure the object constructor is known by polars
     # we set this once on import
 
+    # This must be done before importing the Polars Rust bindings.
+    import polars._cpu_check
+
+    polars._cpu_check.check_cpu_flags()
+
     # we also set other function pointers needed
     # on the rust side. This function is highly
     # unsafe and should only be called once.
@@ -53,6 +58,7 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    String,
     Struct,
     Time,
     UInt8,
@@ -72,11 +78,14 @@ from polars.exceptions import (
     InvalidOperationError,
     NoDataError,
     OutOfBoundsError,
+    PolarsError,
     PolarsPanicError,
+    PolarsWarning,
     SchemaError,
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
+    UnstableWarning,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -102,6 +111,7 @@ from polars.functions import (
     corr,
     count,
     cov,
+    cum_count,
     cum_fold,
     cum_reduce,
     cum_sum,
@@ -129,6 +139,7 @@ from polars.functions import (
     int_range,
     int_ranges,
     last,
+    len,
     lit,
     map,
     map_batches,
@@ -185,7 +196,7 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
-from polars.lazyframe import LazyFrame
+from polars.lazyframe import InProcessQuery, LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import (
@@ -211,23 +222,27 @@ __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
     "ComputeError",
-    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
     "OutOfBoundsError",
+    "PolarsError",
     "PolarsPanicError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
     # warnings
+    "PolarsWarning",
     "CategoricalRemappingWarning",
+    "ChronoFormatWarning",
+    "UnstableWarning",
     # core classes
     "DataFrame",
     "Expr",
     "LazyFrame",
     "Series",
+    "InProcessQuery",
     # polars.datatypes
     "Array",
     "Binary",
@@ -249,6 +264,7 @@ __all__ = [
     "List",
     "Null",
     "Object",
+    "String",
     "Struct",
     "Time",
     "UInt16",
@@ -344,6 +360,7 @@ __all__ = [
     "corr",
     "count",
     "cov",
+    "cum_count",
     "cum_fold",
     "cum_reduce",
     "cumfold",
@@ -379,6 +396,8 @@ __all__ = [
     "tail",
     "time",  # named time_, see import above
     "var",
+    # polars.functions.len
+    "len",
     # polars.functions.random
     "set_random_seed",
     # polars.convert

@@ -570,7 +570,7 @@ impl PhysicalExpr for WindowExpr {
                                 let df_right = DataFrame::new_no_checks(keys);
                                 let df_left = DataFrame::new_no_checks(group_by_columns);
                                 private_left_join_multiple_keys(
-                                    &df_left, &df_right, None, None, false,
+                                    &df_left, &df_right, None, None, true,
                                 )
                                 .1
                             }
@@ -820,7 +820,7 @@ where
         unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_physical().to_arrow(),
+            T::get_dtype().to_physical().to_arrow(true),
             values.into(),
             Some(validity),
         );

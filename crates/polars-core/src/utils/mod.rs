@@ -6,7 +6,8 @@ use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
-pub use arrow::legacy::utils::{TrustMyLength, *};
+pub use arrow::legacy::utils::*;
+pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
 use rayon::prelude::*;
@@ -208,9 +209,9 @@ pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, us
 /// Apply a macro on the Series
 #[macro_export]
 macro_rules! match_dtype_to_physical_apply_macro {
-    ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+    ($obj:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
-            DataType::Utf8 => $macro_utf8!($($opt_args)*),
+            DataType::String => $macro_string!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!(u8 $(, $opt_args)*),
@@ -234,9 +235,9 @@ macro_rules! match_dtype_to_physical_apply_macro {
 /// Apply a macro on the Series
 #[macro_export]
 macro_rules! match_dtype_to_logical_apply_macro {
-    ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+    ($obj:expr, $macro:ident, $macro_string:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
-            DataType::Utf8 => $macro_utf8!($($opt_args)*),
+            DataType::String => $macro_string!($($opt_args)*),
             DataType::Binary => $macro_binary!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
@@ -261,9 +262,9 @@ macro_rules! match_dtype_to_logical_apply_macro {
 /// Apply a macro on the Downcasted ChunkedArray's
 #[macro_export]
 macro_rules! match_arrow_data_type_apply_macro_ca {
-    ($self:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+    ($self:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
-            DataType::Utf8 => $macro_utf8!($self.utf8().unwrap() $(, $opt_args)*),
+            DataType::String => $macro_string!($self.str().unwrap() $(, $opt_args)*),
             DataType::Boolean => $macro_bool!($self.bool().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!($self.u8().unwrap() $(, $opt_args)*),
@@ -279,7 +280,7 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }};
 }
@@ -301,7 +302,7 @@ macro_rules! with_match_physical_numeric_type {(
         UInt64 => __with_ty__! { u64 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -320,7 +321,7 @@ macro_rules! with_match_physical_integer_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -333,7 +334,7 @@ macro_rules! with_match_physical_float_polars_type {(
     match $key_type {
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -358,7 +359,7 @@ macro_rules! with_match_physical_numeric_polars_type {(
         UInt64 => __with_ty__! { UInt64Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -382,7 +383,7 @@ macro_rules! with_match_physical_integer_polars_type {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -472,7 +473,7 @@ macro_rules! apply_method_all_arrow_series {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
             DataType::Boolean => $self.bool().unwrap().$method($($args),*),
-            DataType::Utf8 => $self.utf8().unwrap().$method($($args),*),
+            DataType::String => $self.str().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u16")]
@@ -498,6 +499,18 @@ macro_rules! apply_method_all_arrow_series {
 }
 
 #[macro_export]
+macro_rules! apply_amortized_generic_list_or_array {
+        ($self:expr, $method:ident, $($args:expr),*) => {
+        match $self.dtype() {
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => $self.array().unwrap().apply_amortized_generic($($args),*),
+            DataType::List(_) => $self.list().unwrap().apply_amortized_generic($($args),*),
+            dt => panic!("not implemented for dtype {:?}", dt),
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! apply_method_physical_integer {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
@@ -513,12 +526,12 @@ macro_rules! apply_method_physical_integer {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }
 }
 
-// doesn't include Bool and Utf8
+// doesn't include Bool and String
 #[macro_export]
 macro_rules! apply_method_physical_numeric {
     ($self:expr, $method:ident, $($args:expr),*) => {
@@ -691,6 +704,8 @@ where
     }
 }
 
+/// # Panics
+/// This will panic if `a.len() != b.len() || b.len() != c.len()` and array is chunked.
 #[allow(clippy::type_complexity)]
 pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
@@ -706,10 +721,16 @@ where
     B: PolarsDataType,
     C: PolarsDataType,
 {
-    debug_assert_eq!(a.len(), b.len());
-    debug_assert_eq!(b.len(), c.len());
+    if a.chunks.len() == 1 && b.chunks.len() == 1 && c.chunks.len() == 1 {
+        return (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c));
+    }
+
+    assert!(
+        a.len() == b.len() && b.len() == c.len(),
+        "expected arrays of the same length"
+    );
+
     match (a.chunks.len(), b.chunks.len(), c.chunks.len()) {
-        (1, 1, 1) => (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c)),
         (_, 1, 1) => (
             Cow::Borrowed(a),
             Cow::Owned(b.match_chunks(a.chunk_id())),

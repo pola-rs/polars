@@ -55,6 +55,7 @@ pip install 'polars[numpy,fsspec]'
 | connectorx | Support for reading from SQL databases                                                                                                |
 | xlsx2csv   | Support for reading from Excel files                                                                                                  |
 | deltalake  | Support for reading from Delta Lake Tables                                                                                            |
+| plot       | Support for plotting Dataframes                                                                                                       |
 | timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
 
 ### Rust
@@ -81,7 +82,7 @@ The opt-in features are:
     - `dtype-categorical`
     - `dtype-struct`
 - `lazy` - Lazy API
-    - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+    - `regex` - Use regexes in [column selection](crate::lazy::dsl::col)
     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 - `sql` - Pass SQL queries to polars.
 - `streaming` - Be able to process datasets that are larger than RAM.
@@ -89,7 +90,7 @@ The opt-in features are:
 - `ndarray`- Convert from `DataFrame` to `ndarray`
 - `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 - `timezones` - Activate timezone support.
-- `strings` - Extra string utilities for `Utf8Chunked`
+- `strings` - Extra string utilities for `StringChunked`
     - `string_pad` - `pad_start`, `pad_end`, `zfill`
     - `string_to_integer` - `parse_int`
 - `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
@@ -146,7 +147,7 @@ The opt-in features are:
     - `cum_agg` - cum_sum, cum_min, cum_max aggregation.
     - `rolling_window` - rolling window functions, like rolling_mean
     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
-    - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
+    - `extract_jsonpath` - [Run jsonpath queries on StringChunked](https://goessner.net/articles/JsonPath/)
     - `list` - List utils.
       - `list_gather` take sublist by multiple indices
     - `rank` - Ranking algorithms.

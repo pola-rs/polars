@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-
 import pytest
 
 import polars as pl
@@ -38,9 +36,10 @@ def test_init_invalid_input() -> None:
         (pl.Series([1, 2], dtype=pl.Int8), 2),
         (pl.Series([1, 2], dtype=pl.Int64), 16),
         (pl.Series([1.4, 2.9, 3.0], dtype=pl.Float32), 12),
-        (pl.Series(["a", "bc", "éâç"], dtype=pl.Utf8), 9),
-        (pl.Series(["a", "b", "a", "c", "a"], dtype=pl.Categorical), 20),
+        (pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8), 9),
+        (pl.Series([0, 1, 0, 2, 0], dtype=pl.UInt32), 20),
         (pl.Series([True, False], dtype=pl.Boolean), 1),
+        (pl.Series([True] * 8, dtype=pl.Boolean), 1),
         (pl.Series([True] * 9, dtype=pl.Boolean), 2),
         (pl.Series([True] * 9, dtype=pl.Boolean)[5:], 2),
     ],
@@ -54,20 +53,17 @@ def test_bufsize(data: pl.Series, expected: int) -> None:
     "data",
     [
         pl.Series([1, 2]),
-        pl.Series([1, 2, 3], dtype=pl.UInt8),
         pl.Series([1.2, 2.9, 3.0]),
         pl.Series([True, False]),
-        pl.Series([date(2022, 1, 1), date(2022, 2, 1)]),
-        pl.Series([datetime(2022, 1, 1), datetime(2022, 2, 1)]),
-        pl.Series(["a", "b", "a"]),
-        pl.Series(["a", "b", "a"], dtype=pl.Categorical),
+        pl.Series([True, False])[1:],
+        pl.Series([97, 98, 97], dtype=pl.UInt8),
         pl.Series([], dtype=pl.Float32),
     ],
 )
 def test_ptr(data: pl.Series) -> None:
     buffer = PolarsBuffer(data)
     result = buffer.ptr
-    # Memory address is unpredictable - so we just check if an integer is returned
+    # Memory address is unpredictable, so we just check if an integer is returned
     assert isinstance(result, int)
 
 

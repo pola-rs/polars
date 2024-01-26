@@ -26,10 +26,11 @@ pub(crate) type Extension = Option<(String, Option<String>)>;
 /// which declares the in-memory representation of data.
 /// The [`ArrowDataType::Extension`] is special in that it augments a [`ArrowDataType`] with metadata to support custom types.
 /// Use `to_logical_type` to desugar such type and return its corresponding logical type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrowDataType {
     /// Null type
+    #[default]
     Null,
     /// `true` and `false`.
     Boolean,
@@ -134,6 +135,8 @@ pub enum ArrowDataType {
     /// The metadata is structured so that Arrow systems without special handling
     /// for Map can make Map an alias for List. The "layout" attribute for the Map
     /// field must have the same contents as a List.
+    /// - Field
+    /// - ordered
     Map(Box<Field>, bool),
     /// A dictionary encoded array (`key_type`, `value_type`), where
     /// each array element is an index of `key_type` into an
@@ -156,7 +159,16 @@ pub enum ArrowDataType {
     /// Decimal backed by 256 bits
     Decimal256(usize, usize),
     /// Extension type.
+    /// - name
+    /// - physical type
+    /// - metadata
     Extension(String, Box<ArrowDataType>, Option<String>),
+    /// A binary type that inlines small values
+    /// and can intern bytes.
+    BinaryView,
+    /// A string type that inlines small values
+    /// and can intern strings.
+    Utf8View,
 }
 
 #[cfg(feature = "arrow_rs")]
@@ -218,6 +230,9 @@ impl From<ArrowDataType> for arrow_schema::DataType {
                 Self::Decimal256(precision as _, scale as _)
             },
             ArrowDataType::Extension(_, d, _) => (*d).into(),
+            ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
+                panic!("view datatypes not supported by arrow-rs")
+            },
         }
     }
 }
@@ -445,6 +460,8 @@ impl ArrowDataType {
             LargeBinary => PhysicalType::LargeBinary,
             Utf8 => PhysicalType::Utf8,
             LargeUtf8 => PhysicalType::LargeUtf8,
+            BinaryView => PhysicalType::BinaryView,
+            Utf8View => PhysicalType::Utf8View,
             List(_) => PhysicalType::List,
             FixedSizeList(_, _) => PhysicalType::FixedSizeList,
             LargeList(_) => PhysicalType::LargeList,
@@ -453,6 +470,50 @@ impl ArrowDataType {
             Map(_, _) => PhysicalType::Map,
             Dictionary(key, _, _) => PhysicalType::Dictionary(*key),
             Extension(_, key, _) => key.to_physical_type(),
+        }
+    }
+
+    // The datatype underlying this (possibly logical) arrow data type.
+    pub fn underlying_physical_type(&self) -> ArrowDataType {
+        use ArrowDataType::*;
+        match self {
+            Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => Int32,
+            Date64
+            | Timestamp(_, _)
+            | Time64(_)
+            | Duration(_)
+            | Interval(IntervalUnit::DayTime) => Int64,
+            Interval(IntervalUnit::MonthDayNano) => unimplemented!(),
+            Binary => Binary,
+            List(field) => List(Box::new(Field {
+                data_type: field.data_type.underlying_physical_type(),
+                ..*field.clone()
+            })),
+            LargeList(field) => LargeList(Box::new(Field {
+                data_type: field.data_type.underlying_physical_type(),
+                ..*field.clone()
+            })),
+            FixedSizeList(field, width) => FixedSizeList(
+                Box::new(Field {
+                    data_type: field.data_type.underlying_physical_type(),
+                    ..*field.clone()
+                }),
+                *width,
+            ),
+            Struct(fields) => Struct(
+                fields
+                    .iter()
+                    .map(|field| Field {
+                        data_type: field.data_type.underlying_physical_type(),
+                        ..field.clone()
+                    })
+                    .collect(),
+            ),
+            Dictionary(keys, _, _) => (*keys).into(),
+            Union(_, _, _) => unimplemented!(),
+            Map(_, _) => unimplemented!(),
+            Extension(_, inner, _) => inner.underlying_physical_type(),
+            _ => self.clone(),
         }
     }
 
@@ -465,6 +526,19 @@ impl ArrowDataType {
             Extension(_, key, _) => key.to_logical_type(),
             _ => self,
         }
+    }
+
+    pub fn inner_dtype(&self) -> Option<&ArrowDataType> {
+        match self {
+            ArrowDataType::List(inner) => Some(inner.data_type()),
+            ArrowDataType::LargeList(inner) => Some(inner.data_type()),
+            ArrowDataType::FixedSizeList(inner, _) => Some(inner.data_type()),
+            _ => None,
+        }
+    }
+
+    pub fn is_view(&self) -> bool {
+        matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }
 }
 
@@ -501,6 +575,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::Float64 => ArrowDataType::Float64,
             PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
             PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
+            PrimitiveType::UInt128 => unimplemented!(),
         }
     }
 }

@@ -73,7 +73,7 @@ In case the column contains a non-numerical value, Polars will throw a `ComputeE
 
 ## Booleans
 
-Booleans can be expressed as either 1 (`True`) or 0 (`False`). It's possible to perform casting operations between a numerical `DataType` and a boolean, and vice versa. However, keep in mind that casting from a string (`Utf8`) to a boolean is not permitted.
+Booleans can be expressed as either 1 (`True`) or 0 (`False`). It's possible to perform casting operations between a numerical `DataType` and a boolean, and vice versa. However, keep in mind that casting from a string (`String`) to a boolean is not permitted.
 
 {{code_block('user-guide/expressions/casting','bool',['cast'])}}
 

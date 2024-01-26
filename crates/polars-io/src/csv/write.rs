@@ -1,3 +1,6 @@
+use std::num::NonZeroUsize;
+
+use polars_core::POOL;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +32,8 @@ pub struct CsvWriter<W: Write> {
     options: write_impl::SerializeOptions,
     header: bool,
     bom: bool,
-    batch_size: usize,
+    batch_size: NonZeroUsize,
+    n_threads: usize,
 }
 
 impl<W> SerWriter<W> for CsvWriter<W>
@@ -48,7 +52,8 @@ where
             options,
             header: true,
             bom: false,
-            batch_size: 1024,
+            batch_size: NonZeroUsize::new(1024).unwrap(),
+            n_threads: POOL.current_num_threads(),
         }
     }
 
@@ -60,7 +65,13 @@ where
         if self.header {
             write_impl::write_header(&mut self.buffer, &names, &self.options)?;
         }
-        write_impl::write(&mut self.buffer, df, self.batch_size, &self.options)
+        write_impl::write(
+            &mut self.buffer,
+            df,
+            self.batch_size.into(),
+            &self.options,
+            self.n_threads,
+        )
     }
 }
 
@@ -87,7 +98,7 @@ where
     }
 
     /// Set the batch size to use while writing the CSV.
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+    pub fn with_batch_size(mut self, batch_size: NonZeroUsize) -> Self {
         self.batch_size = batch_size;
         self
     }
@@ -149,6 +160,11 @@ where
         self
     }
 
+    pub fn n_threads(mut self, n_threads: usize) -> Self {
+        self.n_threads = n_threads;
+        self
+    }
+
     pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let expects_bom = self.bom;
         let expects_header = self.header;
@@ -186,8 +202,9 @@ impl<W: Write> BatchedWriter<W> {
         write_impl::write(
             &mut self.writer.buffer,
             df,
-            self.writer.batch_size,
+            self.writer.batch_size.into(),
             &self.writer.options,
+            self.writer.n_threads,
         )?;
         Ok(())
     }

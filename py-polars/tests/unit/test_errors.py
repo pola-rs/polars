@@ -20,7 +20,7 @@ def test_error_on_empty_group_by() -> None:
     with pytest.raises(
         pl.ComputeError, match="at least one key is required in a group_by operation"
     ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.count())
+        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.len())
 
 
 def test_error_on_reducing_map() -> None:
@@ -30,8 +30,8 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(6\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(6\); consider using `apply` instead"
         ),
     ):
         df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
@@ -40,14 +40,15 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            r"output length of `map` \(4\) must be equal to "
-            r"the input length \(1\); consider using `apply` instead"
+            r"output length of `map` \(1\) must be equal to "
+            r"the input length \(4\); consider using `apply` instead"
         ),
     ):
         df.select(
             pl.col("x")
             .map_batches(
-                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
+                is_elementwise=True,
             )
             .over("group")
         )
@@ -97,7 +98,9 @@ def test_not_found_error() -> None:
 
 
 def test_string_numeric_comp_err() -> None:
-    with pytest.raises(pl.ComputeError, match="cannot compare utf-8 with numeric data"):
+    with pytest.raises(
+        pl.ComputeError, match="cannot compare string with numeric data"
+    ):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
 
@@ -188,7 +191,7 @@ def test_err_bubbling_up_to_lit() -> None:
     df = pl.DataFrame({"date": [date(2020, 1, 1)], "value": [42]})
 
     with pytest.raises(TypeError):
-        df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg]
+        df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg,operator]
 
 
 def test_error_on_double_agg() -> None:
@@ -246,7 +249,7 @@ def test_window_expression_different_group_length() -> None:
         assert "output: 'shape:" in msg
 
 
-def test_lazy_concat_err() -> None:
+def test_invalid_concat_type_err() -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2],
@@ -259,11 +262,6 @@ def test_lazy_concat_err() -> None:
         match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
-    with pytest.raises(
-        ValueError,
-        match="LazyFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'align'}, got 'horizontal'",
-    ):
-        pl.concat([df.lazy(), df.lazy()], how="horizontal").collect()
 
 
 @pytest.mark.parametrize("how", ["horizontal", "diagonal"])
@@ -441,8 +439,8 @@ def test_compare_different_len() -> None:
 
 def test_take_negative_index_is_oob() -> None:
     df = pl.DataFrame({"value": [1, 2, 3]})
-    with pytest.raises(pl.ComputeError, match=r"index out of bounds"):
-        df["value"].gather(-1)
+    with pytest.raises(pl.OutOfBoundsError):
+        df["value"].gather(-4)
 
 
 def test_string_numeric_arithmetic_err() -> None:

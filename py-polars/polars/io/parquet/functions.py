@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import contextlib
-from io import BytesIO
+import io
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
+from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import is_int_sequence, normalize_filepath
 
 with contextlib.suppress(ImportError):
@@ -19,13 +20,15 @@ if TYPE_CHECKING:
     from polars.type_aliases import ParallelStrategy
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_parquet(
-    source: str | Path | list[str] | list[Path] | BinaryIO | BytesIO | bytes,
+    source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
@@ -43,7 +46,9 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, or a file-like object. If the path is a directory, files in that
+        Path to a file, or a file-like object (by file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`). If the path is a directory, files in that
         directory will all be read.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -51,11 +56,12 @@ def read_parquet(
     n_rows
         Stop reading from parquet file after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
-    row_count_name
-        If not None, this will insert a row count column with give name into the
-        DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only use if the name is set).
+    row_index_name
+        Insert a row index column with the given name into the DataFrame as the first
+        column. If set to `None` (default), no row index column is created.
+    row_index_offset
+        Start the row index at this offset. Cannot be negative.
+        Only used if `row_index_name` is set.
     parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the
         optimal direction.
@@ -78,9 +84,9 @@ def read_parquet(
         The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:
 
-        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
-        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
-        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
@@ -119,11 +125,13 @@ def read_parquet(
     # Dispatch to pyarrow if requested
     if use_pyarrow:
         if not _PYARROW_AVAILABLE:
-            raise ModuleNotFoundError(
+            msg = (
                 "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
             )
+            raise ModuleNotFoundError(msg)
         if n_rows is not None:
-            raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
+            msg = "`n_rows` cannot be used with `use_pyarrow=True`"
+            raise ValueError(msg)
 
         import pyarrow as pa
         import pyarrow.parquet
@@ -145,15 +153,15 @@ def read_parquet(
             )
 
     # Read binary types using `read_parquet`
-    elif isinstance(source, (BinaryIO, BytesIO, bytes)):
+    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
         with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
             return pl.DataFrame._read_parquet(
                 source_prep,
                 columns=columns,
                 n_rows=n_rows,
                 parallel=parallel,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
+                row_index_name=row_index_name,
+                row_index_offset=row_index_offset,
                 low_memory=low_memory,
                 use_statistics=use_statistics,
                 rechunk=rechunk,
@@ -161,10 +169,10 @@ def read_parquet(
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
-        source,
+        source,  # type: ignore[arg-type]
         n_rows=n_rows,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         parallel=parallel,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
@@ -183,9 +191,7 @@ def read_parquet(
     return lf.collect(no_optimization=True)
 
 
-def read_parquet_schema(
-    source: str | BinaryIO | Path | bytes,
-) -> dict[str, DataType]:
+def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
     """
     Get the schema of a Parquet file without reading data.
 
@@ -200,7 +206,6 @@ def read_parquet_schema(
     -------
     dict
         Dictionary mapping column names to datatypes
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -208,16 +213,18 @@ def read_parquet_schema(
     return _read_parquet_schema(source)
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_parquet(
     source: str | Path | list[str] | list[Path],
     *,
     n_rows: int | None = None,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
@@ -236,11 +243,11 @@ def scan_parquet(
         If a single path is given, it can be a globbing pattern.
     n_rows
         Stop reading from parquet file after reading `n_rows`.
-    row_count_name
-        If not None, this will insert a row count column with the given name into the
+    row_index_name
+        If not None, this will insert a row index column with the given name into the
         DataFrame
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set)
+    row_index_offset
+        Offset to start the row index column (only used if the name is set)
     parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the
         optimal direction.
@@ -265,9 +272,9 @@ def scan_parquet(
         The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:
 
-        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
-        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
-        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
@@ -295,7 +302,6 @@ def scan_parquet(
     ...     "aws_region": "us-east-1",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -308,8 +314,8 @@ def scan_parquet(
         cache=cache,
         parallel=parallel,
         rechunk=rechunk,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         storage_options=storage_options,
         low_memory=low_memory,
         use_statistics=use_statistics,

@@ -75,12 +75,12 @@ unsafe fn write_anyvalue(
 ) -> PolarsResult<()> {
     match value {
         // First do the string-like types as they know how to deal with quoting.
-        AnyValue::Utf8(v) => {
+        AnyValue::String(v) => {
             fmt_and_escape_str(f, v, options)?;
             Ok(())
         },
         #[cfg(feature = "dtype-categorical")]
-        AnyValue::Categorical(idx, rev_map, _) => {
+        AnyValue::Categorical(idx, rev_map, _) | AnyValue::Enum(idx, rev_map, _) => {
             let v = rev_map.get(idx);
             fmt_and_escape_str(f, v, options)?;
             Ok(())
@@ -281,6 +281,7 @@ pub(crate) fn write<W: Write>(
     df: &DataFrame,
     chunk_size: usize,
     options: &SerializeOptions,
+    n_threads: usize,
 ) -> PolarsResult<()> {
     for s in df.get_columns() {
         let nested = match s.dtype() {
@@ -288,7 +289,7 @@ pub(crate) fn write<W: Write>(
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => true,
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
+            DataType::Object(_, _) => {
                 return Err(PolarsError::ComputeError(
                     "csv writer does not support object dtype".into(),
                 ))
@@ -379,7 +380,6 @@ pub(crate) fn write<W: Write>(
     let time_zones = time_zones.into_iter().collect::<Vec<_>>();
 
     let len = df.height();
-    let n_threads = POOL.current_num_threads();
     let total_rows_per_pool_iter = n_threads * chunk_size;
     let any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
     let write_buffer_pool = LowContentionPool::<Vec<_>>::new(n_threads);
@@ -388,8 +388,9 @@ pub(crate) fn write<W: Write>(
 
     // holds the buffers that will be written
     let mut result_buf: Vec<PolarsResult<Vec<u8>>> = Vec::with_capacity(n_threads);
+
     while n_rows_finished < len {
-        let par_iter = (0..n_threads).into_par_iter().map(|thread_no| {
+        let buf_writer = |thread_no| {
             let thread_offset = thread_no * chunk_size;
             let total_offset = n_rows_finished + thread_offset;
             let mut df = df.slice(total_offset as i64, chunk_size);
@@ -453,10 +454,15 @@ pub(crate) fn write<W: Write>(
             any_value_iter_pool.set(col_iters);
 
             Ok(write_buffer)
-        });
+        };
 
-        // rayon will ensure the right order
-        POOL.install(|| result_buf.par_extend(par_iter));
+        if n_threads > 1 {
+            let par_iter = (0..n_threads).into_par_iter().map(buf_writer);
+            // rayon will ensure the right order
+            POOL.install(|| result_buf.par_extend(par_iter));
+        } else {
+            result_buf.push(buf_writer(0));
+        }
 
         for buf in result_buf.drain(..) {
             let mut buf = buf?;

@@ -49,8 +49,12 @@ impl PyExpr {
         self.inner.clone().list().get(index.inner).into()
     }
 
-    fn list_join(&self, separator: PyExpr) -> Self {
-        self.inner.clone().list().join(separator.inner).into()
+    fn list_join(&self, separator: PyExpr, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .join(separator.inner, ignore_nulls)
+            .into()
     }
 
     fn list_len(&self) -> Self {
@@ -94,15 +98,15 @@ impl PyExpr {
         self.inner.clone().list().tail(n.inner).into()
     }
 
-    fn list_sort(&self, descending: bool) -> Self {
+    fn list_sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.inner
             .clone()
             .list()
             .sort(SortOptions {
                 descending,
+                nulls_last,
                 ..Default::default()
             })
-            .with_fmt("list.sort")
             .into()
     }
 

@@ -33,7 +33,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
-Documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
+Documentation = "https://docs.pola.rs/py-polars/html/reference/index.html"
 Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
@@ -45,6 +45,7 @@ connectorx = ["connectorx >= 0.3.2"]
 deltalake = ["deltalake >= 0.14.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
+plot = ["hvplot >= 0.9.1"]
 matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
@@ -58,7 +59,7 @@ timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_syst
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[pyarrow,pandas,numpy,fsspec,plot,connectorx,xlsx2csv,deltalake,timezone,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
 [tool.maturin]
@@ -88,6 +89,7 @@ module = [
   "ezodf.*",
   "fsspec.*",
   "gevent",
+  "hvplot.*",
   "matplotlib.*",
   "moto.server",
   "openpyxl",
@@ -130,6 +132,8 @@ select = [
   "B", # flake8-bugbear
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
+  "D213", # Augment NumPy docstring convention: Multi-line docstring summary should start at the second line
+  "D417", # Augment NumPy docstring convention: Missing argument descriptions
   "I", # isort
   "SIM", # flake8-simplify
   "TCH", # flake8-type-checking
@@ -142,21 +146,15 @@ select = [
   "PIE", # flake8-pie
   "TD", # flake8-todos
   "TRY", # tryceratops
+  "EM", # flake8-errmsg
   "FBT001", # flake8-boolean-trap
 ]
 
 ignore = [
-  # Line length regulated by black
+  # Line length regulated by formatter
   "E501",
   # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
-  # numpy convention with a few additional lints
-  "D107",
-  "D203",
-  "D212",
-  "D401",
-  "D402",
-  "D415",
-  "D416",
+  "D401", # Relax NumPy docstring convention: First line should be in imperative mood
   # flake8-pytest-style:
   "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
   # flake8-simplify
@@ -180,8 +178,14 @@ ignore = [
   "W191",
 ]
 
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.ruff.pycodestyle]
 max-doc-length = 88
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"

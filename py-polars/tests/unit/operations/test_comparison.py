@@ -37,14 +37,14 @@ def test_comparison_order_null_broadcasting() -> None:
 def test_comparison_nulls_single() -> None:
     df1 = pl.DataFrame(
         {
-            "a": pl.Series([None], dtype=pl.Utf8),
+            "a": pl.Series([None], dtype=pl.String),
             "b": pl.Series([None], dtype=pl.Int64),
             "c": pl.Series([None], dtype=pl.Boolean),
         }
     )
     df2 = pl.DataFrame(
         {
-            "a": pl.Series([None], dtype=pl.Utf8),
+            "a": pl.Series([None], dtype=pl.String),
             "b": pl.Series([None], dtype=pl.Int64),
             "c": pl.Series([None], dtype=pl.Boolean),
         }
@@ -320,6 +320,9 @@ INTERESTING_STRING_VALUES = [
     "",
     "foo",
     "bar",
+    "fooo",
+    "fooooooooooo",
+    "foooooooooooo",
     "fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooom",
     "foooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo",
     "fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooop",
@@ -330,12 +333,12 @@ INTERESTING_STRING_VALUES = [
 @pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
-    verify_total_ordering(lhs, rhs, "", pl.Utf8)
+    verify_total_ordering(lhs, rhs, "", pl.String)
     context: pytest.WarningsRecorder | ContextManager[None] = (
         pytest.warns(UserWarning) if rhs is None else nullcontext()
     )
     with context:
-        verify_total_ordering_broadcast(lhs, rhs, "", pl.Utf8)
+        verify_total_ordering_broadcast(lhs, rhs, "", pl.String)
 
 
 @pytest.mark.parametrize("str_lhs", INTERESTING_STRING_VALUES)

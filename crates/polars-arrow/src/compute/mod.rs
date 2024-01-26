@@ -31,12 +31,7 @@ pub mod boolean_kleene;
 #[cfg(feature = "compute_cast")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_cast")))]
 pub mod cast;
-#[cfg(feature = "compute_concatenate")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_concatenate")))]
 pub mod concatenate;
-#[cfg(feature = "compute_filter")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_filter")))]
-pub mod filter;
 #[cfg(feature = "compute_if_then_else")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_if_then_else")))]
 pub mod if_then_else;

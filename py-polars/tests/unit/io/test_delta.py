@@ -108,9 +108,9 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
-    v0 = df.select(pl.col(pl.Utf8))
+    v0 = df.select(pl.col(pl.String))
     v1 = df.select(pl.col(pl.Int64))
-    df_supported = df.drop(["cat", "time"])
+    df_supported = df.drop(["cat", "enum", "time"])
 
     # Case: Success (version 0)
     v0.write_delta(tmp_path)
@@ -188,7 +188,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "series",
     [
-        pl.Series("string", ["test"], dtype=pl.Utf8),
+        pl.Series("string", ["test"], dtype=pl.String),
         pl.Series("uint", [1], dtype=pl.UInt64),
         pl.Series("int", [1], dtype=pl.Int64),
         pl.Series(
@@ -273,7 +273,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
                         "date_range_nested",
                         pl.List(pl.List(pl.Datetime(time_unit="ms", time_zone=None))),
                     ),
-                    pl.Field("string", pl.Utf8),
+                    pl.Field("string", pl.String),
                     pl.Field("int", pl.UInt32),
                 ]
             ),
@@ -319,7 +319,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
                                 pl.List(pl.Datetime(time_unit="ns", time_zone=None))
                             ),
                         ),
-                        pl.Field("string", pl.Utf8),
+                        pl.Field("string", pl.String),
                         pl.Field("int", pl.UInt32),
                     ]
                 )
@@ -340,6 +340,7 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     assert tbl.version() == 1
 
 
+@pytest.mark.write_disk()
 def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -347,6 +348,7 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize(
     "expr",
     [
@@ -382,6 +384,7 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.write_disk()
 def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 

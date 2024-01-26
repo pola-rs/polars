@@ -12,6 +12,7 @@ use pyo3::{create_exception, PyTypeInfo};
 use thiserror::Error;
 
 use crate::Wrap;
+
 #[derive(Error)]
 pub enum PyPolarsErr {
     #[error(transparent)]
@@ -74,18 +75,25 @@ impl Debug for PyPolarsErr {
     }
 }
 
-create_exception!(polars.exceptions, ColumnNotFoundError, PyException);
-create_exception!(polars.exceptions, ComputeError, PyException);
-create_exception!(polars.exceptions, DuplicateError, PyException);
-create_exception!(polars.exceptions, InvalidOperationError, PyException);
-create_exception!(polars.exceptions, NoDataError, PyException);
-create_exception!(polars.exceptions, OutOfBoundsError, PyException);
-create_exception!(polars.exceptions, SchemaError, PyException);
-create_exception!(polars.exceptions, SchemaFieldNotFoundError, PyException);
-create_exception!(polars.exceptions, ShapeError, PyException);
-create_exception!(polars.exceptions, StringCacheMismatchError, PyException);
-create_exception!(polars.exceptions, StructFieldNotFoundError, PyException);
-create_exception!(polars.exceptions, CategoricalRemappingWarning, PyWarning);
+create_exception!(polars.exceptions, PolarsBaseError, PyException);
+create_exception!(polars.exceptions, ColumnNotFoundError, PolarsBaseError);
+create_exception!(polars.exceptions, ComputeError, PolarsBaseError);
+create_exception!(polars.exceptions, DuplicateError, PolarsBaseError);
+create_exception!(polars.exceptions, InvalidOperationError, PolarsBaseError);
+create_exception!(polars.exceptions, NoDataError, PolarsBaseError);
+create_exception!(polars.exceptions, OutOfBoundsError, PolarsBaseError);
+create_exception!(polars.exceptions, SchemaError, PolarsBaseError);
+create_exception!(polars.exceptions, SchemaFieldNotFoundError, PolarsBaseError);
+create_exception!(polars.exceptions, ShapeError, PolarsBaseError);
+create_exception!(polars.exceptions, StringCacheMismatchError, PolarsBaseError);
+create_exception!(polars.exceptions, StructFieldNotFoundError, PolarsBaseError);
+
+create_exception!(polars.exceptions, PolarsBaseWarning, PyWarning);
+create_exception!(
+    polars.exceptions,
+    CategoricalRemappingWarning,
+    PolarsBaseWarning
+);
 
 #[macro_export]
 macro_rules! raise_err(

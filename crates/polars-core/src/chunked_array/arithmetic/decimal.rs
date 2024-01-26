@@ -104,8 +104,8 @@ impl Add for &DecimalChunked {
         self.arithmetic_helper(
             rhs,
             decimal::add,
-            |lhs, rhs_val| decimal::add_scalar(lhs, rhs_val, &rhs.dtype().to_arrow()),
-            |lhs_val, rhs| decimal::add_scalar(rhs, lhs_val, &self.dtype().to_arrow()),
+            |lhs, rhs_val| decimal::add_scalar(lhs, rhs_val, &rhs.dtype().to_arrow(true)),
+            |lhs_val, rhs| decimal::add_scalar(rhs, lhs_val, &self.dtype().to_arrow(true)),
         )
     }
 }
@@ -130,8 +130,8 @@ impl Mul for &DecimalChunked {
         self.arithmetic_helper(
             rhs,
             decimal::mul,
-            |lhs, rhs_val| decimal::mul_scalar(lhs, rhs_val, &rhs.dtype().to_arrow()),
-            |lhs_val, rhs| decimal::mul_scalar(rhs, lhs_val, &self.dtype().to_arrow()),
+            |lhs, rhs_val| decimal::mul_scalar(lhs, rhs_val, &rhs.dtype().to_arrow(true)),
+            |lhs_val, rhs| decimal::mul_scalar(rhs, lhs_val, &self.dtype().to_arrow(true)),
         )
     }
 }
@@ -143,8 +143,8 @@ impl Div for &DecimalChunked {
         self.arithmetic_helper(
             rhs,
             decimal::div,
-            |lhs, rhs_val| decimal::div_scalar(lhs, rhs_val, &rhs.dtype().to_arrow()),
-            |lhs_val, rhs| decimal::div_scalar_swapped(lhs_val, &self.dtype().to_arrow(), rhs),
+            |lhs, rhs_val| decimal::div_scalar(lhs, rhs_val, &rhs.dtype().to_arrow(true)),
+            |lhs_val, rhs| decimal::div_scalar_swapped(lhs_val, &self.dtype().to_arrow(true), rhs),
         )
     }
 }

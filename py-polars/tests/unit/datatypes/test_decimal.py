@@ -31,7 +31,7 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
 
 @pytest.mark.slow()
 def test_series_from_pydecimal_and_ints(
-    permutations_int_dec_none: list[tuple[D | int | None, ...]]
+    permutations_int_dec_none: list[tuple[D | int | None, ...]],
 ) -> None:
     # TODO: check what happens if there are strings, floats arrow scalars in the list
     for data in permutations_int_dec_none:
@@ -145,7 +145,7 @@ def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
 
 
-def test_utf8_to_decimal() -> None:
+def test_string_to_decimal() -> None:
     s = pl.Series(
         [
             "40.12",
@@ -175,12 +175,12 @@ def test_utf8_to_decimal() -> None:
 def test_read_csv_decimal(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     csv = """a,b
-    123.12,a
-    1.1,a
-    0.01,a"""
+123.12,a
+1.1,a
+0.01,a"""
 
     df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal(scale=2)})
-    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.Utf8]
+    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.String]
     assert df["a"].to_list() == [
         D("123.12"),
         D("1.10"),
@@ -215,6 +215,34 @@ def test_decimal_arithmetic() -> None:
         "out3": [D("0.00"), D("0.99"), D("2.55")],
         "out4": [D("-20.00"), D("-0.09"), D("60.80")],
     }
+
+
+def test_decimal_series_value_arithmetic() -> None:
+    s = pl.Series([D("0.10"), D("10.10"), D("100.01")])
+
+    out1 = s + 10
+    out2 = s + D("10")
+    with pytest.raises(pl.InvalidOperationError):
+        s + D("10.0001")
+    out4 = s * 2 / 3
+    out5 = s / D("1.5")
+    out6 = s - 5
+
+    assert out1.dtype == pl.Decimal(precision=None, scale=2)
+    assert out2.dtype == pl.Decimal(precision=None, scale=2)
+    assert out4.dtype == pl.Decimal(precision=None, scale=2)
+    assert out5.dtype == pl.Decimal(precision=None, scale=2)
+    assert out6.dtype == pl.Decimal(precision=None, scale=2)
+
+    assert out1.to_list() == [D("10.1"), D("20.1"), D("110.01")]
+    assert out2.to_list() == [D("10.1"), D("20.1"), D("110.01")]
+    assert out4.to_list() == [
+        D("0.06"),
+        D("6.73"),
+        D("66.67"),
+    ]  # TODO: do we want floor instead of round?
+    assert out5.to_list() == [D("0.06"), D("6.73"), D("66.67")]
+    assert out6.to_list() == [D("-4.9"), D("5.1"), D("95.01")]
 
 
 def test_decimal_aggregations() -> None:

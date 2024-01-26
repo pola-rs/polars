@@ -17,20 +17,20 @@ def foods_ndjson_path(io_files_path: Path) -> Path:
 
 
 def test_scan_ndjson(foods_ndjson_path: Path) -> None:
-    df = pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count").collect()
-    assert df["row_count"].to_list() == list(range(27))
+    df = pl.scan_ndjson(foods_ndjson_path, row_index_name="row_index").collect()
+    assert df["row_index"].to_list() == list(range(27))
 
     df = (
-        pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count")
+        pl.scan_ndjson(foods_ndjson_path, row_index_name="row_index")
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
 
-    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+    assert df["row_index"].to_list() == [0, 6, 11, 13, 14, 20, 25]
 
     df = (
-        pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count")
-        .with_row_count("foo", 10)
+        pl.scan_ndjson(foods_ndjson_path, row_index_name="row_index")
+        .with_row_index("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
@@ -54,6 +54,11 @@ def test_scan_ndjson_with_schema(foods_ndjson_path: Path) -> None:
     schema["sugars_g"] = pl.Float64
     df = pl.scan_ndjson(foods_ndjson_path, schema=schema).collect()
     assert df["sugars_g"].dtype == pl.Float64
+
+
+def test_scan_ndjson_batch_size_zero() -> None:
+    with pytest.raises(ValueError, match="invalid zero value"):
+        pl.scan_ndjson("test.ndjson", batch_size=0)
 
 
 @pytest.mark.write_disk()
@@ -135,19 +140,3 @@ def test_anonymous_scan_explain(io_files_path: Path) -> None:
     q = pl.scan_ndjson(source=file)
     assert "Anonymous" in q.explain()
     assert "Anonymous" in q.show_graph(raw_output=True)  # type: ignore[operator]
-
-
-def test_sink_ndjson_should_write_same_data(
-    io_files_path: Path, tmp_path: Path
-) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    # Arrange
-    source_path = io_files_path / "foods1.csv"
-    target_path = tmp_path / "foods_test.ndjson"
-    expected = pl.read_csv(source_path)
-    lf = pl.scan_csv(source_path)
-    # Act
-    lf.sink_ndjson(target_path)
-    df = pl.read_ndjson(target_path)
-    # Assert
-    assert_frame_equal(df, expected)

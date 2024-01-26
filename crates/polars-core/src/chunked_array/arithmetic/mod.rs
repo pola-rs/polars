@@ -64,6 +64,7 @@ macro_rules! native_array_arithmetics {
 
 native_array_arithmetics!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
+#[inline]
 fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
     buf.clear();
 
@@ -71,44 +72,42 @@ fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
     buf.extend_from_slice(r);
 }
 
-impl Add for &Utf8Chunked {
-    type Output = Utf8Chunked;
+impl Add for &StringChunked {
+    type Output = StringChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        unsafe { (self.as_binary() + rhs.as_binary()).to_utf8() }
+        unsafe { (self.as_binary() + rhs.as_binary()).to_string() }
     }
 }
 
-impl Add for Utf8Chunked {
-    type Output = Utf8Chunked;
+impl Add for StringChunked {
+    type Output = StringChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
         (&self).add(&rhs)
     }
 }
 
-impl Add<&str> for &Utf8Chunked {
-    type Output = Utf8Chunked;
+impl Add<&str> for &StringChunked {
+    type Output = StringChunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_utf8() }
+        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_string() }
     }
 }
 
-fn concat_binary(a: &BinaryArray<i64>, b: &BinaryArray<i64>) -> BinaryArray<i64> {
+fn concat_binview(a: &BinaryViewArray, b: &BinaryViewArray) -> BinaryViewArray {
     let validity = combine_validities_and(a.validity(), b.validity());
-    let mut values = Vec::with_capacity(a.get_values_size() + b.get_values_size());
-    let mut offsets = Vec::with_capacity(a.len() + 1);
-    let mut offset_so_far = 0i64;
-    offsets.push(offset_so_far);
 
+    let mut mutable = MutableBinaryViewArray::with_capacity(a.len());
+
+    let mut scratch = vec![];
     for (a, b) in a.values_iter().zip(b.values_iter()) {
-        values.extend_from_slice(a);
-        values.extend_from_slice(b);
-        offset_so_far = values.len() as i64;
-        offsets.push(offset_so_far)
+        concat_binary_arrs(a, b, &mut scratch);
+        mutable.push_value(&scratch)
     }
-    unsafe { BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), validity) }
+
+    mutable.freeze().with_validity(validity)
 }
 
 impl Add for &BinaryChunked {
@@ -148,7 +147,7 @@ impl Add for &BinaryChunked {
             };
         }
 
-        arity::binary(self, rhs, concat_binary)
+        arity::binary(self, rhs, concat_binview)
     }
 }
 
@@ -164,7 +163,7 @@ impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: &[u8]) -> Self::Output {
-        let arr = BinaryArray::<i64>::from_slice([rhs]);
+        let arr = BinaryViewArray::from_slice_values([rhs]);
         let rhs: BinaryChunked = arr.into();
         self.add(&rhs)
     }

@@ -1,14 +1,13 @@
 use std::fmt::Formatter;
 use std::iter::FlatMap;
 use std::sync::Arc;
-use std::vec::IntoIter;
 
 use polars_core::prelude::*;
 use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
-use crate::prelude::consts::{COUNT, LITERAL_NAME};
+use crate::prelude::consts::{LEN, LITERAL_NAME};
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -142,20 +141,26 @@ where
 pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
     match e {
         Expr::Literal(_) => true,
-        _ => {
-            let roots = expr_to_root_column_exprs(e);
-            roots.iter().any(|e| matches!(e, Expr::Literal(_)))
-        },
+        _ => expr_to_leaf_column_exprs_iter(e).any(|e| matches!(e, Expr::Literal(_))),
     }
 }
-/// Check if leaf expression is a literal
+/// Check if leaf expression returns a scalar
 #[cfg(feature = "is_in")]
-pub(crate) fn all_leaf_literal(e: &Expr) -> bool {
+pub(crate) fn all_return_scalar(e: &Expr) -> bool {
     match e {
-        Expr::Literal(_) => true,
+        Expr::Literal(lv) => lv.projects_as_scalar(),
+        Expr::Function { options: opt, .. } => opt.returns_scalar,
+        Expr::Agg(_) => true,
+        Expr::Column(_) | Expr::Wildcard => false,
         _ => {
-            let roots = expr_to_root_column_exprs(e);
-            roots.iter().all(|e| matches!(e, Expr::Literal(_)))
+            let mut empty = true;
+            for leaf in expr_to_leaf_column_exprs_iter(e) {
+                if !all_return_scalar(leaf) {
+                    return false;
+                }
+                empty = false;
+            }
+            !empty
         },
     }
 }
@@ -182,7 +187,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 ComputeError:
                 "this expression may produce multiple output names"
             ),
-            Expr::Count => return Ok(Arc::from(COUNT)),
+            Expr::Len => return Ok(Arc::from(LEN)),
             Expr::Literal(val) => {
                 return match val {
                     LiteralValue::Series(s) => Ok(Arc::from(s.name())),
@@ -208,7 +213,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
-            Expr::Count => return Ok(Arc::from(COUNT)),
+            Expr::Len => return Ok(Arc::from(LEN)),
             _ => {},
         }
     }
@@ -218,12 +223,8 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn expr_to_leaf_column_names_iter(
-    expr: &Expr,
-) -> FlatMap<IntoIter<Expr>, Option<Arc<str>>, fn(Expr) -> Option<Arc<str>>> {
-    expr_to_root_column_exprs(expr)
-        .into_iter()
-        .flat_map(|e| expr_to_leaf_column_name(&e).ok())
+pub fn expr_to_leaf_column_names_iter(expr: &Expr) -> impl Iterator<Item = Arc<str>> + '_ {
+    expr_to_leaf_column_exprs_iter(expr).flat_map(|e| expr_to_leaf_column_name(e).ok())
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
@@ -233,10 +234,10 @@ pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
 
 /// unpack alias(col) to name of the root column name
 pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
-    let mut roots = expr_to_root_column_exprs(expr);
-    polars_ensure!(roots.len() <= 1, ComputeError: "found more than one root column name");
-    match roots.pop() {
-        Some(Expr::Column(name)) => Ok(name),
+    let mut leaves = expr_to_leaf_column_exprs_iter(expr).collect::<Vec<_>>();
+    polars_ensure!(leaves.len() <= 1, ComputeError: "found more than one root column name");
+    match leaves.pop() {
+        Some(Expr::Column(name)) => Ok(name.clone()),
         Some(Expr::Wildcard) => polars_bail!(
             ComputeError: "wildcard has no root column name",
         ),
@@ -316,16 +317,12 @@ pub(crate) fn aexpr_assign_renamed_leaf(
     panic!("should be a root column that is renamed");
 }
 
-/// Get all root column expressions in the expression tree.
-pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
-    let mut out = vec![];
-    expr.into_iter().for_each(|e| match e {
-        Expr::Column(_) | Expr::Wildcard => {
-            out.push(e.clone());
-        },
-        _ => {},
-    });
-    out
+/// Get all leaf column expressions in the expression tree.
+pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item = &Expr> {
+    expr.into_iter().flat_map(|e| match e {
+        Expr::Column(_) | Expr::Wildcard => Some(e),
+        _ => None,
+    })
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
@@ -380,6 +377,24 @@ pub(crate) fn aexprs_to_schema(
     expr.iter()
         .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap())
         .collect()
+}
+
+/// Concatenate multiple schemas into one, disallowing duplicate field names
+pub fn merge_schemas(schemas: &[SchemaRef]) -> PolarsResult<Schema> {
+    let schema_size = schemas.iter().map(|schema| schema.len()).sum();
+    let mut merged_schema = Schema::with_capacity(schema_size);
+
+    for schema in schemas {
+        schema.iter().try_for_each(|(name, dtype)| {
+            if merged_schema.with_column(name.clone(), dtype.clone()).is_none() {
+                Ok(())
+            } else {
+                Err(polars_err!(Duplicate: "Column with name '{}' has more than one occurrence", name))
+            }
+        })?;
+    }
+
+    Ok(merged_schema)
 }
 
 pub fn combine_predicates_expr<I>(iter: I) -> Expr

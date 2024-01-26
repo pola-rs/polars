@@ -46,28 +46,6 @@ impl PyFileLikeObject {
         Cursor::new(buf)
     }
 
-    /// Take a Python buffer and extends it lifetime to static.
-    ///
-    /// # Safety
-    /// It also returns the bytes PyObject. As long as that object is held, the lifetime is valid
-    /// as the destructor is not called.
-    pub unsafe fn as_file_buffer_ref(&self) -> (Cursor<&'static [u8]>, PyObject) {
-        Python::with_gil(|py| {
-            let bytes = self
-                .inner
-                .call_method(py, "read", (), None)
-                .expect("no read method found");
-
-            let ref_bytes: &PyBytes = bytes
-                .downcast(py)
-                .expect("Expecting to be able to downcast into bytes from read result.");
-            let buf = ref_bytes.as_bytes();
-
-            let static_buf = std::mem::transmute::<&[u8], &'static [u8]>(buf);
-            (Cursor::new(static_buf), bytes)
-        })
-    }
-
     /// Same as `PyFileLikeObject::new`, but validates that the underlying
     /// python object has a `read`, `write`, and `seek` methods in respect to parameters.
     /// Will return a `TypeError` if object does not have `read`, `seek`, and `write` methods.

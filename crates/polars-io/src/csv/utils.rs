@@ -6,9 +6,9 @@ use std::mem::MaybeUninit;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
-use polars_time::chunkedarray::utf8::infer as date_infer;
+use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
-use polars_time::prelude::utf8::Pattern;
+use polars_time::prelude::string::Pattern;
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;
@@ -61,7 +61,7 @@ pub(crate) fn get_file_chunks(
 /// Infer the data type of a record
 fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
-    // Utf8 for them
+    // String for them
     if string.starts_with('"') {
         if try_parse_dates {
             #[cfg(feature = "polars-time")]
@@ -76,7 +76,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                             DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
                         },
                     },
-                    None => DataType::Utf8,
+                    None => DataType::String,
                 }
             }
             #[cfg(not(feature = "polars-time"))]
@@ -84,7 +84,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                 panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
             }
         } else {
-            DataType::Utf8
+            DataType::String
         }
     }
     // match regex in a particular order
@@ -107,7 +107,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                         DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
                     },
                 },
-                None => DataType::Utf8,
+                None => DataType::String,
             }
         }
         #[cfg(not(feature = "polars-time"))]
@@ -115,7 +115,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
             panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
         }
     } else {
-        DataType::Utf8
+        DataType::String
     }
 }
 
@@ -222,16 +222,10 @@ pub fn infer_file_schema_inner(
             }
             final_headers
         } else {
-            let mut column_names: Vec<String> = byterecord
+            byterecord
                 .enumerate()
                 .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect();
-            // needed because SplitLines does not return the \n char, so SplitFields does not catch
-            // the latest value if ending with a separator.
-            if header_line.ends_with(&[separator]) {
-                column_names.push(format!("column_{}", column_names.len() + 1))
-            }
-            column_names
+                .collect::<Vec<String>>()
         }
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one
@@ -385,7 +379,7 @@ pub fn infer_file_schema_inner(
         }
 
         // determine data type based on possible types
-        // if there are incompatible types, use DataType::Utf8
+        // if there are incompatible types, use DataType::String
         match possibilities.len() {
             1 => {
                 for dtype in possibilities.iter() {
@@ -400,13 +394,13 @@ pub fn infer_file_schema_inner(
                     fields.push(Field::new(field_name, DataType::Float64));
                 }
                 // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::Utf8)
+                else if possibilities.contains(&DataType::String)
                     && possibilities.contains(&DataType::Date)
                 {
                     fields.push(Field::new(field_name, DataType::Date));
                 }
                 // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::Utf8)
+                else if possibilities.contains(&DataType::String)
                     && possibilities.contains(&DataType::Datetime(TimeUnit::Microseconds, None))
                 {
                     fields.push(Field::new(
@@ -414,11 +408,11 @@ pub fn infer_file_schema_inner(
                         DataType::Datetime(TimeUnit::Microseconds, None),
                     ));
                 } else {
-                    // default to Utf8 for conflicting datatypes (e.g bool and int)
-                    fields.push(Field::new(field_name, DataType::Utf8));
+                    // default to String for conflicting datatypes (e.g bool and int)
+                    fields.push(Field::new(field_name, DataType::String));
                 }
             },
-            _ => fields.push(Field::new(field_name, DataType::Utf8)),
+            _ => fields.push(Field::new(field_name, DataType::String)),
         }
     }
     // if there is a single line after the header without an eol
@@ -618,7 +612,9 @@ pub(crate) fn decompress(
 /// The caller must ensure that:
 ///     - Output buffer must have enough capacity to hold `bytes.len()`
 ///     - bytes ends with the quote character e.g.: `"`
+///     - bytes length > 1.
 pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [MaybeUninit<u8>]) -> usize {
+    debug_assert!(bytes.len() > 1);
     let mut prev_quote = false;
 
     let mut count = 0;

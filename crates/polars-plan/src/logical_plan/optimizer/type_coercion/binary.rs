@@ -19,8 +19,8 @@ fn compares_cat_to_string(type_left: &DataType, type_right: &DataType, op: Opera
             && matches_any_order!(
                 type_left,
                 type_right,
-                DataType::Utf8,
-                DataType::Categorical(_, _)
+                DataType::String,
+                DataType::Categorical(_, _) | DataType::Enum(_, _)
             )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -63,8 +63,8 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
         matches_any_order!(
             type_left,
             type_right,
-            DataType::Utf8,
-            DataType::Categorical(_, _)
+            DataType::String,
+            DataType::Categorical(_, _) | DataType::Enum(_, _)
         )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -74,8 +74,8 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
 }
 
 fn str_numeric_arithmetic(type_left: &DataType, type_right: &DataType) -> PolarsResult<()> {
-    let mismatch = type_left.is_numeric() && matches!(type_right, DataType::Utf8)
-        || type_right.is_numeric() && matches!(type_left, DataType::Utf8);
+    let mismatch = type_left.is_numeric() && matches!(type_right, DataType::String)
+        || type_right.is_numeric() && matches!(type_left, DataType::String);
     polars_ensure!(
         !mismatch,
         ComputeError: "arithmetic on string and numeric not allowed, try an explicit cast first",
@@ -217,25 +217,31 @@ pub(super) fn process_binary(
     // don't coerce string with number comparisons. They must error
     match (&type_left, &type_right, op) {
         #[cfg(not(feature = "dtype-categorical"))]
-        (DataType::Utf8, dt, op) | (dt, DataType::Utf8, op)
+        (DataType::String, dt, op) | (dt, DataType::String, op)
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)
         },
         #[cfg(feature = "dtype-categorical")]
-        (Utf8 | Categorical(_, _), dt, op) | (dt, Utf8 | Categorical(_, _), op)
+        (String | Categorical(_, _), dt, op) | (dt, String | Categorical(_, _), op)
+            if op.is_comparison() && dt.is_numeric() =>
+        {
+            return Ok(None)
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (String | Enum(_, _), dt, op) | (dt, String | Enum(_, _), op)
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)
         },
         #[cfg(feature = "dtype-date")]
-        (Date, Utf8, op) | (Utf8, Date, op) if op.is_comparison() => err_date_str_compare()?,
+        (Date, String, op) | (String, Date, op) if op.is_comparison() => err_date_str_compare()?,
         #[cfg(feature = "dtype-datetime")]
-        (Datetime(_, _), Utf8, op) | (Utf8, Datetime(_, _), op) if op.is_comparison() => {
+        (Datetime(_, _), String, op) | (String, Datetime(_, _), op) if op.is_comparison() => {
             err_date_str_compare()?
         },
         #[cfg(feature = "dtype-time")]
-        (Time, Utf8, op) if op.is_comparison() => err_date_str_compare()?,
+        (Time, String, op) if op.is_comparison() => err_date_str_compare()?,
         // structs can be arbitrarily nested, leave the complexity to the caller for now.
         #[cfg(feature = "dtype-struct")]
         (Struct(_), Struct(_), _op) => return Ok(None),
@@ -277,7 +283,7 @@ pub(super) fn process_binary(
         let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
         if is_cat_str_binary(&type_left, &type_right) {
-            st = Utf8
+            st = String
         }
 
         // only cast if the type is not already the super type.
