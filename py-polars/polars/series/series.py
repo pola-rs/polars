@@ -303,9 +303,6 @@ class Series:
                 nan_to_null=nan_to_null,
             )
 
-        elif _is_generator(values):
-            self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)  # type: ignore[arg-type]
-
         elif values is None:
             self._s = sequence_to_pyseries(name, [], dtype=dtype)
 
@@ -336,6 +333,9 @@ class Series:
             values, (pd.Series, pd.DatetimeIndex)
         ):
             self._s = pandas_to_pyseries(name, values)
+
+        elif _is_generator(values):
+            self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif isinstance(values, Series):
             self._s = series_to_pyseries(

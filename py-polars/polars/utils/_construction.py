@@ -263,7 +263,7 @@ def numpy_to_pyseries(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
     elif len(shape := values.shape) == 2:
-        # optimise by ingesting 1D and reshaping in Rust
+        # Optimize by ingesting 1D and reshaping in Rust
         values = values.reshape(-1)
         py_s = numpy_to_pyseries(
             name,
