@@ -87,11 +87,12 @@ impl Series {
             String => StringChunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(rev_map, ordering) => {
+            dt @ (Categorical(rev_map, ordering) | Enum(rev_map, ordering)) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
                 let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     rev_map.clone().unwrap(),
+                    matches!(dt, Enum(_, _)),
                     *ordering,
                 );
                 ca.set_fast_unique(false);
@@ -346,7 +347,8 @@ impl Series {
                         // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                         return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                             UInt32Chunked::with_chunk(name, keys.clone()),
-                            Arc::new(RevMapping::build_enum(values.clone())),
+                            Arc::new(RevMapping::build_local(values.clone())),
+                            true,
                             Default::default(),
                         )
                         .into_series());

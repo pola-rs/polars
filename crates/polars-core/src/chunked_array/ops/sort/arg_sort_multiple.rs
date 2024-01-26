@@ -69,7 +69,7 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
 
     let out = match by.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => {
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => {
             let ca = by.categorical().unwrap();
             if ca.uses_lexical_ordering() {
                 by.to_arrow(0, true)

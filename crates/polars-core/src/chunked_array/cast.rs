@@ -100,41 +100,7 @@ where
         }
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, ordering) => {
-                if let Some(rev_map) = rev_map {
-                    if let RevMapping::Enum(categories, _) = &**rev_map {
-                        let ca = match self.dtype() {
-                            DataType::UInt32 => {
-                                // SAFETY: we are guarded by the type system
-                                unsafe {
-                                    &*(self as *const ChunkedArray<T> as *const UInt32Chunked)
-                                }
-                                .clone()
-                            },
-                            dt if dt.is_integer() => self.cast(&DataType::UInt32)?.u32()?.clone(),
-                            _ => {
-                                polars_bail!(ComputeError: "cannot cast non integer types to 'Categorical'")
-                            },
-                        };
-
-                        // Check if indices are in bounds
-                        if let Some(m) = ca.max() {
-                            if m >= categories.len() as u32 {
-                                polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
-                            }
-                        }
-
-                        // SAFETY indices are in bound
-                        unsafe {
-                            return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
-                                ca,
-                                rev_map.clone(),
-                                *ordering,
-                            )
-                            .into_series());
-                        }
-                    }
-                }
+            DataType::Categorical(_, ordering) => {
                 polars_ensure!(
                     self.dtype() == &DataType::UInt32,
                     ComputeError: "cannot cast numeric types to 'Categorical'"
@@ -145,6 +111,47 @@ where
 
                 CategoricalChunked::from_global_indices(ca.clone(), *ordering)
                     .map(|ca| ca.into_series())
+            },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(rev_map, ordering) => {
+                let ca = match self.dtype() {
+                    DataType::UInt32 => {
+                        // SAFETY: we are guarded by the type system
+                        unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) }
+                            .clone()
+                    },
+                    dt if dt.is_integer() => self
+                        .cast(self.dtype())?
+                        .strict_cast(&DataType::UInt32)?
+                        .u32()?
+                        .clone(),
+                    _ => {
+                        polars_bail!(ComputeError: "cannot cast non integer types to 'Enum'")
+                    },
+                };
+                let Some(rev_map) = rev_map else {
+                    polars_bail!(ComputeError: "cannot cast to Enum without categories");
+                };
+                let categories = rev_map.get_categories();
+                // Check if indices are in bounds
+                if let Some(m) = ca.max() {
+                    if m >= categories.len() as u32 {
+                        polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
+                    }
+                }
+                // SAFETY
+                // we are guarded by the type system
+                let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
+                // SAFETY indices are in bound
+                unsafe {
+                    Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                        ca.clone(),
+                        rev_map.clone(),
+                        true,
+                        *ordering,
+                    )
+                    .into_series())
+                }
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
@@ -185,7 +192,8 @@ where
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(Some(rev_map), ordering) => {
+            DataType::Categorical(Some(rev_map), ordering)
+            | DataType::Enum(Some(rev_map), ordering) => {
                 if self.dtype() == &DataType::UInt32 {
                     // safety:
                     // we are guarded by the type system.
@@ -194,6 +202,7 @@ where
                         CategoricalChunked::from_cats_and_rev_map_unchecked(
                             ca.clone(),
                             rev_map.clone(),
+                            matches!(data_type, DataType::Enum(_, _)),
                             *ordering,
                         )
                     }
@@ -221,19 +230,21 @@ impl ChunkCast for StringChunked {
                     let ca = builder.drain_iter_and_finish(iter);
                     Ok(ca.into_series())
                 },
-                Some(rev_map) => {
-                    polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
-                    CategoricalChunked::from_string_to_enum(
-                        self,
-                        rev_map.get_categories(),
-                        *ordering,
-                    )
+                Some(_) => {
+                    polars_bail!(InvalidOperation: "casting to a categorical with rev map is not allowed");
+                },
+            },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(rev_map, ordering) => {
+                let Some(rev_map) = rev_map else {
+                    polars_bail!(ComputeError: "can not cast / initialize Enum without categories present")
+                };
+                CategoricalChunked::from_string_to_enum(self, rev_map.get_categories(), *ordering)
                     .map(|ca| {
                         let mut s = ca.into_series();
                         s.rename(self.name());
                         s
                     })
-                },
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
@@ -387,8 +398,8 @@ impl ChunkCast for ListChunked {
             List(child_type) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _))
-                        if !matches!(dt, Categorical(_, _) | String | Null) =>
+                    (dt, Categorical(None, _) | Enum(_, _))
+                        if !matches!(dt, Categorical(_, _) | Enum(_, _) | String | Null) =>
                     {
                         polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     },
@@ -451,8 +462,8 @@ impl ChunkCast for ArrayChunked {
             Array(child_type, width) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _)) if !matches!(dt, String) => {
-                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
+                    (dt, Categorical(None, _) | Enum(_, _)) if !matches!(dt, String) => {
+                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up

@@ -22,6 +22,7 @@ impl SeriesWrap<CategoricalChunked> {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 cats,
                 self.0.get_rev_map().clone(),
+                self.0.is_enum(),
                 self.0.get_ordering(),
             )
         };

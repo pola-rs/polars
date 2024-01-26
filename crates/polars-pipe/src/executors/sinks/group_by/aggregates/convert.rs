@@ -177,7 +177,10 @@ where
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 #[cfg(feature = "dtype-categorical")]
-                if matches!(logical_dtype, DataType::Categorical(_, _)) {
+                if matches!(
+                    logical_dtype,
+                    DataType::Categorical(_, _) | DataType::Enum(_, _)
+                ) {
                     return (
                         logical_dtype.clone(),
                         phys_expr,
@@ -215,7 +218,10 @@ where
 
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 #[cfg(feature = "dtype-categorical")]
-                if matches!(logical_dtype, DataType::Categorical(_, _)) {
+                if matches!(
+                    logical_dtype,
+                    DataType::Categorical(_, _) | DataType::Enum(_, _)
+                ) {
                     return (
                         logical_dtype.clone(),
                         phys_expr,

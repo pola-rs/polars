@@ -883,7 +883,12 @@ impl PyDataFrame {
                 .get_columns()
                 .iter()
                 .enumerate()
-                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_, _)))
+                .filter(|(_i, s)| {
+                    matches!(
+                        s.dtype(),
+                        DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    )
+                })
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
 

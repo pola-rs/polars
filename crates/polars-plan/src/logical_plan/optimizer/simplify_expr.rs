@@ -552,6 +552,8 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
                         return Ok(None)
                     },
+                    #[cfg(feature = "dtype-categorical")]
+                    (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
                     #[cfg(feature = "dtype-struct")]
                     (_, DataType::Struct(_)) => return Ok(None),
                     (av, _) => {
