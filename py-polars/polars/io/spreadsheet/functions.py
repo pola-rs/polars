@@ -527,18 +527,16 @@ def _initialise_spreadsheet_parser(
         # note: can't read directly from bytes (yet) so
         if read_bytesio := isinstance(source, BytesIO):
             temp_data = NamedTemporaryFile(delete=True)
-        with nullcontext() if not read_bytesio else temp_data as xldata:  # type: ignore[attr-defined]
+        with nullcontext() if not read_bytesio else temp_data as tmp:  # type: ignore[attr-defined]
             if read_bytesio:
-                xldata.write(source.getvalue())  # type: ignore[union-attr]
-                xldata = xldata.file.name
-            else:
-                xldata = source
+                tmp.write(source.getvalue())  # type: ignore[union-attr]
+                source = temp_data.name
 
-            if not Path(xldata).exists():
-                raise FileNotFoundError(xldata)
+            if not Path(source).exists():  # type: ignore[arg-type]
+                raise FileNotFoundError(source)
 
             fxl = import_optional("fastexcel", min_version="0.7.0")
-            parser = fxl.read_excel(xldata, **engine_options)
+            parser = fxl.read_excel(source, **engine_options)
             sheets = [
                 {"index": i + 1, "name": nm} for i, nm in enumerate(parser.sheet_names)
             ]
