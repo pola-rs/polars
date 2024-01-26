@@ -2393,14 +2393,14 @@ def test_reverse() -> None:
 def test_reverse_binary() -> None:
     # single chunk
     s = pl.Series("values", ["a", "b", "c", "d"]).cast(pl.Binary)
-    assert s.reverse().to_list() == [b'd', b'c', b'b', b'a']
+    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
 
     # multiple chunks
     chunk1 = pl.Series("values", ["a", "b"])
     chunk2 = pl.Series("values", ["c", "d"])
     s = chunk1.extend(chunk2).cast(pl.Binary)
     assert s.n_chunks() == 2
-    assert s.reverse().to_list() == [b'd', b'c', b'b', b'a']
+    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
 
 
 def test_clip() -> None:
