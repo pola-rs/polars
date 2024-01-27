@@ -373,6 +373,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         mutable.freeze().with_validity(self.validity)
     }
 
+    pub fn is_sliced(&self) -> bool {
+        self.views.as_ptr() != self.views.storage_ptr()
+    }
+
     pub fn maybe_gc(self) -> Self {
         const GC_MINIMUM_SAVINGS: usize = 16 * 1024; // At least 16 KiB.
 
