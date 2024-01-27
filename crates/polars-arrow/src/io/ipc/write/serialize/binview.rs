@@ -10,9 +10,14 @@ pub(super) fn write_binview<T: ViewType + ?Sized>(
     is_little_endian: bool,
     compression: Option<Compression>,
 ) {
+    let array = if array.is_sliced() {
+        array.clone().maybe_gc()
+    } else {
+        array.clone()
+    };
     write_bitmap(
         array.validity(),
-        array::Array::len(array),
+        array::Array::len(&array),
         buffers,
         arrow_data,
         offset,
