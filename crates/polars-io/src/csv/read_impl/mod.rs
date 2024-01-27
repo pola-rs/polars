@@ -199,6 +199,7 @@ impl<'a> CoreReader<'a> {
                         separator,
                         max_records,
                         has_header,
+                        truncate_ragged_lines,
                         schema_overwrite.as_deref(),
                         &mut skip_rows,
                         skip_rows_after_header,

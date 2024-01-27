@@ -1182,3 +1182,15 @@ fn test_read_csv_file_without_headers_and_non_uniform_col_len() {
 
     assert_eq!(df.get(0).unwrap().len(), 4);
 }
+
+#[test]
+fn test_read_csv_file_without_headers_and_non_uniform_col_len_and_truncate_ragged_lines_true() {
+    let file = std::fs::File::open("../../examples/datasets/headerless/headerless.csv").unwrap();
+    let df = CsvReader::new(file)
+        .has_header(false)
+        .truncate_ragged_lines(true)
+        .finish()
+        .unwrap();
+
+    assert_eq!(df.get(0).unwrap().len(), 2);
+}

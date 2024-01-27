@@ -1634,7 +1634,6 @@ def test_csv_ragged_lines() -> None:
     p =  pl.read_csv(
             io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
         ).to_dict(as_series=False)
-    print("p",p)
     assert (
         pl.read_csv(
             io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
