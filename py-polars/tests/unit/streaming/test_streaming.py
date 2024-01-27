@@ -331,6 +331,7 @@ def test_streaming_11219() -> None:
     ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
 
 
+@pytest.mark.write_disk()
 def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     with Path.open(tmp_path / "header_no_data.csv", "w") as f:
         f.write("name, age\n")
