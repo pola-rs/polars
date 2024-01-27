@@ -30,6 +30,7 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
+    DataTypeGroup,
     Date,
     Datetime,
     Duration,
@@ -49,6 +50,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Unknown,
+    is_polars_dtype,
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
@@ -58,7 +60,7 @@ from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
-from polars.selectors import _expand_selectors, expand_selector
+from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
 from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
@@ -75,6 +77,7 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_index_args,
@@ -1854,7 +1857,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             batch.
 
             .. warning::
-                This functionality is currently in an alpha state.
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
             .. note::
                 Use :func:`explain` to see if Polars can process the query in streaming
@@ -1920,6 +1924,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
 
         if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
             comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
@@ -1989,6 +1994,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect DataFrame asynchronously in thread pool.
 
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
         Collects into a DataFrame (like :func:`collect`), but instead of returning
         DataFrame directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
@@ -2017,22 +2026,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
         streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
+            Process the query in batches to handle larger-than-memory data.
+            If set to `False` (default), the entire query is processed in a single
+            batch.
 
-        Notes
-        -----
-        In case of error `set_exception` is used on
-        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
+            .. warning::
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
-
-        See Also
-        --------
-        polars.collect_all : Collect multiple LazyFrames at the same time.
-        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+            .. note::
+                Use :func:`explain` to see if Polars can process the query in streaming
+                mode.
 
         Returns
         -------
@@ -2040,6 +2044,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         If `gevent=True` then returns wrapper that has
         `.get(block=True, timeout=None)` method.
+
+        See Also
+        --------
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+
+        Notes
+        -----
+        In case of error `set_exception` is used on
+        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
         Examples
         --------
@@ -2077,6 +2091,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
 
         if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
             comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
@@ -2095,6 +2110,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
         return result  # type: ignore[return-value]
 
+    @unstable()
     def sink_parquet(
         self,
         path: str | Path,
@@ -2114,6 +2130,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2187,6 +2207,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @unstable()
     def sink_ipc(
         self,
         path: str | Path,
@@ -2202,6 +2223,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to an IPC file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2254,6 +2279,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
+    @unstable()
     def sink_csv(
         self,
         path: str | Path,
@@ -2280,6 +2306,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to a CSV file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2391,6 +2421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @unstable()
     def sink_ndjson(
         self,
         path: str | Path,
@@ -2405,6 +2436,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2604,7 +2639,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def cast(
         self,
-        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        dtypes: (
+            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            | PolarsDataType
+        ),
         *,
         strict: bool = True,
     ) -> Self:
@@ -2645,12 +2683,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
 
-        Cast all frame columns to the specified dtype:
+        Cast all frame columns matching one dtype (or dtype group) to another dtype:
 
-        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
-        {'foo': ['1', '2', '3'],
-         'bar': ['6.0', '7.0', '8.0'],
-         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
+        >>> lf.cast({pl.Date: pl.Datetime}).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────────────────────┐
+        │ foo ┆ bar ┆ ham                 │
+        │ --- ┆ --- ┆ ---                 │
+        │ i64 ┆ f64 ┆ datetime[μs]        │
+        ╞═════╪═════╪═════════════════════╡
+        │ 1   ┆ 6.0 ┆ 2020-01-02 00:00:00 │
+        │ 2   ┆ 7.0 ┆ 2021-03-04 00:00:00 │
+        │ 3   ┆ 8.0 ┆ 2022-05-06 00:00:00 │
+        └─────┴─────┴─────────────────────┘
 
         Use selectors to define the columns being cast:
 
@@ -2666,17 +2711,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7   ┆ 2021-03-04 │
         │ 3   ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
+
+        Cast all frame columns to the specified dtype:
+
+        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
+        {'foo': ['1', '2', '3'],
+         'bar': ['6.0', '7.0', '8.0'],
+         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         if not isinstance(dtypes, Mapping):
             return self._from_pyldf(self._ldf.cast_all(dtypes, strict))
 
         cast_map = {}
         for c, dtype in dtypes.items():
+            if (is_polars_dtype(c) or isinstance(c, DataTypeGroup)) or (
+                isinstance(c, Collection) and all(is_polars_dtype(x) for x in c)
+            ):
+                c = by_dtype(c)  # type: ignore[arg-type]
+
             dtype = py_type_to_dtype(dtype)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)
-                else {x: dtype for x in expand_selector(self, c)}
+                else {x: dtype for x in expand_selector(self, c)}  # type: ignore[arg-type]
             )
 
         return self._from_pyldf(self._ldf.cast(cast_map, strict))
@@ -5945,6 +6002,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             [wrap_expr(e).set_sorted(descending=descending) for e in columns]
         )
 
+    @unstable()
     def update(
         self,
         other: LazyFrame,
@@ -5959,8 +6017,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Update the values in this `LazyFrame` with the non-null values in `other`.
 
         .. warning::
-            This functionality is experimental and may change without it being
-            considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------

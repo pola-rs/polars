@@ -32,7 +32,7 @@ fn sort_column_can_be_decoded(schema: &Schema, sort_idx: &[usize]) -> bool {
     !sort_idx.iter().any(|i| {
         matches!(
             schema.get_at_index(*i).unwrap().1,
-            DataType::Categorical(_, _)
+            DataType::Categorical(_, _) | DataType::Enum(_, _)
         )
     })
 }

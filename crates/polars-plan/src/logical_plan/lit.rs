@@ -201,7 +201,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
             AnyValue::StringOwned(o) => Ok(Self::String(o.into())),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(c, rev_mapping, arr) => {
+            AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
                 if arr.is_null() {
                     Ok(Self::String(rev_mapping.get(c).to_string()))
                 } else {

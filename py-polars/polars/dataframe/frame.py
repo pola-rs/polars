@@ -52,6 +52,7 @@ from polars.dependencies import (
     _check_for_pyarrow,
     dataframe_api_compat,
     hvplot,
+    import_optional,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -101,6 +102,7 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
     _prepare_row_index_args,
     _process_null_values,
@@ -2189,86 +2191,82 @@ class DataFrame:
 
         return out
 
-    def to_pandas(  # noqa: D417
+    def to_pandas(
         self,
-        *args: Any,
+        *,
         use_pyarrow_extension_array: bool = False,
         **kwargs: Any,
     ) -> pd.DataFrame:
         """
-        Cast to a pandas DataFrame.
+        Convert this DataFrame to a pandas DataFrame.
 
-        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
-        This operation clones data, unless `use_pyarrow_extension_array=True`.
+        This operation copies data if `use_pyarrow_extension_array` is not enabled.
 
         Parameters
         ----------
         use_pyarrow_extension_array
-            Use PyArrow backed-extension arrays instead of numpy arrays for each column
-            of the pandas DataFrame; this allows zero copy operations and preservation
+            Use PyArrow-backed extension arrays instead of NumPy arrays for the columns
+            of the pandas DataFrame. This allows zero copy operations and preservation
             of null values. Subsequent operations on the resulting pandas DataFrame may
-            trigger conversion to NumPy arrays if that operation is not supported by
-            pyarrow compute functions.
+            trigger conversion to NumPy if those operations are not supported by PyArrow
+            compute functions.
         **kwargs
-            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+            Additional keyword arguments to be passed to
+            :meth:`pyarrow.Table.to_pandas`.
 
         Returns
         -------
         :class:`pandas.DataFrame`
 
+        Notes
+        -----
+        This operation requires that both :mod:`pandas` and :mod:`pyarrow` are
+        installed.
+
         Examples
         --------
-        >>> import pandas
-        >>> df1 = pl.DataFrame(
+        >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
+        ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> pandas_df1 = df1.to_pandas()
-        >>> type(pandas_df1)
-        <class 'pandas.core.frame.DataFrame'>
-        >>> pandas_df1.dtypes
-        foo     int64
-        bar     int64
-        ham    object
-        dtype: object
-        >>> df2 = pl.DataFrame(
+        >>> df.to_pandas()
+           foo  bar ham
+        0    1  6.0   a
+        1    2  7.0   b
+        2    3  8.0   c
+
+        Null values in numeric columns are converted to `NaN`.
+
+        >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, None],
-        ...         "bar": [6, None, 8],
+        ...         "bar": [6.0, None, 8.0],
         ...         "ham": [None, "b", "c"],
         ...     }
         ... )
-        >>> pandas_df2 = df2.to_pandas()
-        >>> pandas_df2
+        >>> df.to_pandas()
            foo  bar   ham
         0  1.0  6.0  None
         1  2.0  NaN     b
         2  NaN  8.0     c
-        >>> pandas_df2.dtypes
-        foo    float64
-        bar    float64
-        ham     object
-        dtype: object
-        >>> pandas_df2_pa = df2.to_pandas(
-        ...     use_pyarrow_extension_array=True
-        ... )  # doctest: +SKIP
-        >>> pandas_df2_pa  # doctest: +SKIP
+
+        Pass `use_pyarrow_extension_array=True` to get a pandas DataFrame with columns
+        backed by PyArrow extension arrays. This will preserve null values.
+
+        >>> df.to_pandas(use_pyarrow_extension_array=True)
             foo   bar   ham
-        0     1     6  <NA>
+        0     1   6.0  <NA>
         1     2  <NA>     b
-        2  <NA>     8     c
-        >>> pandas_df2_pa.dtypes  # doctest: +SKIP
+        2  <NA>   8.0     c
+        >>> _.dtypes
         foo           int64[pyarrow]
-        bar           int64[pyarrow]
+        bar          double[pyarrow]
         ham    large_string[pyarrow]
         dtype: object
         """
-        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
-            return pd.DataFrame()
-
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
@@ -2281,7 +2279,65 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        record_batches = self._df.to_pandas()
+        # Object columns must be handled separately as Arrow does not convert them
+        # correctly
+        if Object in self.dtypes:
+            return self._to_pandas_with_object_columns(
+                use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+            )
+
+        return self._to_pandas_without_object_columns(
+            self, use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+        )
+
+    def _to_pandas_with_object_columns(
+        self,
+        *,
+        use_pyarrow_extension_array: bool,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        # Find which columns are of type pl.Object, and which aren't:
+        object_columns = []
+        not_object_columns = []
+        for i, dtype in enumerate(self.dtypes):
+            if dtype == Object:
+                object_columns.append(i)
+            else:
+                not_object_columns.append(i)
+
+        # Export columns that aren't pl.Object, in the same order:
+        if not_object_columns:
+            df_without_objects = self[:, not_object_columns]
+            pandas_df = self._to_pandas_without_object_columns(
+                df_without_objects,
+                use_pyarrow_extension_array=use_pyarrow_extension_array,
+                **kwargs,
+            )
+        else:
+            pandas_df = pd.DataFrame()
+
+        # Add columns that are pl.Object, using Series' custom to_pandas()
+        # logic for this case. We do this in order, so the original index for
+        # the next column in this dataframe is correct for the partially
+        # constructed Pandas dataframe, since there are no additional or
+        # missing columns to the inserted column's left.
+        for i in object_columns:
+            name = self.columns[i]
+            pandas_df.insert(i, name, self.to_series(i).to_pandas())
+
+        return pandas_df
+
+    def _to_pandas_without_object_columns(
+        self,
+        df: DataFrame,
+        *,
+        use_pyarrow_extension_array: bool,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        if not df.width:  # Empty dataframe, cannot infer schema from batches
+            return pd.DataFrame()
+
+        record_batches = df._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
             return tbl.to_pandas(
@@ -3073,15 +3129,8 @@ class DataFrame:
         ...     sheet_zoom=125,
         ... )
         """  # noqa: W505
-        try:
-            import xlsxwriter
-            from xlsxwriter.utility import xl_cell_to_rowcol
-        except ImportError:
-            msg = (
-                "Excel export requires xlsxwriter"
-                "\n\nPlease run: pip install XlsxWriter"
-            )
-            raise ImportError(msg) from None
+        xlsxwriter = import_optional("xlsxwriter", err_prefix="Excel export requires")
+        from xlsxwriter.utility import xl_cell_to_rowcol
 
         # setup workbook/worksheet
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
@@ -3266,10 +3315,12 @@ class DataFrame:
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
         future
-            WARNING: this argument is unstable and will be removed without it being
-            considered a breaking change.
-            Setting this to `True` will write polars' internal data-structures that
+            Setting this to `True` will write Polars' internal data structures that
             might not be available by other Arrow implementations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -3293,6 +3344,11 @@ class DataFrame:
 
         if compression is None:
             compression = "uncompressed"
+
+        if future:
+            issue_unstable_warning(
+                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
+            )
 
         self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
@@ -6348,7 +6404,7 @@ class DataFrame:
 
         Notes
         -----
-        For joining on columns with categorical data, see `pl.StringCache()`.
+        For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
@@ -6751,7 +6807,10 @@ class DataFrame:
 
     def cast(
         self,
-        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        dtypes: (
+            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            | PolarsDataType
+        ),
         *,
         strict: bool = True,
     ) -> DataFrame:
@@ -6792,12 +6851,19 @@ class DataFrame:
         │ 3.0 ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
 
-        Cast all frame columns to the specified dtype:
+        Cast all frame columns matching one dtype (or dtype group) to another dtype:
 
-        >>> df.cast(pl.String).to_dict(as_series=False)
-        {'foo': ['1', '2', '3'],
-         'bar': ['6.0', '7.0', '8.0'],
-         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
+        >>> df.cast({pl.Date: pl.Datetime})
+        shape: (3, 3)
+        ┌─────┬─────┬─────────────────────┐
+        │ foo ┆ bar ┆ ham                 │
+        │ --- ┆ --- ┆ ---                 │
+        │ i64 ┆ f64 ┆ datetime[μs]        │
+        ╞═════╪═════╪═════════════════════╡
+        │ 1   ┆ 6.0 ┆ 2020-01-02 00:00:00 │
+        │ 2   ┆ 7.0 ┆ 2021-03-04 00:00:00 │
+        │ 3   ┆ 8.0 ┆ 2022-05-06 00:00:00 │
+        └─────┴─────┴─────────────────────┘
 
         Use selectors to define the columns being cast:
 
@@ -6813,6 +6879,13 @@ class DataFrame:
         │ 2   ┆ 7   ┆ 2021-03-04 │
         │ 3   ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
+
+        Cast all frame columns to the specified dtype:
+
+        >>> df.cast(pl.String).to_dict(as_series=False)
+        {'foo': ['1', '2', '3'],
+         'bar': ['6.0', '7.0', '8.0'],
+         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         return self.lazy().cast(dtypes, strict=strict).collect(_eager=True)
 
@@ -7449,6 +7522,7 @@ class DataFrame:
             self._df.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @unstable()
     def unstack(
         self,
         step: int,
@@ -7459,12 +7533,11 @@ class DataFrame:
         """
         Unstack a long table to a wide form without doing an aggregation.
 
-        This can be much faster than a pivot, because it can skip the grouping phase.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
-        Warnings
-        --------
-        This functionality is experimental and may be subject to changes
-        without it being considered a breaking change.
+        This can be much faster than a pivot, because it can skip the grouping phase.
 
         Parameters
         ----------
@@ -10289,6 +10362,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @unstable()
     def update(
         self,
         other: DataFrame,
@@ -10303,8 +10377,8 @@ class DataFrame:
         Update the values in this `DataFrame` with the values in `other`.
 
         .. warning::
-            This functionality is experimental and may change without it being
-            considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         By default, null values in the right frame are ignored. Use
         `include_nulls=False` to overwrite values in this frame with

@@ -218,10 +218,13 @@ fn modify_supertype(
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(opt_rev_map, ordering), String, _, AExpr::Literal(_))
-            | (String, Categorical(opt_rev_map, ordering), AExpr::Literal(_), _) => {
-                st = enum_or_default_categorical(opt_rev_map, *ordering);
+            (Categorical(_, ordering), String, _, AExpr::Literal(_))
+            | (String, Categorical(_, ordering), AExpr::Literal(_), _) => {
+                st = Categorical(None, *ordering)
             },
+            #[cfg(feature = "dtype-categorical")]
+            (dt @ Enum(_, _), String, _, AExpr::Literal(_))
+            | (String, dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
             (List(inner), List(other), _, AExpr::Literal(_))
@@ -357,7 +360,9 @@ impl OptimizationRule for TypeCoercionRule {
                         strict: false,
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _), DataType::String) => return Ok(None),
+                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {
+                        return Ok(None)
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)

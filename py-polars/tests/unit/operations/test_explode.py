@@ -352,3 +352,67 @@ def test_explode_null_struct() -> None:
             {"field1": None, "field2": "some", "field3": "value"},
         ]
     }
+
+
+def test_df_explode_with_array() -> None:
+    df = pl.DataFrame(
+        {
+            "arr": [["a", "b"], ["c", None], None, ["d", "e"]],
+            "list": [[1, 2], [3], [4, None], None],
+            "val": ["x", "y", "z", "q"],
+        },
+        schema={
+            "arr": pl.Array(pl.String, 2),
+            "list": pl.List(pl.Int64),
+            "val": pl.String,
+        },
+    )
+
+    expected_by_arr = pl.DataFrame(
+        {
+            "arr": ["a", "b", "c", None, None, "d", "e"],
+            "list": [[1, 2], [1, 2], [3], [3], [4, None], None, None],
+            "val": ["x", "x", "y", "y", "z", "q", "q"],
+        }
+    )
+    assert_frame_equal(df.explode(pl.col("arr")), expected_by_arr)
+
+    expected_by_list = pl.DataFrame(
+        {
+            "arr": [["a", "b"], ["a", "b"], ["c", None], None, None, ["d", "e"]],
+            "list": [1, 2, 3, 4, None, None],
+            "val": ["x", "x", "y", "z", "z", "q"],
+        },
+        schema={
+            "arr": pl.Array(pl.String, 2),
+            "list": pl.Int64,
+            "val": pl.String,
+        },
+    )
+    assert_frame_equal(df.explode(pl.col("list")), expected_by_list)
+
+    df = pl.DataFrame(
+        {
+            "arr": [["a", "b"], ["c", None], None, ["d", "e"]],
+            "list": [[1, 2], [3, 4], None, [5, None]],
+            "val": [None, 1, 2, None],
+        },
+        schema={
+            "arr": pl.Array(pl.String, 2),
+            "list": pl.List(pl.Int64),
+            "val": pl.Int64,
+        },
+    )
+    expected_by_arr_and_list = pl.DataFrame(
+        {
+            "arr": ["a", "b", "c", None, None, "d", "e"],
+            "list": [1, 2, 3, 4, None, 5, None],
+            "val": [None, None, 1, 1, 2, None, None],
+        },
+        schema={
+            "arr": pl.String,
+            "list": pl.Int64,
+            "val": pl.Int64,
+        },
+    )
+    assert_frame_equal(df.explode("arr", "list"), expected_by_arr_and_list)

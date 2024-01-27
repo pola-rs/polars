@@ -95,7 +95,7 @@ class UnsuitableSQLError(PolarsError):  # type: ignore[misc]
 
 class ChronoFormatWarning(PolarsWarning):  # type: ignore[misc]
     """
-    Warning raised when a chrono format string contains dubious patterns.
+    Warning issued when a chrono format string contains dubious patterns.
 
     Polars uses Rust's chrono crate to convert between string data and temporal data.
     The patterns used by chrono differ slightly from Python's built-in datetime module.
@@ -106,11 +106,15 @@ class ChronoFormatWarning(PolarsWarning):  # type: ignore[misc]
 
 
 class PolarsInefficientMapWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning raised when a potentially slow `map_*` operation is performed."""
+    """Warning issued when a potentially slow `map_*` operation is performed."""
 
 
 class TimeZoneAwareConstructorWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
+    """Warning issued when constructing Series from non-UTC time-zone-aware inputs."""
+
+
+class UnstableWarning(PolarsWarning):  # type: ignore[misc]
+    """Warning issued when unstable functionality is used."""
 
 
 class ArrowError(Exception):

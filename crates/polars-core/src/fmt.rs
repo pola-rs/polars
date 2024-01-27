@@ -335,20 +335,18 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_, None) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, _) => {
-                if let Some(rev_map) = rev_map {
-                    if rev_map.is_enum() {
-                        return format_array!(
-                            f,
-                            self.categorical().unwrap(),
-                            "enum",
-                            self.name(),
-                            "Series"
-                        );
-                    }
-                }
+            DataType::Categorical(_, _) => {
                 format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
             },
+
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(_, _) => format_array!(
+                f,
+                self.categorical().unwrap(),
+                "enum",
+                self.name(),
+                "Series"
+            ),
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
                 f,
@@ -969,6 +967,25 @@ fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> 
     Ok(())
 }
 
+fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
+    let width = get_str_width() * 2;
+    write!(f, "b\"")?;
+
+    for b in bytes.iter().take(width) {
+        if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() {
+            write!(f, "{}", *b as char)?;
+        } else {
+            write!(f, "\\x{:02x}", b)?;
+        }
+    }
+    if bytes.len() > width {
+        write!(f, "\"...")?;
+    } else {
+        write!(f, "\"")?;
+    }
+    Ok(())
+}
+
 impl Display for AnyValue<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 0;
@@ -987,20 +1004,8 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
-            AnyValue::Binary(d) => {
-                let max_width = get_str_width() * 2;
-                if d.len() > max_width {
-                    let s = String::from_utf8_lossy(&d[..max_width]);
-                    write!(f, "{}", format_args!("b\"{s}...\""))
-                } else {
-                    let s = String::from_utf8_lossy(d);
-                    write!(f, "{}", format_args!("b\"{s}\""))
-                }
-            },
-            AnyValue::BinaryOwned(d) => {
-                let s = String::from_utf8_lossy(d);
-                write!(f, "{}", format_args!("b\"{s}\""))
-            },
+            AnyValue::Binary(d) => format_blob(f, d),
+            AnyValue::BinaryOwned(d) => format_blob(f, d),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
@@ -1029,7 +1034,7 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _) => {
+            AnyValue::Categorical(_, _, _) | AnyValue::Enum(_, _, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },

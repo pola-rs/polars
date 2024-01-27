@@ -10,14 +10,6 @@ pub fn create_categorical_chunked_listbuilder(
     rev_map: Arc<RevMapping>,
 ) -> Box<dyn ListBuilderTrait> {
     match &*rev_map {
-        RevMapping::Enum(_, h) => Box::new(ListEnumCategoricalChunkedBuilder::new(
-            name,
-            ordering,
-            capacity,
-            values_capacity,
-            (*rev_map).clone(),
-            *h,
-        )),
         RevMapping::Local(_, h) => Box::new(ListLocalCategoricalChunkedBuilder::new(
             name,
             ordering,
@@ -35,11 +27,10 @@ pub fn create_categorical_chunked_listbuilder(
     }
 }
 
-struct ListEnumCategoricalChunkedBuilder {
+pub struct ListEnumCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
     ordering: CategoricalOrdering,
     rev_map: RevMapping,
-    hash: u128,
 }
 
 impl ListEnumCategoricalChunkedBuilder {
@@ -49,7 +40,6 @@ impl ListEnumCategoricalChunkedBuilder {
         capacity: usize,
         values_capacity: usize,
         rev_map: RevMapping,
-        hash: u128,
     ) -> Self {
         Self {
             inner: ListPrimitiveChunkedBuilder::new(
@@ -60,20 +50,16 @@ impl ListEnumCategoricalChunkedBuilder {
             ),
             ordering,
             rev_map,
-            hash,
         }
     }
 }
 
 impl ListBuilderTrait for ListEnumCategoricalChunkedBuilder {
     fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
-        let DataType::Categorical(Some(rev_map), _) = s.dtype() else {
-            polars_bail!(ComputeError: "expected categorical type")
+        let DataType::Enum(Some(rev_map), _) = s.dtype() else {
+            polars_bail!(ComputeError: "expected enum type")
         };
-        let RevMapping::Enum(_, new_hash) = &**rev_map else {
-            polars_bail!(ComputeError: "Can not combine enum with categorical, consider casting to one of the two")
-        };
-        polars_ensure!(*new_hash == self.hash,ComputeError: "Can not combine enums with different variants");
+        polars_ensure!(rev_map.same_src(&self.rev_map),ComputeError: "incompatible enum types");
         self.inner.append_series(s)
     }
 
@@ -82,8 +68,7 @@ impl ListBuilderTrait for ListEnumCategoricalChunkedBuilder {
     }
 
     fn finish(&mut self) -> ListChunked {
-        let inner_dtype =
-            DataType::Categorical(Some(Arc::new(self.rev_map.clone())), self.ordering);
+        let inner_dtype = DataType::Enum(Some(Arc::new(self.rev_map.clone())), self.ordering);
         let mut ca = self.inner.finish();
         unsafe { ca.set_dtype(DataType::List(Box::new(inner_dtype))) }
         ca

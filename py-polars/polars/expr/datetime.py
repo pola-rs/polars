@@ -16,6 +16,7 @@ from polars.utils.deprecation import (
     issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
+from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -206,6 +207,7 @@ class ExprDateTimeNameSpace:
             )
         )
 
+    @unstable()
     def round(
         self,
         every: str | timedelta,
@@ -215,6 +217,10 @@ class ExprDateTimeNameSpace:
     ) -> Expr:
         """
         Divide the date/datetime range into buckets.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Each date/datetime in the first half of the interval
         is mapped to the start of its bucket.
@@ -241,6 +247,11 @@ class ExprDateTimeNameSpace:
             .. deprecated: 0.19.3
                 This is now auto-inferred, you can safely remove this argument.
 
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
         Notes
         -----
         The `every` and `offset` argument are created with the
@@ -260,20 +271,9 @@ class ExprDateTimeNameSpace:
 
         eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Date` or :class:`Datetime`.
-
-        Warnings
-        --------
-        This functionality is currently experimental and may
-        change without it being considered a breaking change.
 
         Examples
         --------
@@ -1547,6 +1547,11 @@ class ExprDateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` expression.
+
+        Notes
+        -----
+        If converting from a time-zone-naive datetime, then conversion will happen
+        as if converting from UTC, regardless of your system's time zone.
 
         Examples
         --------

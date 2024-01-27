@@ -208,8 +208,12 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
-
 BufferInfo: TypeAlias = Tuple[int, int, int]
+
+# type alias for supported spreadsheet engines
+ExcelSpreadsheetEngine: TypeAlias = Literal[
+    "xlsx2csv", "openpyxl", "calamine", "pyxlsb"
+]
 
 
 class SeriesBuffers(TypedDict):

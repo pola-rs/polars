@@ -30,7 +30,7 @@ Polars supports reading and writing for common file formats (e.g. csv, json, par
 --8<-- "python/user-guide/basics/reading-writing.py:dataframe"
 ```
 
-In the example below we write the DataFrame to a csv file called `output.csv`. After thatread it back with `read_csv` and `print` the result for inspection.
+In the example below we write the DataFrame to a csv file called `output.csv`. After that, we read it back using `read_csv` and then `print` the result for inspection.
 
 {{code_block('user-guide/basics/reading-writing','csv',['read_csv','write_csv'])}}
 

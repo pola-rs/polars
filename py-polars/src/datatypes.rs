@@ -62,16 +62,8 @@ impl From<&DataType> for PyDataType {
             DataType::Time => Time,
             #[cfg(feature = "object")]
             DataType::Object(_, _) => Object,
-            DataType::Categorical(rev_map, _) => rev_map.as_ref().map_or_else(
-                || Categorical,
-                |rev_map| {
-                    if let RevMapping::Enum(categories, _) = &**rev_map {
-                        Enum(categories.clone())
-                    } else {
-                        Categorical
-                    }
-                },
-            ),
+            DataType::Categorical(_, _) => Categorical,
+            DataType::Enum(rev_map, _) => Enum(rev_map.as_ref().unwrap().get_categories().clone()),
             DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown | DataType::BinaryOffset => {
                 panic!("null or unknown not expected here")

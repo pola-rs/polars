@@ -326,9 +326,12 @@ pub trait ListNameSpaceImpl: AsList {
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
-        Series::try_from((ca.name(), chunks))
-            .unwrap()
-            .cast(&ca.inner_dtype())
+        // Safety: every element in list has dtype equal to its inner type
+        unsafe {
+            Series::try_from((ca.name(), chunks))
+                .unwrap()
+                .cast_unchecked(&ca.inner_dtype())
+        }
     }
 
     #[cfg(feature = "list_gather")]
@@ -509,14 +512,20 @@ pub trait ListNameSpaceImpl: AsList {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_, _) = &inner_super_type {
+                    if matches!(
+                        &inner_super_type,
+                        DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    ) {
                         inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
                     }
                 },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_, _) = &inner_super_type {
+                    if matches!(
+                        &inner_super_type,
+                        DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    ) {
                         inner_super_type = merge_dtypes(&inner_super_type, dt)?;
                     }
                 },

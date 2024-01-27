@@ -873,6 +873,11 @@ impl PyDataFrame {
         })
     }
 
+    /// Create a `Vec` of PyArrow RecordBatch instances.
+    ///
+    /// Note this will give bad results for columns with dtype `pl.Object`,
+    /// since those can't be converted correctly via PyArrow. The calling Python
+    /// code should make sure these are not included.
     pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
         self.df.as_single_chunk_par();
         Python::with_gil(|py| {
@@ -883,10 +888,14 @@ impl PyDataFrame {
                 .get_columns()
                 .iter()
                 .enumerate()
-                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_, _)))
+                .filter(|(_i, s)| {
+                    matches!(
+                        s.dtype(),
+                        DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    )
+                })
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
-
             let rbs = self
                 .df
                 .iter_chunks(false)

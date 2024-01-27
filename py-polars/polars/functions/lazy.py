@@ -17,6 +17,7 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import issue_unstable_warning, unstable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -1635,7 +1636,17 @@ def collect_all(
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Process the query in batches to handle larger-than-memory data.
+        If set to `False` (default), the entire query is processed in a single
+        batch.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. note::
+            Use :func:`explain` to see if Polars can process the query in streaming
+            mode.
 
     Returns
     -------
@@ -1648,6 +1659,10 @@ def collect_all(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+
+    if streaming:
+        issue_unstable_warning("Streaming mode is considered unstable.")
+        comm_subplan_elim = False
 
     prepared = []
 
@@ -1709,6 +1724,7 @@ def collect_all_async(
     ...
 
 
+@unstable()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -1725,6 +1741,10 @@ def collect_all_async(
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Collects into a list of DataFrame (like :func:`polars.collect_all`),
     but instead of returning them directly, they are scheduled to be collected
@@ -1756,22 +1776,27 @@ def collect_all_async(
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Process the query in batches to handle larger-than-memory data.
+        If set to `False` (default), the entire query is processed in a single
+        batch.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. note::
+            Use :func:`explain` to see if Polars can process the query in streaming
+            mode.
+
+    See Also
+    --------
+    polars.collect_all : Collect multiple LazyFrames at the same time.
+    LazyFrame.collect_async : To collect single frame.
 
     Notes
     -----
     In case of error `set_exception` is used on
     `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
-
-    Warnings
-    --------
-    This functionality is experimental and may change without it being considered a
-    breaking change.
-
-    See Also
-    --------
-    polars.collect_all : Collect multiple LazyFrames at the same time.
-    LazyFrame.collect_async: To collect single frame.
 
     Returns
     -------
@@ -1786,6 +1811,10 @@ def collect_all_async(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+
+    if streaming:
+        issue_unstable_warning("Streaming mode is considered unstable.")
+        comm_subplan_elim = False
 
     prepared = []
 
@@ -2030,6 +2059,7 @@ def from_epoch(
         raise ValueError(msg)
 
 
+@unstable()
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
@@ -2040,6 +2070,10 @@ def rolling_cov(
 ) -> Expr:
     """
     Compute the rolling covariance between two columns/ expressions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
@@ -2070,6 +2104,7 @@ def rolling_cov(
     )
 
 
+@unstable()
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
@@ -2080,6 +2115,10 @@ def rolling_corr(
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.

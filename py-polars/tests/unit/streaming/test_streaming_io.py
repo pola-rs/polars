@@ -22,7 +22,7 @@ def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
 
     path_glob = tmp_path / "small*.parquet"
     result = pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
-    assert result.shape == (1, 16)
+    assert result.shape == (1, df.width)
 
 
 def test_scan_slice_streaming(io_files_path: Path) -> None:
