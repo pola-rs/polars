@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -30,6 +30,30 @@ def test_date() -> None:
     result = pl.select(pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)"""))
     expected = pl.DataFrame({"literal": ["2023-03-01"]})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(2099, 12, 31, 23, 59, 59),
+                datetime(1999, 12, 31, 12, 30, 30),
+                datetime(1969, 12, 31, 1, 1, 1),
+                datetime(1899, 12, 31, 0, 0, 0),
+            ],
+        },
+        schema={"dtm": pl.Datetime(time_unit)},
+    )
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        result = ctx.execute("SELECT dtm::time as tm from df")["tm"].to_list()
+
+    assert result == [
+        time(23, 59, 59),
+        time(12, 30, 30),
+        time(1, 1, 1),
+        time(0, 0, 0),
+    ]
 
 
 @pytest.mark.parametrize(

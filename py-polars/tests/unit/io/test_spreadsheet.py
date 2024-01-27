@@ -410,7 +410,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
-        read_csv_options={"dtypes": {"cardinality": pl.UInt16}},
+        read_options={"dtypes": {"cardinality": pl.UInt16}},
     ).drop_nulls()
     assert df2.schema["cardinality"] == pl.UInt16
     assert df2.schema["rows_by_key"] == pl.Float64
@@ -420,7 +420,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         path_xlsx,
         sheet_name="test4",
         schema_overrides={"cardinality": pl.UInt16},
-        read_csv_options={
+        read_options={
             "dtypes": {
                 "rows_by_key": pl.Float32,
                 "iter_groups": pl.Float32,
@@ -453,12 +453,12 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         )
 
     with pytest.raises(ParameterCollisionError):
-        # cannot specify 'cardinality' in both schema_overrides and read_csv_options
+        # cannot specify 'cardinality' in both schema_overrides and read_options
         pl.read_excel(
             path_xlsx,
             sheet_name="test4",
             schema_overrides={"cardinality": pl.UInt16},
-            read_csv_options={"dtypes": {"cardinality": pl.Int32}},
+            read_options={"dtypes": {"cardinality": pl.Int32}},
         )
 
     # read multiple sheets in conjunction with 'schema_overrides'
@@ -625,29 +625,40 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             "val": [100.5, 55.0, -99.5],
         }
     )
-    header_opts = (
-        {}
-        if write_params.get("include_header", True)
-        else {"has_header": False, "new_columns": ["dtm", "str", "val"]}
-    )
-    fmt_strptime = "%Y-%m-%d"
-    if write_params.get("dtype_formats", {}).get(pl.Date) == "dd-mm-yyyy":
-        fmt_strptime = "%d-%m-%Y"
 
-    # write to an xlsx with polars, using various parameters...
-    xls = BytesIO()
-    _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
+    engine: ExcelSpreadsheetEngine
+    for engine in ("calamine", "xlsx2csv"):  # type: ignore[assignment]
+        # TODO: remove the skip when calamine supported on windows
+        if sys.platform == "win32" and engine == "calamine":
+            continue
 
-    # ...and read it back again:
-    xldf = pl.read_excel(
-        xls,
-        sheet_name="data",
-        read_csv_options=header_opts,
-    )[:3]
-    xldf = xldf.select(xldf.columns[:3]).with_columns(
-        pl.col("dtm").str.strptime(pl.Date, fmt_strptime)
-    )
-    assert_frame_equal(df, xldf)
+        table_params = (
+            {}
+            if write_params.get("include_header", True)
+            else (
+                {"has_header": False, "new_columns": ["dtm", "str", "val"]}
+                if engine == "xlsx2csv"
+                else {"header_row": None, "column_names": ["dtm", "str", "val"]}
+            )
+        )
+        fmt_strptime = "%Y-%m-%d"
+        if write_params.get("dtype_formats", {}).get(pl.Date) == "dd-mm-yyyy":
+            fmt_strptime = "%d-%m-%Y"
+
+        # write to an xlsx with polars, using various parameters...
+        xls = BytesIO()
+        _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
+
+        # ...and read it back again:
+        xldf = pl.read_excel(
+            xls,
+            sheet_name="data",
+            engine=engine,
+            read_options=table_params,
+        )[:3].select(df.columns[:3])
+        if engine == "xlsx2csv":
+            xldf = xldf.with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
+        assert_frame_equal(df, xldf)
 
 
 @pytest.mark.parametrize(
@@ -887,11 +898,44 @@ def test_excel_hidden_columns(
     assert_frame_equal(df, read_df)
 
 
-def test_invalid_engine_options() -> None:
-    # read_csv_options only applicable with 'xlsx2csv' engine
-    with pytest.raises(ValueError, match="cannot specify `read_csv_options`"):
-        pl.read_excel(
-            "",
-            engine="openpyxl",
-            read_csv_options={"sep": "\t"},
-        )
+@pytest.mark.parametrize(
+    "engine",
+    [
+        "xlsx2csv",
+        "openpyxl",
+        pytest.param(
+            "calamine",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="fastexcel not yet available on Windows",
+            ),
+        ),
+    ],
+)
+def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": [1.0, None, 3.5],
+            "c": ["x", None, "z"],
+            "d": [True, False, None],
+            "e": [date(2023, 1, 1), None, date(2023, 1, 4)],
+            "f": [
+                datetime(2023, 1, 1),
+                datetime(2000, 10, 10, 10, 10),
+                None,
+            ],
+        }
+    )
+    xls = BytesIO()
+    df.write_excel(xls)
+
+    read_df = pl.read_excel(
+        xls,
+        engine=engine,
+        schema_overrides={
+            "e": pl.Date,
+            "f": pl.Datetime("us"),
+        },
+    )
+    assert_frame_equal(df, read_df)
