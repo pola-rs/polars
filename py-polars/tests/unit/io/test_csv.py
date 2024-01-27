@@ -869,6 +869,28 @@ def test_quoting_round_trip() -> None:
     assert_frame_equal(read_df, df)
 
 
+def test_csv_field_schema_inference_with_whitespace() -> None:
+    csv = """\
+bool,bool-,-bool,float,float-,-float,int,int-,-int
+true,true , true,1.2,1.2 , 1.2,1,1 , 1
+"""
+    df = pl.read_csv(io.StringIO(csv), has_header=True)
+    expected = pl.DataFrame(
+        {
+            "bool": [True],
+            "bool-": ["true "],
+            "-bool": [" true"],
+            "float": [1.2],
+            "float-": ["1.2 "],
+            "-float": [" 1.2"],
+            "int": [1],
+            "int-": ["1 "],
+            "-int": [" 1"],
+        }
+    )
+    assert_frame_equal(df, expected)
+
+
 def test_fallback_chrono_parser() -> None:
     data = textwrap.dedent(
         """\
@@ -1215,7 +1237,8 @@ def test_float_precision(dtype: pl.Float32 | pl.Float64) -> None:
 def test_skip_rows_different_field_len() -> None:
     csv = io.StringIO(
         textwrap.dedent(
-            """a,b
+            """\
+        a,b
         1,A
         2,
         3,B
