@@ -1631,9 +1631,9 @@ def test_ignore_errors_date_parser() -> None:
 
 def test_csv_ragged_lines() -> None:
     expected = {"column_1": ["A", "B", "C"]}
-    p =  pl.read_csv(
-            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
-        ).to_dict(as_series=False)
+    pl.read_csv(
+        io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+    ).to_dict(as_series=False)
     assert (
         pl.read_csv(
             io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
