@@ -231,7 +231,10 @@ fn modify_supertype(
             | (List(other), List(inner), AExpr::Literal(_), _)
                 if inner != other =>
             {
-                st = DataType::List(inner.clone())
+                st = match &**inner {
+                    Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
+                    _ => List(inner.clone()),
+                };
             },
             // do nothing
             _ => {},
