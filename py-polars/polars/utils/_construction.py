@@ -875,9 +875,9 @@ def _expand_dict_scalars(
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
-                    updated_data[name] = pl.Series(
-                        name=name, values=[val], dtype=dtype
-                    ).extend_constant(val, array_len - 1)
+                    updated_data[name] = F.repeat(
+                        val, array_len, dtype=dtype, eager=True
+                    ).alias(name)
                 else:
                     updated_data[name] = pl.Series(
                         name=name, values=[val] * array_len, dtype=dtype
