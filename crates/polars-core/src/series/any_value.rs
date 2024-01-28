@@ -265,6 +265,7 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
 }
 
 impl Series {
+    /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
     pub fn from_any_values_and_dtype(
         name: &str,
         av: &[AnyValue],
@@ -456,28 +457,48 @@ impl Series {
     /// If `strict` is `true`, ...
     /// If no values were passed, the resulting data type is `Null`.
     pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
-        fn get_any_values_supertype(avs: &[AnyValue], strict: bool) -> PolarsResult<DataType> {
+        fn get_first_non_null_dtype(avs: &[AnyValue]) -> DataType {
+            let mut all_flat_null = true;
+            let first_non_null = avs.iter().find(|av| {
+                if !av.is_null() {
+                    all_flat_null = false
+                };
+                !av.is_nested_null()
+            });
+            match first_non_null {
+                Some(av) => av.dtype(),
+                None => {
+                    if all_flat_null {
+                        DataType::Null
+                    } else {
+                        // Second pass and check for the nested null value
+                        // that toggled `all_flat_null` to false,  e.g. a list<null>
+                        let first_nested_null = avs.iter().find(|av| !av.is_null()).unwrap();
+                        first_nested_null.dtype()
+                    }
+                },
+            }
+        }
+        fn get_any_values_supertype(avs: &[AnyValue]) -> DataType {
             let mut supertype = DataType::Null;
             let mut dtypes = PlHashSet::<DataType>::new();
-
             for av in avs {
                 if dtypes.insert(av.dtype()) {
                     supertype = match try_get_supertype(&supertype, &av.dtype()) {
                         Ok(dt) => dt,
-                        Err(_) => {
-                            if strict {
-                                polars_bail!(ComputeError: "mixed dtypes: {:?}", dtypes)
-                            } else {
-                                supertype
-                            }
-                        },
+                        // Values with incompatible data types will be set to null later
+                        Err(_) => supertype,
                     }
                 }
             }
-            Ok(supertype)
+            supertype
         }
 
-        let dtype = get_any_values_supertype(avs, strict)?;
+        let dtype = if strict {
+            get_first_non_null_dtype(avs)
+        } else {
+            get_any_values_supertype(avs)
+        };
         Self::from_any_values_and_dtype(name, avs, &dtype, strict)
     }
 }
