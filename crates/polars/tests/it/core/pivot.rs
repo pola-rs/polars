@@ -178,10 +178,10 @@ fn test_pivot_new() -> PolarsResult<()> {
         "A" => ["foo", "foo", "bar", "bar"],
         "B" => ["one", "two", "one", "two"],
         "{\"large\",\"egg\"}" => [Some(4), None, None, None],
-        "{\"large\",\"jam\"}" => [Some(4), None, None, None],
-        "{\"small\",\"egg\"}" => [Some(4), None, None, None],
-        "{\"small\",\"jam\"}" => [Some(4), None, None, None],
-        "{\"small\",\"potato\"}" => [Some(4), None, None, None],
+        "{\"large\",\"jam\"}" => [None, None, Some(4), Some(7)],
+        "{\"small\",\"egg\"}" => [None, Some(3), None, None],
+        "{\"small\",\"jam\"}" => [Some(1), Some(3), None, Some(6)],
+        "{\"small\",\"potato\"}" => [None, None, Some(5), None],
     ]?;
     assert!(out.equals_missing(&expected));
 
