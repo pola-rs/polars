@@ -162,10 +162,10 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
     expected = {
         "c1": ["A", "B"],
-        "x1|c2|C": [1, 2],
-        "x1|c2|D": [3, 4],
-        "x2|c2|C": [8, 7],
-        "x2|c2|D": [6, 5],
+        "x1|C": [1, 2],
+        "x1|D": [3, 4],
+        "x2|C": [8, 7],
+        "x2|D": [6, 5],
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -188,10 +188,10 @@ def test_pivot_duplicate_names_7731() -> None:
     ).to_dict(as_series=False)
     expected = {
         "b": [1.5, 2.5],
-        'a_{"c","e"}_{"x","x"}': [1, None],
-        'a_{"c","e"}_{"x","y"}': [None, 4],
-        'd_{"c","e"}_{"x","x"}': [7, None],
-        'd_{"c","e"}_{"x","y"}': [None, 8],
+        'a_{"x","x"}': [1, None],
+        'a_{"x","y"}': [None, 4],
+        'd_{"x","x"}': [7, None],
+        'd_{"x","y"}': [None, 8],
     }
     assert result == expected
 
