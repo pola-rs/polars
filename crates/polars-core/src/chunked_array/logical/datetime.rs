@@ -78,23 +78,20 @@ impl LogicalType for DatetimeChunked {
                 }
             },
             #[cfg(feature = "dtype-time")]
-            (Datetime(tu, _), Time) => {
-                let cast_to_time = |scaled_mod: i64, multiplier: i64| {
-                    Ok(self
-                        .0
-                        .apply_values(|v| {
-                            let t = v % scaled_mod * multiplier;
-                            t + (NS_IN_DAY * (v < 0 && t != 0) as i64)
-                        })
-                        .into_time()
-                        .into_series())
+            (Datetime(tu, _), Time) => Ok({
+                let (scaled_mod, multiplier) = match tu {
+                    TimeUnit::Nanoseconds => (NS_IN_DAY, 1i64),
+                    TimeUnit::Microseconds => (US_IN_DAY, 1_000i64),
+                    TimeUnit::Milliseconds => (MS_IN_DAY, 1_000_000i64),
                 };
-                match tu {
-                    TimeUnit::Nanoseconds => cast_to_time(NS_IN_DAY, 1i64),
-                    TimeUnit::Microseconds => cast_to_time(US_IN_DAY, 1_000i64),
-                    TimeUnit::Milliseconds => cast_to_time(MS_IN_DAY, 1_000_000i64),
-                }
-            },
+                self.0
+                    .apply_values(|v| {
+                        let t = v % scaled_mod * multiplier;
+                        t + (NS_IN_DAY * (v < 0 && t != 0) as i64)
+                    })
+                    .into_time()
+                    .into_series()
+            }),
             _ => self.0.cast(dtype),
         }
     }
