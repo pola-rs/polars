@@ -345,7 +345,7 @@ impl<'a> AnyValue<'a> {
     pub fn dtype(&self) -> DataType {
         use AnyValue::*;
         match self.as_borrowed() {
-            Null => DataType::Unknown,
+            Null => DataType::Null,
             Int8(_) => DataType::Int8,
             Int16(_) => DataType::Int16,
             Int32(_) => DataType::Int32,

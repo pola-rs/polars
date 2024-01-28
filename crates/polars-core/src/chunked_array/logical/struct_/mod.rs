@@ -112,7 +112,7 @@ impl StructChunked {
             }
             Ok(Self::new_unchecked(name, &new_fields))
         } else if fields.is_empty() {
-            let fields = &[Series::full_null("", 0, &DataType::Null)];
+            let fields = &[Series::new_null("", 0)];
             Ok(Self::new_unchecked(name, fields))
         } else {
             Ok(Self::new_unchecked(name, fields))

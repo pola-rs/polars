@@ -180,7 +180,7 @@ impl ListChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkFullNull for StructChunked {
     fn full_null(name: &str, length: usize) -> StructChunked {
-        let s = vec![Series::full_null("", length, &DataType::Null)];
+        let s = vec![Series::new_null("", length)];
         StructChunked::new_unchecked(name, &s)
     }
 }

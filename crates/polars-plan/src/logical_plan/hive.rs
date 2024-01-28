@@ -63,7 +63,7 @@ impl HivePartitions {
                     let value = value.parse::<f64>().ok()?;
                     Series::new(name, &[value])
                 } else if value == "__HIVE_DEFAULT_PARTITION__" {
-                    Series::full_null(name, 1, &DataType::Null)
+                    Series::new_null(name, 1)
                 } else {
                     Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
                 };
