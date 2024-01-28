@@ -63,13 +63,15 @@ impl LogicalType for DatetimeChunked {
             #[cfg(feature = "dtype-date")]
             (Datetime(tu, _), Date) => {
                 let cast_to_date = |tu_in_day: i64| {
-                    Ok(self
+                    let mut dt = self
                         .0
                         .apply_values(|v| v.div_euclid(tu_in_day))
                         .cast(&Int32)
                         .unwrap()
                         .into_date()
-                        .into_series())
+                        .into_series();
+                    dt.set_sorted_flag(self.is_sorted_flag());
+                    Ok(dt)
                 };
                 match tu {
                     TimeUnit::Nanoseconds => cast_to_date(NS_IN_DAY),
