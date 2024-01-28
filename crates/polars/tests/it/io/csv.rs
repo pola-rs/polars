@@ -184,8 +184,8 @@ fn test_projection() -> PolarsResult<()> {
 fn test_missing_data() {
     // missing data should not lead to parser error.
     let csv = r#"column_1,column_2,column_3
-        1,2,3
-        1,,3
+1,2,3
+1,,3
 "#;
 
     let file = Cursor::new(csv);
@@ -1132,21 +1132,6 @@ fn test_try_parse_dates() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_whitespace_skipping() -> PolarsResult<()> {
-    let csv = "a,b
-  12,   1435";
-    let file = Cursor::new(csv);
-    let out = CsvReader::new(file).finish()?;
-    let expected = df![
-        "a" => [12i64],
-        "b" => [1435i64],
-    ]?;
-    assert!(out.equals(&expected));
-
-    Ok(())
-}
-
-#[test]
 fn test_try_parse_dates_3380() -> PolarsResult<()> {
     let csv = "lat;lon;validdate;t_2m:C;precip_1h:mm
 46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00
@@ -1171,6 +1156,6 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     let col_1 = df.column("ABC").unwrap();
     let col_2 = df.column("DEF").unwrap();
     assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
-    assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
+    assert_eq!(col_2.get(0)?, AnyValue::String("  4.1"));
     Ok(())
 }
