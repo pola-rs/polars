@@ -89,7 +89,7 @@ impl LogicalType for DatetimeChunked {
                 self.0
                     .apply_values(|v| {
                         let t = v % scaled_mod * multiplier;
-                        t + (NS_IN_DAY * (v < 0 && t != 0) as i64)
+                        t + (NS_IN_DAY * (t < 0) as i64)
                     })
                     .into_time()
                     .into_series()
