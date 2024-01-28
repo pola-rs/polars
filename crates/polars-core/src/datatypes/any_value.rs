@@ -356,6 +356,11 @@ impl<'a> AnyValue<'a> {
             UInt64(_) => DataType::UInt64,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
+            Boolean(_) => DataType::Boolean,
+            String(_) => DataType::String,
+            StringOwned(_) => DataType::String,
+            Binary(_) => DataType::Binary,
+            BinaryOwned(_) => DataType::Binary,
             #[cfg(feature = "dtype-date")]
             Date(_) => DataType::Date,
             #[cfg(feature = "dtype-datetime")]
@@ -364,19 +369,23 @@ impl<'a> AnyValue<'a> {
             Time(_) => DataType::Time,
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(tu),
-            Boolean(_) => DataType::Boolean,
-            String(_) => DataType::String,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
             #[cfg(feature = "dtype-categorical")]
             Enum(_, _, _) => DataType::Enum(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
+            #[cfg(feature = "dtype-array")]
+            Array(s, width) => DataType::Array(Box::new(s.dtype().clone()), width),
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
-            Binary(_) => DataType::Binary,
-            _ => unimplemented!(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, scale) => DataType::Decimal(None, Some(scale)),
+            #[cfg(feature = "object")]
+            Object(o) => DataType::Object(o.type_name(), None),
+            #[cfg(feature = "object")]
+            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
         }
     }
     /// Extract a numerical value from the AnyValue
