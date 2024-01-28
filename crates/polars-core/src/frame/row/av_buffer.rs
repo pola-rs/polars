@@ -120,7 +120,7 @@ impl<'a> AnyValueBuffer<'a> {
             #[cfg(feature = "dtype-time")]
             (Time(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
             (Null(builder), AnyValue::Null) => builder.append_null(),
-            // Struct and List can be recursive so use anyvalues for that
+            // Struct and List can be recursive so use AnyValues for that
             (All(_, vals), v) => vals.push(v),
 
             // dynamic types
@@ -299,7 +299,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             String => AnyValueBuffer::String(StringChunkedBuilder::new("", len)),
             Null => AnyValueBuffer::Null(NullChunkedBuilder::new("", 0)),
-            // Struct and List can be recursive so use anyvalues for that
+            // Struct and List can be recursive so use AnyValues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }
     }
@@ -456,7 +456,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type
     /// belonging to [`Self`]. This should only be used with physical buffers
     ///
-    /// If a type is not primitive or String, the anyvalue will be converted to static
+    /// If a type is not primitive or String, the AnyValues will be converted to static
     ///
     /// # Safety
     /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is owned.
@@ -668,7 +668,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
                     .collect::<Vec<_>>();
                 AnyValueBufferTrusted::Struct(buffers)
             },
-            // List can be recursive so use anyvalues for that
+            // List can be recursive so use AnyValues for that
             dt => AnyValueBufferTrusted::All(dt.clone(), Vec::with_capacity(len)),
         }
     }

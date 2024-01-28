@@ -362,7 +362,7 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         #[cfg(target_arch = "windows")]
         let (seconds, microseconds) = {
             let convert = UTILS
-                .getattr(py, intern!(py, "_datetime_for_anyvalue_windows"))
+                .getattr(py, intern!(py, "_datetime_for_any_value_windows"))
                 .unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
             let out: (i64, i64) = out.extract(py).unwrap();
@@ -372,7 +372,7 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         #[cfg(not(target_arch = "windows"))]
         let (seconds, microseconds) = {
             let convert = UTILS
-                .getattr(py, intern!(py, "_datetime_for_anyvalue"))
+                .getattr(py, intern!(py, "_datetime_for_any_value"))
                 .unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
             let out: (i64, i64) = out.extract(py).unwrap();

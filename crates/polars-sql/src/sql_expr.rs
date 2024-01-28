@@ -546,7 +546,7 @@ impl SQLExprVisitor<'_> {
     }
 
     /// Visit a SQL literal (like [visit_literal]), but return AnyValue instead of Expr.
-    fn visit_anyvalue(
+    fn visit_any_value(
         &self,
         value: &SQLValue,
         op: Option<&UnaryOperator>,
@@ -669,12 +669,12 @@ impl SQLExprVisitor<'_> {
             .iter()
             .map(|e| {
                 if let SQLExpr::Value(v) = e {
-                    let av = self.visit_anyvalue(v, None)?;
+                    let av = self.visit_any_value(v, None)?;
                     Ok(av)
                 } else if let SQLExpr::UnaryOp {op, expr} = e {
                     match expr.as_ref() {
                         SQLExpr::Value(v) => {
-                            let av = self.visit_anyvalue(v, Some(op))?;
+                            let av = self.visit_any_value(v, Some(op))?;
                             Ok(av)
                         },
                         _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e))

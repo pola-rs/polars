@@ -71,7 +71,7 @@ impl LiteralValue {
         }
     }
 
-    pub fn to_anyvalue(&self) -> Option<AnyValue> {
+    pub fn to_any_value(&self) -> Option<AnyValue> {
         use LiteralValue::*;
         let av = match self {
             Null => AnyValue::Null,
@@ -336,7 +336,7 @@ impl Hash for LiteralValue {
                 data_type.hash(state)
             },
             _ => {
-                if let Some(v) = self.to_anyvalue() {
+                if let Some(v) = self.to_any_value() {
                     v.hash_impl(state, true)
                 }
             },
