@@ -118,6 +118,8 @@ pub use to_dummies::*;
 #[cfg(feature = "unique_counts")]
 pub use unique::*;
 pub use various::*;
+mod not;
+pub use not::*;
 
 pub trait SeriesSealed {
     fn as_series(&self) -> &Series;

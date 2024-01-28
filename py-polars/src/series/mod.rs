@@ -703,6 +703,11 @@ impl PySeries {
         let length = length.unwrap_or_else(|| self.series.len());
         self.series.slice(offset, length).into()
     }
+
+    pub fn not_(&self) -> PyResult<Self> {
+        let out = polars_ops::series::not(&self.series).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
 }
 
 macro_rules! impl_set_with_mask {

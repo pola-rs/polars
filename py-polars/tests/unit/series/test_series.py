@@ -330,7 +330,7 @@ def test_bitwise_ops() -> None:
 def test_bitwise_floats_invert() -> None:
     s = pl.Series([2.0, 3.0, 0.0])
 
-    with pytest.raises(pl.SchemaError):
+    with pytest.raises(pl.InvalidOperationError):
         ~s
 
 
