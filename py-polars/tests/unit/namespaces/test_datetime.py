@@ -906,6 +906,11 @@ def test_year_empty_df() -> None:
     assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
 
 
+def test_epoch_invalid() -> None:
+    with pytest.raises(InvalidOperationError, match="not supported for dtype"):
+        pl.Series([timedelta(1)]).dt.epoch()
+
+
 @pytest.mark.parametrize(
     "time_unit",
     ["ms", "us", "ns"],
