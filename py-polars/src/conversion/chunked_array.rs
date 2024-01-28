@@ -172,7 +172,7 @@ impl ToPyObject for Wrap<&DecimalChunked> {
         let py_precision = self.0.precision().unwrap_or(39).to_object(py);
         let iter = self.0.into_iter().map(|opt_v| {
             opt_v.map(|v| {
-                // TODO! use anyvalue so that we have a single impl.
+                // TODO! use AnyValue so that we have a single impl.
                 const N: usize = 3;
                 let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);

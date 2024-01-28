@@ -155,7 +155,7 @@ fn any_values_to_array(
             })
             .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
     }
-    // make sure that wrongly inferred anyvalues don't deviate from the datatype
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
     else {
         avs.iter()
             .map(|av| match av {
@@ -218,7 +218,7 @@ fn any_values_to_list(
             })
             .collect_trusted()
     }
-    // make sure that wrongly inferred anyvalues don't deviate from the datatype
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
     else {
         avs.iter()
             .map(|av| match av {

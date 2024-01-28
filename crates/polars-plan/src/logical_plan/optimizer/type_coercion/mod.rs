@@ -196,7 +196,7 @@ fn modify_supertype(
 
             // cast literal to right type if they fit in the range
             (Literal(value), _) => {
-                if let Some(lit_val) = value.to_anyvalue() {
+                if let Some(lit_val) = value.to_any_value() {
                     if type_right.value_within_range(lit_val) {
                         st = type_right.clone();
                     }
@@ -204,7 +204,7 @@ fn modify_supertype(
             },
             // cast literal to left type
             (_, Literal(value)) => {
-                if let Some(lit_val) = value.to_anyvalue() {
+                if let Some(lit_val) = value.to_any_value() {
                     if type_left.value_within_range(lit_val) {
                         st = type_left.clone();
                     }

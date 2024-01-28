@@ -521,17 +521,17 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
                 return is_in(&ca_in_super, &other_super);
             }
 
-            let mut anyvalues = Vec::with_capacity(other.len() * other.fields().len());
+            let mut any_values = Vec::with_capacity(other.len() * other.fields().len());
             // SAFETY:
             // the iterator is unsafe as the lifetime is tied to the iterator
             // so we copy to an owned buffer first
             other.into_iter().for_each(|vals| {
-                anyvalues.extend_from_slice(vals);
+                any_values.extend_from_slice(vals);
             });
 
             // then we fill the set
             let mut set = PlHashSet::with_capacity(other.len());
-            for key in anyvalues.chunks_exact(other.fields().len()) {
+            for key in any_values.chunks_exact(other.fields().len()) {
                 set.insert(key);
             }
             // physical ca_in

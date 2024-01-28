@@ -21,7 +21,7 @@ pub(super) fn position_aggregates(
     let split = _split_offsets(row_locations.len(), n_threads);
 
     // ensure the slice series are not dropped
-    // so the anyvalues are referencing correct data, if they reference arrays (struct)
+    // so the AnyValues are referencing correct data, if they reference arrays (struct)
     let n_splits = split.len();
     let mut arrays: Vec<Series> = Vec::with_capacity(n_splits);
 
@@ -115,7 +115,7 @@ where
     let split = _split_offsets(row_locations.len(), n_threads);
     let n_splits = split.len();
     // ensure the arrays are not dropped
-    // so the anyvalues are referencing correct data, if they reference arrays (struct)
+    // so the AnyValues are referencing correct data, if they reference arrays (struct)
     let mut arrays: Vec<ChunkedArray<T>> = Vec::with_capacity(n_splits);
 
     // every thread will only write to their partition
