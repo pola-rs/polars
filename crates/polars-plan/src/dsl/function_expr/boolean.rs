@@ -211,5 +211,5 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
 }
 
 fn not(s: &Series) -> PolarsResult<Series> {
-    polars_ops::series::not(s)
+    polars_ops::series::negate_bitwise(s)
 }

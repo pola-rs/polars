@@ -705,7 +705,7 @@ impl PySeries {
     }
 
     pub fn not_(&self) -> PyResult<Self> {
-        let out = polars_ops::series::not(&self.series).map_err(PyPolarsErr::from)?;
+        let out = polars_ops::series::negate_bitwise(&self.series).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 }

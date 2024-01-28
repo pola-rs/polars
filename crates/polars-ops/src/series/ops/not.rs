@@ -4,7 +4,7 @@ use polars_core::with_match_physical_integer_polars_type;
 
 use super::*;
 
-pub fn not(s: &Series) -> PolarsResult<Series> {
+pub fn negate_bitwise(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         DataType::Boolean => Ok(s.bool().unwrap().not().into_series()),
         dt if dt.is_integer() => {
