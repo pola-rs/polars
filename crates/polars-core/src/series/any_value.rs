@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::prelude::*;
+use crate::utils::try_get_supertype;
 
 fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArray<T> {
     avs.iter()
@@ -449,41 +450,35 @@ impl Series {
         Ok(s)
     }
 
+    /// Construct a new [`Series`]` from a slice of AnyValues.
+    ///
+    /// The data type of the resulting Series is the supertype of the AnyValues.
+    /// If `strict` is `true`, ...
+    /// If no values were passed, the resulting data type is `Null`.
     pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
-        let mut all_flat_null = true;
-        match avs.iter().find(|av| {
-            if !matches!(av, AnyValue::Null) {
-                all_flat_null = false;
+        fn get_any_values_supertype(avs: &[AnyValue], strict: bool) -> PolarsResult<DataType> {
+            let mut supertype = DataType::Null;
+            let mut dtypes = PlHashSet::<DataType>::new();
+
+            for av in avs {
+                if dtypes.insert(av.dtype()) {
+                    supertype = match try_get_supertype(&supertype, &av.dtype()) {
+                        Ok(dt) => dt,
+                        Err(_) => {
+                            if strict {
+                                polars_bail!(ComputeError: "mixed dtypes: {:?}", dtypes)
+                            } else {
+                                supertype
+                            }
+                        },
+                    }
+                }
             }
-            !av.is_nested_null()
-        }) {
-            None => {
-                if all_flat_null {
-                    Ok(Series::new_null(name, avs.len()))
-                } else {
-                    // second pass and check for the nested null value that toggled `all_flat_null` to false
-                    // e.g. a list<null>
-                    if let Some(av) = avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
-                        let dtype: DataType = av.into();
-                        Series::from_any_values_and_dtype(name, avs, &dtype, strict)
-                    } else {
-                        unreachable!()
-                    }
-                }
-            },
-            Some(av) => {
-                #[cfg(feature = "dtype-decimal")]
-                {
-                    if let AnyValue::Decimal(_, _) = av {
-                        let mut s = any_values_to_decimal(avs, None, None)?.into_series();
-                        s.rename(name);
-                        return Ok(s);
-                    }
-                }
-                let dtype: DataType = av.into();
-                Series::from_any_values_and_dtype(name, avs, &dtype, strict)
-            },
+            Ok(supertype)
         }
+
+        let dtype = get_any_values_supertype(avs, strict)?;
+        Self::from_any_values_and_dtype(name, avs, &dtype, strict)
     }
 }
 
