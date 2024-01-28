@@ -453,13 +453,19 @@ impl Series {
 
     /// Construct a new [`Series`]` from a slice of AnyValues.
     ///
-    /// The data type of the resulting Series is the supertype of the AnyValues.
-    /// If `strict` is `true`, ...
-    /// If no values were passed, the resulting data type is `Null`.
-    pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
-        fn get_first_non_null_dtype(avs: &[AnyValue]) -> DataType {
+    /// The data type of the resulting Series is determined by the `values`
+    /// and the `strict` parameter:
+    /// - If `strict` is `true`, the data type is equal to the data type of the
+    ///   first non-null value. If any other non-null values do not match this
+    ///   data type, an error is raised.
+    /// - If `strict` is `false`, the data type is the supertype of the
+    ///   `values`. The supertype is determined by a pass over the values.
+    ///   Values encountered that do not match the supertype are set to null.
+    /// - If no values were passed, the resulting data type is `Null`.
+    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Series> {
+        fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
             let mut all_flat_null = true;
-            let first_non_null = avs.iter().find(|av| {
+            let first_non_null = values.iter().find(|av| {
                 if !av.is_null() {
                     all_flat_null = false
                 };
@@ -471,18 +477,18 @@ impl Series {
                     if all_flat_null {
                         DataType::Null
                     } else {
-                        // Second pass and check for the nested null value
-                        // that toggled `all_flat_null` to false,  e.g. a list<null>
-                        let first_nested_null = avs.iter().find(|av| !av.is_null()).unwrap();
+                        // Second pass to check for the nested null value that
+                        // toggled `all_flat_null` to false, e.g. a List(Null)
+                        let first_nested_null = values.iter().find(|av| !av.is_null()).unwrap();
                         first_nested_null.dtype()
                     }
                 },
             }
         }
-        fn get_any_values_supertype(avs: &[AnyValue]) -> DataType {
+        fn get_any_values_supertype(values: &[AnyValue]) -> DataType {
             let mut supertype = DataType::Null;
             let mut dtypes = PlHashSet::<DataType>::new();
-            for av in avs {
+            for av in values {
                 if dtypes.insert(av.dtype()) {
                     supertype = match try_get_supertype(&supertype, &av.dtype()) {
                         Ok(dt) => dt,
@@ -495,10 +501,10 @@ impl Series {
         }
 
         let dtype = if strict {
-            get_first_non_null_dtype(avs)
+            get_first_non_null_dtype(values)
         } else {
-            get_any_values_supertype(avs)
+            get_any_values_supertype(values)
         };
-        Self::from_any_values_and_dtype(name, avs, &dtype, strict)
+        Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
 }
