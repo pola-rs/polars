@@ -395,6 +395,7 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
     ):
         series.cast(enum_dtype)
 
+
 def test_enum_creating_col_expr() -> None:
     df = pl.DataFrame(
         {

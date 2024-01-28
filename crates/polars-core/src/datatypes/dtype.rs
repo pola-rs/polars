@@ -80,6 +80,7 @@ impl PartialEq for DataType {
         use DataType::*;
         {
             match (self, other) {
+                // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
                 (Categorical(_, _), Categorical(_, _)) | (Enum(_, _), Enum(_, _)) => true,
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
