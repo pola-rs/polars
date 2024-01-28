@@ -517,9 +517,10 @@ impl ApplyExpr {
                         return one_equals(min);
                     }
 
-                    let all_smaller = || Some(ChunkCompare::lt(input, min).ok()?.all());
-                    let all_bigger = || Some(ChunkCompare::gt(input, max).ok()?.all());
-                    Some(!all_smaller()? && !all_bigger()?)
+                    let smaller = ChunkCompare::lt(input, min).ok()?;
+                    let bigger = ChunkCompare::gt(input, max).ok()?;
+
+                    Some(!(smaller | bigger).all())
                 };
 
                 Ok(should_read().unwrap_or(true))
