@@ -451,7 +451,7 @@ impl Series {
         Ok(s)
     }
 
-    /// Construct a new [`Series`]` from a slice of AnyValues.
+    /// Construct a new [`Series`] from a slice of AnyValues.
     ///
     /// The data type of the resulting Series is determined by the `values`
     /// and the `strict` parameter:
