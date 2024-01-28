@@ -469,6 +469,20 @@ impl<'a> AnyValue<'a> {
         )
     }
 
+    pub fn is_null(&self) -> bool {
+        matches!(self, AnyValue::Null)
+    }
+
+    pub fn is_nested_null(&self) -> bool {
+        match self {
+            AnyValue::Null => true,
+            AnyValue::List(s) => s.null_count() == s.len(),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
+            _ => false,
+        }
+    }
+
     pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
         fn cast_numeric<'a>(av: &AnyValue, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
             Ok(match dtype {
@@ -840,16 +854,6 @@ impl<'a> AnyValue<'a> {
                 Some(s)
             },
             _ => None,
-        }
-    }
-
-    pub fn is_nested_null(&self) -> bool {
-        match self {
-            AnyValue::Null => true,
-            AnyValue::List(s) => s.dtype().is_nested_null(),
-            #[cfg(feature = "dtype-struct")]
-            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
-            _ => false,
         }
     }
 }
