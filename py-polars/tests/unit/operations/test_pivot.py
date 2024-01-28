@@ -188,10 +188,10 @@ def test_pivot_duplicate_names_7731() -> None:
     ).to_dict(as_series=False)
     expected = {
         "b": [1.5, 2.5],
-        'a_c_{"x","x"}': [1, None],
-        'a_c_{"x","y"}': [None, 4],
-        'd_c_{"x","x"}': [7, None],
-        'd_c_{"x","y"}': [None, 8],
+        'a_{"c","e"}_{"x","x"}': [1, None],
+        'a_{"c","e"}_{"x","y"}': [None, 4],
+        'd_{"c","e"}_{"x","x"}': [7, None],
+        'd_{"c","e"}_{"x","y"}': [None, 8],
     }
     assert result == expected
 
@@ -239,6 +239,24 @@ def test_pivot_struct_13120() -> None:
     )
     expected = {"index": [1, 2, 3], '{"a",123}': [4, 5, 6], '{"b",456}': [7, 8, 9]}
     assert result == expected
+
+
+def test_pivot_name_already_exists() -> None:
+    # This should be extremely rare...but still, good to check it
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b"],
+            "b": ["a", "b"],
+            '{"a","b"}': [1, 2],
+        }
+    )
+    with pytest.raises(ComputeError, match="already exists in the DataFrame"):
+        df.pivot(
+            values='{"a","b"}',
+            index="a",
+            columns=["a", "b"],
+            aggregate_function="first",
+        )
 
 
 def test_pivot_floats() -> None:

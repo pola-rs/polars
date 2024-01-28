@@ -192,17 +192,25 @@ fn pivot_impl(
 
     let mut final_cols = vec![];
 
-    let column_column_name = &columns[0];
+    let mut column_column_name = columns[0].clone();
     let mut binding = pivot_df.clone();
     let pivot_df: &DataFrame = if columns.len() > 1 {
         let fields = columns
             .iter()
             .map(|s| pivot_df.column(s).unwrap().clone())
             .collect::<Vec<_>>();
-        let columns_struct = StructChunked::new(column_column_name, &fields)
+        column_column_name = format!("{{\"{}\"}}", columns.join("\",\""));
+        if pivot_df
+            .get_column_names()
+            .contains(&column_column_name.as_str())
+        {
+            polars_bail!(ComputeError: "cannot use column name {column_column_name} that \
+            already exists in the DataFrame. Please rename it prior to calling `pivot`.")
+        }
+        let columns_struct = StructChunked::new(&column_column_name, &fields)
             .unwrap()
             .into_series();
-        binding.with_column(columns_struct).unwrap()
+        unsafe { binding.with_column_unchecked(columns_struct) }
     } else {
         pivot_df
     };
@@ -220,7 +228,7 @@ fn pivot_impl(
         };
 
         let (col, row) = POOL.join(
-            || positioning::compute_col_idx(pivot_df, column_column_name, &groups),
+            || positioning::compute_col_idx(pivot_df, &column_column_name, &groups),
             || positioning::compute_row_idx(pivot_df, index, &groups, count),
         );
         let (col_locations, column_agg) = col?;
