@@ -1,5 +1,7 @@
 use std::ops::Not;
 
+use polars_core::with_match_physical_integer_polars_type;
+
 use super::*;
 #[cfg(feature = "is_in")]
 use crate::wrap;
@@ -36,12 +38,25 @@ pub enum BooleanFunction {
     IsIn,
     AllHorizontal,
     AnyHorizontal,
+    // Also bitwise negate
     Not,
 }
 
 impl BooleanFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        mapper.with_dtype(DataType::Boolean)
+        match self {
+            BooleanFunction::Not => {
+                mapper.try_map_dtype(|dtype| {
+                    match dtype {
+                        DataType::Boolean => Ok(DataType::Boolean),
+                        dt if dt.is_integer() => Ok(dt.clone()),
+                        dt => polars_bail!(InvalidOperation: "dtype {:?} not supported in 'not' operation", dt) 
+                    }
+                })
+
+            },
+            _ => mapper.with_dtype(DataType::Boolean),
+        }
     }
 }
 
@@ -200,5 +215,14 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
 }
 
 fn not(s: &Series) -> PolarsResult<Series> {
-    Ok(s.bool()?.not().into_series())
+    match s.dtype() {
+        DataType::Boolean => Ok(s.bool().unwrap().not().into_series()),
+        dt if dt.is_integer() => {
+            with_match_physical_integer_polars_type!(dt, |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_any().downcast_ref().unwrap();
+                    Ok(ca.apply_values(|v| !v).into_series())
+            })
+        },
+        dt => polars_bail!(InvalidOperation: "dtype {:?} not supported in 'not' operation", dt),
+    }
 }
