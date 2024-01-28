@@ -991,10 +991,10 @@ impl Display for AnyValue<'_> {
         let width = 0;
         match self {
             AnyValue::Null => write!(f, "null"),
-            AnyValue::UInt8(v) => write!(f, "{v}"),
-            AnyValue::UInt16(v) => write!(f, "{v}"),
-            AnyValue::UInt32(v) => write!(f, "{v}"),
-            AnyValue::UInt64(v) => write!(f, "{v}"),
+            AnyValue::UInt8(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt16(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt32(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt64(v) => fmt_integer(f, width, *v),
             AnyValue::Int8(v) => fmt_integer(f, width, *v),
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),

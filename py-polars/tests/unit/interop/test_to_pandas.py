@@ -179,3 +179,18 @@ def test_object_to_pandas_series(use_pyarrow_extension_array: bool) -> None:
         ),
         pd.Series(values, dtype=object, name="a"),
     )
+
+
+@pytest.mark.parametrize("polars_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
+def test_series_to_pandas_categorical(polars_dtype: pl.PolarsDataType) -> None:
+    s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
+    result = s.to_pandas()
+    expected = pd.Series(["a", "b", "a"], name="x", dtype="category")
+    pd.testing.assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("polars_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
+def test_series_to_pandas_categorical_pyarrow(polars_dtype: pl.PolarsDataType) -> None:
+    s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
+    result = s.to_pandas(use_pyarrow_extension_array=True)
+    assert s.to_list() == result.to_list()

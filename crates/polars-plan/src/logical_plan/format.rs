@@ -423,7 +423,7 @@ impl Debug for LiteralValue {
                 }
             },
             _ => {
-                let av = self.to_anyvalue().unwrap();
+                let av = self.to_any_value().unwrap();
                 write!(f, "{av}")
             },
         }

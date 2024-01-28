@@ -292,14 +292,14 @@ def _get_first_non_none(values: Sequence[Any | None]) -> Any:
         return next((v for v in values if v is not None), None)
 
 
-def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeries:
+def sequence_from_any_value_or_object(name: str, values: Sequence[Any]) -> PySeries:
     """
     Last resort conversion.
 
     AnyValues are most flexible and if they fail we go for object types
     """
     try:
-        return PySeries.new_from_anyvalues(name, values, strict=True)
+        return PySeries.new_from_any_values(name, values, strict=True)
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
         return PySeries.new_object(name, values, _strict=False)
@@ -309,7 +309,7 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
         raise
 
 
-def sequence_from_anyvalue_and_dtype_or_object(
+def sequence_from_any_value_and_dtype_or_object(
     name: str, values: Sequence[Any], dtype: PolarsDataType
 ) -> PySeries:
     """
@@ -318,7 +318,7 @@ def sequence_from_anyvalue_and_dtype_or_object(
     AnyValues are most flexible and if they fail we go for object types
     """
     try:
-        return PySeries.new_from_anyvalues_and_dtype(name, values, dtype, strict=True)
+        return PySeries.new_from_any_values_and_dtype(name, values, dtype, strict=True)
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
         return PySeries.new_object(name, values, _strict=False)
@@ -520,9 +520,9 @@ def sequence_to_pyseries(
                     msg
                 )
 
-            # we use anyvalue builder to create the datetime array
-            # we store the values internally as UTC and set the timezone
-            py_series = PySeries.new_from_anyvalues(name, values, strict)
+            # We use the AnyValue builder to create the datetime array
+            # We store the values internally as UTC and set the timezone
+            py_series = PySeries.new_from_any_values(name, values, strict)
             time_unit = getattr(dtype, "time_unit", None)
             if time_unit is None or values_dtype == Date:
                 s = wrap_s(py_series)
@@ -588,11 +588,11 @@ def sequence_to_pyseries(
             if isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
             if dtype:
-                srs = sequence_from_anyvalue_and_dtype_or_object(name, values, dtype)
+                srs = sequence_from_any_value_and_dtype_or_object(name, values, dtype)
                 if not dtype.is_(srs.dtype()):
                     srs = srs.cast(dtype, strict=False)
                 return srs
-            return sequence_from_anyvalue_or_object(name, values)
+            return sequence_from_any_value_or_object(name, values)
 
         elif python_dtype == pl.Series:
             return PySeries.new_series_list(name, [v._s for v in values], strict)
@@ -603,7 +603,7 @@ def sequence_to_pyseries(
             constructor = py_type_to_constructor(python_dtype)
             if constructor == PySeries.new_object:
                 try:
-                    srs = PySeries.new_from_anyvalues(name, values, strict)
+                    srs = PySeries.new_from_any_values(name, values, strict)
                     if _check_for_numpy(python_dtype, check_type=False) and isinstance(
                         np.bool_(True), np.generic
                     ):
@@ -614,7 +614,7 @@ def sequence_to_pyseries(
 
                 except RuntimeError:
                     # raised if we cannot convert to Wrap<AnyValue>
-                    return sequence_from_anyvalue_or_object(name, values)
+                    return sequence_from_any_value_or_object(name, values)
 
             return _construct_series_with_fallbacks(
                 constructor, name, values, dtype, strict=strict
@@ -1809,10 +1809,10 @@ def pandas_to_pydf(
     )
 
 
-def coerce_arrow(array: pa.Array, *, rechunk: bool = True) -> pa.Array:
+def coerce_arrow(array: pa.Array) -> pa.Array:
     import pyarrow.compute as pc
 
-    if hasattr(array, "num_chunks") and array.num_chunks > 1 and rechunk:
+    if hasattr(array, "num_chunks") and array.num_chunks > 1:
         # small integer keys can often not be combined, so let's already cast
         # to the uint32 used by polars
         if pa.types.is_dictionary(array.type) and (

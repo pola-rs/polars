@@ -4501,7 +4501,7 @@ class Series:
         Name: b, dtype: int64[pyarrow]
         """
         if self.dtype == Object:
-            # Can't convert via PyArrow, so do it via NumPy:
+            # Can't convert via PyArrow, so do it via NumPy
             return pd.Series(self.to_numpy(), dtype=object, name=self.name)
 
         if use_pyarrow_extension_array:
@@ -4517,6 +4517,10 @@ class Series:
                 )
 
         pa_arr = self.to_arrow()
+        # pandas does not support unsigned dictionary indices
+        if pa.types.is_dictionary(pa_arr.type):
+            pa_arr = pa_arr.cast(pa.dictionary(pa.int64(), pa.large_string()))
+
         if use_pyarrow_extension_array:
             pd_series = pa_arr.to_pandas(
                 self_destruct=True,

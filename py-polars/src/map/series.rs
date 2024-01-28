@@ -49,7 +49,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
 
-        // empty dtype is incorrect use anyvalues.
+        // Empty dtype is incorrect, use AnyValues.
         if series.is_empty() {
             let av = out.extract::<Wrap<AnyValue>>()?;
             return applyer
@@ -76,7 +76,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
             .map(|ca| ca.into_series().into());
         match result {
             Ok(out) => Ok(out),
-            // try anyvalue
+            // Try AnyValue
             Err(_) => {
                 let av = out.extract::<Wrap<AnyValue>>()?;
                 applyer

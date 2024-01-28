@@ -218,8 +218,8 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
     return dt.astimezone(_tzinfo)
 
 
-def _datetime_for_anyvalue(dt: datetime) -> tuple[int, int]:
-    """Used in pyo3 anyvalue conversion."""
+def _datetime_for_any_value(dt: datetime) -> tuple[int, int]:
+    """Used in PyO3 AnyValue conversion."""
     # returns (s, ms)
     if dt.tzinfo is None:
         return (
@@ -229,8 +229,8 @@ def _datetime_for_anyvalue(dt: datetime) -> tuple[int, int]:
     return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
-def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
-    """Used in pyo3 anyvalue conversion."""
+def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
+    """Used in PyO3 AnyValue conversion."""
     if dt.tzinfo is None:
         dt = _localize(dt, "UTC")
     # returns (s, ms)

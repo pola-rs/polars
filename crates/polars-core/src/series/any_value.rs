@@ -155,7 +155,7 @@ fn any_values_to_array(
             })
             .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
     }
-    // make sure that wrongly inferred anyvalues don't deviate from the datatype
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
     else {
         avs.iter()
             .map(|av| match av {
@@ -218,7 +218,7 @@ fn any_values_to_list(
             })
             .collect_trusted()
     }
-    // make sure that wrongly inferred anyvalues don't deviate from the datatype
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
     else {
         avs.iter()
             .map(|av| match av {
@@ -423,7 +423,7 @@ impl Series {
                     },
                 }
             },
-            DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
+            DataType::Null => Series::new_null(name, av.len()),
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 let ca = if let Some(single_av) = av.first() {
@@ -459,7 +459,7 @@ impl Series {
         }) {
             None => {
                 if all_flat_null {
-                    Ok(Series::full_null(name, avs.len(), &DataType::Null))
+                    Ok(Series::new_null(name, avs.len()))
                 } else {
                     // second pass and check for the nested null value that toggled `all_flat_null` to false
                     // e.g. a list<null>

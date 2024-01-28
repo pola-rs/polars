@@ -534,7 +534,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                 LiteralValue::Series(SpecialEq::new(s))
             },
             _ => {
-                let Some(av) = lv.to_anyvalue() else {
+                let Some(av) = lv.to_any_value() else {
                     return Ok(None);
                 };
                 if dtype == &av.dtype() {

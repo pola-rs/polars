@@ -255,7 +255,7 @@ pub trait TemporalMethods: AsSeries {
     /// Convert date(time) object to timestamp in [`TimeUnit`].
     fn timestamp(&self, tu: TimeUnit) -> PolarsResult<Int64Chunked> {
         let s = self.as_series();
-        if matches!(s.dtype(), DataType::Time) {
+        if matches!(s.dtype(), DataType::Time | DataType::Duration(_)) {
             polars_bail!(opq = timestamp, s.dtype());
         } else {
             s.cast(&DataType::Datetime(tu, None))

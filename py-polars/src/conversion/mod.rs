@@ -1,4 +1,4 @@
-pub(crate) mod anyvalue;
+pub(crate) mod any_value;
 mod chunked_array;
 
 use std::fmt::{Display, Formatter};
