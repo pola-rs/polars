@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pickle
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -664,3 +664,91 @@ def test_as_list_logical_type() -> None:
     assert df.group_by(True).agg(
         pl.col("timestamp").gather(pl.col("value").arg_max())
     ).to_dict(as_series=False) == {"literal": [True], "timestamp": [[date(2000, 1, 1)]]}
+
+
+@pytest.fixture()
+def data_dispersion() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "int": [[1, 2, 3, 4, 5]],
+            "float": [[1.0, 2.0, 3.0, 4.0, 5.0]],
+            "duration": [[1000, 2000, 3000, 4000, 5000]],
+        },
+        schema={
+            "int": pl.List(pl.Int64),
+            "float": pl.List(pl.Float64),
+            "duration": pl.List(pl.Duration),
+        },
+    )
+
+
+def test_list_var(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").list.var().name.suffix("_var"),
+        pl.col("float").list.var().name.suffix("_var"),
+        pl.col("duration").list.var().name.suffix("_var"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_var", [2.5], dtype=pl.Float64),
+            pl.Series("float_var", [2.5], dtype=pl.Float64),
+            pl.Series(
+                "duration_var",
+                [timedelta(microseconds=2000)],
+                dtype=pl.Duration(time_unit="ms"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_list_std(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").list.std().name.suffix("_std"),
+        pl.col("float").list.std().name.suffix("_std"),
+        pl.col("duration").list.std().name.suffix("_std"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series(
+                "duration_std",
+                [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_list_median(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").list.median().name.suffix("_median"),
+        pl.col("float").list.median().name.suffix("_median"),
+        pl.col("duration").list.median().name.suffix("_median"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_median", [3.0], dtype=pl.Float64),
+            pl.Series("float_median", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_median",
+                [timedelta(microseconds=3000)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)

@@ -89,6 +89,75 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_sum())
 
+    def std(self, ddof: int = 1) -> Expr:
+        """
+        Compute the std of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.std())
+        shape: (2, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.707107 │
+        │ 0.707107 │
+        └──────────┘
+        """
+        return wrap_expr(self._pyexpr.arr_std(ddof))
+
+    def var(self, ddof: int = 1) -> Expr:
+        """
+        Compute the var of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.var())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.5 │
+        │ 0.5 │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_var(ddof))
+
+    def median(self) -> Expr:
+        """
+        Compute the median of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.median())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.5 │
+        │ 3.5 │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_median())
+
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
         Get the unique/distinct values in the array.

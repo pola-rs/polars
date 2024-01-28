@@ -31,6 +31,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.lengths
     Series.list.max
     Series.list.mean
+    Series.list.median
     Series.list.min
     Series.list.reverse
     Series.list.sample
@@ -41,9 +42,11 @@ The following methods are available under the `Series.list` attribute.
     Series.list.shift
     Series.list.slice
     Series.list.sort
+    Series.list.std
     Series.list.sum
     Series.list.tail
     Series.list.take
     Series.list.to_array
     Series.list.to_struct
     Series.list.unique
+    Series.list.var

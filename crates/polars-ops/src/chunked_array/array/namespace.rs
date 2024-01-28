@@ -51,6 +51,21 @@ pub trait ArrayNameSpace: AsArray {
         }
     }
 
+    fn array_median(&self) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        dispersion::median_with_nulls(ca)
+    }
+
+    fn array_std(&self, ddof: u8) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        dispersion::std_with_nulls(ca, ddof)
+    }
+
+    fn array_var(&self, ddof: u8) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        dispersion::var_with_nulls(ca, ddof)
+    }
+
     fn array_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_array();
         ca.try_apply_amortized_to_list(|s| s.as_ref().unique())

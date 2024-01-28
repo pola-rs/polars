@@ -242,6 +242,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.median()
     }
 
+    fn std(&self, ddof: u8) -> Option<f64> {
+        self.0.std(ddof)
+    }
+
+    fn var(&self, ddof: u8) -> Option<f64> {
+        self.0.var(ddof)
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other.to_physical_repr().into_owned();
@@ -419,10 +427,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn var_as_series(&self, ddof: u8) -> PolarsResult<Series> {
         Ok(self
             .0
+            .cast_time_unit(TimeUnit::Milliseconds)
             .var_as_series(ddof)
             .cast(&self.dtype().to_physical())
             .unwrap()
-            .into_duration(self.0.time_unit()))
+            .into_duration(TimeUnit::Milliseconds))
     }
     fn median_as_series(&self) -> PolarsResult<Series> {
         Ok(self
