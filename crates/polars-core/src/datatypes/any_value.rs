@@ -346,6 +346,7 @@ impl<'a> AnyValue<'a> {
         use AnyValue::*;
         match self.as_borrowed() {
             Null => DataType::Null,
+            Boolean(_) => DataType::Boolean,
             Int8(_) => DataType::Int8,
             Int16(_) => DataType::Int16,
             Int32(_) => DataType::Int32,
@@ -356,18 +357,15 @@ impl<'a> AnyValue<'a> {
             UInt64(_) => DataType::UInt64,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
-            Boolean(_) => DataType::Boolean,
-            String(_) => DataType::String,
-            StringOwned(_) => DataType::String,
-            Binary(_) => DataType::Binary,
-            BinaryOwned(_) => DataType::Binary,
+            String(_) | StringOwned(_) => DataType::String,
+            Binary(_) | BinaryOwned(_) => DataType::Binary,
             #[cfg(feature = "dtype-date")]
             Date(_) => DataType::Date,
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => DataType::Datetime(tu, tz.clone()),
-            #[cfg(feature = "dtype-time")]
             Time(_) => DataType::Time,
             #[cfg(feature = "dtype-duration")]
+            Datetime(_, tu, tz) => DataType::Datetime(tu, tz.clone()),
+            #[cfg(feature = "dtype-time")]
             Duration(_, tu) => DataType::Duration(tu),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
@@ -626,6 +624,69 @@ impl<'a> AnyValue<'a> {
 impl From<AnyValue<'_>> for DataType {
     fn from(value: AnyValue<'_>) -> Self {
         value.dtype()
+    }
+}
+
+impl<'a> From<&AnyValue<'a>> for DataType {
+    fn from(val: &AnyValue<'a>) -> Self {
+        use AnyValue::*;
+        match val {
+            Null => DataType::Null,
+            Boolean(_) => DataType::Boolean,
+            Int8(_) => DataType::Int8,
+            Int16(_) => DataType::Int16,
+            Int32(_) => DataType::Int32,
+            Int64(_) => DataType::Int64,
+            UInt8(_) => DataType::UInt8,
+            UInt16(_) => DataType::UInt16,
+            UInt32(_) => DataType::UInt32,
+            UInt64(_) => DataType::UInt64,
+            Float32(_) => DataType::Float32,
+            Float64(_) => DataType::Float64,
+            String(_) | StringOwned(_) => DataType::String,
+            Binary(_) | BinaryOwned(_) => DataType::Binary,
+            #[cfg(feature = "dtype-date")]
+            Date(_) => DataType::Date,
+            #[cfg(feature = "dtype-time")]
+            Time(_) => DataType::Time,
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
+            #[cfg(feature = "dtype-duration")]
+            Duration(_, tu) => DataType::Duration(*tu),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, rev_map, arr) => {
+                if arr.is_null() {
+                    DataType::Categorical(Some(Arc::new((*rev_map).clone())), Default::default())
+                } else {
+                    let array = unsafe { arr.deref_unchecked().clone() };
+                    let rev_map = RevMapping::build_local(array);
+                    DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
+                }
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, rev_map, arr) => {
+                if arr.is_null() {
+                    DataType::Enum(Some(Arc::new((*rev_map).clone())), Default::default())
+                } else {
+                    let array = unsafe { arr.deref_unchecked().clone() };
+                    let rev_map = RevMapping::build_local(array);
+                    DataType::Enum(Some(Arc::new(rev_map)), Default::default())
+                }
+            },
+            List(s) => DataType::List(Box::new(s.dtype().clone())),
+            #[cfg(feature = "dtype-array")]
+            Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
+            #[cfg(feature = "dtype-struct")]
+            Struct(_, _, flds) => DataType::Struct(flds.to_vec()),
+            #[cfg(feature = "dtype-struct")]
+            StructOwned(payload) => DataType::Struct(payload.1.to_vec()),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
+            #[cfg(feature = "object")]
+            Object(o) => DataType::Object(o.type_name(), None),
+            #[cfg(feature = "object")]
+            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
+        }
     }
 }
 
