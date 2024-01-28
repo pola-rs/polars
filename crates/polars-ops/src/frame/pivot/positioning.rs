@@ -210,6 +210,26 @@ pub(super) fn compute_col_idx(
             let ca = column_agg_physical.bit_repr_large();
             compute_col_idx_numeric(&ca)
         },
+        Struct(_) => {
+            let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+            let mut idx = 0 as IdxSize;
+            let ca = column_agg_physical.struct_()?;
+            (0..(column_agg_physical.len()))
+                .map(|row_nr| {
+                    let v: Vec<_> = ca
+                        .fields()
+                        .iter()
+                        .map(|field| unsafe { field.get_unchecked(row_nr) })
+                        .collect();
+                    let idx = *col_to_idx.entry(v).or_insert_with(|| {
+                        let old_idx = idx;
+                        idx += 1;
+                        old_idx
+                    });
+                    idx
+                })
+                .collect()
+        },
         _ => {
             let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
             let mut idx = 0 as IdxSize;
