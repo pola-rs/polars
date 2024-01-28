@@ -3727,6 +3727,7 @@ class Series:
             true
         ]
         """
+        return self._from_pyseries(self._s.not_())
 
     def is_null(self) -> Series:
         """
