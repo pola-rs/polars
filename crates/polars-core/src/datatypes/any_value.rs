@@ -343,6 +343,9 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 
 impl<'a> AnyValue<'a> {
     /// Get the matching [`DataType`] for this [`AnyValue`]`.
+    ///
+    /// Note: For `Categorical` and `Enum` values, the exact mapping information
+    /// is not preserved in the result for performance reasons.
     pub fn dtype(&self) -> DataType {
         use AnyValue::*;
         match self {
@@ -369,25 +372,9 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(*tu),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, rev_map, arr) => {
-                if arr.is_null() {
-                    DataType::Categorical(Some(Arc::new((*rev_map).clone())), Default::default())
-                } else {
-                    let array = unsafe { arr.deref_unchecked().clone() };
-                    let rev_map = RevMapping::build_local(array);
-                    DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
-                }
-            },
+            Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
             #[cfg(feature = "dtype-categorical")]
-            Enum(_, rev_map, arr) => {
-                if arr.is_null() {
-                    DataType::Enum(Some(Arc::new((*rev_map).clone())), Default::default())
-                } else {
-                    let array = unsafe { arr.deref_unchecked().clone() };
-                    let rev_map = RevMapping::build_local(array);
-                    DataType::Enum(Some(Arc::new(rev_map)), Default::default())
-                }
-            },
+            Enum(_, _, _) => DataType::Enum(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-array")]
             Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
