@@ -284,8 +284,9 @@ where
                 _ => unimplemented!(),
             }
         },
-        Slice { offset, len, .. } => {
-            let slice = SliceSink::new(*offset as u64, *len as usize);
+        Slice { input, offset, len } => {
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            let slice = SliceSink::new(*offset as u64, *len as usize, input_schema.into_owned());
             Box::new(slice) as Box<dyn SinkTrait>
         },
         Sort {
