@@ -223,11 +223,6 @@ impl DatetimeChunked {
         self.2 = Some(Datetime(self.time_unit(), Some(time_zone)));
         Ok(())
     }
-    #[cfg(feature = "timezones")]
-    pub fn convert_time_zone(mut self, time_zone: TimeZone) -> PolarsResult<Self> {
-        self.set_time_zone(time_zone)?;
-        Ok(self)
-    }
 }
 
 #[cfg(test)]
