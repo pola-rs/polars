@@ -481,8 +481,11 @@ fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked
 fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
     let mapper = |av: &AnyValue| match av {
         AnyValue::Boolean(b) => Some(*b),
-        // TODO: Interpret integers/floats as booleans
-        _ => None,
+        AnyValue::Null => None,
+        av => match av.cast(&DataType::Boolean) {
+            AnyValue::Boolean(b) => Some(b),
+            _ => None,
+        },
     };
     values.iter().map(mapper).collect_trusted()
 }
