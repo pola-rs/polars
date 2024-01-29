@@ -17,6 +17,7 @@ from polars.utils._wrap import wrap_s
     [
         (pl.Boolean, [True, False, None]),
         (pl.Binary, [b"123", b"xyz", None]),
+        (pl.String, ["123", "xyz", None]),
     ],
 )
 def test_fallback_with_dtype_strict(
@@ -33,6 +34,7 @@ def test_fallback_with_dtype_strict(
     [
         (pl.Boolean, [0, 1]),
         (pl.Binary, ["123", "xyz"]),
+        (pl.String, [b"123", b"xyz"]),
     ],
 )
 def test_fallback_with_dtype_strict_failure(
@@ -52,8 +54,13 @@ def test_fallback_with_dtype_strict_failure(
         ),
         (
             pl.Binary,
-            [b"123", b"xyz", None],
-            [b"123", b"xyz", None],
+            [b"123", "xyz", 100, True, None],
+            [b"123", b"xyz", None, None, None],
+        ),
+        (
+            pl.String,
+            ["xyz", 1, 2.5, date(1970, 1, 1), True, b"123", None],
+            ["xyz", "1", "2.5", "1970-01-01", "true", None, None],
         ),
     ],
 )
