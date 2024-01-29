@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::prelude::*;
-use crate::utils::try_get_supertype;
+use crate::utils::get_supertype;
 
 fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArray<T> {
     avs.iter()
@@ -491,10 +491,9 @@ impl Series {
             let mut dtypes = PlHashSet::<DataType>::new();
             for av in values {
                 if dtypes.insert(av.dtype()) {
-                    supertype = match try_get_supertype(&supertype, &av.dtype()) {
-                        Ok(dt) => dt,
-                        // Values with incompatible data types will be set to null later
-                        Err(_) => supertype,
+                    // Values with incompatible data types will be set to null later
+                    if let Some(st) = get_supertype(&supertype, &av.dtype()) {
+                        supertype = st;
                     }
                 }
             }
