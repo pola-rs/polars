@@ -396,8 +396,10 @@ impl LogicalType for CategoricalChunked {
             },
             dt if dt.is_numeric() => {
                 // Apply the cast to to the categories and then index into the casted series
-                let categories =
-                    StringChunked::with_chunk("", self.get_rev_map().get_categories().clone());
+                let categories = StringChunked::with_chunk(
+                    self.physical.name(),
+                    self.get_rev_map().get_categories().clone(),
+                );
                 let casted_series = categories.cast(dtype)?;
 
                 #[cfg(feature = "bigidx")]

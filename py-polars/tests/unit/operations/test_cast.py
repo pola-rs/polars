@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -14,6 +14,9 @@ from polars.utils.convert import (
     NS_PER_SECOND,
     US_PER_SECOND,
 )
+
+if TYPE_CHECKING:
+    from polars import PolarsDataType
 
 
 def test_string_date() -> None:
@@ -574,3 +577,25 @@ def test_strict_cast_string_and_binary(
             _cast_expr_t(*args)  # type: ignore[arg-type]
         with pytest.raises(pl.exceptions.ComputeError):
             _cast_lit_t(*args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "dtype_out",
+    [
+        (pl.UInt8),
+        (pl.Int8),
+        (pl.UInt16),
+        (pl.Int16),
+        (pl.UInt32),
+        (pl.Int32),
+        (pl.UInt64),
+        (pl.Int64),
+        (pl.Date),
+        (pl.Datetime),
+        (pl.Time),
+        (pl.Duration),
+        (pl.Enum(["1"])),
+    ],
+)
+def test_cast_categorical_name_retention(dtype_out: PolarsDataType):
+    assert pl.Series("a", ["1"], dtype=pl.Categorical).cast(dtype_out).name == "a"
