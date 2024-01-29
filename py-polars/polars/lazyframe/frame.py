@@ -3126,6 +3126,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
+    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],

@@ -5362,6 +5362,7 @@ class DataFrame:
         """
         return self.with_row_index(name, offset)
 
+    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],
