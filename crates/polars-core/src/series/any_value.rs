@@ -116,15 +116,6 @@ fn any_values_to_binary(avs: &[AnyValue]) -> BinaryChunked {
         .collect_trusted()
 }
 
-fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
-    avs.iter()
-        .map(|av| match av {
-            AnyValue::Boolean(b) => Some(*b),
-            _ => None,
-        })
-        .collect_trusted()
-}
-
 #[cfg(feature = "dtype-array")]
 fn any_values_to_array(
     avs: &[AnyValue],
@@ -289,7 +280,7 @@ impl Series {
             DataType::Float64 => any_values_to_primitive::<Float64Type>(av).into_series(),
             DataType::String => any_values_to_string(av, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(av).into_series(),
-            DataType::Boolean => any_values_to_bool(av).into_series(),
+            DataType::Boolean => any_values_to_bool(av, strict)?.into_series(),
             #[cfg(feature = "dtype-date")]
             DataType::Date => any_values_to_primitive::<Int32Type>(av)
                 .into_date()
@@ -507,4 +498,33 @@ impl Series {
         };
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
+}
+
+fn any_values_to_bool(values: &[AnyValue], strict: bool) -> PolarsResult<BooleanChunked> {
+    if strict {
+        any_values_to_bool_strict(values)
+    } else {
+        Ok(any_values_to_bool_nonstrict(values))
+    }
+}
+fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked> {
+    let mut builder = BooleanChunkedBuilder::new("", values.len());
+    for av in values {
+        match av {
+            AnyValue::Boolean(b) => builder.append_value(*b),
+            AnyValue::Null => builder.append_null(),
+            av => polars_bail!(
+                ComputeError: "found value of type {} while building Series of type Boolean: {}", av.dtype(), av
+            ),
+        }
+    }
+    Ok(builder.finish())
+}
+fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
+    let mapper = |av: &AnyValue| match av {
+        AnyValue::Boolean(b) => Some(*b),
+        // TODO: Interpret integers/floats as booleans
+        _ => None,
+    };
+    values.iter().map(mapper).collect_trusted()
 }
