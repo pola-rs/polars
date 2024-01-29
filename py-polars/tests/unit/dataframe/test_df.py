@@ -2048,17 +2048,55 @@ def test_arithmetic() -> None:
         expected = pl.DataFrame({"a": [3.0, 4.0], "b": [5.0, 6.0]})
         assert_frame_equal(df_plus, expected)
 
-    df_div = df / 2
+    df_truediv = df / 2
     expected = pl.DataFrame({"a": [0.5, 1.0], "b": [1.5, 2.0]})
-    assert_frame_equal(df_div, expected)
+    assert_frame_equal(df_truediv, expected)
 
-    df_minus = df - 2
+    df_rtruediv = 2 / df
+    expected = pl.DataFrame({"a": [2.0, 1.0], "b": [2 / 3, 0.5]})
+    assert_frame_equal(df_rtruediv, expected)
+
+    df_floordiv = df // 2
+    expected = pl.DataFrame({"a": [0.0, 1.0], "b": [1.0, 2.0]})
+    assert_frame_equal(df_floordiv, expected)
+
+    df_rfloordiv = 2 // df
+    expected = pl.DataFrame({"a": [2.0, 1.0], "b": [0.0, 0.0]})
+    assert_frame_equal(df_rfloordiv, expected)
+
+    df_sub = df - 2
     expected = pl.DataFrame({"a": [-1.0, 0.0], "b": [1.0, 2.0]})
-    assert_frame_equal(df_minus, expected)
+    assert_frame_equal(df_sub, expected)
+
+    df_rsub = 2 - df
+    expected = pl.DataFrame({"a": [1.0, 0.0], "b": [-1.0, -2.0]})
+    assert_frame_equal(df_rsub, expected)
 
     df_mod = df % 2
     expected = pl.DataFrame({"a": [1.0, 0.0], "b": [1.0, 0.0]})
     assert_frame_equal(df_mod, expected)
+
+    df_rmod = 2 % df
+    expected = pl.DataFrame({"a": [0.0, 0.0], "b": [2.0, 2.0]})
+    assert_frame_equal(df_rmod, expected)
+
+    df_pow = df**2
+    expected = pl.DataFrame({"a": [1.0, 4.0], "b": [9.0, 16.0]})
+    assert_frame_equal(df_pow, expected)
+
+    df_rpow = 2**df
+    expected = pl.DataFrame({"a": [2.0, 4.0], "b": [8.0, 16.0]})
+    assert_frame_equal(df_rpow, expected)
+
+    df_pos = +df
+    assert_frame_equal(df_pos, df)
+
+    df_neg = -df
+    expected = pl.DataFrame({"a": [-1.0, -2.0], "b": [-3.0, -4.0]})
+    assert_frame_equal(df_neg, expected)
+
+    df_abs = abs(-df)
+    assert_frame_equal(df_abs, df)
 
     df2 = pl.DataFrame({"c": [10]})
 
@@ -2095,6 +2133,19 @@ def test_arithmetic() -> None:
     # cannot do arithmetic with a sequence
     with pytest.raises(TypeError, match="operation not supported"):
         _ = df + [1]  # type: ignore[operator]
+
+
+def test_bitwise_ops() -> None:
+    a = pl.DataFrame({"a": [True, False, True]})
+    b = pl.DataFrame({"a": [False, True, True]})
+    assert_frame_equal(a & b, pl.DataFrame({"a": [False, False, True]}))
+    assert_frame_equal(a | b, pl.DataFrame({"a": [True, True, True]}))
+    assert_frame_equal(a ^ b, pl.DataFrame({"a": [True, True, False]}))
+    assert_frame_equal(~a, pl.DataFrame({"a": [False, True, False]}))
+    assert_frame_equal(True & a, pl.DataFrame({"a": [True, False, True]}))
+    assert_frame_equal(True | a, pl.DataFrame({"a": [True, True, True]}))
+    assert_frame_equal(True | a, pl.DataFrame({"a": [True, True, True]}))
+    assert_frame_equal(True ^ a, pl.DataFrame({"a": [False, True, False]}))
 
 
 def test_df_series_division() -> None:

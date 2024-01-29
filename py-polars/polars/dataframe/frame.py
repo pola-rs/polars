@@ -1496,8 +1496,14 @@ class DataFrame:
     def __floordiv__(self, other: DataFrame | Series | int | float) -> DataFrame:
         return self._div(other, floordiv=True)
 
+    def __rfloordiv__(self, other: Any) -> DataFrame:
+        return self.select((other // F.all()).name.keep())
+
     def __truediv__(self, other: DataFrame | Series | int | float) -> DataFrame:
         return self._div(other, floordiv=False)
+
+    def __rtruediv__(self, other: Any) -> DataFrame:
+        return self.select((other / F.all()).name.keep())
 
     def __bool__(self) -> NoReturn:
         msg = (
@@ -1561,11 +1567,109 @@ class DataFrame:
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.sub(other._s))
 
+    def __rsub__(self, other: Any) -> DataFrame:
+        return self.select((other - F.all()).name.keep())
+
     def __mod__(self, other: DataFrame | Series | int | float) -> Self:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.rem_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.rem(other._s))
+
+    def __rmod__(self, other: Any) -> DataFrame:
+        return self.select((other % F.all()).name.keep())
+
+    def __pow__(self, exponent: DataFrame | Series | int | float) -> DataFrame:
+        if isinstance(exponent, DataFrame):
+            if self.columns != exponent.columns:
+                msg = "DataFrame columns do not match"
+                raise ValueError(msg)
+            if self.shape != exponent.shape:
+                msg = "DataFrame dimensions do not match"
+                raise ValueError(msg)
+            suffix = "__POLARS_POW_OTHER"
+            other_renamed = exponent.select(F.all().name.suffix(suffix))
+            combined = F.concat([self, other_renamed], how="horizontal")
+            return combined.select(
+                [F.col(n) ** F.col(f"{n}{suffix}") for n in self.columns]
+            )
+        else:
+            return self.select(F.all() ** exponent)
+
+    def __rpow__(self, base: Series | int | float) -> DataFrame:
+        return self.select((base ** F.all()).name.keep())
+
+    def __and__(self, other: DataFrame | Series | int | bool) -> DataFrame:
+        if isinstance(other, DataFrame):
+            if self.columns != other.columns:
+                msg = "DataFrame columns do not match"
+                raise ValueError(msg)
+            if self.shape != other.shape:
+                msg = "DataFrame dimensions do not match"
+                raise ValueError(msg)
+            suffix = "__POLARS_AND_OTHER"
+            other_renamed = other.select(F.all().name.suffix(suffix))
+            combined = F.concat([self, other_renamed], how="horizontal")
+            return combined.select(
+                [F.col(n) & F.col(f"{n}{suffix}") for n in self.columns]
+            )
+        else:
+            return self.select(F.all() & other)
+
+    def __or__(self, other: DataFrame | Series | int | bool) -> DataFrame:
+        if isinstance(other, DataFrame):
+            if self.columns != other.columns:
+                msg = "DataFrame columns do not match"
+                raise ValueError(msg)
+            if self.shape != other.shape:
+                msg = "DataFrame dimensions do not match"
+                raise ValueError(msg)
+            suffix = "__POLARS_OR_OTHER"
+            other_renamed = other.select(F.all().name.suffix(suffix))
+            combined = F.concat([self, other_renamed], how="horizontal")
+            return combined.select(
+                [F.col(n) | F.col(f"{n}{suffix}") for n in self.columns]
+            )
+        else:
+            return self.select(F.all() | other)
+
+    def __xor__(self, other: DataFrame | Series | int | bool) -> DataFrame:
+        if isinstance(other, DataFrame):
+            if self.columns != other.columns:
+                msg = "DataFrame columns do not match"
+                raise ValueError(msg)
+            if self.shape != other.shape:
+                msg = "DataFrame dimensions do not match"
+                raise ValueError(msg)
+            suffix = "__POLARS_XOR_OTHER"
+            other_renamed = other.select(F.all().name.suffix(suffix))
+            combined = F.concat([self, other_renamed], how="horizontal")
+            return combined.select(
+                [F.col(n) ^ F.col(f"{n}{suffix}") for n in self.columns]
+            )
+        else:
+            return self.select(F.all() ^ other)
+
+    def __rand__(self, other: Series | int | bool) -> DataFrame:
+        return self.select((other & F.all()).name.keep())
+
+    def __ror__(self, other: Series | int | bool) -> DataFrame:
+        return self.select((other | F.all()).name.keep())
+
+    def __rxor__(self, other: Series | int | bool) -> DataFrame:
+        return self.select((other ^ F.all()).name.keep())
+
+    def __invert__(self) -> DataFrame:
+        return self.select((~F.all()).name.keep())
+
+    def __abs__(self) -> DataFrame:
+        return self.select(F.all().abs().name.keep())
+
+    def __pos__(self) -> DataFrame:
+        return self
+
+    def __neg__(self) -> DataFrame:
+        return self.select((-F.all()).name.keep())
 
     def __str__(self) -> str:
         return self._df.as_str()
