@@ -150,12 +150,12 @@ macro_rules! impl_signed_arith_kernel {
                         // Largest possible modulo -I::MIN, with
                         // -I::MIN-1 == I::MAX as largest remainder.
                         let mut rem_u = x.unsigned_abs() % red;
-                        
+
                         // Mixed signs: swap direction of remainder.
                         if rem_u != 0 && (scalar < 0) != (x < 0) {
                             rem_u = scalar_u - rem_u;
                         }
-                        
+
                         // Remainder should have sign of RHS.
                         if scalar < 0 {
                             -(rem_u as $T)
