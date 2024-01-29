@@ -622,10 +622,10 @@ impl<'a> AnyValue<'a> {
         Ok(new_av)
     }
 
-    pub fn cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+    pub fn cast(&self, dtype: &'a DataType) -> AnyValue<'a> {
         match self.strict_cast(dtype) {
-            Ok(s) => Ok(s),
-            Err(_) => Ok(AnyValue::Null),
+            Ok(av) => av,
+            Err(_) => AnyValue::Null,
         }
     }
 }
