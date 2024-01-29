@@ -41,6 +41,7 @@ impl_signed_div_mod!(i8);
 impl_signed_div_mod!(i16);
 impl_signed_div_mod!(i32);
 impl_signed_div_mod!(i64);
+impl_signed_div_mod!(i128);
 impl_signed_div_mod!(isize);
 
 #[cfg(test)]

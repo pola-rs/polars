@@ -197,3 +197,4 @@ impl_signed_arith_kernel!(i8, u8, StrengthReducedU8);
 impl_signed_arith_kernel!(i16, u16, StrengthReducedU16);
 impl_signed_arith_kernel!(i32, u32, StrengthReducedU32);
 impl_signed_arith_kernel!(i64, u64, StrengthReducedU64);
+impl_signed_arith_kernel!(i128, u128, StrengthReducedU128);

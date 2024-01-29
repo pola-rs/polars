@@ -140,3 +140,4 @@ impl_unsigned_arith_kernel!(u8, StrengthReducedU8);
 impl_unsigned_arith_kernel!(u16, StrengthReducedU16);
 impl_unsigned_arith_kernel!(u32, StrengthReducedU32);
 impl_unsigned_arith_kernel!(u64, StrengthReducedU64);
+impl_unsigned_arith_kernel!(u128, StrengthReducedU128);
