@@ -288,6 +288,14 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
+
+    fn min_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::min_as_series(&self.0))
+    }
+
+    fn max_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::max_as_series(&self.0))
+    }
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {

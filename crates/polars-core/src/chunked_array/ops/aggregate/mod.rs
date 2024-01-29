@@ -514,6 +514,67 @@ impl ChunkAggSeries for StringChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+impl CategoricalChunked {
+    fn min_categorical(&self) -> Option<&str> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+        if self.uses_lexical_ordering() {
+            // Fast path where all categories are used
+            if self.can_fast_unique() {
+                self.get_rev_map()
+                    .get_categories()
+                    .iter()
+                    .flatten()
+                    .reduce(|acc, val| if val < acc { val } else { acc })
+            } else {
+                self.iter_str()
+                    .flatten()
+                    .reduce(|acc, val| if val < acc { val } else { acc })
+            }
+        } else {
+            let ca_phys = self.physical();
+            let min_idx = ca_phys.get(ca_phys.first_non_null().unwrap())?;
+            self.get_rev_map().get_categories().get(min_idx as usize)
+        }
+    }
+
+    fn max_categorical(&self) -> Option<&str> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+        if self.uses_lexical_ordering() {
+            // Fast path where all categories are used
+            if self.can_fast_unique() {
+                self.get_rev_map()
+                    .get_categories()
+                    .iter()
+                    .reduce(|acc, val| if acc < val { val } else { acc })
+                    .unwrap()
+            } else {
+                self.iter_str()
+                    .reduce(|acc, val| if acc < val { val } else { acc })
+                    .unwrap()
+            }
+        } else {
+            let ca_phys = self.physical();
+            let max_idx = ca_phys.get(ca_phys.last_non_null().unwrap())?;
+            self.get_rev_map().get_categories().get(max_idx as usize)
+        }
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl ChunkAggSeries for CategoricalChunked {
+    fn min_as_series(&self) -> Series {
+        Series::new(self.name(), &[self.min_categorical()])
+    }
+    fn max_as_series(&self) -> Series {
+        Series::new(self.name(), &[self.max_categorical()])
+    }
+}
+
 impl BinaryChunked {
     pub(crate) fn max_binary(&self) -> Option<&[u8]> {
         if self.is_empty() {
