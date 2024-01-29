@@ -19,7 +19,7 @@ from numpy.testing import assert_array_equal, assert_equal
 import polars as pl
 import polars.selectors as cs
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -2126,6 +2126,32 @@ def test_add_string() -> None:
         {"a": ["hello hi", "hello there"], "b": ["hello hello", "hello world"]}
     )
     assert_frame_equal(("hello " + df), expected)
+
+
+def test_matmul() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    s = pl.Series([10, 11, 12])
+
+    assert_series_equal(df @ s, pl.Series([138, 171, 204]))
+    assert_series_equal(df[:, :-1] @ s[:-1], pl.Series([54, 75, 96]))
+    assert_series_equal(s @ df, pl.Series([68, 167, 266]))
+    assert_series_equal(s[:-1] @ df[:-1], pl.Series([32, 95, 158]))
+    assert_frame_equal(
+        df @ df,
+        pl.DataFrame({"a": [30, 36, 42], "b": [66, 81, 96], "c": [102, 126, 150]}),
+    )
+    assert_frame_equal(
+        df @ df[:, :-1], pl.DataFrame({"a": [30, 36, 42], "b": [66, 81, 96]})
+    )
+
+    with pytest.raises(ShapeError, match="Incompatible shapes"):
+        df @ s[:-1]
+
+    with pytest.raises(ShapeError, match="Incompatible shapes"):
+        s[:-1] @ df[:, :-1]
+
+    with pytest.raises(ShapeError, match="Incompatible shapes"):
+        df[:, :-1] @ df
 
 
 def test_getitem() -> None:

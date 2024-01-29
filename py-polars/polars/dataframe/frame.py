@@ -64,6 +64,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import (
     ModuleUpgradeRequired,
     NoRowsReturnedError,
+    ShapeError,
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
@@ -1566,6 +1567,68 @@ class DataFrame:
             return self._from_pydf(self._df.rem_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.rem(other._s))
+
+    @overload
+    def __matmul__(self, other: DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __matmul__(self, other: Series) -> Series:
+        ...
+
+    def __matmul__(self, other: DataFrame | Series) -> DataFrame | Series:
+        if isinstance(other, DataFrame):
+            if self.width != len(other):
+                msg = (
+                    f"Incompatible shapes for matrix multiplication: "
+                    f'left-hand operand of "@" has {self.width} columns, but '
+                    f"right-hand operand has {len(other)} rows"
+                )
+                raise ShapeError(msg)
+            return DataFrame(
+                self.to_numpy().dot(other.to_numpy()), schema=other.columns
+            )
+        elif isinstance(other, pl.Series):
+            if self.width != len(other):
+                msg = (
+                    f"Incompatible shapes for matrix-vector multiplication: "
+                    f'left-hand operand of "@" has {self.width} columns, but '
+                    f"right-hand operand has {len(other)} rows"
+                )
+                raise ShapeError(msg)
+            return pl.Series(other.name, self.to_numpy().dot(other.to_numpy()))
+        else:
+            msg = (
+                f'Right-hand operand of "@" has unsupported type '
+                f'"{type(other).__name__}"'
+            )
+            raise TypeError(msg)
+
+    def __rmatmul__(self, other: Series) -> Series:
+        if isinstance(other, DataFrame):
+            if other.width != len(self):
+                msg = (
+                    f"Incompatible shapes for matrix multiplication: "
+                    f'left-hand operand of "@" has {other.width} columns, but '
+                    f"right-hand operand has {len(self)} rows"
+                )
+                raise ShapeError(msg)
+            return DataFrame(other.to_numpy().dot(self.to_numpy()), schema=self.columns)
+        elif isinstance(other, pl.Series):
+            if len(other) != len(self):
+                msg = (
+                    f"Incompatible shapes for vector-matrix multiplication: "
+                    f'left-hand operand of "@" has {len(other)} rows, but '
+                    f"right-hand operand has {len(self)} rows"
+                )
+                raise ShapeError(msg)
+            return pl.Series(other.name, other.to_numpy().dot(self.to_numpy()))
+        else:
+            msg = (
+                f'Left-hand operand of "@" has unsupported type '
+                f'"{type(other).__name__}"'
+            )
+            raise TypeError(msg)
 
     def __str__(self) -> str:
         return self._df.as_str()

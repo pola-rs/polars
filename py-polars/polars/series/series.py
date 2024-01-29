@@ -1168,7 +1168,11 @@ class Series:
             raise TypeError(msg)
         return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
 
-    def __matmul__(self, other: Any) -> float | Series | None:
+    def __matmul__(
+        self, other: Series | Sequence[Any] | np.ndarray[Any, Any]
+    ) -> float | Series | None:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented  # delegate to DataFrame.__rmatmul__
         if isinstance(other, Sequence) or (
             _check_for_numpy(other) and isinstance(other, np.ndarray)
         ):
@@ -1177,7 +1181,9 @@ class Series:
         #     return other.__rmatmul__(self)  # type: ignore[return-value]
         return self.dot(other)
 
-    def __rmatmul__(self, other: Any) -> float | Series | None:
+    def __rmatmul__(
+        self, other: Series | Sequence[Any] | np.ndarray[Any, Any]
+    ) -> float | Series | None:
         if isinstance(other, Sequence) or (
             _check_for_numpy(other) and isinstance(other, np.ndarray)
         ):
