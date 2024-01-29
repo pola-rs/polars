@@ -451,11 +451,15 @@ impl<'a> AnyValue<'a> {
     }
 
     pub fn is_numeric(&self) -> bool {
-        self.is_signed_integer() || self.is_unsigned_integer() || self.is_float()
+        self.is_integer() || self.is_float()
     }
 
     pub fn is_float(&self) -> bool {
         matches!(self, AnyValue::Float32(_) | AnyValue::Float64(_))
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.is_signed_integer() || self.is_unsigned_integer()
     }
 
     pub fn is_signed_integer(&self) -> bool {
