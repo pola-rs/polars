@@ -78,6 +78,26 @@ macro_rules! primitive_dyn {
     }};
 }
 
+fn cast_struct(
+    array: &StructArray,
+    to_type: &ArrowDataType,
+    options: CastOptions,
+) -> PolarsResult<StructArray> {
+    let values = array.values();
+    let fields = StructArray::get_fields(to_type);
+    let new_values = values
+        .iter()
+        .zip(fields)
+        .map(|(arr, field)| cast(arr.as_ref(), field.data_type(), options))
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    Ok(StructArray::new(
+        to_type.clone(),
+        new_values,
+        array.validity().cloned(),
+    ))
+}
+
 fn cast_list<O: Offset>(
     array: &ListArray<O>,
     to_type: &ArrowDataType,
@@ -239,13 +259,14 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 /// * Fixed Size List to List: the underlying data type is cast
 /// * List to Fixed Size List: the offsets are checked for valid order, then the
 ///   underlying type is cast.
+/// * Struct to Struct: the underlying fields are cast.
 /// * PrimitiveArray to List: a list array with 1 value per slot is created
 /// * Date32 and Date64: precision lost when going to higher interval
 /// * Time32 and Time64: precision lost when going to higher interval
 /// * Timestamp and Date{32|64}: precision lost when going to higher interval
 /// * Temporal to/from backing primitive: zero-copy with data type change
 /// Unsupported Casts
-/// * To or from `StructArray`
+/// * non-`StructArray` to `StructArray` or `StructArray` to non-`StructArray`
 /// * List to primitive
 /// * Utf8 to boolean
 /// * Interval and duration
@@ -265,6 +286,10 @@ pub fn cast(
     let as_options = options.with_wrapped(true);
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
+        (Struct(from_fd), Struct(to_fd)) => {
+            polars_ensure!(from_fd.len() == to_fd.len(), InvalidOperation: "Cannot cast struct with different number of fields.");
+            cast_struct(array.as_any().downcast_ref().unwrap(), to_type, options).map(|x| x.boxed())
+        },
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
             "Cannot cast from struct to other types"
         ),
