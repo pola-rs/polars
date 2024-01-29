@@ -5362,22 +5362,21 @@ class DataFrame:
         """
         return self.with_row_index(name, offset)
 
+    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
+        *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool = False,
+        **named_by: IntoExpr,
     ) -> GroupBy:
         """
         Start a group by operation.
 
         Parameters
         ----------
-        by
+        *by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
@@ -5387,6 +5386,9 @@ class DataFrame:
             .. note::
                 Within each group, the order of rows is always preserved, regardless
                 of this argument.
+        **named_by
+            Additional columns to group by, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Returns
         -------
@@ -5498,7 +5500,7 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        return GroupBy(self, by, *more_by, maintain_order=maintain_order)
+        return GroupBy(self, *by, **named_by, maintain_order=maintain_order)
 
     def rolling(
         self,
@@ -9191,7 +9193,7 @@ class DataFrame:
         In aggregate context there is also an equivalent method for returning the
         unique values per-group:
 
-        >>> df_agg_nunique = df.group_by(by=["a"]).n_unique()
+        >>> df_agg_nunique = df.group_by(["a"]).n_unique()
 
         Examples
         --------

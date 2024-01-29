@@ -917,3 +917,24 @@ def test_group_by_all_12869() -> None:
     df = pl.DataFrame({"a": [1]})
     result = next(iter(df.group_by(pl.all())))[1]
     assert_frame_equal(df, result)
+
+
+def test_group_by_named() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    result = df.group_by(z=pl.col("a") * 2, maintain_order=True).agg(pl.col("b").min())
+    expected = df.group_by((pl.col("a") * 2).alias("z"), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_deprecated_by_arg() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    with pytest.deprecated_call():
+        result = df.group_by(by=(pl.col("a") * 2), maintain_order=True).agg(
+            pl.col("b").min()
+        )
+    expected = df.group_by((pl.col("a") * 2), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)

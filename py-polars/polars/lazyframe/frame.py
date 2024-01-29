@@ -3126,27 +3126,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
+    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
+        *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool = False,
+        **named_by: IntoExpr,
     ) -> LazyGroupBy:
         """
         Start a group by operation.
 
         Parameters
         ----------
-        by
+        *by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Setting this to `True` blocks the possibility
             to run on the streaming engine.
+        **named_by
+            Additional columns to group by, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Examples
         --------
@@ -3219,7 +3221,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
-        exprs = parse_as_list_of_expressions(by, *more_by)
+        exprs = parse_as_list_of_expressions(*by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 

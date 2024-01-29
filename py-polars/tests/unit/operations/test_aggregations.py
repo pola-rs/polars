@@ -387,7 +387,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
 
     out = (
         ldf.drop_nulls()
-        .group_by(by=["a"], maintain_order=True)
+        .group_by(["a"], maintain_order=True)
         .agg(pl.col("b").filter(pl.col("b").shift(1)))
         .collect()
     )
