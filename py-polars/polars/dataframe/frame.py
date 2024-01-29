@@ -9193,7 +9193,7 @@ class DataFrame:
         In aggregate context there is also an equivalent method for returning the
         unique values per-group:
 
-        >>> df_agg_nunique = df.group_by(by=["a"]).n_unique()
+        >>> df_agg_nunique = df.group_by(["a"]).n_unique()
 
         Examples
         --------
