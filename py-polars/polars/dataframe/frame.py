@@ -5377,19 +5377,18 @@ class DataFrame:
         *by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
-
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Settings this to `True` blocks the possibility
             to run on the streaming engine.
-        **named_by
-            Additional column(s) to group by, specified as keyword arguments.
-            The columns will be named as the keyword used.
 
             .. note::
                 Within each group, the order of rows is always preserved, regardless
                 of this argument.
+        **named_by
+            Additional columns to group by, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Returns
         -------
@@ -10543,9 +10542,9 @@ class DataFrame:
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
         self,
-        *by: IntoExpr | Iterable[IntoExpr],
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
         maintain_order: bool = False,
-        **named_by: IntoExpr,
     ) -> GroupBy:
         """
         Start a group by operation.
@@ -10555,17 +10554,16 @@ class DataFrame:
 
         Parameters
         ----------
-        *by
+        by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
+        *more_by
+            Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Settings this to `True` blocks the possibility
             to run on the streaming engine.
-        **named_by
-            Additional column(s) to group by, specified as keyword arguments.
-            The columns will be named as the keyword used.
 
             .. note::
                 Within each group, the order of rows is always preserved, regardless
@@ -10576,7 +10574,7 @@ class DataFrame:
         GroupBy
             Object which can be used to perform aggregations.
         """
-        return self.group_by(*by, maintain_order=maintain_order, **named_by)
+        return self.group_by(by, *more_by, maintain_order=maintain_order)
 
     @deprecate_renamed_function("rolling", version="0.19.0")
     def groupby_rolling(

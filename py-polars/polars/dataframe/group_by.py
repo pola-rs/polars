@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from polars import functions as F
-from polars.exceptions import InvalidOperationError
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_renamed_function,
@@ -101,7 +100,7 @@ class GroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .group_by(*self.by, maintain_order=self.maintain_order, **self.named_by)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().agg_groups().alias(temp_col))
             .collect(no_optimization=True)
         )
@@ -246,7 +245,7 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(*self.by, maintain_order=self.maintain_order, **self.named_by)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
@@ -312,18 +311,17 @@ class GroupBy:
         ...     pl.int_range(pl.len()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
         """
-        by: list[str]
         if self.named_by:
-            msg = "cannot call `map_groups` with named_by"
-            raise InvalidOperationError(msg)
-        if all(isinstance(c, str) for c in self.by):
-            by = list(self.by)  # type: ignore[arg-type]
-        else:
+            msg = "cannot call `map_groups` when grouping by named expressions"
+            raise TypeError(msg)
+        if not all(isinstance(c, str) for c in self.by):
             msg = "cannot call `map_groups` when grouping by an expression"
             raise TypeError(msg)
 
         return self.df.__class__._from_pydf(
-            self.df._df.group_by_map_groups(by, function, self.maintain_order)
+            self.df._df.group_by_map_groups(
+                list(self.by), function, self.maintain_order
+            )
         )
 
     def head(self, n: int = 5) -> DataFrame:
@@ -373,7 +371,7 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(*self.by, maintain_order=self.maintain_order, **self.named_by)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .head(n)
             .collect(no_optimization=True)
         )
@@ -425,7 +423,7 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(*self.by, maintain_order=self.maintain_order, **self.named_by)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .tail(n)
             .collect(no_optimization=True)
         )
