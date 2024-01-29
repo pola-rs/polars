@@ -187,9 +187,9 @@ class Series:
         Data type of the Series if `values` contains no non-null data.
 
         .. deprecated:: 0.20.6
-            The data type for empty Series will always be Null.
-            To preserve behavior, check if the resulting Series has data type Null and
-            cast to the desired data type.
+            The data type for empty Series will always be `Null`, unless `dtype` is
+            specified. To preserve behavior, check if the resulting Series has data type
+            `Null` and cast to the desired data type.
             This parameter will be removed in the next breaking release.
 
     Examples
@@ -263,7 +263,7 @@ class Series:
         if dtype_if_empty != Null:
             issue_deprecation_warning(
                 "The `dtype_if_empty` parameter for the Series constructor is deprecated."
-                " The data type for empty Series will always be Null."
+                " The data type for empty Series will always be Null, unless `dtype` is specified."
                 " To preserve behavior, check if the resulting Series has data type Null and cast to the desired data type."
                 " This parameter will be removed in the next breaking release.",
                 version="0.20.6",
