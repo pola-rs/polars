@@ -597,5 +597,5 @@ def test_strict_cast_string_and_binary(
         (pl.Enum(["1"])),
     ],
 )
-def test_cast_categorical_name_retention(dtype_out: PolarsDataType):
+def test_cast_categorical_name_retention(dtype_out: PolarsDataType) -> None:
     assert pl.Series("a", ["1"], dtype=pl.Categorical).cast(dtype_out).name == "a"
