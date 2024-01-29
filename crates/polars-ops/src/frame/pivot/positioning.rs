@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 use polars_utils::sync::SyncPtr;
 
@@ -178,17 +179,46 @@ where
 {
     let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
     let mut idx = 0 as IdxSize;
-    column_agg_physical
-        .into_iter()
-        .map(|v| {
-            let idx = *col_to_idx.entry(v).or_insert_with(|| {
+    let mut out = Vec::with_capacity(column_agg_physical.len());
+
+    for arr in column_agg_physical.downcast_iter() {
+        for opt_v in arr.into_iter() {
+            let idx = *col_to_idx.entry(opt_v).or_insert_with(|| {
                 let old_idx = idx;
                 idx += 1;
                 old_idx
             });
-            idx
-        })
-        .collect()
+            // SAFETY:
+            // we pre-allocated
+            unsafe { out.push_unchecked(idx) };
+        }
+    }
+    out
+}
+
+fn compute_col_idx_gen<'a, T>(column_agg_physical: &'a ChunkedArray<T>) -> Vec<IdxSize>
+where
+    T: PolarsDataType,
+    &'a T::Array: IntoIterator<Item = Option<T::Physical<'a>>>,
+    T::Physical<'a>: Hash + Eq,
+{
+    let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+    let mut idx = 0 as IdxSize;
+    let mut out = Vec::with_capacity(column_agg_physical.len());
+
+    for arr in column_agg_physical.downcast_iter() {
+        for opt_v in arr.into_iter() {
+            let idx = *col_to_idx.entry(opt_v).or_insert_with(|| {
+                let old_idx = idx;
+                idx += 1;
+                old_idx
+            });
+            // SAFETY:
+            // we pre-allocated
+            unsafe { out.push_unchecked(idx) };
+        }
+    }
+    out
 }
 
 pub(super) fn compute_col_idx(
@@ -211,24 +241,22 @@ pub(super) fn compute_col_idx(
             compute_col_idx_numeric(&ca)
         },
         Struct(_) => {
-            let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
-            let mut idx = 0 as IdxSize;
-            let ca = column_agg_physical.struct_()?;
-            (0..(column_agg_physical.len()))
-                .map(|row_nr| {
-                    let v: Vec<_> = ca
-                        .fields()
-                        .iter()
-                        .map(|field| unsafe { field.get_unchecked(row_nr) })
-                        .collect();
-                    let idx = *col_to_idx.entry(v).or_insert_with(|| {
-                        let old_idx = idx;
-                        idx += 1;
-                        old_idx
-                    });
-                    idx
-                })
-                .collect()
+            let ca = column_agg_physical.struct_().unwrap();
+            let ca = ca.rows_encode()?;
+            compute_col_idx_gen(&ca)
+        },
+        String => {
+            let ca = column_agg_physical.str().unwrap();
+            let ca = ca.as_binary();
+            compute_col_idx_gen(&ca)
+        },
+        Binary => {
+            let ca = column_agg_physical.binary().unwrap();
+            compute_col_idx_gen(ca)
+        },
+        Boolean => {
+            let ca = column_agg_physical.bool().unwrap();
+            compute_col_idx_gen(ca)
         },
         _ => {
             let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
