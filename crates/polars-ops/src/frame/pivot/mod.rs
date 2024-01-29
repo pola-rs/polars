@@ -195,14 +195,11 @@ fn pivot_impl(
     let mut column_column_name = columns[0].clone();
     let mut binding = pivot_df.clone();
     let pivot_df: &DataFrame = if columns.len() > 1 {
-        let fields = columns
-            .iter()
-            .map(|s| pivot_df.column(s).unwrap().clone())
-            .collect::<Vec<_>>();
+        let schema = Arc::new(pivot_df.schema());
+        let inner_binding = pivot_df.select_with_schema(columns, &schema)?;
+        let fields = inner_binding.get_columns();
         column_column_name = format!("{{\"{}\"}}", columns.join("\",\""));
-        if pivot_df
-            .get_column_names()
-            .contains(&column_column_name.as_str())
+        if schema.contains(&column_column_name.as_str())
         {
             polars_bail!(ComputeError: "cannot use column name {column_column_name} that \
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
