@@ -824,7 +824,7 @@ class RollingGroupBy:
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if group_names.width == 1:
+        if self.by is None:
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
