@@ -9,36 +9,6 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
         .collect_trusted()
 }
 
-fn any_values_to_string(avs: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
-    let mut builder = StringChunkedBuilder::new("", avs.len());
-
-    // amortize allocations
-    let mut owned = String::new();
-
-    for av in avs {
-        match av {
-            AnyValue::String(s) => builder.append_value(s),
-            AnyValue::StringOwned(s) => builder.append_value(s),
-            AnyValue::Null => builder.append_null(),
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => {
-                if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
-                }
-                builder.append_null()
-            },
-            av => {
-                if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building String Series")
-                }
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_value(&owned);
-            },
-        }
-    }
-    Ok(builder.finish())
-}
-
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
     avs: &[AnyValue],
@@ -527,4 +497,44 @@ fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
         _ => None,
     };
     values.iter().map(mapper).collect_trusted()
+}
+
+fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
+    if strict {
+        any_values_to_string_strict(values)
+    } else {
+        Ok(any_values_to_string_nonstrict(values))
+    }
+}
+fn any_values_to_string_strict(values: &[AnyValue]) -> PolarsResult<StringChunked> {
+    let mut builder = StringChunkedBuilder::new("", values.len());
+    for av in values {
+        match av {
+            AnyValue::String(s) => builder.append_value(s),
+            AnyValue::StringOwned(s) => builder.append_value(s),
+            AnyValue::Null => builder.append_null(),
+            av => polars_bail!(
+                ComputeError: "String Series construction found unexpected value of type {}: {}", av.dtype(), av
+            ),
+        }
+    }
+    Ok(builder.finish())
+}
+fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
+    let mut builder = StringChunkedBuilder::new("", values.len());
+    let mut owned = String::new(); // Amortize allocations
+    for av in values {
+        match av {
+            AnyValue::String(s) => builder.append_value(s),
+            AnyValue::StringOwned(s) => builder.append_value(s),
+            AnyValue::Null => builder.append_null(),
+            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
+            av => {
+                owned.clear();
+                write!(owned, "{av}").unwrap();
+                builder.append_value(&owned);
+            },
+        }
+    }
+    builder.finish()
 }
