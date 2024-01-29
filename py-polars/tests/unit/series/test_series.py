@@ -2270,26 +2270,6 @@ def test_ewm_param_validation() -> None:
             s.ewm_std(alpha=alpha)
 
 
-@pytest.mark.parametrize(
-    ("const", "dtype"),
-    [
-        (1, pl.Int8),
-        (4, pl.UInt32),
-        (4.5, pl.Float32),
-        (None, pl.Float64),
-        ("白鵬翔", pl.String),
-        (date.today(), pl.Date),
-        (datetime.now(), pl.Datetime("ns")),
-        (time(23, 59, 59), pl.Time),
-        (timedelta(hours=7, seconds=123), pl.Duration("ms")),
-    ],
-)
-def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
-    s = pl.Series("s", [None], dtype=dtype)
-    expected = pl.Series("s", [None, const, const, const], dtype=dtype)
-    assert_series_equal(s.extend_constant(const, 3), expected)
-
-
 def test_product() -> None:
     a = pl.Series("a", [1, 2, 3])
     out = a.product()

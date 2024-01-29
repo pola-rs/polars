@@ -156,3 +156,18 @@ pub(super) fn reinterpret(s: &Series, signed: bool) -> PolarsResult<Series> {
 pub(super) fn negate(s: &Series) -> PolarsResult<Series> {
     polars_ops::series::negate(s)
 }
+
+pub(super) fn extend_constant(s: &[Series]) -> PolarsResult<Series> {
+    let value = &s[1];
+    let n = &s[2];
+    polars_ensure!(value.len() == 1 && n.len() == 1, ComputeError: "value and n should have unit length.");
+    let n = n.strict_cast(&DataType::UInt64)?;
+    let v = value.get(0)?;
+    let s = &s[0];
+    match n.u64()?.get(0) {
+        Some(n) => s.extend_constant(v, n as usize),
+        None => {
+            polars_bail!(ComputeError: "n can not be None for extend_constant.")
+        },
+    }
+}

@@ -84,7 +84,6 @@ if TYPE_CHECKING:
         NullBehavior,
         NumericLiteral,
         PolarsDataType,
-        PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
@@ -8788,14 +8787,14 @@ class Expr:
             self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
         )
 
-    def extend_constant(self, value: PythonLiteral | None, n: int) -> Self:
+    def extend_constant(self, value: IntoExpr, n: int | IntoExprColumn) -> Self:
         """
         Extremely fast method for extending the Series with 'n' copies of a value.
 
         Parameters
         ----------
         value
-            A constant literal value (not an expression) with which to extend the
+            A constant literal value or a unit expressioin with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.
@@ -8817,10 +8816,8 @@ class Expr:
         │ 99     │
         └────────┘
         """
-        if isinstance(value, Expr):
-            msg = f"`value` must be a supported literal; found {value!r}"
-            raise TypeError(msg)
-
+        value = parse_as_expression(value, str_as_lit=True)
+        n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
     @deprecate_renamed_parameter("multithreaded", "parallel", version="0.19.0")

@@ -1631,6 +1631,10 @@ impl Expr {
         self.map_private(FunctionExpr::Reinterpret(signed))
     }
 
+    pub fn extend_constant(self, value: Expr, n: Expr) -> Expr {
+        self.apply_many_private(FunctionExpr::ExtendConstant, &[value, n], false, false)
+    }
+
     #[cfg(feature = "strings")]
     /// Get the [`string::StringNameSpace`]
     pub fn str(self) -> string::StringNameSpace {
