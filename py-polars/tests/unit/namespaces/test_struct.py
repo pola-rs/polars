@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -41,4 +43,21 @@ def test_struct_json_encode() -> None:
     ) == {
         "a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}],
         "encoded": ['{"a":[1,2],"b":[45]}', '{"a":[9,1,3],"b":null}'],
+    }
+
+
+def test_struct_json_encode_logical_type() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                {
+                    "a": [datetime.date(1997, 1, 1)],
+                    "b": [datetime.datetime(2000, 1, 29, 10, 30)],
+                    "c": [datetime.timedelta(1, 25)],
+                }
+            ]
+        }
+    ).select(pl.col("a").struct.json_encode().alias("encoded"))
+    assert df.to_dict(as_series=False) == {
+        "encoded": ['{"a":["1997-01-01"],"b":["2000-01-29 10:30:00"],"c":["P1DT25S"]}']
     }

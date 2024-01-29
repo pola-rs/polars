@@ -123,11 +123,12 @@ pub(super) fn rename_fields(s: &Series, names: Arc<Vec<String>>) -> PolarsResult
 #[cfg(feature = "json")]
 pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
     let ca = s.struct_()?;
+    let dtype = ca.dtype().to_arrow(true);
 
-    let iter = ca
-        .chunks()
-        .iter()
-        .map(|arr| polars_json::json::write::serialize_to_utf8(arr.as_ref()));
+    let iter = ca.chunks().iter().map(|arr| {
+        let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
+        polars_json::json::write::serialize_to_utf8(arr.as_ref())
+    });
 
     Ok(StringChunked::from_chunk_iter(ca.name(), iter).into_series())
 }
