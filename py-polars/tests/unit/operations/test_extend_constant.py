@@ -26,11 +26,11 @@ from polars.testing import assert_frame_equal, assert_series_equal
 def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
     df = pl.DataFrame({"a": pl.Series("s", [None], dtype=dtype)})
 
-    expected = pl.DataFrame(
+    expected_df = pl.DataFrame(
         {"a": pl.Series("s", [None, const, const, const], dtype=dtype)}
     )
 
-    assert_frame_equal(df.select(pl.col("a").extend_constant(const, 3)), expected)
+    assert_frame_equal(df.select(pl.col("a").extend_constant(const, 3)), expected_df)
 
     s = pl.Series("s", [None], dtype=dtype)
     expected = pl.Series("s", [None, const, const, const], dtype=dtype)
