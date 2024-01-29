@@ -102,7 +102,8 @@ macro_rules! impl_signed_arith_kernel {
                         let (quot, rem) = <$StrRed>::div_rem(x.unsigned_abs(), red);
                         if (x < 0) != (scalar < 0) {
                             // Different signs: result should be negative.
-                            let mut ret = (quot as $T).wrapping_neg();
+                            // Since we handled scalar.abs() <= 1, quot fits.
+                            let mut ret = -(quot as $T);
                             if rem != 0 {
                                 // Division had remainder, subtract 1 to floor to
                                 // negative infinity, as we truncated to zero.
@@ -133,7 +134,26 @@ macro_rules! impl_signed_arith_kernel {
                 } else if scalar == -1 || scalar == 1 {
                     self.fill_with(0)
                 } else {
-                    todo!()
+                    let scalar_u = scalar.unsigned_abs();
+                    let red = <$StrRed>::new(scalar_u);
+                    prim_unary_values(self, |x| {
+                        // Remainder fits in signed type after reduction.
+                        // Largest possible modulo -I::MIN, with
+                        // -I::MIN-1 == I::MAX as largest remainder.
+                        let mut rem_u = x.unsigned_abs() % red;
+                        
+                        // Mixed signs: swap direction of remainder.
+                        if rem_u != 0 && (scalar < 0) != (x < 0) {
+                            rem_u = scalar_u - rem_u;
+                        }
+                        
+                        // Remainder should have sign of RHS.
+                        if scalar < 0 {
+                            -(rem_u as $T)
+                        } else {
+                            rem_u as $T
+                        }
+                    })
                 }
             }
 
