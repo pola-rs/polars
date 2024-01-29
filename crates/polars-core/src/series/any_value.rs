@@ -551,9 +551,10 @@ fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
     values
         .iter()
         .map(|av| match av {
-            AnyValue::Binary(s) => Some(*s),
-            AnyValue::BinaryOwned(s) => Some(&**s),
-            // TODO: Interpret strings/other types as bytes?
+            AnyValue::Binary(b) => Some(*b),
+            AnyValue::BinaryOwned(b) => Some(&**b),
+            AnyValue::String(s) => Some(s.as_bytes()),
+            AnyValue::StringOwned(s) => Some(s.as_bytes()),
             _ => None,
         })
         .collect_trusted()
