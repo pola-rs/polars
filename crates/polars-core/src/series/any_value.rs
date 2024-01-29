@@ -473,9 +473,7 @@ fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked
         match av {
             AnyValue::Boolean(b) => builder.append_value(*b),
             AnyValue::Null => builder.append_null(),
-            av => polars_bail!(
-                ComputeError: "found value of type {} while building Series of type Boolean: {}", av.dtype(), av
-            ),
+            av => return Err(invalid_value_error(&DataType::Boolean, av)),
         }
     }
     Ok(builder.finish())
@@ -503,9 +501,7 @@ fn any_values_to_string_strict(values: &[AnyValue]) -> PolarsResult<StringChunke
             AnyValue::String(s) => builder.append_value(s),
             AnyValue::StringOwned(s) => builder.append_value(s),
             AnyValue::Null => builder.append_null(),
-            av => polars_bail!(
-                ComputeError: "String Series construction found unexpected value of type {}: {}", av.dtype(), av
-            ),
+            av => return Err(invalid_value_error(&DataType::String, av)),
         }
     }
     Ok(builder.finish())
@@ -543,9 +539,7 @@ fn any_values_to_binary_strict(values: &[AnyValue]) -> PolarsResult<BinaryChunke
             AnyValue::Binary(s) => builder.append_value(*s),
             AnyValue::BinaryOwned(s) => builder.append_value(&**s),
             AnyValue::Null => builder.append_null(),
-            av => polars_bail!(
-                ComputeError: "found value of type {} while building Series of type Boolean: {}", av.dtype(), av
-            ),
+            av => return Err(invalid_value_error(&DataType::Binary, av)),
         }
     }
     Ok(builder.finish())
@@ -560,4 +554,17 @@ fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
             _ => None,
         })
         .collect_trusted()
+}
+
+fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {
+    // TODO: Define new error type
+    PolarsError::ComputeError(
+        format!(
+            "unexpected value while building Series of type {:?}; found value of type {:?}: {}",
+            dtype,
+            value.dtype(),
+            value
+        )
+        .into(),
+    )
 }
