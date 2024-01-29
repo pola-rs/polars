@@ -67,6 +67,10 @@ macro_rules! impl_unsigned_arith_kernel {
                     self.fill_with(0)
                 } else if scalar == 1 {
                     self
+                } else if scalar & (scalar - 1) == 0 {
+                    // Power of two.
+                    let shift = scalar.trailing_zeros();
+                    prim_unary_values(self, |x| x << shift)
                 } else {
                     prim_unary_values(self, |x| x.wrapping_mul(scalar))
                 }

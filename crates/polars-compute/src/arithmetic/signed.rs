@@ -80,10 +80,19 @@ macro_rules! impl_signed_arith_kernel {
             }
 
             fn wrapping_mul_scalar(self, scalar: Self::Scalar) -> Self {
+                let scalar_u = scalar.unsigned_abs();
                 if scalar == 0 {
                     self.fill_with(0)
                 } else if scalar == 1 {
                     self
+                } else if scalar_u & (scalar_u - 1) == 0 {
+                    // Power of two.
+                    let shift = scalar_u.trailing_zeros();
+                    if scalar > 0 {
+                        prim_unary_values(self, |x| x << shift)
+                    } else {
+                        prim_unary_values(self, |x| (x << shift).wrapping_neg())
+                    }
                 } else {
                     prim_unary_values(self, |x| x.wrapping_mul(scalar))
                 }
