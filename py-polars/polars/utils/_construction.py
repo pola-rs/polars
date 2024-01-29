@@ -304,7 +304,7 @@ def sequence_from_any_value_or_object(name: str, values: Sequence[Any]) -> PySer
     except RuntimeError:
         return PySeries.new_object(name, values, _strict=False)
     except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
+        if any(s in str(exc) for s in ["mixed dtypes", "unexpected value"]):
             return PySeries.new_object(name, values, _strict=False)
         raise
 
