@@ -608,7 +608,7 @@ class Config(contextlib.ContextDecorator):
             How to format floating point numbers:
 
             - "mixed": Limit the number of decimal places and use scientific
-                notation for large/small values.
+              notation for large/small values.
             - "full": Print the full precision of the floating point number.
 
         Examples

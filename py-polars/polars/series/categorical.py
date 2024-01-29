@@ -43,7 +43,7 @@ class CatNameSpace:
             Ordering type:
 
             - 'physical' -> Use the physical representation of the categories to
-                determine the order (default).
+              determine the order (default).
             - 'lexical' -> Use the string values to determine the ordering.
         """
 
