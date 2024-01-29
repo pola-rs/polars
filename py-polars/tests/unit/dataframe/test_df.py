@@ -3334,3 +3334,13 @@ def test_iter_columns() -> None:
     iter_columns = df.iter_columns()
     assert_series_equal(next(iter_columns), pl.Series("a", [1, 1, 2]))
     assert_series_equal(next(iter_columns), pl.Series("b", [4, 5, 6]))
+
+
+def test_group_by_named() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    assert_frame_equal(
+        df.group_by(z=pl.col("a") * 2, maintain_order=True).agg(pl.col("b").min()),
+        df.group_by((pl.col("a") * 2).alias("z"), maintain_order=True).agg(
+            pl.col("b").min()
+        ),
+    )

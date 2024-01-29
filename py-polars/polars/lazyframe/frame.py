@@ -3128,25 +3128,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def group_by(
         self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
+        *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool = False,
+        **named_by: IntoExpr,
     ) -> LazyGroupBy:
         """
         Start a group by operation.
 
         Parameters
         ----------
-        by
+        *by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Setting this to `True` blocks the possibility
             to run on the streaming engine.
+        **named_by
+            Additional column(s) to group by, specified as keyword arguments.
+            The columns will be named as the keyword used.
 
         Examples
         --------
@@ -3219,7 +3220,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
-        exprs = parse_as_list_of_expressions(by, *more_by)
+        exprs = parse_as_list_of_expressions(*by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
@@ -6249,9 +6250,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
         self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
+        *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool = False,
+        **named_by: IntoExpr,
     ) -> LazyGroupBy:
         """
         Start a group by operation.
@@ -6261,18 +6262,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
-        by
+        *by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
+
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Settings this to `True` blocks the possibility
             to run on the streaming engine.
+        **named_by
+            Additional column(s) to group by, specified as keyword arguments.
+            The columns will be named as the keyword used.
         """
-        return self.group_by(by, *more_by, maintain_order=maintain_order)
+        return self.group_by(*by, maintain_order=maintain_order, **named_by)
 
     @deprecate_renamed_function("rolling", version="0.19.0")
     def groupby_rolling(
