@@ -138,7 +138,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        self.0.extend(other.as_ref().as_ref());
+        let other = other.decimal()?;
+        self.0.extend(&other.0);
         Ok(())
     }
 

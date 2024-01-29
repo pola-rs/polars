@@ -4,7 +4,7 @@ import contextlib
 import os
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
-from functools import reduce
+from functools import lru_cache, reduce
 from io import BytesIO, StringIO
 from operator import and_
 from pathlib import Path
@@ -24,26 +24,33 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
+    DataTypeGroup,
     Date,
     Datetime,
     Duration,
+    Enum,
     Float32,
     Float64,
     Int8,
     Int16,
     Int32,
     Int64,
+    Null,
+    Object,
     String,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
+    Unknown,
+    is_polars_dtype,
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
@@ -53,7 +60,7 @@ from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
-from polars.selectors import _expand_selectors, expand_selector
+from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
 from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
@@ -70,6 +77,7 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_index_args,
@@ -77,6 +85,7 @@ from polars.utils.various import (
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
+    parse_percentiles,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -446,7 +455,7 @@ class LazyFrame:
             return scan  # type: ignore[return-value]
 
         if storage_options:
-            storage_options = list(storage_options.items())  #  type: ignore[assignment]
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
         else:
             # Handle empty dict input
             storage_options = None
@@ -931,6 +940,205 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         return function(self, *args, **kwargs)
+
+    def describe(
+        self,
+        percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
+        *,
+        interpolation: RollingInterpolationMethod = "nearest",
+    ) -> DataFrame:
+        """
+        Creates a summary of statistics for a LazyFrame, returning a DataFrame.
+
+        Parameters
+        ----------
+        percentiles
+            One or more percentiles to include in the summary statistics.
+            All values must be in the range `[0, 1]`.
+
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method used when calculating percentiles.
+
+        Returns
+        -------
+        DataFrame
+
+        Notes
+        -----
+        The median is included by default as the 50% percentile.
+
+        Warnings
+        --------
+        * This method does *not* maintain the laziness of the frame, and will `collect`
+          the final result. This could potentially be an expensive operation.
+        * We do not guarantee the output of `describe` to be stable. It will show
+          statistics that we deem informative, and may be updated in the future.
+          Using `describe` programmatically (versus interactive exploration) is
+          not recommended for this reason.
+
+        Examples
+        --------
+        >>> from datetime import date, time
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "float": [1.0, 2.8, 3.0],
+        ...         "int": [40, 50, None],
+        ...         "bool": [True, False, True],
+        ...         "str": ["zz", "xx", "yy"],
+        ...         "date": [date(2020, 1, 1), date(2021, 7, 5), date(2022, 12, 31)],
+        ...         "time": [time(10, 20, 30), time(14, 45, 50), time(23, 15, 10)],
+        ...     }
+        ... )
+
+        Show default frame statistics:
+
+        >>> lf.describe()
+        shape: (9, 7)
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
+        │ 25%        ┆ 2.8      ┆ 40.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 50%        ┆ 2.8      ┆ 50.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 75%        ┆ 3.0      ┆ 50.0     ┆ null     ┆ null ┆ 2022-12-31 ┆ 23:15:10 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
+
+        Customize which percentiles are displayed, applying linear interpolation:
+
+        >>> lf.describe(
+        ...     percentiles=[0.1, 0.3, 0.5, 0.7, 0.9],
+        ...     interpolation="linear",
+        ... )
+        shape: (11, 7)
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
+        │ 10%        ┆ 1.36     ┆ 41.0     ┆ null     ┆ null ┆ 2020-04-20 ┆ 11:13:34 │
+        │ 30%        ┆ 2.08     ┆ 43.0     ┆ null     ┆ null ┆ 2020-11-26 ┆ 12:59:42 │
+        │ 50%        ┆ 2.8      ┆ 45.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 70%        ┆ 2.88     ┆ 47.0     ┆ null     ┆ null ┆ 2022-02-07 ┆ 18:09:34 │
+        │ 90%        ┆ 2.96     ┆ 49.0     ┆ null     ┆ null ┆ 2022-09-13 ┆ 21:33:18 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
+        """
+        if not self.columns:
+            msg = "cannot describe a LazyFrame that has no columns"
+            raise TypeError(msg)
+
+        # create list of metrics
+        metrics = ["count", "null_count", "mean", "std", "min"]
+        if quantiles := parse_percentiles(percentiles):
+            metrics.extend(f"{q * 100:g}%" for q in quantiles)
+        metrics.append("max")
+
+        @lru_cache
+        def skip_minmax(dt: PolarsDataType) -> bool:
+            return dt.is_nested() or dt in (Categorical, Enum, Null, Object, Unknown)
+
+        # determine which columns will produce std/mean/percentile/etc
+        # statistics in a single pass over the frame schema
+        has_numeric_result, sort_cols = set(), set()
+        metric_exprs: list[Expr] = []
+        null = F.lit(None)
+
+        for c, dtype in self.schema.items():
+            is_numeric = dtype.is_numeric()
+            is_temporal = not is_numeric and dtype.is_temporal()
+
+            # counts
+            count_exprs = [
+                F.col(c).count().name.prefix("count:"),
+                F.col(c).null_count().name.prefix("null_count:"),
+            ]
+            # mean
+            mean_expr = (
+                F.col(c).to_physical().mean().cast(dtype)
+                if is_temporal
+                else (F.col(c).mean() if is_numeric or dtype == Boolean else null)
+            )
+
+            # standard deviation, min, max
+            expr_std = F.col(c).std() if is_numeric else null
+            min_expr = F.col(c).min() if not skip_minmax(dtype) else null
+            max_expr = F.col(c).max() if not skip_minmax(dtype) else null
+
+            # percentiles
+            pct_exprs = []
+            for p in quantiles:
+                if is_numeric or is_temporal:
+                    pct_expr = (
+                        F.col(c).to_physical().quantile(p, interpolation).cast(dtype)
+                        if is_temporal
+                        else F.col(c).quantile(p, interpolation)
+                    )
+                    sort_cols.add(c)
+                else:
+                    pct_expr = null
+                pct_exprs.append(pct_expr.alias(f"{p}:{c}"))
+
+            if is_numeric or dtype.is_nested() or dtype in (Null, Boolean):
+                has_numeric_result.add(c)
+
+            # add column expressions (in end-state 'metrics' list order)
+            metric_exprs.extend(
+                [
+                    *count_exprs,
+                    mean_expr.alias(f"mean:{c}"),
+                    expr_std.alias(f"std:{c}"),
+                    min_expr.alias(f"min:{c}"),
+                    *pct_exprs,
+                    max_expr.alias(f"max:{c}"),
+                ]
+            )
+
+        # calculate requested metrics in parallel, then collect the result
+        df_metrics = (
+            (
+                # if more than one quantile, sort the relevant columns to make them O(1)
+                # TODO: drop sort once we have efficient retrieval of multiple quantiles
+                self.with_columns(F.col(c).sort() for c in sort_cols)
+                if sort_cols
+                else self
+            )
+            .select(*metric_exprs)
+            .collect()
+        )
+
+        # reshape wide result
+        n_metrics = len(metrics)
+        column_metrics = [
+            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
+            for n in range(self.width)
+        ]
+        summary = dict(zip(self.columns, column_metrics))
+
+        # cast by column type (numeric/bool -> float), (other -> string)
+        for c in self.columns:
+            summary[c] = [  # type: ignore[assignment]
+                None
+                if (v is None or isinstance(v, dict))
+                else (float(v) if (c in has_numeric_result) else str(v))
+                for v in summary[c]
+            ]
+
+        # return results as a DataFrame
+        df_summary = from_dict(summary)
+        df_summary.insert_column(0, pl.Series("statistic", metrics))
+        return df_summary
 
     def explain(
         self,
@@ -1645,7 +1853,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             batch.
 
             .. warning::
-                This functionality is currently in an alpha state.
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
             .. note::
                 Use :func:`explain` to see if Polars can process the query in streaming
@@ -1711,6 +1920,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
 
         if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
             comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
@@ -1780,6 +1990,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect DataFrame asynchronously in thread pool.
 
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
         Collects into a DataFrame (like :func:`collect`), but instead of returning
         DataFrame directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
@@ -1808,22 +2022,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
         streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
+            Process the query in batches to handle larger-than-memory data.
+            If set to `False` (default), the entire query is processed in a single
+            batch.
 
-        Notes
-        -----
-        In case of error `set_exception` is used on
-        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
+            .. warning::
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
-
-        See Also
-        --------
-        polars.collect_all : Collect multiple LazyFrames at the same time.
-        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+            .. note::
+                Use :func:`explain` to see if Polars can process the query in streaming
+                mode.
 
         Returns
         -------
@@ -1831,6 +2040,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         If `gevent=True` then returns wrapper that has
         `.get(block=True, timeout=None)` method.
+
+        See Also
+        --------
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+
+        Notes
+        -----
+        In case of error `set_exception` is used on
+        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
         Examples
         --------
@@ -1868,6 +2087,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
 
         if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
             comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
@@ -1886,6 +2106,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
         return result  # type: ignore[return-value]
 
+    @unstable()
     def sink_parquet(
         self,
         path: str | Path,
@@ -1905,6 +2126,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -1978,6 +2203,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @unstable()
     def sink_ipc(
         self,
         path: str | Path,
@@ -1993,6 +2219,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to an IPC file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2045,6 +2275,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
+    @unstable()
     def sink_csv(
         self,
         path: str | Path,
@@ -2071,6 +2302,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to a CSV file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2182,6 +2417,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @unstable()
     def sink_ndjson(
         self,
         path: str | Path,
@@ -2196,6 +2432,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2395,7 +2635,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def cast(
         self,
-        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        dtypes: (
+            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            | PolarsDataType
+        ),
         *,
         strict: bool = True,
     ) -> Self:
@@ -2436,12 +2679,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
 
-        Cast all frame columns to the specified dtype:
+        Cast all frame columns matching one dtype (or dtype group) to another dtype:
 
-        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
-        {'foo': ['1', '2', '3'],
-         'bar': ['6.0', '7.0', '8.0'],
-         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
+        >>> lf.cast({pl.Date: pl.Datetime}).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────────────────────┐
+        │ foo ┆ bar ┆ ham                 │
+        │ --- ┆ --- ┆ ---                 │
+        │ i64 ┆ f64 ┆ datetime[μs]        │
+        ╞═════╪═════╪═════════════════════╡
+        │ 1   ┆ 6.0 ┆ 2020-01-02 00:00:00 │
+        │ 2   ┆ 7.0 ┆ 2021-03-04 00:00:00 │
+        │ 3   ┆ 8.0 ┆ 2022-05-06 00:00:00 │
+        └─────┴─────┴─────────────────────┘
 
         Use selectors to define the columns being cast:
 
@@ -2457,17 +2707,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7   ┆ 2021-03-04 │
         │ 3   ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
+
+        Cast all frame columns to the specified dtype:
+
+        >>> lf.cast(pl.String).collect().to_dict(as_series=False)
+        {'foo': ['1', '2', '3'],
+         'bar': ['6.0', '7.0', '8.0'],
+         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         if not isinstance(dtypes, Mapping):
             return self._from_pyldf(self._ldf.cast_all(dtypes, strict))
 
         cast_map = {}
         for c, dtype in dtypes.items():
+            if (is_polars_dtype(c) or isinstance(c, DataTypeGroup)) or (
+                isinstance(c, Collection) and all(is_polars_dtype(x) for x in c)
+            ):
+                c = by_dtype(c)  # type: ignore[arg-type]
+
             dtype = py_type_to_dtype(dtype)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)
-                else {x: dtype for x in expand_selector(self, c)}
+                else {x: dtype for x in expand_selector(self, c)}  # type: ignore[arg-type]
             )
 
         return self._from_pyldf(self._ldf.cast(cast_map, strict))
@@ -2698,7 +2960,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
-            F.col(name).eq_missing(value) for name, value in constraints.items()
+            F.col(name).eq(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
             msg = "at least one predicate or constraint must be provided"
@@ -2864,27 +3126,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
+    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
+        *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool = False,
+        **named_by: IntoExpr,
     ) -> LazyGroupBy:
         """
         Start a group by operation.
 
         Parameters
         ----------
-        by
+        *by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Setting this to `True` blocks the possibility
             to run on the streaming engine.
+        **named_by
+            Additional columns to group by, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Examples
         --------
@@ -2957,7 +3221,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
-        exprs = parse_as_list_of_expressions(by, *more_by)
+        exprs = parse_as_list_of_expressions(*by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
@@ -4165,14 +4429,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         drop_cols = _expand_selectors(self, *columns)
         return self._from_pyldf(self._ldf.drop(drop_cols))
 
-    def rename(self, mapping: dict[str, str]) -> Self:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> Self:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Notes
         -----
@@ -4199,10 +4464,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> lf.rename(lambda column_name: "c" + column_name[1:]).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
-        existing = list(mapping.keys())
-        new = list(mapping.values())
-        return self._from_pyldf(self._ldf.rename(existing, new))
+        if callable(mapping):
+            return self.select(F.all().name.map(mapping))
+        else:
+            existing = list(mapping.keys())
+            new = list(mapping.values())
+            return self._from_pyldf(self._ldf.rename(existing, new))
 
     def reverse(self) -> Self:
         """
@@ -4616,10 +4895,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴─────┘
 
         An index column can also be created using the expressions :func:`int_range`
-        and :func:`count`.
+        and :func:`len`.
 
         >>> lf.select(
-        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
         ...     pl.all(),
         ... ).collect()
         shape: (3, 3)
@@ -4642,7 +4921,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     @deprecate_function(
         "Use `with_row_index` instead."
-        "Note that the default column name has changed from 'row_nr' to 'index'.",
+        " Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
@@ -4650,7 +4929,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Add a column at index 0 that counts the rows.
 
         .. deprecated::
-            Use `meth`:with_row_index` instead.
+            Use :meth:`with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
@@ -5721,6 +6000,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             [wrap_expr(e).set_sorted(descending=descending) for e in columns]
         )
 
+    @unstable()
     def update(
         self,
         other: LazyFrame,
@@ -5735,8 +6015,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Update the values in this `LazyFrame` with the non-null values in `other`.
 
         .. warning::
-            This functionality is experimental and may change without it being
-            considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------

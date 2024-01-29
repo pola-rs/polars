@@ -7,8 +7,8 @@ from polars.utils._scan import _execute_from_rust
 from polars.utils.build_info import build_info
 from polars.utils.convert import (
     _date_to_pl_date,
-    _datetime_for_anyvalue,
-    _datetime_for_anyvalue_windows,
+    _datetime_for_any_value,
+    _datetime_for_any_value_windows,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
     _to_python_date,
@@ -31,8 +31,8 @@ __all__ = [
     "threadpool_size",
     # Required for Rust bindings
     "_date_to_pl_date",
-    "_datetime_for_anyvalue",
-    "_datetime_for_anyvalue_windows",
+    "_datetime_for_any_value",
+    "_datetime_for_any_value_windows",
     "_execute_from_rust",
     "_polars_warn",
     "_time_to_pl_time",

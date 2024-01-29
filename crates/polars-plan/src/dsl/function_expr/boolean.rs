@@ -1,5 +1,3 @@
-use std::ops::Not;
-
 use super::*;
 #[cfg(feature = "is_in")]
 use crate::wrap;
@@ -36,12 +34,25 @@ pub enum BooleanFunction {
     IsIn,
     AllHorizontal,
     AnyHorizontal,
+    // Also bitwise negate
     Not,
 }
 
 impl BooleanFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        mapper.with_dtype(DataType::Boolean)
+        match self {
+            BooleanFunction::Not => {
+                mapper.try_map_dtype(|dtype| {
+                    match dtype {
+                        DataType::Boolean => Ok(DataType::Boolean),
+                        dt if dt.is_integer() => Ok(dt.clone()),
+                        dt => polars_bail!(InvalidOperation: "dtype {:?} not supported in 'not' operation", dt) 
+                    }
+                })
+
+            },
+            _ => mapper.with_dtype(DataType::Boolean),
+        }
     }
 }
 
@@ -200,5 +211,5 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
 }
 
 fn not(s: &Series) -> PolarsResult<Series> {
-    Ok(s.bool()?.not().into_series())
+    polars_ops::series::negate_bitwise(s)
 }

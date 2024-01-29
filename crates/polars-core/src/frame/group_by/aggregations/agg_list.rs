@@ -71,9 +71,12 @@ where
                     None
                 };
 
-                let array =
-                    PrimitiveArray::new(T::get_dtype().to_arrow(), list_values.into(), validity);
-                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
+                let array = PrimitiveArray::new(
+                    T::get_dtype().to_arrow(true),
+                    list_values.into(),
+                    validity,
+                );
+                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow(true));
                 // Safety:
                 // offsets are monotonically increasing
                 let arr = ListArray::<i64>::new(
@@ -131,9 +134,12 @@ where
                     None
                 };
 
-                let array =
-                    PrimitiveArray::new(T::get_dtype().to_arrow(), list_values.into(), validity);
-                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
+                let array = PrimitiveArray::new(
+                    T::get_dtype().to_arrow(true),
+                    list_values.into(),
+                    validity,
+                );
+                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow(true));
                 let arr = ListArray::<i64>::new(
                     data_type,
                     Offsets::new_unchecked(offsets).into(),

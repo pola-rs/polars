@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use arrow::array::*;
 
 use crate::prelude::*;
@@ -7,9 +5,6 @@ use crate::prelude::*;
 use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 
-type LargeUtf8Array = Utf8Array<i64>;
-type LargeBinaryArray = BinaryArray<i64>;
-type LargeListArray = ListArray<i64>;
 pub mod par;
 
 /// A [`PolarsIterator`] is an iterator over a [`ChunkedArray`] which contains polars types. A [`PolarsIterator`]
@@ -132,58 +127,6 @@ impl<'a> IntoIterator for &'a StringChunked {
     }
 }
 
-pub struct Utf8IterNoNull<'a> {
-    array: &'a LargeUtf8Array,
-    current: usize,
-    current_end: usize,
-}
-
-impl<'a> Utf8IterNoNull<'a> {
-    /// create a new iterator
-    pub fn new(array: &'a LargeUtf8Array) -> Self {
-        Utf8IterNoNull {
-            array,
-            current: 0,
-            current_end: array.len(),
-        }
-    }
-}
-
-impl<'a> Iterator for Utf8IterNoNull<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current == self.current_end {
-            None
-        } else {
-            let old = self.current;
-            self.current += 1;
-            unsafe { Some(self.array.value_unchecked(old)) }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            self.array.len() - self.current,
-            Some(self.array.len() - self.current),
-        )
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterNoNull<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.current_end == self.current {
-            None
-        } else {
-            self.current_end -= 1;
-            unsafe { Some(self.array.value_unchecked(self.current_end)) }
-        }
-    }
-}
-
-/// all arrays have known size.
-impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
-
 impl StringChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
@@ -194,7 +137,7 @@ impl StringChunked {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .flat_map(Utf8IterNoNull::new)
+                .flat_map(|arr| arr.values_iter())
                 .trust_my_length(self.len())
         }
     }
@@ -209,58 +152,6 @@ impl<'a> IntoIterator for &'a BinaryChunked {
     }
 }
 
-pub struct BinaryIterNoNull<'a> {
-    array: &'a LargeBinaryArray,
-    current: usize,
-    current_end: usize,
-}
-
-impl<'a> BinaryIterNoNull<'a> {
-    /// create a new iterator
-    pub fn new(array: &'a LargeBinaryArray) -> Self {
-        BinaryIterNoNull {
-            array,
-            current: 0,
-            current_end: array.len(),
-        }
-    }
-}
-
-impl<'a> Iterator for BinaryIterNoNull<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current == self.current_end {
-            None
-        } else {
-            let old = self.current;
-            self.current += 1;
-            unsafe { Some(self.array.value_unchecked(old)) }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            self.array.len() - self.current,
-            Some(self.array.len() - self.current),
-        )
-    }
-}
-
-impl<'a> DoubleEndedIterator for BinaryIterNoNull<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.current_end == self.current {
-            None
-        } else {
-            self.current_end -= 1;
-            unsafe { Some(self.array.value_unchecked(self.current_end)) }
-        }
-    }
-}
-
-/// all arrays have known size.
-impl<'a> ExactSizeIterator for BinaryIterNoNull<'a> {}
-
 impl BinaryChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
@@ -271,7 +162,32 @@ impl BinaryChunked {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .flat_map(BinaryIterNoNull::new)
+                .flat_map(|arr| arr.values_iter())
+                .trust_my_length(self.len())
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a BinaryOffsetChunked {
+    type Item = Option<&'a [u8]>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
+    }
+}
+
+impl BinaryOffsetChunked {
+    #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = &[u8]> + DoubleEndedIterator + TrustedLen
+    {
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flat_map(|arr| arr.values_iter())
                 .trust_my_length(self.len())
         }
     }
@@ -317,68 +233,6 @@ impl<'a> IntoIterator for &'a ListChunked {
     }
 }
 
-pub struct ListIterNoNull<'a> {
-    array: &'a LargeListArray,
-    inner_type: DataType,
-    current: usize,
-    current_end: usize,
-}
-
-impl<'a> ListIterNoNull<'a> {
-    /// create a new iterator
-    pub fn new(array: &'a LargeListArray, inner_type: DataType) -> Self {
-        ListIterNoNull {
-            array,
-            inner_type,
-            current: 0,
-            current_end: array.len(),
-        }
-    }
-}
-
-impl<'a> Iterator for ListIterNoNull<'a> {
-    type Item = Series;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current == self.current_end {
-            None
-        } else {
-            let old = self.current;
-            self.current += 1;
-            unsafe {
-                Some(Series::from_chunks_and_dtype_unchecked(
-                    "",
-                    vec![self.array.value_unchecked(old)],
-                    &self.inner_type,
-                ))
-            }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            self.array.len() - self.current,
-            Some(self.array.len() - self.current),
-        )
-    }
-}
-
-impl<'a> DoubleEndedIterator for ListIterNoNull<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.current_end == self.current {
-            None
-        } else {
-            self.current_end -= 1;
-            unsafe {
-                Some(Series::try_from(("", self.array.value_unchecked(self.current_end))).unwrap())
-            }
-        }
-    }
-}
-
-/// all arrays have known size.
-impl<'a> ExactSizeIterator for ListIterNoNull<'a> {}
-
 impl ListChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
@@ -386,11 +240,11 @@ impl ListChunked {
         &self,
     ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = Series> + DoubleEndedIterator + TrustedLen
     {
-        // we know that we only iterate over length == self.len()
         let inner_type = self.inner_dtype();
         unsafe {
             self.downcast_iter()
-                .flat_map(move |arr| ListIterNoNull::new(arr, inner_type.clone()))
+                .flat_map(|arr| arr.values_iter())
+                .map(move |arr| Series::from_chunks_and_dtype_unchecked("", vec![arr], &inner_type))
                 .trust_my_length(self.len())
         }
     }

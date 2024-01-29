@@ -37,10 +37,10 @@ def test_all_any_horizontally() -> None:
     assert_frame_equal(result, expected)
 
     # note: a kwargs filter will use an internal call to all_horizontal
-    dfltr = df.lazy().filter(var1=None, var3=False)
-    assert dfltr.collect().rows() == [(None, None, False)]
+    dfltr = df.lazy().filter(var1=True, var3=False)
+    assert dfltr.collect().rows() == [(True, False, False)]
 
-    # confirm that we reduce the horizontal filter components
+    # confirm that we reduced the horizontal filter components
     # (eg: explain does not contain an "all_horizontal" node)
     assert "horizontal" not in dfltr.explain().lower()
 
@@ -238,6 +238,49 @@ def test_sum_max_min() -> None:
     assert_series_equal(out["sum"], pl.Series("sum", [2.0, 4.0, 6.0]))
     assert_series_equal(out["max"], pl.Series("max", [1.0, 4.0, 9.0]))
     assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
+
+
+def test_str_sum_horizontal() -> None:
+    df = pl.DataFrame(
+        {"A": ["a", "b", None, "c", None], "B": ["f", "g", "h", None, None]}
+    )
+    out = df.select(pl.sum_horizontal("A", "B"))
+    assert_series_equal(out["A"], pl.Series("A", ["af", "bg", "h", "c", ""]))
+
+
+def test_sum_null_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [5, None, 3, 2, 1],
+            "B": [5, 3, None, 2, 1],
+            "C": [None, None, None, None, None],
+        }
+    )
+
+    assert_series_equal(
+        df.select(pl.sum_horizontal("A", "B", "C")).to_series(),
+        pl.Series("A", [10, 3, 3, 4, 2]),
+    )
+    assert_series_equal(
+        df.select(pl.sum_horizontal("C", "B")).to_series(),
+        pl.Series("C", [5, 3, 0, 2, 1]),
+    )
+    assert_series_equal(
+        df.select(pl.sum_horizontal("C", "C")).to_series(),
+        pl.Series("C", [None, None, None, None, None]),
+    )
+
+
+def test_sum_single_col() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [5, None, 3, None, 1],
+        }
+    )
+
+    assert_series_equal(
+        df.select(pl.sum_horizontal("A")).to_series(), pl.Series("A", [5, 0, 3, 0, 1])
+    )
 
 
 def test_cum_sum_horizontal() -> None:

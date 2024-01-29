@@ -122,7 +122,7 @@ where
 
 #[cfg(feature = "dtype-categorical")]
 struct LocalCategorical<'a> {
-    rev_map: &'a Utf8Array<i64>,
+    rev_map: &'a Utf8ViewArray,
     cats: &'a UInt32Chunked,
 }
 
@@ -138,7 +138,7 @@ impl<'a> GetInner for LocalCategorical<'a> {
 #[cfg(feature = "dtype-categorical")]
 struct GlobalCategorical<'a> {
     p1: &'a PlHashMap<u32, u32>,
-    p2: &'a Utf8Array<i64>,
+    p2: &'a Utf8ViewArray,
     cats: &'a UInt32Chunked,
 }
 
@@ -159,7 +159,6 @@ impl<'a> IntoTotalOrdInner<'a> for &'a CategoricalChunked {
         match &**self.get_rev_map() {
             RevMapping::Global(p1, p2, _) => Box::new(GlobalCategorical { p1, p2, cats }),
             RevMapping::Local(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
-            RevMapping::Enum(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
         }
     }
 }

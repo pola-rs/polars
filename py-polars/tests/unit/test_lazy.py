@@ -146,11 +146,11 @@ def test_count_suffix_10783() -> None:
         }
     )
     df_with_cnt = df.with_columns(
-        pl.count()
+        pl.len()
         .over(pl.col("a").list.sort().list.join("").hash())
         .name.suffix("_suffix")
     )
-    df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
+    df_expect = df.with_columns(pl.Series("len_suffix", [3, 3, 1, 3]))
     assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
 
 
@@ -923,6 +923,14 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     assert res.columns[0] == "C"
 
 
+def test_rename_lambda() -> None:
+    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+    out = ldf.rename(
+        lambda col: "foo" if col == "a" else "bar" if col == "b" else col
+    ).collect()
+    assert out.columns == ["foo", "bar", "c"]
+
+
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
@@ -1197,7 +1205,7 @@ def test_predicate_count_vstack() -> None:
             "v": [5, 7],
         }
     )
-    assert pl.concat([l1, l2]).filter(pl.count().over("k") == 2).collect()[
+    assert pl.concat([l1, l2]).filter(pl.len().over("k") == 2).collect()[
         "v"
     ].to_list() == [3, 2, 5, 7]
 

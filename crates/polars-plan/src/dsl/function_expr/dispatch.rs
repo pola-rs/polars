@@ -135,3 +135,39 @@ pub(super) fn replace(s: &[Series], return_dtype: Option<DataType>) -> PolarsRes
     let default = if let Some(s) = s.get(3) { s } else { &s[0] };
     polars_ops::series::replace(&s[0], &s[1], &s[2], default, return_dtype)
 }
+
+pub(super) fn fill_null_with_strategy(
+    s: &Series,
+    strategy: FillNullStrategy,
+) -> PolarsResult<Series> {
+    s.fill_null(strategy)
+}
+
+pub(super) fn gather_every(s: &Series, n: usize, offset: usize) -> PolarsResult<Series> {
+    polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n should be positive");
+    Ok(s.gather_every(n, offset))
+}
+
+#[cfg(feature = "reinterpret")]
+pub(super) fn reinterpret(s: &Series, signed: bool) -> PolarsResult<Series> {
+    polars_ops::series::reinterpret(s, signed)
+}
+
+pub(super) fn negate(s: &Series) -> PolarsResult<Series> {
+    polars_ops::series::negate(s)
+}
+
+pub(super) fn extend_constant(s: &[Series]) -> PolarsResult<Series> {
+    let value = &s[1];
+    let n = &s[2];
+    polars_ensure!(value.len() == 1 && n.len() == 1, ComputeError: "value and n should have unit length.");
+    let n = n.strict_cast(&DataType::UInt64)?;
+    let v = value.get(0)?;
+    let s = &s[0];
+    match n.u64()?.get(0) {
+        Some(n) => s.extend_constant(v, n as usize),
+        None => {
+            polars_bail!(ComputeError: "n can not be None for extend_constant.")
+        },
+    }
+}

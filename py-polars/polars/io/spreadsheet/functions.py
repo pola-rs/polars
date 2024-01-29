@@ -1,22 +1,27 @@
 from __future__ import annotations
 
 import re
-from io import StringIO
+from contextlib import nullcontext
+from datetime import time
+from io import BytesIO, StringIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Datetime, String
+from polars.datatypes import FLOAT_DTYPES, Date, Datetime, Int64, Null, String
+from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
+from polars.io._utils import _looks_like_url, _process_file_url
 from polars.io.csv.functions import read_csv
+from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
-    from io import BytesIO
     from typing import Literal
 
-    from polars.type_aliases import SchemaDict
+    from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict
 
 
 @overload
@@ -25,8 +30,8 @@ def read_excel(
     *,
     sheet_id: None = ...,
     sheet_name: str,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
-    xlsx2csv_options: dict[str, Any] | None = ...,
+    engine: ExcelSpreadsheetEngine | None = ...,
+    engine_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
@@ -40,8 +45,8 @@ def read_excel(
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
-    xlsx2csv_options: dict[str, Any] | None = ...,
+    engine: ExcelSpreadsheetEngine | None = ...,
+    engine_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
@@ -55,8 +60,8 @@ def read_excel(
     *,
     sheet_id: int,
     sheet_name: str,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
-    xlsx2csv_options: dict[str, Any] | None = ...,
+    engine: ExcelSpreadsheetEngine | None = ...,
+    engine_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
@@ -72,8 +77,8 @@ def read_excel(
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
-    xlsx2csv_options: dict[str, Any] | None = ...,
+    engine: ExcelSpreadsheetEngine | None = ...,
+    engine_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
@@ -87,8 +92,8 @@ def read_excel(
     *,
     sheet_id: int,
     sheet_name: None = ...,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
-    xlsx2csv_options: dict[str, Any] | None = ...,
+    engine: ExcelSpreadsheetEngine | None = ...,
+    engine_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
@@ -102,8 +107,8 @@ def read_excel(
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
-    xlsx2csv_options: dict[str, Any] | None = ...,
+    engine: ExcelSpreadsheetEngine | None = ...,
+    engine_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
@@ -111,24 +116,27 @@ def read_excel(
     ...
 
 
+@deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = None,
-    xlsx2csv_options: dict[str, Any] | None = None,
+    engine: ExcelSpreadsheetEngine | None = None,
+    engine_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
-    Read Excel (XLSX) spreadsheet data into a DataFrame.
+    Read Excel spreadsheet data into a DataFrame.
 
+    .. versionadded:: 0.20.6
+        Added "calamine" fastexcel engine for Excel Workbooks (.xlsx, .xlsb, .xls).
     .. versionadded:: 0.19.4
-        Added support for "pyxlsb" engine for reading Excel Binary Workbooks (.xlsb).
+        Added "pyxlsb" engine for Excel Binary Workbooks (.xlsb).
     .. versionadded:: 0.19.3
-        Added support for "openpyxl" engine, and added `schema_overrides` parameter.
+        Added "openpyxl" engine, and added `schema_overrides` parameter.
 
     Parameters
     ----------
@@ -144,11 +152,12 @@ def read_excel(
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
         than one is given then a `{sheetname:frame,}` dict is returned.
     engine
-        Library used to parse the spreadsheet file; defaults to "xlsx2csv" if not set.
+        Library used to parse the spreadsheet file; currently defaults to "xlsx2csv"
+        if not explicitly set.
 
-        * "xlsx2csv": the fastest engine; converts the data to an in-memory CSV before
-          using the native polars `read_csv` method to parse the result. You can
-          pass `xlsx2csv_options` and `read_csv_options` to refine the conversion.
+        * "xlsx2csv": converts the data to an in-memory CSV before using the native
+          polars `read_csv` method to parse the result. You can pass `engine_options`
+          and `read_csv_options` to refine the conversion.
         * "openpyxl": this engine is significantly slower than `xlsx2csv` but supports
           additional automatic type inference; potentially useful if you are otherwise
           unable to parse your sheet with the (default) `xlsx2csv` engine in
@@ -156,15 +165,18 @@ def read_excel(
         * "pyxlsb": this engine is used for Excel Binary Workbooks (`.xlsb` files).
           Note that you have to use `schema_overrides` to correctly load date/datetime
           columns (or these will be read as floats representing offset Julian values).
+        * "calamine": this engine can be used for reading all major types of Excel
+          Workbook (`.xlsx`, `.xlsb`, `.xls`) and is *dramatically* faster than the
+          other options, using the `fastexcel` module to bind calamine.
 
-    xlsx2csv_options
-        Extra options passed to `xlsx2csv.Xlsx2csv()`,
-        e.g. `{"skip_empty_lines": True}`
+    engine_options
+        Extra options passed to the underlying engine's Workbook-reading constructor.
+        For example, if using `xlsx2csv` you could pass `{"skip_empty_lines": True}`.
     read_csv_options
         Extra options passed to :func:`read_csv` for parsing the CSV file returned by
-        `xlsx2csv.Xlsx2csv().convert()`
-        e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
-        "infer_schema_length": None}``
+        `xlsx2csv.Xlsx2csv().convert()`. This option is *only* applicable when using
+        the `xlsx2csv` engine. For example, you could pass ``{"has_header": False,
+        "new_columns": ["a", "b", "c"], "infer_schema_length": None}``
     schema_overrides
         Support type specification or override of one or more columns.
     raise_if_empty
@@ -202,7 +214,7 @@ def read_excel(
     >>> pl.read_excel(
     ...     source="test.xlsx",
     ...     sheet_id=3,
-    ...     xlsx2csv_options={"skip_empty_lines": True},
+    ...     engine_options={"skip_empty_lines": True},
     ...     read_csv_options={"has_header": False, "new_columns": ["a", "b", "c"]},
     ... )  # doctest: +SKIP
 
@@ -222,7 +234,7 @@ def read_excel(
     The `openpyxl` package can also be used to parse Excel data; it has slightly
     better default type detection, but is slower than `xlsx2csv`. If you have a sheet
     that is better read using this package you can set the engine as "openpyxl" (if you
-    use this engine then neither `xlsx2csv_options` nor `read_csv_options` can be set).
+    use this engine then `read_csv_options` cannot be set).
 
     >>> pl.read_excel(
     ...     source="test.xlsx",
@@ -230,20 +242,16 @@ def read_excel(
     ...     schema_overrides={"dt": pl.Datetime, "value": pl.Int32},
     ... )  # doctest: +SKIP
     """
-    if engine and engine != "xlsx2csv":
-        if xlsx2csv_options:
-            msg = f"cannot specify `xlsx2csv_options` when engine={engine!r}"
-            raise ValueError(msg)
-        if read_csv_options:
-            msg = f"cannot specify `read_csv_options` when engine={engine!r}"
-            raise ValueError(msg)
+    if engine and engine != "xlsx2csv" and read_csv_options:
+        msg = f"cannot specify `read_csv_options` when engine={engine!r}"
+        raise ValueError(msg)
 
     return _read_spreadsheet(
         sheet_id,
         sheet_name,
         source=source,
         engine=engine,
-        engine_options=xlsx2csv_options,
+        engine_options=engine_options,
         read_csv_options=read_csv_options,
         schema_overrides=schema_overrides,
         raise_if_empty=raise_if_empty,
@@ -392,7 +400,7 @@ def _read_spreadsheet(
     sheet_id: int | Sequence[int] | None,
     sheet_name: str | list[str] | tuple[str] | None,
     source: str | BytesIO | Path | BinaryIO | bytes,
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb", "ods"] | None,
+    engine: ExcelSpreadsheetEngine | Literal["ods"] | None,
     engine_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
     schema_overrides: SchemaDict | None = None,
@@ -401,6 +409,8 @@ def _read_spreadsheet(
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
+        if _looks_like_url(source):
+            source = _process_file_url(source)
 
     if engine is None:
         if (src := str(source).lower()).endswith(".ods"):
@@ -486,19 +496,13 @@ def _get_sheet_names(
 
 
 def _initialise_spreadsheet_parser(
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb", "ods"],
+    engine: str | None,
     source: str | BytesIO | Path | BinaryIO | bytes,
     engine_options: dict[str, Any],
 ) -> tuple[Callable[..., pl.DataFrame], Any, list[dict[str, Any]]]:
     """Instantiate the indicated spreadsheet parser and establish related properties."""
     if engine == "xlsx2csv":  # default
-        try:
-            import xlsx2csv
-        except ImportError:
-            msg = (
-                "required package not installed" "\n\nPlease run: pip install xlsx2csv"
-            )
-            raise ModuleNotFoundError(msg) from None
+        xlsx2csv = import_optional("xlsx2csv")
 
         # establish sensible defaults for unset options
         for option, value in {
@@ -514,23 +518,32 @@ def _initialise_spreadsheet_parser(
         return _read_spreadsheet_xlsx2csv, parser, sheets
 
     elif engine == "openpyxl":
-        try:
-            import openpyxl
-        except ImportError:
-            msg = (
-                "required package not installed" "\n\nPlease run: pip install openpyxl"
-            )
-            raise ImportError(msg) from None
+        openpyxl = import_optional("openpyxl")
         parser = openpyxl.load_workbook(source, data_only=True, **engine_options)
         sheets = [{"index": i + 1, "name": ws.title} for i, ws in enumerate(parser)]
         return _read_spreadsheet_openpyxl, parser, sheets
 
+    elif engine == "calamine":
+        # note: can't read directly from bytes (yet) so
+        if read_bytesio := isinstance(source, BytesIO):
+            temp_data = NamedTemporaryFile(delete=True)
+        with nullcontext() if not read_bytesio else temp_data as tmp:  # type: ignore[attr-defined]
+            if read_bytesio:
+                tmp.write(source.getvalue())  # type: ignore[union-attr]
+                source = temp_data.name
+
+            if not Path(source).exists():  # type: ignore[arg-type]
+                raise FileNotFoundError(source)
+
+            fxl = import_optional("fastexcel", min_version="0.7.0")
+            parser = fxl.read_excel(source, **engine_options)
+            sheets = [
+                {"index": i + 1, "name": nm} for i, nm in enumerate(parser.sheet_names)
+            ]
+            return _read_spreadsheet_calamine, parser, sheets
+
     elif engine == "pyxlsb":
-        try:
-            import pyxlsb
-        except ImportError:
-            msg = "required package not installed" "\n\nPlease run: pip install pyxlsb"
-            raise ImportError(msg) from None
+        pyxlsb = import_optional("pyxlsb")
         try:
             parser = pyxlsb.open_workbook(source, **engine_options)
         except KeyError as err:
@@ -544,14 +557,7 @@ def _initialise_spreadsheet_parser(
         return _read_spreadsheet_pyxlsb, parser, sheets
 
     elif engine == "ods":
-        try:
-            import ezodf
-        except ImportError:
-            msg = (
-                "required package not installed"
-                "\n\nPlease run: pip install ezodf lxml"
-            )
-            raise ImportError(msg) from None
+        ezodf = import_optional("ezodf")
         parser = ezodf.opendoc(source, **engine_options)
         sheets = [
             {"index": i + 1, "name": ws.name} for i, ws in enumerate(parser.sheets)
@@ -599,21 +605,33 @@ def _csv_buffer_to_frame(
         separator=separator,
         **read_csv_options,
     )
-    return _drop_unnamed_null_columns(df)
+    return _drop_null_data(df, raise_if_empty=raise_if_empty)
 
 
-def _drop_unnamed_null_columns(df: pl.DataFrame) -> pl.DataFrame:
-    """If DataFrame contains unnamed columns that contain only nulls, drop them."""
+def _drop_null_data(df: pl.DataFrame, *, raise_if_empty: bool) -> pl.DataFrame:
+    """If DataFrame contains columns/rows that contain only nulls, drop them."""
     null_cols = []
     for col_name in df.columns:
-        # note that if multiple unnamed columns are found then all but
-        # the first one will be ones will be named as "_duplicated_{n}"
-        if col_name == "" or re.match(r"_duplicated_\d+$", col_name):
-            if df[col_name].null_count() == len(df):
+        # note that if multiple unnamed columns are found then all but the first one
+        # will be named as "_duplicated_{n}" (or "__UNNAMED__{n}" from calamine)
+        if col_name == "" or re.match(r"(_duplicated_|__UNNAMED__)\d+$", col_name):
+            col = df[col_name]
+            if col.dtype == Null or col.null_count() == len(df):
                 null_cols.append(col_name)
     if null_cols:
         df = df.drop(*null_cols)
-    return df
+
+    if len(df) == 0 and len(df.columns) == 0:
+        if not raise_if_empty:
+            return df
+        else:
+            msg = (
+                "empty Excel sheet"
+                "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
+            )
+            raise NoDataError(msg)
+
+    return df.filter(~F.all_horizontal(F.all().is_null()))
 
 
 def _read_spreadsheet_ods(
@@ -668,13 +686,6 @@ def _read_spreadsheet_ods(
             schema_overrides=overrides,
         )
 
-    if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
-        msg = (
-            "empty Excel sheet"
-            "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
-        )
-        raise NoDataError(msg)
-
     if strptime_cols:
         df = df.with_columns(
             (
@@ -686,8 +697,9 @@ def _read_spreadsheet_ods(
             )
             for nm, dtype in strptime_cols.items()
         )
+
     df.columns = headers
-    return _drop_unnamed_null_columns(df)
+    return _drop_null_data(df, raise_if_empty=raise_if_empty)
 
 
 def _read_spreadsheet_openpyxl(
@@ -735,13 +747,49 @@ def _read_spreadsheet_openpyxl(
         {s.name: s for s in series_data},
         schema_overrides=schema_overrides,
     )
-    if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
-        msg = (
-            "empty Excel sheet"
-            "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
-        )
-        raise NoDataError(msg)
-    return _drop_unnamed_null_columns(df)
+    return _drop_null_data(df, raise_if_empty=raise_if_empty)
+
+
+def _read_spreadsheet_calamine(
+    parser: Any,
+    sheet_name: str | None,
+    read_csv_options: dict[str, Any] | None,
+    schema_overrides: SchemaDict | None,
+    *,
+    raise_if_empty: bool,
+) -> pl.DataFrame:
+    ws = parser.load_sheet_by_name(sheet_name)
+    df = ws.to_polars()
+
+    if schema_overrides:
+        df = df.cast(dtypes=schema_overrides)
+
+    df = _drop_null_data(df, raise_if_empty=raise_if_empty)
+
+    # calamine may read integer data as float; cast back to int where possible.
+    # do a similar downcast check for datetime -> date dtypes.
+    type_checks = []
+    for c, dtype in df.schema.items():
+        if dtype in FLOAT_DTYPES:
+            check_cast = [F.col(c).floor().eq_missing(F.col(c)), F.col(c).cast(Int64)]
+            type_checks.append(check_cast)
+        elif dtype == Datetime:
+            check_cast = [
+                F.col(c).drop_nulls().dt.time().eq_missing(time(0, 0, 0)),
+                F.col(c).cast(Date),
+            ]
+            type_checks.append(check_cast)
+
+    if type_checks:
+        apply_downcast = df.select([d[0] for d in type_checks]).row(0)
+
+        # do a similar check for datetime columns that have only 00:00:00 times.
+        if downcast := [
+            cast for apply, (_, cast) in zip(apply_downcast, type_checks) if apply
+        ]:
+            df = df.with_columns(*downcast)
+
+    return df
 
 
 def _read_spreadsheet_pyxlsb(
@@ -796,13 +844,7 @@ def _read_spreadsheet_pyxlsb(
         {s.name: s for s in series_data},
         schema_overrides=schema_overrides,
     )
-    if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
-        msg = (
-            "empty Excel sheet"
-            "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
-        )
-        raise NoDataError(msg)
-    return _drop_unnamed_null_columns(df)
+    return _drop_null_data(df, raise_if_empty=raise_if_empty)
 
 
 def _read_spreadsheet_xlsx2csv(

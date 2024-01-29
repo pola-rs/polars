@@ -38,7 +38,8 @@ pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
     let mut mutable = make_growable(arrays, false, capacity);
 
     for (i, len) in lengths.iter().enumerate() {
-        mutable.extend(i, 0, *len)
+        // SAFETY: len is correct
+        unsafe { mutable.extend(i, 0, *len) }
     }
 
     Ok(mutable.as_box())

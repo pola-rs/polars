@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
 from typing import Any, cast
 
@@ -100,16 +100,16 @@ def test_filter_where() -> None:
     ]
 
 
-def test_count_expr() -> None:
+def test_len_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
 
-    out = df.select(pl.count())
+    out = df.select(pl.len())
     assert out.shape == (1, 1)
     assert cast(int, out.item()) == 5
 
-    out = df.group_by("b", maintain_order=True).agg(pl.count())
+    out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
-    assert out["count"].to_list() == [4, 1]
+    assert out["len"].to_list() == [4, 1]
 
 
 def test_map_alias() -> None:
@@ -412,13 +412,6 @@ def test_search_sorted() -> None:
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
 
-def test_abs_expr() -> None:
-    df = pl.DataFrame({"x": [-1, 0, 1]})
-    out = df.select(abs(pl.col("x")))
-
-    assert out["x"].to_list() == [1, 0, 1]
-
-
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
@@ -678,7 +671,7 @@ def test_head() -> None:
     assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").head(pl.len() / 2)).to_dict(as_series=False) == {
         "a": [1, 2]
     }
 
@@ -690,61 +683,9 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").tail(pl.len() / 2)).to_dict(as_series=False) == {
         "a": [4, 5]
     }
-
-
-@pytest.mark.parametrize(
-    ("const", "dtype"),
-    [
-        (1, pl.Int8),
-        (4, pl.UInt32),
-        (4.5, pl.Float32),
-        (None, pl.Float64),
-        ("白鵬翔", pl.String),
-        (date.today(), pl.Date),
-        (datetime.now(), pl.Datetime("ns")),
-        (time(23, 59, 59), pl.Time),
-        (timedelta(hours=7, seconds=123), pl.Duration("ms")),
-    ],
-)
-def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
-    df = pl.DataFrame({"a": pl.Series("s", [None], dtype=dtype)})
-
-    expected = pl.DataFrame(
-        {"a": pl.Series("s", [None, const, const, const], dtype=dtype)}
-    )
-
-    assert_frame_equal(df.select(pl.col("a").extend_constant(const, 3)), expected)
-
-
-@pytest.mark.parametrize(
-    ("const", "dtype"),
-    [
-        (1, pl.Int8),
-        (4, pl.UInt32),
-        (4.5, pl.Float32),
-        (None, pl.Float64),
-        ("白鵬翔", pl.String),
-        (date.today(), pl.Date),
-        (datetime.now(), pl.Datetime("ns")),
-        (time(23, 59, 59), pl.Time),
-        (timedelta(hours=7, seconds=123), pl.Duration("ms")),
-    ],
-)
-def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
-    """
-    Test extend_constant in pl.List array.
-
-    NOTE: This function currently fails when the Series is a list with a single [None]
-          value. Hence, this function does not begin with [[None]], but [[const]].
-    """
-    s = pl.Series("s", [[const]], dtype=pl.List(dtype))
-
-    expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
-
-    assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)
 
 
 def test_is_not_deprecated() -> None:

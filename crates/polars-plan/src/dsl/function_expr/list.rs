@@ -31,6 +31,9 @@ pub enum ListFunction {
     Max,
     Min,
     Mean,
+    Median,
+    Std(u8),
+    Var(u8),
     ArgMin,
     ArgMax,
     #[cfg(feature = "diff")]
@@ -47,7 +50,7 @@ pub enum ListFunction {
     Any,
     #[cfg(feature = "list_any_all")]
     All,
-    Join,
+    Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
 }
@@ -74,6 +77,9 @@ impl ListFunction {
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.with_dtype(DataType::Float64),
+            Median => mapper.map_to_float_dtype(),
+            Std(_) => mapper.map_to_float_dtype(), // Need to also have this sometimes marked as float32 or duration..
+            Var(_) => mapper.map_to_float_dtype(),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
@@ -88,7 +94,7 @@ impl ListFunction {
             Any => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_any_all")]
             All => mapper.with_dtype(DataType::Boolean),
-            Join => mapper.with_dtype(DataType::String),
+            Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
         }
@@ -128,11 +134,14 @@ impl Display for ListFunction {
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
             #[cfg(feature = "list_count")]
-            CountMatches => "count",
+            CountMatches => "count_matches",
             Sum => "sum",
             Min => "min",
             Max => "max",
             Mean => "mean",
+            Median => "median",
+            Std(_) => "std",
+            Var(_) => "var",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             #[cfg(feature = "diff")]
@@ -153,7 +162,7 @@ impl Display for ListFunction {
             Any => "any",
             #[cfg(feature = "list_any_all")]
             All => "all",
-            Join => "join",
+            Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",
         };
@@ -195,6 +204,9 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Max => map!(max),
             Min => map!(min),
             Mean => map!(mean),
+            Median => map!(median),
+            Std(ddof) => map!(std, ddof),
+            Var(ddof) => map!(var, ddof),
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
             #[cfg(feature = "diff")]
@@ -208,7 +220,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Any => map!(lst_any),
             #[cfg(feature = "list_any_all")]
             All => map!(lst_all),
-            Join => map_as_slice!(join),
+            Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => map!(to_array, width),
         }
@@ -219,7 +231,9 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let list = &args[0];
     let item = &args[1];
-
+    polars_ensure!(matches!(list.dtype(), DataType::List(_)),
+        SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
+    );
     polars_ops::prelude::is_in(item, list).map(|mut ca| {
         ca.rename(list.name());
         Some(ca.into_series())
@@ -459,7 +473,7 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
     let element = &args[1];
     polars_ensure!(
         element.len() == 1,
-        ComputeError: "argument expression in `arr.count` must produce exactly one element, got {}",
+        ComputeError: "argument expression in `list.count_matches` must produce exactly one element, got {}",
         element.len()
     );
     let ca = s.list()?;
@@ -484,6 +498,18 @@ pub(super) fn min(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn mean(s: &Series) -> PolarsResult<Series> {
     Ok(s.list()?.lst_mean())
+}
+
+pub(super) fn median(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_median())
+}
+
+pub(super) fn std(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_std(ddof))
+}
+
+pub(super) fn var(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_var(ddof))
 }
 
 pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {
@@ -553,10 +579,10 @@ pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
     s.list()?.lst_all()
 }
 
-pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
     let ca = s[0].list()?;
     let separator = s[1].str()?;
-    Ok(ca.lst_join(separator)?.into_series())
+    Ok(ca.lst_join(separator, ignore_nulls)?.into_series())
 }
 
 #[cfg(feature = "dtype-array")]

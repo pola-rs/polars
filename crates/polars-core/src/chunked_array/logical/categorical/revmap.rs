@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use ahash::RandomState;
 use arrow::array::*;
@@ -23,11 +24,9 @@ pub enum CategoricalOrdering {
 pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
-    Global(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
+    Global(PlHashMap<u32, u32>, Utf8ViewArray, u32),
     /// Utf8Array: caches the string values and a hash of all values for quick comparison
-    Local(Utf8Array<i64>, u128),
-    /// Utf8Array: fixed user defined array of categories which caches the string values
-    Enum(Utf8Array<i64>, u128),
+    Local(Utf8ViewArray, u128),
 }
 
 impl Debug for RevMapping {
@@ -39,9 +38,6 @@ impl Debug for RevMapping {
             RevMapping::Local(_, _) => {
                 write!(f, "local")
             },
-            RevMapping::Enum(_, _) => {
-                write!(f, "enum")
-            },
         }
     }
 }
@@ -49,7 +45,7 @@ impl Debug for RevMapping {
 impl Default for RevMapping {
     fn default() -> Self {
         let slice: &[Option<&str>] = &[];
-        let cats = Utf8Array::<i64>::from(slice);
+        let cats = Utf8ViewArray::from_slice(slice);
         if using_string_cache() {
             let cache = &mut crate::STRING_CACHE.lock_map();
             let id = cache.uuid;
@@ -70,32 +66,25 @@ impl RevMapping {
         matches!(self, Self::Local(_, _))
     }
 
-    #[inline]
-    pub fn is_enum(&self) -> bool {
-        matches!(self, Self::Enum(_, _))
-    }
-
     /// Get the categories in this [`RevMapping`]
-    pub fn get_categories(&self) -> &Utf8Array<i64> {
+    pub fn get_categories(&self) -> &Utf8ViewArray {
         match self {
             Self::Global(_, a, _) => a,
-            Self::Local(a, _) | Self::Enum(a, _) => a,
+            Self::Local(a, _) => a,
         }
     }
 
-    fn build_hash(categories: &Utf8Array<i64>) -> u128 {
-        let hash_builder = RandomState::with_seed(0);
-        let value_hash = hash_builder.hash_one(categories.values().as_slice());
-        let offset_hash = hash_builder.hash_one(categories.offsets().as_slice());
-        (value_hash as u128) << 64 | (offset_hash as u128)
+    fn build_hash(categories: &Utf8ViewArray) -> u128 {
+        // TODO! we must also validate the cases of duplicates!
+        let mut hb = RandomState::with_seed(0).build_hasher();
+        categories.values_iter().for_each(|val| {
+            val.hash(&mut hb);
+        });
+        let hash = hb.finish();
+        (hash as u128) << 64 | (categories.total_bytes_len() as u128)
     }
 
-    pub fn build_enum(categories: Utf8Array<i64>) -> Self {
-        let hash = Self::build_hash(&categories);
-        Self::Enum(categories, hash)
-    }
-
-    pub fn build_local(categories: Utf8Array<i64>) -> Self {
+    pub fn build_local(categories: Utf8ViewArray) -> Self {
         let hash = Self::build_hash(&categories);
         Self::Local(categories, hash)
     }
@@ -114,7 +103,7 @@ impl RevMapping {
                 let idx = *map.get(&idx).unwrap();
                 a.value(idx as usize)
             },
-            Self::Local(a, _) | Self::Enum(a, _) => a.value(idx as usize),
+            Self::Local(a, _) => a.value(idx as usize),
         }
     }
 
@@ -124,7 +113,7 @@ impl RevMapping {
                 let idx = *map.get(&idx)?;
                 a.get(idx as usize)
             },
-            Self::Local(a, _) | Self::Enum(a, _) => a.get(idx as usize),
+            Self::Local(a, _) => a.get(idx as usize),
         }
     }
 
@@ -140,7 +129,7 @@ impl RevMapping {
                 let idx = *map.get(&idx).unwrap();
                 a.value_unchecked(idx as usize)
             },
-            Self::Local(a, _) | Self::Enum(a, _) => a.value_unchecked(idx as usize),
+            Self::Local(a, _) => a.value_unchecked(idx as usize),
         }
     }
     /// Check if the categoricals have a compatible mapping
@@ -149,7 +138,6 @@ impl RevMapping {
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
             (RevMapping::Local(_, l_hash), RevMapping::Local(_, r_hash)) => l_hash == r_hash,
-            (RevMapping::Enum(_, l_hash), RevMapping::Enum(_, r_hash)) => l_hash == r_hash,
             _ => false,
         }
     }
@@ -176,7 +164,7 @@ impl RevMapping {
                     .map(|(k, _v)| *k)
             },
 
-            Self::Local(a, _) | Self::Enum(a, _) => {
+            Self::Local(a, _) => {
                 // Safety: within bounds
                 unsafe { (0..a.len()).find(|idx| a.value_unchecked(*idx) == value) }
                     .map(|idx| idx as u32)

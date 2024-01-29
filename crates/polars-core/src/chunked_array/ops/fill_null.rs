@@ -383,6 +383,7 @@ fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsRes
         FillNullStrategy::Max => {
             ca.fill_null_with_values(ca.max_binary().ok_or_else(err_fill_null)?)
         },
+        FillNullStrategy::Zero => ca.fill_null_with_values(&[]),
         strat => polars_bail!(InvalidOperation: "fill-null strategy {:?} is not supported", strat),
     }
 }

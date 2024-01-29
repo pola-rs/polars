@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -62,7 +63,7 @@ def test_date() -> None:
         ),
     ],
 )
-def test_extract_datepart(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
+def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
     df = pl.DataFrame(
         {
             "dt": [
@@ -81,3 +82,83 @@ def test_extract_datepart(part: str, dtype: pl.DataType, expected: list[Any]) ->
 
             assert res.dtype == dtype
             assert res.to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (date(1, 1, 1), [1, 1]),
+        (date(100, 1, 1), [1, 1]),
+        (date(101, 1, 1), [1, 2]),
+        (date(1000, 1, 1), [1, 10]),
+        (date(1001, 1, 1), [2, 11]),
+        (date(1899, 12, 31), [2, 19]),
+        (date(1900, 12, 31), [2, 19]),
+        (date(1901, 1, 1), [2, 20]),
+        (date(2000, 12, 31), [2, 20]),
+        (date(2001, 1, 1), [3, 21]),
+        (date(5555, 5, 5), [6, 56]),
+        (date(9999, 12, 31), [10, 100]),
+    ],
+)
+def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
+    with pl.SQLContext(
+        frame_data=pl.DataFrame({"dt": [dt]}), eager_execution=True
+    ) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              EXTRACT(MILLENNIUM FROM dt) AS c1,
+              DATE_PART(dt,'century') AS c2,
+              EXTRACT(millennium FROM dt) AS c3,
+              DATE_PART(dt,'CENTURY') AS c4,
+            FROM frame_data
+            """
+        )
+        assert_frame_equal(
+            left=res,
+            right=pl.DataFrame(
+                data=[expected + expected],
+                schema=["c1", "c2", "c3", "c4"],
+            ).cast(pl.Int32),
+        )
+
+
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        ("ms", [1704589323123, 1609324245987, 1136159999555]),
+        ("us", [1704589323123456, 1609324245987654, 1136159999555555]),
+        ("ns", [1704589323123456000, 1609324245987654000, 1136159999555555000]),
+        (None, [1704589323123456, 1609324245987654, 1136159999555555]),
+    ],
+)
+def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2024, 1, 7, 1, 2, 3, 123456),
+                datetime(2020, 12, 30, 10, 30, 45, 987654),
+                datetime(2006, 1, 1, 23, 59, 59, 555555),
+            ],
+        }
+    )
+    precision = {"ms": 3, "us": 6, "ns": 9}
+
+    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+        prec = f"({precision[unit]})" if unit else ""
+        res = ctx.execute(f"SELECT ts::timestamp{prec} FROM frame_data").to_series()
+
+        assert res.dtype == pl.Datetime(time_unit=unit)  # type: ignore[arg-type]
+        assert res.to_physical().to_list() == expected
+
+
+def test_timestamp_time_unit_errors() -> None:
+    df = pl.DataFrame({"ts": [datetime(2024, 1, 7, 1, 2, 3, 123456)]})
+
+    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+        for prec in (0, 4, 15):
+            with pytest.raises(
+                ComputeError, match=f"unsupported `timestamp` precision; .* prec={prec}"
+            ):
+                ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")

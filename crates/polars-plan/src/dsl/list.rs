@@ -107,6 +107,21 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Mean))
     }
 
+    pub fn median(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Median))
+    }
+
+    pub fn std(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Std(ddof)))
+    }
+
+    pub fn var(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Var(ddof)))
+    }
+
     /// Sort every sublist.
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
@@ -169,9 +184,9 @@ impl ListNameSpace {
     /// Join all string items in a sublist and place a separator between them.
     /// # Error
     /// This errors if inner type of list `!= DataType::String`.
-    pub fn join(self, separator: Expr) -> Expr {
+    pub fn join(self, separator: Expr, ignore_nulls: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Join),
+            FunctionExpr::ListExpr(ListFunction::Join(ignore_nulls)),
             &[separator],
             false,
             false,

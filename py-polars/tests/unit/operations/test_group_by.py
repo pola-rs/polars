@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -249,7 +250,7 @@ def df() -> pl.DataFrame:
     ("method", "expected"),
     [
         ("all", [("a", [1, 2], [None, 1]), ("b", [3, 4, 5], [None, 1, None])]),
-        ("count", [("a", 2), ("b", 3)]),
+        ("len", [("a", 2), ("b", 3)]),
         ("first", [("a", 1, None), ("b", 3, None)]),
         ("last", [("a", 2, 1), ("b", 5, None)]),
         ("max", [("a", 2, 1), ("b", 5, 1)]),
@@ -327,7 +328,9 @@ def test_group_by_iteration() -> None:
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    for i, (group, data) in enumerate(df.group_by("foo", maintain_order=True)):
+    with pytest.deprecated_call():
+        gb_iter = enumerate(df.group_by("foo", maintain_order=True))
+    for i, (group, data) in gb_iter:
         assert group == expected_names[i]
         assert data.rows() == expected_rows[i]
 
@@ -339,12 +342,24 @@ def test_group_by_iteration() -> None:
     result2 = list(df.group_by(["foo", pl.col("bar") * pl.col("baz")]))
     assert len(result2) == 5
 
-    # Single column, alias in group_by
+    # Single expression, alias in group_by
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6]})
     gb = df.group_by((pl.col("foo") // 2).alias("bar"), maintain_order=True)
     result3 = [(group, df.rows()) for group, df in gb]
-    expected3 = [(0, [(1,)]), (1, [(2,), (3,)]), (2, [(4,), (5,)]), (3, [(6,)])]
+    expected3 = [
+        ((0,), [(1,)]),
+        ((1,), [(2,), (3,)]),
+        ((2,), [(4,), (5,)]),
+        ((3,), [(6,)]),
+    ]
     assert result3 == expected3
+
+
+def test_group_by_iteration_selector() -> None:
+    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+    result = dict(df.group_by(cs.string()))
+    result_first = result[("one",)]
+    assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
@@ -748,7 +763,7 @@ def test_perfect_hash_table_null_values() -> None:
 def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
-    out = df.group_by(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
 
@@ -816,22 +831,6 @@ def test_group_by_rolling_deprecated() -> None:
     assert_frame_equal(result_lazy, expected, check_row_order=False)
 
 
-def test_group_by_multiple_keys_one_literal() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
-
-    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
-    for streaming in [True, False]:
-        assert (
-            df.lazy()
-            .group_by("a", pl.lit(1))
-            .agg(pl.col("b").max())
-            .sort(["a", "b"])
-            .collect(streaming=streaming)
-            .to_dict(as_series=False)
-            == expected
-        )
-
-
 def test_group_by_list_scalar_11749() -> None:
     df = pl.DataFrame(
         {
@@ -875,8 +874,8 @@ def test_group_by_with_expr_as_key() -> None:
 
 def test_lazy_group_by_reuse_11767() -> None:
     lgb = pl.select(x=1).lazy().group_by("x")
-    a = lgb.count()
-    b = lgb.count()
+    a = lgb.len()
+    b = lgb.len()
     assert_frame_equal(a, b)
 
 
@@ -918,3 +917,24 @@ def test_group_by_all_12869() -> None:
     df = pl.DataFrame({"a": [1]})
     result = next(iter(df.group_by(pl.all())))[1]
     assert_frame_equal(df, result)
+
+
+def test_group_by_named() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    result = df.group_by(z=pl.col("a") * 2, maintain_order=True).agg(pl.col("b").min())
+    expected = df.group_by((pl.col("a") * 2).alias("z"), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_deprecated_by_arg() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    with pytest.deprecated_call():
+        result = df.group_by(by=(pl.col("a") * 2), maintain_order=True).agg(
+            pl.col("b").min()
+        )
+    expected = df.group_by((pl.col("a") * 2), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)

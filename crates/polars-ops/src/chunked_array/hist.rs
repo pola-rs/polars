@@ -120,7 +120,7 @@ where
     if include_category {
         // Use AnyValue for formatting.
         let mut lower = AnyValue::Float64(f64::NEG_INFINITY);
-        let mut categories = StringChunkedBuilder::new("category", breaks.len(), breaks.len() * 20);
+        let mut categories = StringChunkedBuilder::new("category", breaks.len());
 
         let mut buf = String::new();
         for br in &breaks {

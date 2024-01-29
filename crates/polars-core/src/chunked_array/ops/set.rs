@@ -1,4 +1,3 @@
-use arrow::array::ValueSize;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
 use arrow::legacy::prelude::FromData;
@@ -57,7 +56,7 @@ where
                         self.downcast_iter().next().unwrap(),
                         idx,
                         value,
-                        T::get_dtype().to_arrow(),
+                        T::get_dtype().to_arrow(true),
                     )?;
                     return Ok(Self::with_chunk(self.name(), arr));
                 }
@@ -103,7 +102,7 @@ where
             let chunks = left
                 .downcast_iter()
                 .zip(mask.downcast_iter())
-                .map(|(arr, mask)| set_with_mask(arr, mask, value, T::get_dtype().to_arrow()));
+                .map(|(arr, mask)| set_with_mask(arr, mask, value, T::get_dtype().to_arrow(true)));
             Ok(ChunkedArray::from_chunk_iter(self.name(), chunks))
         } else {
             // slow path, could be optimized.
@@ -184,8 +183,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
     {
         let idx_iter = idx.into_iter();
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder =
-            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
 
         for current_idx in idx_iter.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
@@ -216,8 +214,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
     {
-        let mut builder =
-            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
         impl_scatter_with!(self, builder, idx, f)
     }
 
@@ -249,8 +246,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Self: Sized,
     {
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder =
-            BinaryChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder = BinaryChunkedBuilder::new(self.name(), self.len());
 
         for current_idx in idx.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
@@ -281,8 +277,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Self: Sized,
         F: Fn(Option<&'a [u8]>) -> Option<Vec<u8>>,
     {
-        let mut builder =
-            BinaryChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder = BinaryChunkedBuilder::new(self.name(), self.len());
         impl_scatter_with!(self, builder, idx, f)
     }
 

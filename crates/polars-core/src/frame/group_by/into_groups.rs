@@ -239,6 +239,20 @@ impl IntoGroupsProxy for StringChunked {
     }
 }
 
+fn fill_bytes_hashes(ca: &BinaryChunked, null_h: u64, hb: RandomState) -> Vec<BytesHash> {
+    let mut byte_hashes = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        for opt_b in arr {
+            let hash = match opt_b {
+                Some(s) => hb.hash_one(s),
+                None => null_h,
+            };
+            byte_hashes.push(BytesHash::new(opt_b, hash))
+        }
+    }
+    byte_hashes
+}
+
 impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
@@ -255,37 +269,78 @@ impl IntoGroupsProxy for BinaryChunked {
                     .into_par_iter()
                     .map(|(offset, len)| {
                         let ca = self.slice(offset as i64, len);
-                        ca.into_iter()
-                            .map(|opt_b| {
-                                let hash = match opt_b {
-                                    Some(s) => hb.hash_one(s),
-                                    None => null_h,
-                                };
-                                // Safety:
-                                // the underlying data is tied to self
-                                unsafe {
-                                    std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(
-                                        BytesHash::new(opt_b, hash),
-                                    )
-                                }
-                            })
-                            .collect_trusted::<Vec<_>>()
+                        let byte_hashes = fill_bytes_hashes(&ca, null_h, hb.clone());
+
+                        // Safety:
+                        // the underlying data is tied to self
+                        unsafe {
+                            std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
+                                byte_hashes,
+                            )
+                        }
                     })
                     .collect::<Vec<_>>()
             });
             let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
             group_by_threaded_slice(byte_hashes, n_partitions, sorted)
         } else {
-            let byte_hashes = self
-                .into_iter()
-                .map(|opt_b| {
-                    let hash = match opt_b {
-                        Some(s) => hb.hash_one(s),
-                        None => null_h,
-                    };
-                    BytesHash::new(opt_b, hash)
-                })
-                .collect_trusted::<Vec<_>>();
+            let byte_hashes = fill_bytes_hashes(self, null_h, hb.clone());
+            group_by(byte_hashes.iter(), sorted)
+        };
+        Ok(out)
+    }
+}
+
+fn fill_bytes_offset_hashes(
+    ca: &BinaryOffsetChunked,
+    null_h: u64,
+    hb: RandomState,
+) -> Vec<BytesHash> {
+    let mut byte_hashes = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        for opt_b in arr {
+            let hash = match opt_b {
+                Some(s) => hb.hash_one(s),
+                None => null_h,
+            };
+            byte_hashes.push(BytesHash::new(opt_b, hash))
+        }
+    }
+    byte_hashes
+}
+
+impl IntoGroupsProxy for BinaryOffsetChunked {
+    #[allow(clippy::needless_lifetimes)]
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        let hb = RandomState::default();
+        let null_h = get_null_hash_value(&hb);
+
+        let out = if multithreaded {
+            let n_partitions = _set_partition_size();
+
+            let split = _split_offsets(self.len(), n_partitions);
+
+            let byte_hashes = POOL.install(|| {
+                split
+                    .into_par_iter()
+                    .map(|(offset, len)| {
+                        let ca = self.slice(offset as i64, len);
+                        let byte_hashes = fill_bytes_offset_hashes(&ca, null_h, hb.clone());
+
+                        // Safety:
+                        // the underlying data is tied to self
+                        unsafe {
+                            std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
+                                byte_hashes,
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
+            group_by_threaded_slice(byte_hashes, n_partitions, sorted)
+        } else {
+            let byte_hashes = fill_bytes_offset_hashes(self, null_h, hb.clone());
             group_by(byte_hashes.iter(), sorted)
         };
         Ok(out)

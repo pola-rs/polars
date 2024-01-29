@@ -285,7 +285,7 @@ fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> Pol
     polars_ensure!(
         input_len == output_len, expr = expr, InvalidOperation:
         "output length of `map` ({}) must be equal to the input length ({}); \
-        consider using `apply` instead", input_len, output_len
+        consider using `apply` instead", output_len, input_len
     );
     Ok(())
 }
@@ -517,9 +517,10 @@ impl ApplyExpr {
                         return one_equals(min);
                     }
 
-                    let all_smaller = || Some(ChunkCompare::lt(input, min).ok()?.all());
-                    let all_bigger = || Some(ChunkCompare::gt(input, max).ok()?.all());
-                    Some(!all_smaller()? && !all_bigger()?)
+                    let smaller = ChunkCompare::lt(input, min).ok()?;
+                    let bigger = ChunkCompare::gt(input, max).ok()?;
+
+                    Some(!(smaller | bigger).all())
                 };
 
                 Ok(should_read().unwrap_or(true))

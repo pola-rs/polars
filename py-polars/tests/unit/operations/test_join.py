@@ -738,88 +738,6 @@ def test_outer_join_bool() -> None:
     }
 
 
-@pytest.mark.parametrize("streaming", [False, True])
-def test_join_null_matches(streaming: bool) -> None:
-    # null values in joins should never find a match.
-    df_a = pl.LazyFrame(
-        {
-            "idx_a": [0, 1, 2],
-            "a": [None, 1, 2],
-        }
-    )
-
-    df_b = pl.LazyFrame(
-        {
-            "idx_b": [0, 1, 2, 3],
-            "a": [None, 2, 1, None],
-        }
-    )
-
-    expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
-    assert_frame_equal(
-        df_a.join(df_b, on="a", how="inner").collect(streaming=streaming), expected
-    )
-    expected = pl.DataFrame(
-        {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
-    )
-    assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
-    )
-    expected = pl.DataFrame(
-        {
-            "idx_a": [None, 2, 1, None, 0],
-            "a": [None, 2, 1, None, None],
-            "idx_b": [0, 1, 2, 3, None],
-            "a_right": [None, 2, 1, None, None],
-        }
-    )
-    assert_frame_equal(df_a.join(df_b, on="a", how="outer").collect(), expected)
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_join_null_matches_multiple_keys(streaming: bool) -> None:
-    df_a = pl.LazyFrame(
-        {
-            "a": [None, 1, 2],
-            "idx": [0, 1, 2],
-        }
-    )
-
-    df_b = pl.LazyFrame(
-        {
-            "a": [None, 2, 1, None, 1],
-            "idx": [0, 1, 2, 3, 1],
-            "c": [10, 20, 30, 40, 50],
-        }
-    )
-
-    expected = pl.DataFrame({"a": [1], "idx": [1], "c": [50]})
-    assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="inner").collect(streaming=streaming),
-        expected,
-    )
-    expected = pl.DataFrame(
-        {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
-    )
-    assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
-        expected,
-    )
-
-    expected = pl.DataFrame(
-        {
-            "a": [None, None, None, None, None, 1, 2],
-            "idx": [None, None, None, None, 0, 1, 2],
-            "a_right": [None, 2, 1, None, None, 1, None],
-            "idx_right": [0, 1, 2, 3, None, 1, None],
-            "c": [10, 20, 30, 40, None, 50, None],
-        }
-    )
-    assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
-    )
-
-
 def test_outer_join_coalesce_different_names_13450() -> None:
     df1 = pl.DataFrame({"L1": ["a", "b", "c"], "L3": ["b", "c", "d"], "L2": [1, 2, 3]})
     df2 = pl.DataFrame({"L3": ["a", "c", "d"], "R2": [7, 8, 9]})
@@ -835,3 +753,22 @@ def test_outer_join_coalesce_different_names_13450() -> None:
 
     out = df1.join(df2, left_on="L1", right_on="L3", how="outer_coalesce")
     assert_frame_equal(out, expected)
+
+
+# https://github.com/pola-rs/polars/issues/10663
+def test_join_on_wildcard_error() -> None:
+    df = pl.DataFrame({"x": [1]})
+    df2 = pl.DataFrame({"x": [1], "y": [2]})
+    with pytest.raises(
+        pl.ComputeError, match="wildcard column selection not supported at this point"
+    ):
+        df.join(df2, on=pl.all())
+
+
+def test_join_on_nth_error() -> None:
+    df = pl.DataFrame({"x": [1]})
+    df2 = pl.DataFrame({"x": [1], "y": [2]})
+    with pytest.raises(
+        pl.ComputeError, match="nth column selection not supported at this point"
+    ):
+        df.join(df2, on=pl.first())

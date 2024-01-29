@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import warnings
 from collections import OrderedDict, defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -39,13 +38,9 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
-    Categorical,
-    Enum,
     Float64,
-    Null,
     Object,
     String,
-    Unknown,
     py_type_to_dtype,
 )
 from polars.dependencies import (
@@ -57,6 +52,7 @@ from polars.dependencies import (
     _check_for_pyarrow,
     dataframe_api_compat,
     hvplot,
+    import_optional,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -106,6 +102,7 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
     _prepare_row_index_args,
     _process_null_values,
@@ -114,7 +111,6 @@ from polars.utils.various import (
     is_int_sequence,
     is_str_sequence,
     normalize_filepath,
-    parse_percentiles,
     parse_version,
     range_to_slice,
     scale_bytes,
@@ -132,6 +128,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     import deltalake
+    from hvplot.plotting.core import hvPlotTabularPolars
     from xlsxwriter import Workbook
 
     from polars import DataType, Expr, LazyFrame, Series
@@ -1118,7 +1115,7 @@ class DataFrame:
         return self
 
     @property
-    def plot(self) -> Any:
+    def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
 
@@ -2194,86 +2191,82 @@ class DataFrame:
 
         return out
 
-    def to_pandas(  # noqa: D417
+    def to_pandas(
         self,
-        *args: Any,
+        *,
         use_pyarrow_extension_array: bool = False,
         **kwargs: Any,
     ) -> pd.DataFrame:
         """
-        Cast to a pandas DataFrame.
+        Convert this DataFrame to a pandas DataFrame.
 
-        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
-        This operation clones data, unless `use_pyarrow_extension_array=True`.
+        This operation copies data if `use_pyarrow_extension_array` is not enabled.
 
         Parameters
         ----------
         use_pyarrow_extension_array
-            Use PyArrow backed-extension arrays instead of numpy arrays for each column
-            of the pandas DataFrame; this allows zero copy operations and preservation
+            Use PyArrow-backed extension arrays instead of NumPy arrays for the columns
+            of the pandas DataFrame. This allows zero copy operations and preservation
             of null values. Subsequent operations on the resulting pandas DataFrame may
-            trigger conversion to NumPy arrays if that operation is not supported by
-            pyarrow compute functions.
+            trigger conversion to NumPy if those operations are not supported by PyArrow
+            compute functions.
         **kwargs
-            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+            Additional keyword arguments to be passed to
+            :meth:`pyarrow.Table.to_pandas`.
 
         Returns
         -------
         :class:`pandas.DataFrame`
 
+        Notes
+        -----
+        This operation requires that both :mod:`pandas` and :mod:`pyarrow` are
+        installed.
+
         Examples
         --------
-        >>> import pandas
-        >>> df1 = pl.DataFrame(
+        >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
+        ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> pandas_df1 = df1.to_pandas()
-        >>> type(pandas_df1)
-        <class 'pandas.core.frame.DataFrame'>
-        >>> pandas_df1.dtypes
-        foo     int64
-        bar     int64
-        ham    object
-        dtype: object
-        >>> df2 = pl.DataFrame(
+        >>> df.to_pandas()
+           foo  bar ham
+        0    1  6.0   a
+        1    2  7.0   b
+        2    3  8.0   c
+
+        Null values in numeric columns are converted to `NaN`.
+
+        >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, None],
-        ...         "bar": [6, None, 8],
+        ...         "bar": [6.0, None, 8.0],
         ...         "ham": [None, "b", "c"],
         ...     }
         ... )
-        >>> pandas_df2 = df2.to_pandas()
-        >>> pandas_df2
+        >>> df.to_pandas()
            foo  bar   ham
         0  1.0  6.0  None
         1  2.0  NaN     b
         2  NaN  8.0     c
-        >>> pandas_df2.dtypes
-        foo    float64
-        bar    float64
-        ham     object
-        dtype: object
-        >>> pandas_df2_pa = df2.to_pandas(
-        ...     use_pyarrow_extension_array=True
-        ... )  # doctest: +SKIP
-        >>> pandas_df2_pa  # doctest: +SKIP
+
+        Pass `use_pyarrow_extension_array=True` to get a pandas DataFrame with columns
+        backed by PyArrow extension arrays. This will preserve null values.
+
+        >>> df.to_pandas(use_pyarrow_extension_array=True)
             foo   bar   ham
-        0     1     6  <NA>
+        0     1   6.0  <NA>
         1     2  <NA>     b
-        2  <NA>     8     c
-        >>> pandas_df2_pa.dtypes  # doctest: +SKIP
+        2  <NA>   8.0     c
+        >>> _.dtypes
         foo           int64[pyarrow]
-        bar           int64[pyarrow]
+        bar          double[pyarrow]
         ham    large_string[pyarrow]
         dtype: object
         """
-        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
-            return pd.DataFrame()
-
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
@@ -2286,36 +2279,76 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        record_batches = self._df.to_pandas()
+        # Object columns must be handled separately as Arrow does not convert them
+        # correctly
+        if Object in self.dtypes:
+            return self._to_pandas_with_object_columns(
+                use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+            )
+
+        return self._to_pandas_without_object_columns(
+            self, use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+        )
+
+    def _to_pandas_with_object_columns(
+        self,
+        *,
+        use_pyarrow_extension_array: bool,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        # Find which columns are of type pl.Object, and which aren't:
+        object_columns = []
+        not_object_columns = []
+        for i, dtype in enumerate(self.dtypes):
+            if dtype == Object:
+                object_columns.append(i)
+            else:
+                not_object_columns.append(i)
+
+        # Export columns that aren't pl.Object, in the same order:
+        if not_object_columns:
+            df_without_objects = self[:, not_object_columns]
+            pandas_df = self._to_pandas_without_object_columns(
+                df_without_objects,
+                use_pyarrow_extension_array=use_pyarrow_extension_array,
+                **kwargs,
+            )
+        else:
+            pandas_df = pd.DataFrame()
+
+        # Add columns that are pl.Object, using Series' custom to_pandas()
+        # logic for this case. We do this in order, so the original index for
+        # the next column in this dataframe is correct for the partially
+        # constructed Pandas dataframe, since there are no additional or
+        # missing columns to the inserted column's left.
+        for i in object_columns:
+            name = self.columns[i]
+            pandas_df.insert(i, name, self.to_series(i).to_pandas())
+
+        return pandas_df
+
+    def _to_pandas_without_object_columns(
+        self,
+        df: DataFrame,
+        *,
+        use_pyarrow_extension_array: bool,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        if not df.width:  # Empty dataframe, cannot infer schema from batches
+            return pd.DataFrame()
+
+        record_batches = df._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         if use_pyarrow_extension_array:
-            with warnings.catch_warnings():
-                # Needs fixing upstream in pyarrow
-                # Silence here as it's something Polars users can't do
-                # anything about.
-                warnings.filterwarnings(
-                    "ignore",
-                    message="make_block is deprecated and will be removed",
-                    category=DeprecationWarning,
-                )
-                return tbl.to_pandas(
-                    self_destruct=True,
-                    split_blocks=True,
-                    types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
-                    **kwargs,
-                )
+            return tbl.to_pandas(
+                self_destruct=True,
+                split_blocks=True,
+                types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
+                **kwargs,
+            )
 
         date_as_object = kwargs.pop("date_as_object", False)
-        with warnings.catch_warnings():
-            # Needs fixing upstream in pyarrow
-            # Silence here as it's something Polars users can't do
-            # anything about.
-            warnings.filterwarnings(
-                "ignore",
-                message="make_block is deprecated and will be removed",
-                category=DeprecationWarning,
-            )
-            return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
+        return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
 
     def to_series(self, index: int = 0) -> Series:
         """
@@ -3096,15 +3129,8 @@ class DataFrame:
         ...     sheet_zoom=125,
         ... )
         """  # noqa: W505
-        try:
-            import xlsxwriter
-            from xlsxwriter.utility import xl_cell_to_rowcol
-        except ImportError:
-            msg = (
-                "Excel export requires xlsxwriter"
-                "\n\nPlease run: pip install XlsxWriter"
-            )
-            raise ImportError(msg) from None
+        xlsxwriter = import_optional("xlsxwriter", err_prefix="Excel export requires")
+        from xlsxwriter.utility import xl_cell_to_rowcol
 
         # setup workbook/worksheet
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
@@ -3254,6 +3280,8 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO:
         ...
 
@@ -3262,6 +3290,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> None:
         ...
 
@@ -3269,6 +3299,8 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path | None,
         compression: IpcCompression = "uncompressed",
+        *,
+        future: bool = False,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3282,6 +3314,13 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+        future
+            Setting this to `True` will write Polars' internal data structures that
+            might not be available by other Arrow implementations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -3306,7 +3345,12 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc(file, compression)
+        if future:
+            issue_unstable_warning(
+                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
+            )
+
+        self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3906,9 +3950,9 @@ class DataFrame:
         ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.String)],
         ... )
         >>> df.estimated_size()
-        25888898
+        28000000
         >>> df.estimated_size("mb")
-        24.689577102661133
+        26.702880859375
         """
         sz = self._df.estimated_size()
         return scale_bytes(sz, unit)
@@ -4058,14 +4102,15 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str]) -> DataFrame:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> DataFrame:
         """
         Rename column names.
 
         Parameters
         ----------
         mapping
-            Key value pairs that map from old name to new name.
+            Key value pairs that map from old name to new name, or a function
+            that takes the old name as input and returns the new name.
 
         Examples
         --------
@@ -4083,6 +4128,17 @@ class DataFrame:
         │ 2     ┆ 7   ┆ b   │
         │ 3     ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
+        >>> df.rename(lambda column_name: "c" + column_name[1:])
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ coo ┆ car ┆ cam │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
         return self.lazy().rename(mapping).collect(_eager=True)
 
@@ -4330,7 +4386,6 @@ class DataFrame:
         # determine column layout widths
         max_col_name = max((len(col_name) for col_name, _, _ in data))
         max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
-        max_col_values = 100 - max_col_name - max_col_dtype
 
         # print header
         output = StringIO()
@@ -4341,7 +4396,7 @@ class DataFrame:
             output.write(
                 f"$ {col_name:<{max_col_name}}"
                 f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str:<{min(len(val_str), max_col_values)}}\n"
+                f" {val_str}\n"
             )
 
         s = output.getvalue()
@@ -4352,8 +4407,11 @@ class DataFrame:
         return None
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
-    ) -> Self:
+        self,
+        percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
+        *,
+        interpolation: RollingInterpolationMethod = "nearest",
+    ) -> DataFrame:
         """
         Summary statistics for a DataFrame.
 
@@ -4363,15 +4421,19 @@ class DataFrame:
             One or more percentiles to include in the summary statistics.
             All values must be in the range `[0, 1]`.
 
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method used when calculating percentiles.
+
         Notes
         -----
         The median is included by default as the 50% percentile.
 
         Warnings
         --------
-        We will never guarantee the output of describe to be stable.
-        It will show statistics that we deem informative and may
-        be updated in the future.
+        We do not guarantee the output of `describe` to be stable. It will show
+        statistics that we deem informative, and may be updated in the future.
+        Using `describe` programmatically (versus interactive exploration) is
+        not recommended for this reason.
 
         See Also
         --------
@@ -4379,108 +4441,70 @@ class DataFrame:
 
         Examples
         --------
-        >>> from datetime import date
+        >>> from datetime import date, time
         >>> df = pl.DataFrame(
         ...     {
         ...         "float": [1.0, 2.8, 3.0],
-        ...         "int": [4, 5, None],
+        ...         "int": [40, 50, None],
         ...         "bool": [True, False, True],
-        ...         "str": [None, "b", "c"],
-        ...         "str2": ["usd", "eur", None],
-        ...         "date": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
+        ...         "str": ["zz", "xx", "yy"],
+        ...         "date": [date(2020, 1, 1), date(2021, 7, 5), date(2022, 12, 31)],
+        ...         "time": [time(10, 20, 30), time(14, 45, 50), time(23, 15, 10)],
         ...     }
         ... )
+
+        Show default frame statistics:
+
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬───────┬──────┬──────┬────────────┐
-        │ describe   ┆ float    ┆ int      ┆ bool  ┆ str  ┆ str2 ┆ date       │
-        │ ---        ┆ ---      ┆ ---      ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
-        │ str        ┆ f64      ┆ f64      ┆ str   ┆ str  ┆ str  ┆ str        │
-        ╞════════════╪══════════╪══════════╪═══════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3     ┆ 2    ┆ 2    ┆ 3          │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0     ┆ 1    ┆ 1    ┆ 0          │
-        │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ null       │
-        │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null       │
-        │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null       │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01 │
-        └────────────┴──────────┴──────────┴───────┴──────┴──────┴────────────┘
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
+        │ 25%        ┆ 2.8      ┆ 40.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 50%        ┆ 2.8      ┆ 50.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 75%        ┆ 3.0      ┆ 50.0     ┆ null     ┆ null ┆ 2022-12-31 ┆ 23:15:10 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
+
+        Customize which percentiles are displayed, applying linear interpolation:
+
+        >>> df.describe(
+        ...     percentiles=[0.1, 0.3, 0.5, 0.7, 0.9],
+        ...     interpolation="linear",
+        ... )
+        shape: (11, 7)
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
+        │ 10%        ┆ 1.36     ┆ 41.0     ┆ null     ┆ null ┆ 2020-04-20 ┆ 11:13:34 │
+        │ 30%        ┆ 2.08     ┆ 43.0     ┆ null     ┆ null ┆ 2020-11-26 ┆ 12:59:42 │
+        │ 50%        ┆ 2.8      ┆ 45.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
+        │ 70%        ┆ 2.88     ┆ 47.0     ┆ null     ┆ null ┆ 2022-02-07 ┆ 18:09:34 │
+        │ 90%        ┆ 2.96     ┆ 49.0     ┆ null     ┆ null ┆ 2022-09-13 ┆ 21:33:18 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
         """
         if not self.columns:
-            msg = "cannot describe a DataFrame without any columns"
+            msg = "cannot describe a DataFrame that has no columns"
             raise TypeError(msg)
 
-        # Determine which columns should get std/mean/percentile statistics
-        stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
-
-        # Determine metrics and optional/additional percentiles
-        metrics = ["count", "null_count", "mean", "std", "min"]
-        percentile_exprs = []
-        for p in parse_percentiles(percentiles):
-            for c in self.columns:
-                expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
-                expr = expr.alias(f"{p}:{c}")
-                percentile_exprs.append(expr)
-            metrics.append(f"{p*100:g}%")
-        metrics.append("max")
-
-        mean_exprs = [
-            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
-            for c in self.columns
-        ]
-        std_exprs = [
-            (F.col(c).std() if c in stat_cols else F.lit(None)).alias(f"std:{c}")
-            for c in self.columns
-        ]
-
-        minmax_cols = {
-            c
-            for c, dt in self.schema.items()
-            if not dt.is_nested()
-            and dt not in (Object, Null, Unknown, Categorical, Enum)
-        }
-        min_exprs = [
-            (F.col(c).min() if c in minmax_cols else F.lit(None)).alias(f"min:{c}")
-            for c in self.columns
-        ]
-        max_exprs = [
-            (F.col(c).max() if c in minmax_cols else F.lit(None)).alias(f"max:{c}")
-            for c in self.columns
-        ]
-
-        # Calculate metrics in parallel
-        df_metrics = self.select(
-            F.all().count().name.prefix("count:"),
-            F.all().null_count().name.prefix("null_count:"),
-            *mean_exprs,
-            *std_exprs,
-            *min_exprs,
-            *percentile_exprs,
-            *max_exprs,
+        return self.lazy().describe(
+            percentiles=percentiles, interpolation=interpolation
         )
-
-        # Reshape wide result
-        described = [
-            df_metrics.row(0)[(n * self.width) : (n + 1) * self.width]
-            for n in range(len(metrics))
-        ]
-
-        # Cast by column type (numeric/bool -> float), (other -> string)
-        summary = dict(zip(self.columns, list(zip(*described))))
-        for c in self.columns:
-            summary[c] = [  # type: ignore[assignment]
-                None
-                if (v is None or isinstance(v, dict))
-                else (float(v) if c in stat_cols else str(v))
-                for v in summary[c]
-            ]
-
-        # Return results as a DataFrame
-        df_summary = self._from_dict(summary)
-        df_summary.insert_column(0, pl.Series("describe", metrics))
-        return df_summary
 
     def get_column_index(self, name: str) -> int:
         """
@@ -5272,10 +5296,10 @@ class DataFrame:
         └──────┴─────┴─────┘
 
         An index column can also be created using the expressions :func:`int_range`
-        and :func:`count`.
+        and :func:`len`.
 
         >>> df.select(
-        ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
+        ...     pl.int_range(pl.len(), dtype=pl.UInt32).alias("index"),
         ...     pl.all(),
         ... )
         shape: (3, 3)
@@ -5298,7 +5322,7 @@ class DataFrame:
 
     @deprecate_function(
         "Use `with_row_index` instead."
-        "Note that the default column name has changed from 'row_nr' to 'index'.",
+        " Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
@@ -5306,7 +5330,7 @@ class DataFrame:
         Add a column at index 0 that counts the rows.
 
         .. deprecated::
-            Use `meth`:with_row_index` instead.
+            Use :meth:`with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
@@ -5338,22 +5362,21 @@ class DataFrame:
         """
         return self.with_row_index(name, offset)
 
+    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
+        *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool = False,
+        **named_by: IntoExpr,
     ) -> GroupBy:
         """
         Start a group by operation.
 
         Parameters
         ----------
-        by
+        *by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
@@ -5363,6 +5386,9 @@ class DataFrame:
             .. note::
                 Within each group, the order of rows is always preserved, regardless
                 of this argument.
+        **named_by
+            Additional columns to group by, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Returns
         -------
@@ -5474,7 +5500,7 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        return GroupBy(self, by, *more_by, maintain_order=maintain_order)
+        return GroupBy(self, *by, **named_by, maintain_order=maintain_order)
 
     def rolling(
         self,
@@ -6380,7 +6406,7 @@ class DataFrame:
 
         Notes
         -----
-        For joining on columns with categorical data, see `pl.StringCache()`.
+        For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
@@ -6783,7 +6809,10 @@ class DataFrame:
 
     def cast(
         self,
-        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        dtypes: (
+            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            | PolarsDataType
+        ),
         *,
         strict: bool = True,
     ) -> DataFrame:
@@ -6824,12 +6853,19 @@ class DataFrame:
         │ 3.0 ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
 
-        Cast all frame columns to the specified dtype:
+        Cast all frame columns matching one dtype (or dtype group) to another dtype:
 
-        >>> df.cast(pl.String).to_dict(as_series=False)
-        {'foo': ['1', '2', '3'],
-         'bar': ['6.0', '7.0', '8.0'],
-         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
+        >>> df.cast({pl.Date: pl.Datetime})
+        shape: (3, 3)
+        ┌─────┬─────┬─────────────────────┐
+        │ foo ┆ bar ┆ ham                 │
+        │ --- ┆ --- ┆ ---                 │
+        │ i64 ┆ f64 ┆ datetime[μs]        │
+        ╞═════╪═════╪═════════════════════╡
+        │ 1   ┆ 6.0 ┆ 2020-01-02 00:00:00 │
+        │ 2   ┆ 7.0 ┆ 2021-03-04 00:00:00 │
+        │ 3   ┆ 8.0 ┆ 2022-05-06 00:00:00 │
+        └─────┴─────┴─────────────────────┘
 
         Use selectors to define the columns being cast:
 
@@ -6845,6 +6881,13 @@ class DataFrame:
         │ 2   ┆ 7   ┆ 2021-03-04 │
         │ 3   ┆ 8   ┆ 2022-05-06 │
         └─────┴─────┴────────────┘
+
+        Cast all frame columns to the specified dtype:
+
+        >>> df.cast(pl.String).to_dict(as_series=False)
+        {'foo': ['1', '2', '3'],
+         'bar': ['6.0', '7.0', '8.0'],
+         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         return self.lazy().cast(dtypes, strict=strict).collect(_eager=True)
 
@@ -7260,9 +7303,8 @@ class DataFrame:
 
             - None: no aggregation takes place, will raise error if multiple values are in group.
             - A predefined aggregate function string, one of
-              {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
+              {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len'}
             - An expression to do the aggregation.
-
         maintain_order
             Sort the grouped keys so that the output order is predictable.
         sort_columns
@@ -7392,8 +7434,15 @@ class DataFrame:
                 aggregate_expr = F.element().median()._pyexpr
             elif aggregate_function == "last":
                 aggregate_expr = F.element().last()._pyexpr
+            elif aggregate_function == "len":
+                aggregate_expr = F.len()._pyexpr
             elif aggregate_function == "count":
-                aggregate_expr = F.count()._pyexpr
+                issue_deprecation_warning(
+                    "`aggregate_function='count'` input for `pivot` is deprecated."
+                    " Please use `aggregate_function='len'`.",
+                    version="0.20.5",
+                )
+                aggregate_expr = F.len()._pyexpr
             else:
                 msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 raise ValueError(msg)
@@ -7475,6 +7524,7 @@ class DataFrame:
             self._df.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @unstable()
     def unstack(
         self,
         step: int,
@@ -7485,12 +7535,11 @@ class DataFrame:
         """
         Unstack a long table to a wide form without doing an aggregation.
 
-        This can be much faster than a pivot, because it can skip the grouping phase.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
-        Warnings
-        --------
-        This functionality is experimental and may be subject to changes
-        without it being considered a breaking change.
+        This can be much faster than a pivot, because it can skip the grouping phase.
 
         Parameters
         ----------
@@ -7662,8 +7711,9 @@ class DataFrame:
         include_key
             Include the columns used to partition the DataFrame in the output.
         as_dict
-            Return a dictionary instead of a list. The dictionary keys are the distinct
-            group values that identify that group.
+            Return a dictionary instead of a list. The dictionary keys are tuples of
+            the distinct group values that identify each group. If a single string
+            was passed to `by`, the keys are a single value instead of a tuple.
 
         Examples
         --------
@@ -7746,7 +7796,7 @@ class DataFrame:
 
         >>> import polars.selectors as cs
         >>> df.partition_by(cs.string(), as_dict=True)  # doctest: +IGNORE_RESULT
-        {'a': shape: (2, 3)
+        {('a',): shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -7755,7 +7805,7 @@ class DataFrame:
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
         └─────┴─────┴─────┘,
-        'b': shape: (2, 3)
+        ('b',): shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -7764,7 +7814,7 @@ class DataFrame:
         │ b   ┆ 2   ┆ 4   │
         │ b   ┆ 3   ┆ 2   │
         └─────┴─────┴─────┘,
-        'c': shape: (1, 3)
+        ('c',): shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -7773,24 +7823,34 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘}
         """
-        by = _expand_selectors(self, by, *more_by)
+        by_parsed = _expand_selectors(self, by, *more_by)
+
         partitions = [
             self._from_pydf(_df)
-            for _df in self._df.partition_by(by, maintain_order, include_key)
+            for _df in self._df.partition_by(by_parsed, maintain_order, include_key)
         ]
 
         if as_dict:
-            df = self._from_pydf(self._df)
+            key_as_single_value = isinstance(by, str) and not more_by
+            if key_as_single_value:
+                issue_deprecation_warning(
+                    "`partition_by(..., as_dict=True)` will change to always return tuples as dictionary keys."
+                    f" Pass `by` as a list to silence this warning, e.g. `partition_by([{by!r}], as_dict=True)`.",
+                    version="0.20.4",
+                )
             if include_key:
-                if len(by) == 1:
-                    names = [p[by[0]][0] for p in partitions]
+                if key_as_single_value:
+                    names = [p.get_column(by)[0] for p in partitions]  # type: ignore[arg-type]
                 else:
-                    names = [p.select(by).row(0) for p in partitions]
+                    names = [p.select(by_parsed).row(0) for p in partitions]
             else:
-                if len(by) == 1:
-                    names = df[by[0]].unique(maintain_order=True).to_list()
+                if not maintain_order:  # Group keys cannot be matched to partitions
+                    msg = "cannot use `partition_by` with `maintain_order=False, include_key=False, as_dict=True`"
+                    raise ValueError(msg)
+                if key_as_single_value:
+                    names = self.get_column(by).unique(maintain_order=True).to_list()  # type: ignore[arg-type]
                 else:
-                    names = df.select(by).unique(maintain_order=True).rows()
+                    names = self.select(by_parsed).unique(maintain_order=True).rows()
 
             return dict(zip(names, partitions))
 
@@ -9133,7 +9193,7 @@ class DataFrame:
         In aggregate context there is also an equivalent method for returning the
         unique values per-group:
 
-        >>> df_agg_nunique = df.group_by(by=["a"]).n_unique()
+        >>> df_agg_nunique = df.group_by(["a"]).n_unique()
 
         Examples
         --------
@@ -9606,7 +9666,7 @@ class DataFrame:
         Returns DataFrame data as a keyed dictionary of python-native values.
 
         Note that this method should not be used in place of native operations, due to
-        the high cost of materialising all frame data out into a dictionary; it should
+        the high cost of materializing all frame data out into a dictionary; it should
         be used only when you need to move the values out into a Python data structure
         or other object that cannot operate directly with Polars/Arrow.
 
@@ -9636,8 +9696,8 @@ class DataFrame:
 
         See Also
         --------
-        rows : Materialise all frame data as a list of rows (potentially expensive).
-        iter_rows : Row iterator over frame data (does not materialise all rows).
+        rows : Materialize all frame data as a list of rows (potentially expensive).
+        iter_rows : Row iterator over frame data (does not materialize all rows).
 
         Examples
         --------
@@ -10209,7 +10269,10 @@ class DataFrame:
         │ 1.0  ┆ -1.0 ┆ 1.0  │
         └──────┴──────┴──────┘
         """
-        return DataFrame(np.corrcoef(self.to_numpy().T, **kwargs), schema=self.columns)
+        correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
+        if self.width == 1:
+            correlation_matrix = np.array([correlation_matrix])
+        return DataFrame(correlation_matrix, schema=self.columns)
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """
@@ -10301,6 +10364,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @unstable()
     def update(
         self,
         other: DataFrame,
@@ -10315,8 +10379,8 @@ class DataFrame:
         Update the values in this `DataFrame` with the values in `other`.
 
         .. warning::
-            This functionality is experimental and may change without it being
-            considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         By default, null values in the right frame are ignored. Use
         `include_nulls=False` to overwrite values in this frame with

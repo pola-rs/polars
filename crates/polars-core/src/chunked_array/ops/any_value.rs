@@ -32,8 +32,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         }};
     }
     match dtype {
-        DataType::String => downcast_and_pack!(LargeStringArray, String),
-        DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
+        DataType::String => downcast_and_pack!(Utf8ViewArray, String),
+        DataType::Binary => downcast_and_pack!(BinaryViewArray, Binary),
         DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
         DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
@@ -75,6 +75,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
+        },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(rev_map, _) => {
+            let arr = &*(arr as *const dyn Array as *const UInt32Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Enum(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
@@ -119,6 +125,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             PolarsExtension::arr_to_av(arr, idx)
         },
         DataType::Null => AnyValue::Null,
+        DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
         dt => panic!("not implemented for {dt:?}"),
     }
 }
@@ -140,16 +147,24 @@ impl<'a> AnyValue<'a> {
                                 let keys = arr.keys();
                                 let values = arr.values();
                                 let values =
-                                    values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                                    values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
                                 let arr = &*(keys as *const dyn Array as *const UInt32Array);
 
                                 if arr.is_valid_unchecked(idx) {
                                     let v = arr.value_unchecked(idx);
-                                    let DataType::Categorical(Some(rev_map), _) = fld.data_type()
-                                    else {
-                                        unimplemented!()
-                                    };
-                                    AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
+                                    match fld.data_type() {
+                                        DataType::Categorical(Some(rev_map), _) => {
+                                            AnyValue::Categorical(
+                                                v,
+                                                rev_map,
+                                                SyncPtr::from_const(values),
+                                            )
+                                        },
+                                        DataType::Enum(Some(rev_map), _) => {
+                                            AnyValue::Enum(v, rev_map, SyncPtr::from_const(values))
+                                        },
+                                        _ => unimplemented!(),
+                                    }
                                 } else {
                                     AnyValue::Null
                                 }
@@ -233,6 +248,17 @@ impl ChunkAnyValue for StringChunked {
 }
 
 impl ChunkAnyValue for BinaryChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        get_any_value!(self, index)
+    }
+}
+
+impl ChunkAnyValue for BinaryOffsetChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)

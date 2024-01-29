@@ -76,6 +76,12 @@ impl ChunkShiftFill<BinaryType, Option<&[u8]>> for BinaryChunked {
     }
 }
 
+impl ChunkShiftFill<BinaryOffsetType, Option<&[u8]>> for BinaryOffsetChunked {
+    fn shift_and_fill(&self, periods: i64, fill_value: Option<&[u8]>) -> BinaryOffsetChunked {
+        impl_shift_fill!(self, periods, fill_value)
+    }
+}
+
 impl ChunkShift<StringType> for StringChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
@@ -83,6 +89,12 @@ impl ChunkShift<StringType> for StringChunked {
 }
 
 impl ChunkShift<BinaryType> for BinaryChunked {
+    fn shift(&self, periods: i64) -> Self {
+        self.shift_and_fill(periods, None)
+    }
+}
+
+impl ChunkShift<BinaryOffsetType> for BinaryOffsetChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }

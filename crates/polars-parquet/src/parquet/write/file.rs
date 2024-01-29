@@ -36,6 +36,19 @@ pub(super) fn end_file<W: Write>(mut writer: &mut W, metadata: &ThriftFileMetaDa
     Ok(metadata_len as u64 + FOOTER_SIZE)
 }
 
+fn create_column_orders(schema_desc: &SchemaDescriptor) -> Vec<parquet_format_safe::ColumnOrder> {
+    // We only include ColumnOrder for leaf nodes.
+    // Currently only supported ColumnOrder is TypeDefinedOrder so we set this
+    // for all leaf nodes.
+    // Even if the column has an undefined sort order, such as INTERVAL, this
+    // is still technically the defined TYPEORDER so it should still be set.
+    (0..schema_desc.columns().len())
+        .map(|_| {
+            parquet_format_safe::ColumnOrder::TYPEORDER(parquet_format_safe::TypeDefinedOrder {})
+        })
+        .collect()
+}
+
 /// An interface to write a parquet file.
 /// Use `start` to write the header, `write` to write a row group,
 /// and `end` to write the footer.
@@ -216,7 +229,7 @@ impl<W: Write> FileWriter<W> {
             self.row_groups.clone(),
             key_value_metadata,
             self.created_by.clone(),
-            None,
+            Some(create_column_orders(&self.schema)),
             None,
             None,
         );

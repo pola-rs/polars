@@ -1161,6 +1161,11 @@ def test_from_rows_dtype() -> None:
     assert df.dtypes == [pl.Int32, pl.Object, pl.Object]
     assert df.null_count().row(0) == (0, 0, 0)
 
+    dc = _TestBazDC(d=datetime(2020, 2, 22), e=42.0, f="xyz")
+    df = pl.DataFrame([[dc]], schema={"d": pl.Object})
+    assert df.schema == {"d": pl.Object}
+    assert df.item() == dc
+
 
 def test_from_dicts_schema() -> None:
     data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]

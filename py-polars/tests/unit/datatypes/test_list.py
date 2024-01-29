@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pickle
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -77,6 +78,15 @@ def test_categorical() -> None:
 
     assert out.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
     assert out.dtype.inner.is_nested() is False  # type: ignore[attr-defined]
+
+
+def test_decimal() -> None:
+    input = [[Decimal("1.23"), Decimal("4.56")], [Decimal("7.89"), Decimal("10.11")]]
+    s = pl.Series(input)
+    assert s.dtype == pl.List(pl.Decimal)
+    assert s.dtype.inner == pl.Decimal  # type: ignore[attr-defined]
+    assert s.dtype.inner.is_nested() is False  # type: ignore[attr-defined]
+    assert s.to_list() == input
 
 
 def test_cast_inner() -> None:
@@ -304,9 +314,6 @@ def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").list.count_matches(2).alias("number_of_twos")
     ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
-    assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").list.count_matches(2).alias("number_of_twos")
-    ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
 def test_list_sum_and_dtypes() -> None:
@@ -425,6 +432,35 @@ def test_list_min_max() -> None:
     assert df.select(pl.col("a").list.max()).to_dict(as_series=False) == {
         "a": [1, 5, 4, 5, None]
     }
+
+
+def test_list_min_max_13978() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2, 3]],
+            "b": [[1, 2], None],
+            "c": [[], [None, 1, 2]],
+        }
+    )
+    out = df.select(
+        min_a=pl.col("a").list.min(),
+        max_a=pl.col("a").list.max(),
+        min_b=pl.col("b").list.min(),
+        max_b=pl.col("b").list.max(),
+        min_c=pl.col("c").list.min(),
+        max_c=pl.col("c").list.max(),
+    )
+    expected = pl.DataFrame(
+        {
+            "min_a": [None, 1],
+            "max_a": [None, 3],
+            "min_b": [1, None],
+            "max_b": [2, None],
+            "min_c": [None, 1],
+            "max_c": [None, 2],
+        }
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_fill_null_empty_list() -> None:
@@ -628,3 +664,91 @@ def test_as_list_logical_type() -> None:
     assert df.group_by(True).agg(
         pl.col("timestamp").gather(pl.col("value").arg_max())
     ).to_dict(as_series=False) == {"literal": [True], "timestamp": [[date(2000, 1, 1)]]}
+
+
+@pytest.fixture()
+def data_dispersion() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "int": [[1, 2, 3, 4, 5]],
+            "float": [[1.0, 2.0, 3.0, 4.0, 5.0]],
+            "duration": [[1000, 2000, 3000, 4000, 5000]],
+        },
+        schema={
+            "int": pl.List(pl.Int64),
+            "float": pl.List(pl.Float64),
+            "duration": pl.List(pl.Duration),
+        },
+    )
+
+
+def test_list_var(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").list.var().name.suffix("_var"),
+        pl.col("float").list.var().name.suffix("_var"),
+        pl.col("duration").list.var().name.suffix("_var"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_var", [2.5], dtype=pl.Float64),
+            pl.Series("float_var", [2.5], dtype=pl.Float64),
+            pl.Series(
+                "duration_var",
+                [timedelta(microseconds=2000)],
+                dtype=pl.Duration(time_unit="ms"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_list_std(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").list.std().name.suffix("_std"),
+        pl.col("float").list.std().name.suffix("_std"),
+        pl.col("duration").list.std().name.suffix("_std"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series(
+                "duration_std",
+                [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_list_median(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").list.median().name.suffix("_median"),
+        pl.col("float").list.median().name.suffix("_median"),
+        pl.col("duration").list.median().name.suffix("_median"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_median", [3.0], dtype=pl.Float64),
+            pl.Series("float_median", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_median",
+                [timedelta(microseconds=3000)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)

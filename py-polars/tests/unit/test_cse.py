@@ -1,5 +1,6 @@
 import re
-from datetime import date, datetime
+import typing
+from datetime import date, datetime, timedelta
 from tempfile import NamedTemporaryFile
 from typing import Any
 
@@ -138,7 +139,13 @@ def test_cse_9630() -> None:
 @pytest.mark.write_disk()
 def test_schema_row_index_cse() -> None:
     csv_a = NamedTemporaryFile()
-    csv_a.write(b"A,B\nGr1,A\nGr1,B\n".strip())
+    csv_a.write(
+        b"""
+A,B
+Gr1,A
+Gr1,B
+    """.strip()
+    )
     csv_a.seek(0)
 
     df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
@@ -463,7 +470,7 @@ def test_cse_count_in_group_by() -> None:
     q = (
         pl.LazyFrame({"a": [1, 1, 2], "b": [1, 2, 3], "c": [40, 51, 12]})
         .group_by("a")
-        .agg(pl.all().slice(0, pl.count() - 1))
+        .agg(pl.all().slice(0, pl.len() - 1))
     )
 
     assert "POLARS_CSER" not in q.explain()
@@ -521,8 +528,8 @@ def test_cse_slice_11594() -> None:
     df = pl.LazyFrame({"a": [1, 2, 1, 2, 1, 2]})
 
     q = df.select(
-        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
-        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("2"),
+        pl.col("a").slice(offset=1, length=pl.len() - 1).alias("1"),
+        pl.col("a").slice(offset=1, length=pl.len() - 1).alias("2"),
     )
 
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
@@ -533,8 +540,8 @@ def test_cse_slice_11594() -> None:
     }
 
     q = df.select(
-        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
-        pl.col("a").slice(offset=0, length=pl.count() - 1).alias("2"),
+        pl.col("a").slice(offset=1, length=pl.len() - 1).alias("1"),
+        pl.col("a").slice(offset=0, length=pl.len() - 1).alias("2"),
     )
 
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
@@ -588,3 +595,52 @@ def test_cse_11958() -> None:
         "diff3": [None, None, None, 30, 30],
         "diff4": [None, None, None, None, 40],
     }
+
+
+@typing.no_type_check
+def test_cse_14047() -> None:
+    ldf = pl.LazyFrame(
+        {
+            "timestamp": pl.datetime_range(
+                datetime(2024, 1, 12),
+                datetime(2024, 1, 12, 0, 0, 0, 150_000),
+                "10ms",
+                eager=True,
+                closed="left",
+            ),
+            "price": list(range(15)),
+        }
+    )
+
+    def count_diff(
+        price: pl.Expr, upper_bound: float = 0.1, lower_bound: float = 0.001
+    ):
+        span_end_to_curr = (
+            price.count()
+            .cast(int)
+            .rolling("timestamp", period=timedelta(seconds=lower_bound))
+        )
+        span_start_to_curr = (
+            price.count()
+            .cast(int)
+            .rolling("timestamp", period=timedelta(seconds=upper_bound))
+        )
+        return (span_start_to_curr - span_end_to_curr).alias(
+            f"count_diff_{upper_bound}_{lower_bound}"
+        )
+
+    def s_per_count(count_diff, span) -> pl.Expr:
+        return (span[1] * 1000 - span[0] * 1000) / count_diff
+
+    spans = [(0.001, 0.1), (1, 10)]
+    count_diff_exprs = [count_diff(pl.col("price"), span[0], span[1]) for span in spans]
+    s_per_count_exprs = [
+        s_per_count(count_diff, span).alias(f"zz_{span}")
+        for count_diff, span in zip(count_diff_exprs, spans)
+    ]
+
+    exprs = count_diff_exprs + s_per_count_exprs
+    ldf = ldf.with_columns(*exprs)
+    assert_frame_equal(
+        ldf.collect(comm_subexpr_elim=True), ldf.collect(comm_subexpr_elim=False)
+    )

@@ -195,19 +195,25 @@ fn is_in_string_inner_categorical(
 fn is_in_string(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::List(dt) if matches!(&**dt, DataType::Categorical(_, _)) => {
-            if let DataType::Categorical(Some(rev_map), _) = &**dt {
-                is_in_string_inner_categorical(ca_in, other, rev_map)
-            } else {
-                unreachable!()
+        DataType::List(dt)
+            if matches!(&**dt, DataType::Categorical(_, _) | DataType::Enum(_, _)) =>
+        {
+            match &**dt {
+                DataType::Enum(Some(rev_map), _) | DataType::Categorical(Some(rev_map), _) => {
+                    is_in_string_inner_categorical(ca_in, other, rev_map)
+                },
+                _ => unreachable!(),
             }
         },
         #[cfg(all(feature = "dtype-categorical", feature = "dtype-array"))]
-        DataType::Array(dt, _) if matches!(&**dt, DataType::Categorical(_, _)) => {
-            if let DataType::Categorical(Some(rev_map), _) = &**dt {
-                is_in_string_inner_categorical(ca_in, other, rev_map)
-            } else {
-                unreachable!()
+        DataType::Array(dt, _)
+            if matches!(&**dt, DataType::Categorical(_, _) | DataType::Enum(_, _)) =>
+        {
+            match &**dt {
+                DataType::Enum(Some(rev_map), _) | DataType::Categorical(Some(rev_map), _) => {
+                    is_in_string_inner_categorical(ca_in, other, rev_map)
+                },
+                _ => unreachable!(),
             }
         },
         DataType::List(dt) if DataType::String == **dt => is_in_binary(
@@ -515,17 +521,17 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
                 return is_in(&ca_in_super, &other_super);
             }
 
-            let mut anyvalues = Vec::with_capacity(other.len() * other.fields().len());
+            let mut any_values = Vec::with_capacity(other.len() * other.fields().len());
             // SAFETY:
             // the iterator is unsafe as the lifetime is tied to the iterator
             // so we copy to an owned buffer first
             other.into_iter().for_each(|vals| {
-                anyvalues.extend_from_slice(vals);
+                any_values.extend_from_slice(vals);
             });
 
             // then we fill the set
             let mut set = PlHashSet::with_capacity(other.len());
-            for key in anyvalues.chunks_exact(other.fields().len()) {
+            for key in any_values.chunks_exact(other.fields().len()) {
                 set.insert(key);
             }
             // physical ca_in
@@ -553,7 +559,7 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
 #[cfg(feature = "dtype-categorical")]
 fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
-        DataType::Categorical(_, _) => {
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => {
             let (ca_in, other_in) =
                 make_categoricals_compatible(ca_in, other.categorical().unwrap())?;
             is_in_helper_ca(ca_in.physical(), other_in.physical())
@@ -578,7 +584,7 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
                         }
                     }
                 },
-                RevMapping::Local(categories, _) | RevMapping::Enum(categories, _) => {
+                RevMapping::Local(categories, _) => {
                     categories
                         .values_iter()
                         .enumerate_idx()
@@ -604,7 +610,7 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
 pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => {
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => {
             let ca = s.categorical().unwrap();
             is_in_cat(ca, other)
         },

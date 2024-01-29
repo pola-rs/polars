@@ -1,11 +1,12 @@
 import datetime
+from datetime import timedelta
 from typing import Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_cast_list_array() -> None:
@@ -73,9 +74,8 @@ def test_array_in_group_by() -> None:
         ]
     )
 
-    assert next(iter(df.group_by("id", maintain_order=True)))[1]["list"].to_list() == [
-        [1, 2]
-    ]
+    result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
+    assert result.to_list() == [[1, 2]]
 
     df = pl.DataFrame(
         {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
@@ -208,9 +208,109 @@ def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     assert s.to_list() == data
 
 
+@pytest.fixture()
+def data_dispersion() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "int": [[1, 2, 3, 4, 5]],
+            "float": [[1.0, 2.0, 3.0, 4.0, 5.0]],
+            "duration": [[1000, 2000, 3000, 4000, 5000]],
+        },
+        schema={
+            "int": pl.Array(pl.Int64, 5),
+            "float": pl.Array(pl.Float64, 5),
+            "duration": pl.Array(pl.Duration, 5),
+        },
+    )
+
+
+def test_arr_var(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.var().name.suffix("_var"),
+        pl.col("float").arr.var().name.suffix("_var"),
+        pl.col("duration").arr.var().name.suffix("_var"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_var", [2.5], dtype=pl.Float64),
+            pl.Series("float_var", [2.5], dtype=pl.Float64),
+            pl.Series(
+                "duration_var",
+                [timedelta(microseconds=2000)],
+                dtype=pl.Duration(time_unit="ms"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_std(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.std().name.suffix("_std"),
+        pl.col("float").arr.std().name.suffix("_std"),
+        pl.col("duration").arr.std().name.suffix("_std"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
+            pl.Series(
+                "duration_std",
+                [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_median(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.median().name.suffix("_median"),
+        pl.col("float").arr.median().name.suffix("_median"),
+        pl.col("duration").arr.median().name.suffix("_median"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_median", [3.0], dtype=pl.Float64),
+            pl.Series("float_median", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_median",
+                [timedelta(microseconds=3000)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
 def test_array_repeat() -> None:
     dtype = pl.Array(pl.UInt8, width=1)
     s = pl.repeat([42], n=3, dtype=dtype, eager=True)
     expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
     assert s.dtype == dtype
     assert_series_equal(s, expected)
+
+
+def test_create_nested_array() -> None:
+    data = [[[1, 2], [3]], [[], [4, None]], None]
+    s1 = pl.Series(data, dtype=pl.Array(pl.List(pl.Int64), 2))
+    assert s1.to_list() == data
+    data = [[[1, 2], [3, None]], [[None, None], [4, None]], None]
+    s2 = pl.Series(
+        [[[1, 2], [3, None]], [[None, None], [4, None]], None],
+        dtype=pl.Array(pl.Array(pl.Int64, 2), 2),
+    )
+    assert s2.to_list() == data

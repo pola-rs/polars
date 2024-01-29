@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -29,6 +29,20 @@ def test_concat_align() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_concat_align_no_common_cols() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
+    df2 = pl.DataFrame({"c": [3, 4], "d": [3, 4]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="'align' strategy requires at least one common column",
+    ):
+        pl.concat((df1, df2), how="align")
+
+
+data2 = pl.DataFrame({"field3": [3, 4], "field4": ["C", "D"]})
 
 
 @pytest.mark.parametrize(
@@ -388,11 +402,6 @@ def test_fill_null_unknown_output_type() -> None:
             148.4131591025766,
         ]
     }
-
-
-def test_abs_logical_type() -> None:
-    s = pl.Series([timedelta(hours=1), timedelta(hours=-1)])
-    assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
 
 
 def test_approx_n_unique() -> None:

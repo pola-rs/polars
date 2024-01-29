@@ -28,6 +28,24 @@ impl ArrayNameSpace {
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Sum))
     }
 
+    /// Compute the std of the items in every subarray.
+    pub fn std(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Std(ddof)))
+    }
+
+    /// Compute the var of the items in every subarray.
+    pub fn var(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Var(ddof)))
+    }
+
+    /// Compute the median of the items in every subarray.
+    pub fn median(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Median))
+    }
+
     /// Keep only the unique values in every sub-array.
     pub fn unique(self) -> Expr {
         self.0
@@ -93,9 +111,9 @@ impl ArrayNameSpace {
     /// Join all string items in a sub-array and place a separator between them.
     /// # Error
     /// Raise if inner type of array is not `DataType::String`.
-    pub fn join(self, separator: Expr) -> Expr {
+    pub fn join(self, separator: Expr, ignore_nulls: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ArrayExpr(ArrayFunction::Join),
+            FunctionExpr::ArrayExpr(ArrayFunction::Join(ignore_nulls)),
             &[separator],
             false,
             false,
@@ -113,5 +131,23 @@ impl ArrayNameSpace {
             false,
             false,
         )
+    }
+
+    #[cfg(feature = "array_count")]
+    /// Count how often the value produced by ``element`` occurs.
+    pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
+        let other = element.into();
+
+        self.0
+            .map_many_private(
+                FunctionExpr::ArrayExpr(ArrayFunction::CountMatches),
+                &[other],
+                false,
+                false,
+            )
+            .with_function_options(|mut options| {
+                options.input_wildcard_expansion = true;
+                options
+            })
     }
 }

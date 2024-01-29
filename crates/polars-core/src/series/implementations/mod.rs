@@ -1,6 +1,7 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+mod binary_offset;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
@@ -289,6 +290,14 @@ macro_rules! impl_dyn_series {
                 self.0.median()
             }
 
+            fn std(&self, ddof: u8) -> Option<f64> {
+                self.0.std(ddof)
+            }
+
+            fn var(&self, ddof: u8) -> Option<f64> {
+                self.0.var(ddof)
+            }
+
             #[cfg(feature = "chunked_ids")]
             unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
                 self.0.take_chunked_unchecked(by, sorted).into_series()
@@ -464,6 +473,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
 
 impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]
 impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}

@@ -49,8 +49,12 @@ impl PyExpr {
         self.inner.clone().list().get(index.inner).into()
     }
 
-    fn list_join(&self, separator: PyExpr) -> Self {
-        self.inner.clone().list().join(separator.inner).into()
+    fn list_join(&self, separator: PyExpr, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .join(separator.inner, ignore_nulls)
+            .into()
     }
 
     fn list_len(&self) -> Self {
@@ -67,6 +71,33 @@ impl PyExpr {
             .list()
             .mean()
             .with_fmt("list.mean")
+            .into()
+    }
+
+    fn list_median(&self) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .median()
+            .with_fmt("list.median")
+            .into()
+    }
+
+    fn list_std(&self, ddof: u8) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .std(ddof)
+            .with_fmt("list.std")
+            .into()
+    }
+
+    fn list_var(&self, ddof: u8) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .var(ddof)
+            .with_fmt("list.var")
             .into()
     }
 
@@ -94,15 +125,15 @@ impl PyExpr {
         self.inner.clone().list().tail(n.inner).into()
     }
 
-    fn list_sort(&self, descending: bool) -> Self {
+    fn list_sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.inner
             .clone()
             .list()
             .sort(SortOptions {
                 descending,
+                nulls_last,
                 ..Default::default()
             })
-            .with_fmt("list.sort")
             .into()
     }
 

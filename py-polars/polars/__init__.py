@@ -85,6 +85,7 @@ from polars.exceptions import (
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
+    UnstableWarning,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -138,6 +139,7 @@ from polars.functions import (
     int_range,
     int_ranges,
     last,
+    len,
     lit,
     map,
     map_batches,
@@ -220,7 +222,6 @@ __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
     "ComputeError",
-    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
@@ -234,6 +235,8 @@ __all__ = [
     # warnings
     "PolarsWarning",
     "CategoricalRemappingWarning",
+    "ChronoFormatWarning",
+    "UnstableWarning",
     # core classes
     "DataFrame",
     "Expr",
@@ -393,6 +396,8 @@ __all__ = [
     "tail",
     "time",  # named time_, see import above
     "var",
+    # polars.functions.len
+    "len",
     # polars.functions.random
     "set_random_seed",
     # polars.convert

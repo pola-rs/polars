@@ -11,9 +11,12 @@ The following methods are available under the `Series.arr` attribute.
 
     Series.arr.max
     Series.arr.min
+    Series.arr.median
     Series.arr.sum
+    Series.arr.std
     Series.arr.to_list
     Series.arr.unique
+    Series.arr.var
     Series.arr.all
     Series.arr.any
     Series.arr.sort
@@ -24,4 +27,6 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.first
     Series.arr.last
     Series.arr.join
+    Series.arr.explode
     Series.arr.contains
+    Series.arr.count_matches

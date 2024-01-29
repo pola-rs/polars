@@ -7,6 +7,7 @@ from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
 from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
+from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -140,6 +141,27 @@ class DateTimeNameSpace:
             "2020/04/01"
             "2020/05/01"
         ]
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.to_string("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.to_string("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
+        ]
         """
 
     def strftime(self, format: str) -> Series:
@@ -177,8 +199,105 @@ class DateTimeNameSpace:
             "2020/04/01"
             "2020/05/01"
         ]
+
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.strftime("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.strftime("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
+        ]
         """
         return self.to_string(format)
+
+    def millennium(self) -> Expr:
+        """
+        Extract the millennium from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the millennium number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "dt",
+        ...     [
+        ...         date(999, 12, 31),
+        ...         date(1897, 5, 7),
+        ...         date(2000, 1, 1),
+        ...         date(2001, 7, 5),
+        ...         date(3002, 10, 20),
+        ...     ],
+        ... )
+        >>> s.dt.millennium()
+        shape: (5,)
+        Series: 'dt' [i32]
+        [
+            1
+            2
+            2
+            3
+            4
+        ]
+        """
+
+    def century(self) -> Expr:
+        """
+        Extract the century from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the century number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "dt",
+        ...     [
+        ...         date(999, 12, 31),
+        ...         date(1897, 5, 7),
+        ...         date(2000, 1, 1),
+        ...         date(2001, 7, 5),
+        ...         date(3002, 10, 20),
+        ...     ],
+        ... )
+        >>> s.dt.century()
+        shape: (5,)
+        Series: 'dt' [i32]
+        [
+            10
+            19
+            20
+            21
+            31
+        ]
+        """
 
     def year(self) -> Series:
         """
@@ -895,13 +1014,16 @@ class DateTimeNameSpace:
         """
         Set time unit a Series of dtype Datetime or Duration.
 
+        .. deprecated:: 0.20.5
+            First cast to `Int64` and then cast to the desired data type.
+
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
 
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` Series.
+            Unit of time for the `Datetime` or `Duration` Series.
 
         Examples
         --------
@@ -911,7 +1033,7 @@ class DateTimeNameSpace:
         ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)],
         ...     dtype=pl.Datetime(time_unit="ns"),
         ... )
-        >>> s.dt.with_time_unit("us")
+        >>> s.dt.with_time_unit("us")  # doctest: +SKIP
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
@@ -970,6 +1092,11 @@ class DateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` Series.
+
+        Notes
+        -----
+        If converting from a time-zone-naive datetime, then conversion will happen
+        as if converting from UTC, regardless of your system's time zone.
 
         Examples
         --------
@@ -1566,6 +1693,7 @@ class DateTimeNameSpace:
         ]
         """
 
+    @unstable()
     def round(
         self,
         every: str | dt.timedelta,
@@ -1576,38 +1704,18 @@ class DateTimeNameSpace:
         """
         Divide the date/ datetime range into buckets.
 
-        Each date/datetime in the first half of the interval
-        is mapped to the start of its bucket.
-        Each date/datetime in the second half of the interval
-        is mapped to the end of its bucket.
-        Ambiguous results are localised using the DST offset of the original timestamp -
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Each date/datetime in the first half of the interval is mapped to the start of
+        its bucket.
+        Each date/datetime in the second half of the interval is mapped to the end of
+        its bucket.
+        Ambiguous results are localized using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
         `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
-
-        The `every` and `offset` argument are created with the
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
 
         Parameters
         ----------
@@ -1630,10 +1738,30 @@ class DateTimeNameSpace:
         Series
             Series of data type :class:`Date` or :class:`Datetime`.
 
-        Warnings
-        --------
-        This functionality is currently experimental and may
-        change without it being considered a breaking change.
+        Notes
+        -----
+        The `every` and `offset` argument are created with the
+        the following string language:
+
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
+        - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
+        - 1y    (1 calendar year)
+
+        These strings can be combined:
+
+        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Examples
         --------

@@ -102,9 +102,9 @@ pub(super) fn array_iter_to_series(
     };
     if chunks.is_empty() {
         let arr = new_empty_array(field.data_type.clone());
-        Series::try_from((field.name.as_str(), arr))
+        Series::try_from((field, arr))
     } else {
-        Series::try_from((field.name.as_str(), chunks))
+        Series::try_from((field, chunks))
     }
 }
 
@@ -297,48 +297,54 @@ fn rg_to_dfs_par_over_rg(
         })
         .collect::<Vec<_>>();
 
-    let dfs = row_groups
-        .into_par_iter()
-        .map(|(rg_idx, md, projection_height, row_count_start)| {
-            if projection_height == 0
-                || use_statistics
-                    && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
-            {
-                return Ok(None);
-            }
-            // test we don't read the parquet file if this env var is set
-            #[cfg(debug_assertions)]
-            {
-                assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
-            }
+    let dfs = POOL.install(|| {
+        row_groups
+            .into_par_iter()
+            .map(|(rg_idx, md, projection_height, row_count_start)| {
+                if projection_height == 0
+                    || use_statistics
+                        && !read_this_row_group(
+                            predicate,
+                            &file_metadata.row_groups[rg_idx],
+                            schema,
+                        )?
+                {
+                    return Ok(None);
+                }
+                // test we don't read the parquet file if this env var is set
+                #[cfg(debug_assertions)]
+                {
+                    assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
+                }
 
-            let chunk_size = md.num_rows();
-            let columns = projection
-                .iter()
-                .map(|column_i| {
-                    column_idx_to_series(
-                        *column_i,
-                        md,
-                        projection_height,
-                        schema,
-                        store,
-                        chunk_size,
-                    )
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
+                let chunk_size = md.num_rows();
+                let columns = projection
+                    .iter()
+                    .map(|column_i| {
+                        column_idx_to_series(
+                            *column_i,
+                            md,
+                            projection_height,
+                            schema,
+                            store,
+                            chunk_size,
+                        )
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-            let mut df = DataFrame::new_no_checks(columns);
+                let mut df = DataFrame::new_no_checks(columns);
 
-            if let Some(rc) = &row_index {
-                df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
-            }
+                if let Some(rc) = &row_index {
+                    df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
+                }
 
-            materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
-            apply_predicate(&mut df, predicate, false)?;
+                materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
+                apply_predicate(&mut df, predicate, false)?;
 
-            Ok(Some(df))
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
+                Ok(Some(df))
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+    })?;
     Ok(dfs.into_iter().flatten().collect())
 }
 

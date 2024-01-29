@@ -232,12 +232,12 @@ def test_streaming_9776() -> None:
     df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
     ordered = (
         df.group_by("col_1", "ID", maintain_order=True)
-        .count()
+        .len()
         .filter(pl.col("col_1") == "a")
     )
     unordered = (
         df.group_by("col_1", "ID", maintain_order=False)
-        .count()
+        .len()
         .filter(pl.col("col_1") == "a")
     )
     expected = [("a", None, 1), ("a", "a", 999)]
@@ -329,6 +329,21 @@ def test_streaming_11219() -> None:
     assert lf.with_context([lf_other, lf_other2]).select(
         pl.col("b") + pl.col("c").first()
     ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
+
+
+@pytest.mark.write_disk()
+def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
+    with Path.open(tmp_path / "header_no_data.csv", "w") as f:
+        f.write("name, age\n")
+
+    schema = {"name": pl.String, "age": pl.Int32}
+    df = (
+        pl.scan_csv(tmp_path / "header_no_data.csv", schema=schema)
+        .head()
+        .collect(streaming=True)
+    )
+    assert len(df) == 0
+    assert df.schema == schema
 
 
 @pytest.mark.write_disk()

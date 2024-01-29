@@ -129,9 +129,7 @@ impl<'a> CoreReader<'a> {
             eol_char: self.eol_char,
         };
 
-        let projection = self.get_projection();
-
-        let str_columns = self.get_string_columns(&projection)?;
+        let projection = self.get_projection()?;
 
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
@@ -149,8 +147,6 @@ impl<'a> CoreReader<'a> {
             chunk_size: self.chunk_size,
             file_chunks_iter: file_chunks,
             file_chunks: vec![],
-            str_capacities: self.init_string_size_stats(&str_columns, self.chunk_size),
-            str_columns,
             projection,
             starting_point_offset,
             row_index: self.row_index,
@@ -177,8 +173,6 @@ pub struct BatchedCsvReaderMmap<'a> {
     chunk_size: usize,
     file_chunks_iter: ChunkOffsetIter<'a>,
     file_chunks: Vec<(usize, usize)>,
-    str_capacities: Vec<RunningSize>,
-    str_columns: StringColumns,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
     row_index: Option<RowIndex>,
@@ -242,7 +236,6 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                         self.eol_char,
                         self.comment_prefix.as_ref(),
                         self.chunk_size,
-                        &self.str_capacities,
                         self.encoding,
                         self.null_values.as_ref(),
                         self.missing_is_null,
@@ -254,7 +247,6 @@ impl<'a> BatchedCsvReaderMmap<'a> {
 
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
-                    update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_index {
                         df.with_row_index_mut(&rc.name, Some(rc.offset));
                     }

@@ -947,6 +947,10 @@ impl Expr {
         self.fill_null_impl(fill_value.into())
     }
 
+    pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
+        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+    }
+
     /// Replace the floating point `NaN` values by a value.
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
@@ -1604,7 +1608,8 @@ impl Expr {
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
     pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
-        self.apply_private(FunctionExpr::SetSortedFlag(sorted))
+        // This is `map`. If a column is sorted. Chunks of that column are also sorted.
+        self.map_private(FunctionExpr::SetSortedFlag(sorted))
     }
 
     #[cfg(feature = "row_hash")]
@@ -1615,6 +1620,19 @@ impl Expr {
 
     pub fn to_physical(self) -> Expr {
         self.map_private(FunctionExpr::ToPhysical)
+    }
+
+    pub fn gather_every(self, n: usize, offset: usize) -> Expr {
+        self.apply_private(FunctionExpr::GatherEvery { n, offset })
+    }
+
+    #[cfg(feature = "reinterpret")]
+    pub fn reinterpret(self, signed: bool) -> Expr {
+        self.map_private(FunctionExpr::Reinterpret(signed))
+    }
+
+    pub fn extend_constant(self, value: Expr, n: Expr) -> Expr {
+        self.apply_many_private(FunctionExpr::ExtendConstant, &[value, n], false, false)
     }
 
     #[cfg(feature = "strings")]
@@ -1760,21 +1778,9 @@ where
     }
 }
 
-/// Count expression.
-pub fn count() -> Expr {
-    Expr::Count
-}
-
-/// Return the cumulative count of the context.
-#[cfg(feature = "range")]
-pub fn cum_count(reverse: bool) -> Expr {
-    let start = lit(1 as IdxSize);
-    let end = count() + lit(1 as IdxSize);
-    let mut range = int_range(start, end, 1, IDX_DTYPE);
-    if reverse {
-        range = range.reverse()
-    }
-    range.alias("cum_count")
+/// Return the number of rows in the context.
+pub fn len() -> Expr {
+    Expr::Len
 }
 
 /// First column in DataFrame.

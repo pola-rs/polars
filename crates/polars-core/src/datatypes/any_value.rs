@@ -72,7 +72,9 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-categorical")]
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
-    Categorical(u32, &'a RevMapping, SyncPtr<Utf8Array<i64>>),
+    Categorical(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
+    #[cfg(feature = "dtype-categorical")]
+    Enum(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
@@ -340,10 +342,15 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 }
 
 impl<'a> AnyValue<'a> {
+    /// Get the matching [`DataType`] for this [`AnyValue`]`.
+    ///
+    /// Note: For `Categorical` and `Enum` values, the exact mapping information
+    /// is not preserved in the result for performance reasons.
     pub fn dtype(&self) -> DataType {
         use AnyValue::*;
-        match self.as_borrowed() {
-            Null => DataType::Unknown,
+        match self {
+            Null => DataType::Null,
+            Boolean(_) => DataType::Boolean,
             Int8(_) => DataType::Int8,
             Int16(_) => DataType::Int16,
             Int32(_) => DataType::Int32,
@@ -354,27 +361,36 @@ impl<'a> AnyValue<'a> {
             UInt64(_) => DataType::UInt64,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
+            String(_) | StringOwned(_) => DataType::String,
+            Binary(_) | BinaryOwned(_) => DataType::Binary,
             #[cfg(feature = "dtype-date")]
             Date(_) => DataType::Date,
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => DataType::Datetime(tu, tz.clone()),
             #[cfg(feature = "dtype-time")]
             Time(_) => DataType::Time,
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
             #[cfg(feature = "dtype-duration")]
-            Duration(_, tu) => DataType::Duration(tu),
-            Boolean(_) => DataType::Boolean,
-            String(_) => DataType::String,
+            Duration(_, tu) => DataType::Duration(*tu),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _, _) => DataType::Enum(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
+            #[cfg(feature = "dtype-array")]
+            Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
-            Binary(_) => DataType::Binary,
-            _ => unimplemented!(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
+            #[cfg(feature = "object")]
+            Object(o) => DataType::Object(o.type_name(), None),
+            #[cfg(feature = "object")]
+            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
         }
     }
+
     /// Extract a numerical value from the AnyValue
     #[doc(hidden)]
     #[inline]
@@ -408,11 +424,12 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(f? / 10f64.powi(*scale as _))
                 }
             },
-            Boolean(v) => {
-                if *v {
-                    NumCast::from(1)
+            Boolean(v) => NumCast::from(if *v { 1 } else { 0 }),
+            String(v) => {
+                if let Ok(val) = (*v).parse::<i128>() {
+                    NumCast::from(val)
                 } else {
-                    NumCast::from(0)
+                    NumCast::from((*v).parse::<f64>().ok()?)
                 }
             },
             _ => None,
@@ -453,6 +470,20 @@ impl<'a> AnyValue<'a> {
             self,
             AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
         )
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, AnyValue::Null)
+    }
+
+    pub fn is_nested_null(&self) -> bool {
+        match self {
+            AnyValue::Null => true,
+            AnyValue::List(s) => s.null_count() == s.len(),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
+            _ => false,
+        }
     }
 
     pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
@@ -601,6 +632,12 @@ impl From<AnyValue<'_>> for DataType {
     }
 }
 
+impl<'a> From<&AnyValue<'a>> for DataType {
+    fn from(value: &AnyValue<'a>) -> Self {
+        value.dtype()
+    }
+}
+
 impl AnyValue<'_> {
     pub fn hash_impl<H: Hasher>(&self, state: &mut H, cheap: bool) {
         use AnyValue::*;
@@ -649,7 +686,7 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             Time(v) => v.hash(state),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(v, _, _) => v.hash(state),
+            Categorical(v, _, _) | Enum(v, _, _) => v.hash(state),
             #[cfg(feature = "object")]
             Object(_) => {},
             #[cfg(feature = "object")]
@@ -817,7 +854,7 @@ impl<'a> AnyValue<'a> {
             AnyValue::String(s) => Some(s),
             AnyValue::StringOwned(s) => Some(s),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev, arr) => {
+            AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
                 let s = if arr.is_null() {
                     rev.get(*idx)
                 } else {
@@ -826,16 +863,6 @@ impl<'a> AnyValue<'a> {
                 Some(s)
             },
             _ => None,
-        }
-    }
-
-    pub fn is_nested_null(&self) -> bool {
-        match self {
-            AnyValue::Null => true,
-            AnyValue::List(s) => s.dtype().is_nested_null(),
-            #[cfg(feature = "dtype-struct")]
-            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
-            _ => false,
         }
     }
 }
@@ -897,6 +924,8 @@ impl AnyValue<'_> {
                 },
                 _ => false,
             },
+            #[cfg(feature = "dtype-categorical")]
+            (Enum(idx_l, _, _), Enum(idx_r, _, _)) => idx_l == idx_r,
             #[cfg(feature = "dtype-duration")]
             (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
             #[cfg(feature = "dtype-struct")]
@@ -1190,7 +1219,7 @@ mod test {
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
-                DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
             (ArrowDataType::Utf8, DataType::String),

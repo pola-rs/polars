@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
@@ -11,7 +12,7 @@ use crate::prelude::{LazyFrame, ScanArgsAnonymous};
 pub struct LazyJsonLineReader {
     pub(crate) path: PathBuf,
     paths: Arc<[PathBuf]>,
-    pub(crate) batch_size: Option<usize>,
+    pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
     pub(crate) schema: Arc<RwLock<Option<SchemaRef>>>,
@@ -84,7 +85,7 @@ impl LazyJsonLineReader {
     }
 
     #[must_use]
-    pub fn with_batch_size(mut self, batch_size: Option<usize>) -> Self {
+    pub fn with_batch_size(mut self, batch_size: Option<NonZeroUsize>) -> Self {
         self.batch_size = batch_size;
         self
     }

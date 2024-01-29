@@ -94,6 +94,11 @@ impl Series {
         unpack_chunked!(self, DataType::Binary => BinaryChunked, "Binary")
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype `[DataType::Binary]`
+    pub fn binary_offset(&self) -> PolarsResult<&BinaryOffsetChunked> {
+        unpack_chunked!(self, DataType::BinaryOffset => BinaryOffsetChunked, "BinaryOffset")
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Time]`
     #[cfg(feature = "dtype-time")]
     pub fn time(&self) -> PolarsResult<&TimeChunked> {
@@ -138,7 +143,7 @@ impl Series {
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Categorical]`
     #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        unpack_chunked!(self, DataType::Categorical(_,_) => CategoricalChunked, "Categorical")
+        unpack_chunked!(self, DataType::Categorical(_, _) | DataType::Enum(_, _) => CategoricalChunked, "Enum | Categorical")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Struct]`

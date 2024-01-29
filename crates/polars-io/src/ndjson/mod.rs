@@ -11,7 +11,7 @@ pub fn infer_schema<R: std::io::BufRead>(
     let data_types = polars_json::ndjson::iter_unique_dtypes(reader, infer_schema_len)?;
     let data_type =
         crate::json::infer::data_types_to_supertype(data_types.map(|dt| DataType::from(&dt)))?;
-    let schema = StructArray::get_fields(&data_type.to_arrow())
+    let schema = StructArray::get_fields(&data_type.to_arrow(true))
         .iter()
         .collect();
     Ok(schema)

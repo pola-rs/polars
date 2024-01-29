@@ -69,6 +69,18 @@ def test_list_arr_get() -> None:
     ) == {"lists": [None, None, 4]}
 
 
+def test_list_categorical_get() -> None:
+    df = pl.DataFrame(
+        {
+            "actions": pl.Series(
+                [["a", "b"], ["c"], [None], None], dtype=pl.List(pl.Categorical)
+            ),
+        }
+    )
+    expected = pl.Series("actions", ["a", "c", None, None], dtype=pl.Categorical)
+    assert_series_equal(df["actions"].list.get(0), expected, categorical_as_str=True)
+
+
 def test_contains() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     out = a.list.contains(2)
@@ -77,6 +89,12 @@ def test_contains() -> None:
 
     out = pl.select(pl.lit(a).list.contains(2)).to_series()
     assert_series_equal(out, expected)
+
+
+def test_list_contains_invalid_datatype() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, width=2)})
+    with pytest.raises(pl.SchemaError, match="invalid series dtype: expected `List`"):
+        df.select(pl.col("a").list.contains(2))
 
 
 def test_list_concat() -> None:
@@ -103,6 +121,24 @@ def test_list_join() -> None:
     assert out.to_dict(as_series=False) == {"a": ["ab-c-d", "e-f", "g", "", None]}
     out = df.select(pl.col("a").list.join(pl.col("separator")))
     assert out.to_dict(as_series=False) == {"a": ["ab&c&d", None, "g", "", None]}
+
+    # test ignore_nulls argument
+    df = pl.DataFrame(
+        {
+            "a": [["a", None, "b", None], None, [None, None], ["c", "d"], []],
+            "separator": ["-", "&", " ", "@", "/"],
+        }
+    )
+    # ignore nulls
+    out = df.select(pl.col("a").list.join("-", ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c-d", ""]}
+    out = df.select(pl.col("a").list.join(pl.col("separator"), ignore_nulls=True))
+    assert out.to_dict(as_series=False) == {"a": ["a-b", None, "", "c@d", ""]}
+    # propagate nulls
+    out = df.select(pl.col("a").list.join("-", ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c-d", ""]}
+    out = df.select(pl.col("a").list.join(pl.col("separator"), ignore_nulls=False))
+    assert out.to_dict(as_series=False) == {"a": [None, None, None, "c@d", ""]}
 
 
 def test_list_arr_empty() -> None:
@@ -555,6 +591,16 @@ def test_list_count_match_boolean_nulls_9141() -> None:
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
+def test_list_count_match_categorical() -> None:
+    df = pl.DataFrame(
+        {"list": [["0"], ["1"], ["1", "2", "3", "2"], ["1", "2", "1"], ["4", "4"]]},
+        schema={"list": pl.List(pl.Categorical)},
+    )
+    assert df.select(pl.col("list").list.count_matches("2").alias("number_of_twos"))[
+        "number_of_twos"
+    ].to_list() == [0, 0, 2, 1, 0]
+
+
 def test_list_count_matches_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
 
@@ -566,6 +612,34 @@ def test_list_set_oob() -> None:
     assert df.select(pl.col("a").list.set_intersection([])).to_dict(
         as_series=False
     ) == {"a": [[], []]}
+
+
+def test_list_set_operations_float() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]},
+        schema={"a": pl.List(pl.Float32), "b": pl.List(pl.Float32)},
+    )
+
+    assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
+        [1.0, 2.0, 3.0, 4.0],
+        [1.0, 2.0, 12.0],
+        [4.0],
+    ]
+    assert df.select(pl.col("a").list.set_intersection("b"))["a"].to_list() == [
+        [1.0, 2.0],
+        [1.0],
+        [4.0],
+    ]
+    assert df.select(pl.col("a").list.set_difference("b"))["a"].to_list() == [
+        [3.0],
+        [],
+        [],
+    ]
+    assert df.select(pl.col("b").list.set_difference("a"))["b"].to_list() == [
+        [4.0],
+        [2.0, 12.0],
+        [],
+    ]
 
 
 def test_list_set_operations() -> None:
@@ -763,6 +837,15 @@ def test_list_ordering() -> None:
     assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
     assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
 
+    # test nulls_last
+    s = pl.Series([[None, 1, 2], [-1, None, 9]])
+    assert_series_equal(
+        s.list.sort(nulls_last=True), pl.Series([[1, 2, None], [-1, 9, None]])
+    )
+    assert_series_equal(
+        s.list.sort(nulls_last=False), pl.Series([[None, 1, 2], [None, -1, 9]])
+    )
+
 
 def test_list_get_logical_type() -> None:
     s = pl.Series(
@@ -789,3 +872,10 @@ def test_list_get_logical_type() -> None:
         dtype=pl.Date,
     )
     assert_series_equal(out, expected)
+
+
+def test_list_eval_gater_every_13410() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
+    out = df.with_columns(result=pl.col("a").list.eval(pl.element().gather_every(2)))
+    expected = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]], "result": [[1, 3], [4, 6]]})
+    assert_frame_equal(out, expected)

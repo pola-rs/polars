@@ -31,6 +31,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.lengths
     Expr.list.max
     Expr.list.mean
+    Expr.list.median
     Expr.list.min
     Expr.list.reverse
     Expr.list.sample
@@ -41,9 +42,11 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.shift
     Expr.list.slice
     Expr.list.sort
+    Expr.list.std
     Expr.list.sum
     Expr.list.tail
     Expr.list.take
     Expr.list.to_array
     Expr.list.to_struct
     Expr.list.unique
+    Expr.list.var 

@@ -29,6 +29,7 @@ impl FunctionExpr {
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
+            Negate => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 PowFunction::Generic => mapper.pow_dtype(),
@@ -261,9 +262,11 @@ impl FunctionExpr {
             Random { .. } => mapper.with_same_dtype(),
             SetSortedFlag(_) => mapper.with_same_dtype(),
             #[cfg(feature = "ffi_plugin")]
-            FfiPlugin { lib, symbol, .. } => unsafe {
-                plugin::plugin_field(fields, lib, symbol.as_ref())
-            },
+            FfiPlugin {
+                lib,
+                symbol,
+                kwargs,
+            } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
             BackwardFill { .. } => mapper.with_same_dtype(),
             ForwardFill { .. } => mapper.with_same_dtype(),
             SumHorizontal => mapper.map_to_supertype(),
@@ -277,6 +280,18 @@ impl FunctionExpr {
             EwmVar { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "replace")]
             Replace { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
+            FillNullWithStrategy(_) => mapper.with_same_dtype(),
+            GatherEvery { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => {
+                let dt = if *signed {
+                    DataType::Int64
+                } else {
+                    DataType::UInt64
+                };
+                mapper.with_dtype(dt)
+            },
+            ExtendConstant => mapper.with_same_dtype(),
         }
     }
 }
@@ -301,7 +316,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map a single dtype.
-    pub fn map_dtype(&self, func: impl Fn(&DataType) -> DataType) -> PolarsResult<Field> {
+    pub fn map_dtype(&self, func: impl FnOnce(&DataType) -> DataType) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type());
         Ok(Field::new(self.fields[0].name(), dtype))
     }
@@ -313,7 +328,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map a single field with a potentially failing mapper function.
     pub fn try_map_field(
         &self,
-        func: impl Fn(&Field) -> PolarsResult<Field>,
+        func: impl FnOnce(&Field) -> PolarsResult<Field>,
     ) -> PolarsResult<Field> {
         func(&self.fields[0])
     }
@@ -348,7 +363,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map a single dtype with a potentially failing mapper function.
     pub fn try_map_dtype(
         &self,
-        func: impl Fn(&DataType) -> PolarsResult<DataType>,
+        func: impl FnOnce(&DataType) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type())?;
         Ok(Field::new(self.fields[0].name(), dtype))
@@ -357,7 +372,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map all dtypes with a potentially failing mapper function.
     pub fn try_map_dtypes(
         &self,
-        func: impl Fn(&[&DataType]) -> PolarsResult<DataType>,
+        func: impl FnOnce(&[&DataType]) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
         let mut fld = self.fields[0].clone();
         let dtypes = self

@@ -298,6 +298,18 @@ pub trait SeriesTrait:
         None
     }
 
+    /// Returns the std value in the array
+    /// Returns an option because the array is nullable.
+    fn std(&self, _ddof: u8) -> Option<f64> {
+        None
+    }
+
+    /// Returns the var value in the array
+    /// Returns an option because the array is nullable.
+    fn var(&self, _ddof: u8) -> Option<f64> {
+        None
+    }
+
     /// Returns the median value in the array
     /// Returns an option because the array is nullable.
     fn median(&self) -> Option<f64> {

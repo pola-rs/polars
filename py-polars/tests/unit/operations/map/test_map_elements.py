@@ -79,7 +79,7 @@ def test_datelike_identity() -> None:
         assert s.map_elements(lambda x: x).to_list() == s.to_list()
 
 
-def test_map_elements_list_anyvalue_fallback() -> None:
+def test_map_elements_list_any_value_fallback() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r'(?s)with this one instead:.*pl.col\("text"\).str.json_decode()',

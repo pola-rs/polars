@@ -15,7 +15,7 @@ impl PySeries {
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
 
-            arrow_interop::to_py::to_py_array(self.series.to_arrow(0), py, pyarrow)
+            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, pyarrow)
         })
     }
 
@@ -100,7 +100,7 @@ impl PySeries {
                     DataType::Int64 => PyList::new(py, series.i64().unwrap()),
                     DataType::Float32 => PyList::new(py, series.f32().unwrap()),
                     DataType::Float64 => PyList::new(py, series.f64().unwrap()),
-                    DataType::Categorical(_, _) => {
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                         PyList::new(py, series.categorical().unwrap().iter_str())
                     },
                     #[cfg(feature = "object")]
@@ -205,6 +205,9 @@ impl PySeries {
                     },
                     DataType::Unknown => {
                         panic!("to_list not implemented for unknown")
+                    },
+                    DataType::BinaryOffset => {
+                        unreachable!()
                     },
                 };
                 pylist.to_object(py)

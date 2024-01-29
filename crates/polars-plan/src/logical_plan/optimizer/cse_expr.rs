@@ -317,7 +317,7 @@ impl ExprIdentifierVisitor<'_> {
             // TODO! Add a typed null
             AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
             AExpr::Column(_) | AExpr::Literal(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
-            AExpr::Count => {
+            AExpr::Len => {
                 if self.is_group_by {
                     REFUSE_NO_MEMBER
                 } else {
@@ -361,6 +361,9 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
         if skip_pre_visit(node.to_aexpr(), self.is_group_by) {
+            // Still add to the stack so that a parent becomes invalidated.
+            self.visit_stack
+                .push(VisitRecord::SubExprId(Identifier::new(), false));
             return Ok(VisitRecursion::Skip);
         }
 

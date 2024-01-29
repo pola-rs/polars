@@ -123,6 +123,7 @@ pub enum FunctionExpr {
     Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
+    Negate,
     #[cfg(feature = "hist")]
     Hist {
         bin_count: Option<usize>,
@@ -150,6 +151,7 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
+    FillNullWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
     ShiftAndFill,
@@ -320,6 +322,13 @@ pub enum FunctionExpr {
     Replace {
         return_dtype: Option<DataType>,
     },
+    GatherEvery {
+        n: usize,
+        offset: usize,
+    },
+    #[cfg(feature = "reinterpret")]
+    Reinterpret(bool),
+    ExtendConstant,
 }
 
 impl Hash for FunctionExpr {
@@ -376,6 +385,7 @@ impl Hash for FunctionExpr {
             Mode => {},
             #[cfg(feature = "abs")]
             Abs => {},
+            Negate => {},
             NullCount => {},
             #[cfg(feature = "date_offset")]
             DateOffset => {},
@@ -521,6 +531,11 @@ impl Hash for FunctionExpr {
             },
             #[cfg(feature = "replace")]
             Replace { return_dtype } => return_dtype.hash(state),
+            FillNullWithStrategy(strategy) => strategy.hash(state),
+            GatherEvery { n, offset } => (n, offset).hash(state),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => signed.hash(state),
+            ExtendConstant => {},
         }
     }
 }
@@ -547,6 +562,7 @@ impl Display for FunctionExpr {
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "abs")]
             Abs => "abs",
+            Negate => "negate",
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
@@ -689,6 +705,11 @@ impl Display for FunctionExpr {
             Hist { .. } => "hist",
             #[cfg(feature = "replace")]
             Replace { .. } => "replace",
+            FillNullWithStrategy(_) => "fill_null_with_strategy",
+            GatherEvery { .. } => "gather_every",
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(_) => "reinterpret",
+            ExtendConstant => "extend_constant",
         };
         write!(f, "{s}")
     }
@@ -790,6 +811,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Boolean(func) => func.into(),
             #[cfg(feature = "abs")]
             Abs => map!(abs::abs),
+            Negate => map!(dispatch::negate),
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
@@ -1040,6 +1062,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { return_dtype } => {
                 map_as_slice!(dispatch::replace, return_dtype.clone())
             },
+            FillNullWithStrategy(strategy) => map!(dispatch::fill_null_with_strategy, strategy),
+            GatherEvery { n, offset } => map!(dispatch::gather_every, n, offset),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => map!(dispatch::reinterpret, signed),
+            ExtendConstant => map_as_slice!(dispatch::extend_constant),
         }
     }
 }

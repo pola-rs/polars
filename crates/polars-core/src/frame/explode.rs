@@ -14,7 +14,6 @@ use crate::POOL;
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
-        DataType::String => series.str().unwrap().explode_and_offsets(),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(),
         _ => polars_bail!(opq = explode, series.dtype()),
@@ -260,13 +259,25 @@ impl DataFrame {
         let id_vars = args.id_vars;
         let mut value_vars = args.value_vars;
 
-        let value_name = args.value_name.as_deref().unwrap_or("value");
         let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+        let value_name = args.value_name.as_deref().unwrap_or("value");
 
         let len = self.height();
 
         // if value vars is empty we take all columns that are not in id_vars.
         if value_vars.is_empty() {
+            // return empty frame if there are no columns available to use as value vars
+            if id_vars.len() == self.width() {
+                let variable_col = Series::new_empty(variable_name, &DataType::String);
+                let value_col = Series::new_empty(variable_name, &DataType::Null);
+
+                let mut out = self.select(id_vars).unwrap().clear().columns;
+                out.push(variable_col);
+                out.push(value_col);
+
+                return Ok(DataFrame::new_no_checks(out));
+            }
+
             let id_vars_set = PlHashSet::from_iter(id_vars.iter().map(|s| s.as_str()));
             value_vars = self
                 .get_columns()
@@ -293,13 +304,9 @@ impl DataFrame {
             st = try_get_supertype(&st, dt?)?;
         }
 
-        let values_len = value_vars.iter().map(|name| name.len()).sum::<usize>();
-
         // The column name of the variable that is melted
-        let mut variable_col = MutableUtf8Array::<i64>::with_capacities(
-            len * value_vars.len() + 1,
-            len * values_len + 1,
-        );
+        let mut variable_col =
+            MutableBinaryViewArray::<str>::with_capacity(len * value_vars.len() + 1);
         // prepare ids
         let ids_ = self.select_with_schema_unchecked(id_vars, &schema)?;
         let mut ids = ids_.clone();
@@ -314,7 +321,7 @@ impl DataFrame {
         let mut values = Vec::with_capacity(value_vars.len());
 
         for value_column_name in &value_vars {
-            variable_col.extend_trusted_len_values(std::iter::repeat(value_column_name).take(len));
+            variable_col.extend_constant(len, Some(value_column_name.as_str()));
             // ensure we go via the schema so we are O(1)
             // self.column() is linear
             // together with this loop that would make it O^2 over value_vars
@@ -330,7 +337,7 @@ impl DataFrame {
 
         let variable_col = variable_col.as_box();
         // Safety
-        // The give dtype is correct
+        // The given dtype is correct
         let variables = unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 variable_name,
@@ -369,16 +376,6 @@ mod test {
         assert_eq!(
             exploded.column("foo").unwrap().i8().unwrap().get(8),
             Some(2)
-        );
-
-        let str = Series::new("foo", &["abc", "de", "fg"]);
-        let df = DataFrame::new(vec![str, s0, s1]).unwrap();
-        let exploded = df.explode(["foo"]).unwrap();
-        assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(6), Some(1));
-        assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(6), Some(3));
-        assert_eq!(
-            exploded.column("foo").unwrap().str().unwrap().get(6),
-            Some("g")
         );
     }
 

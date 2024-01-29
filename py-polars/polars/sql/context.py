@@ -7,6 +7,7 @@ from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.type_aliases import FrameType
 from polars.utils._wrap import wrap_ldf
+from polars.utils.unstable import issue_unstable_warning
 from polars.utils.various import _get_stack_locals
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -27,10 +28,10 @@ class SQLContext(Generic[FrameType]):
     """
     Run SQL queries against DataFrame/LazyFrame data.
 
-    Warnings
-    --------
-    This feature is stabilising, but is still considered experimental and
-    changes may be made without them necessarily being considered breaking.
+    .. warning::
+        This functionality is considered **unstable**, although it is close to being
+        considered stable. It may be changed at any point without it being considered
+        a breaking change.
     """
 
     _ctxt: PySQLContext
@@ -74,7 +75,7 @@ class SQLContext(Generic[FrameType]):
         **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         """
-        Initialise a new `SQLContext`.
+        Initialize a new `SQLContext`.
 
         Parameters
         ----------
@@ -109,6 +110,10 @@ class SQLContext(Generic[FrameType]):
         │ z   ┆ 6     │
         └─────┴───────┘
         """
+        issue_unstable_warning(
+            "`SQLContext` is considered **unstable**, although it is close to being considered stable."
+        )
+
         self._ctxt = PySQLContext.new()
         self._eager_execution = eager_execution
 

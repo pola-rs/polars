@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
     from polars import Series
     from polars.polars import PySeries
-    from polars.type_aliases import IntoExprColumn
+    from polars.type_aliases import IntoExpr, IntoExprColumn
 
 
 @expr_dispatch
@@ -73,6 +73,54 @@ class ArrayNameSpace:
         │ 3   │
         │ 7   │
         └─────┘
+        """
+
+    def std(self, ddof: int = 1) -> Series:
+        """
+        Compute the std of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.std()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            0.707107
+            0.707107
+        ]
+        """
+
+    def var(self, ddof: int = 1) -> Series:
+        """
+        Compute the var of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.var()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+                0.5
+                0.5
+        ]
+        """
+
+    def median(self) -> Series:
+        """
+        Compute the median of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.median()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            1.5
+            3.5
+        ]
         """
 
     def unique(self, *, maintain_order: bool = False) -> Series:
@@ -178,7 +226,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False) -> Series:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -186,6 +234,8 @@ class ArrayNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -344,7 +394,7 @@ class ArrayNameSpace:
 
         """
 
-    def join(self, separator: IntoExprColumn) -> Series:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:
         """
         Join all string items in a sub-array and place a separator between them.
 
@@ -354,6 +404,11 @@ class ArrayNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -371,6 +426,31 @@ class ArrayNameSpace:
             "a-b"
         ]
 
+        """
+
+    def explode(self) -> Series:
+        """
+        Returns a column with a separate row for every array element.
+
+        Returns
+        -------
+        Series
+            Series with the data type of the array elements.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+            6
+        ]
         """
 
     def contains(
@@ -401,6 +481,28 @@ class ArrayNameSpace:
             true
             true
             false
+        ]
+
+        """
+
+    def count_matches(self, element: IntoExpr) -> Series:
+        """
+        Count how often the value produced by `element` occurs.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [2, 2, 2]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.count_matches(2)
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            1
+            3
         ]
 
         """

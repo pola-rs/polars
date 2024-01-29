@@ -9,6 +9,10 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.skip(
+    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
+)
+@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
@@ -85,6 +89,10 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     assert "hive partitioning: skipped 3 files" in capfd.readouterr().err
 
 
+@pytest.mark.skip(
+    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
+)
+@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) -> None:
     df = pl.read_ipc(io_files_path / "*.ipc")
@@ -118,6 +126,10 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
         ]
 
 
+@pytest.mark.skip(
+    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
+)
+@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_projection_pushdown(
     io_files_path: Path, tmp_path: Path

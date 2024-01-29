@@ -7,6 +7,7 @@ use rayon::prelude::*;
 
 use crate::executors::sinks::sort::ooc::read_df;
 use crate::executors::sinks::sort::sink::sort_accumulated;
+use crate::executors::sources::get_source_index;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 
 pub struct SortSource {
@@ -41,7 +42,7 @@ impl SortSource {
             n_threads,
             sort_idx,
             descending,
-            chunk_offset: 0,
+            chunk_offset: get_source_index(1) as IdxSize,
             slice,
             finished: false,
         }

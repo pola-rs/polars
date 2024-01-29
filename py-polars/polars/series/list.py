@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        IntoExpr,
         IntoExprColumn,
         NullBehavior,
         ToStructStrategy,
@@ -232,7 +233,16 @@ class ListNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False) -> Series:
+    def median(self) -> Series:
+        """Compute the median value of the arrays in the list."""
+
+    def std(self) -> Series:
+        """Compute the std value of the arrays in the list."""
+
+    def var(self) -> Series:
+        """Compute the var value of the arrays in the list."""
+
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -240,6 +250,8 @@ class ListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -383,7 +395,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: IntoExprColumn) -> Series:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -393,6 +405,11 @@ class ListNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -692,9 +709,7 @@ class ListNameSpace:
         ]
         """
 
-    def count_matches(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_matches(self, element: IntoExpr) -> Series:
         """
         Count how often the value produced by `element` occurs.
 

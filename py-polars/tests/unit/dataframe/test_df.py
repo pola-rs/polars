@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import sys
-import textwrap
 import typing
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone
@@ -392,6 +391,23 @@ def test_gather_every() -> None:
     assert_frame_equal(expected_df, df.gather_every(2, offset=1))
 
 
+def test_gather_every_agg() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 2],
+            "a": ["a", "b", "c", "d", "e", "f"],
+        }
+    )
+    out = df.group_by(pl.col("g")).agg(pl.col("a").gather_every(2)).sort("g")
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "a": [["a", "c"], ["d", "f"]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
@@ -633,7 +649,7 @@ def test_to_dummies_drop_first() -> None:
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
     # pyarrow cannot convert a time64 w/ non-zero nanoseconds
-    df = df.drop(["cat", "time"])
+    df = df.drop(["cat", "time", "enum"])
     df.to_arrow()
     df.to_pandas()
     # test shifted df
@@ -1137,6 +1153,12 @@ def test_rename(df: pl.DataFrame) -> None:
     out = df.rename({"strings": "bars", "int": "foos"})
     # check if we can select these new columns
     _ = out[["foos", "bars"]]
+
+
+def test_rename_lambda() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    out = df.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col)
+    assert out.columns == ["foo", "bar", "c"]
 
 
 def test_write_csv() -> None:
@@ -1774,9 +1796,9 @@ def test_extension() -> None:
 def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
-    result = df.group_by("x", maintain_order=True).count()
+    result = df.group_by("x", maintain_order=True).len()
     expected = pl.DataFrame(
-        {"x": ["b", "a"], "count": [2, 1]}, schema_overrides={"count": pl.UInt32}
+        {"x": ["b", "a"], "len": [2, 1]}, schema_overrides={"len": pl.UInt32}
     )
     assert_frame_equal(result, expected)
 
@@ -2409,7 +2431,7 @@ def test_group_by_slice_expression_args() -> None:
 
     out = (
         df.group_by("groups", maintain_order=True)
-        .agg([pl.col("vals").slice(pl.count() * 0.1, (pl.count() // 5))])
+        .agg([pl.col("vals").slice(pl.len() * 0.1, (pl.len() // 5))])
         .explode("vals")
     )
 
@@ -2482,79 +2504,6 @@ def test_asof_by_multiple_keys() -> None:
     ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
     assert_frame_equal(result, expected)
-
-
-def test_partition_by() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": ["A", "A", "B", "B", "C"],
-            "N": [1, 2, 2, 4, 2],
-            "bar": ["k", "l", "m", "m", "l"],
-        }
-    )
-
-    expected = [
-        {"foo": ["A"], "N": [1], "bar": ["k"]},
-        {"foo": ["A"], "N": [2], "bar": ["l"]},
-        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
-        {"foo": ["C"], "N": [2], "bar": ["l"]},
-    ]
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by("foo", "bar", maintain_order=True)
-    ] == expected
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by(cs.string(), maintain_order=True)
-    ] == expected
-
-    expected = [
-        {"N": [1]},
-        {"N": [2]},
-        {"N": [2, 4]},
-        {"N": [2]},
-    ]
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by(["foo", "bar"], maintain_order=True, include_key=False)
-    ] == expected
-    assert [
-        a.to_dict(as_series=False)
-        for a in df.partition_by("foo", "bar", maintain_order=True, include_key=False)
-    ] == expected
-
-    assert [
-        a.to_dict(as_series=False) for a in df.partition_by("foo", maintain_order=True)
-    ] == [
-        {"foo": ["A", "A"], "N": [1, 2], "bar": ["k", "l"]},
-        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
-        {"foo": ["C"], "N": [2], "bar": ["l"]},
-    ]
-
-    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
-    assert df.partition_by(cs.all(), as_dict=True)["one", 1].to_dict(
-        as_series=False
-    ) == {
-        "a": ["one"],
-        "b": [1],
-    }
-    assert df.partition_by(["a"], as_dict=True)["one"].to_dict(as_series=False) == {
-        "a": ["one", "one"],
-        "b": [1, 3],
-    }
-
-    # test with both as_dict and include_key=False
-    df = pl.DataFrame(
-        {
-            "a": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "b": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "c": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-            "d": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
-        }
-    ).sample(n=100_000, with_replacement=True, shuffle=True)
-
-    partitions = df.partition_by(["a", "b"], as_dict=True, include_key=False)
-    assert all(key == value.row(0) for key, value in partitions.items())
 
 
 def test_list_of_list_of_struct() -> None:
@@ -3074,81 +3023,6 @@ def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
             assert divop(elem1, elem2) == df_div[i][j]
 
 
-def test_glimpse(capsys: Any) -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1.0, 2.8, 3.0],
-            "b": [4, 5, None],
-            "c": [True, False, True],
-            "d": [None, "b", "c"],
-            "e": ["usd", "eur", None],
-            "f": pl.datetime_range(
-                datetime(2023, 1, 1),
-                datetime(2023, 1, 3),
-                "1d",
-                time_unit="us",
-                eager=True,
-            ),
-            "g": pl.datetime_range(
-                datetime(2023, 1, 1),
-                datetime(2023, 1, 3),
-                "1d",
-                time_unit="ms",
-                eager=True,
-            ),
-            "h": pl.datetime_range(
-                datetime(2023, 1, 1),
-                datetime(2023, 1, 3),
-                "1d",
-                time_unit="ns",
-                eager=True,
-            ),
-            "i": [[5, 6], [3, 4], [9, 8]],
-            "j": [[5.0, 6.0], [3.0, 4.0], [9.0, 8.0]],
-            "k": [["A", "a"], ["B", "b"], ["C", "c"]],
-        }
-    )
-    result = df.glimpse(return_as_string=True)
-
-    expected = textwrap.dedent(
-        """\
-        Rows: 3
-        Columns: 11
-        $ a          <f64> 1.0, 2.8, 3.0
-        $ b          <i64> 4, 5, None
-        $ c         <bool> True, False, True
-        $ d          <str> None, 'b', 'c'
-        $ e          <str> 'usd', 'eur', None
-        $ f <datetime[μs]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
-        $ g <datetime[ms]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
-        $ h <datetime[ns]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
-        $ i    <list[i64]> [5, 6], [3, 4], [9, 8]
-        $ j    <list[f64]> [5.0, 6.0], [3.0, 4.0], [9.0, 8.0]
-        $ k    <list[str]> ['A', 'a'], ['B', 'b'], ['C', 'c']
-        """
-    )
-    assert result == expected
-
-    # the default is to print to the console
-    df.glimpse(return_as_string=False)
-    # remove the last newline on the capsys
-    assert capsys.readouterr().out[:-1] == expected
-
-    colc = "a" * 96
-    df = pl.DataFrame({colc: [11, 22, 33, 44, 55, 66]})
-    result = df.glimpse(
-        return_as_string=True, max_colname_length=20, max_items_per_column=4
-    )
-    expected = textwrap.dedent(
-        """\
-        Rows: 6
-        Columns: 1
-        $ aaaaaaaaaaaaaaaaaaa… <i64> 11, 22, 33, 44
-        """
-    )
-    assert result == expected
-
-
 @pytest.mark.parametrize(
     ("subset", "keep", "expected_mask"),
     [
@@ -3422,6 +3296,25 @@ def test_from_dicts_undeclared_column_dtype() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
     assert result.schema == {"x": pl.Null}
+
+
+def test_from_dicts_with_override() -> None:
+    data = [
+        {"a": "1", "b": str(2**64 - 1), "c": "1"},
+        {"a": "1", "b": "1", "c": "-5.0"},
+    ]
+    override = {"a": pl.Int32, "b": pl.UInt64, "c": pl.Float32}
+    result = pl.from_dicts(data, schema_overrides=override)
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "a": pl.Series([1, 1], dtype=pl.Int32),
+                "b": pl.Series([2**64 - 1, 1], dtype=pl.UInt64),
+                "c": pl.Series([1.0, -5.0], dtype=pl.Float32),
+            }
+        ),
+    )
 
 
 def test_from_records_u64_12329() -> None:

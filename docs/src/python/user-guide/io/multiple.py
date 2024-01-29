@@ -28,12 +28,13 @@ pl.scan_csv("docs/data/my_many_files_*.csv").show_graph()
 # --8<-- [end:graph]
 
 # --8<-- [start:glob]
-import polars as pl
 import glob
+
+import polars as pl
 
 queries = []
 for file in glob.glob("docs/data/my_many_files_*.csv"):
-    q = pl.scan_csv(file).group_by("bar").agg([pl.count(), pl.sum("foo")])
+    q = pl.scan_csv(file).group_by("bar").agg(pl.len(), pl.sum("foo"))
     queries.append(q)
 
 dataframes = pl.collect_all(queries)

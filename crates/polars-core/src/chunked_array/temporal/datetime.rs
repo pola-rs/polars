@@ -19,12 +19,11 @@ use crate::prelude::*;
 
 fn apply_datefmt_f<'a>(
     arr: &PrimitiveArray<i64>,
-    fmted: &'a str,
     conversion_f: fn(i64) -> NaiveDateTime,
     datefmt_f: impl Fn(NaiveDateTime) -> DelayedFormat<StrftimeItems<'a>>,
 ) -> ArrayRef {
     let mut buf = String::new();
-    let mut mutarr = MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+    let mut mutarr = MutableBinaryViewArray::<str>::with_capacity(arr.len());
     for opt in arr.into_iter() {
         match opt {
             None => mutarr.push_null(),
@@ -33,12 +32,11 @@ fn apply_datefmt_f<'a>(
                 let converted = conversion_f(*v);
                 let datefmt = datefmt_f(converted);
                 write!(buf, "{datefmt}").unwrap();
-                mutarr.push(Some(&buf))
+                mutarr.push_value(&buf)
             },
         }
     }
-    let arr: Utf8Array<i64> = mutarr.into();
-    Box::new(arr)
+    mutarr.freeze().boxed()
 }
 
 #[cfg(feature = "timezones")]
@@ -46,20 +44,18 @@ fn format_tz(
     tz: Tz,
     arr: &PrimitiveArray<i64>,
     fmt: &str,
-    fmted: &str,
     conversion_f: fn(i64) -> NaiveDateTime,
 ) -> ArrayRef {
     let datefmt_f = |ndt| tz.from_utc_datetime(&ndt).format(fmt);
-    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
+    apply_datefmt_f(arr, conversion_f, datefmt_f)
 }
 fn format_naive(
     arr: &PrimitiveArray<i64>,
     fmt: &str,
-    fmted: &str,
     conversion_f: fn(i64) -> NaiveDateTime,
 ) -> ArrayRef {
     let datefmt_f = |ndt: NaiveDateTime| ndt.format(fmt);
-    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
+    apply_datefmt_f(arr, conversion_f, datefmt_f)
 }
 
 impl DatetimeChunked {
@@ -121,20 +117,13 @@ impl DatetimeChunked {
                 |_| polars_err!(ComputeError: "cannot format NaiveDateTime with format '{}'", format),
             )?,
         };
-        let fmted = fmted; // discard mut
 
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(time_zone) => self.apply_kernel_cast(&|arr| {
-                format_tz(
-                    time_zone.parse::<Tz>().unwrap(),
-                    arr,
-                    format,
-                    &fmted,
-                    conversion_f,
-                )
+                format_tz(time_zone.parse::<Tz>().unwrap(), arr, format, conversion_f)
             }),
-            _ => self.apply_kernel_cast(&|arr| format_naive(arr, format, &fmted, conversion_f)),
+            _ => self.apply_kernel_cast(&|arr| format_naive(arr, format, conversion_f)),
         };
         ca.rename(self.name());
         Ok(ca)
@@ -233,17 +222,6 @@ impl DatetimeChunked {
         validate_time_zone(&time_zone)?;
         self.2 = Some(Datetime(self.time_unit(), Some(time_zone)));
         Ok(())
-    }
-    #[cfg(feature = "timezones")]
-    pub fn convert_time_zone(mut self, time_zone: TimeZone) -> PolarsResult<Self> {
-        polars_ensure!(
-            self.time_zone().is_some(),
-            InvalidOperation:
-            "cannot call `convert_time_zone` on tz-naive; \
-            set a time zone first with `replace_time_zone`"
-        );
-        self.set_time_zone(time_zone)?;
-        Ok(self)
     }
 }
 

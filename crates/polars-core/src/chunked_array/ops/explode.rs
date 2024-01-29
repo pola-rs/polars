@@ -155,7 +155,7 @@ where
             unsafe { unset_bit_raw(validity_slice, i) }
         }
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(),
+            T::get_dtype().to_arrow(true),
             new_values.into(),
             Some(validity.into()),
         );
@@ -274,7 +274,7 @@ impl ExplodeByOffsets for ListChunked {
             last = o;
         }
         process_range(start, last, &mut builder);
-        let arr = builder.finish(Some(&inner_type.to_arrow())).unwrap();
+        let arr = builder.finish(Some(&inner_type.to_arrow(true))).unwrap();
         unsafe { self.copy_with_chunks(vec![Box::new(arr)], true, true) }.into_series()
     }
 }
@@ -349,8 +349,7 @@ impl ExplodeByOffsets for BinaryChunked {
         let arr = self.downcast_iter().next().unwrap();
 
         let cap = get_capacity(offsets);
-        let bytes_size = self.get_values_size();
-        let mut builder = BinaryChunkedBuilder::new(self.name(), cap, bytes_size);
+        let mut builder = BinaryChunkedBuilder::new(self.name(), cap);
 
         let mut start = offsets[0] as usize;
         let mut last = start;
@@ -361,10 +360,10 @@ impl ExplodeByOffsets for BinaryChunked {
                     let vals = arr.slice_typed(start, last - start);
                     if vals.null_count() == 0 {
                         builder
-                            .builder
+                            .chunk_builder
                             .extend_trusted_len_values(vals.values_iter())
                     } else {
-                        builder.builder.extend_trusted_len(vals.into_iter());
+                        builder.chunk_builder.extend_trusted_len(vals.into_iter());
                     }
                 }
                 builder.append_null();
@@ -375,10 +374,10 @@ impl ExplodeByOffsets for BinaryChunked {
         let vals = arr.slice_typed(start, last - start);
         if vals.null_count() == 0 {
             builder
-                .builder
+                .chunk_builder
                 .extend_trusted_len_values(vals.values_iter())
         } else {
-            builder.builder.extend_trusted_len(vals.into_iter());
+            builder.chunk_builder.extend_trusted_len(vals.into_iter());
         }
         builder.finish().into()
     }

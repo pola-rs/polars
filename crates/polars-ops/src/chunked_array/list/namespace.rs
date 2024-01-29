@@ -78,36 +78,41 @@ fn cast_rhs(
 pub trait ListNameSpaceImpl: AsList {
     /// In case the inner dtype [`DataType::String`], the individual items will be joined into a
     /// single string separated by `separator`.
-    fn lst_join(&self, separator: &StringChunked) -> PolarsResult<StringChunked> {
+    fn lst_join(
+        &self,
+        separator: &StringChunked,
+        ignore_nulls: bool,
+    ) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         match ca.inner_dtype() {
             DataType::String => match separator.len() {
                 1 => match separator.get(0) {
-                    Some(separator) => self.join_literal(separator),
+                    Some(separator) => self.join_literal(separator, ignore_nulls),
                     _ => Ok(StringChunked::full_null(ca.name(), ca.len())),
                 },
-                _ => self.join_many(separator),
+                _ => self.join_many(separator, ignore_nulls),
             },
             dt => polars_bail!(op = "`lst.join`", got = dt, expected = "String"),
         }
     }
 
-    fn join_literal(&self, separator: &str) -> PolarsResult<StringChunked> {
+    fn join_literal(&self, separator: &str, ignore_nulls: bool) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
-        let mut builder = StringChunkedBuilder::new(
-            ca.name(),
-            ca.len(),
-            ca.get_values_size() + separator.len() * ca.len(),
-        );
+        let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
 
         ca.for_each_amortized(|opt_s| {
-            let opt_val = opt_s.map(|s| {
+            let opt_val = opt_s.and_then(|s| {
                 // make sure that we don't write values of previous iteration
                 buf.clear();
                 let ca = s.as_ref().str().unwrap();
-                let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
+
+                if ca.null_count() != 0 && !ignore_nulls {
+                    return None;
+                }
+
+                let iter = ca.into_iter().flatten();
 
                 for val in iter {
                     buf.write_str(val).unwrap();
@@ -115,30 +120,38 @@ pub trait ListNameSpaceImpl: AsList {
                 }
                 // last value should not have a separator, so slice that off
                 // saturating sub because there might have been nothing written.
-                &buf[..buf.len().saturating_sub(separator.len())]
+                Some(&buf[..buf.len().saturating_sub(separator.len())])
             });
             builder.append_option(opt_val)
         });
         Ok(builder.finish())
     }
 
-    fn join_many(&self, separator: &StringChunked) -> PolarsResult<StringChunked> {
+    fn join_many(
+        &self,
+        separator: &StringChunked,
+        ignore_nulls: bool,
+    ) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
-        let mut builder =
-            StringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size() + ca.len());
+        let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca.amortized_iter()
                 .zip(separator)
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
                     Some(separator) => {
-                        let opt_val = opt_s.map(|s| {
+                        let opt_val = opt_s.and_then(|s| {
                             // make sure that we don't write values of previous iteration
                             buf.clear();
                             let ca = s.as_ref().str().unwrap();
-                            let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
+
+                            if ca.null_count() != 0 && !ignore_nulls {
+                                return None;
+                            }
+
+                            let iter = ca.into_iter().flatten();
 
                             for val in iter {
                                 buf.write_str(val).unwrap();
@@ -146,7 +159,7 @@ pub trait ListNameSpaceImpl: AsList {
                             }
                             // last value should not have a separator, so slice that off
                             // saturating sub because there might have been nothing written.
-                            &buf[..buf.len().saturating_sub(separator.len())]
+                            Some(&buf[..buf.len().saturating_sub(separator.len())])
                         });
                         builder.append_option(opt_val)
                     },
@@ -201,6 +214,21 @@ pub trait ListNameSpaceImpl: AsList {
             dt if dt.is_numeric() => mean_list_numerical(ca, &dt),
             _ => sum_mean::mean_with_nulls(ca),
         }
+    }
+
+    fn lst_median(&self) -> Series {
+        let ca = self.as_list();
+        dispersion::median_with_nulls(ca)
+    }
+
+    fn lst_std(&self, ddof: u8) -> Series {
+        let ca = self.as_list();
+        dispersion::std_with_nulls(ca, ddof)
+    }
+
+    fn lst_var(&self, ddof: u8) -> Series {
+        let ca = self.as_list();
+        dispersion::var_with_nulls(ca, ddof)
     }
 
     fn same_type(&self, out: ListChunked) -> ListChunked {
@@ -313,9 +341,12 @@ pub trait ListNameSpaceImpl: AsList {
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
-        Series::try_from((ca.name(), chunks))
-            .unwrap()
-            .cast(&ca.inner_dtype())
+        // Safety: every element in list has dtype equal to its inner type
+        unsafe {
+            Series::try_from((ca.name(), chunks))
+                .unwrap()
+                .cast_unchecked(&ca.inner_dtype())
+        }
     }
 
     #[cfg(feature = "list_gather")]
@@ -496,14 +527,20 @@ pub trait ListNameSpaceImpl: AsList {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_, _) = &inner_super_type {
+                    if matches!(
+                        &inner_super_type,
+                        DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    ) {
                         inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
                     }
                 },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_, _) = &inner_super_type {
+                    if matches!(
+                        &inner_super_type,
+                        DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    ) {
                         inner_super_type = merge_dtypes(&inner_super_type, dt)?;
                     }
                 },

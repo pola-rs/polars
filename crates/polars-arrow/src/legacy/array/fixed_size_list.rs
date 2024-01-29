@@ -1,6 +1,6 @@
 use polars_error::PolarsResult;
 
-use crate::array::{ArrayRef, FixedSizeListArray, NullArray};
+use crate::array::{new_null_array, ArrayRef, FixedSizeListArray, NullArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::{convert_inner_type, is_nested_null};
@@ -67,7 +67,9 @@ impl AnonymousBuilder {
             .arrays
             .iter()
             .map(|arr| {
-                if is_nested_null(arr.data_type()) {
+                if matches!(arr.data_type(), ArrowDataType::Null) {
+                    new_null_array(inner_dtype.clone(), arr.len())
+                } else if is_nested_null(arr.data_type()) {
                     convert_inner_type(&**arr, inner_dtype)
                 } else {
                     arr.to_boxed()

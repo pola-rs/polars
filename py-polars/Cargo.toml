@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.3"
+version = "0.20.6"
 edition = "2021"
 
 [lib]
@@ -137,6 +137,7 @@ cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
 list_gather = ["polars/list_gather"]
 list_count = ["polars/list_count"]
+array_count = ["polars/array_count", "polars/dtype-array"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
@@ -163,6 +164,7 @@ dtypes = [
 
 operations = [
   "array_any_all",
+  "array_count",
   "is_in",
   "repeat_by",
   "trigonometry",

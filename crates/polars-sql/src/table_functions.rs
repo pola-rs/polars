@@ -1,5 +1,12 @@
 use std::str::FromStr;
 
+#[cfg(any(
+    feature = "csv",
+    feature = "parquet",
+    feature = "ipc",
+    feature = "json"
+))]
+use polars_core::prelude::polars_ensure;
 use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
@@ -72,6 +79,8 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "csv")]
     fn read_csv(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        polars_ensure!(!args.is_empty(), ComputeError: "read_csv expected a path");
+
         use polars_lazy::frame::LazyFileListReader;
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyCsvReader::new(&path).finish()?;
@@ -80,6 +89,8 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "parquet")]
     fn read_parquet(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        polars_ensure!(!args.is_empty(), ComputeError: "read_parquet expected a path");
+
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyFrame::scan_parquet(&path, Default::default())?;
         Ok((path, lf))
@@ -87,12 +98,16 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "ipc")]
     fn read_ipc(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        polars_ensure!(!args.is_empty(), ComputeError: "read_ipc expected a path");
+
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyFrame::scan_ipc(&path, Default::default())?;
         Ok((path, lf))
     }
     #[cfg(feature = "json")]
     fn read_ndjson(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        polars_ensure!(!args.is_empty(), ComputeError: "read_json expected a path");
+
         use polars_lazy::frame::LazyFileListReader;
         use polars_lazy::prelude::LazyJsonLineReader;
 

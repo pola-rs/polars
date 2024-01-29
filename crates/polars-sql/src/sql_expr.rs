@@ -9,11 +9,13 @@ use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, lit, when};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+#[cfg(feature = "dtype-decimal")]
+use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator,
-    Value as SQLValue,
+    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo, TrimWhereField,
+    UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -27,13 +29,23 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type)) => {
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
+        #[cfg(feature = "dtype-decimal")]
+        SQLDataType::Dec(info) | SQLDataType::Decimal(info) | SQLDataType::Numeric(info) => {
+            match *info {
+                ExactNumberInfo::PrecisionAndScale(p, s) => {
+                    DataType::Decimal(Some(p as usize), Some(s as usize))
+                },
+                ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
+                ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
+            }
+        },
         SQLDataType::BigInt(_) => DataType::Int64,
+        SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Bytea
         | SQLDataType::Bytes(_)
         | SQLDataType::Binary(_)
         | SQLDataType::Blob(_)
         | SQLDataType::Varbinary(_) => DataType::Binary,
-        SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Char(_)
         | SQLDataType::CharVarying(_)
         | SQLDataType::Character(_)
@@ -47,14 +59,41 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Double | SQLDataType::DoublePrecision => DataType::Float64,
         SQLDataType::Float(_) => DataType::Float32,
         SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
-        SQLDataType::Interval => DataType::Duration(TimeUnit::Milliseconds),
+        SQLDataType::Int2(_) => DataType::Int16,
+        SQLDataType::Int4(_) => DataType::Int32,
+        SQLDataType::Int8(_) => DataType::Int64,
+        SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
         SQLDataType::Real => DataType::Float32,
         SQLDataType::SmallInt(_) => DataType::Int16,
-        SQLDataType::Time { .. } => DataType::Time,
-        SQLDataType::Timestamp { .. } => DataType::Datetime(TimeUnit::Milliseconds, None),
+        SQLDataType::Time(_, tz) => match tz {
+            TimezoneInfo::None => DataType::Time,
+            _ => {
+                polars_bail!(ComputeError: "`time` with timezone is not supported; found tz={}", tz)
+            },
+        },
+        SQLDataType::Timestamp(prec, tz) => {
+            let tu = match prec {
+                None => TimeUnit::Microseconds,
+                Some(3) => TimeUnit::Milliseconds,
+                Some(6) => TimeUnit::Microseconds,
+                Some(9) => TimeUnit::Nanoseconds,
+                Some(n) => {
+                    polars_bail!(ComputeError: "unsupported `timestamp` precision; expected 3, 6 or 9, found prec={}", n)
+                },
+            };
+            match tz {
+                TimezoneInfo::None => DataType::Datetime(tu, None),
+                _ => {
+                    polars_bail!(ComputeError: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
+                },
+            }
+        },
         SQLDataType::TinyInt(_) => DataType::Int8,
         SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt2(_) => DataType::UInt16,
+        SQLDataType::UnsignedInt4(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt8(_) => DataType::UInt64,
         SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
         SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
 
@@ -252,7 +291,7 @@ impl SQLExprVisitor<'_> {
                 }
             },
             _ => polars_bail!(
-                ComputeError: "Invalid identifier {:?}",
+                ComputeError: "invalid identifier {:?}",
                 idents
             ),
         }
@@ -333,23 +372,23 @@ impl SQLExprVisitor<'_> {
             // ----
             SQLBinaryOperator::PGRegexMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true).not(),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~*' operator: {:?}", right),
             },
             other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
         })
@@ -360,11 +399,17 @@ impl SQLExprVisitor<'_> {
     /// e.g. +column or -column
     fn visit_unary_op(&mut self, op: &UnaryOperator, expr: &SQLExpr) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
-        Ok(match op {
-            UnaryOperator::Plus => lit(0) + expr,
-            UnaryOperator::Minus => lit(0) - expr,
-            UnaryOperator::Not => expr.not(),
-            other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
+        Ok(match (op, expr.clone()) {
+            // simplify the parse tree by special-casing common unary +/- ops
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int64(n))) => lit(n),
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Float64(n))) => lit(n),
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Int64(n))) => lit(-n),
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Float64(n))) => lit(-n),
+            // general case
+            (UnaryOperator::Plus, _) => lit(0) + expr,
+            (UnaryOperator::Minus, _) => lit(0) - expr,
+            (UnaryOperator::Not, _) => expr.not(),
+            other => polars_bail!(InvalidOperation: "unary operator {:?} is not supported", other),
         })
     }
 
@@ -400,7 +445,7 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
             BinaryOperator::Eq => polars_bail!(ComputeError: "ALL cannot be used with ="),
             BinaryOperator::NotEq => polars_bail!(ComputeError: "ALL cannot be used with !="),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -423,7 +468,7 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
             BinaryOperator::Eq => Ok(left.is_in(right)),
             BinaryOperator::NotEq => Ok(left.is_in(right).not()),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -501,7 +546,7 @@ impl SQLExprVisitor<'_> {
     }
 
     /// Visit a SQL literal (like [visit_literal]), but return AnyValue instead of Expr.
-    fn visit_anyvalue(
+    fn visit_any_value(
         &self,
         value: &SQLValue,
         op: Option<&UnaryOperator>,
@@ -591,27 +636,20 @@ impl SQLExprVisitor<'_> {
     /// Visit a SQL `ARRAY_AGG` expression.
     fn visit_arr_agg(&mut self, expr: &ArrayAgg) -> PolarsResult<Expr> {
         let mut base = self.visit_expr(&expr.expr)?;
-
         if let Some(order_by) = expr.order_by.as_ref() {
             let (order_by, descending) = self.visit_order_by(order_by)?;
             base = base.sort_by(order_by, descending);
         }
-
         if let Some(limit) = &expr.limit {
             let limit = match self.visit_expr(limit)? {
-                Expr::Literal(LiteralValue::UInt32(n)) => n as usize,
-                Expr::Literal(LiteralValue::UInt64(n)) => n as usize,
-                Expr::Literal(LiteralValue::Int32(n)) => n as usize,
                 Expr::Literal(LiteralValue::Int64(n)) => n as usize,
                 _ => polars_bail!(ComputeError: "limit in ARRAY_AGG must be a positive integer"),
             };
             base = base.head(Some(limit));
         }
-
         if expr.distinct {
             base = base.unique_stable();
         }
-
         polars_ensure!(
             !expr.within_group,
             ComputeError: "ARRAY_AGG WITHIN GROUP is not yet supported"
@@ -631,12 +669,12 @@ impl SQLExprVisitor<'_> {
             .iter()
             .map(|e| {
                 if let SQLExpr::Value(v) = e {
-                    let av = self.visit_anyvalue(v, None)?;
+                    let av = self.visit_any_value(v, None)?;
                     Ok(av)
                 } else if let SQLExpr::UnaryOp {op, expr} = e {
                     match expr.as_ref() {
                         SQLExpr::Value(v) => {
-                            let av = self.visit_anyvalue(v, Some(op))?;
+                            let av = self.visit_any_value(v, Some(op))?;
                             Ok(av)
                         },
                         _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e))
@@ -874,7 +912,7 @@ pub(super) fn process_join_constraint(
             return Ok((using.clone(), using.clone()));
         }
     }
-    polars_bail!(InvalidOperation: "Unsupported SQL join constraint:\n{:?}", constraint);
+    polars_bail!(InvalidOperation: "unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression
@@ -923,7 +961,9 @@ pub(crate) fn parse_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResu
 
 fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
     Ok(match field {
-        DateTimeField::Decade => expr.dt().year() / lit(10),
+        DateTimeField::Millennium => expr.dt().millennium(),
+        DateTimeField::Century => expr.dt().century(),
+        DateTimeField::Decade => expr.dt().year() / lit(10i32),
         DateTimeField::Isoyear => expr.dt().iso_year(),
         DateTimeField::Year => expr.dt().year(),
         DateTimeField::Quarter => expr.dt().quarter(),
@@ -952,6 +992,8 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
             (expr.clone().dt().second() * lit(1_000_000_000f64)) + expr.dt().nanosecond()
         },
         DateTimeField::Time => expr.dt().time(),
+        #[cfg(feature = "timezones")]
+        DateTimeField::Timezone => expr.dt().base_utc_offset().dt().total_seconds(),
         DateTimeField::Epoch => {
             expr.clone()
                 .dt()
@@ -960,7 +1002,7 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
                 + expr.dt().nanosecond().div(lit(1_000_000_000f64))
         },
         _ => {
-            polars_bail!(ComputeError: "Extract function does not yet support {}", field)
+            polars_bail!(ComputeError: "EXTRACT function does not support {}", field)
         },
     })
 }
@@ -970,6 +1012,8 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
     parse_extract(
         expr,
         match part.as_str() {
+            "millennium" => &DateTimeField::Millennium,
+            "century" => &DateTimeField::Century,
             "decade" => &DateTimeField::Decade,
             "isoyear" => &DateTimeField::Isoyear,
             "year" => &DateTimeField::Year,
@@ -986,10 +1030,12 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
             "millisecond" | "milliseconds" => &DateTimeField::Millisecond,
             "microsecond" | "microseconds" => &DateTimeField::Microsecond,
             "nanosecond" | "nanoseconds" => &DateTimeField::Nanosecond,
+            #[cfg(feature = "timezones")]
+            "timezone" => &DateTimeField::Timezone,
             "time" => &DateTimeField::Time,
             "epoch" => &DateTimeField::Epoch,
             _ => {
-                polars_bail!(ComputeError: "Date part '{}' not supported", part)
+                polars_bail!(ComputeError: "DATE_PART function does not support '{}'", part)
             },
         },
     )

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
 from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
@@ -15,7 +15,9 @@ from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.deprecation import (
     deprecate_parameter_as_positional,
     deprecate_renamed_function,
+    issue_deprecation_warning,
 )
+from polars.utils.unstable import issue_unstable_warning, unstable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -90,12 +92,13 @@ def element() -> Expr:
 @deprecate_parameter_as_positional("column", version="0.20.4")
 def count(*columns: str) -> Expr:
     """
-    Either return the number of rows in the context, or return the number of non-null values in the column.
+    Return the number of non-null values in the column.
 
-    If no arguments are passed, returns the number of rows in the context; note that rows
-    containing null values count towards the total (this is similar to `COUNT(*)` in SQL).
+    This function is syntactic sugar for `col(columns).count()`.
 
-    Otherwise, this function is syntactic sugar for `col(column).count()`.
+    Calling this function without any arguments returns the number of rows in the
+    context. **This way of using the function is deprecated. Please use :func:`len`
+    instead.**
 
     Parameters
     ----------
@@ -113,9 +116,6 @@ def count(*columns: str) -> Expr:
 
     Examples
     --------
-    Return the number of rows in a context. Note that rows containing null values are
-    counted towards the total.
-
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2, None],
@@ -123,18 +123,6 @@ def count(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "foo"],
     ...     }
     ... )
-    >>> df.select(pl.count())
-    shape: (1, 1)
-    ┌───────┐
-    │ count │
-    │ ---   │
-    │ u32   │
-    ╞═══════╡
-    │ 3     │
-    └───────┘
-
-    Return the number of non-null values in a column.
-
     >>> df.select(pl.count("a"))
     shape: (1, 1)
     ┌─────┐
@@ -157,37 +145,36 @@ def count(*columns: str) -> Expr:
     │ 1   ┆ 3   │
     └─────┴─────┘
 
-    Generate an index column using `count` in conjunction with :func:`int_range`.
+    Return the number of rows in a context. **This way of using the function is
+    deprecated. Please use :func:`len` instead.**
 
-    >>> df.select(
-    ...     pl.int_range(pl.count(), dtype=pl.UInt32).alias("index"),
-    ...     pl.all(),
-    ... )
-    shape: (3, 4)
-    ┌───────┬──────┬──────┬─────┐
-    │ index ┆ a    ┆ b    ┆ c   │
-    │ ---   ┆ ---  ┆ ---  ┆ --- │
-    │ u32   ┆ i64  ┆ i64  ┆ str │
-    ╞═══════╪══════╪══════╪═════╡
-    │ 0     ┆ 1    ┆ 3    ┆ foo │
-    │ 1     ┆ 2    ┆ null ┆ bar │
-    │ 2     ┆ null ┆ null ┆ foo │
-    └───────┴──────┴──────┴─────┘
-
-    """  # noqa: W505
+    >>> df.select(pl.count())  # doctest: +SKIP
+    shape: (1, 1)
+    ┌───────┐
+    │ count │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 3     │
+    └───────┘
+    """
     if not columns:
-        return wrap_expr(plr.count())
+        issue_deprecation_warning(
+            "`pl.count()` is deprecated. Please use `pl.len()` instead.",
+            version="0.20.5",
+        )
+        return F.len().alias("count")
     return F.col(*columns).count()
 
 
 def cum_count(*columns: str, reverse: bool = False) -> Expr:
     """
-    Return the cumulative count of the non-null values in the column or of the context.
+    Return the cumulative count of the non-null values in the column.
+
+    This function is syntactic sugar for `col(columns).cum_count()`.
 
     If no arguments are passed, returns the cumulative count of a context.
     Rows containing null values count towards the result.
-
-    Otherwise, this function is syntactic sugar for `col(names).cum_count()`.
 
     Parameters
     ----------
@@ -198,24 +185,7 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
 
     Examples
     --------
-    Return the row numbers of a context. Note that rows containing null values are
-    counted towards the total.
-
     >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
-    >>> df.select(pl.cum_count())
-    shape: (3, 1)
-    ┌───────────┐
-    │ cum_count │
-    │ ---       │
-    │ u32       │
-    ╞═══════════╡
-    │ 1         │
-    │ 2         │
-    │ 3         │
-    └───────────┘
-
-    Return the cumulative count of non-null values in a column.
-
     >>> df.select(pl.cum_count("a"))
     shape: (3, 1)
     ┌─────┐
@@ -227,23 +197,18 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     │ 2   │
     │ 2   │
     └─────┘
-
-    Add row numbers to a DataFrame.
-
-    >>> df.select(pl.cum_count().alias("row_number"), pl.all())
-    shape: (3, 3)
-    ┌────────────┬──────┬──────┐
-    │ row_number ┆ a    ┆ b    │
-    │ ---        ┆ ---  ┆ ---  │
-    │ u32        ┆ i64  ┆ i64  │
-    ╞════════════╪══════╪══════╡
-    │ 1          ┆ 1    ┆ 3    │
-    │ 2          ┆ 2    ┆ null │
-    │ 3          ┆ null ┆ null │
-    └────────────┴──────┴──────┘
     """
     if not columns:
-        return wrap_expr(plr.cum_count(reverse=reverse))
+        issue_deprecation_warning(
+            "`pl.cum_count()` is deprecated. The same result can be achieved using"
+            " `pl.int_range(1, pl.len() + 1, dtype=pl.UInt32)`,"
+            " or `int_range(pl.len(), 0, -1, dtype=pl.UInt32)` when `reverse=True`.",
+            version="0.20.5",
+        )
+        if reverse:
+            return F.int_range(F.len(), 0, step=-1, dtype=UInt32).alias("cum_count")
+        else:
+            return F.int_range(1, F.len() + 1, dtype=UInt32).alias("cum_count")
     return F.col(*columns).cum_count(reverse=reverse)
 
 
@@ -1671,7 +1636,17 @@ def collect_all(
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Process the query in batches to handle larger-than-memory data.
+        If set to `False` (default), the entire query is processed in a single
+        batch.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. note::
+            Use :func:`explain` to see if Polars can process the query in streaming
+            mode.
 
     Returns
     -------
@@ -1684,6 +1659,10 @@ def collect_all(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+
+    if streaming:
+        issue_unstable_warning("Streaming mode is considered unstable.")
+        comm_subplan_elim = False
 
     prepared = []
 
@@ -1745,6 +1724,7 @@ def collect_all_async(
     ...
 
 
+@unstable()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -1761,6 +1741,10 @@ def collect_all_async(
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Collects into a list of DataFrame (like :func:`polars.collect_all`),
     but instead of returning them directly, they are scheduled to be collected
@@ -1792,22 +1776,27 @@ def collect_all_async(
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
     streaming
-        Run parts of the query in a streaming fashion (this is in an alpha state)
+        Process the query in batches to handle larger-than-memory data.
+        If set to `False` (default), the entire query is processed in a single
+        batch.
+
+        .. warning::
+            Streaming mode is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. note::
+            Use :func:`explain` to see if Polars can process the query in streaming
+            mode.
+
+    See Also
+    --------
+    polars.collect_all : Collect multiple LazyFrames at the same time.
+    LazyFrame.collect_async : To collect single frame.
 
     Notes
     -----
     In case of error `set_exception` is used on
     `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
-
-    Warnings
-    --------
-    This functionality is experimental and may change without it being considered a
-    breaking change.
-
-    See Also
-    --------
-    polars.collect_all : Collect multiple LazyFrames at the same time.
-    LazyFrame.collect_async: To collect single frame.
 
     Returns
     -------
@@ -1822,6 +1811,10 @@ def collect_all_async(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+
+    if streaming:
+        issue_unstable_warning("Streaming mode is considered unstable.")
+        comm_subplan_elim = False
 
     prepared = []
 
@@ -2066,6 +2059,7 @@ def from_epoch(
         raise ValueError(msg)
 
 
+@unstable()
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
@@ -2076,6 +2070,10 @@ def rolling_cov(
 ) -> Expr:
     """
     Compute the rolling covariance between two columns/ expressions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
@@ -2106,6 +2104,7 @@ def rolling_cov(
     )
 
 
+@unstable()
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
@@ -2116,6 +2115,10 @@ def rolling_corr(
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.

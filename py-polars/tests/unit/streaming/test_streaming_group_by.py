@@ -26,12 +26,12 @@ def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:
         df.set_sorted("x")
         .lazy()
         .group_by("x")
-        .agg(pl.count())
+        .agg(pl.len())
         .collect(streaming=True)
         .sort("x")
     ).to_dict(as_series=False) == {
         "x": [None, 0, 1, 2, 3],
-        "count": [100, 100, 100, 100, 100],
+        "len": [100, 100, 100, 100, 100],
     }
 
 
@@ -80,7 +80,7 @@ def test_streaming_group_by_types() -> None:
             "str_sum": pl.String,
             "bool_first": pl.Boolean,
             "bool_last": pl.Boolean,
-            "bool_mean": pl.Boolean,
+            "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
             "date_mean": pl.Date,
@@ -147,18 +147,14 @@ def test_streaming_group_by_min_max() -> None:
 def test_streaming_non_streaming_gb() -> None:
     n = 100
     df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
-    q = df.lazy().group_by("a").agg(pl.count()).sort("a")
+    q = df.lazy().group_by("a").agg(pl.len()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
     q = df.lazy().with_columns(pl.col("a").cast(pl.String))
-    q = q.group_by("a").agg(pl.count()).sort("a")
+    q = q.group_by("a").agg(pl.len()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
-    q = (
-        q.group_by(["a", "b"])
-        .agg(pl.count(), pl.col("a").sum().alias("sum_a"))
-        .sort("a")
-    )
+    q = q.group_by(["a", "b"]).agg(pl.len(), pl.col("a").sum().alias("sum_a")).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
@@ -289,11 +285,11 @@ def test_streaming_group_by_struct_key() -> None:
         {"A": [1, 2, 3, 2], "B": ["google", "ms", "apple", "ms"], "C": [2, 3, 4, 3]}
     )
     df1 = df.lazy().with_columns(pl.struct(["A", "C"]).alias("tuples"))
-    assert df1.group_by("tuples").agg(pl.count(), pl.col("B").first()).sort(
-        "B"
-    ).collect(streaming=True).to_dict(as_series=False) == {
+    assert df1.group_by("tuples").agg(pl.len(), pl.col("B").first()).sort("B").collect(
+        streaming=True
+    ).to_dict(as_series=False) == {
         "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
-        "count": [1, 1, 2],
+        "len": [1, 1, 2],
         "B": ["apple", "google", "ms"],
     }
 
@@ -426,3 +422,19 @@ def test_streaming_group_by_literal(literal: Any) -> None:
         "a_count": [20],
         "a_sum": [190],
     }
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_group_by_multiple_keys_one_literal(streaming: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
+
+    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
+    assert (
+        df.lazy()
+        .group_by("a", pl.lit(1))
+        .agg(pl.col("b").max())
+        .sort(["a", "b"])
+        .collect(streaming=streaming)
+        .to_dict(as_series=False)
+        == expected
+    )

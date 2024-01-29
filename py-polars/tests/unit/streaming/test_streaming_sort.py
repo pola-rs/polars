@@ -1,19 +1,17 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
-from collections import Counter
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.xdist_group("streaming")
 

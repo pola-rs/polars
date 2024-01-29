@@ -275,7 +275,81 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_mean())
 
-    def sort(self, *, descending: bool = False) -> Expr:
+    def median(self) -> Expr:
+        """
+        Compute the median value of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.median().alias("median"))
+        shape: (2, 2)
+        ┌────────────┬────────┐
+        │ values     ┆ median │
+        │ ---        ┆ ---    │
+        │ list[i64]  ┆ f64    │
+        ╞════════════╪════════╡
+        │ [-1, 0, 1] ┆ 0.0    │
+        │ [1, 10]    ┆ 5.5    │
+        └────────────┴────────┘
+        """
+        return wrap_expr(self._pyexpr.list_median())
+
+    def std(self, ddof: int = 1) -> Expr:
+        """
+        Compute the std value of the lists in the array.
+
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.std().alias("std"))
+        shape: (2, 2)
+        ┌────────────┬──────────┐
+        │ values     ┆ std      │
+        │ ---        ┆ ---      │
+        │ list[i64]  ┆ f64      │
+        ╞════════════╪══════════╡
+        │ [-1, 0, 1] ┆ 1.0      │
+        │ [1, 10]    ┆ 6.363961 │
+        └────────────┴──────────┘
+        """
+        return wrap_expr(self._pyexpr.list_std(ddof))
+
+    def var(self, ddof: int = 1) -> Expr:
+        """
+        Compute the var value of the lists in the array.
+
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.var().alias("var"))
+        shape: (2, 2)
+        ┌────────────┬──────┐
+        │ values     ┆ var  │
+        │ ---        ┆ ---  │
+        │ list[i64]  ┆ f64  │
+        ╞════════════╪══════╡
+        │ [-1, 0, 1] ┆ 1.0  │
+        │ [1, 10]    ┆ 40.5 │
+        └────────────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.list_var(ddof))
+
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
 
@@ -283,6 +357,8 @@ class ExprListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -312,7 +388,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [9, 2, 1] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_sort(descending))
+        return wrap_expr(self._pyexpr.list_sort(descending, nulls_last))
 
     def reverse(self) -> Expr:
         """
@@ -554,7 +630,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: IntoExprColumn) -> Expr:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -564,6 +640,11 @@ class ExprListNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -599,7 +680,7 @@ class ExprListNameSpace:
         └─────────────────┴───────────┴───────┘
         """
         separator = parse_as_expression(separator, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_join(separator))
+        return wrap_expr(self._pyexpr.list_join(separator, ignore_nulls))
 
     def arg_min(self) -> Expr:
         """

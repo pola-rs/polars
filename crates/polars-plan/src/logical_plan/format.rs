@@ -269,7 +269,7 @@ impl Debug for Expr {
                 },
             },
             Nth(i) => write!(f, "nth({i})"),
-            Count => write!(f, "count()"),
+            Len => write!(f, "len()"),
             Explode(expr) => write!(f, "{expr:?}.explode()"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
@@ -423,7 +423,7 @@ impl Debug for LiteralValue {
                 }
             },
             _ => {
-                let av = self.to_anyvalue().unwrap();
+                let av = self.to_any_value().unwrap();
                 write!(f, "{av}")
             },
         }

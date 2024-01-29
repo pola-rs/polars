@@ -36,6 +36,7 @@ ethnum = { workspace = true }
 atoi_simd = { workspace = true, optional = true }
 fast-float = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
+itoap = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 
 regex = { workspace = true, optional = true }
@@ -139,7 +140,6 @@ compute_boolean = []
 compute_boolean_kleene = []
 compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
-compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
 compute_take = []
@@ -152,7 +152,6 @@ compute = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_filter",
   "compute_hash",
   "compute_if_then_else",
   "compute_take",
@@ -163,7 +162,7 @@ simd = []
 # polars-arrow
 timezones = []
 dtype-array = []
-dtype-decimal = ["atoi"]
+dtype-decimal = ["atoi", "itoap"]
 bigidx = []
 nightly = []
 performant = []

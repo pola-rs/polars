@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowDataType;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{
@@ -30,7 +30,7 @@ pub(crate) fn prepare_collect_dtype(dtype: &DataType) -> ArrowDataType {
                 registry::get_object_physical_type()
             },
         },
-        dt => dt.to_arrow(),
+        dt => dt.to_arrow(true),
     }
 }
 
