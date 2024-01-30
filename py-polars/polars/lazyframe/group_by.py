@@ -26,7 +26,7 @@ class LazyGroupBy:
         *by: IntoExpr | Iterable[IntoExpr] | None,
         _lf: LazyFrame | None = None,
         maintain_order: bool | None = None,
-        **named_by,
+        **named_by: IntoExpr | None,
     ) -> None:
         self.lgb = lgb
         self._lf = _lf
