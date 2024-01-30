@@ -796,7 +796,8 @@ where
     LK: Fn(L::Physical<'l>, &R::Array) -> O::Array,
     RK: Fn(&L::Array, R::Physical<'r>) -> O::Array,
 {
-    match (lhs.len(), rhs.len()) {
+    let name = lhs.name();
+    let out = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => binary(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
         // broadcast right path
         (_, 1) => {
@@ -820,7 +821,8 @@ where
             }
         },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
-    }
+    };
+    out.with_name(name)
 }
 
 pub fn apply_binary_kernel_broadcast_owned<'l, 'r, L, R, O, K, LK, RK>(
@@ -838,7 +840,8 @@ where
     for<'a> LK: Fn(L::Physical<'a>, R::Array) -> O::Array,
     for<'a> RK: Fn(L::Array, R::Physical<'a>) -> O::Array,
 {
-    match (lhs.len(), rhs.len()) {
+    let name = lhs.name().to_owned();
+    let out = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => binary_owned(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
         // broadcast right path
         (_, 1) => {
@@ -862,5 +865,6 @@ where
             }
         },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
-    }
+    };
+    out.with_name(&name)
 }
