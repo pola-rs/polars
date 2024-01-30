@@ -61,20 +61,12 @@ impl UpperExp for AExpr {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct TreeFmtVisitor {
     levels: Vec<Vec<String>>,
-    depth: u32,
-    width: u32,
-}
-
-impl TreeFmtVisitor {
-    pub(crate) fn new() -> Self {
-        Self {
-            levels: vec![],
-            depth: 0,
-            width: 0,
-        }
-    }
+    prev_depth: usize,
+    depth: usize,
+    width: usize,
 }
 
 impl Visitor for TreeFmtVisitor {
@@ -85,17 +77,18 @@ impl Visitor for TreeFmtVisitor {
         let ae = node.to_aexpr();
         let repr = format!("{:E}", ae);
 
-        if self.levels.len() <= self.depth as usize {
+        if self.levels.len() <= self.depth {
             self.levels.push(vec![])
         }
 
         // the post-visit ensures the width of this node is known
-        let row = self.levels.get_mut(self.depth as usize).unwrap();
+        let row = self.levels.get_mut(self.depth).unwrap();
 
         // set default values to ensure we format at the right width
-        row.resize(self.width as usize + 1, "".to_string());
-        row[self.width as usize] = repr;
+        row.resize(self.width + 1, "".to_string());
+        row[self.width] = repr;
 
+        self.prev_depth = self.depth;
         // we will enter depth first, we enter child so depth increases
         self.depth += 1;
 
@@ -103,12 +96,12 @@ impl Visitor for TreeFmtVisitor {
     }
 
     fn post_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        // because we traverse depth first
-        // every post-visit increases the width as we finished a depth-first branch
-        self.width += 1;
-
         // we finished this branch so we decrease in depth, back the caller node
         self.depth -= 1;
+
+        // because we traverse depth first
+        // every post-visit increases the width as we finished one or more depth-first branches
+        self.width += if self.prev_depth == self.depth { 1 } else { 0 };
         Ok(VisitRecursion::Continue)
     }
 }
@@ -129,14 +122,20 @@ struct TreeViewColumn {
     offset: usize,
     width: usize,
     center: usize,
-    /// A `TreeViewColumn` `is_empty` when it doesn't contain a single populated `TreeViewCell`
-    is_empty: bool,
+}
+
+/// Meta-info of a column in a populated `TreeFmtVisitor` required for the pretty-print of a tree
+#[derive(Clone, Default, Debug)]
+struct TreeViewRow {
+    offset: usize,
+    height: usize,
+    center: usize,
 }
 
 /// Meta-info of a cell in a populated `TreeFmtVisitor`
 #[derive(Clone, Default, Debug)]
 struct TreeViewCell<'a> {
-    text: Option<&'a str>,
+    text: Vec<&'a str>,
     /// A `Vec` of indices of of `TreeViewColumn`-s stored elsewhere in another `Vec`
     /// For a cell on a row `i` these indices point to the columns that contain child-cells on a
     /// row `i + 1` (if the latter exists)
@@ -154,6 +153,7 @@ struct TreeView<'a> {
     /// NOTE: `TreeViewCell`'s `children_columns` field contains indices pointing at the elements
     /// of this `Vec`
     columns: Vec<TreeViewColumn>,
+    rows: Vec<TreeViewRow>,
 }
 
 // NOTE: the code below this line is full of hardcoded integer offsets which may not be a big
@@ -174,7 +174,7 @@ impl<'a> From<&'a [Vec<String>]> for TreeView<'a> {
         for i in 0..n_rows {
             for j in 0..n_cols {
                 if j < value[i].len() && !value[i][j].is_empty() {
-                    matrix[i][j].text = Some(value[i][j].as_str());
+                    matrix[i][j].text = value[i][j].split('\n').collect();
                     if i < n_rows - 1 {
                         if j < value[i + 1].len() && !value[i + 1][j].is_empty() {
                             matrix[i][j].children_columns.push(j);
@@ -195,25 +195,40 @@ impl<'a> From<&'a [Vec<String>]> for TreeView<'a> {
             }
         }
 
-        let mut offset = n_rows_width + 3;
+        let mut y_offset = 3;
+        let mut rows = vec![TreeViewRow::default(); n_rows];
+        for i in 0..n_rows {
+            let mut height = 0;
+            for j in 0..n_cols {
+                height = [matrix[i][j].text.len(), height].into_iter().max().unwrap();
+            }
+            height += 2;
+            rows[i].offset = y_offset;
+            rows[i].height = height;
+            rows[i].center = height / 2;
+            y_offset += height + 3;
+        }
+
+        let mut x_offset = n_rows_width + 4;
         let mut columns = vec![TreeViewColumn::default(); n_cols];
         // the two nested loops below are those `needless_range_loop`s
         // more readable this way to my taste
         for j in 0..n_cols {
             let mut width = 0;
-            let mut is_empty = true;
             for i in 0..n_rows {
-                if let Some(text) = matrix[i][j].text {
-                    is_empty = false;
-                    width = [text.len(), width].into_iter().max().unwrap();
-                }
+                width = [
+                    matrix[i][j].text.iter().map(|l| l.len()).max().unwrap_or(0),
+                    width,
+                ]
+                .into_iter()
+                .max()
+                .unwrap();
             }
-            width += if width > 0 { 6 } else { 4 };
-            columns[j].offset = offset;
+            width += 6;
+            columns[j].offset = x_offset;
             columns[j].width = width;
             columns[j].center = width / 2 + width % 2;
-            columns[j].is_empty = is_empty;
-            offset += width;
+            x_offset += width;
         }
 
         Self {
@@ -221,6 +236,7 @@ impl<'a> From<&'a [Vec<String>]> for TreeView<'a> {
             n_rows_width,
             matrix,
             columns,
+            rows,
         }
     }
 }
@@ -330,14 +346,24 @@ impl Canvas {
         );
     }
 
-    /// Draws a box of height 3 containing a center-aligned text
-    fn draw_label_centered(&mut self, center: Point, text: &str) {
-        let Point(x, y) = center;
-        let half = text.len() / 2 + text.len() % 2;
-        if x >= half + 2 || y >= 1 {
-            self.draw_box(Point(x - half - 2, y - 1), text.len() + 4, 3);
-            for (i, c) in text.chars().enumerate() {
-                self.draw_symbol(Point(x - half + i, y), c);
+    /// Draws a box of height `2 + text.len()` containing a left-aligned text
+    fn draw_label_centered(&mut self, center: Point, text: &[&str]) {
+        if !text.is_empty() {
+            let Point(x, y) = center;
+            let text_width = text.iter().map(|l| l.len()).max().unwrap();
+            let half_width = text_width / 2 + text_width % 2;
+            let half_height = text.len() / 2;
+            if x >= half_width + 2 && y > half_height {
+                self.draw_box(
+                    Point(x - half_width - 2, y - half_height - 1),
+                    text_width + 4,
+                    text.len() + 2,
+                );
+                for (i, line) in text.iter().enumerate() {
+                    for (j, c) in line.chars().enumerate() {
+                        self.draw_symbol(Point(x - half_width + j, y - half_height + i), c);
+                    }
+                }
             }
         }
     }
@@ -345,9 +371,9 @@ impl Canvas {
     /// Draws branched lines from a `Point` to multiple `Point`s below
     /// NOTE: the shape of these connections is very specific for this particular kind of the
     /// representation of a tree
-    fn draw_connections(&mut self, from: Point, to: &[Point]) {
+    fn draw_connections(&mut self, from: Point, to: &[Point], branching_offset: usize) {
         let mut start_with_corner = true;
-        let Point(mut x_from, y_from) = from;
+        let Point(mut x_from, mut y_from) = from;
         for Point(x, y) in to {
             if *x >= x_from && *y >= y_from - 1 {
                 if *x == x_from {
@@ -357,6 +383,12 @@ impl Canvas {
                 } else {
                     if start_with_corner {
                         // if the first or the second connection steers to the right
+                        self.draw_line(
+                            Point(x_from, y_from),
+                            Orientation::Vertical,
+                            branching_offset,
+                        );
+                        y_from += branching_offset;
                         self.draw_symbol(Point(x_from, y_from), self.glyphs.bottom_left_corner);
                         start_with_corner = false;
                         x_from += 1;
@@ -381,7 +413,8 @@ impl Canvas {
 impl From<TreeView<'_>> for Canvas {
     fn from(value: TreeView<'_>) -> Self {
         let width = value.n_rows_width + 3 + value.columns.iter().map(|c| c.width).sum::<usize>();
-        let height = 3 + 3 * value.n_rows + 3 * (value.n_rows - 1);
+        let height =
+            3 + value.rows.iter().map(|r| r.height).sum::<usize>() + 3 * (value.n_rows - 1);
         let mut canvas = Canvas::new(width, height, Glyphs::default());
 
         // Axles
@@ -391,8 +424,7 @@ impl From<TreeView<'_>> for Canvas {
         canvas.draw_line(Point(x, y + 1), Orientation::Vertical, height - y);
 
         // Row and column indices
-        let mut y_offset = 4;
-        for i in 0..value.n_rows {
+        for (i, row) in value.rows.iter().enumerate() {
             // the prefix `Vec` of spaces compensates for the row indices that are shorter than the
             // highest index, effectively, row indices are right-aligned
             for (j, c) in vec![' '; value.n_rows_width - digits(i)]
@@ -400,46 +432,59 @@ impl From<TreeView<'_>> for Canvas {
                 .chain(format!("{i}").chars())
                 .enumerate()
             {
-                canvas.draw_symbol(Point(j + 1, y_offset), c);
+                canvas.draw_symbol(Point(j + 1, row.offset + row.center), c);
             }
-            y_offset += 6;
         }
-        let mut j = 0;
-        for col in &value.columns {
-            if !col.is_empty {
-                // NOTE: the empty columns (i.e. such that don't contain a single populated cell)
-                // don't obtain an index
-                // the column indices are centered
-                let j_width = digits(j);
-                let start = col.offset + col.center - (j_width / 2 + j_width % 2);
-                for (k, c) in format!("{j}").chars().enumerate() {
-                    canvas.draw_symbol(Point(start + k, 0), c);
-                }
-                j += 1;
+        for (j, col) in value.columns.iter().enumerate() {
+            let j_width = digits(j);
+            let start = col.offset + col.center - (j_width / 2 + j_width % 2);
+            for (k, c) in format!("{j}").chars().enumerate() {
+                canvas.draw_symbol(Point(start + k, 0), c);
             }
         }
 
         // Non-empty cells (nodes) and their connections (edges)
-        let mut y_offset = 3;
-        for row in &value.matrix {
+        for (i, row) in value.matrix.iter().enumerate() {
             for (j, cell) in row.iter().enumerate() {
-                if let Some(text) = cell.text {
-                    let x_offset = value.columns[j].offset + value.columns[j].center;
-                    let children_points = cell
-                        .children_columns
-                        .iter()
-                        .map(|k| {
+                if !cell.text.is_empty() {
+                    canvas.draw_label_centered(
+                        Point(
+                            value.columns[j].offset + value.columns[j].center,
+                            value.rows[i].offset + value.rows[i].center,
+                        ),
+                        &cell.text,
+                    );
+                    if i < value.rows.len() - 1 {
+                        let children_points = cell
+                            .children_columns
+                            .iter()
+                            .map(|k| {
+                                let child_total_padding = value.rows[i + 1].height
+                                    - value.matrix[i + 1][*k].text.len()
+                                    - 2;
+                                Point(
+                                    value.columns[*k].offset + value.columns[*k].center - 1,
+                                    value.rows[i + 1].offset
+                                        + child_total_padding / 2
+                                        + child_total_padding % 2,
+                                )
+                            })
+                            .collect::<Vec<_>>();
+
+                        let parent_total_padding =
+                            value.rows[i].height - value.matrix[i][j].text.len() - 2;
+                        canvas.draw_connections(
                             Point(
-                                value.columns[*k].offset + value.columns[*k].center - 1,
-                                y_offset + 6,
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    canvas.draw_label_centered(Point(x_offset, y_offset + 1), text);
-                    canvas.draw_connections(Point(x_offset - 1, y_offset + 3), &children_points);
+                                value.columns[j].offset + value.columns[j].center - 1,
+                                value.rows[i].offset + value.rows[i].height
+                                    - parent_total_padding / 2,
+                            ),
+                            &children_points,
+                            parent_total_padding / 2 + 1,
+                        );
+                    }
                 }
             }
-            y_offset += 6;
         }
 
         canvas
@@ -461,6 +506,7 @@ impl Display for TreeFmtVisitor {
         let tree_view: TreeView<'_> = self.levels.as_slice().into();
         let canvas: Canvas = tree_view.into();
         write!(f, "{canvas}")?;
+
         Ok(())
     }
 }
@@ -476,7 +522,7 @@ mod test {
         let mut arena = Default::default();
         let node = to_aexpr(e, &mut arena);
 
-        let mut visitor = TreeFmtVisitor::new();
+        let mut visitor = TreeFmtVisitor::default();
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
         let expected: &[&[&str]] = &[
@@ -496,35 +542,35 @@ mod test {
         let mut arena = Default::default();
         let node = to_aexpr(e, &mut arena);
 
-        let mut visitor = TreeFmtVisitor::new();
+        let mut visitor = TreeFmtVisitor::default();
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
         let expected_lines = vec![
-            "           0            1                   2                3            4",
-            "   ┌─────────────────────────────────────────────────────────────────────────────",
+            "            0            1               2                3            4",
+            "   ┌─────────────────────────────────────────────────────────────────────────",
             "   │",
-            "   │ ╭───────────╮",
-            " 0 │ │ binary: + │",
-            "   │ ╰───────────╯",
-            "   │       │╰───────────────────────────────╮",
-            "   │       │                                │",
-            "   │       │                                │",
-            "   │ ╭───────────╮                  ╭───────────────╮",
-            " 1 │ │ binary: * │                  │ function: pow │",
-            "   │ ╰───────────╯                  ╰───────────────╯",
-            "   │       │╰───────────╮                   │╰───────────────╮",
-            "   │       │            │                   │                │",
-            "   │       │            │                   │                │",
-            "   │   ╭────────╮   ╭────────╮          ╭────────╮     ╭───────────╮",
-            " 2 │   │ col(d) │   │ col(c) │          │ lit(2) │     │ binary: + │",
-            "   │   ╰────────╯   ╰────────╯          ╰────────╯     ╰───────────╯",
-            "   │                                                         │╰───────────╮",
-            "   │                                                         │            │",
-            "   │                                                         │            │",
-            "   │                                                     ╭────────╮   ╭────────╮",
-            " 3 │                                                     │ col(b) │   │ col(a) │",
-            "   │                                                     ╰────────╯   ╰────────╯",
+            "   │  ╭───────────╮",
+            " 0 │  │ binary: + │",
+            "   │  ╰───────────╯",
+            "   │        ││",
+            "   │        │╰───────────────────────────╮",
+            "   │        │                            │",
+            "   │  ╭───────────╮              ╭───────────────╮",
+            " 1 │  │ binary: * │              │ function: pow │",
+            "   │  ╰───────────╯              ╰───────────────╯",
+            "   │        ││                           ││",
+            "   │        │╰───────────╮               │╰───────────────╮",
+            "   │        │            │               │                │",
+            "   │    ╭────────╮   ╭────────╮      ╭────────╮     ╭───────────╮",
+            " 2 │    │ col(d) │   │ col(c) │      │ lit(2) │     │ binary: + │",
+            "   │    ╰────────╯   ╰────────╯      ╰────────╯     ╰───────────╯",
+            "   │                                                      ││",
+            "   │                                                      │╰───────────╮",
+            "   │                                                      │            │",
+            "   │                                                  ╭────────╮   ╭────────╮",
+            " 3 │                                                  │ col(b) │   │ col(a) │",
+            "   │                                                  ╰────────╯   ╰────────╯",
         ];
         for (i, (line, expected_line)) in
             format!("{visitor}").lines().zip(expected_lines).enumerate()
@@ -546,35 +592,35 @@ mod test {
         let mut arena = Default::default();
         let node = to_aexpr(e, &mut arena);
 
-        let mut visitor = TreeFmtVisitor::new();
+        let mut visitor = TreeFmtVisitor::default();
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
         let expected_lines = vec![
-            "                0                 1                   2                3            4",
-            "   ┌───────────────────────────────────────────────────────────────────────────────────────",
+            "                 0                 1               2                3            4",
+            "   ┌───────────────────────────────────────────────────────────────────────────────────",
             "   │",
-            "   │      ╭───────────╮",
-            " 0 │      │ binary: + │",
-            "   │      ╰───────────╯",
-            "   │            │╰────────────────────────────────────╮",
-            "   │            │                                     │",
-            "   │            │                                     │",
-            "   │ ╭─────────────────────╮                  ╭───────────────╮",
-            " 1 │ │ function: int_range │                  │ function: pow │",
-            "   │ ╰─────────────────────╯                  ╰───────────────╯",
-            "   │            │╰────────────────╮                   │╰───────────────╮",
-            "   │            │                 │                   │                │",
-            "   │            │                 │                   │                │",
-            "   │        ╭────────╮        ╭────────╮          ╭────────╮     ╭───────────╮",
-            " 2 │        │ lit(3) │        │ lit(0) │          │ lit(2) │     │ binary: + │",
-            "   │        ╰────────╯        ╰────────╯          ╰────────╯     ╰───────────╯",
-            "   │                                                                   │╰───────────╮",
-            "   │                                                                   │            │",
-            "   │                                                                   │            │",
-            "   │                                                               ╭────────╮   ╭────────╮",
-            " 3 │                                                               │ col(b) │   │ col(a) │",
-            "   │                                                               ╰────────╯   ╰────────╯",
+            "   │       ╭───────────╮",
+            " 0 │       │ binary: + │",
+            "   │       ╰───────────╯",
+            "   │             ││",
+            "   │             │╰────────────────────────────────╮",
+            "   │             │                                 │",
+            "   │  ╭─────────────────────╮              ╭───────────────╮",
+            " 1 │  │ function: int_range │              │ function: pow │",
+            "   │  ╰─────────────────────╯              ╰───────────────╯",
+            "   │             ││                                ││",
+            "   │             │╰────────────────╮               │╰───────────────╮",
+            "   │             │                 │               │                │",
+            "   │         ╭────────╮        ╭────────╮      ╭────────╮     ╭───────────╮",
+            " 2 │         │ lit(3) │        │ lit(0) │      │ lit(2) │     │ binary: + │",
+            "   │         ╰────────╯        ╰────────╯      ╰────────╯     ╰───────────╯",
+            "   │                                                                ││",
+            "   │                                                                │╰───────────╮",
+            "   │                                                                │            │",
+            "   │                                                            ╭────────╮   ╭────────╮",
+            " 3 │                                                            │ col(b) │   │ col(a) │",
+            "   │                                                            ╰────────╯   ╰────────╯",
         ];
         for (i, (line, expected_line)) in
             format!("{visitor}").lines().zip(expected_lines).enumerate()
