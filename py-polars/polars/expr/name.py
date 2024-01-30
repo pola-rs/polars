@@ -21,8 +21,11 @@ class ExprNameNameSpace:
 
         Notes
         -----
+        This will undo any previous renaming operations on the expression.
+
         Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
+        expression in a chain. Only one name operation per expression will work.
+        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
@@ -68,6 +71,14 @@ class ExprNameNameSpace:
     def map(self, function: Callable[[str], str]) -> Expr:
         """
         Rename the output of an expression by mapping a function over the root name.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain. Only one name operation per expression will work.
+
 
         Parameters
         ----------
@@ -115,12 +126,14 @@ class ExprNameNameSpace:
         prefix
             Prefix to add to the root column name.
 
+
         Notes
         -----
         This will undo any previous renaming operations on the expression.
 
         Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
+        expression in a chain. Only one name operation per expression will work.
+        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
@@ -162,7 +175,8 @@ class ExprNameNameSpace:
         This will undo any previous renaming operations on the expression.
 
         Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
+        expression in a chain. Only one name operation per expression will work.
+        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
@@ -196,8 +210,11 @@ class ExprNameNameSpace:
 
         Notes
         -----
+        This will undo any previous renaming operations on the expression.
+
         Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
+        expression in a chain. Only one name operation per expression will work.
+        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
@@ -233,8 +250,11 @@ class ExprNameNameSpace:
 
         Notes
         -----
+        This will undo any previous renaming operations on the expression.
+
         Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
+        expression in a chain. Only one name operation per expression will work.
+        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
