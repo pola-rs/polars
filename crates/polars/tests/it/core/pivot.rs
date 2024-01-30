@@ -177,11 +177,11 @@ fn test_pivot_new() -> PolarsResult<()> {
     let expected = df![
         "A" => ["foo", "foo", "bar", "bar"],
         "B" => ["one", "two", "one", "two"],
-        "large" => [Some(4), None, Some(4), Some(7)],
-        "small" => [1, 6, 5, 6],
-        "egg" => [Some(4), Some(3), None, None],
-        "jam" => [1, 3, 4, 13],
-        "potato" => [None, None, Some(5), None]
+        "{\"large\",\"egg\"}" => [Some(4), None, None, None],
+        "{\"large\",\"jam\"}" => [None, None, Some(4), Some(7)],
+        "{\"small\",\"egg\"}" => [None, Some(3), None, None],
+        "{\"small\",\"jam\"}" => [Some(1), Some(3), None, Some(6)],
+        "{\"small\",\"potato\"}" => [None, None, Some(5), None],
     ]?;
     assert!(out.equals_missing(&expected));
 

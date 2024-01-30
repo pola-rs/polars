@@ -162,10 +162,10 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
     expected = {
         "c1": ["A", "B"],
-        "x1|c2|C": [1, 2],
-        "x1|c2|D": [3, 4],
-        "x2|c2|C": [8, 7],
-        "x2|c2|D": [6, 5],
+        "x1|C": [1, 2],
+        "x1|D": [3, 4],
+        "x2|C": [8, 7],
+        "x2|D": [6, 5],
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -180,20 +180,83 @@ def test_pivot_duplicate_names_7731() -> None:
             "e": ["x", "y"],
         }
     )
-    assert df.pivot(
+    result = df.pivot(
         values=cs.integer(),
         index=cs.float(),
         columns=cs.string(),
         aggregate_function="first",
-    ).to_dict(as_series=False) == {
+    ).to_dict(as_series=False)
+    expected = {
         "b": [1.5, 2.5],
-        "a_c_x": [1, 4],
-        "d_c_x": [7, 8],
-        "a_e_x": [1, None],
-        "a_e_y": [None, 4],
-        "d_e_x": [7, None],
-        "d_e_y": [None, 8],
+        'a_{"x","x"}': [1, None],
+        'a_{"x","y"}': [None, 4],
+        'd_{"x","x"}': [7, None],
+        'd_{"x","y"}': [None, 8],
     }
+    assert result == expected
+
+
+def test_pivot_duplicate_names_11663() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": ["x", "x"], "d": ["x", "y"]})
+    result = df.pivot(values="a", index="b", columns=["c", "d"]).to_dict(
+        as_series=False
+    )
+    expected = {"b": [1, 2], '{"x","x"}': [1, None], '{"x","y"}': [None, 2]}
+    assert result == expected
+
+
+def test_pivot_multiple_columns_12407() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["beep", "bop"],
+            "b": ["a", "b"],
+            "c": ["s", "f"],
+            "d": [7, 8],
+            "e": ["x", "y"],
+        }
+    )
+    result = df.pivot(
+        values=["a"], index="b", columns=["c", "e"], aggregate_function="len"
+    ).to_dict(as_series=False)
+    expected = {"b": ["a", "b"], '{"s","x"}': [1, None], '{"f","y"}': [None, 1]}
+    assert result == expected
+
+
+def test_pivot_struct_13120() -> None:
+    df = pl.DataFrame(
+        {
+            "index": [1, 2, 3, 1, 2, 3],
+            "item_type": ["a", "a", "a", "b", "b", "b"],
+            "item_id": [123, 123, 123, 456, 456, 456],
+            "values": [4, 5, 6, 7, 8, 9],
+        }
+    )
+    df = df.with_columns(pl.struct(["item_type", "item_id"]).alias("columns")).drop(
+        "item_type", "item_id"
+    )
+    result = df.pivot(index="index", columns="columns", values="values").to_dict(
+        as_series=False
+    )
+    expected = {"index": [1, 2, 3], '{"a",123}': [4, 5, 6], '{"b",456}': [7, 8, 9]}
+    assert result == expected
+
+
+def test_pivot_name_already_exists() -> None:
+    # This should be extremely rare...but still, good to check it
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b"],
+            "b": ["a", "b"],
+            '{"a","b"}': [1, 2],
+        }
+    )
+    with pytest.raises(ComputeError, match="already exists in the DataFrame"):
+        df.pivot(
+            values='{"a","b"}',
+            index="a",
+            columns=["a", "b"],
+            aggregate_function="first",
+        )
 
 
 def test_pivot_floats() -> None:
