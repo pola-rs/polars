@@ -63,7 +63,12 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import (
+    ComputeError,
+    SchemaError,
+    ShapeError,
+    TimeZoneAwareConstructorWarning,
+)
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.meta import get_index_type, threadpool_size
 from polars.utils.various import (
@@ -302,6 +307,9 @@ def sequence_from_any_value_or_object(name: str, values: Sequence[Any]) -> PySer
         return PySeries.new_from_any_values(name, values, strict=True)
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
+        return PySeries.new_object(name, values, _strict=False)
+    # raised if AnyValue fallbacks fail
+    except SchemaError:
         return PySeries.new_object(name, values, _strict=False)
     except ComputeError as exc:
         if "mixed dtypes" in str(exc):

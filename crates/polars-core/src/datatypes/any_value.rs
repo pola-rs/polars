@@ -451,11 +451,15 @@ impl<'a> AnyValue<'a> {
     }
 
     pub fn is_numeric(&self) -> bool {
-        self.is_signed_integer() || self.is_unsigned_integer() || self.is_float()
+        self.is_integer() || self.is_float()
     }
 
     pub fn is_float(&self) -> bool {
         matches!(self, AnyValue::Float32(_) | AnyValue::Float64(_))
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.is_signed_integer() || self.is_unsigned_integer()
     }
 
     pub fn is_signed_integer(&self) -> bool {
@@ -487,8 +491,8 @@ impl<'a> AnyValue<'a> {
     }
 
     pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
-        fn cast_numeric<'a>(av: &AnyValue, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
-            Ok(match dtype {
+        fn cast_to_numeric<'a>(av: &AnyValue, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+            let out = match dtype {
                 DataType::UInt8 => AnyValue::UInt8(av.try_extract::<u8>()?),
                 DataType::UInt16 => AnyValue::UInt16(av.try_extract::<u16>()?),
                 DataType::UInt32 => AnyValue::UInt32(av.try_extract::<u32>()?),
@@ -502,11 +506,12 @@ impl<'a> AnyValue<'a> {
                 _ => {
                     polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", av, dtype)
                 },
-            })
+            };
+            Ok(out)
         }
 
-        fn cast_boolean<'a>(av: &AnyValue) -> PolarsResult<AnyValue<'a>> {
-            Ok(match av {
+        fn cast_to_boolean<'a>(av: &AnyValue) -> PolarsResult<AnyValue<'a>> {
+            let out = match av {
                 AnyValue::UInt8(v) => AnyValue::Boolean(*v != u8::default()),
                 AnyValue::UInt16(v) => AnyValue::Boolean(*v != u16::default()),
                 AnyValue::UInt32(v) => AnyValue::Boolean(*v != u32::default()),
@@ -520,32 +525,27 @@ impl<'a> AnyValue<'a> {
                 _ => {
                     polars_bail!(ComputeError: "cannot cast any-value {:?} to boolean", av)
                 },
-            })
+            };
+            Ok(out)
         }
 
         let new_av = match self {
-            _ if (self.is_boolean()
-                | self.is_signed_integer()
-                | self.is_unsigned_integer()
-                | self.is_float()) =>
-            {
-                match dtype {
-                    #[cfg(feature = "dtype-date")]
-                    DataType::Date => AnyValue::Date(self.try_extract::<i32>()?),
-                    #[cfg(feature = "dtype-datetime")]
-                    DataType::Datetime(tu, tz) => {
-                        AnyValue::Datetime(self.try_extract::<i64>()?, *tu, tz)
-                    },
-                    #[cfg(feature = "dtype-duration")]
-                    DataType::Duration(tu) => AnyValue::Duration(self.try_extract::<i64>()?, *tu),
-                    #[cfg(feature = "dtype-time")]
-                    DataType::Time => AnyValue::Time(self.try_extract::<i64>()?),
-                    DataType::String => {
-                        AnyValue::StringOwned(format_smartstring!("{}", self.try_extract::<i64>()?))
-                    },
-                    DataType::Boolean => return cast_boolean(self),
-                    _ => return cast_numeric(self, dtype),
-                }
+            _ if (self.is_boolean() | self.is_numeric()) => match dtype {
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => AnyValue::Date(self.try_extract::<i32>()?),
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(tu, tz) => {
+                    AnyValue::Datetime(self.try_extract::<i64>()?, *tu, tz)
+                },
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(tu) => AnyValue::Duration(self.try_extract::<i64>()?, *tu),
+                #[cfg(feature = "dtype-time")]
+                DataType::Time => AnyValue::Time(self.try_extract::<i64>()?),
+                DataType::String => {
+                    AnyValue::StringOwned(format_smartstring!("{}", self.try_extract::<i64>()?))
+                },
+                DataType::Boolean => return cast_to_boolean(self),
+                _ => return cast_to_numeric(self, dtype),
             },
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, None) => match dtype {
@@ -571,14 +571,14 @@ impl<'a> AnyValue<'a> {
                     };
                     AnyValue::Time(ns_since_midnight)
                 },
-                _ => return cast_numeric(self, dtype),
+                _ => return cast_to_numeric(self, dtype),
             },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, _) => match dtype {
                 DataType::Time | DataType::Date | DataType::Datetime(_, _) => {
                     polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", v, dtype)
                 },
-                _ => return cast_numeric(self, dtype),
+                _ => return cast_to_numeric(self, dtype),
             },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(v) => match dtype {
@@ -592,7 +592,7 @@ impl<'a> AnyValue<'a> {
                     };
                     AnyValue::Duration(duration_value, *tu)
                 },
-                _ => return cast_numeric(self, dtype),
+                _ => return cast_to_numeric(self, dtype),
             },
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => match dtype {
@@ -608,7 +608,7 @@ impl<'a> AnyValue<'a> {
                     let value = func(ndt);
                     AnyValue::Datetime(value, *tu, &None)
                 },
-                _ => return cast_numeric(self, dtype),
+                _ => return cast_to_numeric(self, dtype),
             },
             AnyValue::String(s) if dtype == &DataType::Binary => AnyValue::Binary(s.as_bytes()),
             _ => {
@@ -618,10 +618,10 @@ impl<'a> AnyValue<'a> {
         Ok(new_av)
     }
 
-    pub fn cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+    pub fn cast(&self, dtype: &'a DataType) -> AnyValue<'a> {
         match self.strict_cast(dtype) {
-            Ok(s) => Ok(s),
-            Err(_) => Ok(AnyValue::Null),
+            Ok(av) => av,
+            Err(_) => AnyValue::Null,
         }
     }
 }
