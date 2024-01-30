@@ -3223,7 +3223,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         exprs = parse_as_list_of_expressions(*by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
-        return LazyGroupBy(lgb)
+        lf = self
+        return LazyGroupBy(lgb, *by, _lf=lf, maintain_order=maintain_order, **named_by)
 
     def rolling(
         self,

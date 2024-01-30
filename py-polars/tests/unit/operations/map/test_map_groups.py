@@ -165,3 +165,25 @@ def test_apply_deprecated() -> None:
         df.group_by_dynamic("a", every="2i").apply(lambda x: x, schema=None)
     with pytest.deprecated_call():
         pl.apply(["a", "b"], lambda x: x)
+
+
+def test_group_by_map_groups_expressions() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    result = df.group_by(z=pl.col("a") * 2, maintain_order=True).map_groups(
+        lambda df: (df.with_columns(pl.col("b") * 2))
+    )
+    expected = pl.DataFrame(
+        {"a": [1, 1, 2, 2, 3, 3], "b": [0, 2, 4, 6, 8, 10], "z": [2, 2, 4, 4, 6, 6]}
+    )
+    assert_frame_equal(result, expected)
+
+    lf = df.lazy()
+    result_lf = (
+        lf.group_by(z=pl.col("a") * 2, maintain_order=True)
+        .map_groups(
+            lambda df: (df.with_columns(pl.col("b") * 2)),
+            schema={"a": pl.Int64, "b": pl.Int64, "z": pl.Int64},
+        )
+        .collect()
+    )
+    assert_frame_equal(result_lf, expected)
