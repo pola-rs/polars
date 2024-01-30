@@ -342,10 +342,15 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 }
 
 impl<'a> AnyValue<'a> {
+    /// Get the matching [`DataType`] for this [`AnyValue`]`.
+    ///
+    /// Note: For `Categorical` and `Enum` values, the exact mapping information
+    /// is not preserved in the result for performance reasons.
     pub fn dtype(&self) -> DataType {
         use AnyValue::*;
-        match self.as_borrowed() {
+        match self {
             Null => DataType::Null,
+            Boolean(_) => DataType::Boolean,
             Int8(_) => DataType::Int8,
             Int16(_) => DataType::Int16,
             Int32(_) => DataType::Int32,
@@ -356,29 +361,36 @@ impl<'a> AnyValue<'a> {
             UInt64(_) => DataType::UInt64,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
+            String(_) | StringOwned(_) => DataType::String,
+            Binary(_) | BinaryOwned(_) => DataType::Binary,
             #[cfg(feature = "dtype-date")]
             Date(_) => DataType::Date,
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => DataType::Datetime(tu, tz.clone()),
             #[cfg(feature = "dtype-time")]
             Time(_) => DataType::Time,
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
             #[cfg(feature = "dtype-duration")]
-            Duration(_, tu) => DataType::Duration(tu),
-            Boolean(_) => DataType::Boolean,
-            String(_) => DataType::String,
+            Duration(_, tu) => DataType::Duration(*tu),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
             #[cfg(feature = "dtype-categorical")]
             Enum(_, _, _) => DataType::Enum(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
+            #[cfg(feature = "dtype-array")]
+            Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
-            Binary(_) => DataType::Binary,
-            _ => unimplemented!(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
+            #[cfg(feature = "object")]
+            Object(o) => DataType::Object(o.type_name(), None),
+            #[cfg(feature = "object")]
+            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
         }
     }
+
     /// Extract a numerical value from the AnyValue
     #[doc(hidden)]
     #[inline]
@@ -458,6 +470,20 @@ impl<'a> AnyValue<'a> {
             self,
             AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
         )
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, AnyValue::Null)
+    }
+
+    pub fn is_nested_null(&self) -> bool {
+        match self {
+            AnyValue::Null => true,
+            AnyValue::List(s) => s.null_count() == s.len(),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
+            _ => false,
+        }
     }
 
     pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
@@ -602,6 +628,12 @@ impl<'a> AnyValue<'a> {
 
 impl From<AnyValue<'_>> for DataType {
     fn from(value: AnyValue<'_>) -> Self {
+        value.dtype()
+    }
+}
+
+impl<'a> From<&AnyValue<'a>> for DataType {
+    fn from(value: &AnyValue<'a>) -> Self {
         value.dtype()
     }
 }
@@ -831,16 +863,6 @@ impl<'a> AnyValue<'a> {
                 Some(s)
             },
             _ => None,
-        }
-    }
-
-    pub fn is_nested_null(&self) -> bool {
-        match self {
-            AnyValue::Null => true,
-            AnyValue::List(s) => s.dtype().is_nested_null(),
-            #[cfg(feature = "dtype-struct")]
-            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
-            _ => false,
         }
     }
 }

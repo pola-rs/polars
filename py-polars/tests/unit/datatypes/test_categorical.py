@@ -574,9 +574,9 @@ def test_nested_categorical_aggregation_7848() -> None:
             "letter": ["a", "b", "c", "d", "e", "f", "g"],
         }
     ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
-        maintain_order=True, by=["group"]
+        "group", maintain_order=True
     ).all().with_columns(pl.col("letter").list.len().alias("c_group")).group_by(
-        by=["c_group"], maintain_order=True
+        ["c_group"], maintain_order=True
     ).agg(pl.col("letter")).to_dict(as_series=False) == {
         "c_group": [2, 3],
         "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],

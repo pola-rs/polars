@@ -233,6 +233,15 @@ class ListNameSpace:
         ]
         """
 
+    def median(self) -> Series:
+        """Compute the median value of the arrays in the list."""
+
+    def std(self) -> Series:
+        """Compute the std value of the arrays in the list."""
+
+    def var(self) -> Series:
+        """Compute the var value of the arrays in the list."""
+
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Sort the arrays in this column.

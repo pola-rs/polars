@@ -35,9 +35,9 @@ class GroupBy:
     def __init__(
         self,
         df: DataFrame,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
+        *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool,
+        **named_by: IntoExpr,
     ):
         """
         Utility class for performing a group by operation over the given DataFrame.
@@ -48,18 +48,19 @@ class GroupBy:
         ----------
         df
             DataFrame to perform the group by operation over.
-        by
+        *by
             Column or columns to group by. Accepts expression input. Strings are parsed
             as column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
+        **named_by
+            Additional column(s) to group by, specified as keyword arguments.
+            The columns will be named as the keyword used.
         """
         self.df = df
         self.by = by
-        self.more_by = more_by
+        self.named_by = named_by
         self.maintain_order = maintain_order
 
     def __iter__(self) -> Self:
@@ -99,7 +100,7 @@ class GroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().agg_groups().alias(temp_col))
             .collect(no_optimization=True)
         )
@@ -107,11 +108,13 @@ class GroupBy:
         group_names = groups_df.select(F.all().exclude(temp_col))
 
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        key_as_single_value = isinstance(self.by, str) and not self.more_by
+        key_as_single_value = (
+            len(self.by) == 1 and isinstance(self.by[0], str) and not self.named_by
+        )
         if key_as_single_value:
             issue_deprecation_warning(
                 "`group_by` iteration will change to always return group identifiers as tuples."
-                f" Pass `by` as a list to silence this warning, e.g. `group_by([{self.by!r}])`.",
+                f" Pass `by` as a list to silence this warning, e.g. `group_by([{self.by[0]!r}])`.",
                 version="0.20.4",
             )
             self._group_names = iter(group_names.to_series())
@@ -242,7 +245,7 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
@@ -308,24 +311,17 @@ class GroupBy:
         ...     pl.int_range(pl.len()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
         """
-        by: list[str]
-
-        if isinstance(self.by, str):
-            by = [self.by]
-        elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
-            by = list(self.by)  # type: ignore[arg-type]
-        else:
-            msg = "cannot call `map_groups` when grouping by an expression"
+        if self.named_by:
+            msg = "cannot call `map_groups` when grouping by named expressions"
             raise TypeError(msg)
-
-        if all(isinstance(c, str) for c in self.more_by):
-            by.extend(self.more_by)  # type: ignore[arg-type]
-        else:
+        if not all(isinstance(c, str) for c in self.by):
             msg = "cannot call `map_groups` when grouping by an expression"
             raise TypeError(msg)
 
         return self.df.__class__._from_pydf(
-            self.df._df.group_by_map_groups(by, function, self.maintain_order)
+            self.df._df.group_by_map_groups(
+                list(self.by), function, self.maintain_order
+            )
         )
 
     def head(self, n: int = 5) -> DataFrame:
@@ -375,7 +371,7 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .head(n)
             .collect(no_optimization=True)
         )
@@ -427,7 +423,7 @@ class GroupBy:
         """
         return (
             self.df.lazy()
-            .group_by(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .tail(n)
             .collect(no_optimization=True)
         )

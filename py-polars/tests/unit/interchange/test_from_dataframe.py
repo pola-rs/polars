@@ -311,7 +311,7 @@ def test_column_to_series_use_sentinel_invalid_value() -> None:
     dtype = pl.Datetime("ns")
     mask_value = "invalid"
 
-    s = pl.Series([datetime(1970, 1, 1), mask_value, datetime(2000, 1, 1)], dtype=dtype)
+    s = pl.Series([datetime(1970, 1, 1), None, datetime(2000, 1, 1)], dtype=dtype)
 
     col = PatchableColumn(s)
     col.describe_null = (ColumnNullType.USE_SENTINEL, mask_value)

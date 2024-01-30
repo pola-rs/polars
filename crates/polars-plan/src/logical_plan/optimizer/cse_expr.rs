@@ -361,6 +361,9 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
         if skip_pre_visit(node.to_aexpr(), self.is_group_by) {
+            // Still add to the stack so that a parent becomes invalidated.
+            self.visit_stack
+                .push(VisitRecord::SubExprId(Identifier::new(), false));
             return Ok(VisitRecursion::Skip);
         }
 

@@ -291,6 +291,7 @@ impl FunctionExpr {
                 };
                 mapper.with_dtype(dt)
             },
+            ExtendConstant => mapper.with_same_dtype(),
         }
     }
 }

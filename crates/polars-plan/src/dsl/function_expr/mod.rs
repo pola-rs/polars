@@ -328,6 +328,7 @@ pub enum FunctionExpr {
     },
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
+    ExtendConstant,
 }
 
 impl Hash for FunctionExpr {
@@ -534,6 +535,7 @@ impl Hash for FunctionExpr {
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => signed.hash(state),
+            ExtendConstant => {},
         }
     }
 }
@@ -707,6 +709,7 @@ impl Display for FunctionExpr {
             GatherEvery { .. } => "gather_every",
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
+            ExtendConstant => "extend_constant",
         };
         write!(f, "{s}")
     }
@@ -1063,6 +1066,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             GatherEvery { n, offset } => map!(dispatch::gather_every, n, offset),
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
+            ExtendConstant => map_as_slice!(dispatch::extend_constant),
         }
     }
 }

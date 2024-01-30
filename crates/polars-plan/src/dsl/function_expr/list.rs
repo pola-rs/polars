@@ -31,6 +31,9 @@ pub enum ListFunction {
     Max,
     Min,
     Mean,
+    Median,
+    Std(u8),
+    Var(u8),
     ArgMin,
     ArgMax,
     #[cfg(feature = "diff")]
@@ -74,6 +77,9 @@ impl ListFunction {
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.with_dtype(DataType::Float64),
+            Median => mapper.map_to_float_dtype(),
+            Std(_) => mapper.map_to_float_dtype(), // Need to also have this sometimes marked as float32 or duration..
+            Var(_) => mapper.map_to_float_dtype(),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
@@ -133,6 +139,9 @@ impl Display for ListFunction {
             Min => "min",
             Max => "max",
             Mean => "mean",
+            Median => "median",
+            Std(_) => "std",
+            Var(_) => "var",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             #[cfg(feature = "diff")]
@@ -195,6 +204,9 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Max => map!(max),
             Min => map!(min),
             Mean => map!(mean),
+            Median => map!(median),
+            Std(ddof) => map!(std, ddof),
+            Var(ddof) => map!(var, ddof),
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
             #[cfg(feature = "diff")]
@@ -486,6 +498,18 @@ pub(super) fn min(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn mean(s: &Series) -> PolarsResult<Series> {
     Ok(s.list()?.lst_mean())
+}
+
+pub(super) fn median(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_median())
+}
+
+pub(super) fn std(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_std(ddof))
+}
+
+pub(super) fn var(s: &Series, ddof: u8) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_var(ddof))
 }
 
 pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {

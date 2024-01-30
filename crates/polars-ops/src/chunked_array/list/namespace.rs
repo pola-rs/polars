@@ -216,6 +216,21 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
+    fn lst_median(&self) -> Series {
+        let ca = self.as_list();
+        dispersion::median_with_nulls(ca)
+    }
+
+    fn lst_std(&self, ddof: u8) -> Series {
+        let ca = self.as_list();
+        dispersion::std_with_nulls(ca, ddof)
+    }
+
+    fn lst_var(&self, ddof: u8) -> Series {
+        let ca = self.as_list();
+        dispersion::var_with_nulls(ca, ddof)
+    }
+
     fn same_type(&self, out: ListChunked) -> ListChunked {
         let ca = self.as_list();
         let dtype = ca.dtype();

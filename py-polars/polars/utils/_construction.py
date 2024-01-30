@@ -449,7 +449,7 @@ def sequence_to_pyseries(
             dataclasses.is_dataclass(value)
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__)
-        ):
+        ) and dtype != Object:
             return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range):
             values = [range_to_series("", v) for v in values]
@@ -665,7 +665,10 @@ def _pandas_series_to_arrow(
 
 
 def pandas_to_pyseries(
-    name: str, values: pd.Series[Any] | pd.DatetimeIndex, *, nan_to_null: bool = True
+    name: str,
+    values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+    *,
+    nan_to_null: bool = True,
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
@@ -875,9 +878,9 @@ def _expand_dict_scalars(
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
-                    updated_data[name] = pl.Series(
-                        name=name, values=[val], dtype=dtype
-                    ).extend_constant(val, array_len - 1)
+                    updated_data[name] = F.repeat(
+                        val, array_len, dtype=dtype, eager=True
+                    ).alias(name)
                 else:
                     updated_data[name] = pl.Series(
                         name=name, values=[val] * array_len, dtype=dtype
@@ -1060,7 +1063,7 @@ def _sequence_to_pydf_dispatcher(
         to_pydf = _sequence_of_numpy_to_pydf
 
     elif _check_for_pandas(first_element) and isinstance(
-        first_element, (pd.Series, pd.DatetimeIndex)
+        first_element, (pd.Series, pd.Index, pd.DatetimeIndex)
     ):
         to_pydf = _sequence_of_pandas_to_pydf
 
@@ -1253,7 +1256,7 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series[Any] | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,

@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::prelude::*;
+use crate::utils::get_supertype;
 
 fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArray<T> {
     avs.iter()
@@ -264,6 +265,7 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
 }
 
 impl Series {
+    /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
     pub fn from_any_values_and_dtype(
         name: &str,
         av: &[AnyValue],
@@ -449,103 +451,60 @@ impl Series {
         Ok(s)
     }
 
-    pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
-        let mut all_flat_null = true;
-        match avs.iter().find(|av| {
-            if !matches!(av, AnyValue::Null) {
-                all_flat_null = false;
-            }
-            !av.is_nested_null()
-        }) {
-            None => {
-                if all_flat_null {
-                    Ok(Series::new_null(name, avs.len()))
-                } else {
-                    // second pass and check for the nested null value that toggled `all_flat_null` to false
-                    // e.g. a list<null>
-                    if let Some(av) = avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
-                        let dtype: DataType = av.into();
-                        Series::from_any_values_and_dtype(name, avs, &dtype, strict)
+    /// Construct a new [`Series`] from a slice of AnyValues.
+    ///
+    /// The data type of the resulting Series is determined by the `values`
+    /// and the `strict` parameter:
+    /// - If `strict` is `true`, the data type is equal to the data type of the
+    ///   first non-null value. If any other non-null values do not match this
+    ///   data type, an error is raised.
+    /// - If `strict` is `false`, the data type is the supertype of the
+    ///   `values`. **WARNING**: A full pass over the values is required to
+    ///   determine the supertype. Values encountered that do not match the
+    ///   supertype are set to null.
+    /// - If no values were passed, the resulting data type is `Null`.
+    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Series> {
+        fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
+            let mut all_flat_null = true;
+            let first_non_null = values.iter().find(|av| {
+                if !av.is_null() {
+                    all_flat_null = false
+                };
+                !av.is_nested_null()
+            });
+            match first_non_null {
+                Some(av) => av.dtype(),
+                None => {
+                    if all_flat_null {
+                        DataType::Null
                     } else {
-                        unreachable!()
+                        // Second pass to check for the nested null value that
+                        // toggled `all_flat_null` to false, e.g. a List(Null)
+                        let first_nested_null = values.iter().find(|av| !av.is_null()).unwrap();
+                        first_nested_null.dtype()
                     }
-                }
-            },
-            Some(av) => {
-                #[cfg(feature = "dtype-decimal")]
-                {
-                    if let AnyValue::Decimal(_, _) = av {
-                        let mut s = any_values_to_decimal(avs, None, None)?.into_series();
-                        s.rename(name);
-                        return Ok(s);
-                    }
-                }
-                let dtype: DataType = av.into();
-                Series::from_any_values_and_dtype(name, avs, &dtype, strict)
-            },
+                },
+            }
         }
-    }
-}
+        fn get_any_values_supertype(values: &[AnyValue]) -> DataType {
+            let mut supertype = DataType::Null;
+            let mut dtypes = PlHashSet::<DataType>::new();
+            for av in values {
+                if dtypes.insert(av.dtype()) {
+                    // Values with incompatible data types will be set to null later
+                    if let Some(st) = get_supertype(&supertype, &av.dtype()) {
+                        supertype = st;
+                    }
+                }
+            }
+            supertype
+        }
 
-impl<'a> From<&AnyValue<'a>> for DataType {
-    fn from(val: &AnyValue<'a>) -> Self {
-        use AnyValue::*;
-        match val {
-            Null => DataType::Null,
-            Boolean(_) => DataType::Boolean,
-            String(_) | StringOwned(_) => DataType::String,
-            Binary(_) | BinaryOwned(_) => DataType::Binary,
-            UInt32(_) => DataType::UInt32,
-            UInt64(_) => DataType::UInt64,
-            Int32(_) => DataType::Int32,
-            Int64(_) => DataType::Int64,
-            Float32(_) => DataType::Float32,
-            Float64(_) => DataType::Float64,
-            #[cfg(feature = "dtype-date")]
-            Date(_) => DataType::Date,
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
-            #[cfg(feature = "dtype-time")]
-            Time(_) => DataType::Time,
-            #[cfg(feature = "dtype-array")]
-            Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
-            List(s) => DataType::List(Box::new(s.dtype().clone())),
-            #[cfg(feature = "dtype-struct")]
-            StructOwned(payload) => DataType::Struct(payload.1.to_vec()),
-            #[cfg(feature = "dtype-struct")]
-            Struct(_, _, flds) => DataType::Struct(flds.to_vec()),
-            #[cfg(feature = "dtype-duration")]
-            Duration(_, tu) => DataType::Duration(*tu),
-            UInt8(_) => DataType::UInt8,
-            UInt16(_) => DataType::UInt16,
-            Int8(_) => DataType::Int8,
-            Int16(_) => DataType::Int16,
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(_, rev_map, arr) => {
-                if arr.is_null() {
-                    DataType::Categorical(Some(Arc::new((*rev_map).clone())), Default::default())
-                } else {
-                    let array = unsafe { arr.deref_unchecked().clone() };
-                    let rev_map = RevMapping::build_local(array);
-                    DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
-                }
-            },
-            #[cfg(feature = "dtype-categorical")]
-            Enum(_, rev_map, arr) => {
-                if arr.is_null() {
-                    DataType::Enum(Some(Arc::new((*rev_map).clone())), Default::default())
-                } else {
-                    let array = unsafe { arr.deref_unchecked().clone() };
-                    let rev_map = RevMapping::build_local(array);
-                    DataType::Enum(Some(Arc::new(rev_map)), Default::default())
-                }
-            },
-            #[cfg(feature = "object")]
-            Object(o) => DataType::Object(o.type_name(), None),
-            #[cfg(feature = "object")]
-            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
-            #[cfg(feature = "dtype-decimal")]
-            Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
-        }
+        let dtype = if strict {
+            get_first_non_null_dtype(values)
+        } else {
+            get_any_values_supertype(values)
+        };
+        Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
 }

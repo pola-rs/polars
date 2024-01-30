@@ -187,9 +187,9 @@ class Series:
         Data type of the Series if `values` contains no non-null data.
 
         .. deprecated:: 0.20.6
-            The data type for empty Series will always be Null.
-            To preserve behavior, check if the resulting Series has data type Null and
-            cast to the desired data type.
+            The data type for empty Series will always be `Null`, unless `dtype` is
+            specified. To preserve behavior, check if the resulting Series has data type
+            `Null` and cast to the desired data type.
             This parameter will be removed in the next breaking release.
 
     Examples
@@ -263,7 +263,7 @@ class Series:
         if dtype_if_empty != Null:
             issue_deprecation_warning(
                 "The `dtype_if_empty` parameter for the Series constructor is deprecated."
-                " The data type for empty Series will always be Null."
+                " The data type for empty Series will always be Null, unless `dtype` is specified."
                 " To preserve behavior, check if the resulting Series has data type Null and cast to the desired data type."
                 " This parameter will be removed in the next breaking release.",
                 version="0.20.6",
@@ -331,7 +331,7 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
 
         elif _check_for_pandas(values) and isinstance(
-            values, (pd.Series, pd.DatetimeIndex)
+            values, (pd.Series, pd.Index, pd.DatetimeIndex)
         ):
             self._s = pandas_to_pyseries(name, values)
 
@@ -374,7 +374,7 @@ class Series:
     def _from_pandas(
         cls,
         name: str,
-        values: pd.Series[Any] | pd.DatetimeIndex,
+        values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
         *,
         nan_to_null: bool = True,
     ) -> Self:
@@ -486,9 +486,9 @@ class Series:
             the physical data type of `dtype`. Some data types require multiple buffers:
 
             - `String`: A data buffer of type `UInt8` and an offsets buffer
-                        of type `Int64`. Note that this does not match how the data
-                        is represented internally and data copy is required to construct
-                        the Series.
+              of type `Int64`. Note that this does not match how the data
+              is represented internally and data copy is required to construct
+              the Series.
         validity
             Validity buffer. If specified, must be a Series of data type `Boolean`.
 
@@ -3727,6 +3727,7 @@ class Series:
             true
         ]
         """
+        return self._from_pyseries(self._s.not_())
 
     def is_null(self) -> Series:
         """
@@ -7026,15 +7027,15 @@ class Series:
         ]
         """
 
-    def extend_constant(self, value: PythonLiteral | None, n: int) -> Series:
+    def extend_constant(self, value: IntoExpr, n: int | IntoExprColumn) -> Series:
         """
         Extremely fast method for extending the Series with 'n' copies of a value.
 
         Parameters
         ----------
         value
-            A constant literal value (not an expression) with which to extend
-            the Series; can pass None to extend with nulls.
+            A constant literal value or a unit expressioin with which to extend the
+            expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.
 

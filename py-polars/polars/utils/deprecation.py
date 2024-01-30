@@ -92,17 +92,20 @@ def deprecate_parameter_as_positional(
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            if param_args := kwargs.pop(old_name, []):
-                issue_deprecation_warning(
-                    f"named `{old_name}` param is deprecated; use positional `*args` instead.",
-                    version=version,
-                )
-            if param_args:
-                if not isinstance(param_args, Sequence) or isinstance(param_args, str):
-                    param_args = (param_args,)
-                elif not isinstance(param_args, tuple):
-                    param_args = tuple(param_args)
-                args = args + param_args  # type: ignore[assignment]
+            try:
+                param_args = kwargs.pop(old_name)
+            except KeyError:
+                return function(*args, **kwargs)
+
+            issue_deprecation_warning(
+                f"named `{old_name}` param is deprecated; use positional `*args` instead.",
+                version=version,
+            )
+            if not isinstance(param_args, Sequence) or isinstance(param_args, str):
+                param_args = (param_args,)
+            elif not isinstance(param_args, tuple):
+                param_args = tuple(param_args)
+            args = args + param_args  # type: ignore[assignment]
             return function(*args, **kwargs)
 
         wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]

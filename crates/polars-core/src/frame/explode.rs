@@ -259,13 +259,25 @@ impl DataFrame {
         let id_vars = args.id_vars;
         let mut value_vars = args.value_vars;
 
-        let value_name = args.value_name.as_deref().unwrap_or("value");
         let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+        let value_name = args.value_name.as_deref().unwrap_or("value");
 
         let len = self.height();
 
         // if value vars is empty we take all columns that are not in id_vars.
         if value_vars.is_empty() {
+            // return empty frame if there are no columns available to use as value vars
+            if id_vars.len() == self.width() {
+                let variable_col = Series::new_empty(variable_name, &DataType::String);
+                let value_col = Series::new_empty(variable_name, &DataType::Null);
+
+                let mut out = self.select(id_vars).unwrap().clear().columns;
+                out.push(variable_col);
+                out.push(value_col);
+
+                return Ok(DataFrame::new_no_checks(out));
+            }
+
             let id_vars_set = PlHashSet::from_iter(id_vars.iter().map(|s| s.as_str()));
             value_vars = self
                 .get_columns()
@@ -325,7 +337,7 @@ impl DataFrame {
 
         let variable_col = variable_col.as_box();
         // Safety
-        // The give dtype is correct
+        // The given dtype is correct
         let variables = unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 variable_name,

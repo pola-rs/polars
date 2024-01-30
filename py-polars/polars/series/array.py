@@ -75,6 +75,54 @@ class ArrayNameSpace:
         └─────┘
         """
 
+    def std(self, ddof: int = 1) -> Series:
+        """
+        Compute the std of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.std()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            0.707107
+            0.707107
+        ]
+        """
+
+    def var(self, ddof: int = 1) -> Series:
+        """
+        Compute the var of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.var()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+                0.5
+                0.5
+        ]
+        """
+
+    def median(self) -> Series:
+        """
+        Compute the median of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.median()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            1.5
+            3.5
+        ]
+        """
+
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
         Get the unique/distinct values in the array.

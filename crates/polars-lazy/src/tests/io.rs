@@ -97,6 +97,12 @@ fn test_parquet_statistics() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
+    // issue: 13427
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_in(lit(Series::new("", [0, 500]))))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
     let out = scan_foods_parquet(par)
         .filter(lit(1000i32).lt(col("calories")))
         .collect()?;

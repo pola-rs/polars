@@ -283,7 +283,7 @@ def test_int_to_python_timedelta() -> None:
     ]
 
     assert df.select(
-        [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
+        [pl.col(col).cast(pl.Int64) for col in ("c", "d", "e")]
     ).rows() == [(100001, 100001, 100001), (200002, 200002, 200002)]
 
 
