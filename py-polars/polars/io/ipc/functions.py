@@ -52,10 +52,10 @@ def read_ipc(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
-        remote files.
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
+        to open remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -193,10 +193,10 @@ def read_ipc_stream(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
-        remote files.
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
+        to open remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -286,9 +286,9 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
 
     Returns
     -------
