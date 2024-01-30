@@ -20,7 +20,7 @@ pub enum IsSorted {
 }
 
 impl IsSorted {
-    pub(crate) fn reverse(self) -> Self {
+    pub fn reverse(self) -> Self {
         use IsSorted::*;
         match self {
             Ascending => Descending,

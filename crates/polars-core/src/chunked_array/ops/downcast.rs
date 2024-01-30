@@ -54,8 +54,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         chunks.into_iter().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let ptr = Box::into_raw(arr).cast::<T::Array>();
-            let arr = unsafe { *Box::from_raw(ptr) };
-            arr
+            unsafe { *Box::from_raw(ptr) }
         })
     }
 

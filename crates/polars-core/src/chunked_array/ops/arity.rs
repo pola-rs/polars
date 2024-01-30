@@ -40,20 +40,20 @@ impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
 
 /// Applies a kernel that produces `Array` types.
 #[inline]
-pub fn unary_kernel<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_kernel<T, V, F, Arr>(ca: &ChunkedArray<T>, op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
     Arr: Array,
     F: FnMut(&T::Array) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| op(arr));
+    let iter = ca.downcast_iter().map(op);
     ChunkedArray::from_chunk_iter(ca.name(), iter)
 }
 
 /// Applies a kernel that produces `Array` types.
 #[inline]
-pub fn unary_kernel_owned<T, V, F, Arr>(ca: ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_kernel_owned<T, V, F, Arr>(ca: ChunkedArray<T>, op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
@@ -61,7 +61,7 @@ where
     F: FnMut(T::Array) -> Arr,
 {
     let name = ca.name().to_owned();
-    let iter = ca.downcast_into_iter().map(|arr| op(arr));
+    let iter = ca.downcast_into_iter().map(op);
     ChunkedArray::from_chunk_iter(&name, iter)
 }
 
@@ -819,7 +819,7 @@ where
     out.with_name(name)
 }
 
-pub fn apply_binary_kernel_broadcast_owned<'l, 'r, L, R, O, K, LK, RK>(
+pub fn apply_binary_kernel_broadcast_owned<L, R, O, K, LK, RK>(
     lhs: ChunkedArray<L>,
     rhs: ChunkedArray<R>,
     kernel: K,
@@ -836,7 +836,7 @@ where
 {
     let name = lhs.name().to_owned();
     let out = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => binary_owned(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
+        (a, b) if a == b => binary_owned(lhs, rhs, kernel),
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);

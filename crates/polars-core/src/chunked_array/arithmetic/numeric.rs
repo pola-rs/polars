@@ -6,7 +6,6 @@ use crate::chunked_array::arity::{
     unary_kernel_owned,
 };
 
-
 // Operands on ChunkedArray & ChunkedArray
 impl<T> Add for &ChunkedArray<T>
 where

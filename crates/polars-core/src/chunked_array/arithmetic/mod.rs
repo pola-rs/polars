@@ -8,11 +8,8 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
-pub(super) use numeric::arithmetic_helper;
 
 use crate::prelude::*;
-use crate::series::IsSorted;
-use crate::utils::align_chunks_binary_owned;
 
 #[inline]
 fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
