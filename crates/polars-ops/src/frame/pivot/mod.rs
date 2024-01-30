@@ -187,45 +187,65 @@ fn pivot_impl(
     // used as separator/delimiter in generated column names.
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame> {
-    let sep = separator.unwrap_or("_");
     polars_ensure!(!index.is_empty(), ComputeError: "index cannot be zero length");
-
-    let mut final_cols = vec![];
-
-    let mut column_column_name = columns[0].clone();
-    let mut binding = pivot_df.clone();
-    let pivot_df: &DataFrame = if columns.len() > 1 {
+    polars_ensure!(!columns.is_empty(), ComputeError: "columns cannot be zero length");
+    if !stable {
+        println!("unstable pivot not yet supported, using stable pivot");
+    };
+    if columns.len() > 1 {
         let schema = Arc::new(pivot_df.schema());
-        let inner_binding = pivot_df.select_with_schema(columns, &schema)?;
-        let fields = inner_binding.get_columns();
-        column_column_name = format!("{{\"{}\"}}", columns.join("\",\""));
-        if schema.contains(&column_column_name.as_str())
-        {
-            polars_bail!(ComputeError: "cannot use column name {column_column_name} that \
+        let binding = pivot_df.select_with_schema(columns, &schema)?;
+        let fields = binding.get_columns();
+        let column = format!("{{\"{}\"}}", columns.join("\",\""));
+        if schema.contains(column.as_str()) {
+            polars_bail!(ComputeError: "cannot use column name {column} that \
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
         }
-        let columns_struct = StructChunked::new(&column_column_name, &fields)
-            .unwrap()
-            .into_series();
-        unsafe { binding.with_column_unchecked(columns_struct) }
+        let columns_struct = StructChunked::new(&column, fields).unwrap().into_series();
+        let mut binding = pivot_df.clone();
+        let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
+        pivot_impl_single_column(
+            pivot_df,
+            &column,
+            values,
+            index,
+            agg_fn,
+            sort_columns,
+            separator,
+        )
     } else {
-        pivot_df
-    };
+        pivot_impl_single_column(
+            pivot_df,
+            unsafe { columns.get_unchecked(0) },
+            values,
+            index,
+            agg_fn,
+            sort_columns,
+            separator,
+        )
+    }
+}
 
+fn pivot_impl_single_column(
+    pivot_df: &DataFrame,
+    column: &str,
+    values: &[String],
+    index: &[String],
+    agg_fn: Option<PivotAgg>,
+    sort_columns: bool,
+    separator: Option<&str>,
+) -> PolarsResult<DataFrame> {
+    let sep = separator.unwrap_or("_");
+    let mut final_cols = vec![];
     let mut count = 0;
     let out: PolarsResult<()> = POOL.install(|| {
         let mut group_by = index.to_vec();
-        group_by.push(column_column_name.clone());
+        group_by.push(column.to_string());
 
         let groups = pivot_df.group_by_stable(group_by)?.take_groups();
 
-        // these are the row locations
-        if !stable {
-            println!("unstable pivot not yet supported, using stable pivot");
-        };
-
         let (col, row) = POOL.join(
-            || positioning::compute_col_idx(pivot_df, &column_column_name, &groups),
+            || positioning::compute_col_idx(pivot_df, column, &groups),
             || positioning::compute_row_idx(pivot_df, index, &groups, count),
         );
         let (col_locations, column_agg) = col?;
