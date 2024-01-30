@@ -665,7 +665,10 @@ def _pandas_series_to_arrow(
 
 
 def pandas_to_pyseries(
-    name: str, values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex, *, nan_to_null: bool = True
+    name: str,
+    values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+    *,
+    nan_to_null: bool = True,
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
