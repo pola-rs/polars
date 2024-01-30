@@ -290,6 +290,12 @@ impl<'a> CoreReader<'a> {
                 bytes = &bytes[pos..];
             }
         }
+
+        // skip lines that are comments
+        while is_comment_line(bytes, self.comment_prefix.as_ref()) {
+            bytes = skip_this_line(bytes, quote_char, eol_char);
+        }
+
         // skip header row
         if self.has_header {
             bytes = skip_this_line(bytes, quote_char, eol_char);
