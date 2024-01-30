@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
-from typing import Any, cast
+from datetime import date, datetime, time, timedelta, timezone
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,9 @@ from numpy.testing import assert_array_equal
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 @pytest.fixture(
@@ -180,6 +183,44 @@ def test_from_pandas_datetime() -> None:
     s = pl.from_pandas(date_times)
     assert s[0] == datetime(2021, 6, 24, 0, 0)
     assert s[-1] == datetime(2021, 6, 24, 9, 0)
+
+
+@pytest.mark.parametrize(
+    ("index_class", "index_data", "index_params", "expected_data", "expected_dtype"),
+    [
+        (pd.Index, [100, 200, 300], {}, None, pl.Int64),
+        (pd.Index, [1, 2, 3], {"dtype": "uint32"}, None, pl.UInt32),
+        (pd.RangeIndex, 5, {}, [0, 1, 2, 3, 4], pl.Int64),
+        (pd.CategoricalIndex, ["N", "E", "S", "W"], {}, None, pl.Categorical),
+        (
+            pd.DatetimeIndex,
+            [datetime(1960, 12, 31), datetime(2077, 10, 20)],
+            {"dtype": "datetime64[ms]"},
+            None,
+            pl.Datetime("ms"),
+        ),
+        (
+            pd.TimedeltaIndex,
+            ["24 hours", "2 days 8 hours", "3 days 42 seconds"],
+            {},
+            [timedelta(1), timedelta(days=2, hours=8), timedelta(days=3, seconds=42)],
+            pl.Duration("ns"),
+        ),
+    ],
+)
+def test_from_pandas_index(
+    index_class: Any,
+    index_data: Any,
+    index_params: dict[str, Any],
+    expected_data: list[Any] | None,
+    expected_dtype: PolarsDataType,
+) -> None:
+    if expected_data is None:
+        expected_data = index_data
+
+    s = pl.from_pandas(index_class(index_data, **index_params))
+    assert s.to_list() == expected_data
+    assert s.dtype == expected_dtype
 
 
 def test_from_pandas_include_indexes() -> None:
