@@ -111,6 +111,7 @@ default-features = false
 features = [
   "compute_aggregate",
   "compute_arithmetics",
+  "compute_bitwise",
   "compute_boolean",
   "compute_boolean_kleene",
   "compute_cast",
