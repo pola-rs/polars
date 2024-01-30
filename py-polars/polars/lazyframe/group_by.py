@@ -24,8 +24,8 @@ class LazyGroupBy:
         self,
         lgb: PyLazyGroupBy,
         *by,
-        _lf: LazyFrame = None,
-        maintain_order=None,
+        _lf: LazyFrame | None = None,
+        maintain_order: bool | None = None,
         **named_by,
     ) -> None:
         self.lgb = lgb
