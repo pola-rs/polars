@@ -4,37 +4,6 @@ use super::*;
 use crate::prelude::DecimalChunked;
 use crate::utils::align_chunks_binary;
 
-// TODO: remove
-impl ArrayArithmetics for i128 {
-    fn add(_lhs: &PrimitiveArray<Self>, _rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        unimplemented!()
-    }
-
-    fn sub(_lhs: &PrimitiveArray<Self>, _rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        unimplemented!()
-    }
-
-    fn mul(_lhs: &PrimitiveArray<Self>, _rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        unimplemented!()
-    }
-
-    fn div(_lhs: &PrimitiveArray<Self>, _rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        unimplemented!()
-    }
-
-    fn div_scalar(_lhs: &PrimitiveArray<Self>, _rhs: &Self) -> PrimitiveArray<Self> {
-        unimplemented!()
-    }
-
-    fn rem(_lhs: &PrimitiveArray<Self>, _rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        unimplemented!("requires support in arrow2 crate")
-    }
-
-    fn rem_scalar(_lhs: &PrimitiveArray<Self>, _rhs: &Self) -> PrimitiveArray<Self> {
-        unimplemented!("requires support in arrow2 crate")
-    }
-}
-
 impl DecimalChunked {
     fn arithmetic_helper<Kernel, ScalarKernelLhs, ScalarKernelRhs>(
         &self,

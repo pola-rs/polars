@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 pub use time_unit::*;
 
-use crate::chunked_array::arithmetic::ArrayArithmetics;
+use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -263,7 +263,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + ArrayArithmetics
+    + HasPrimitiveArithmeticKernel
     + MinMax
     + IsNull
 {

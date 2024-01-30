@@ -6,63 +6,14 @@ mod numeric;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
-use arrow::compute::arithmetics::basic;
-use arrow::compute::arity_assign;
 use arrow::compute::utils::combine_validities_and;
-use arrow::types::NativeType;
-use num_traits::{Num, NumCast, ToPrimitive, Zero};
+use num_traits::{Num, NumCast, ToPrimitive};
 pub(super) use numeric::arithmetic_helper;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::align_chunks_binary_owned;
 
-pub trait ArrayArithmetics
-where
-    Self: NativeType,
-{
-    fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn div_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self>;
-    fn rem(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn rem_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self>;
-}
-
-macro_rules! native_array_arithmetics {
-    ($ty: ty) => {
-        impl ArrayArithmetics for $ty
-        {
-            fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::add(lhs, rhs)
-            }
-            fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::sub(lhs, rhs)
-            }
-            fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::mul(lhs, rhs)
-            }
-            fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::div(lhs, rhs)
-            }
-            fn div_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self> {
-                basic::div_scalar(lhs, rhs)
-            }
-            fn rem(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::rem(lhs, rhs)
-            }
-            fn rem_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self> {
-                basic::rem_scalar(lhs, rhs)
-            }
-        }
-    };
-    ($($ty:ty),*) => {
-        $(native_array_arithmetics!($ty);)*
-    }
-}
-
-native_array_arithmetics!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
 #[inline]
 fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
