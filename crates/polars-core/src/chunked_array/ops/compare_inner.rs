@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 
 use crate::chunked_array::ChunkedArrayLayout;
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 #[repr(transparent)]
 struct NonNull<T>(T);
@@ -64,10 +65,22 @@ where
     }
 }
 
+impl TotalEqInner for &NullChunked {
+    unsafe fn eq_element_unchecked(&self, _idx_a: usize, _idx_b: usize) -> bool {
+        true
+    }
+}
+
 /// Create a type that implements TotalEqInner.
 pub(crate) trait IntoTotalEqInner<'a> {
     /// Create a type that implements `TakeRandom`.
     fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a>;
+}
+
+impl<'a> IntoTotalEqInner<'a> for &'a NullChunked {
+    fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a> {
+        Box::new(self)
+    }
 }
 
 /// We use a trait object because we want to call this from Series and cannot use a typed enum.
