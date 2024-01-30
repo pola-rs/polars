@@ -49,6 +49,17 @@ impl<'a, T> Chunks<'a, T> {
 #[doc(hidden)]
 impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
+    pub fn downcast_into_iter(mut self) -> impl DoubleEndedIterator<Item = T::Array> {
+        let chunks = std::mem::take(&mut self.chunks);
+        chunks.into_iter().map(|arr| {
+            // SAFETY: T::Array guarantees this is correct.
+            let ptr = Box::into_raw(arr).cast::<T::Array>();
+            let arr = unsafe { *Box::from_raw(ptr) };
+            arr
+        })
+    }
+
+    #[inline]
     pub fn downcast_iter(&self) -> impl DoubleEndedIterator<Item = &T::Array> {
         self.chunks.iter().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
