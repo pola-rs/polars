@@ -1,99 +1,98 @@
-use arrow::array::PrimitiveArray;
+use arrow::array::PrimitiveArray as PArr;
 
-use super::ArithmeticKernel;
+use super::PrimitiveArithmeticKernelImpl;
 use crate::arity::{prim_binary_values, prim_unary_values};
 
 macro_rules! impl_float_arith_kernel {
     ($T:ty) => {
-        impl ArithmeticKernel for PrimitiveArray<$T> {
-            type Scalar = $T;
+        impl PrimitiveArithmeticKernelImpl for $T {
             type TrueDivT = $T;
 
-            fn wrapping_neg(self) -> Self {
-                prim_unary_values(self, |x| -x)
+            fn prim_wrapping_neg(lhs: PArr<$T>) -> PArr<$T> {
+                prim_unary_values(lhs, |x| -x)
             }
 
-            fn wrapping_add(self, other: Self) -> Self {
-                prim_binary_values(self, other, |l, r| l + r)
+            fn prim_wrapping_add(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
+                prim_binary_values(lhs, rhs, |l, r| l + r)
             }
 
-            fn wrapping_sub(self, other: Self) -> Self {
-                prim_binary_values(self, other, |l, r| l - r)
+            fn prim_wrapping_sub(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
+                prim_binary_values(lhs, rhs, |l, r| l - r)
             }
 
-            fn wrapping_mul(self, other: Self) -> Self {
-                prim_binary_values(self, other, |l, r| l * r)
+            fn prim_wrapping_mul(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
+                prim_binary_values(lhs, rhs, |l, r| l * r)
             }
 
-            fn wrapping_floor_div(self, other: Self) -> Self {
-                prim_binary_values(self, other, |l, r| (l / r).floor())
+            fn prim_wrapping_floor_div(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
+                prim_binary_values(lhs, rhs, |l, r| (l / r).floor())
             }
 
-            fn wrapping_mod(self, other: Self) -> Self {
-                prim_binary_values(self, other, |l, r| l - r * (l / r).floor())
+            fn prim_wrapping_mod(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
+                prim_binary_values(lhs, rhs, |l, r| l - r * (l / r).floor())
             }
 
-            fn wrapping_add_scalar(self, scalar: Self::Scalar) -> Self {
-                if scalar == 0.0 {
-                    return self;
+            fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                if rhs == 0.0 {
+                    return lhs;
                 }
-                prim_unary_values(self, |x| x + scalar)
+                prim_unary_values(lhs, |x| x + rhs)
             }
 
-            fn wrapping_sub_scalar(self, scalar: Self::Scalar) -> Self {
-                if scalar == 0.0 {
-                    return self;
+            fn prim_wrapping_sub_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                if rhs == 0.0 {
+                    return lhs;
                 }
-                self.wrapping_add_scalar(-scalar)
+                Self::prim_wrapping_add_scalar(lhs, -rhs)
             }
 
-            fn wrapping_sub_scalar_lhs(self, scalar: Self::Scalar) -> Self {
-                if scalar == 0.0 {
-                    self.wrapping_neg()
+            fn prim_wrapping_sub_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+                if lhs == 0.0 {
+                    Self::prim_wrapping_neg(rhs)
                 } else {
-                    prim_unary_values(self, |x| scalar - x)
+                    prim_unary_values(rhs, |x| lhs - x)
                 }
             }
 
-            fn wrapping_mul_scalar(self, scalar: Self::Scalar) -> Self {
+            fn prim_wrapping_mul_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
                 // No optimization for multiplication by zero, would invalidate NaNs/infinities.
-                if scalar == 1.0 {
-                    self
-                } else if scalar == -1.0 {
-                    self.wrapping_neg()
+                if rhs == 1.0 {
+                    lhs
+                } else if rhs == -1.0 {
+                    Self::prim_wrapping_neg(lhs)
                 } else {
-                    prim_unary_values(self, |x| x * scalar)
+                    prim_unary_values(lhs, |x| x * rhs)
                 }
             }
 
-            fn wrapping_floor_div_scalar(self, scalar: Self::Scalar) -> Self {
-                let inv = 1.0 / scalar;
-                prim_unary_values(self, |x| (x * inv).floor())
+            fn prim_wrapping_floor_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                let inv = 1.0 / rhs;
+                prim_unary_values(lhs, |x| (x * inv).floor())
             }
 
-            fn wrapping_floor_div_scalar_lhs(self, scalar: Self::Scalar) -> Self {
-                prim_unary_values(self, |x| (scalar / x).floor())
+            fn prim_wrapping_floor_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+                prim_unary_values(rhs, |x| (lhs / x).floor())
             }
 
-            fn wrapping_mod_scalar(self, scalar: Self::Scalar) -> Self {
-                let inv = 1.0 / scalar;
-                prim_unary_values(self, |x| x - scalar * (x * inv).floor())
+            fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                let inv = 1.0 / rhs;
+                prim_unary_values(lhs, |x| x - rhs * (x * inv).floor())
             }
 
-            fn wrapping_mod_scalar_lhs(self, scalar: Self::Scalar) -> Self {
-                prim_unary_values(self, |x| scalar - x * (scalar / x).floor())
+            fn prim_wrapping_mod_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+                prim_unary_values(rhs, |x| lhs - x * (lhs / x).floor())
             }
 
-            fn true_div(self, other: Self) -> PrimitiveArray<Self::TrueDivT> {
-                prim_binary_values(self, other, |l, r| l / r)
+            fn prim_true_div(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<Self::TrueDivT> {
+                prim_binary_values(lhs, rhs, |l, r| l / r)
             }
 
-            fn true_div_scalar(self, scalar: Self::Scalar) -> PrimitiveArray<Self::TrueDivT> {
-                self.wrapping_mul_scalar(1.0 / scalar)
+            fn prim_true_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<Self::TrueDivT> {
+                Self::prim_wrapping_mul_scalar(lhs, 1.0 / rhs)
             }
 
-            fn true_div_scalar_lhs(self, scalar: Self::Scalar) -> PrimitiveArray<Self::TrueDivT> {
-                prim_unary_values(self, |x| scalar / x)
+            fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<Self::TrueDivT> {
+                prim_unary_values(rhs, |x| lhs / x)
             }
         }
     };
