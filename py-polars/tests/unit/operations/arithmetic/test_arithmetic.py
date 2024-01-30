@@ -270,3 +270,26 @@ def test_operator_arithmetic_with_nulls(op: Any) -> None:
 
         assert_frame_equal(df_expected, op(df, None))
         assert_series_equal(s_expected, op(s, None))
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.mod,
+        operator.mul,
+        operator.sub,
+    ],
+)
+def test_null_column_arithmetic(op: Any) -> None:
+    df = pl.DataFrame({"a": [None, None], "b": [None, None]})
+    expected_df = pl.DataFrame({"a": [None, None]})
+
+    output_df = df.select(op(pl.col("a"), pl.col("b")))
+    assert_frame_equal(expected_df, output_df)
+    # test broadcast right
+    output_df = df.select(op(pl.col("a"), pl.Series([None])))
+    assert_frame_equal(expected_df, output_df)
+    # test broadcast left
+    output_df = df.select(op(pl.Series("a", [None]), pl.col("a")))
+    assert_frame_equal(expected_df, output_df)

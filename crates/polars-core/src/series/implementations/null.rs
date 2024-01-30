@@ -81,6 +81,23 @@ impl PrivateSeries for NullChunked {
         ExplodeByOffsets::explode_by_offsets(self, offsets)
     }
 
+    fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
+        null_arithmetic(self, _rhs, "subtract")
+    }
+
+    fn add_to(&self, _rhs: &Series) -> PolarsResult<Series> {
+        null_arithmetic(self, _rhs, "add_to")
+    }
+    fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
+        null_arithmetic(self, _rhs, "multiply")
+    }
+    fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
+        null_arithmetic(self, _rhs, "divide")
+    }
+    fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
+        null_arithmetic(self, _rhs, "remainder")
+    }
+
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
         Ok(if self.is_empty() {
@@ -96,6 +113,16 @@ impl PrivateSeries for NullChunked {
     fn _get_flags(&self) -> Settings {
         Settings::empty()
     }
+}
+
+fn null_arithmetic(lhs: &NullChunked, rhs: &Series, op: &str) -> PolarsResult<Series> {
+    let output_len = match (lhs.len(), rhs.len()) {
+        (1, len_r) => len_r,
+        (len_l, 1) => len_l,
+        (len_l, len_r) if len_l == len_r => len_l,
+        _ => polars_bail!(ComputeError: "Cannot {:?} two series of different lengths.", op),
+    };
+    Ok(NullChunked::new(lhs.name().into(), output_len).into_series())
 }
 
 impl SeriesTrait for NullChunked {
