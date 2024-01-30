@@ -1128,8 +1128,52 @@ class StringNameSpace:
         n
             Number of matches to replace.
 
-        Notes
-        -----
+        See Also
+        --------
+        replace_all : Replace all matching regex/literal substrings.
+
+        Warnings
+        --------
+        In the `value` string, a dollar sign not followed by curly braces treats the
+        remainder of the string (until the next `$` or whitespace character) as the
+        name of a capture group. For instance, replacing `"(.*)"` with `"foo$bar"` will
+        replace each string with `"foo"`, since `$bar` is treated as a missing capture
+        group. Use `"foo$$bar"` to get the expected behavior.
+
+        Examples
+        --------
+        >>> s = pl.Series(["123abc", "abc456"])
+        >>> s.str.replace(r"abc\b", "ABC")  # doctest: +IGNORE_RESULT
+        shape: (2,)
+        Series: '' [str]
+        [
+            "123ABC"
+            "abc456"
+        ]
+
+        Rust's regex crate supports "replacement strings". Use `${1}` in the `value`
+        string to refer to the first capture group in the `pattern`, `${2}` to refer
+        to the second capture group, and so on. You can also name capture groups.
+        Use `$$` in the `value` string to refer to a literal dollar sign.
+
+        >>> s = pl.Series("word", ["hat", "hut"])
+        >>> pl.DataFrame(
+        ...     [
+        ...         s,
+        ...         s.str.replace("h(.)t", "b${1}d").alias("r1"),
+        ...         s.str.replace("h(?<vowel>.)t", "b${vowel}d").alias("r2"),
+        ...     ]
+        ... )
+        shape: (2, 3)
+        ┌──────┬─────┬─────┐
+        │ word ┆ r1  ┆ r2  │
+        │ ---  ┆ --- ┆ --- │
+        │ str  ┆ str ┆ str │
+        ╞══════╪═════╪═════╡
+        │ hat  ┆ bad ┆ bad │
+        │ hut  ┆ bud ┆ bud │
+        └──────┴─────┴─────┘
+
         To modify regular expression behaviour (such as case-sensitivity) with flags,
         use the inline `(?iLmsuxU)` syntax. For example:
 
@@ -1154,25 +1198,10 @@ class StringNameSpace:
         See the regex crate's section on `grouping and flags
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
-
-        See Also
-        --------
-        replace_all : Replace all matching regex/literal substrings.
-
-        Examples
-        --------
-        >>> s = pl.Series(["123abc", "abc456"])
-        >>> s.str.replace(r"abc\b", "ABC")  # doctest: +IGNORE_RESULT
-        shape: (2,)
-        Series: '' [str]
-        [
-            "123ABC"
-            "abc456"
-        ]
         """
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
-        """
+        r"""
         Replace all matching regex/literal substrings with a new string value.
 
         Parameters
@@ -1189,16 +1218,72 @@ class StringNameSpace:
         --------
         replace : Replace first matching regex/literal substring.
 
+        Warnings
+        --------
+        In the `value` string, a dollar sign not followed by curly braces treats the
+        remainder of the string (until the next `$` or whitespace character) as the
+        name of a capture group. For instance, replacing `"(.*)"` with `"foo$bar"` will
+        replace each string with `"foo"`, since `$bar` is treated as a missing capture
+        group. Use `"foo$$bar"` to get the expected behavior.
+
         Examples
         --------
-        >>> df = pl.Series(["abcabc", "123a123"])
-        >>> df.str.replace_all("a", "-")
+        >>> s = pl.Series(["abcabc", "123a123"])
+        >>> s.str.replace_all("a", "-")
         shape: (2,)
         Series: '' [str]
         [
             "-bc-bc"
             "123-123"
         ]
+
+        Rust's regex crate supports "replacement strings". Use `${1}` in the `value`
+        string to refer to the first capture group in the `pattern`, `${2}` to refer
+        to the second capture group, and so on. You can also name capture groups.
+        Use `$$` in the `value` string to refer to a literal dollar sign.
+
+        >>> s = pl.Series("word", ["hat", "hut"])
+        >>> pl.DataFrame(
+        ...     [
+        ...         s,
+        ...         s.str.replace("h(.)t", "b${1}d").alias("r1"),
+        ...         s.str.replace("h(?<vowel>.)t", "b${vowel}d").alias("r2"),
+        ...     ]
+        ... )
+        shape: (2, 3)
+        ┌──────┬─────┬─────┐
+        │ word ┆ r1  ┆ r2  │
+        │ ---  ┆ --- ┆ --- │
+        │ str  ┆ str ┆ str │
+        ╞══════╪═════╪═════╡
+        │ hat  ┆ bad ┆ bad │
+        │ hut  ┆ bud ┆ bud │
+        └──────┴─────┴─────┘
+
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline `(?iLmsuxU)` syntax. For example:
+
+        >>> s = pl.Series(
+        ...     name="weather",
+        ...     values=[
+        ...         "Foggy",
+        ...         "Rainy",
+        ...         "Sunny",
+        ...     ],
+        ... )
+        >>> # apply case-insensitive string replacement
+        >>> s.str.replace_all(r"(?i)foggy|rainy", "Sunny")
+        shape: (3,)
+        Series: 'weather' [str]
+        [
+            "Sunny"
+            "Sunny"
+            "Sunny"
+        ]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
         """
 
     def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
