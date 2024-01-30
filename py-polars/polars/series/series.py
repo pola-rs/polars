@@ -374,7 +374,7 @@ class Series:
     def _from_pandas(
         cls,
         name: str,
-        values: pd.Series[Any] | pd.DatetimeIndex,
+        values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
         *,
         nan_to_null: bool = True,
     ) -> Self:

@@ -182,6 +182,17 @@ def test_from_pandas_datetime() -> None:
     assert s[-1] == datetime(2021, 6, 24, 9, 0)
 
 
+def test_from_pandas_index() -> None:
+    s = pl.from_pandas(pd.Index([1, 2, 3]))
+    assert_series_equal(s, pl.Series([1, 2, 3]))
+    s = pl.from_pandas(pd.Index(["1", "2", "3"]))
+    assert_series_equal(s, pl.Series(["1", "2", "3"]))
+    s = pl.from_pandas(pd.DatetimeIndex(["1970-01-01", "1990-01-01"]))
+    assert_series_equal(
+        s, pl.Series(["1970-01-01", "1990-01-01"]).str.to_datetime(time_unit="ns")
+    )
+
+
 def test_from_pandas_include_indexes() -> None:
     data = {
         "dtm": [datetime(2021, 1, 1), datetime(2021, 1, 2), datetime(2021, 1, 3)],
