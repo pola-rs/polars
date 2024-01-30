@@ -1,9 +1,11 @@
+use std::any::TypeId;
+
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 
 // Low-level comparison kernel.
 pub trait ArithmeticKernel: Sized + Array {
-    type Scalar: ?Sized;
+    type Scalar;
     type TrueDivT: NativeType;
 
     fn wrapping_neg(self) -> Self;
@@ -25,6 +27,46 @@ pub trait ArithmeticKernel: Sized + Array {
     fn true_div(self, rhs: Self) -> PrimitiveArray<Self::TrueDivT>;
     fn true_div_scalar(self, rhs: Self::Scalar) -> PrimitiveArray<Self::TrueDivT>;
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT>;
+    
+    // TODO: remove these.
+    // These are flooring division for integer types, true division for floating point types.
+    fn legacy_div(self, rhs: Self) -> Self {
+        if TypeId::of::<Self>() == TypeId::of::<PrimitiveArray<Self::TrueDivT>>() {
+            let ret = self.true_div(rhs);
+            unsafe {
+                let cast_ret = std::mem::transmute_copy(&ret);
+                std::mem::forget(ret);
+                cast_ret
+            }
+        } else {
+            self.wrapping_floor_div(rhs)
+        }
+    }
+    fn legacy_div_scalar(self, rhs: Self::Scalar) -> Self {
+        if TypeId::of::<Self>() == TypeId::of::<PrimitiveArray<Self::TrueDivT>>() {
+            let ret = self.true_div_scalar(rhs);
+            unsafe {
+                let cast_ret = std::mem::transmute_copy(&ret);
+                std::mem::forget(ret);
+                cast_ret
+            }
+        } else {
+            self.wrapping_floor_div_scalar(rhs)
+        }
+    }
+
+    fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self {
+        if TypeId::of::<Self>() == TypeId::of::<PrimitiveArray<Self::TrueDivT>>() {
+            let ret = ArithmeticKernel::true_div_scalar_lhs(lhs, rhs);
+            unsafe {
+                let cast_ret = std::mem::transmute_copy(&ret);
+                std::mem::forget(ret);
+                cast_ret
+            }
+        } else {
+            ArithmeticKernel::wrapping_floor_div_scalar_lhs(lhs, rhs)
+        }
+    }
 }
 
 // Proxy trait so one can bound T: HasPrimitiveArithmeticKernel. Sadly Rust
