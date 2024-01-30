@@ -5271,8 +5271,9 @@ class Series:
         function
             Custom function or lambda.
         return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be
-            used.
+            Output datatype.
+            If not set, the dtype will be inferred based on the first non-null value
+            that is returned by the function.
         skip_nulls
             Nulls will be skipped and not passed to the python function.
             This is faster because python can be skipped and because we call
