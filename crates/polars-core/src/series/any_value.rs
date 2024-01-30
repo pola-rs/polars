@@ -561,14 +561,11 @@ fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {
-    // TODO: Define new error type
-    PolarsError::ComputeError(
-        format!(
-            "unexpected value while building Series of type {:?}; found value of type {:?}: {}",
-            dtype,
-            value.dtype(),
-            value
-        )
-        .into(),
+    polars_err!(
+        SchemaMismatch:
+        "unexpected value while building Series of type {:?}; found value of type {:?}: {}",
+        dtype,
+        value.dtype(),
+        value
     )
 }
