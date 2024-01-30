@@ -922,7 +922,6 @@ mod test {
         (a1, a3)
     }
 
-
     #[test]
     fn test_bitwise_ops() {
         let a = BooleanChunked::new("a", &[true, false, false]);

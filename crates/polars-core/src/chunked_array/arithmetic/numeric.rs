@@ -1,8 +1,10 @@
 use polars_compute::arithmetic::ArithmeticKernel;
 
-use crate::chunked_array::arity::{apply_binary_kernel_broadcast, apply_binary_kernel_broadcast_owned, unary_kernel, unary_kernel_owned};
-
 use super::*;
+use crate::chunked_array::arity::{
+    apply_binary_kernel_broadcast, apply_binary_kernel_broadcast_owned, unary_kernel,
+    unary_kernel_owned,
+};
 
 pub(crate) fn arithmetic_helper<T, Kernel, F>(
     lhs: &ChunkedArray<T>,
@@ -239,7 +241,9 @@ where
 
     fn add(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_add_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_add_scalar(a.clone(), rhs)
+        })
     }
 }
 
@@ -252,7 +256,9 @@ where
 
     fn sub(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_sub_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_sub_scalar(a.clone(), rhs)
+        })
     }
 }
 
@@ -265,7 +271,9 @@ where
 
     fn mul(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_mul_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_mul_scalar(a.clone(), rhs)
+        })
     }
 }
 
@@ -278,7 +286,9 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_mod_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_mod_scalar(a.clone(), rhs)
+        })
     }
 }
 
@@ -334,8 +344,6 @@ where
     }
 }
 
-
-
 impl<T> Div for &ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -379,7 +387,9 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        unary_kernel(self, |a| ArithmeticKernel::legacy_div_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::legacy_div_scalar(a.clone(), rhs)
+        })
     }
 }
 

@@ -30,7 +30,7 @@ macro_rules! impl_unsigned_arith_kernel {
             fn prim_wrapping_floor_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and3(
-                    lhs.take_validity().as_ref(),  // Take validity so we don't
+                    lhs.take_validity().as_ref(),   // Take validity so we don't
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
@@ -41,7 +41,7 @@ macro_rules! impl_unsigned_arith_kernel {
             fn prim_wrapping_mod(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and3(
-                    lhs.take_validity().as_ref(),  // Take validity so we don't
+                    lhs.take_validity().as_ref(),   // Take validity so we don't
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );

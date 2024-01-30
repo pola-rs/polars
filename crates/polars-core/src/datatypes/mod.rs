@@ -35,6 +35,7 @@ use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
+use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
@@ -47,7 +48,6 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 pub use time_unit::*;
 
-use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;

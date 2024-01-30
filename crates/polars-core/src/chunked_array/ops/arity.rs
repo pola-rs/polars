@@ -40,10 +40,7 @@ impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
 
 /// Applies a kernel that produces `Array` types.
 #[inline]
-pub fn unary_kernel<T, V, F, Arr>(
-    ca: &ChunkedArray<T>,
-    mut op: F,
-) -> ChunkedArray<V>
+pub fn unary_kernel<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
@@ -56,10 +53,7 @@ where
 
 /// Applies a kernel that produces `Array` types.
 #[inline]
-pub fn unary_kernel_owned<T, V, F, Arr>(
-    ca: ChunkedArray<T>,
-    mut op: F,
-) -> ChunkedArray<V>
+pub fn unary_kernel_owned<T, V, F, Arr>(ca: ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,

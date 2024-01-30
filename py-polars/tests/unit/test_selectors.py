@@ -511,7 +511,7 @@ def test_regex_expansion_exclude_10002() -> None:
             pl.col("^col_.*$").exclude("col_2").mul(10),
             pl.col("^col_.*$").exclude("col_1") / 10,
         ),
-        expected
+        expected,
     )
 
 
