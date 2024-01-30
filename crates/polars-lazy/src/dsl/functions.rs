@@ -228,7 +228,37 @@ impl Default for UnionArgs {
     }
 }
 
-/// Concat multiple [`LazyFrame`]s vertically.
+/** Concat multiple [`LazyFrame`]s vertically.
+
+# Example
+```
+# use polars_core::prelude::*;
+# use polars_lazy::prelude::*;
+
+let df_v1 = df!(
+        "a"=> &[1],
+        "b"=> &[3],
+)?;
+let df_v2 = df!(
+        "a"=> &[2],
+        "b"=> &[4],
+)?;
+let df_vertical_concat = concat(
+    [df_v1.lazy(), df_v2.lazy()],
+    UnionArgs::default(),
+)?
+.collect()?;
+
+assert_eq!(df_vertical_concat,
+    df!(
+        "a" => &[1,2],
+        "b" => &[3,4],
+    )?
+);
+
+# Ok::<(), PolarsError>(())
+```
+ **/
 pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult<LazyFrame> {
     concat_impl(
         inputs,
