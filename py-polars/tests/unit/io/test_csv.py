@@ -715,7 +715,7 @@ def test_csv_date_handling() -> None:
         1742-03-21
         1743-06-16
         1730-07-22
-        ""
+
         1739-03-16
         """
     )
@@ -735,6 +735,67 @@ def test_csv_date_handling() -> None:
     assert_frame_equal(out, expected)
     dtypes = {"date": pl.Date}
     out = pl.read_csv(csv.encode(), dtypes=dtypes)
+    assert_frame_equal(out, expected)
+
+
+def test_csv_no_date_dtype_because_string() -> None:
+    csv = textwrap.dedent(
+        """\
+        date
+        2024-01-01
+        2024-01-02
+        hello
+        """
+    )
+    out = pl.read_csv(csv.encode(), try_parse_dates=True)
+    assert out.dtypes == [pl.String]
+
+
+def test_csv_infer_date_dtype() -> None:
+    csv = textwrap.dedent(
+        """\
+        date
+        2024-01-01
+        "2024-01-02"
+
+        2024-01-04
+        """
+    )
+    out = pl.read_csv(csv.encode(), try_parse_dates=True)
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2024, 1, 1),
+                date(2024, 1, 2),
+                None,
+                date(2024, 1, 4),
+            ]
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_csv_date_dtype_ignore_errors() -> None:
+    csv = textwrap.dedent(
+        """\
+        date
+        hello
+        2024-01-02
+        world
+        !!
+        """
+    )
+    out = pl.read_csv(csv.encode(), ignore_errors=True, dtypes={"date": pl.Date})
+    expected = pl.DataFrame(
+        {
+            "date": [
+                None,
+                date(2024, 1, 2),
+                None,
+                None,
+            ]
+        }
+    )
     assert_frame_equal(out, expected)
 
 
