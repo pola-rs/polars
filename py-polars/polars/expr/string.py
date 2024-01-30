@@ -1917,28 +1917,28 @@ class ExprStringNameSpace:
         value
             String that will replace the matched substring.
         literal
-            Treat pattern as a literal string.
+            Treat `pattern` as a literal string.
         n
             Number of matches to replace.
 
         See Also
         --------
-        replace_all : Replace all matching regex/literal substrings.
+        replace_all
 
-        Warnings
-        --------
-        In the `value` string, a dollar sign not followed by curly braces treats the
-        remainder of the string (until the next `$` or whitespace character) as the
-        name of a capture group. For instance, replacing `"(.*)"` with `"foo$bar"` will
-        replace each string with `"foo"`, since `$bar` is treated as a missing capture
-        group. Use `"foo$$bar"` to get the expected behavior.
+        Notes
+        -----
+        The dollar sign (`$`) is a special character related to capture groups.
+        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+        for additional information about the use of inline expression modifiers.
 
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
-        >>> df.with_columns(
-        ...     pl.col("text").str.replace(r"abc\b", "ABC")
-        ... )  # doctest: +IGNORE_RESULT
+        >>> df.with_columns(pl.col("text").str.replace(r"abc\b", "ABC"))
         shape: (2, 2)
         ┌─────┬────────┐
         │ id  ┆ text   │
@@ -1948,28 +1948,27 @@ class ExprStringNameSpace:
         │ 1   ┆ 123ABC │
         │ 2   ┆ abc456 │
         └─────┴────────┘
-        Rust's regex crate supports "replacement strings". Use `${1}` in the `value`
-        string to refer to the first capture group in the `pattern`, `${2}` to refer
-        to the second capture group, and so on. You can also name capture groups.
-        Use `$$` in the `value` string to refer to a literal dollar sign.
+
+        Capture groups are supported. Use `${1}` in the `value` string to refer to the
+        first capture group in the `pattern`, `${2}` to refer to the second capture
+        group, and so on. You can also use named capture groups.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
-        ...     r1=pl.col.word.str.replace("h(.)t", "b${1}d"),
-        ...     r2=pl.col.word.str.replace("h(?<vowel>.)t", "b${vowel}d"),
+        ...     positional=pl.col.word.str.replace("h(.)t", "b${1}d"),
+        ...     named=pl.col.word.str.replace("h(?<vowel>.)t", "b${vowel}d"),
         ... )
         shape: (2, 3)
-        ┌──────┬─────┬─────┐
-        │ word ┆ r1  ┆ r2  │
-        │ ---  ┆ --- ┆ --- │
-        │ str  ┆ str ┆ str │
-        ╞══════╪═════╪═════╡
-        │ hat  ┆ bad ┆ bad │
-        │ hut  ┆ bud ┆ bud │
-        └──────┴─────┴─────┘
+        ┌──────┬────────────┬───────┐
+        │ word ┆ positional ┆ named │
+        │ ---  ┆ ---        ┆ ---   │
+        │ str  ┆ str        ┆ str   │
+        ╞══════╪════════════╪═══════╡
+        │ hat  ┆ bad        ┆ bad   │
+        │ hut  ┆ bud        ┆ bud   │
+        └──────┴────────────┴───────┘
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. For example:
+        Apply case-insensitive string replacement using the `(?i)` flag.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -1979,7 +1978,6 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     # apply case-insensitive string replacement
         ...     pl.col("weather").str.replace(r"(?i)foggy|rainy|cloudy|snowy", "Sunny")
         ... )
         shape: (4, 3)
@@ -1993,10 +1991,6 @@ class ExprStringNameSpace:
         │ Philadelphia ┆ Autumn ┆ Sunny   │
         │ Philadelphia ┆ Winter ┆ Sunny   │
         └──────────────┴────────┴─────────┘
-
-        See the regex crate's section on `grouping and flags
-        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
-        additional information about the use of inline expression modifiers.
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
@@ -2014,21 +2008,23 @@ class ExprStringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            Replacement string.
+            String that will replace the matched substring.
         literal
-            Treat pattern as a literal string.
+            Treat `pattern` as a literal string.
 
         See Also
         --------
-        replace : Replace first matching regex/literal substring.
+        replace
 
-        Warnings
-        --------
-        In the `value` string, a dollar sign not followed by curly braces treats the
-        remainder of the string (until the next `$` or whitespace character) as the
-        name of a capture group. For instance, replacing `"(.*)"` with `"foo$bar"` will
-        replace each string with `"foo"`, since `$bar` is treated as a missing capture
-        group. Use `"foo$$bar"` to get the expected behavior.
+        Notes
+        -----
+        The dollar sign (`$`) is a special character related to capture groups.
+        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+        for additional information about the use of inline expression modifiers.
 
         Examples
         --------
@@ -2044,28 +2040,26 @@ class ExprStringNameSpace:
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
 
-        Rust's regex crate supports "replacement strings". Use `${1}` in the `value`
-        string to refer to the first capture group in the `pattern`, `${2}` to refer
-        to the second capture group, and so on. You can also name capture groups.
-        Use `$$` in the `value` string to refer to a literal dollar sign.
+        Capture groups are supported. Use `${1}` in the `value` string to refer to the
+        first capture group in the `pattern`, `${2}` to refer to the second capture
+        group, and so on. You can also use named capture groups.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
-        ...     r1=pl.col.word.str.replace_all("h(.)t", "b${1}d"),
-        ...     r2=pl.col.word.str.replace_all("h(?<vowel>.)t", "b${vowel}d"),
+        ...     positional=pl.col.word.str.replace_all("h(.)t", "b${1}d"),
+        ...     named=pl.col.word.str.replace_all("h(?<vowel>.)t", "b${vowel}d"),
         ... )
         shape: (2, 3)
-        ┌──────┬─────┬─────┐
-        │ word ┆ r1  ┆ r2  │
-        │ ---  ┆ --- ┆ --- │
-        │ str  ┆ str ┆ str │
-        ╞══════╪═════╪═════╡
-        │ hat  ┆ bad ┆ bad │
-        │ hut  ┆ bud ┆ bud │
-        └──────┴─────┴─────┘
+        ┌──────┬────────────┬───────┐
+        │ word ┆ positional ┆ named │
+        │ ---  ┆ ---        ┆ ---   │
+        │ str  ┆ str        ┆ str   │
+        ╞══════╪════════════╪═══════╡
+        │ hat  ┆ bad        ┆ bad   │
+        │ hut  ┆ bud        ┆ bud   │
+        └──────┴────────────┴───────┘
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. For example:
+        Apply case-insensitive string replacement using the `(?i)` flag.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -2091,10 +2085,6 @@ class ExprStringNameSpace:
         │ Philadelphia ┆ Autumn ┆ Sunny   │
         │ Philadelphia ┆ Winter ┆ Sunny   │
         └──────────────┴────────┴─────────┘
-
-        See the regex crate's section on `grouping and flags
-        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
-        additional information about the use of inline expression modifiers.
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
