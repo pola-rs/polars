@@ -6,8 +6,10 @@ use polars_core::prelude::*;
 use polars_core::series::arithmetic::_struct_arithmetic;
 use polars_core::with_match_physical_numeric_polars_type;
 
-
-fn floor_div_ca<T: PolarsNumericType>(lhs: &ChunkedArray<T>, rhs: &ChunkedArray<T>) -> ChunkedArray<T> {
+fn floor_div_ca<T: PolarsNumericType>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<T>,
+) -> ChunkedArray<T> {
     apply_binary_kernel_broadcast(
         lhs,
         rhs,
