@@ -58,6 +58,7 @@ features = [
   "lazy",
   "list_eval",
   "list_to_struct",
+  "array_to_struct",
   "log",
   "mode",
   "moment",
