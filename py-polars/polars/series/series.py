@@ -331,7 +331,7 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
 
         elif _check_for_pandas(values) and isinstance(
-            values, (pd.Series, pd.DatetimeIndex)
+            values, (pd.Series, pd.Index, pd.DatetimeIndex)
         ):
             self._s = pandas_to_pyseries(name, values)
 

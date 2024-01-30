@@ -1063,7 +1063,7 @@ def _sequence_to_pydf_dispatcher(
         to_pydf = _sequence_of_numpy_to_pydf
 
     elif _check_for_pandas(first_element) and isinstance(
-        first_element, (pd.Series, pd.DatetimeIndex)
+        first_element, (pd.Series, pd.Index, pd.DatetimeIndex)
     ):
         to_pydf = _sequence_of_pandas_to_pydf
 
@@ -1256,7 +1256,7 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series[Any] | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
