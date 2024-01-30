@@ -23,7 +23,7 @@ class LazyGroupBy:
     def __init__(
         self,
         lgb: PyLazyGroupBy,
-        *by,
+        *by: IntoExpr | Iterable[IntoExpr] | None,
         _lf: LazyFrame | None = None,
         maintain_order: bool | None = None,
         **named_by,
