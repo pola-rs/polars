@@ -502,7 +502,12 @@ impl LazyFrame {
                 }
             })
             .collect();
-        self.with_columns(cast_cols)
+
+        if cast_cols.is_empty() {
+            self.clone()
+        } else {
+            self.with_columns(cast_cols)
+        }
     }
 
     /// Cast all frame columns to the given dtype, resulting in a new LazyFrame
