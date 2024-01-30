@@ -230,7 +230,6 @@
 //!     - `group_by_list` - Allow group_by operation on keys of type List.
 //!     - `row_hash` - Utility to hash [`DataFrame`] rows to [`UInt64Chunked`]
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
-//!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
 //!     - `dataframe_arithmetic` - Arithmetic on ([`Dataframe`] and [`DataFrame`]s) and ([`DataFrame`] on [`Series`])
 //!     - `partition_by` - Split into multiple [`DataFrame`]s partitioned by groups.
 //! * [`Series`]/[`Expr`] operations:
