@@ -1,12 +1,11 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use arrow::compute;
-use arrow::compute::utils::combine_validities_and;
 use arrow::compute::bitwise;
-
-use crate::chunked_array::arity::apply_binary_kernel_broadcast;
+use arrow::compute::utils::combine_validities_and;
 
 use super::*;
+use crate::chunked_array::arity::apply_binary_kernel_broadcast;
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -16,7 +15,13 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(self, rhs, bitwise::and, |l, r| bitwise::and_scalar(r, &l), |l, r| bitwise::and_scalar(l, &r))
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            bitwise::and,
+            |l, r| bitwise::and_scalar(r, &l),
+            |l, r| bitwise::and_scalar(l, &r),
+        )
     }
 }
 
@@ -28,7 +33,13 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(self, rhs, bitwise::or, |l, r| bitwise::or_scalar(r, &l), |l, r| bitwise::or_scalar(l, &r))
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            bitwise::or,
+            |l, r| bitwise::or_scalar(r, &l),
+            |l, r| bitwise::or_scalar(l, &r),
+        )
     }
 }
 
@@ -40,7 +51,13 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(self, rhs, bitwise::xor, |l, r| bitwise::xor_scalar(r, &l), |l, r| bitwise::xor_scalar(l, &r))
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            bitwise::xor,
+            |l, r| bitwise::xor_scalar(r, &l),
+            |l, r| bitwise::xor_scalar(l, &r),
+        )
     }
 }
 

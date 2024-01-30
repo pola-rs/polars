@@ -85,9 +85,9 @@ where
         apply_binary_kernel_broadcast_owned(
             self,
             rhs,
-            |l, r| ArithmeticKernel::wrapping_add(l, r),
+            ArithmeticKernel::wrapping_add,
             |l, r| ArithmeticKernel::wrapping_add_scalar(r, l),
-            |l, r| ArithmeticKernel::wrapping_add_scalar(l, r),
+            ArithmeticKernel::wrapping_add_scalar,
         )
     }
 }
@@ -102,9 +102,9 @@ where
         apply_binary_kernel_broadcast_owned(
             self,
             rhs,
-            |l, r| ArithmeticKernel::wrapping_mul(l, r),
+            ArithmeticKernel::wrapping_mul,
             |l, r| ArithmeticKernel::wrapping_mul_scalar(r, l),
-            |l, r| ArithmeticKernel::wrapping_mul_scalar(l, r),
+            ArithmeticKernel::wrapping_mul_scalar,
         )
     }
 }
@@ -119,9 +119,9 @@ where
         apply_binary_kernel_broadcast_owned(
             self,
             rhs,
-            |l, r| ArithmeticKernel::wrapping_sub(l, r),
-            |l, r| ArithmeticKernel::wrapping_sub_scalar_lhs(l, r),
-            |l, r| ArithmeticKernel::wrapping_sub_scalar(l, r),
+            ArithmeticKernel::wrapping_sub,
+            ArithmeticKernel::wrapping_sub_scalar_lhs,
+            ArithmeticKernel::wrapping_sub_scalar,
         )
     }
 }
@@ -136,9 +136,9 @@ where
         apply_binary_kernel_broadcast_owned(
             self,
             rhs,
-            |l, r| ArithmeticKernel::wrapping_mod(l, r),
-            |l, r| ArithmeticKernel::wrapping_mod_scalar_lhs(l, r),
-            |l, r| ArithmeticKernel::wrapping_mod_scalar(l, r),
+            ArithmeticKernel::wrapping_mod,
+            ArithmeticKernel::wrapping_mod_scalar_lhs,
+            ArithmeticKernel::wrapping_mod_scalar,
         )
     }
 }
@@ -284,9 +284,9 @@ where
         apply_binary_kernel_broadcast_owned(
             self,
             rhs,
-            |l, r| ArithmeticKernel::legacy_div(l, r),
-            |l, r| ArithmeticKernel::legacy_div_scalar_lhs(l, r),
-            |l, r| ArithmeticKernel::legacy_div_scalar(l, r),
+            ArithmeticKernel::legacy_div,
+            ArithmeticKernel::legacy_div_scalar_lhs,
+            ArithmeticKernel::legacy_div_scalar,
         )
     }
 }
