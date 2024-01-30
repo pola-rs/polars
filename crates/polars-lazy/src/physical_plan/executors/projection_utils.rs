@@ -53,6 +53,54 @@ fn rolling_evaluate(
     })
 }
 
+fn window_evaluate(
+    df: &DataFrame,
+    state: &ExecutionState,
+    window: PlHashMap<SmartString, Vec<IdAndExpression>>,
+) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
+    POOL.install(|| {
+        window
+            .par_iter()
+            .map(|(_, partition)| {
+                // clear the cache for every partitioned group
+                let mut state = state.split();
+                // inform the expression it has window functions.
+                state.insert_has_window_function_flag();
+
+                // don't bother caching if we only have a single window function in this partition
+                if partition.len() == 1 {
+                    state.remove_cache_window_flag();
+                } else {
+                    state.insert_cache_window_flag();
+                }
+
+                let mut out = Vec::with_capacity(partition.len());
+                // Don't parallelize here, as this will hold a mutex and Deadlock.
+                for (index, e) in partition {
+                    if e.as_expression()
+                        .unwrap()
+                        .into_iter()
+                        .filter(|e| matches!(e, Expr::Window { .. }))
+                        .count()
+                        == 1
+                    {
+                        state.insert_cache_window_flag();
+                    }
+                    // caching more than one window expression is a complicated topic for another day
+                    // see issue #2523
+                    else {
+                        state.remove_cache_window_flag();
+                    }
+
+                    let s = e.evaluate(df, &state)?;
+                    out.push((*index, s));
+                }
+                Ok(out)
+            })
+            .collect()
+    })
+}
+
 fn execute_projection_cached_window_fns(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
@@ -116,43 +164,25 @@ fn execute_projection_cached_window_fns(
     // The rolling expression knows how to fetch the groups.
     #[cfg(feature = "dynamic_group_by")]
     {
-        let partitions = rolling_evaluate(df, state, rolling)?;
+        let (a, b) = POOL.join(
+            || rolling_evaluate(df, state, rolling),
+            || window_evaluate(df, state, windows),
+        );
+
+        let partitions = a?;
+        for part in partitions {
+            selected_columns.extend_from_slice(&part)
+        }
+        let partitions = b?;
         for part in partitions {
             selected_columns.extend_from_slice(&part)
         }
     }
-
-    for partition in windows {
-        // clear the cache for every partitioned group
-        let mut state = state.split();
-        // inform the expression it has window functions.
-        state.insert_has_window_function_flag();
-
-        // don't bother caching if we only have a single window function in this partition
-        if partition.1.len() == 1 {
-            state.remove_cache_window_flag();
-        } else {
-            state.insert_cache_window_flag();
-        }
-
-        for (index, e) in partition.1 {
-            if e.as_expression()
-                .unwrap()
-                .into_iter()
-                .filter(|e| matches!(e, Expr::Window { .. }))
-                .count()
-                == 1
-            {
-                state.insert_cache_window_flag();
-            }
-            // caching more than one window expression is a complicated topic for another day
-            // see issue #2523
-            else {
-                state.remove_cache_window_flag();
-            }
-
-            let s = e.evaluate(df, &state)?;
-            selected_columns.push((index, s));
+    #[cfg(not(feature = "dynamic_group_by"))]
+    {
+        let partitions = window_evaluate(df, state, windows)?;
+        for part in partitions {
+            selected_columns.extend_from_slice(&part)
         }
     }
 
