@@ -685,20 +685,6 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
-    let mut idx_mapping = Vec::with_capacity(len);
-    let mut iter = 0..len as IdxSize;
-    match groups {
-        GroupsProxy::Idx(groups) => {
-            for g in groups.all() {
-                idx_mapping.extend((&mut iter).take(g.len()).zip(g.iter().copied()));
-            }
-        },
-        GroupsProxy::Slice { groups, .. } => {
-            for &[first, len] in groups {
-                idx_mapping.extend((&mut iter).take(len as usize).zip(first..first + len));
-            }
-        },
-    }
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
     // safety:
