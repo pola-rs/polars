@@ -223,25 +223,25 @@ pub fn make_list_categoricals_compatible(
     let (cat_left, cat_right) =
         make_categoricals_compatible(cat_left.categorical()?, cat_right.categorical()?)?;
 
-    // we only added categories to the rev_map of the left side
+    // we only appended categories to the rev_map at the end, so only change the inner dtype
     list_ca_left.set_inner_dtype(cat_left.dtype().clone());
 
     // We changed the physicals and the rev_map, offsets and validity buffers are still good
-    let new_dt = DataType::List(Box::new(cat_right.dtype().clone()));
-    let ca = list_ca_right.rechunk();
-    let arr = ca.downcast_iter().next().unwrap().clone();
-    let cat_right = cat_right.physical().rechunk();
-    let new_phys = cat_right.downcast_iter().next().unwrap();
-
-    let new_list_array = ListArray::new(
-        arr.data_type().clone(),
-        arr.offsets().clone(),
-        new_phys.clone().boxed(),
-        arr.validity().cloned(),
-    )
-    .boxed();
-    list_ca_right = unsafe {
-        ListChunked::from_chunks_and_dtype(list_ca_right.name(), vec![new_list_array], new_dt)
-    };
+    // SAFETY
+    // make_categoricals_compatible does not rechunk / alter the chunk sizes
+    unsafe {
+        list_ca_right
+            .downcast_iter_mut()
+            .zip(cat_right.physical().chunks())
+            .for_each(|(arr, new_phys)| {
+                *arr = ListArray::new(
+                    arr.data_type().clone(),
+                    arr.offsets().clone(),
+                    new_phys.clone(),
+                    arr.validity().cloned(),
+                )
+            });
+    }
+    list_ca_right.set_inner_dtype(cat_right.dtype().clone());
     Ok((list_ca_left, list_ca_right))
 }
