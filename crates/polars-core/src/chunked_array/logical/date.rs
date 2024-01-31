@@ -29,9 +29,9 @@ impl LogicalType for DateChunked {
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
-        match (self.dtype(), dtype) {
+        match dtype {
             #[cfg(feature = "dtype-datetime")]
-            (Date, Datetime(tu, tz)) => {
+            Datetime(tu, tz) => {
                 let casted = self.0.cast(dtype)?;
                 let casted = casted.datetime().unwrap();
                 let conversion = match tu {
@@ -44,9 +44,9 @@ impl LogicalType for DateChunked {
                     .into_series())
             },
             #[cfg(feature = "dtype-time")]
-            (Date, Time) => Ok(Int64Chunked::full(self.name(), 0i64, self.len())
-                .into_time()
-                .into_series()),
+            Time => {
+                polars_bail!(ComputeError: "cannot cast `Date` to `Time`");
+            },
             _ => self.0.cast(dtype),
         }
     }

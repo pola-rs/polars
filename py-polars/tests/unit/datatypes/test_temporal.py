@@ -1343,22 +1343,6 @@ def test_rolling_by_() -> None:
     }
 
 
-def test_date_to_time_cast_5111() -> None:
-    # check date -> time casts (fast-path: always 00:00:00)
-    df = pl.DataFrame(
-        {
-            "xyz": [
-                date(1969, 1, 1),
-                date(1990, 3, 8),
-                date(2000, 6, 16),
-                date(2010, 9, 24),
-                date(2022, 12, 31),
-            ]
-        }
-    ).with_columns(pl.col("xyz").cast(pl.Time))
-    assert df["xyz"].to_list() == [time(0), time(0), time(0), time(0), time(0)]
-
-
 def test_sum_duration() -> None:
     assert pl.DataFrame(
         [
