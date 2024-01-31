@@ -263,44 +263,56 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + HasPrimitiveArithmeticKernel
+    + HasPrimitiveArithmeticKernel<TrueDivT=<Self::TrueDivPolarsType as PolarsNumericType>::Native>
     + MinMax
     + IsNull
 {
     type PolarsType: PolarsNumericType;
+    type TrueDivPolarsType: PolarsNumericType;
 }
 
 impl NumericNative for i8 {
     type PolarsType = Int8Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for i16 {
     type PolarsType = Int16Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for i32 {
     type PolarsType = Int32Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for i64 {
     type PolarsType = Int64Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u8 {
     type PolarsType = UInt8Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u16 {
     type PolarsType = UInt16Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u32 {
     type PolarsType = UInt32Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u64 {
     type PolarsType = UInt64Type;
+    type TrueDivPolarsType = Float64Type;
 }
 #[cfg(feature = "dtype-decimal")]
 impl NumericNative for i128 {
     type PolarsType = Int128Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for f32 {
     type PolarsType = Float32Type;
+    type TrueDivPolarsType = Float32Type;
 }
 impl NumericNative for f64 {
     type PolarsType = Float64Type;
+    type TrueDivPolarsType = Float64Type;
 }
