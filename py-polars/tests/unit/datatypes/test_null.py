@@ -70,3 +70,10 @@ def test_null_comp_14118(op: Any, expected: list[None | bool]) -> None:
         },
     )
     assert_frame_equal(output_df, expected_df)
+
+
+def test_null_hash_rows_14100() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [None, None, None, None]})
+    assert df.hash_rows().dtype == pl.UInt64
+    assert df["b"].hash().dtype == pl.UInt64
+    assert df.select([pl.col("b").hash().alias("foo")])["foo"].dtype == pl.UInt64

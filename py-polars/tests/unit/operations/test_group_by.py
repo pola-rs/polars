@@ -938,3 +938,14 @@ def test_group_by_deprecated_by_arg() -> None:
         pl.col("b").min()
     )
     assert_frame_equal(result, expected)
+
+
+def test_group_by_with_null() -> None:
+    df = pl.DataFrame(
+        {"a": [None, None, None, None], "b": [1, 1, 2, 2], "c": ["x", "y", "z", "u"]}
+    )
+    expected = pl.DataFrame(
+        {"a": [None, None], "b": [1, 2], "c": [["x", "y"], ["z", "u"]]}
+    )
+    output = df.group_by(["a", "b"], maintain_order=True).agg(pl.col("c"))
+    assert_frame_equal(expected, output)

@@ -7,6 +7,7 @@ use xxhash_rust::xxh3::xxh3_64_with_seed;
 use super::*;
 use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 use crate::utils::arrow::array::Array;
 use crate::POOL;
 
@@ -290,6 +291,22 @@ impl VecHash for BinaryOffsetChunked {
     }
 }
 
+impl VecHash for NullChunked {
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        let null_h = get_null_hash_value(&random_state);
+        buf.clear();
+        buf.resize(self.len(), null_h);
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        let null_h = get_null_hash_value(&random_state);
+        hashes
+            .iter_mut()
+            .for_each(|h| *h = _boost_hash_combine(null_h, *h));
+        Ok(())
+    }
+}
 impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         buf.clear();

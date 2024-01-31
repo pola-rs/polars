@@ -7,6 +7,7 @@ use polars_utils::IdxSize;
 
 use crate::datatypes::IdxCa;
 use crate::error::PolarsResult;
+use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -113,6 +114,20 @@ impl PrivateSeries for NullChunked {
     fn _get_flags(&self) -> Settings {
         Settings::empty()
     }
+
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        VecHash::vec_hash(self, random_state, buf)?;
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        VecHash::vec_hash_combine(self, build_hasher, hashes)?;
+        Ok(())
+    }
+
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        IntoTotalEqInner::into_total_eq_inner(self)
+    }
 }
 
 fn null_arithmetic(lhs: &NullChunked, rhs: &Series, op: &str) -> PolarsResult<Series> {
@@ -210,6 +225,10 @@ impl SeriesTrait for NullChunked {
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         polars_ensure!(index < self.len(), oob = index, self.len());
         Ok(AnyValue::Null)
+    }
+
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
+        AnyValue::Null
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
