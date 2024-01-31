@@ -1120,7 +1120,7 @@ fn test_try_parse_dates() -> PolarsResult<()> {
 1742-03-21
 1743-06-16
 1730-07-22
-''
+
 1739-03-16
 ";
     let file = Cursor::new(csv);

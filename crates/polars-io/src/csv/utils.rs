@@ -392,21 +392,6 @@ pub fn infer_file_schema_inner(
                 {
                     // we have an integer and double, fall down to double
                     fields.push(Field::new(field_name, DataType::Float64));
-                }
-                // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::String)
-                    && possibilities.contains(&DataType::Date)
-                {
-                    fields.push(Field::new(field_name, DataType::Date));
-                }
-                // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::String)
-                    && possibilities.contains(&DataType::Datetime(TimeUnit::Microseconds, None))
-                {
-                    fields.push(Field::new(
-                        field_name,
-                        DataType::Datetime(TimeUnit::Microseconds, None),
-                    ));
                 } else {
                     // default to String for conflicting datatypes (e.g bool and int)
                     fields.push(Field::new(field_name, DataType::String));

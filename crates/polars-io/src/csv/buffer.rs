@@ -369,7 +369,7 @@ where
                     buf.builder.append_null();
                     return Ok(());
                 } else {
-                    polars_bail!(ComputeError: "could not find a 'date/datetime' pattern for {}", val)
+                    polars_bail!(ComputeError: "could not find a 'date/datetime' pattern for '{}'", val)
                 }
             },
         },
@@ -377,8 +377,17 @@ where
     match DatetimeInfer::try_from_with_unit(pattern, time_unit) {
         Ok(mut infer) => {
             let parsed = infer.parse(val);
+            let Some(parsed) = parsed else {
+                if ignore_errors {
+                    buf.builder.append_null();
+                    return Ok(());
+                } else {
+                    polars_bail!(ComputeError: "could not parse '{}' with pattern '{:?}'", val, pattern)
+                }
+            };
+
             buf.compiled = Some(infer);
-            buf.builder.append_option(parsed);
+            buf.builder.append_value(parsed);
             Ok(())
         },
         Err(err) => {
@@ -407,8 +416,14 @@ where
         _missing_is_null: bool,
         time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
-        if needs_escaping && bytes.len() > 2 {
+        if needs_escaping && bytes.len() >= 2 {
             bytes = &bytes[1..bytes.len() - 1]
+        }
+
+        if bytes.is_empty() {
+            // for types other than string `_missing_is_null` is irrelevant; we always append null
+            self.builder.append_null();
+            return Ok(());
         }
 
         match &mut self.compiled {
