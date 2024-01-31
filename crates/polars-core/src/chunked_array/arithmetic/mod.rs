@@ -11,6 +11,8 @@ use num_traits::{Num, NumCast, ToPrimitive};
 
 use crate::prelude::*;
 
+pub use numeric::ArithmeticChunked;
+
 #[inline]
 fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
     buf.clear();
