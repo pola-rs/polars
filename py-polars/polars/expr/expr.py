@@ -4037,6 +4037,8 @@ class Expr:
             Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
+            If not set, the dtype will be inferred based on the first non-null value
+            that is returned by the function.
         is_elementwise
             If set to true this can run in the streaming engine, but may yield
             incorrect results in group-by. Ensure you know what you are doing!
@@ -4161,7 +4163,8 @@ class Expr:
             Lambda/function to map.
         return_dtype
             Dtype of the output Series.
-            If not set, the dtype will be `pl.Unknown`.
+            If not set, the dtype will be inferred based on the first non-null value
+            that is returned by the function.
         skip_nulls
             Don't map the function over values that contain nulls (this is faster).
         pass_name
