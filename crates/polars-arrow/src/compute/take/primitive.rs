@@ -1,3 +1,4 @@
+use polars_utils::index::NullCount;
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::PrimitiveArray;
@@ -17,10 +18,20 @@ pub(super) unsafe fn take_values_and_validity_unchecked<T: NativeType>(
     let null_count = validity_values.map(|b| b.unset_bits()).unwrap_or(0);
 
     // first take the values, these are always needed
-    let values: Vec<T> = index_values
-        .iter()
-        .map(|idx| *values.get_unchecked_release(*idx as usize))
-        .collect_trusted();
+    let values: Vec<T> = if indices.null_count() == 0 {
+        index_values
+            .iter()
+            .map(|idx| *values.get_unchecked_release(*idx as usize))
+            .collect_trusted()
+    } else {
+        indices
+            .iter()
+            .map(|idx| match idx {
+                Some(idx) => *values.get_unchecked_release(*idx as usize),
+                None => T::default(),
+            })
+            .collect_trusted()
+    };
 
     if null_count > 0 {
         let validity_values = validity_values.unwrap();

@@ -68,6 +68,8 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
 pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     let take_by = sublist_get_indexes(arr, index);
     let values = arr.values();
+    dbg!(&values);
+    dbg!(&take_by);
     // Safety:
     // the indices we generate are in bounds
     unsafe { take_unchecked(&**values, &take_by) }
