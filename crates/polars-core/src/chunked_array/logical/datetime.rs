@@ -96,5 +96,10 @@ impl LogicalType for DatetimeChunked {
             }),
             _ => self.0.cast(dtype),
         }
+        .map(|mut s| {
+            // TODO!; implement the divisions/multipliers above
+            s.set_sorted_flag(self.is_sorted_flag());
+            s
+        })
     }
 }
