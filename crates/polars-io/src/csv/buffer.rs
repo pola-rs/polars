@@ -416,7 +416,7 @@ where
         _missing_is_null: bool,
         time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
-        if needs_escaping {
+        if needs_escaping && bytes.len() >= 2 {
             bytes = &bytes[1..bytes.len() - 1]
         }
 
