@@ -1,7 +1,6 @@
 use arrow::bitmap::utils::get_bit_unchecked;
 #[cfg(feature = "group_by_list")]
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
-use arrow::pushable::Pushable;
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
@@ -294,10 +293,9 @@ impl VecHash for BinaryOffsetChunked {
 
 impl VecHash for NullChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        buf.clear();
-        buf.reserve(self.len());
         let null_h = get_null_hash_value(&random_state);
-        buf.extend_constant(self.len(), null_h);
+        buf.clear();
+        buf.resize(self.len(), null_h);
         Ok(())
     }
 
