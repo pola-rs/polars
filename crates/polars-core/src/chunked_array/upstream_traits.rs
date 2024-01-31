@@ -609,42 +609,20 @@ where
     }
 }
 
-/// From trait
-impl<'a> From<&'a StringChunked> for Vec<Option<&'a str>> {
-    fn from(ca: &'a StringChunked) -> Self {
-        ca.into_iter().collect()
-    }
-}
-
-impl From<StringChunked> for Vec<Option<String>> {
-    fn from(ca: StringChunked) -> Self {
-        ca.into_iter()
-            .map(|opt| opt.map(|s| s.to_string()))
-            .collect()
-    }
-}
-
-impl<'a> From<&'a BooleanChunked> for Vec<Option<bool>> {
-    fn from(ca: &'a BooleanChunked) -> Self {
-        ca.into_iter().collect()
-    }
-}
-
-impl From<BooleanChunked> for Vec<Option<bool>> {
-    fn from(ca: BooleanChunked) -> Self {
-        ca.into_iter().collect()
-    }
-}
-
-impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Native>>
+impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Physical<'a>>>
 where
-    T: PolarsNumericType,
+    T: PolarsDataType,
 {
     fn from(ca: &'a ChunkedArray<T>) -> Self {
-        ca.into_iter().collect()
+        let mut out = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            out.extend(arr.iter())
+        }
+        out
     }
 }
 
+/// From trait
 impl FromParallelIterator<Option<Series>> for ListChunked {
     fn from_par_iter<I>(iter: I) -> Self
     where
