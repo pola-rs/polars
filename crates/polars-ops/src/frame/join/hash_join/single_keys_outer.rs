@@ -1,6 +1,8 @@
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::idx_vec::IdxVec;
+use polars_utils::idxvec;
 use polars_utils::nulls::IsNull;
 
 use super::*;
@@ -31,7 +33,7 @@ where
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
-) -> Vec<PlHashMap<T, (bool, Vec<IdxSize>)>>
+) -> Vec<PlHashMap<T, (bool, IdxVec)>>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
     T: Send + Hash + Eq + Sync + Copy,
@@ -48,7 +50,7 @@ where
             .map(|partition_no| {
                 let build_hasher = build_hasher.clone();
                 let hashes_and_keys = &hashes_and_keys;
-                let mut hash_tbl: PlHashMap<T, (bool, Vec<IdxSize>)> =
+                let mut hash_tbl: PlHashMap<T, (bool, IdxVec)> =
                     PlHashMap::with_hasher(build_hasher);
 
                 let mut offset = 0;
@@ -70,7 +72,7 @@ where
 
                                 match entry {
                                     RawEntryMut::Vacant(entry) => {
-                                        entry.insert_hashed_nocheck(*h, *k, (false, vec![idx]));
+                                        entry.insert_hashed_nocheck(*h, *k, (false, idxvec![idx]));
                                     },
                                     RawEntryMut::Occupied(mut entry) => {
                                         let (_k, v) = entry.get_key_value_mut();
@@ -92,7 +94,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
-    hash_tbls: &mut [PlHashMap<T, (bool, Vec<IdxSize>)>],
+    hash_tbls: &mut [PlHashMap<T, (bool, IdxVec)>],
     results: &mut (
         MutablePrimitiveArray<IdxSize>,
         MutablePrimitiveArray<IdxSize>,
