@@ -25,13 +25,13 @@ fn join_literal(
             if ca.null_count() != 0 && !ignore_nulls {
                 return None;
             }
-
-            let iter = ca.into_iter().flatten();
-
-            for val in iter {
-                buf.write_str(val).unwrap();
-                buf.write_str(separator).unwrap();
+            for arr in ca.downcast_iter() {
+                for val in arr.non_null_values_iter() {
+                    buf.write_str(val).unwrap();
+                    buf.write_str(separator).unwrap();
+                }
             }
+
             // last value should not have a separator, so slice that off
             // saturating sub because there might have been nothing written.
             Some(&buf[..buf.len().saturating_sub(separator.len())])
@@ -62,11 +62,11 @@ fn join_many(
                         return None;
                     }
 
-                    let iter = ca.into_iter().flatten();
-
-                    for val in iter {
-                        buf.write_str(val).unwrap();
-                        buf.write_str(separator).unwrap();
+                    for arr in ca.downcast_iter() {
+                        for val in arr.non_null_values_iter() {
+                            buf.write_str(val).unwrap();
+                            buf.write_str(separator).unwrap();
+                        }
                     }
                     // last value should not have a separator, so slice that off
                     // saturating sub because there might have been nothing written.

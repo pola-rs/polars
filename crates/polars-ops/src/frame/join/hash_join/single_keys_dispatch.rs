@@ -375,7 +375,7 @@ pub fn prepare_bytes<'a>(
         been_split
             .par_iter()
             .map(|ca| {
-                ca.into_iter()
+                ca.iter()
                     .map(|opt_b| {
                         let hash = hb.hash_one(opt_b);
                         BytesHash::new(opt_b, hash)

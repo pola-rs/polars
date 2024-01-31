@@ -148,7 +148,7 @@ pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
         Some(first_set_bit(mask))
     } else {
         let mut first_false_idx: Option<usize> = None;
-        ca.into_iter()
+        ca.iter()
             .enumerate()
             .find_map(|(idx, val)| match val {
                 Some(true) => Some(idx),
@@ -171,7 +171,7 @@ fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
         Some(first_unset_bit(mask))
     } else {
         let mut first_true_idx: Option<usize> = None;
-        ca.into_iter()
+        ca.iter()
             .enumerate()
             .find_map(|(idx, val)| match val {
                 Some(false) => Some(idx),
@@ -193,7 +193,7 @@ fn arg_min_str(ca: &StringChunked) -> Option<usize> {
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
         IsSorted::Not => ca
-            .into_iter()
+            .iter()
             .enumerate()
             .flat_map(|(idx, val)| val.map(|val| (idx, val)))
             .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
@@ -209,7 +209,7 @@ fn arg_max_str(ca: &StringChunked) -> Option<usize> {
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
         IsSorted::Not => ca
-            .into_iter()
+            .iter()
             .enumerate()
             .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
             .map(|tpl| tpl.0),

@@ -78,8 +78,8 @@ where
     let init = Bounded::min_value();
 
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_max).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_max).collect_reversed(),
+        false => ca.iter().scan(init, det_max).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_max).collect_reversed(),
     };
     out.with_name(ca.name())
 }
@@ -91,8 +91,8 @@ where
 {
     let init = Bounded::max_value();
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_min).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_min).collect_reversed(),
+        false => ca.iter().scan(init, det_min).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_min).collect_reversed(),
     };
     out.with_name(ca.name())
 }
@@ -104,8 +104,8 @@ where
 {
     let init = None;
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_sum).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_sum).collect_reversed(),
+        false => ca.iter().scan(init, det_sum).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_sum).collect_reversed(),
     };
     out.with_name(ca.name())
 }
@@ -117,8 +117,8 @@ where
 {
     let init = None;
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_prod).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_prod).collect_reversed(),
+        false => ca.iter().scan(init, det_prod).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_prod).collect_reversed(),
     };
     out.with_name(ca.name())
 }

@@ -191,7 +191,7 @@ where
             // we also ensured we allocated enough memory, so we never reallocate and thus
             // the pointers remain valid.
             if has_nulls {
-                for (col_idx, opt_v) in ca.into_iter().enumerate() {
+                for (col_idx, opt_v) in ca.iter().enumerate() {
                     match opt_v {
                         None => unsafe {
                             let column = (*(validity_buf_ptr as *mut Vec<Vec<bool>>))

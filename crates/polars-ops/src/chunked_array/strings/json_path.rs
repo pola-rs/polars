@@ -55,7 +55,7 @@ pub trait Utf8JsonPathImpl: AsString {
     fn json_infer(&self, number_of_rows: Option<usize>) -> PolarsResult<DataType> {
         let ca = self.as_string();
         let values_iter = ca
-            .into_iter()
+            .iter()
             .map(|x| x.unwrap_or("null"))
             .take(number_of_rows.unwrap_or(ca.len()));
 
@@ -76,7 +76,7 @@ pub trait Utf8JsonPathImpl: AsString {
             None => ca.json_infer(infer_schema_len)?,
         };
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
-        let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
+        let iter = ca.iter().map(|x| x.unwrap_or("null"));
 
         let array = polars_json::ndjson::deserialize::deserialize_iter(
             iter,

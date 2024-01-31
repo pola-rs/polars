@@ -183,12 +183,11 @@ mod test {
     }
 
     fn test_equal_ref(ca: &UInt32Chunked, idx_ca: &IdxCa) {
-        let ref_ca: Vec<Option<u32>> = ca.into_iter().collect();
-        let ref_idx_ca: Vec<Option<usize>> =
-            idx_ca.into_iter().map(|i| Some(i? as usize)).collect();
+        let ref_ca: Vec<Option<u32>> = ca.iter().collect();
+        let ref_idx_ca: Vec<Option<usize>> = idx_ca.iter().map(|i| Some(i? as usize)).collect();
         let gather = ca.gather_skip_nulls(idx_ca).ok();
         let ref_gather = ref_gather_nulls(ref_ca, ref_idx_ca);
-        assert_eq!(gather.map(|ca| ca.into_iter().collect()), ref_gather);
+        assert_eq!(gather.map(|ca| ca.iter().collect()), ref_gather);
     }
 
     fn gather_skip_nulls_check(ca: &UInt32Chunked, idx_ca: &IdxCa) {

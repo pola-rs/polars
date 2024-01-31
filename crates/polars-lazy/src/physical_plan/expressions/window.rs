@@ -751,7 +751,7 @@ where
                 let values_ptr = sync_ptr_values.get();
                 let validity_ptr = sync_ptr_validity.get();
 
-                ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
+                ca.iter().zip(groups.iter()).for_each(|(opt_v, g)| {
                     for idx in g.as_slice() {
                         let idx = *idx as usize;
                         debug_assert!(idx < len);
@@ -779,7 +779,7 @@ where
                     let values_ptr = sync_ptr_values.get();
                     let validity_ptr = sync_ptr_validity.get();
 
-                    for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
+                    for (opt_v, [start, g_len]) in ca.iter().zip(groups.iter()) {
                         let start = *start as usize;
                         let end = start + *g_len as usize;
                         for idx in start..end {

@@ -112,12 +112,13 @@ pub trait ListNameSpaceImpl: AsList {
                     return None;
                 }
 
-                let iter = ca.into_iter().flatten();
-
-                for val in iter {
-                    buf.write_str(val).unwrap();
-                    buf.write_str(separator).unwrap();
+                for arr in ca.downcast_iter() {
+                    for val in arr.non_null_values_iter() {
+                        buf.write_str(val).unwrap();
+                        buf.write_str(separator).unwrap();
+                    }
                 }
+
                 // last value should not have a separator, so slice that off
                 // saturating sub because there might have been nothing written.
                 Some(&buf[..buf.len().saturating_sub(separator.len())])
@@ -151,12 +152,13 @@ pub trait ListNameSpaceImpl: AsList {
                                 return None;
                             }
 
-                            let iter = ca.into_iter().flatten();
-
-                            for val in iter {
-                                buf.write_str(val).unwrap();
-                                buf.write_str(separator).unwrap();
+                            for arr in ca.downcast_iter() {
+                                for val in arr.non_null_values_iter() {
+                                    buf.write_str(val).unwrap();
+                                    buf.write_str(separator).unwrap();
+                                }
                             }
+
                             // last value should not have a separator, so slice that off
                             // saturating sub because there might have been nothing written.
                             Some(&buf[..buf.len().saturating_sub(separator.len())])
@@ -614,7 +616,7 @@ pub trait ListNameSpaceImpl: AsList {
                 // SAFETY: unstable series never lives longer than the iterator.
                 iters.push(unsafe { s.list()?.amortized_iter() })
             }
-            let mut first_iter = ca.into_iter();
+            let mut first_iter: Box<dyn PolarsIterator<Item = Option<Series>>> = ca.into_iter();
             let mut builder = get_list_builder(
                 &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,
@@ -683,7 +685,7 @@ fn cast_signed_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize)
 where
     T::Native: Copy + PartialOrd + PartialEq + NumCast + Signed + Zero,
 {
-    idx.into_iter()
+    idx.iter()
         .map(|opt_idx| opt_idx.and_then(|idx| idx.negative_to_usize(len).map(|idx| idx as IdxSize)))
         .collect::<IdxCa>()
         .into_series()
@@ -694,7 +696,7 @@ fn cast_unsigned_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usiz
 where
     T::Native: Copy + PartialOrd + ToPrimitive,
 {
-    idx.into_iter()
+    idx.iter()
         .map(|opt_idx| {
             opt_idx.and_then(|idx| {
                 let idx = idx.to_usize().unwrap();

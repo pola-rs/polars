@@ -96,12 +96,12 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// # use polars_core::prelude::*;
 ///
 /// fn iter_forward(ca: &Float32Chunked) {
-///     ca.into_iter()
+///     ca.iter()
 ///         .for_each(|opt_v| println!("{:?}", opt_v))
 /// }
 ///
 /// fn iter_backward(ca: &Float32Chunked) {
-///     ca.into_iter()
+///     ca.iter()
 ///         .rev()
 ///         .for_each(|opt_v| println!("{:?}", opt_v))
 /// }
@@ -759,10 +759,7 @@ pub(crate) mod test {
     where
         T: PolarsNumericType,
     {
-        assert_eq!(
-            ca.into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(),
-            eq
-        )
+        assert_eq!(ca.iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(), eq)
     }
 
     #[test]

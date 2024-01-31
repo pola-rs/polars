@@ -25,7 +25,7 @@ pub trait StaticArray:
     type ZeroableValueT<'a>: Zeroable + From<Self::ValueT<'a>>
     where
         Self: 'a;
-    type ValueIterT<'a>: Iterator<Item = Self::ValueT<'a>> + TrustedLen
+    type ValueIterT<'a>: DoubleEndedIterator<Item = Self::ValueT<'a>> + TrustedLen + Send + Sync
     where
         Self: 'a;
 

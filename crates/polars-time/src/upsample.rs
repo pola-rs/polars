@@ -160,8 +160,8 @@ fn upsample_single_impl(
         Datetime(tu, tz) => {
             let s = index_column.cast(&Int64).unwrap();
             let ca = s.i64().unwrap();
-            let first = ca.into_iter().flatten().next();
-            let last = ca.into_iter().flatten().next_back();
+            let first = ca.iter().flatten().next();
+            let last = ca.iter().flatten().next_back();
             match (first, last) {
                 (Some(first), Some(last)) => {
                     let tz = match tz {

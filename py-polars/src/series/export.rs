@@ -29,18 +29,14 @@ impl PySeries {
                 if s.bit_repr_is_large() {
                     let s = s.cast(&DataType::Float64).unwrap();
                     let ca = s.f64().unwrap();
-                    let np_arr = PyArray1::from_iter(
-                        py,
-                        ca.into_iter().map(|opt_v| opt_v.unwrap_or(f64::NAN)),
-                    );
+                    let np_arr =
+                        PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f64::NAN)));
                     Ok(np_arr.into_py(py))
                 } else {
                     let s = s.cast(&DataType::Float32).unwrap();
                     let ca = s.f32().unwrap();
-                    let np_arr = PyArray1::from_iter(
-                        py,
-                        ca.into_iter().map(|opt_v| opt_v.unwrap_or(f32::NAN)),
-                    );
+                    let np_arr =
+                        PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f32::NAN)));
                     Ok(np_arr.into_py(py))
                 }
             },
