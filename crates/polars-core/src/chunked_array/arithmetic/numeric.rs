@@ -42,7 +42,7 @@ macro_rules! impl_op_overload {
                 ArithmeticChunked::$ca_method_scalar(self, rhs)
             }
         }
-    }
+    };
 }
 
 impl_op_overload!(Add, add, wrapping_add, wrapping_add_scalar);
@@ -86,14 +86,13 @@ pub trait ArithmeticChunked {
     fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
 }
 
-
 impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     type Scalar = T::Native;
     type Out = ChunkedArray<T>;
     type TrueDivOut = ChunkedArray<<T::Native as NumericNative>::TrueDivPolarsType>;
 
     fn wrapping_neg(self) -> Self::Out {
-        unary_kernel_owned(self, |a| ArithmeticKernel::wrapping_neg(a))
+        unary_kernel_owned(self, ArithmeticKernel::wrapping_neg)
     }
 
     fn wrapping_add(self, rhs: Self) -> Self::Out {
@@ -173,19 +172,27 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     }
 
     fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel_owned(self, |a| ArithmeticKernel::wrapping_floor_div_scalar(a, rhs))
+        unary_kernel_owned(self, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar(a, rhs)
+        })
     }
 
     fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
-        unary_kernel_owned(rhs, |a| ArithmeticKernel::wrapping_floor_div_scalar_lhs(lhs, a))
+        unary_kernel_owned(rhs, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar_lhs(lhs, a)
+        })
     }
 
     fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel_owned(self, |a| ArithmeticKernel::wrapping_trunc_div_scalar(a, rhs))
+        unary_kernel_owned(self, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar(a, rhs)
+        })
     }
 
     fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
-        unary_kernel_owned(rhs, |a| ArithmeticKernel::wrapping_trunc_div_scalar_lhs(lhs, a))
+        unary_kernel_owned(rhs, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar_lhs(lhs, a)
+        })
     }
 
     fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self::Out {
@@ -303,43 +310,63 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_add_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_add_scalar(a.clone(), rhs)
+        })
     }
 
     fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_sub_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_sub_scalar(a.clone(), rhs)
+        })
     }
 
     fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
-        unary_kernel(rhs, |a| ArithmeticKernel::wrapping_sub_scalar_lhs(lhs, a.clone()))
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_sub_scalar_lhs(lhs, a.clone())
+        })
     }
 
     fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_mul_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_mul_scalar(a.clone(), rhs)
+        })
     }
 
     fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_floor_div_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar(a.clone(), rhs)
+        })
     }
 
     fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
-        unary_kernel(rhs, |a| ArithmeticKernel::wrapping_floor_div_scalar_lhs(lhs, a.clone()))
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar_lhs(lhs, a.clone())
+        })
     }
 
     fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_trunc_div_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar(a.clone(), rhs)
+        })
     }
 
     fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
-        unary_kernel(rhs, |a| ArithmeticKernel::wrapping_trunc_div_scalar_lhs(lhs, a.clone()))
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar_lhs(lhs, a.clone())
+        })
     }
 
     fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel(self, |a| ArithmeticKernel::wrapping_mod_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_mod_scalar(a.clone(), rhs)
+        })
     }
 
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
-        unary_kernel(rhs, |a| ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a.clone()))
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a.clone())
+        })
     }
 
     fn true_div(self, rhs: Self) -> Self::TrueDivOut {
@@ -357,9 +384,11 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut {
-        unary_kernel(rhs, |a| ArithmeticKernel::true_div_scalar_lhs(lhs, a.clone()))
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::true_div_scalar_lhs(lhs, a.clone())
+        })
     }
-    
+
     fn legacy_div(self, rhs: Self) -> Self::Out {
         apply_binary_kernel_broadcast(
             self,
@@ -371,10 +400,14 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn legacy_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
-        unary_kernel(self, |a| ArithmeticKernel::legacy_div_scalar(a.clone(), rhs))
+        unary_kernel(self, |a| {
+            ArithmeticKernel::legacy_div_scalar(a.clone(), rhs)
+        })
     }
 
     fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
-        unary_kernel(rhs, |a| ArithmeticKernel::legacy_div_scalar_lhs(lhs, a.clone()))
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::legacy_div_scalar_lhs(lhs, a.clone())
+        })
     }
 }

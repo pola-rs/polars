@@ -45,7 +45,7 @@ macro_rules! impl_signed_arith_kernel {
                 let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div_mod(rhs).0);
                 ret.with_validity(valid)
             }
-            
+
             fn prim_wrapping_trunc_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and3(
@@ -53,7 +53,13 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| if rhs != 0 { lhs.wrapping_div(rhs) } else { 0 });
+                let ret = prim_binary_values(lhs, other, |lhs, rhs| {
+                    if rhs != 0 {
+                        lhs.wrapping_div(rhs)
+                    } else {
+                        0
+                    }
+                });
                 ret.with_validity(valid)
             }
 

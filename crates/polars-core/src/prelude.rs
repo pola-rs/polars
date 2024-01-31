@@ -10,6 +10,7 @@ pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
+pub use crate::chunked_array::arithmetic::ArithmeticChunked;
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
     ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
@@ -31,7 +32,6 @@ pub use crate::chunked_array::ops::*;
 pub use crate::chunked_array::temporal::conversion::*;
 pub(crate) use crate::chunked_array::ChunkIdIter;
 pub use crate::chunked_array::ChunkedArray;
-pub use crate::chunked_array::arithmetic::ArithmeticChunked;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::datatypes::string_cache::StringCacheHolder;
 pub use crate::datatypes::{ArrayCollectIterExt, *};
