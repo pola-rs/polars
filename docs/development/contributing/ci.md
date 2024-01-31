@@ -6,11 +6,11 @@ Polars uses GitHub Actions as its continuous integration (CI) tool. The setup is
 
 Overall, the CI suite aims to achieve the following:
 
-• Enforce code correctness by running automated tests.
-• Enforce code quality by running automated linting checks.
-• Enforce code performance by running benchmark tests.
-• Enforce that code is properly documented.
-• Allow maintainers to easily publish new releases.
+- Enforce code correctness by running automated tests.
+- Enforce code quality by running automated linting checks.
+- Enforce code performance by running benchmark tests.
+- Enforce that code is properly documented.
+- Allow maintainers to easily publish new releases.
 
 We rely on a wide range of tools to achieve this for both the Rust and the Python code base, and thus a lot of checks are triggered on each pull request.
 
@@ -20,9 +20,9 @@ It's entirely possible that you submit a relatively trivial fix that subsequentl
 
 The CI setup is designed with the following requirements in mind:
 
-• Get feedback on each step individually. We want to avoid our test job being cancelled because a linting check failed, only to find out later that we also have a failing test.
-• Get feedback on each check as quickly as possible. We want to be able to iterate quickly if it turns out our code does not pass some of the checks.
-• Only run checks when they need to be run. A change to the Rust code does not warrant a linting check of the Python code, for example.
+- Get feedback on each step individually. We want to avoid our test job being cancelled because a linting check failed, only to find out later that we also have a failing test.
+- Get feedback on each check as quickly as possible. We want to be able to iterate quickly if it turns out our code does not pass some of the checks.
+- Only run checks when they need to be run. A change to the Rust code does not warrant a linting check of the Python code, for example.
 
 This results in a modular setup with many separate workflows and jobs that rely heavily on caching.
 
