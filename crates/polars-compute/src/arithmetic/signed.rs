@@ -53,7 +53,7 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div(rhs));
+                let ret = prim_binary_values(lhs, other, |lhs, rhs| if rhs != 0 { lhs.wrapping_div(rhs) } else { 0 });
                 ret.with_validity(valid)
             }
 
@@ -175,7 +175,7 @@ macro_rules! impl_signed_arith_kernel {
 
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| lhs.wrapping_div(x));
+                let ret = prim_unary_values(rhs, |x| if x != 0 { lhs.wrapping_div(x) } else { 0 });
                 ret.with_validity(valid)
             }
 
