@@ -6,7 +6,7 @@ use crate::types::NativeType;
 pub mod arithmetics;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
-pub mod take;
+// pub mod take;
 pub mod tile;
 
 #[inline]

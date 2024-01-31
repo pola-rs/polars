@@ -1,5 +1,5 @@
 use crate::array::{ArrayRef, ListArray};
-use crate::legacy::compute::take::take_unchecked;
+use crate::compute::take::take_unchecked;
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::legacy::utils::CustomIterTools;

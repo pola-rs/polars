@@ -26,7 +26,7 @@ pub(super) unsafe fn take_values<O: Offset>(
 }
 
 // take implementation when neither values nor indices contain nulls
-pub fn take_no_validity<O: Offset, I: Index>(
+pub(super) unsafe fn take_no_validity_unchecked<O: Offset, I: Index>(
     offsets: &OffsetsBuffer<O>,
     values: &[u8],
     indices: &[I],
@@ -34,8 +34,7 @@ pub fn take_no_validity<O: Offset, I: Index>(
     let mut buffer = Vec::<u8>::new();
     let lengths = indices.iter().map(|index| index.to_usize()).map(|index| {
         let (start, end) = offsets.start_end(index);
-        // todo: remove this bound check
-        buffer.extend_from_slice(&values[start..end]);
+        buffer.extend_from_slice(values.get_unchecked(start..end));
         end - start
     });
     let offsets = Offsets::try_from_lengths(lengths).expect("");
@@ -89,7 +88,7 @@ pub(super) unsafe fn take_indices_validity<O: Offset, I: Index>(
     let offsets = offsets.buffer();
 
     let mut starts = Vec::<O>::with_capacity(indices.len());
-    let offsets = indices.values().iter().map(|index| {
+    let offsets_iter = indices.values().iter().map(|index| {
         let index = index.to_usize();
         match offsets.get(index + 1) {
             Some(&next) => {
@@ -101,9 +100,9 @@ pub(super) unsafe fn take_indices_validity<O: Offset, I: Index>(
         };
         length
     });
-    let offsets = std::iter::once(O::default())
-        .chain(offsets)
-        .collect::<Vec<_>>();
+    let mut offsets = Vec::with_capacity(indices.len() + 1);
+    offsets.push(O::default());
+    offsets.extend(offsets_iter);
     // Safety: by construction offsets are monotonically increasing
     let offsets = unsafe { Offsets::new_unchecked(offsets) }.into();
 
@@ -125,7 +124,7 @@ pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: Generi
     let values_values = values.values();
 
     let mut starts = Vec::<O>::with_capacity(indices.len());
-    let offsets = indices.iter().map(|index| {
+    let offsets_iter = indices.iter().map(|index| {
         match index {
             Some(index) => {
                 let index = index.to_usize();
@@ -146,9 +145,9 @@ pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: Generi
         };
         length
     });
-    let offsets = std::iter::once(O::default())
-        .chain(offsets)
-        .collect::<Vec<_>>();
+    let mut offsets = Vec::with_capacity(indices.len() + 1);
+    offsets.push(O::default());
+    offsets.extend(offsets_iter);
     // Safety: by construction offsets are monotonically increasing
     let offsets = unsafe { Offsets::new_unchecked(offsets) }.into();
 
