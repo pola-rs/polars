@@ -1,7 +1,7 @@
 use polars_error::PolarsResult;
 
-use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
-use crate::offset::Offset;
+use super::{ArrayFromIter, BinaryViewArray, Utf8ViewArray};
+use crate::array::{Array, BooleanArray, PrimitiveArray};
 use crate::types::NativeType;
 
 pub(super) fn boolean_to_primitive_dyn<T>(array: &dyn Array) -> PolarsResult<Box<dyn Array>>
@@ -26,24 +26,26 @@ where
     PrimitiveArray::<T>::new(T::PRIMITIVE.into(), values.into(), from.validity().cloned())
 }
 
-/// Casts the [`BooleanArray`] to a [`Utf8Array`], casting trues to `"1"` and falses to `"0"`
-pub fn boolean_to_utf8<O: Offset>(from: &BooleanArray) -> Utf8Array<O> {
-    let iter = from.values().iter().map(|x| if x { "1" } else { "0" });
-    Utf8Array::from_trusted_len_values_iter(iter)
+pub fn boolean_to_utf8view(from: &BooleanArray) -> Utf8ViewArray {
+    unsafe { boolean_to_binaryview(from).to_utf8view_unchecked() }
 }
 
-pub(super) fn boolean_to_utf8_dyn<O: Offset>(array: &dyn Array) -> PolarsResult<Box<dyn Array>> {
+pub(super) fn boolean_to_utf8view_dyn(array: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let array = array.as_any().downcast_ref().unwrap();
-    Ok(Box::new(boolean_to_utf8::<O>(array)))
+    Ok(boolean_to_utf8view(array).boxed())
 }
 
 /// Casts the [`BooleanArray`] to a [`BinaryArray`], casting trues to `"1"` and falses to `"0"`
-pub fn boolean_to_binary<O: Offset>(from: &BooleanArray) -> BinaryArray<O> {
-    let iter = from.values().iter().map(|x| if x { b"1" } else { b"0" });
-    BinaryArray::from_trusted_len_values_iter(iter)
+pub fn boolean_to_binaryview(from: &BooleanArray) -> BinaryViewArray {
+    let iter = from.iter().map(|opt_b| match opt_b {
+        Some(true) => Some("true".as_bytes()),
+        Some(false) => Some("false".as_bytes()),
+        None => None,
+    });
+    BinaryViewArray::arr_from_iter_trusted(iter)
 }
 
-pub(super) fn boolean_to_binary_dyn<O: Offset>(array: &dyn Array) -> PolarsResult<Box<dyn Array>> {
+pub(super) fn boolean_to_binaryview_dyn(array: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let array = array.as_any().downcast_ref().unwrap();
-    Ok(Box::new(boolean_to_binary::<O>(array)))
+    Ok(boolean_to_binaryview(array).boxed())
 }
