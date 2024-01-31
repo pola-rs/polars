@@ -462,8 +462,8 @@ pub fn cast(
             Int64 => boolean_to_primitive_dyn::<i64>(array),
             Float32 => boolean_to_primitive_dyn::<f32>(array),
             Float64 => boolean_to_primitive_dyn::<f64>(array),
-            LargeUtf8 => boolean_to_utf8_dyn::<i64>(array),
-            LargeBinary => boolean_to_binary_dyn::<i64>(array),
+            Utf8View => boolean_to_utf8view_dyn(array),
+            BinaryView => boolean_to_binaryview_dyn(array),
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
