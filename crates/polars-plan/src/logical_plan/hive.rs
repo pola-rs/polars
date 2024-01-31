@@ -53,7 +53,9 @@ impl HivePartitions {
                     return None;
                 }
                 let value_path = Path::new(value);
-                let _ = value_path.extension()?;
+                if value_path.extension().is_some() {
+                    return None;
+                }
 
                 // Having multiple '=' doesn't seem like valid hive partition,
                 // continue as url.
