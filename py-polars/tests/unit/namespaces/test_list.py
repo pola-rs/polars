@@ -290,6 +290,16 @@ def test_list_eval_dtype_inference() -> None:
     ]
 
 
+def test_list_eval_categorical() -> None:
+    df = pl.DataFrame({"test": [["a", None]]}, schema={"test": pl.List(pl.Categorical)})
+    df = df.select(
+        pl.col("test").list.eval(pl.element().filter(pl.element().is_not_null()))
+    )
+    assert_series_equal(
+        df.get_column("test"), pl.Series("test", [["a"]], dtype=pl.List(pl.Categorical))
+    )
+
+
 def test_list_ternary_concat() -> None:
     df = pl.DataFrame(
         {
