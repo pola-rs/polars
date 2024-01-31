@@ -45,6 +45,7 @@ macro_rules! impl_compare {
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
         let mut out = match lhs.dtype() {
+            Null => lhs.null().unwrap().$method(rhs.null().unwrap()),
             Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             String => lhs.str().unwrap().$method(rhs.str().unwrap()),
             Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
@@ -97,82 +98,42 @@ impl ChunkCompare<&Series> for Series {
 
     /// Create a boolean mask by checking for equality.
     fn equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full_null(self.name(), self.len()))
-            },
-            _ => impl_compare!(self, rhs, equal),
-        }
+        impl_compare!(self, rhs, equal)
     }
 
     /// Create a boolean mask by checking for equality.
     fn equal_missing(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full(self.name(), true, self.len()))
-            },
-            _ => impl_compare!(self, rhs, equal_missing),
-        }
+        impl_compare!(self, rhs, equal_missing)
     }
 
     /// Create a boolean mask by checking for inequality.
     fn not_equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full_null(self.name(), self.len()))
-            },
-            _ => impl_compare!(self, rhs, not_equal),
-        }
+        impl_compare!(self, rhs, not_equal)
     }
 
     /// Create a boolean mask by checking for inequality.
     fn not_equal_missing(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full(self.name(), false, self.len()))
-            },
-            _ => impl_compare!(self, rhs, not_equal_missing),
-        }
+        impl_compare!(self, rhs, not_equal_missing)
     }
 
     /// Create a boolean mask by checking if self > rhs.
     fn gt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full_null(self.name(), self.len()))
-            },
-            _ => impl_compare!(self, rhs, gt),
-        }
+        impl_compare!(self, rhs, gt)
     }
 
     /// Create a boolean mask by checking if self >= rhs.
     fn gt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full_null(self.name(), self.len()))
-            },
-            _ => impl_compare!(self, rhs, gt_eq),
-        }
+        impl_compare!(self, rhs, gt_eq)
     }
 
     /// Create a boolean mask by checking if self < rhs.
     fn lt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full_null(self.name(), self.len()))
-            },
-            _ => impl_compare!(self, rhs, lt),
-        }
+        impl_compare!(self, rhs, lt)
     }
 
     /// Create a boolean mask by checking if self <= rhs.
     fn lt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        match (self.dtype(), rhs.dtype()) {
-            (DataType::Null, DataType::Null) => {
-                Ok(BooleanChunked::full_null(self.name(), self.len()))
-            },
-            _ => impl_compare!(self, rhs, lt_eq),
-        }
+        impl_compare!(self, rhs, lt_eq)
     }
 }
 

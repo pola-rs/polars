@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -24,7 +30,20 @@ def test_null_grouping_12950() -> None:
     }
 
 
-def test_null_comp_14118() -> None:
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (pl.Expr.gt, [None, None]),
+        (pl.Expr.lt, [None, None]),
+        (pl.Expr.ge, [None, None]),
+        (pl.Expr.le, [None, None]),
+        (pl.Expr.eq, [None, None]),
+        (pl.Expr.eq_missing, [True, True]),
+        (pl.Expr.ne, [None, None]),
+        (pl.Expr.ne_missing, [False, False]),
+    ],
+)
+def test_null_comp_14118(op: Any, expected: list[None | bool]) -> None:
     df = pl.DataFrame(
         {
             "a": [None, None],
@@ -33,36 +52,21 @@ def test_null_comp_14118() -> None:
     )
 
     output_df = df.select(
-        gt=pl.col("a") > pl.col("b"),
-        lt=pl.col("a") < pl.col("b"),
-        gt_eq=pl.col("a") >= pl.col("b"),
-        lt_eq=pl.col("a") <= pl.col("b"),
-        eq=pl.col("a") == pl.col("b"),
-        eq_missing=pl.col("a").eq_missing(pl.col("b")),
-        ne=pl.col("a") != pl.col("b"),
-        ne_missing=pl.col("a").ne_missing(pl.col("b")),
+        cmp=op(pl.col("a"), pl.col("b")),
+        broadcast_lhs=op(pl.lit(None), pl.col("b")),
+        broadcast_rhs=op(pl.col("a"), pl.lit(None)),
     )
 
     expected_df = pl.DataFrame(
         {
-            "gt": [None, None],
-            "lt": [None, None],
-            "gt_eq": [None, None],
-            "lt_eq": [None, None],
-            "eq": [None, None],
-            "eq_missing": [True, True],
-            "ne": [None, None],
-            "ne_missing": [False, False],
+            "cmp": expected,
+            "broadcast_lhs": expected,
+            "broadcast_rhs": expected,
         },
         schema={
-            "gt": pl.Boolean,
-            "lt": pl.Boolean,
-            "gt_eq": pl.Boolean,
-            "lt_eq": pl.Boolean,
-            "eq": pl.Boolean,
-            "eq_missing": pl.Boolean,
-            "ne": pl.Boolean,
-            "ne_missing": pl.Boolean,
+            "cmp": pl.Boolean,
+            "broadcast_lhs": pl.Boolean,
+            "broadcast_rhs": pl.Boolean,
         },
     )
     assert_frame_equal(output_df, expected_df)
