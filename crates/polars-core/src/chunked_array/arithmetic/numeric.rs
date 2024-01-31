@@ -1,388 +1,413 @@
+use polars_compute::arithmetic::ArithmeticKernel;
+
 use super::*;
+use crate::chunked_array::arity::{
+    apply_binary_kernel_broadcast, apply_binary_kernel_broadcast_owned, unary_kernel,
+    unary_kernel_owned,
+};
 
-pub(crate) fn arithmetic_helper<T, Kernel, F>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<T>,
-    kernel: Kernel,
-    operation: F,
-) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
-    F: Fn(T::Native, T::Native) -> T::Native,
-{
-    let mut ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => arity::binary(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
-        // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(lhs.name(), lhs.len()),
-                Some(rhs) => lhs.apply_values(|lhs| operation(lhs, rhs)),
+macro_rules! impl_op_overload {
+    ($op: ident, $trait_method: ident, $ca_method: ident, $ca_method_scalar: ident) => {
+        impl<T: PolarsNumericType> $op for ChunkedArray<T> {
+            type Output = ChunkedArray<T>;
+
+            fn $trait_method(self, rhs: Self) -> Self::Output {
+                ArithmeticChunked::$ca_method(self, rhs)
             }
-        },
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(lhs.name(), rhs.len()),
-                Some(lhs) => rhs.apply_values(|rhs| operation(lhs, rhs)),
-            }
-        },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
-    };
-    ca.rename(lhs.name());
-    ca
-}
-
-/// This assigns to the owned buffer if the ref count is 1
-fn arithmetic_helper_owned<T, Kernel, F>(
-    mut lhs: ChunkedArray<T>,
-    mut rhs: ChunkedArray<T>,
-    kernel: Kernel,
-    operation: F,
-) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    Kernel: Fn(&mut PrimitiveArray<T::Native>, &mut PrimitiveArray<T::Native>),
-    F: Fn(T::Native, T::Native) -> T::Native,
-{
-    let ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => {
-            let (mut lhs, mut rhs) = align_chunks_binary_owned(lhs, rhs);
-            // safety, we do no t change the lengths
-            unsafe {
-                lhs.downcast_iter_mut()
-                    .zip(rhs.downcast_iter_mut())
-                    .for_each(|(lhs, rhs)| kernel(lhs, rhs));
-            }
-            lhs.compute_len();
-            lhs.set_sorted_flag(IsSorted::Not);
-            lhs
-        },
-        // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(lhs.name(), lhs.len()),
-                Some(rhs) => {
-                    lhs.apply_mut(|lhs| operation(lhs, rhs));
-                    lhs
-                },
-            }
-        },
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(lhs.name(), rhs.len()),
-                Some(lhs_val) => {
-                    rhs.apply_mut(|rhs| operation(lhs_val, rhs));
-                    rhs.rename(lhs.name());
-                    rhs
-                },
-            }
-        },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
-    };
-    ca
-}
-
-// Operands on ChunkedArray & ChunkedArray
-
-impl<T> Add for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::add,
-            |lhs, rhs| lhs + rhs,
-        )
-    }
-}
-
-impl<T> Div for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::div,
-            |lhs, rhs| lhs / rhs,
-        )
-    }
-}
-
-impl<T> Mul for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::mul,
-            |lhs, rhs| lhs * rhs,
-        )
-    }
-}
-
-impl<T> Rem for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::rem,
-            |lhs, rhs| lhs % rhs,
-        )
-    }
-}
-
-impl<T> Sub for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::sub,
-            |lhs, rhs| lhs - rhs,
-        )
-    }
-}
-
-impl<T> Add for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a + b),
-            |lhs, rhs| lhs + rhs,
-        )
-    }
-}
-
-impl<T> Div for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a / b),
-            |lhs, rhs| lhs / rhs,
-        )
-    }
-}
-
-impl<T> Mul for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a * b),
-            |lhs, rhs| lhs * rhs,
-        )
-    }
-}
-
-impl<T> Sub for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a - b),
-            |lhs, rhs| lhs - rhs,
-        )
-    }
-}
-
-impl<T> Rem for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        (&self).rem(&rhs)
-    }
-}
-
-// Operands on ChunkedArray & Num
-
-impl<T, N> Add<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn add(self, rhs: N) -> Self::Output {
-        let adder: T::Native = NumCast::from(rhs).unwrap();
-        let mut out = self.apply_values(|val| val + adder);
-        out.set_sorted_flag(self.is_sorted_flag());
-        out
-    }
-}
-
-impl<T, N> Sub<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn sub(self, rhs: N) -> Self::Output {
-        let subber: T::Native = NumCast::from(rhs).unwrap();
-        let mut out = self.apply_values(|val| val - subber);
-        out.set_sorted_flag(self.is_sorted_flag());
-        out
-    }
-}
-
-impl<T, N> Div<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn div(self, rhs: N) -> Self::Output {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        let mut out = self
-            .apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)));
-
-        if rhs.tot_lt(&T::Native::zero()) {
-            out.set_sorted_flag(self.is_sorted_flag().reverse());
-        } else {
-            out.set_sorted_flag(self.is_sorted_flag());
         }
-        out
+
+        impl<T: PolarsNumericType> $op for &ChunkedArray<T> {
+            type Output = ChunkedArray<T>;
+
+            fn $trait_method(self, rhs: Self) -> Self::Output {
+                ArithmeticChunked::$ca_method(self, rhs)
+            }
+        }
+
+        // TODO: make this more strict instead of casting.
+        impl<T: PolarsNumericType, N: Num + ToPrimitive> $op<N> for ChunkedArray<T> {
+            type Output = ChunkedArray<T>;
+
+            fn $trait_method(self, rhs: N) -> Self::Output {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                ArithmeticChunked::$ca_method_scalar(self, rhs)
+            }
+        }
+
+        impl<T: PolarsNumericType, N: Num + ToPrimitive> $op<N> for &ChunkedArray<T> {
+            type Output = ChunkedArray<T>;
+
+            fn $trait_method(self, rhs: N) -> Self::Output {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                ArithmeticChunked::$ca_method_scalar(self, rhs)
+            }
+        }
+    };
+}
+
+impl_op_overload!(Add, add, wrapping_add, wrapping_add_scalar);
+impl_op_overload!(Sub, sub, wrapping_sub, wrapping_sub_scalar);
+impl_op_overload!(Mul, mul, wrapping_mul, wrapping_mul_scalar);
+impl_op_overload!(Div, div, legacy_div, legacy_div_scalar); // FIXME: replace this with true division.
+impl_op_overload!(Rem, rem, wrapping_mod, wrapping_mod_scalar);
+
+pub trait ArithmeticChunked {
+    type Scalar;
+    type Out;
+    type TrueDivOut;
+
+    fn wrapping_neg(self) -> Self::Out;
+    fn wrapping_add(self, rhs: Self) -> Self::Out;
+    fn wrapping_sub(self, rhs: Self) -> Self::Out;
+    fn wrapping_mul(self, rhs: Self) -> Self::Out;
+    fn wrapping_floor_div(self, rhs: Self) -> Self::Out;
+    fn wrapping_trunc_div(self, rhs: Self) -> Self::Out;
+    fn wrapping_mod(self, rhs: Self) -> Self::Out;
+
+    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self::Out;
+    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self::Out;
+    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self::Out;
+    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self::Out;
+    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self::Out;
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self::Out;
+    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+
+    fn true_div(self, rhs: Self) -> Self::TrueDivOut;
+    fn true_div_scalar(self, rhs: Self::Scalar) -> Self::TrueDivOut;
+    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut;
+
+    // TODO: remove these.
+    // These are flooring division for integer types, true division for floating point types.
+    fn legacy_div(self, rhs: Self) -> Self::Out;
+    fn legacy_div_scalar(self, rhs: Self::Scalar) -> Self::Out;
+    fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+}
+
+impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
+    type Scalar = T::Native;
+    type Out = ChunkedArray<T>;
+    type TrueDivOut = ChunkedArray<<T::Native as NumericNative>::TrueDivPolarsType>;
+
+    fn wrapping_neg(self) -> Self::Out {
+        unary_kernel_owned(self, ArithmeticKernel::wrapping_neg)
+    }
+
+    fn wrapping_add(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::wrapping_add,
+            |l, r| ArithmeticKernel::wrapping_add_scalar(r, l),
+            ArithmeticKernel::wrapping_add_scalar,
+        )
+    }
+
+    fn wrapping_sub(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::wrapping_sub,
+            ArithmeticKernel::wrapping_sub_scalar_lhs,
+            ArithmeticKernel::wrapping_sub_scalar,
+        )
+    }
+
+    fn wrapping_mul(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::wrapping_mul,
+            |l, r| ArithmeticKernel::wrapping_mul_scalar(r, l),
+            ArithmeticKernel::wrapping_mul_scalar,
+        )
+    }
+
+    fn wrapping_floor_div(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::wrapping_floor_div,
+            ArithmeticKernel::wrapping_floor_div_scalar_lhs,
+            ArithmeticKernel::wrapping_floor_div_scalar,
+        )
+    }
+
+    fn wrapping_trunc_div(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::wrapping_trunc_div,
+            ArithmeticKernel::wrapping_trunc_div_scalar_lhs,
+            ArithmeticKernel::wrapping_trunc_div_scalar,
+        )
+    }
+
+    fn wrapping_mod(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::wrapping_mod,
+            ArithmeticKernel::wrapping_mod_scalar_lhs,
+            ArithmeticKernel::wrapping_mod_scalar,
+        )
+    }
+
+    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| ArithmeticKernel::wrapping_add_scalar(a, rhs))
+    }
+
+    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| ArithmeticKernel::wrapping_sub_scalar(a, rhs))
+    }
+
+    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel_owned(rhs, |a| ArithmeticKernel::wrapping_sub_scalar_lhs(lhs, a))
+    }
+
+    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| ArithmeticKernel::wrapping_mul_scalar(a, rhs))
+    }
+
+    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar(a, rhs)
+        })
+    }
+
+    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel_owned(rhs, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar_lhs(lhs, a)
+        })
+    }
+
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar(a, rhs)
+        })
+    }
+
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel_owned(rhs, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar_lhs(lhs, a)
+        })
+    }
+
+    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| ArithmeticKernel::wrapping_mod_scalar(a, rhs))
+    }
+
+    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel_owned(rhs, |a| ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a))
+    }
+
+    fn true_div(self, rhs: Self) -> Self::TrueDivOut {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::true_div,
+            ArithmeticKernel::true_div_scalar_lhs,
+            ArithmeticKernel::true_div_scalar,
+        )
+    }
+
+    fn true_div_scalar(self, rhs: Self::Scalar) -> Self::TrueDivOut {
+        unary_kernel_owned(self, |a| ArithmeticKernel::true_div_scalar(a, rhs))
+    }
+
+    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut {
+        unary_kernel_owned(rhs, |a| ArithmeticKernel::true_div_scalar_lhs(lhs, a))
+    }
+
+    fn legacy_div(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast_owned(
+            self,
+            rhs,
+            ArithmeticKernel::legacy_div,
+            ArithmeticKernel::legacy_div_scalar_lhs,
+            ArithmeticKernel::legacy_div_scalar,
+        )
+    }
+
+    fn legacy_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| ArithmeticKernel::legacy_div_scalar(a, rhs))
+    }
+
+    fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel_owned(rhs, |a| ArithmeticKernel::legacy_div_scalar_lhs(lhs, a))
     }
 }
 
-impl<T, N> Mul<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
+impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
+    type Scalar = T::Native;
+    type Out = ChunkedArray<T>;
+    type TrueDivOut = ChunkedArray<<T::Native as NumericNative>::TrueDivPolarsType>;
 
-    fn mul(self, rhs: N) -> Self::Output {
-        // don't set sorted flag as probability of overflow is higher
-        let multiplier: T::Native = NumCast::from(rhs).unwrap();
-        let rhs = ChunkedArray::from_vec("", vec![multiplier]);
-        self.mul(&rhs)
+    fn wrapping_neg(self) -> Self::Out {
+        unary_kernel(self, |a| ArithmeticKernel::wrapping_neg(a.clone()))
     }
-}
 
-impl<T, N> Rem<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn rem(self, rhs: N) -> Self::Output {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        let rhs = ChunkedArray::from_vec("", vec![rhs]);
-        self.rem(&rhs)
+    fn wrapping_add(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::wrapping_add(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::wrapping_add_scalar(r.clone(), l),
+            |l, r| ArithmeticKernel::wrapping_add_scalar(l.clone(), r),
+        )
     }
-}
 
-impl<T, N> Add<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn add(self, rhs: N) -> Self::Output {
-        (&self).add(rhs)
+    fn wrapping_sub(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::wrapping_sub(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::wrapping_sub_scalar_lhs(l, r.clone()),
+            |l, r| ArithmeticKernel::wrapping_sub_scalar(l.clone(), r),
+        )
     }
-}
 
-impl<T, N> Sub<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn sub(self, rhs: N) -> Self::Output {
-        (&self).sub(rhs)
+    fn wrapping_mul(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::wrapping_mul(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::wrapping_mul_scalar(r.clone(), l),
+            |l, r| ArithmeticKernel::wrapping_mul_scalar(l.clone(), r),
+        )
     }
-}
 
-impl<T, N> Div<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn div(self, rhs: N) -> Self::Output {
-        (&self).div(rhs)
+    fn wrapping_floor_div(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::wrapping_floor_div(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::wrapping_floor_div_scalar_lhs(l, r.clone()),
+            |l, r| ArithmeticKernel::wrapping_floor_div_scalar(l.clone(), r),
+        )
     }
-}
 
-impl<T, N> Mul<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn mul(mut self, rhs: N) -> Self::Output {
-        let multiplier: T::Native = NumCast::from(rhs).unwrap();
-        self.apply_mut(|val| val * multiplier);
-        self
+    fn wrapping_trunc_div(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::wrapping_trunc_div(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::wrapping_trunc_div_scalar_lhs(l, r.clone()),
+            |l, r| ArithmeticKernel::wrapping_trunc_div_scalar(l.clone(), r),
+        )
     }
-}
 
-impl<T, N> Rem<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
+    fn wrapping_mod(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::wrapping_mod(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::wrapping_mod_scalar_lhs(l, r.clone()),
+            |l, r| ArithmeticKernel::wrapping_mod_scalar(l.clone(), r),
+        )
+    }
 
-    fn rem(self, rhs: N) -> Self::Output {
-        (&self).rem(rhs)
+    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_add_scalar(a.clone(), rhs)
+        })
+    }
+
+    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_sub_scalar(a.clone(), rhs)
+        })
+    }
+
+    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_sub_scalar_lhs(lhs, a.clone())
+        })
+    }
+
+    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_mul_scalar(a.clone(), rhs)
+        })
+    }
+
+    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar(a.clone(), rhs)
+        })
+    }
+
+    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_floor_div_scalar_lhs(lhs, a.clone())
+        })
+    }
+
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar(a.clone(), rhs)
+        })
+    }
+
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_trunc_div_scalar_lhs(lhs, a.clone())
+        })
+    }
+
+    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::wrapping_mod_scalar(a.clone(), rhs)
+        })
+    }
+
+    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a.clone())
+        })
+    }
+
+    fn true_div(self, rhs: Self) -> Self::TrueDivOut {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::true_div(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::true_div_scalar_lhs(l, r.clone()),
+            |l, r| ArithmeticKernel::true_div_scalar(l.clone(), r),
+        )
+    }
+
+    fn true_div_scalar(self, rhs: Self::Scalar) -> Self::TrueDivOut {
+        unary_kernel(self, |a| ArithmeticKernel::true_div_scalar(a.clone(), rhs))
+    }
+
+    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut {
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::true_div_scalar_lhs(lhs, a.clone())
+        })
+    }
+
+    fn legacy_div(self, rhs: Self) -> Self::Out {
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            |l, r| ArithmeticKernel::legacy_div(l.clone(), r.clone()),
+            |l, r| ArithmeticKernel::legacy_div_scalar_lhs(l, r.clone()),
+            |l, r| ArithmeticKernel::legacy_div_scalar(l.clone(), r),
+        )
+    }
+
+    fn legacy_div_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::legacy_div_scalar(a.clone(), rhs)
+        })
+    }
+
+    fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+        unary_kernel(rhs, |a| {
+            ArithmeticKernel::legacy_div_scalar_lhs(lhs, a.clone())
+        })
     }
 }

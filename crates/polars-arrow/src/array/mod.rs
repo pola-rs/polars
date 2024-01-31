@@ -530,6 +530,12 @@ macro_rules! impl_mut_validity {
             }
             self.validity = validity;
         }
+
+        /// Takes the validity of this array, leaving it without a validity mask.
+        #[inline]
+        pub fn take_validity(&mut self) -> Option<Bitmap> {
+            self.validity.take()
+        }
     }
 }
 

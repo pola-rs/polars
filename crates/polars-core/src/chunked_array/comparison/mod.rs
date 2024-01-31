@@ -911,9 +911,16 @@ impl ChunkEqualElement for ArrayChunked {}
 mod test {
     use std::iter::repeat;
 
-    use super::super::arithmetic::test::create_two_chunked;
     use super::super::test::get_chunked_array;
     use crate::prelude::*;
+
+    pub(crate) fn create_two_chunked() -> (Int32Chunked, Int32Chunked) {
+        let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
+        let a2 = Int32Chunked::new("a", &[4, 5, 6]);
+        let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
+        a1.append(&a2);
+        (a1, a3)
+    }
 
     #[test]
     fn test_bitwise_ops() {

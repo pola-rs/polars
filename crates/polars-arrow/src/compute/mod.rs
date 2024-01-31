@@ -14,9 +14,6 @@
 #[cfg(any(feature = "compute_aggregate", feature = "io_parquet"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_aggregate")))]
 pub mod aggregate;
-#[cfg(feature = "compute_arithmetics")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_arithmetics")))]
-pub mod arithmetics;
 pub mod arity;
 pub mod arity_assign;
 #[cfg(feature = "compute_bitwise")]

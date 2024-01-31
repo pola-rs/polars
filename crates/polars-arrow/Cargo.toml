@@ -63,7 +63,7 @@ async-stream = { version = "0.3.2", optional = true }
 avro-schema = { workspace = true, optional = true }
 
 # for division/remainder optimization at runtime
-strength_reduce = { version = "0.2", optional = true }
+strength_reduce = { workspace = true, optional = true }
 
 # For instruction multiversioning
 multiversion = { workspace = true, optional = true }

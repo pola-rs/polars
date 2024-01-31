@@ -622,6 +622,22 @@ where
     }
 }
 
+// TODO: remove this, temporary band-aid.
+impl Series {
+    pub fn wrapping_trunc_div_scalar<T: Num + NumCast>(&self, rhs: T) -> Self {
+        let s = self.to_physical_repr();
+        macro_rules! div {
+            ($ca:expr) => {{
+                let rhs = NumCast::from(rhs).unwrap();
+                $ca.wrapping_trunc_div_scalar(rhs).into_series()
+            }};
+        }
+
+        let out = downcast_as_macro_arg_physical!(s, div);
+        finish_cast(self, out)
+    }
+}
+
 impl<T> Mul<T> for &Series
 where
     T: Num + NumCast,

@@ -211,6 +211,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.set_sorted_flag(sorted)
     }
 
+    /// Set the 'sorted' bit meta info.
+    pub fn with_sorted_flag(&self, sorted: IsSorted) -> Self {
+        let mut out = self.clone();
+        out.bit_settings.set_sorted_flag(sorted);
+        out
+    }
+
     /// Get the index of the first non null value in this [`ChunkedArray`].
     pub fn first_non_null(&self) -> Option<usize> {
         if self.is_empty() {

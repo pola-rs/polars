@@ -35,6 +35,7 @@ use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
+use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
@@ -47,7 +48,6 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 pub use time_unit::*;
 
-use crate::chunked_array::arithmetic::ArrayArithmetics;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -263,44 +263,56 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + ArrayArithmetics
+    + HasPrimitiveArithmeticKernel<TrueDivT=<Self::TrueDivPolarsType as PolarsNumericType>::Native>
     + MinMax
     + IsNull
 {
     type PolarsType: PolarsNumericType;
+    type TrueDivPolarsType: PolarsNumericType;
 }
 
 impl NumericNative for i8 {
     type PolarsType = Int8Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for i16 {
     type PolarsType = Int16Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for i32 {
     type PolarsType = Int32Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for i64 {
     type PolarsType = Int64Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u8 {
     type PolarsType = UInt8Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u16 {
     type PolarsType = UInt16Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u32 {
     type PolarsType = UInt32Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for u64 {
     type PolarsType = UInt64Type;
+    type TrueDivPolarsType = Float64Type;
 }
 #[cfg(feature = "dtype-decimal")]
 impl NumericNative for i128 {
     type PolarsType = Int128Type;
+    type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for f32 {
     type PolarsType = Float32Type;
+    type TrueDivPolarsType = Float32Type;
 }
 impl NumericNative for f64 {
     type PolarsType = Float64Type;
+    type TrueDivPolarsType = Float64Type;
 }

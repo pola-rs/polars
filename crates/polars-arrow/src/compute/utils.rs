@@ -3,7 +3,24 @@ use std::ops::{BitAnd, BitOr};
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::array::Array;
-use crate::bitmap::Bitmap;
+use crate::bitmap::{ternary, Bitmap};
+
+pub fn combine_validities_and3(
+    opt1: Option<&Bitmap>,
+    opt2: Option<&Bitmap>,
+    opt3: Option<&Bitmap>,
+) -> Option<Bitmap> {
+    match (opt1, opt2, opt3) {
+        (Some(a), Some(b), Some(c)) => Some(ternary(a, b, c, |x, y, z| x & y & z)),
+        (Some(a), Some(b), None) => Some(a.bitand(b)),
+        (Some(a), None, Some(c)) => Some(a.bitand(c)),
+        (None, Some(b), Some(c)) => Some(b.bitand(c)),
+        (Some(a), None, None) => Some(a.clone()),
+        (None, Some(b), None) => Some(b.clone()),
+        (None, None, Some(c)) => Some(c.clone()),
+        (None, None, None) => None,
+    }
+}
 
 pub fn combine_validities_and(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
     match (opt_l, opt_r) {

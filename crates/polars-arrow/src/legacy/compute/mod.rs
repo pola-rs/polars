@@ -4,7 +4,6 @@ use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 pub mod arithmetics;
-pub mod bitwise;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
 pub mod take;

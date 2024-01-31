@@ -448,6 +448,37 @@ impl<T: NativeType> PrimitiveArray<T> {
     pub fn new(data_type: ArrowDataType, values: Buffer<T>, validity: Option<Bitmap>) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
     }
+
+    /// Transmute this PrimitiveArray into another PrimitiveArray.
+    ///
+    /// T and U must have the same size and alignment.
+    pub fn transmute<U: NativeType>(self) -> PrimitiveArray<U> {
+        let PrimitiveArray {
+            values, validity, ..
+        } = self;
+
+        // SAFETY: this is fine, we checked size and alignment, and NativeType
+        // is always Pod.
+        assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<U>());
+        assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<U>());
+        let new_values = unsafe { std::mem::transmute::<Buffer<T>, Buffer<U>>(values) };
+        PrimitiveArray::new(U::PRIMITIVE.into(), new_values, validity)
+    }
+
+    /// Fills this entire array with the given value, leaving the validity mask intact.
+    ///
+    /// Re-uses the memory of the PrimitiveArray if possible.
+    pub fn fill_with(mut self, value: T) -> Self {
+        if let Some(values) = self.get_mut_values() {
+            for x in values.iter_mut() {
+                *x = value;
+            }
+            self
+        } else {
+            let values = vec![value; self.len()];
+            Self::new(T::PRIMITIVE.into(), values.into(), self.validity)
+        }
+    }
 }
 
 impl<T: NativeType> Array for PrimitiveArray<T> {

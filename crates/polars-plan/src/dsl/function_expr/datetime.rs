@@ -289,10 +289,12 @@ pub(super) fn second(s: &Series) -> PolarsResult<Series> {
     s.second().map(|ca| ca.into_series())
 }
 pub(super) fn millisecond(s: &Series) -> PolarsResult<Series> {
-    s.nanosecond().map(|ca| (ca / 1_000_000).into_series())
+    s.nanosecond()
+        .map(|ca| (ca.wrapping_trunc_div_scalar(1_000_000)).into_series())
 }
 pub(super) fn microsecond(s: &Series) -> PolarsResult<Series> {
-    s.nanosecond().map(|ca| (ca / 1_000).into_series())
+    s.nanosecond()
+        .map(|ca| (ca.wrapping_trunc_div_scalar(1_000)).into_series())
 }
 pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
     s.nanosecond().map(|ca| ca.into_series())
@@ -518,7 +520,7 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
                 microseconds = microseconds.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&nanoseconds) {
-                microseconds = microseconds + (nanoseconds / 1_000);
+                microseconds = microseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000));
             }
             if !is_zero_scalar(&milliseconds) {
                 microseconds = microseconds + (milliseconds * 1_000);
@@ -542,10 +544,10 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
                 milliseconds = milliseconds.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&nanoseconds) {
-                milliseconds = milliseconds + (nanoseconds / 1_000_000);
+                milliseconds = milliseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000_000));
             }
             if !is_zero_scalar(&microseconds) {
-                milliseconds = milliseconds + (microseconds / 1_000);
+                milliseconds = milliseconds + (microseconds.wrapping_trunc_div_scalar(1_000));
             }
             milliseconds
         },
