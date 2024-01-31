@@ -13,6 +13,7 @@ use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::TotalOrdKernel;
 
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 use crate::series::IsSorted;
 
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
@@ -164,6 +165,52 @@ where
 
     fn gt_eq(&self, rhs: &Self) -> BooleanChunked {
         rhs.lt_eq(self)
+    }
+}
+
+impl ChunkCompare<&NullChunked> for NullChunked {
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn equal_missing(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full(self.name(), true, get_broadcast_length(self, rhs))
+    }
+
+    fn not_equal(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn not_equal_missing(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full(self.name(), false, get_broadcast_length(self, rhs))
+    }
+
+    fn gt(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn gt_eq(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn lt(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn lt_eq(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+}
+
+#[inline]
+fn get_broadcast_length(lhs: &NullChunked, rhs: &NullChunked) -> usize {
+    match (lhs.len(), rhs.len()) {
+        (1, len_r) => len_r,
+        (len_l, 1) => len_l,
+        (len_l, len_r) if len_l == len_r => len_l,
+        _ => panic!("Cannot compare two series of different lengths."),
     }
 }
 
