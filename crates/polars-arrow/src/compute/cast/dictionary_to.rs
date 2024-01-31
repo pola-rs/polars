@@ -1,9 +1,8 @@
 use polars_error::{polars_bail, PolarsResult};
 
 use super::{primitive_as_primitive, primitive_to_primitive, CastOptions};
-use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
+use crate::array::{Array, DictionaryArray, DictionaryKey};
 use crate::compute::cast::cast;
-use crate::compute::take::take_unchecked;
 use crate::datatypes::ArrowDataType;
 use crate::match_integer_type;
 
@@ -147,40 +146,6 @@ pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
                 key_cast!(keys, values, array, &to_key_type, $T, to_type.clone())
             })
         },
-        _ => unpack_dictionary::<K>(keys, values.as_ref(), to_type, options),
+        _ => unimplemented!(),
     }
-}
-
-// Unpack the dictionary
-fn unpack_dictionary<K>(
-    keys: &PrimitiveArray<K>,
-    values: &dyn Array,
-    to_type: &ArrowDataType,
-    options: CastOptions,
-) -> PolarsResult<Box<dyn Array>>
-where
-    K: DictionaryKey + num_traits::NumCast,
-{
-    // attempt to cast the dict values to the target type
-    // use the take kernel to expand out the dictionary
-    let values = cast(values, to_type, options)?;
-
-    // take requires first casting i32
-    let indices = primitive_to_primitive::<_, i32>(keys, &ArrowDataType::Int32);
-
-    Ok(unsafe { take_unchecked(values.as_ref(), &indices) })
-}
-
-/// Casts a [`DictionaryArray`] to its values' [`ArrowDataType`], also known as unpacking.
-/// The resulting array has the same length.
-pub fn dictionary_to_values<K>(from: &DictionaryArray<K>) -> Box<dyn Array>
-where
-    K: DictionaryKey + num_traits::NumCast,
-{
-    // take requires first casting i64
-    let indices = primitive_to_primitive::<_, i64>(from.keys(), &ArrowDataType::Int64);
-
-    // SAFETY:
-    // The dictionary guarantees that the keys are not out-of-bounds.
-    unsafe { take_unchecked(from.values().as_ref(), &indices) }
 }

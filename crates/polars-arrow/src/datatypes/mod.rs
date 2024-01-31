@@ -592,3 +592,8 @@ pub fn get_extension(metadata: &Metadata) -> Extension {
         None
     }
 }
+
+#[cfg(not(feature = "bigidx"))]
+pub type IdxArr = super::array::UInt32Array;
+#[cfg(feature = "bigidx")]
+pub type IdxArr = super::array::UInt64Array;

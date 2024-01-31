@@ -17,13 +17,14 @@
 
 use super::Index;
 use crate::array::growable::{Growable, GrowableList};
-use crate::array::{ListArray, PrimitiveArray};
+use crate::array::ListArray;
+use crate::datatypes::IdxArr;
 use crate::offset::Offset;
 
 /// `take` implementation for ListArrays
-pub(super) unsafe fn take_unchecked<I: Offset, O: Index>(
+pub(super) unsafe fn take_unchecked<I: Offset>(
     values: &ListArray<I>,
-    indices: &PrimitiveArray<O>,
+    indices: &IdxArr,
 ) -> ListArray<I> {
     let mut capacity = 0;
     let arrays = indices

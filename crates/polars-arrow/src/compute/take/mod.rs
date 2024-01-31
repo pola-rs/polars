@@ -17,29 +17,28 @@
 
 //! Defines take kernel for [`Array`]
 
-use crate::array::{new_empty_array, Array, NullArray, PrimitiveArray};
+use crate::array::{new_empty_array, Array, NullArray, Utf8ViewArray};
+use crate::compute::take::binview::take_binview_unchecked;
+use crate::datatypes::IdxArr;
 use crate::types::Index;
 
 mod binary;
+mod binview;
+mod bitmap;
 mod boolean;
-mod dict;
 mod fixed_size_list;
 mod generic_binary;
 mod list;
 mod primitive;
 mod structure;
-mod utf8;
 
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::with_match_primitive_type;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
 /// # Safety
 /// Doesn't do bound checks
-pub unsafe fn take_unchecked<O: Index>(
-    values: &dyn Array,
-    indices: &PrimitiveArray<O>,
-) -> Box<dyn Array> {
+pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Array> {
     if indices.len() == 0 {
         return new_empty_array(values.data_type().clone());
     }
@@ -49,37 +48,36 @@ pub unsafe fn take_unchecked<O: Index>(
         Null => Box::new(NullArray::new(values.data_type().clone(), indices.len())),
         Boolean => {
             let values = values.as_any().downcast_ref().unwrap();
-            Box::new(boolean::take_unchecked::<O>(values, indices))
+            Box::new(boolean::take_unchecked(values, indices))
         },
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let values = values.as_any().downcast_ref().unwrap();
-            Box::new(primitive::take_unchecked::<$T, _>(&values, indices))
+            Box::new(primitive::take_primitive_unchecked::<$T>(&values, indices))
         }),
-        LargeUtf8 => {
-            let values = values.as_any().downcast_ref().unwrap();
-            Box::new(utf8::take_unchecked::<i64, _>(values, indices))
-        },
         LargeBinary => {
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(binary::take_unchecked::<i64, _>(values, indices))
         },
-        Dictionary(key_type) => {
-            match_integer_type!(key_type, |$T| {
-                let values = values.as_any().downcast_ref().unwrap();
-                Box::new(dict::take_unchecked::<$T, _>(&values, indices))
-            })
-        },
         Struct => {
             let array = values.as_any().downcast_ref().unwrap();
-            structure::take_unchecked::<_>(array, indices).boxed()
+            structure::take_unchecked(array, indices).boxed()
         },
         LargeList => {
             let array = values.as_any().downcast_ref().unwrap();
-            Box::new(list::take_unchecked::<i64, O>(array, indices))
+            Box::new(list::take_unchecked::<i64>(array, indices))
         },
         FixedSizeList => {
             let array = values.as_any().downcast_ref().unwrap();
-            Box::new(fixed_size_list::take_unchecked::<O>(array, indices))
+            Box::new(fixed_size_list::take_unchecked(array, indices))
+        },
+        BinaryView => {
+            take_binview_unchecked(values.as_any().downcast_ref().unwrap(), indices).boxed()
+        },
+        Utf8View => {
+            let arr: &Utf8ViewArray = values.as_any().downcast_ref().unwrap();
+            take_binview_unchecked(&arr.to_binview(), indices)
+                .to_utf8view_unchecked()
+                .boxed()
         },
         t => unimplemented!("Take not supported for data type {:?}", t),
     }
