@@ -621,6 +621,23 @@ where
         out
     }
 }
+impl From<StringChunked> for Vec<Option<String>> {
+    fn from(ca: StringChunked) -> Self {
+        ca.into_iter()
+            .map(|opt| opt.map(|s| s.to_string()))
+            .collect()
+    }
+}
+
+impl From<BooleanChunked> for Vec<Option<bool>> {
+    fn from(ca: BooleanChunked) -> Self {
+        let mut out = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            out.extend(arr.iter())
+        }
+        out
+    }
+}
 
 /// From trait
 impl FromParallelIterator<Option<Series>> for ListChunked {
