@@ -45,6 +45,17 @@ macro_rules! impl_signed_arith_kernel {
                 let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div_mod(rhs).0);
                 ret.with_validity(valid)
             }
+            
+            fn prim_wrapping_trunc_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
+                let mask = other.tot_ne_kernel_broadcast(&0);
+                let valid = combine_validities_and3(
+                    lhs.take_validity().as_ref(),   // Take validity so we don't
+                    other.take_validity().as_ref(), // compute combination twice.
+                    Some(&mask),
+                );
+                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div(rhs));
+                ret.with_validity(valid)
+            }
 
             fn prim_wrapping_mod(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
@@ -133,6 +144,38 @@ macro_rules! impl_signed_arith_kernel {
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
                 let ret = prim_unary_values(rhs, |x| lhs.wrapping_div_mod(x).0);
+                ret.with_validity(valid)
+            }
+
+            fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                if rhs == 0 {
+                    PArr::full_null(lhs.len(), lhs.data_type().clone())
+                } else if rhs == -1 {
+                    Self::prim_wrapping_neg(lhs)
+                } else if rhs == 1 {
+                    lhs
+                } else {
+                    let red = <$StrRed>::new(rhs.unsigned_abs());
+                    prim_unary_values(lhs, |x| {
+                        let quot = x.unsigned_abs() / red;
+                        if (x < 0) != (rhs < 0) {
+                            // Different signs: result should be negative.
+                            -(quot as $T)
+                        } else {
+                            quot as $T
+                        }
+                    })
+                }
+            }
+
+            fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+                if lhs == 0 {
+                    return rhs.fill_with(0);
+                }
+
+                let mask = rhs.tot_ne_kernel_broadcast(&0);
+                let valid = combine_validities_and(rhs.validity(), Some(&mask));
+                let ret = prim_unary_values(rhs, |x| lhs.wrapping_div(x));
                 ret.with_validity(valid)
             }
 

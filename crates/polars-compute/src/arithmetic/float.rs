@@ -28,6 +28,10 @@ macro_rules! impl_float_arith_kernel {
                 prim_binary_values(lhs, rhs, |l, r| (l / r).floor())
             }
 
+            fn prim_wrapping_trunc_div(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
+                prim_binary_values(lhs, rhs, |l, r| (l / r).trunc())
+            }
+
             fn prim_wrapping_mod(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
                 prim_binary_values(lhs, rhs, |l, r| l - r * (l / r).floor())
             }
@@ -72,6 +76,15 @@ macro_rules! impl_float_arith_kernel {
 
             fn prim_wrapping_floor_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
                 prim_unary_values(rhs, |x| (lhs / x).floor())
+            }
+
+            fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                let inv = 1.0 / rhs;
+                prim_unary_values(lhs, |x| (x * inv).trunc())
+            }
+
+            fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+                prim_unary_values(rhs, |x| (lhs / x).trunc())
             }
 
             fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {

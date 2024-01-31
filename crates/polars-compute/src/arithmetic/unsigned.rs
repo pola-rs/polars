@@ -38,6 +38,10 @@ macro_rules! impl_unsigned_arith_kernel {
                 ret.with_validity(valid)
             }
 
+            fn prim_wrapping_trunc_div(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<$T> {
+                Self::prim_wrapping_floor_div(lhs, rhs)
+            }
+
             fn prim_wrapping_mod(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and3(
@@ -95,6 +99,14 @@ macro_rules! impl_unsigned_arith_kernel {
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
                 let ret = prim_unary_values(rhs, |x| if x != 0 { lhs / x } else { 0 });
                 ret.with_validity(valid)
+            }
+
+            fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                Self::prim_wrapping_floor_div_scalar(lhs, rhs)
+            }
+
+            fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+                Self::prim_wrapping_floor_div_scalar_lhs(lhs, rhs)
             }
 
             fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {

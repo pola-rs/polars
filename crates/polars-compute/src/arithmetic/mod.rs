@@ -13,6 +13,7 @@ pub trait ArithmeticKernel: Sized + Array {
     fn wrapping_sub(self, rhs: Self) -> Self;
     fn wrapping_mul(self, rhs: Self) -> Self;
     fn wrapping_floor_div(self, rhs: Self) -> Self;
+    fn wrapping_trunc_div(self, rhs: Self) -> Self;
     fn wrapping_mod(self, rhs: Self) -> Self;
 
     fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self;
@@ -21,6 +22,8 @@ pub trait ArithmeticKernel: Sized + Array {
     fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self;
     fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self;
     fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self;
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self;
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self;
     fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self;
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self;
 
@@ -86,6 +89,7 @@ pub trait PrimitiveArithmeticKernelImpl: NativeType {
     fn prim_wrapping_sub(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
     fn prim_wrapping_mul(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
     fn prim_wrapping_floor_div(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
+    fn prim_wrapping_trunc_div(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
     fn prim_wrapping_mod(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
 
     fn prim_wrapping_add_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
@@ -94,6 +98,8 @@ pub trait PrimitiveArithmeticKernelImpl: NativeType {
     fn prim_wrapping_mul_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
     fn prim_wrapping_floor_div_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
     fn prim_wrapping_floor_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self>;
+    fn prim_wrapping_trunc_div_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
+    fn prim_wrapping_trunc_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self>;
     fn prim_wrapping_mod_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
     fn prim_wrapping_mod_scalar_lhs(lhs: Self, lhs: PArr<Self>) -> PArr<Self>;
 
@@ -102,63 +108,33 @@ pub trait PrimitiveArithmeticKernelImpl: NativeType {
     fn prim_true_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self::TrueDivT>;
 }
 
+#[rustfmt::skip]
 impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PrimitiveArray<T> {
     type Scalar = T;
     type TrueDivT = T::TrueDivT;
 
-    fn wrapping_neg(self) -> Self {
-        T::prim_wrapping_neg(self)
-    }
-    fn wrapping_add(self, rhs: Self) -> Self {
-        T::prim_wrapping_add(self, rhs)
-    }
-    fn wrapping_sub(self, rhs: Self) -> Self {
-        T::prim_wrapping_sub(self, rhs)
-    }
-    fn wrapping_mul(self, rhs: Self) -> Self {
-        T::prim_wrapping_mul(self, rhs)
-    }
-    fn wrapping_floor_div(self, rhs: Self) -> Self {
-        T::prim_wrapping_floor_div(self, rhs)
-    }
-    fn wrapping_mod(self, rhs: Self) -> Self {
-        T::prim_wrapping_mod(self, rhs)
-    }
+    fn wrapping_neg(self) -> Self { T::prim_wrapping_neg(self) }
+    fn wrapping_add(self, rhs: Self) -> Self { T::prim_wrapping_add(self, rhs) }
+    fn wrapping_sub(self, rhs: Self) -> Self { T::prim_wrapping_sub(self, rhs) }
+    fn wrapping_mul(self, rhs: Self) -> Self { T::prim_wrapping_mul(self, rhs) }
+    fn wrapping_floor_div(self, rhs: Self) -> Self { T::prim_wrapping_floor_div(self, rhs) }
+    fn wrapping_trunc_div(self, rhs: Self) -> Self { T::prim_wrapping_trunc_div(self, rhs) }
+    fn wrapping_mod(self, rhs: Self) -> Self { T::prim_wrapping_mod(self, rhs) }
 
-    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self {
-        T::prim_wrapping_add_scalar(self, rhs)
-    }
-    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self {
-        T::prim_wrapping_sub_scalar(self, rhs)
-    }
-    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self {
-        T::prim_wrapping_sub_scalar_lhs(lhs, rhs)
-    }
-    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self {
-        T::prim_wrapping_mul_scalar(self, rhs)
-    }
-    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self {
-        T::prim_wrapping_floor_div_scalar(self, rhs)
-    }
-    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self {
-        T::prim_wrapping_floor_div_scalar_lhs(lhs, rhs)
-    }
-    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self {
-        T::prim_wrapping_mod_scalar(self, rhs)
-    }
-    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self {
-        T::prim_wrapping_mod_scalar_lhs(lhs, rhs)
-    }
+    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_add_scalar(self, rhs) }
+    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_sub_scalar(self, rhs) }
+    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_sub_scalar_lhs(lhs, rhs) }
+    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_mul_scalar(self, rhs) }
+    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_floor_div_scalar(self, rhs) }
+    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_floor_div_scalar_lhs(lhs, rhs) }
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_trunc_div_scalar(self, rhs) }
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_trunc_div_scalar_lhs(lhs, rhs) }
+    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_mod_scalar(self, rhs) }
+    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_mod_scalar_lhs(lhs, rhs) }
 
-    fn true_div(self, rhs: Self) -> PrimitiveArray<Self::TrueDivT> {
-        T::prim_true_div(self, rhs)
-    }
-    fn true_div_scalar(self, rhs: Self::Scalar) -> PrimitiveArray<Self::TrueDivT> {
-        T::prim_true_div_scalar(self, rhs)
-    }
-    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT> {
-        T::prim_true_div_scalar_lhs(lhs, rhs)
-    }
+    fn true_div(self, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div(self, rhs) }
+    fn true_div_scalar(self, rhs: Self::Scalar) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar(self, rhs) }
+    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar_lhs(lhs, rhs) }
 }
 
 mod float;
