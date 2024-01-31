@@ -47,6 +47,14 @@ impl HivePartitions {
                 let name = it.next()?;
                 let value = it.next()?;
 
+                // Don't see files `foo=1.parquet` as hive partitions.
+                // So we return globs and paths with extensions.
+                if value.contains('*') {
+                    return None;
+                }
+                let value_path = Path::new(value);
+                let _ = value_path.extension()?;
+
                 // Having multiple '=' doesn't seem like valid hive partition,
                 // continue as url.
                 if it.next().is_some() {
