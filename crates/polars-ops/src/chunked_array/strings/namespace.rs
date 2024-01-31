@@ -383,10 +383,12 @@ pub trait StringNameSpaceImpl: AsString {
         let reg = Regex::new(pat)?;
 
         let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-        for opt_s in ca.into_iter() {
-            match opt_s {
-                None => builder.append_null(),
-                Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
+        for arr in ca.downcast_iter() {
+            for opt_s in arr {
+                match opt_s {
+                    None => builder.append_null(),
+                    Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
+                }
             }
         }
         Ok(builder.finish())

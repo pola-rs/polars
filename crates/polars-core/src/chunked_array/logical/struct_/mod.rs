@@ -11,6 +11,7 @@ use smartstring::alias::String as SmartString;
 
 use self::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use super::*;
+use crate::chunked_array::iterator::StructIter;
 use crate::datatypes::*;
 use crate::utils::index_to_chunked_index;
 
@@ -416,6 +417,10 @@ impl StructChunked {
     pub fn rows_encode(&self) -> PolarsResult<BinaryOffsetChunked> {
         let descending = vec![false; self.fields.len()];
         _get_rows_encoded_ca(self.name(), &self.fields, &descending, false)
+    }
+
+    pub fn iter(&self) -> StructIter {
+        self.into_iter()
     }
 }
 

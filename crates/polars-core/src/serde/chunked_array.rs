@@ -59,7 +59,7 @@ where
     state.serialize_entry("name", name)?;
     state.serialize_entry("datatype", dtype)?;
     state.serialize_entry("bit_settings", &bit_settings)?;
-    state.serialize_entry("values", &IterSer::new(ca.into_iter()))?;
+    state.serialize_entry("values", &IterSer::new(ca.iter()))?;
     state.end()
 }
 

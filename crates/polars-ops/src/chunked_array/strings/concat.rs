@@ -91,7 +91,7 @@ pub fn hor_str_concat(
         .iter()
         .map(|ca| {
             if ca.len() > 1 {
-                ColumnIter::Iter(ca.into_iter())
+                ColumnIter::Iter(ca.iter())
             } else {
                 ColumnIter::Broadcast(ca.get(0))
             }

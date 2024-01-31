@@ -7,6 +7,21 @@ use crate::utils::CustomIterTools;
 
 pub mod par;
 
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    #[inline]
+    pub fn iter(&self) -> impl PolarsIterator<Item = Option<T::Physical<'_>>> {
+        // SAFETY: we set the correct length of the iterator.
+        unsafe {
+            self.downcast_iter()
+                .flat_map(|arr| arr.iter())
+                .trust_my_length(self.len())
+        }
+    }
+}
+
 /// A [`PolarsIterator`] is an iterator over a [`ChunkedArray`] which contains polars types. A [`PolarsIterator`]
 /// must implement [`ExactSizeIterator`] and [`DoubleEndedIterator`].
 pub trait PolarsIterator:

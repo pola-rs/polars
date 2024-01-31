@@ -26,10 +26,10 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     if s.dtype().to_physical().is_numeric() {
         if s.bit_repr_is_large() {
             let ca = s.bit_repr_large();
-            Ok(unique_counts_helper(ca.into_iter()).into_series())
+            Ok(unique_counts_helper(ca.iter()).into_series())
         } else {
             let ca = s.bit_repr_small();
-            Ok(unique_counts_helper(ca.into_iter()).into_series())
+            Ok(unique_counts_helper(ca.iter()).into_series())
         }
     } else {
         match s.dtype() {

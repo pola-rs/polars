@@ -49,7 +49,7 @@ where
     } else if !ca.has_validity() {
         group_by(ca.into_no_null_iter(), sorted)
     } else {
-        group_by(ca.into_iter(), sorted)
+        group_by(ca.iter(), sorted)
     }
 }
 

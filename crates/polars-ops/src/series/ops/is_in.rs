@@ -49,7 +49,7 @@ where
             Some(
                 opt_s.map(|s| {
                     let ca = s.as_ref().unpack::<T>().unwrap();
-                    ca.into_iter().any(|a| a == value)
+                    ca.iter().any(|a| a == value)
                 }) == Some(true),
             )
         })
@@ -58,12 +58,12 @@ where
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca_in
-                .into_iter()
+                .iter()
                 .zip(other.list()?.amortized_iter())
                 .map(|(value, series)| match (value, series) {
                     (val, Some(series)) => {
                         let ca = series.as_ref().unpack::<T>().unwrap();
-                        ca.into_iter().any(|a| a == val)
+                        ca.iter().any(|a| a == val)
                     },
                     _ => false,
                 })
@@ -87,19 +87,19 @@ where
             Some(
                 opt_s.map(|s| {
                     let ca = s.as_ref().unpack::<T>().unwrap();
-                    ca.into_iter().any(|a| a == value)
+                    ca.iter().any(|a| a == value)
                 }) == Some(true),
             )
         })
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
-            .into_iter()
+            .iter()
             .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<T>().unwrap();
-                    ca.into_iter().any(|a| a == val)
+                    ca.iter().any(|a| a == val)
                 },
                 _ => false,
             })
@@ -179,7 +179,7 @@ fn is_in_string_inner_categorical(
                                     if ca.null_count() == 0 {
                                         ca.into_no_null_iter().any(|a| a == idx)
                                     } else {
-                                        ca.into_iter().any(|a| a == Some(idx))
+                                        ca.iter().any(|a| a == Some(idx))
                                     }
                                 }) == Some(true),
                             )
@@ -244,7 +244,7 @@ fn is_in_binary_list(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Bool
             Some(
                 opt_b.map(|s| {
                     let ca = s.as_ref().unpack::<BinaryType>().unwrap();
-                    ca.into_iter().any(|a| a == value)
+                    ca.iter().any(|a| a == value)
                 }) == Some(true),
             )
         })
@@ -253,12 +253,12 @@ fn is_in_binary_list(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Bool
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca_in
-                .into_iter()
+                .iter()
                 .zip(other.list()?.amortized_iter())
                 .map(|(value, series)| match (value, series) {
                     (val, Some(series)) => {
                         let ca = series.as_ref().unpack::<BinaryType>().unwrap();
-                        ca.into_iter().any(|a| a == val)
+                        ca.iter().any(|a| a == val)
                     },
                     _ => false,
                 })
@@ -278,19 +278,19 @@ fn is_in_binary_array(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Boo
             Some(
                 opt_b.map(|s| {
                     let ca = s.as_ref().unpack::<BinaryType>().unwrap();
-                    ca.into_iter().any(|a| a == value)
+                    ca.iter().any(|a| a == value)
                 }) == Some(true),
             )
         })
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
-            .into_iter()
+            .iter()
             .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<BinaryType>().unwrap();
-                    ca.into_iter().any(|a| a == val)
+                    ca.iter().any(|a| a == val)
                 },
                 _ => false,
             })
@@ -322,7 +322,7 @@ fn is_in_boolean_list(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Bo
                 .map(|opt_s| {
                     opt_s.map(|s| {
                         let ca = s.as_ref().unpack::<BooleanType>().unwrap();
-                        ca.into_iter().any(|a| a == value)
+                        ca.iter().any(|a| a == value)
                     }) == Some(true)
                 })
                 .trust_my_length(other.len())
@@ -333,12 +333,12 @@ fn is_in_boolean_list(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Bo
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca_in
-                .into_iter()
+                .iter()
                 .zip(other.list()?.amortized_iter())
                 .map(|(value, series)| match (value, series) {
                     (val, Some(series)) => {
                         let ca = series.as_ref().unpack::<BooleanType>().unwrap();
-                        ca.into_iter().any(|a| a == val)
+                        ca.iter().any(|a| a == val)
                     },
                     _ => false,
                 })
@@ -361,7 +361,7 @@ fn is_in_boolean_array(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<B
                 .map(|opt_s| {
                     opt_s.map(|s| {
                         let ca = s.as_ref().unpack::<BooleanType>().unwrap();
-                        ca.into_iter().any(|a| a == value)
+                        ca.iter().any(|a| a == value)
                     }) == Some(true)
                 })
                 .trust_my_length(other.len())
@@ -370,12 +370,12 @@ fn is_in_boolean_array(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<B
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
-            .into_iter()
+            .iter()
             .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<BooleanType>().unwrap();
-                    ca.into_iter().any(|a| a == val)
+                    ca.iter().any(|a| a == val)
                 },
                 _ => false,
             })
@@ -421,7 +421,7 @@ fn is_in_struct_list(ca_in: &StructChunked, other: &Series) -> PolarsResult<Bool
             Some(
                 opt_s.map(|s| {
                     let ca = s.as_ref().struct_().unwrap();
-                    ca.into_iter().any(|a| a == value)
+                    ca.iter().any(|a| a == value)
                 }) == Some(true),
             )
         })
@@ -430,12 +430,12 @@ fn is_in_struct_list(ca_in: &StructChunked, other: &Series) -> PolarsResult<Bool
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca_in
-                .into_iter()
+                .iter()
                 .zip(other.list()?.amortized_iter())
                 .map(|(value, series)| match (value, series) {
                     (val, Some(series)) => {
                         let ca = series.as_ref().struct_().unwrap();
-                        ca.into_iter().any(|a| a == val)
+                        ca.iter().any(|a| a == val)
                     },
                     _ => false,
                 })
@@ -459,19 +459,19 @@ fn is_in_struct_array(ca_in: &StructChunked, other: &Series) -> PolarsResult<Boo
             Some(
                 opt_s.map(|s| {
                     let ca = s.as_ref().struct_().unwrap();
-                    ca.into_iter().any(|a| a == value)
+                    ca.iter().any(|a| a == value)
                 }) == Some(true),
             )
         })
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
-            .into_iter()
+            .iter()
             .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().struct_().unwrap();
-                    ca.into_iter().any(|a| a == val)
+                    ca.iter().any(|a| a == val)
                 },
                 _ => false,
             })
@@ -525,7 +525,7 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
             // SAFETY:
             // the iterator is unsafe as the lifetime is tied to the iterator
             // so we copy to an owned buffer first
-            other.into_iter().for_each(|vals| {
+            other.iter().for_each(|vals| {
                 any_values.extend_from_slice(vals);
             });
 
@@ -540,7 +540,7 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
 
             // and then we check for membership
             let mut ca: BooleanChunked = ca_in_ca
-                .into_iter()
+                .iter()
                 .map(|vals| {
                     // If all rows are null we see the struct row as missing.
                     if !vals.iter().all(|val| matches!(val, AnyValue::Null)) {

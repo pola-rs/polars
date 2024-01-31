@@ -982,7 +982,7 @@ fn test_empty_string_cols() -> PolarsResult<()> {
     let s = df.column("column_1")?;
     let ca = s.str()?;
     assert_eq!(
-        ca.into_iter().collect::<Vec<_>>(),
+        ca.iter().collect::<Vec<_>>(),
         &[None, Some("abc"), None, Some("xyz")]
     );
 

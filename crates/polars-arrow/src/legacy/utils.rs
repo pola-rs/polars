@@ -11,6 +11,7 @@ pub trait CustomIterTools: Iterator {
     ///
     /// # Safety
     /// The given length must be correct.
+    #[inline]
     unsafe fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
     where
         Self: Sized,

@@ -623,9 +623,7 @@ where
 }
 impl From<StringChunked> for Vec<Option<String>> {
     fn from(ca: StringChunked) -> Self {
-        ca.into_iter()
-            .map(|opt| opt.map(|s| s.to_string()))
-            .collect()
+        ca.iter().map(|opt| opt.map(|s| s.to_string())).collect()
     }
 }
 
