@@ -120,8 +120,9 @@ fn run_on_group_by_engine(
     // List elements in a series.
     let values = Series::try_from(("", arr.values().clone())).unwrap();
     let inner_dtype = lst.inner_dtype();
-    // Ensure we use the logical type.
-    let values = values.cast(&inner_dtype).unwrap();
+    // SAFETY
+    // Invariant in List means values physicals can be cast to inner dtype
+    let values = unsafe { values.cast_unchecked(&inner_dtype).unwrap() };
 
     let df_context = DataFrame::new_no_checks(vec![values]);
     let phys_expr = prepare_expression_for_context("", expr, &inner_dtype, Context::Aggregation)?;
