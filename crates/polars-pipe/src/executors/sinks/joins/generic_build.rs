@@ -13,7 +13,7 @@ use polars_utils::hashing::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::*;
-use crate::executors::sinks::joins::inner_left::GenericJoinProbe;
+use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;

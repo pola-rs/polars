@@ -7,6 +7,8 @@ use polars_core::hashing::{
 use polars_core::utils::{_set_partition_size, split_df};
 use polars_core::POOL;
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::idx_vec::IdxVec;
+use polars_utils::idxvec;
 
 use super::*;
 
@@ -31,7 +33,7 @@ pub(crate) unsafe fn compare_df_rows2(
 pub(crate) fn create_probe_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
-) -> Vec<HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>> {
+) -> Vec<HashMap<IdxHash, IdxVec, IdBuildHasher>> {
     let n_partitions = _set_partition_size();
 
     // We will create a hashtable in every thread.
@@ -41,7 +43,7 @@ pub(crate) fn create_probe_table(
         (0..n_partitions)
             .into_par_iter()
             .map(|part_no| {
-                let mut hash_tbl: HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher> =
+                let mut hash_tbl: HashMap<IdxHash, IdxVec, IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
                 let mut offset = 0;
@@ -59,7 +61,7 @@ pub(crate) fn create_probe_table(
                                     idx,
                                     *h,
                                     keys,
-                                    || vec![idx],
+                                    || idxvec![idx],
                                     |v| v.push(idx),
                                 )
                             }
@@ -78,7 +80,7 @@ pub(crate) fn create_probe_table(
 fn create_build_table_outer(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
-) -> Vec<HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>> {
+) -> Vec<HashMap<IdxHash, (bool, IdxVec), IdBuildHasher>> {
     // Outer join equivalent of create_build_table() adds a bool in the hashmap values for tracking
     // whether a value in the hash table has already been matched to a value in the probe hashes.
     let n_partitions = _set_partition_size();
@@ -88,7 +90,7 @@ fn create_build_table_outer(
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|part_no| {
-            let mut hash_tbl: HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher> =
+            let mut hash_tbl: HashMap<IdxHash, (bool, IdxVec), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
             let mut offset = 0;
@@ -106,7 +108,7 @@ fn create_build_table_outer(
                                 idx,
                                 *h,
                                 keys,
-                                || (false, vec![idx]),
+                                || (false, idxvec![idx]),
                                 |v| v.1.push(idx),
                             )
                         }
@@ -126,7 +128,7 @@ fn create_build_table_outer(
 #[allow(clippy::too_many_arguments)]
 fn probe_inner<F>(
     probe_hashes: &UInt64Chunked,
-    hash_tbls: &[HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>],
+    hash_tbls: &[HashMap<IdxHash, IdxVec, IdBuildHasher>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: usize,
     n_tables: usize,
@@ -492,7 +494,7 @@ pub fn _left_semi_multiple_keys(
 #[allow(clippy::type_complexity)]
 fn probe_outer<F, G, H>(
     probe_hashes: &[UInt64Chunked],
-    hash_tbls: &mut [HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>],
+    hash_tbls: &mut [HashMap<IdxHash, (bool, IdxVec), IdBuildHasher>],
     results: &mut (
         MutablePrimitiveArray<IdxSize>,
         MutablePrimitiveArray<IdxSize>,
