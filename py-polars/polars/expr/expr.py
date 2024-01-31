@@ -298,11 +298,21 @@ class Expr:
             exprs = parse_as_list_of_expressions(inputs)
             return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
 
+        not_numpy = ufunc.__class__ != np.ufunc
+
         def function(s: Series) -> Series:  # pragma: no cover
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
             return ufunc(*args, **kwargs)
 
-        return self.map_batches(function)
+        if not_numpy is True:
+            msg = (
+                "ufuncs are dispatched using `map_batches(ufunc, is_elementwise=True)` which "
+                "is safe for native Numpy and Scipy ufuncs but custom ufuncs in a group_by "
+                "context won't be properly grouped. Please use map_batches directly with its "
+                "default `is_elementwise=False` setting to avoid this message"
+            )
+            issue_unstable_warning(msg)
+        return self.map_batches(function, is_elementwise=True)
 
     @classmethod
     def from_json(cls, value: str) -> Self:
