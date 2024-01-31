@@ -231,10 +231,13 @@ fn modify_supertype(
             | (List(other), List(inner), AExpr::Literal(_), _)
                 if inner != other =>
             {
+                #[cfg(feature = "dtype-categorical")]
                 st = match &**inner {
                     Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
                     _ => List(inner.clone()),
                 };
+                #[cfg(not(feature = "dtype-categorical"))]
+                st = List(inner.clone())
             },
             // do nothing
             _ => {},
