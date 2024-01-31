@@ -137,22 +137,42 @@ impl ChunkCompare<&Series> for Series {
 
     /// Create a boolean mask by checking if self > rhs.
     fn gt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, gt)
+        match (self.dtype(), rhs.dtype()) {
+            (DataType::Null, DataType::Null) => {
+                Ok(BooleanChunked::full_null(self.name(), self.len()))
+            },
+            _ => impl_compare!(self, rhs, gt),
+        }
     }
 
     /// Create a boolean mask by checking if self >= rhs.
     fn gt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, gt_eq)
+        match (self.dtype(), rhs.dtype()) {
+            (DataType::Null, DataType::Null) => {
+                Ok(BooleanChunked::full_null(self.name(), self.len()))
+            },
+            _ => impl_compare!(self, rhs, gt_eq),
+        }
     }
 
     /// Create a boolean mask by checking if self < rhs.
     fn lt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, lt)
+        match (self.dtype(), rhs.dtype()) {
+            (DataType::Null, DataType::Null) => {
+                Ok(BooleanChunked::full_null(self.name(), self.len()))
+            },
+            _ => impl_compare!(self, rhs, lt),
+        }
     }
 
     /// Create a boolean mask by checking if self <= rhs.
     fn lt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, lt_eq)
+        match (self.dtype(), rhs.dtype()) {
+            (DataType::Null, DataType::Null) => {
+                Ok(BooleanChunked::full_null(self.name(), self.len()))
+            },
+            _ => impl_compare!(self, rhs, lt_eq),
+        }
     }
 }
 
