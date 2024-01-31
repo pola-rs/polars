@@ -47,6 +47,7 @@ pub enum StringFunction {
         dtype: DataType,
         pat: String,
     },
+    #[cfg(feature = "regex")]
     Find {
         literal: bool,
         strict: bool,
@@ -139,6 +140,7 @@ impl StringFunction {
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => mapper.with_dtype(DataType::Int64),
+            #[cfg(feature = "regex")]
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
@@ -206,6 +208,7 @@ impl Display for StringFunction {
             ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => "to_integer",
+            #[cfg(feature = "regex")]
             Find { .. } => "find",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
@@ -289,6 +292,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractGroups { pat, dtype } => {
                 map!(strings::extract_groups, &pat, &dtype)
             },
+            #[cfg(feature = "regex")]
             Find { literal, strict } => map_as_slice!(strings::find, literal, strict),
             LenBytes => map!(strings::len_bytes),
             LenChars => map!(strings::len_chars),
