@@ -286,7 +286,8 @@ fn pivot_impl_single_column(
             let headers = column_agg.unique_stable()?.cast(&DataType::String)?;
             let mut headers = headers.str().unwrap().clone();
             if values.len() > 1 {
-                headers = headers.apply_values(|v| Cow::from(format!("{value_col_name}{sep}{v}")))
+                // TODO! MILESTONE 1.0: change to `format!("{value_col_name}{sep}{v}")`
+                headers = headers.apply_values(|v| Cow::from(format!("{value_col_name}{sep}{column}{sep}{v}")))
             }
 
             let n_cols = headers.len();
