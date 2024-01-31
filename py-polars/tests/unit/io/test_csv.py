@@ -1537,6 +1537,24 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
 
 
+def test_read_csv_comments_on_top_with_schema_11667() -> None:
+    csv = """
+# This is a comment
+A,B
+1,Hello
+2,World
+""".strip()
+
+    schema = {
+        "A": pl.Int32(),
+        "B": pl.Utf8(),
+    }
+
+    df = pl.read_csv(io.StringIO(csv), comment_prefix="#", schema=schema)
+    assert len(df) == 2
+    assert df.schema == schema
+
+
 def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     # The capsys fixture allows pytest to access stdout/stderr. See
     # https://docs.pytest.org/en/7.1.x/how-to/capture-stdout-stderr.html
