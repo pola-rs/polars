@@ -161,7 +161,10 @@ impl DataFrame {
     }
 
     // Reduce monomorphization.
-    pub fn _apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
+    pub fn _apply_columns_par(
+        &self,
+        func: &(dyn Fn(&Series) -> Series + Send + Sync),
+    ) -> Vec<Series> {
         POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 

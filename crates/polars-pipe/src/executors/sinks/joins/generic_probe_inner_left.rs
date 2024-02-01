@@ -7,6 +7,7 @@ use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
@@ -20,7 +21,6 @@ use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
-use polars_ops::chunked_array::DfTake;
 
 #[derive(Clone)]
 pub struct GenericJoinProbe {

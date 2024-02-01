@@ -459,7 +459,13 @@ pub trait SeriesTrait:
 
     #[cfg(feature = "object")]
     /// Get the value at this index as a downcastable Any trait ref.
-    unsafe fn get_object_chunked_unchecked(&self, _chunk: usize, _index: usize) -> Option<&dyn PolarsObjectSafe> {
+    /// # Safety
+    /// This function doesn't do any bound checks.
+    unsafe fn get_object_chunked_unchecked(
+        &self,
+        _chunk: usize,
+        _index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
         invalid_operation_panic!(get_object_chunked_unchecked, self)
     }
 

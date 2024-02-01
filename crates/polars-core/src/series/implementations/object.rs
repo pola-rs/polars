@@ -212,8 +212,12 @@ where
         ObjectChunked::<T>::get_object(&self.0, index)
     }
 
-    unsafe fn get_object_chunked_unchecked(&self, chunk: usize, index: usize) -> Option<&dyn PolarsObjectSafe> {
-        ObjectChunked::<T>::get_object_chunked_unchecked(&self.0, chunk , index)
+    unsafe fn get_object_chunked_unchecked(
+        &self,
+        chunk: usize,
+        index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
+        ObjectChunked::<T>::get_object_chunked_unchecked(&self.0, chunk, index)
     }
 
     fn as_any(&self) -> &dyn Any {

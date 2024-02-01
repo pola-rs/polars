@@ -14,7 +14,6 @@ use crate::datatypes::AnyValue;
 use crate::prelude::PolarsObject;
 use crate::series::{IntoSeries, Series};
 
-
 /// Takes a `name` and `capacity` and constructs a new builder.
 pub type BuilderConstructor =
     Box<dyn Fn(&str, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
@@ -63,7 +62,7 @@ pub trait AnonymousObjectBuilder {
     fn append_option(&mut self, value: Option<&dyn Any>) {
         match value {
             None => self.append_null(),
-            Some(v) => self.append_value(v)
+            Some(v) => self.append_value(v),
         }
     }
 

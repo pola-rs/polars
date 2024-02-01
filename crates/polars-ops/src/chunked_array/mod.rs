@@ -21,17 +21,19 @@ pub mod mode;
 
 #[cfg(feature = "cov")]
 pub mod cov;
+pub(crate) mod gather;
 #[cfg(feature = "gather")]
 pub mod gather_skip_nulls;
 #[cfg(feature = "hist")]
 mod hist;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
-pub(crate) mod gather;
 
 pub use binary::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;
+#[cfg(feature = "chunked_ids")]
+pub use gather::*;
 #[cfg(feature = "hist")]
 pub use hist::*;
 #[cfg(feature = "interpolate")]
@@ -45,8 +47,6 @@ pub use scatter::ChunkedSet;
 pub use strings::*;
 #[cfg(feature = "top_k")]
 pub use top_k::*;
-
-pub use gather::*;
 
 #[allow(unused_imports)]
 use crate::prelude::*;
