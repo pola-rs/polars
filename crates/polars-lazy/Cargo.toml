@@ -47,7 +47,7 @@ async = [
 cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures"]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
-json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe/json"]
+json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe?/json"]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv"]
 temporal = [
   "dtype-datetime",
@@ -272,7 +272,6 @@ features = [
   "peaks",
   "pivot",
   "polars-json",
-  "polars-pipe",
   "polars-time",
   "propagate_nans",
   "random",
