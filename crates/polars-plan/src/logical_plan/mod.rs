@@ -34,7 +34,6 @@ mod projection_expr;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
-#[cfg(any(feature = "meta", feature = "cse"))]
 pub(crate) mod tree_format;
 pub mod visitor;
 
@@ -55,6 +54,7 @@ pub use schema::*;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use self::tree_format::{TreeFmtNode, TreeFmtVisitor};
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -271,6 +271,12 @@ impl Default for LogicalPlan {
 impl LogicalPlan {
     pub fn describe(&self) -> String {
         format!("{self:#?}")
+    }
+
+    pub fn describe_tree_format(&self, expand_expressions: bool) -> String {
+        let mut visitor = TreeFmtVisitor::default();
+        TreeFmtNode::root_logical_plan(self).traverse(&mut visitor, expand_expressions);
+        format!("{visitor:#?}")
     }
 
     pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {

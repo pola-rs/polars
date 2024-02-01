@@ -29,7 +29,7 @@ fn write_scan<P: Display>(
         )),
     };
 
-    write!(f, "{:indent$}{} SCAN {}", "", name, path_fmt)?;
+    write!(f, "{:indent$}{name} SCAN {path_fmt}", "")?;
     if n_columns > 0 {
         write!(
             f,
@@ -37,7 +37,7 @@ fn write_scan<P: Display>(
             "",
         )?;
     } else {
-        write!(f, "\n{:indent$}PROJECT */{total_columns} COLUMNS", "",)?;
+        write!(f, "\n{:indent$}PROJECT */{total_columns} COLUMNS", "")?;
     }
     if let Some(predicate) = predicate {
         write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
@@ -79,7 +79,7 @@ impl LogicalPlan {
             Union { inputs, options } => {
                 let mut name = String::new();
                 let name = if let Some(slice) = options.slice {
-                    write!(name, "SLICED UNION: {:?}", slice)?;
+                    write!(name, "SLICED UNION: {slice:?}")?;
                     name.as_str()
                 } else {
                     "UNION"
@@ -89,12 +89,12 @@ impl LogicalPlan {
                 // - 1 => PLAN 0, PLAN 1, ... PLAN N
                 // - 2 => actual formatting of plans
                 let sub_sub_indent = sub_indent + 2;
-                write!(f, "{:indent$}{}", "", name)?;
+                write!(f, "{:indent$}{name}", "")?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
                     plan._format(f, sub_sub_indent)?;
                 }
-                write!(f, "\n{:indent$}END {}", "", name)
+                write!(f, "\n{:indent$}END {name}", "")
             },
             HConcat { inputs, .. } => {
                 let sub_sub_indent = sub_indent + 2;
@@ -194,7 +194,7 @@ impl LogicalPlan {
                 input_left._format(f, sub_indent)?;
                 write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on:?}", "")?;
                 input_right._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}END {} JOIN", "", how)
+                write!(f, "\n{:indent$}END {how} JOIN", "")
             },
             HStack { input, exprs, .. } => {
                 write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
@@ -228,7 +228,7 @@ impl LogicalPlan {
                     #[cfg(feature = "cloud")]
                     SinkType::Cloud { .. } => "SINK (cloud)",
                 };
-                write!(f, "{:indent$}{}", "", name)?;
+                write!(f, "{:indent$}{name}", "")?;
                 input._format(f, sub_indent)
             },
         }
@@ -285,9 +285,12 @@ impl Debug for Expr {
                 }
             },
             BinaryExpr { left, op, right } => write!(f, "[({left:?}) {op:?} ({right:?})]"),
-            Sort { expr, options } => match options.descending {
-                true => write!(f, "{expr:?}.sort(desc)"),
-                false => write!(f, "{expr:?}.sort(asc)"),
+            Sort { expr, options } => {
+                if options.descending {
+                    write!(f, "{expr:?}.sort(desc)")
+                } else {
+                    write!(f, "{expr:?}.sort(asc)")
+                }
             },
             SortBy {
                 expr,
@@ -373,7 +376,7 @@ impl Debug for Expr {
                 input, function, ..
             } => {
                 if input.len() >= 2 {
-                    write!(f, "{:?}.{}({:?})", input[0], function, &input[1..])
+                    write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
                 } else {
                     write!(f, "{:?}.{function}()", input[0])
                 }

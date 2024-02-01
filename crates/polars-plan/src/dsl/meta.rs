@@ -4,8 +4,7 @@ use std::ops::BitAnd;
 use super::*;
 use crate::dsl::selector::Selector;
 use crate::logical_plan::projection::is_regex_projection;
-use crate::logical_plan::tree_format::TreeFmtVisitor;
-use crate::logical_plan::visitor::{AexprNode, TreeWalker};
+use crate::logical_plan::tree_format::{TreeFmtNode, TreeFmtVisitor};
 
 /// Specialized expressions for Categorical dtypes.
 pub struct MetaNameSpace(pub(crate) Expr);
@@ -135,10 +134,8 @@ impl MetaNameSpace {
     /// Get a hold to an implementor of the `Display` trait that will format as
     /// the expression as a tree
     pub fn into_tree_formatter(self) -> PolarsResult<impl Display> {
-        let mut arena = Default::default();
-        let node = to_aexpr(self.0, &mut arena);
         let mut visitor = TreeFmtVisitor::default();
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor))?;
+        TreeFmtNode::root_expression(&self.0).traverse(&mut visitor, true);
         Ok(visitor)
     }
 }
