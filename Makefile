@@ -79,13 +79,18 @@ build-release-native: .venv  ## Same as build-release, except with native CPU op
 	&& maturin develop -m py-polars/Cargo.toml --release -- -C target-cpu=native \
 	$(FILTER_PIP_WARNINGS)
 
+
+.PHONY: check
+check:  ## Run cargo check with all features
+	cargo clippy --workspace --all-targets --all-features
+
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --all-targets --locked -- -D warnings
+	cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
 
 .PHONY: fmt
 fmt:  ## Run autoformatting and linting
