@@ -537,8 +537,9 @@ def _initialise_spreadsheet_parser(
     elif engine == "calamine":
         # note: can't read directly from bytes (yet) so
         if read_bytesio := isinstance(source, BytesIO):
-            # note: on windows, a NamedTemporaryFile cannot be reopened while bein already open, so
-            # we need to close it before passing it to read_excel and close it manually afterwards
+            # note: on windows, a NamedTemporaryFile cannot be reopened while being
+            # already open, so we need to close it before passing it to read_excel
+            # and close it manually afterwards
             temp_data = NamedTemporaryFile(delete=False)
         with nullcontext() if not read_bytesio else temp_data as tmp:  # type: ignore[attr-defined]
             if read_bytesio:
