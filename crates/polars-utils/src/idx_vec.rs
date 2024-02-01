@@ -10,16 +10,16 @@ pub type IdxVec = UnitVec<IdxSize>;
 /// memory allocation until at least two elements have been pushed, storing the
 /// first element in the data pointer directly.
 #[derive(Eq)]
-pub struct UnitVec<T: Copy> {
+pub struct UnitVec<T> {
     len: usize,
     capacity: NonZeroUsize,
     data: *mut T,
 }
 
-unsafe impl<T: Copy + Send + Sync> Send for UnitVec<T> {}
-unsafe impl<T: Copy + Send + Sync> Sync for UnitVec<T> {}
+unsafe impl<T: Send + Sync> Send for UnitVec<T> {}
+unsafe impl<T: Send + Sync> Sync for UnitVec<T> {}
 
-impl<T: Copy> UnitVec<T> {
+impl<T> UnitVec<T> {
     #[inline(always)]
     fn data_ptr_mut(&mut self) -> *mut T {
         let external = self.data;
@@ -135,9 +135,21 @@ impl<T: Copy> UnitVec<T> {
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         self.as_mut()
     }
+
+    #[inline]
+    pub fn pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            None
+        } else {
+            unsafe {
+                self.len -= 1;
+                Some(std::ptr::read(self.as_ptr().add(self.len())))
+            }
+        }
+    }
 }
 
-impl<T: Copy> Extend<T> for UnitVec<T> {
+impl<T> Extend<T> for UnitVec<T> {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         let iter = iter.into_iter();
         self.reserve(iter.size_hint().0);
@@ -147,13 +159,13 @@ impl<T: Copy> Extend<T> for UnitVec<T> {
     }
 }
 
-impl<T: Copy> Drop for UnitVec<T> {
+impl<T> Drop for UnitVec<T> {
     fn drop(&mut self) {
         self.dealloc()
     }
 }
 
-impl<T: Copy> Clone for UnitVec<T> {
+impl<T> Clone for UnitVec<T> {
     fn clone(&self) -> Self {
         unsafe {
             let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(self.len));
@@ -168,13 +180,13 @@ impl<T: Copy> Clone for UnitVec<T> {
     }
 }
 
-impl<T: Copy + Debug> Debug for UnitVec<T> {
+impl<T: Debug> Debug for UnitVec<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "UnitVec: {:?}", self.as_slice())
     }
 }
 
-impl<T: Copy> Default for UnitVec<T> {
+impl<T> Default for UnitVec<T> {
     fn default() -> Self {
         Self {
             len: 0,
@@ -184,7 +196,7 @@ impl<T: Copy> Default for UnitVec<T> {
     }
 }
 
-impl<T: Copy> Deref for UnitVec<T> {
+impl<T> Deref for UnitVec<T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -192,25 +204,25 @@ impl<T: Copy> Deref for UnitVec<T> {
     }
 }
 
-impl<T: Copy> AsRef<[T]> for UnitVec<T> {
+impl<T> AsRef<[T]> for UnitVec<T> {
     fn as_ref(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len) }
     }
 }
 
-impl<T: Copy> AsMut<[T]> for UnitVec<T> {
+impl<T> AsMut<[T]> for UnitVec<T> {
     fn as_mut(&mut self) -> &mut [T] {
         unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len) }
     }
 }
 
-impl<T: PartialEq + Copy> PartialEq for UnitVec<T> {
+impl<T: PartialEq> PartialEq for UnitVec<T> {
     fn eq(&self, other: &Self) -> bool {
         self.as_slice() == other.as_slice()
     }
 }
 
-impl<T: Copy> FromIterator<T> for UnitVec<T> {
+impl<T> FromIterator<T> for UnitVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let iter = iter.into_iter();
         if iter.size_hint().0 <= 1 {
@@ -226,12 +238,12 @@ impl<T: Copy> FromIterator<T> for UnitVec<T> {
     }
 }
 
-impl<T: Copy> From<Vec<T>> for UnitVec<T> {
-    fn from(value: Vec<T>) -> Self {
+impl<T> From<Vec<T>> for UnitVec<T> {
+    fn from(mut value: Vec<T>) -> Self {
         if value.capacity() <= 1 {
             let mut new = UnitVec::new();
-            if let Some(v) = value.first() {
-                new.push(*v)
+            if let Some(v) = value.pop() {
+                new.push(v)
             }
             new
         } else {
@@ -245,12 +257,12 @@ impl<T: Copy> From<Vec<T>> for UnitVec<T> {
     }
 }
 
-impl<T: Copy> From<&[T]> for UnitVec<T> {
+impl<T: Clone> From<&[T]> for UnitVec<T> {
     fn from(value: &[T]) -> Self {
         if value.len() <= 1 {
             let mut new = UnitVec::new();
             if let Some(v) = value.first() {
-                new.push(*v)
+                new.push(v.clone())
             }
             new
         } else {

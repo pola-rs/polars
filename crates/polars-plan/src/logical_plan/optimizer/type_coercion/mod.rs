@@ -4,6 +4,8 @@ use std::borrow::Cow;
 
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
@@ -240,13 +242,13 @@ fn modify_supertype(
     st
 }
 
-fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2] {
+fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> UnitVec<Node> {
     let plan = lp_arena.get(lp_node);
-    let mut inputs = [None, None];
+    let mut inputs: UnitVec<Node> = unitvec!();
 
     // Used to get the schema of the input.
     if is_scan(plan) {
-        inputs[0] = Some(lp_node);
+        inputs.push(lp_node);
     } else {
         plan.copy_inputs(&mut inputs);
     };
@@ -254,10 +256,13 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2]
 }
 
 fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    match get_input(lp_arena, lp_node) {
-        [Some(input), _] => lp_arena.get(input).schema(lp_arena),
-        // files don't have an input, so we must take their schema
-        [None, _] => Cow::Borrowed(lp_arena.get(lp_node).scan_schema()),
+    let inputs = get_input(lp_arena, lp_node);
+    if inputs.is_empty() {
+        // Files don't have an input, so we must take their schema.
+        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
+    } else {
+        let input = inputs[0];
+        lp_arena.get(input).schema(lp_arena)
     }
 }
 
