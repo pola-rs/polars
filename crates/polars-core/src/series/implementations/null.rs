@@ -160,16 +160,6 @@ impl SeriesTrait for NullChunked {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], _sorted: IsSorted) -> Series {
-        NullChunked::new(self.name.clone(), by.len()).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        NullChunked::new(self.name.clone(), by.len()).into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(NullChunked::new(self.name.clone(), indices.len()).into_series())
     }

@@ -284,7 +284,7 @@ impl StructChunked {
         Ok(Self::new_unchecked(self.field.name(), &fields))
     }
 
-    pub(crate) fn apply_fields<F>(&self, func: F) -> Self
+    pub fn _apply_fields<F>(&self, func: F) -> Self
     where
         F: FnMut(&Series) -> Series,
     {

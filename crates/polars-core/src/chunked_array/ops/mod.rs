@@ -35,7 +35,6 @@ pub(crate) mod rolling_window;
 mod set;
 mod shift;
 pub mod sort;
-pub(crate) mod take;
 mod tile;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) mod unique;

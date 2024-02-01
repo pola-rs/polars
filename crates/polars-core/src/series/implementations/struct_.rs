@@ -32,7 +32,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
-            .apply_fields(|s| s.explode_by_offsets(offsets))
+            ._apply_fields(|s| s.explode_by_offsets(offsets))
             .into_series()
     }
 
@@ -123,7 +123,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     /// When offset is negative the offset is counted from the
     /// end of the array
     fn slice(&self, offset: i64, length: usize) -> Series {
-        let mut out = self.0.apply_fields(|s| s.slice(offset, length));
+        let mut out = self.0._apply_fields(|s| s.slice(offset, length));
         out.update_chunks(0);
         out.into_series()
     }
@@ -178,20 +178,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .map(|ca| ca.into_series())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0
-            .apply_fields(|s| s._take_chunked_unchecked(by, sorted))
-            .into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0
-            .apply_fields(|s| s._take_opt_chunked_unchecked(by))
-            .into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         self.0
             .try_apply_fields(|s| s.take(indices))
@@ -200,7 +186,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
         self.0
-            .apply_fields(|s| s.take_unchecked(indices))
+            ._apply_fields(|s| s.take_unchecked(indices))
             .into_series()
     }
 
@@ -212,7 +198,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
         self.0
-            .apply_fields(|s| s.take_slice_unchecked(indices))
+            ._apply_fields(|s| s.take_slice_unchecked(indices))
             .into_series()
     }
 
@@ -230,7 +216,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
-            .apply_fields(|s| s.new_from_index(index, length))
+            ._apply_fields(|s| s.new_from_index(index, length))
             .into_series()
     }
 
@@ -314,11 +300,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn reverse(&self) -> Series {
-        self.0.apply_fields(|s| s.reverse()).into_series()
+        self.0._apply_fields(|s| s.reverse()).into_series()
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.0.apply_fields(|s| s.shift(periods)).into_series()
+        self.0._apply_fields(|s| s.shift(periods)).into_series()
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

@@ -629,21 +629,16 @@ impl PhysicalExpr for WindowExpr {
 }
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
-    #[cfg(feature = "chunked_ids")]
     {
         use arrow::Either;
+        use polars_ops::chunked_array::TakeChunked;
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
                 out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
             },
-            Either::Right(ids) => unsafe { out_column._take_opt_chunked_unchecked(ids) },
+            Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
         }
-    }
-
-    #[cfg(not(feature = "chunked_ids"))]
-    unsafe {
-        out_column.take_unchecked(&join_opt_ids.iter().copied().collect_ca(""))
     }
 }
 

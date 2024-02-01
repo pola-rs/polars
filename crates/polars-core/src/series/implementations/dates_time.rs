@@ -204,18 +204,6 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-                let ca = self.0.deref().take_chunked_unchecked(by, sorted);
-                ca.$into_logical().into_series()
-            }
-
-            #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-                let ca = self.0.deref().take_opt_chunked_unchecked(by);
-                ca.$into_logical().into_series()
-            }
-
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
                 Ok(self.0.take(indices)?.$into_logical().into_series())
             }

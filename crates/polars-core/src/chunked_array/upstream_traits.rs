@@ -278,7 +278,10 @@ impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
 
 #[cfg(feature = "dtype-array")]
 impl ArrayChunked {
-    pub(crate) unsafe fn from_iter_and_args<I: IntoIterator<Item = Option<Box<dyn Array>>>>(
+    /// # Safety
+    /// The caller must ensure that the underlying `Arrays` match the given datatype.
+    /// That means the logical map should map to the physical type.
+    pub unsafe fn from_iter_and_args<I: IntoIterator<Item = Option<ArrayRef>>>(
         iter: I,
         width: usize,
         capacity: usize,

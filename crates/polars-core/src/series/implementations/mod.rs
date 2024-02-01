@@ -40,8 +40,6 @@ use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
-#[cfg(feature = "chunked_ids")]
-use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
@@ -296,16 +294,6 @@ macro_rules! impl_dyn_series {
 
             fn var(&self, ddof: u8) -> Option<f64> {
                 self.0.var(ddof)
-            }
-
-            #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-                self.0.take_chunked_unchecked(by, sorted).into_series()
-            }
-
-            #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-                self.0.take_opt_chunked_unchecked(by).into_series()
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {

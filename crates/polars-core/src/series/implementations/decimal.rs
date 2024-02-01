@@ -151,18 +151,6 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let ca = self.0.deref().take_chunked_unchecked(by, sorted);
-        ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
-            .into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.apply_physical(|ca| ca.take_opt_chunked_unchecked(by))
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(self
             .0

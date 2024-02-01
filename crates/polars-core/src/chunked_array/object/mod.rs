@@ -121,15 +121,6 @@ where
         !self.is_valid_unchecked(i)
     }
 
-    #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, item: usize) -> Option<&T> {
-        if self.is_null_unchecked(item) {
-            None
-        } else {
-            Some(self.value_unchecked(item))
-        }
-    }
-
     /// Returns this array with a new validity.
     /// # Panic
     /// Panics iff `validity.len() != self.len()`.
@@ -217,11 +208,19 @@ where
     ///
     /// No bounds checks
     pub unsafe fn get_object_unchecked(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
-        let chunks = self.downcast_chunks();
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = chunks.get_unchecked(chunk_idx);
-        if arr.is_valid_unchecked(idx) {
-            Some(arr.value(idx))
+        self.get_object_chunked_unchecked(chunk_idx, idx)
+    }
+
+    pub(crate) unsafe fn get_object_chunked_unchecked(
+        &self,
+        chunk: usize,
+        index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get_unchecked(chunk);
+        if arr.is_valid_unchecked(index) {
+            Some(arr.value(index))
         } else {
             None
         }

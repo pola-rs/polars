@@ -270,18 +270,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let ca = self.0.deref().take_chunked_unchecked(by, sorted);
-        ca.into_duration(self.0.time_unit()).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        let ca = self.0.deref().take_opt_chunked_unchecked(by);
-        ca.into_duration(self.0.time_unit()).into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(self
             .0
