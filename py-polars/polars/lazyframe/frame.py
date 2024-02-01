@@ -1152,6 +1152,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
+        tree_format: bool = False,
+        expand_expressions: bool = False,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -1181,6 +1183,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+        tree_format
+            Format the output as a tree
+        expand_expressions
+            Expand expressions into individual nodes in tree format
 
         Examples
         --------
@@ -1207,7 +1213,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 streaming,
                 _eager=False,
             )
+            if tree_format:
+                return ldf.describe_optimized_plan_tree(expand_expressions)
             return ldf.describe_optimized_plan()
+
+        if tree_format:
+            return self._ldf.describe_plan_tree(expand_expressions)
         return self._ldf.describe_plan()
 
     def show_graph(

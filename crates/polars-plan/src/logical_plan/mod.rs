@@ -65,6 +65,7 @@ use strum_macros::IntoStaticStr;
 pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };
+use crate::logical_plan::tree_format::{TreeFmtNode, TreeFmtVisitor};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
@@ -279,6 +280,12 @@ impl Default for LogicalPlan {
 impl LogicalPlan {
     pub fn describe(&self) -> String {
         format!("{self:#?}")
+    }
+
+    pub fn describe_tree_format(&self, expand_expressions: bool) -> String {
+        let mut visitor = TreeFmtVisitor::default();
+        TreeFmtNode::root_logical_plan(self).traverse(&mut visitor, expand_expressions);
+        format!("{visitor:#?}")
     }
 
     pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {

@@ -72,7 +72,7 @@ pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup
+	$(VENV_BIN)/pytest -n auto --dist loadgroup $(PYTEST_ARGS)
 
 .PHONY: doctest
 doctest: .venv build  ## Run doctests

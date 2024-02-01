@@ -1,9 +1,8 @@
-use std::fmt::{Display, Formatter, UpperExp};
+use std::borrow::Cow;
+use std::fmt::{Debug, Display, Formatter, UpperExp};
 
-use polars_core::error::*;
+use regex::Regex;
 
-use crate::logical_plan::visitor::{VisitRecursion, Visitor};
-use crate::prelude::visitor::AexprNode;
 use crate::prelude::*;
 
 /// Hack UpperExpr trait to get a kind of formatting that doesn't traverse the nodes.
@@ -61,6 +60,434 @@ impl UpperExp for AExpr {
     }
 }
 
+pub enum TreeFmtNode<'a> {
+    Expression(Option<String>, &'a Expr),
+    LogicalPlan(Option<String>, &'a LogicalPlan),
+}
+
+struct TreeFmtNodeData<'a>(String, Vec<TreeFmtNode<'a>>);
+
+fn with_header(header: &Option<String>, text: &str) -> String {
+    if let Some(header) = header {
+        format!("{header}\n{text}")
+    } else {
+        text.to_string()
+    }
+}
+
+fn multiline_expression(expr: &str) -> Cow<'_, str> {
+    let re = Regex::new(r"([\)\]])(\.[a-z0-9]+\()").unwrap();
+    re.replace_all(expr, "$1\n  $2")
+}
+
+impl<'a> TreeFmtNode<'a> {
+    pub fn root_expression(expr: &'a Expr) -> Self {
+        Self::Expression(None, expr)
+    }
+
+    pub fn root_logical_plan(lp: &'a LogicalPlan) -> Self {
+        Self::LogicalPlan(None, lp)
+    }
+
+    pub fn traverse(&self, visitor: &mut TreeFmtVisitor, expand_expressions: bool) {
+        let TreeFmtNodeData(title, child_nodes) = self.node_data(expand_expressions);
+
+        if visitor.levels.len() <= visitor.depth {
+            visitor.levels.push(vec![]);
+        }
+
+        let row = visitor.levels.get_mut(visitor.depth).unwrap();
+        row.resize(visitor.width + 1, "".to_string());
+
+        row[visitor.width] = title;
+        visitor.prev_depth = visitor.depth;
+        visitor.depth += 1;
+
+        for child in &child_nodes {
+            child.traverse(visitor, expand_expressions);
+        }
+
+        visitor.depth -= 1;
+        visitor.width += if visitor.prev_depth == visitor.depth {
+            1
+        } else {
+            0
+        };
+    }
+
+    fn node_data(&self, expand_expressions: bool) -> TreeFmtNodeData<'_> {
+        use Expr::*;
+        use LogicalPlan::*;
+        use TreeFmtNode::{
+            Expression as NE,
+            LogicalPlan as NL, // echt?
+        };
+        use {with_header as wh, TreeFmtNodeData as ND};
+
+        match self {
+            NE(h, expr) if !expand_expressions => {
+                ND(wh(h, &multiline_expression(&format!("{expr:?}"))), vec![])
+            },
+            NE(h, BinaryExpr { left, op, right }) => ND(
+                wh(h, &format!("binary: {op:?}")),
+                vec![NE(None, left), NE(None, right)],
+            ),
+            NE(
+                h,
+                Function {
+                    input, function, ..
+                },
+            ) => ND(
+                wh(h, &format!("function: {function}")),
+                input.iter().map(|expr| NE(None, expr)).collect(),
+            ),
+            NE(h, AnonymousFunction { input, options, .. }) => ND(
+                wh(h, &format!("function: {}", options.fmt_str)),
+                input.iter().map(|expr| NE(None, expr)).collect(),
+            ),
+            NE(
+                h,
+                Window {
+                    function,
+                    partition_by,
+                    options,
+                },
+            ) => match options {
+                #[cfg(feature = "dynamic_group_by")]
+                WindowType::Rolling(options) => ND(
+                    wh(
+                        h,
+                        &format!(
+                            "window: rolling(by='{}', offset={}, period={})",
+                            options.index_column, options.offset, options.period
+                        ),
+                    ),
+                    vec![NE(Some("function:".to_string()), function)],
+                ),
+                _ => ND(
+                    wh(h, "window"),
+                    [NE(Some("function:".to_string()), function)]
+                        .into_iter()
+                        .chain(
+                            partition_by
+                                .iter()
+                                .map(|expr| NE(Some("partition_by:".to_string()), expr)),
+                        )
+                        .collect(),
+                ),
+            },
+            NE(h, Expr::Sort { expr, options }) => ND(
+                wh(
+                    h,
+                    &format!("sort: {}", if options.descending { "desc" } else { "asc" }),
+                ),
+                vec![NE(None, expr)],
+            ),
+            NE(
+                h,
+                SortBy {
+                    expr,
+                    by,
+                    descending,
+                },
+            ) => ND(
+                wh(h, "sort_by"),
+                [NE(Some("expression:".to_string()), expr)]
+                    .into_iter()
+                    .chain(by.iter().zip(descending).map(|(by, desc)| {
+                        NE(
+                            if *desc {
+                                Some("sort_by(desc):".to_string())
+                            } else {
+                                Some("sort_by(asc):".to_string())
+                            },
+                            by,
+                        )
+                    }))
+                    .collect(),
+            ),
+            NE(h, Filter { input, by }) => ND(
+                wh(h, "filter"),
+                vec![
+                    NE(Some("expression:".to_string()), input),
+                    NE(Some("by:".to_string()), by),
+                ],
+            ),
+            NE(
+                h,
+                Gather {
+                    expr,
+                    idx,
+                    returns_scalar,
+                },
+            ) => ND(
+                wh(h, if *returns_scalar { "get" } else { "gather" }),
+                vec![NE(None, expr), NE(None, idx)],
+            ),
+            NE(
+                h,
+                Cast {
+                    expr,
+                    data_type,
+                    strict,
+                },
+            ) => ND(
+                wh(
+                    h,
+                    &format!(
+                        "{}cast({data_type:?})",
+                        if *strict { "strict_" } else { "" }
+                    ),
+                ),
+                vec![NE(None, expr)],
+            ),
+            NE(
+                h,
+                Ternary {
+                    predicate,
+                    truthy,
+                    falsy,
+                },
+            ) => ND(
+                wh(h, "ternary"),
+                vec![
+                    NE(Some("when:".to_string()), predicate),
+                    NE(Some("then:".to_string()), truthy),
+                    NE(Some("otherwise:".to_string()), falsy),
+                ],
+            ),
+            NE(
+                h,
+                Expr::Slice {
+                    input,
+                    offset,
+                    length,
+                },
+            ) => ND(
+                wh(h, "slice"),
+                vec![
+                    NE(Some("expression:".to_string()), input),
+                    NE(Some("offset:".to_string()), offset),
+                    NE(Some("length:".to_string()), length),
+                ],
+            ),
+            NE(h, Wildcard) => ND(wh(h, "*"), vec![]),
+            NE(h, Exclude(expr, names)) => {
+                ND(wh(h, &format!("exclude({names:?})")), vec![NE(None, expr)])
+            },
+            NE(h, Alias(expr, name)) => {
+                ND(wh(h, &format!("alias(\"{name}\")")), vec![NE(None, expr)])
+            },
+            NE(h, KeepName(expr)) => ND(wh(h, "keep name"), vec![NE(None, expr)]),
+            NE(h, RenameAlias { expr, .. }) => ND(wh(h, "rename alias"), vec![NE(None, expr)]),
+            NE(h, Columns(names)) => ND(wh(h, &format!("cols({names:?})")), vec![]),
+            NE(h, Selector(_)) => ND(wh(h, "SELECTOR"), vec![]),
+            NE(h, expr @ Len) => ND(wh(h, &format!("{expr:?}")), vec![]),
+            NE(h, expr @ Nth(_)) => ND(wh(h, &format!("{expr:?}")), vec![]),
+            NE(h, expr @ Column(_)) => ND(wh(h, &format!("{expr:?}")), vec![]),
+            NE(h, expr @ Literal(_)) => ND(wh(h, &format!("lit({expr:?})")), vec![]),
+            NE(h, expr @ DtypeColumn(_)) => ND(wh(h, &format!("{expr:?}")), vec![]),
+            NE(h, Explode(expr)) => ND(wh(h, "explode"), vec![NE(None, expr)]),
+            NE(h, SubPlan(lp, _)) => ND(wh(h, "subplan"), vec![NL(None, lp)]),
+            NE(h, Agg(agg)) => {
+                use AggExpr::*;
+                match agg {
+                    Min {
+                        input,
+                        propagate_nans,
+                    } => ND(
+                        wh(
+                            h,
+                            &format!("{}min", if *propagate_nans { "nan_" } else { "" }),
+                        ),
+                        vec![NE(None, input)],
+                    ),
+                    Max {
+                        input,
+                        propagate_nans,
+                    } => ND(
+                        wh(
+                            h,
+                            &format!("{}max", if *propagate_nans { "nan_" } else { "" }),
+                        ),
+                        vec![NE(None, input)],
+                    ),
+                    Median(expr) => ND(wh(h, "median"), vec![NE(None, expr)]),
+                    Mean(expr) => ND(wh(h, "mean"), vec![NE(None, expr)]),
+                    First(expr) => ND(wh(h, "first"), vec![NE(None, expr)]),
+                    Last(expr) => ND(wh(h, "last"), vec![NE(None, expr)]),
+                    Implode(expr) => ND(wh(h, "list"), vec![NE(None, expr)]),
+                    NUnique(expr) => ND(wh(h, "n_unique"), vec![NE(None, expr)]),
+                    Sum(expr) => ND(wh(h, "sum"), vec![NE(None, expr)]),
+                    AggGroups(expr) => ND(wh(h, "groups"), vec![NE(None, expr)]),
+                    Count(expr, _) => ND(wh(h, "count"), vec![NE(None, expr)]),
+                    Var(expr, _) => ND(wh(h, "var"), vec![NE(None, expr)]),
+                    Std(expr, _) => ND(wh(h, "std"), vec![NE(None, expr)]),
+                    Quantile { expr, .. } => ND(wh(h, "quantile"), vec![NE(None, expr)]),
+                }
+            },
+            #[cfg(feature = "python")]
+            NL(h, lp @ PythonScan { .. }) => ND(wh(h, &format!("{lp:?}",)), vec![]),
+            NL(h, lp @ Scan { .. }) => ND(wh(h, &format!("{lp:?}",)), vec![]),
+            NL(
+                h,
+                DataFrameScan {
+                    schema,
+                    projection,
+                    selection,
+                    ..
+                },
+            ) => ND(
+                wh(
+                    h,
+                    &format!(
+                        "DF {:?}\nPROJECT {}/{} COLUMNS",
+                        schema.iter_names().take(4).collect::<Vec<_>>(),
+                        if let Some(columns) = projection {
+                            format!("{}", columns.len())
+                        } else {
+                            "*".to_string()
+                        },
+                        schema.len()
+                    ),
+                ),
+                if let Some(expr) = selection {
+                    vec![NE(Some("SELECTION:".to_string()), expr)]
+                } else {
+                    vec![]
+                },
+            ),
+            NL(h, Union { inputs, options }) => ND(
+                wh(
+                    h,
+                    &(if let Some(slice) = options.slice {
+                        format!("SLICED UNION: {slice:?}")
+                    } else {
+                        "UNION".to_string()
+                    }),
+                ),
+                inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, lp)| NL(Some(format!("PLAN {i}:")), lp))
+                    .collect(),
+            ),
+            NL(h, HConcat { inputs, .. }) => ND(
+                wh(h, "HCONCAT"),
+                inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, lp)| NL(Some(format!("PLAN {i}:")), lp))
+                    .collect(),
+            ),
+            NL(h, Cache { input, id, count }) => ND(
+                wh(h, &format!("CACHE[id: {:x}, count: {}]", *id, *count)),
+                vec![NL(None, input)],
+            ),
+            NL(h, Selection { input, predicate }) => ND(
+                wh(h, "FILTER"),
+                vec![
+                    NE(Some("predicate:".to_string()), predicate),
+                    NL(Some("FROM:".to_string()), input),
+                ],
+            ),
+            NL(h, Projection { expr, input, .. }) => ND(
+                wh(h, "SELECT"),
+                expr.iter()
+                    .map(|expr| NE(Some("expression:".to_string()), expr))
+                    .chain([NL(Some("FROM:".to_string()), input)])
+                    .collect(),
+            ),
+            NL(
+                h,
+                LogicalPlan::Sort {
+                    input, by_column, ..
+                },
+            ) => ND(
+                wh(h, "SORT BY"),
+                by_column
+                    .iter()
+                    .map(|expr| NE(Some("expression:".to_string()), expr))
+                    .chain([NL(None, input)])
+                    .collect(),
+            ),
+            NL(
+                h,
+                Aggregate {
+                    input, keys, aggs, ..
+                },
+            ) => ND(
+                wh(h, "AGGREGATE"),
+                aggs.iter()
+                    .map(|expr| NE(Some("expression:".to_string()), expr))
+                    .chain(
+                        keys.iter()
+                            .map(|expr| NE(Some("aggregate by:".to_string()), expr)),
+                    )
+                    .chain([NL(Some("FROM:".to_string()), input)])
+                    .collect(),
+            ),
+            NL(
+                h,
+                Join {
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    options,
+                    ..
+                },
+            ) => ND(
+                wh(h, &format!("{} JOIN", options.args.how)),
+                left_on
+                    .iter()
+                    .map(|expr| NE(Some("left on:".to_string()), expr))
+                    .chain([NL(Some("LEFT PLAN:".to_string()), input_left)])
+                    .chain(
+                        right_on
+                            .iter()
+                            .map(|expr| NE(Some("right on:".to_string()), expr)),
+                    )
+                    .chain([NL(Some("RIGHT PLAN:".to_string()), input_right)])
+                    .collect(),
+            ),
+            NL(h, HStack { input, exprs, .. }) => ND(
+                wh(h, "WITH_COLUMNS"),
+                exprs
+                    .iter()
+                    .map(|expr| NE(Some("expression:".to_string()), expr))
+                    .chain([NL(None, input)])
+                    .collect(),
+            ),
+            NL(h, Distinct { input, options }) => ND(
+                wh(h, &format!("UNIQUE BY {:?}", options.subset)),
+                vec![NL(None, input)],
+            ),
+            NL(h, LogicalPlan::Slice { input, offset, len }) => ND(
+                wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
+                vec![NL(None, input)],
+            ),
+            NL(h, MapFunction { input, function }) => {
+                ND(wh(h, &format!("{function}")), vec![NL(None, input)])
+            },
+            NL(h, Error { input, err }) => ND(wh(h, &format!("{err:?}")), vec![NL(None, input)]),
+            NL(h, ExtContext { input, .. }) => ND(wh(h, "EXTERNAL_CONTEXT"), vec![NL(None, input)]),
+            NL(h, Sink { input, payload }) => ND(
+                wh(
+                    h,
+                    match payload {
+                        SinkType::Memory => "SINK (memory)",
+                        SinkType::File { .. } => "SINK (file)",
+                        #[cfg(feature = "cloud")]
+                        SinkType::Cloud { .. } => "SINK (cloud)",
+                    },
+                ),
+                vec![NL(None, input)],
+            ),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct TreeFmtVisitor {
     levels: Vec<Vec<String>>,
@@ -69,45 +496,8 @@ pub(crate) struct TreeFmtVisitor {
     width: usize,
 }
 
-impl Visitor for TreeFmtVisitor {
-    type Node = AexprNode;
-
-    /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        let ae = node.to_aexpr();
-        let repr = format!("{:E}", ae);
-
-        if self.levels.len() <= self.depth {
-            self.levels.push(vec![])
-        }
-
-        // the post-visit ensures the width of this node is known
-        let row = self.levels.get_mut(self.depth).unwrap();
-
-        // set default values to ensure we format at the right width
-        row.resize(self.width + 1, "".to_string());
-        row[self.width] = repr;
-
-        self.prev_depth = self.depth;
-        // we will enter depth first, we enter child so depth increases
-        self.depth += 1;
-
-        Ok(VisitRecursion::Continue)
-    }
-
-    fn post_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        // we finished this branch so we decrease in depth, back the caller node
-        self.depth -= 1;
-
-        // because we traverse depth first
-        // every post-visit increases the width as we finished one or more depth-first branches
-        self.width += if self.prev_depth == self.depth { 1 } else { 0 };
-        Ok(VisitRecursion::Continue)
-    }
-}
-
 /// Calculates the number of digits in a `usize` number
-/// Useful for the alignment of of `usize` values when they are displayed
+/// Useful for the alignment of `usize` values when they are displayed
 fn digits(n: usize) -> usize {
     if n == 0 {
         1
@@ -136,7 +526,7 @@ struct TreeViewRow {
 #[derive(Clone, Default, Debug)]
 struct TreeViewCell<'a> {
     text: Vec<&'a str>,
-    /// A `Vec` of indices of of `TreeViewColumn`-s stored elsewhere in another `Vec`
+    /// A `Vec` of indices of `TreeViewColumn`-s stored elsewhere in another `Vec`
     /// For a cell on a row `i` these indices point to the columns that contain child-cells on a
     /// row `i + 1` (if the latter exists)
     /// NOTE: might warrant a rethink should this code become used broader
@@ -250,6 +640,8 @@ struct Glyphs {
     top_right_corner: char,
     bottom_left_corner: char,
     bottom_right_corner: char,
+    tee_down: char,
+    tee_up: char,
 }
 
 impl Default for Glyphs {
@@ -262,6 +654,8 @@ impl Default for Glyphs {
             top_right_corner: '╮',
             bottom_left_corner: '╰',
             bottom_right_corner: '╯',
+            tee_down: '┬',
+            tee_up: '┴',
         }
     }
 }
@@ -374,15 +768,18 @@ impl Canvas {
     fn draw_connections(&mut self, from: Point, to: &[Point], branching_offset: usize) {
         let mut start_with_corner = true;
         let Point(mut x_from, mut y_from) = from;
-        for Point(x, y) in to {
+        for (i, Point(x, y)) in to.iter().enumerate() {
             if *x >= x_from && *y >= y_from - 1 {
+                self.draw_symbol(Point(*x, *y), self.glyphs.tee_up);
                 if *x == x_from {
                     // if the first connection goes straight below
+                    self.draw_symbol(Point(x_from, y_from - 1), self.glyphs.tee_down);
                     self.draw_line(Point(x_from, y_from), Orientation::Vertical, *y - y_from);
                     x_from += 1;
                 } else {
                     if start_with_corner {
                         // if the first or the second connection steers to the right
+                        self.draw_symbol(Point(x_from, y_from - 1), self.glyphs.tee_down);
                         self.draw_line(
                             Point(x_from, y_from),
                             Orientation::Vertical,
@@ -396,7 +793,11 @@ impl Canvas {
                     let length = *x - x_from;
                     self.draw_line(Point(x_from, y_from), Orientation::Horizontal, length);
                     x_from += length;
-                    self.draw_symbol(Point(x_from, y_from), self.glyphs.top_right_corner);
+                    if i == to.len() - 1 {
+                        self.draw_symbol(Point(x_from, y_from), self.glyphs.top_right_corner);
+                    } else {
+                        self.draw_symbol(Point(x_from, y_from), self.glyphs.tee_down);
+                    }
                     self.draw_line(
                         Point(x_from, y_from + 1),
                         Orientation::Vertical,
@@ -454,35 +855,56 @@ impl From<TreeView<'_>> for Canvas {
                         ),
                         &cell.text,
                     );
-                    if i < value.rows.len() - 1 {
-                        let children_points = cell
-                            .children_columns
-                            .iter()
-                            .map(|k| {
-                                let child_total_padding = value.rows[i + 1].height
-                                    - value.matrix[i + 1][*k].text.len()
-                                    - 2;
-                                Point(
-                                    value.columns[*k].offset + value.columns[*k].center - 1,
-                                    value.rows[i + 1].offset
-                                        + child_total_padding / 2
-                                        + child_total_padding % 2,
-                                )
-                            })
-                            .collect::<Vec<_>>();
+                }
+            }
+        }
 
-                        let parent_total_padding =
-                            value.rows[i].height - value.matrix[i][j].text.len() - 2;
-                        canvas.draw_connections(
+        fn even_odd(a: usize, b: usize) -> usize {
+            if a % 2 == 0 && b % 2 == 1 {
+                1
+            } else {
+                0
+            }
+        }
+
+        for (i, row) in value.matrix.iter().enumerate() {
+            for (j, cell) in row.iter().enumerate() {
+                if !cell.text.is_empty() && i < value.rows.len() - 1 {
+                    let children_points = cell
+                        .children_columns
+                        .iter()
+                        .map(|k| {
+                            let child_total_padding =
+                                value.rows[i + 1].height - value.matrix[i + 1][*k].text.len() - 2;
+                            let even_cell_in_odd_row = even_odd(
+                                value.matrix[i + 1][*k].text.len(),
+                                value.rows[i + 1].height,
+                            );
                             Point(
-                                value.columns[j].offset + value.columns[j].center - 1,
-                                value.rows[i].offset + value.rows[i].height
-                                    - parent_total_padding / 2,
-                            ),
-                            &children_points,
-                            parent_total_padding / 2 + 1,
-                        );
-                    }
+                                value.columns[*k].offset + value.columns[*k].center - 1,
+                                value.rows[i + 1].offset
+                                    + child_total_padding / 2
+                                    + child_total_padding % 2
+                                    - even_cell_in_odd_row,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+
+                    let parent_total_padding =
+                        value.rows[i].height - value.matrix[i][j].text.len() - 2;
+                    let even_cell_in_odd_row =
+                        even_odd(value.matrix[i][j].text.len(), value.rows[i].height);
+
+                    canvas.draw_connections(
+                        Point(
+                            value.columns[j].offset + value.columns[j].center - 1,
+                            value.rows[i].offset + value.rows[i].height
+                                - parent_total_padding / 2
+                                - even_cell_in_odd_row,
+                        ),
+                        &children_points,
+                        parent_total_padding / 2 + 1 + even_cell_in_odd_row,
+                    );
                 }
             }
         }
@@ -503,6 +925,12 @@ impl Display for Canvas {
 
 impl Display for TreeFmtVisitor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+impl Debug for TreeFmtVisitor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let tree_view: TreeView<'_> = self.levels.as_slice().into();
         let canvas: Canvas = tree_view.into();
         write!(f, "{canvas}")?;
@@ -514,23 +942,20 @@ impl Display for TreeFmtVisitor {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::logical_plan::visitor::TreeWalker;
 
     #[test]
     fn test_tree_fmt_visit() {
         let e = (col("foo") * lit(2) + lit(3) + lit(43)).sum();
-        let mut arena = Default::default();
-        let node = to_aexpr(e, &mut arena);
 
         let mut visitor = TreeFmtVisitor::default();
+        TreeFmtNode::root_expression(&e).traverse(&mut visitor, true);
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
         let expected: &[&[&str]] = &[
             &["sum"],
             &["binary: +"],
-            &["lit(43)", "binary: +"],
-            &["", "lit(3)", "binary: *"],
-            &["", "", "lit(2)", "col(foo)"],
+            &["binary: +", "", "", "lit(43)"],
+            &["binary: *", "", "lit(3)"],
+            &["col(\"foo\")", "lit(2)"],
         ];
 
         assert_eq!(visitor.levels, expected);
@@ -539,38 +964,35 @@ mod test {
     #[test]
     fn test_tree_format_levels() {
         let e = (col("a") + col("b")).pow(2) + col("c") * col("d");
-        let mut arena = Default::default();
-        let node = to_aexpr(e, &mut arena);
 
         let mut visitor = TreeFmtVisitor::default();
-
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        TreeFmtNode::root_expression(&e).traverse(&mut visitor, true);
 
         let expected_lines = vec![
-            "            0            1               2                3            4",
-            "   ┌─────────────────────────────────────────────────────────────────────────",
-            "   │",
-            "   │  ╭───────────╮",
-            " 0 │  │ binary: + │",
-            "   │  ╰───────────╯",
-            "   │        ││",
-            "   │        │╰───────────────────────────╮",
-            "   │        │                            │",
-            "   │  ╭───────────╮              ╭───────────────╮",
-            " 1 │  │ binary: * │              │ function: pow │",
-            "   │  ╰───────────╯              ╰───────────────╯",
-            "   │        ││                           ││",
-            "   │        │╰───────────╮               │╰───────────────╮",
-            "   │        │            │               │                │",
-            "   │    ╭────────╮   ╭────────╮      ╭────────╮     ╭───────────╮",
-            " 2 │    │ col(d) │   │ col(c) │      │ lit(2) │     │ binary: + │",
-            "   │    ╰────────╯   ╰────────╯      ╰────────╯     ╰───────────╯",
-            "   │                                                      ││",
-            "   │                                                      │╰───────────╮",
-            "   │                                                      │            │",
-            "   │                                                  ╭────────╮   ╭────────╮",
-            " 3 │                                                  │ col(b) │   │ col(a) │",
-            "   │                                                  ╰────────╯   ╰────────╯",
+            r#"              0               1            2             3             4"#,
+            r#"   ┌──────────────────────────────────────────────────────────────────────────"#,
+            r#"   │"#,
+            r#"   │    ╭───────────╮"#,
+            r#" 0 │    │ binary: + │"#,
+            r#"   │    ╰─────┬┬────╯"#,
+            r#"   │          ││"#,
+            r#"   │          │╰─────────────────────────────────────────╮"#,
+            r#"   │          │                                          │"#,
+            r#"   │  ╭───────┴───────╮                            ╭─────┴─────╮"#,
+            r#" 1 │  │ function: pow │                            │ binary: * │"#,
+            r#"   │  ╰───────┬┬──────╯                            ╰─────┬┬────╯"#,
+            r#"   │          ││                                         ││"#,
+            r#"   │          │╰───────────────────────────╮             │╰────────────╮"#,
+            r#"   │          │                            │             │             │"#,
+            r#"   │    ╭─────┴─────╮                  ╭───┴────╮   ╭────┴─────╮  ╭────┴─────╮"#,
+            r#" 2 │    │ binary: + │                  │ lit(2) │   │ col("c") │  │ col("d") │"#,
+            r#"   │    ╰─────┬┬────╯                  ╰────────╯   ╰──────────╯  ╰──────────╯"#,
+            r#"   │          ││"#,
+            r#"   │          │╰──────────────╮"#,
+            r#"   │          │               │"#,
+            r#"   │     ╭────┴─────╮    ╭────┴─────╮"#,
+            r#" 3 │     │ col("a") │    │ col("b") │"#,
+            r#"   │     ╰──────────╯    ╰──────────╯"#,
         ];
         for (i, (line, expected_line)) in
             format!("{visitor}").lines().zip(expected_lines).enumerate()
@@ -589,38 +1011,35 @@ mod test {
                 1,
                 polars_core::datatypes::DataType::Int64,
             );
-        let mut arena = Default::default();
-        let node = to_aexpr(e, &mut arena);
 
         let mut visitor = TreeFmtVisitor::default();
-
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        TreeFmtNode::root_expression(&e).traverse(&mut visitor, true);
 
         let expected_lines = vec![
-            "                 0                 1               2                3            4",
-            "   ┌───────────────────────────────────────────────────────────────────────────────────",
-            "   │",
-            "   │       ╭───────────╮",
-            " 0 │       │ binary: + │",
-            "   │       ╰───────────╯",
-            "   │             ││",
-            "   │             │╰────────────────────────────────╮",
-            "   │             │                                 │",
-            "   │  ╭─────────────────────╮              ╭───────────────╮",
-            " 1 │  │ function: int_range │              │ function: pow │",
-            "   │  ╰─────────────────────╯              ╰───────────────╯",
-            "   │             ││                                ││",
-            "   │             │╰────────────────╮               │╰───────────────╮",
-            "   │             │                 │               │                │",
-            "   │         ╭────────╮        ╭────────╮      ╭────────╮     ╭───────────╮",
-            " 2 │         │ lit(3) │        │ lit(0) │      │ lit(2) │     │ binary: + │",
-            "   │         ╰────────╯        ╰────────╯      ╰────────╯     ╰───────────╯",
-            "   │                                                                ││",
-            "   │                                                                │╰───────────╮",
-            "   │                                                                │            │",
-            "   │                                                            ╭────────╮   ╭────────╮",
-            " 3 │                                                            │ col(b) │   │ col(a) │",
-            "   │                                                            ╰────────╯   ╰────────╯",
+            r#"              0               1            2                  3                 4"#,
+            r#"   ┌──────────────────────────────────────────────────────────────────────────────────"#,
+            r#"   │"#,
+            r#"   │    ╭───────────╮"#,
+            r#" 0 │    │ binary: + │"#,
+            r#"   │    ╰─────┬┬────╯"#,
+            r#"   │          ││"#,
+            r#"   │          │╰──────────────────────────────────────────────╮"#,
+            r#"   │          │                                               │"#,
+            r#"   │  ╭───────┴───────╮                            ╭──────────┴──────────╮"#,
+            r#" 1 │  │ function: pow │                            │ function: int_range │"#,
+            r#"   │  ╰───────┬┬──────╯                            ╰──────────┬┬─────────╯"#,
+            r#"   │          ││                                              ││"#,
+            r#"   │          │╰───────────────────────────╮                  │╰────────────────╮"#,
+            r#"   │          │                            │                  │                 │"#,
+            r#"   │    ╭─────┴─────╮                  ╭───┴────╮         ╭───┴────╮        ╭───┴────╮"#,
+            r#" 2 │    │ binary: + │                  │ lit(2) │         │ lit(0) │        │ lit(3) │"#,
+            r#"   │    ╰─────┬┬────╯                  ╰────────╯         ╰────────╯        ╰────────╯"#,
+            r#"   │          ││"#,
+            r#"   │          │╰──────────────╮"#,
+            r#"   │          │               │"#,
+            r#"   │     ╭────┴─────╮    ╭────┴─────╮"#,
+            r#" 3 │     │ col("a") │    │ col("b") │"#,
+            r#"   │     ╰──────────╯    ╰──────────╯"#,
         ];
         for (i, (line, expected_line)) in
             format!("{visitor}").lines().zip(expected_lines).enumerate()
