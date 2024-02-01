@@ -9,8 +9,10 @@ use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::idx_vec::UnitVec;
 use polars_utils::index::ChunkId;
 use polars_utils::slice::GetSaferUnchecked;
+use polars_utils::unitvec;
 
 use super::*;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
@@ -62,7 +64,7 @@ pub struct GenericBuild {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Vec<PlIdHashMap<Key, Vec<ChunkId>>>,
+    hash_tables: Vec<PlIdHashMap<Key, UnitVec<ChunkId>>>,
 
     // the columns that will be joined on
     join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -200,7 +202,7 @@ impl Sink for GenericBuild {
             match entry {
                 RawEntryMut::Vacant(entry) => {
                     let key = Key::new(*h, current_chunk_offset, current_df_idx);
-                    entry.insert(key, vec![payload]);
+                    entry.insert(key, unitvec![payload]);
                 },
                 RawEntryMut::Occupied(mut entry) => {
                     entry.get_mut().push(payload);
@@ -257,7 +259,7 @@ impl Sink for GenericBuild {
                             let (chunk_idx, df_idx) = chunk_id.extract();
                             let new_chunk_idx = chunk_idx + chunks_offset;
                             let key = Key::new(h, new_chunk_idx, df_idx);
-                            let mut payload = vec![ChunkId::store(new_chunk_idx, df_idx)];
+                            let mut payload = unitvec![ChunkId::store(new_chunk_idx, df_idx)];
                             if val.len() > 1 {
                                 let iter = val[1..].iter().map(|chunk_id| {
                                     let (chunk_idx, val_idx) = chunk_id.extract();

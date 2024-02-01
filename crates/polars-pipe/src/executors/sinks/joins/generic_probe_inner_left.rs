@@ -12,6 +12,7 @@ use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::idx_vec::UnitVec;
 use polars_utils::index::ChunkId;
 use polars_utils::nulls::IsNull;
 use polars_utils::slice::GetSaferUnchecked;
@@ -39,7 +40,7 @@ pub struct GenericJoinProbe {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
+    hash_tables: Arc<Vec<PlIdHashMap<Key, UnitVec<ChunkId>>>>,
 
     // the columns that will be joined on
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -89,7 +90,7 @@ impl GenericJoinProbe {
         materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
         suffix: Arc<str>,
         hb: RandomState,
-        hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
+        hash_tables: Arc<Vec<PlIdHashMap<Key, UnitVec<ChunkId>>>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped_or_left: bool,
