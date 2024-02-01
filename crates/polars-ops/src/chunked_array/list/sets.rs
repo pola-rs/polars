@@ -84,7 +84,7 @@ where
         SetOperation::Difference => {
             set.extend(a);
             for v in b {
-                set.remove(&v);
+                set.swap_remove(&v);
             }
             out.extend_buf(set.drain(..))
         },
