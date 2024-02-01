@@ -38,11 +38,10 @@ impl Int128Chunked {
     }
 
     pub fn into_decimal(
-        mut self,
+        self,
         precision: Option<usize>,
         scale: usize,
     ) -> PolarsResult<DecimalChunked> {
-        self.update_chunks_dtype(precision, scale);
         // TODO: if precision is None, do we check that the value fits within precision of 38?...
         if let Some(precision) = precision {
             let precision_max = 10_i128.pow(precision as u32);
