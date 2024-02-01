@@ -11,7 +11,7 @@ sphinx==7.2.4
 # Third-party Sphinx extensions
 autodocsumm==0.2.11
 numpydoc==1.6.0
-pydata-sphinx-theme==0.14.1
+pydata-sphinx-theme==0.15.2
 sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.2
 sphinx-design==0.5.0
