@@ -11,6 +11,8 @@ Make sure to configure VSCode to use the virtual environment created by the Make
 VSCode will prompt you to do this automatically once the Makefile creates the `.venv` folder.
 You can also run the `Python: Select Interpreter` command to manually configure the workspace to use the local `.venv` interpreter.
 
+You can use the `Python: Create Terminal` command to easily launch a terminal instance that has the virtual environment loaded.
+
 ### Line lengths
 
 We use 88 characters for Python code and 100 characters for Rust code. If you want VSCode to show you rulers at those points, add the following settings to your `.vscode/settings.json`:
