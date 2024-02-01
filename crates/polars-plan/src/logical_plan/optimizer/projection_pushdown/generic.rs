@@ -21,6 +21,7 @@ pub(super) fn process_generic(
         .map(|&node| {
             let alp = lp_arena.take(node);
             let mut alp = proj_pd.push_down(
+                node,
                 alp,
                 acc_projections.clone(),
                 projected_names.clone(),

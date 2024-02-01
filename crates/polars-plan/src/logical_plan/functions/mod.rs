@@ -3,9 +3,10 @@ mod merge_sorted;
 #[cfg(feature = "python")]
 mod python_udf;
 mod rename;
-
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -44,6 +45,10 @@ pub enum FunctionNode {
         // used for formatting
         #[cfg_attr(feature = "serde", serde(skip))]
         fmt_str: &'static str,
+    },
+    Count {
+        paths: Arc<[PathBuf]>,
+        scan_type: FileScan,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
     Pipeline {
@@ -108,6 +113,7 @@ impl PartialEq for FunctionNode {
             ) => l == r && dl == dr,
             (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
+            (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
             (
                 Rename {
                     existing: existing_l,
@@ -138,6 +144,7 @@ impl FunctionNode {
             MergeSorted { .. } => false,
             DropNulls { .. }
             | FastProjection { .. }
+            | Count { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. } => true,
@@ -190,7 +197,7 @@ impl FunctionNode {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rechunk => Ok(Cow::Borrowed(input_schema)),
+            Rechunk | Count { .. } => Ok(Cow::Borrowed(input_schema)),
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
                 {
@@ -245,6 +252,7 @@ impl FunctionNode {
             FastProjection { .. }
             | DropNulls { .. }
             | Rechunk
+            | Count { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
@@ -265,6 +273,7 @@ impl FunctionNode {
             FastProjection { .. }
             | DropNulls { .. }
             | Rechunk
+            | Count { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
@@ -309,6 +318,9 @@ impl FunctionNode {
                 }
             },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
+            Count { .. } => {
+                todo!();
+            },
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
@@ -373,6 +385,7 @@ impl Display for FunctionNode {
                 fmt_column_delimited(f, subset, "[", "]")
             },
             Rechunk => write!(f, "RECHUNK"),
+            Count { .. } => write!(f, "COUNT(*)"),
             Unnest { columns } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();

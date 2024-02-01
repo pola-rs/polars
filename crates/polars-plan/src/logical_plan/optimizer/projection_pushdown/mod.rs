@@ -149,11 +149,13 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
-pub struct ProjectionPushDown {}
+pub struct ProjectionPushDown {
+    count_star: Vec<Node>,
+}
 
 impl ProjectionPushDown {
     pub(super) fn new() -> Self {
-        Self {}
+        Self { count_star: vec![] }
     }
 
     /// Projection will be done at this node, but we continue optimization
@@ -173,6 +175,7 @@ impl ProjectionPushDown {
             .map(|&node| {
                 let alp = lp_arena.take(node);
                 let alp = self.push_down(
+                    node,
                     alp,
                     Default::default(),
                     Default::default(),
@@ -254,6 +257,7 @@ impl ProjectionPushDown {
     ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
         let lp = self.push_down(
+            input,
             alp,
             acc_projections,
             names,
@@ -287,6 +291,7 @@ impl ProjectionPushDown {
             split_acc_projections(acc_projections, &down_schema, expr_arena, expands_schema);
 
         let lp = self.push_down(
+            input,
             alp,
             acc_projections,
             names,
@@ -311,6 +316,7 @@ impl ProjectionPushDown {
     ///
     fn push_down(
         &mut self,
+        node: Node,
         logical_plan: ALogicalPlan,
         mut acc_projections: Vec<Node>,
         mut projected_names: PlHashSet<Arc<str>>,
@@ -323,6 +329,7 @@ impl ProjectionPushDown {
         match logical_plan {
             Projection { expr, input, .. } => process_projection(
                 self,
+                node,
                 input,
                 expr.exprs(),
                 acc_projections,
@@ -699,6 +706,7 @@ impl ProjectionPushDown {
 
     pub fn optimize(
         &mut self,
+        root: Node,
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
@@ -706,6 +714,7 @@ impl ProjectionPushDown {
         let acc_projections = init_vec();
         let names = init_set();
         self.push_down(
+            root,
             logical_plan,
             acc_projections,
             names,

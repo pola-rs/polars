@@ -166,7 +166,7 @@ pub(super) fn set_cache_states(
                             .project(projection.clone(), Default::default())
                             .build();
 
-                        let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
+                        let lp = pd.optimize(new_child, lp, lp_arena, expr_arena).unwrap();
                         // remove the projection added by the optimization
                         let lp = if let ALogicalPlan::Projection { input, .. } = lp {
                             lp_arena.take(input)

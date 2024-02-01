@@ -9,6 +9,7 @@ mod delay_rechunk;
 mod drop_nulls;
 
 mod collect_members;
+mod count_star;
 #[cfg(feature = "cse")]
 mod cse_expr;
 mod fast_projection;
@@ -132,7 +133,7 @@ pub fn optimize(
     if projection_pushdown {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
-        let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+        let alp = projection_pushdown_opt.optimize(lp_top, alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
 
         if members.has_joins_or_unions && members.has_cache {
