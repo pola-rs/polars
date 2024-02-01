@@ -113,3 +113,51 @@ impl_to_idx!(i8, i16);
 impl_to_idx!(i16, i32);
 impl_to_idx!(i32, i64);
 impl_to_idx!(i64, i64);
+
+// Allows for 2^24 (~16M) chunks
+// Leaves 2^40 (~1T) rows per chunk
+const CHUNK_BITS: u64 = 24;
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct ChunkId {
+    swizzled: u64,
+}
+
+impl ChunkId {
+    #[inline(always)]
+    #[allow(clippy::unnecessary_cast)]
+    pub fn store(chunk: IdxSize, row: IdxSize) -> Self {
+        debug_assert!(chunk < !(u64::MAX << CHUNK_BITS) as IdxSize);
+        let swizzled = (row as u64) << CHUNK_BITS | chunk as u64;
+
+        Self { swizzled }
+    }
+
+    #[inline(always)]
+    #[allow(clippy::unnecessary_cast)]
+    pub fn extract(self) -> (IdxSize, IdxSize) {
+        let row = (self.swizzled >> CHUNK_BITS) as IdxSize;
+
+        const MASK: IdxSize = IdxSize::MAX << CHUNK_BITS;
+        let chunk = (self.swizzled as IdxSize) & !MASK;
+        (chunk, row)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_chunk_idx() {
+        let chunk = 213908;
+        let row = 813457;
+
+        let ci = ChunkId::store(chunk, row);
+        let (c, r) = ci.extract();
+
+        assert_eq!(c, chunk);
+        assert_eq!(r, row);
+    }
+}

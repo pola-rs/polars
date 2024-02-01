@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BinaryArray};
 use hashbrown::hash_map::RawEntryMut;
-use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::index::ChunkId;
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::*;
@@ -196,7 +196,7 @@ impl Sink for GenericBuild {
                 compare_fn(key, *h, &self.materialized_join_cols, row)
             });
 
-            let payload = [current_chunk_offset, current_df_idx];
+            let payload = ChunkId::store(current_chunk_offset, current_df_idx);
             match entry {
                 RawEntryMut::Vacant(entry) => {
                     let key = Key::new(*h, current_chunk_offset, current_df_idx);
@@ -253,22 +253,25 @@ impl Sink for GenericBuild {
 
                     match entry {
                         RawEntryMut::Vacant(entry) => {
-                            let [chunk_idx, df_idx] = unsafe { val.get_unchecked_release(0) };
+                            let chunk_id = unsafe { val.get_unchecked_release(0) };
+                            let (chunk_idx, df_idx) = chunk_id.extract();
                             let new_chunk_idx = chunk_idx + chunks_offset;
-                            let key = Key::new(h, new_chunk_idx, *df_idx);
-                            let mut payload = vec![[new_chunk_idx, *df_idx]];
+                            let key = Key::new(h, new_chunk_idx, df_idx);
+                            let mut payload = vec![ChunkId::store(new_chunk_idx, df_idx)];
                             if val.len() > 1 {
-                                let iter = val[1..].iter().map(|[chunk_idx, val_idx]| {
-                                    [*chunk_idx + chunks_offset, *val_idx]
+                                let iter = val[1..].iter().map(|chunk_id| {
+                                    let (chunk_idx, val_idx) = chunk_id.extract();
+                                    ChunkId::store(chunk_idx + chunks_offset, val_idx)
                                 });
                                 payload.extend(iter);
                             }
                             entry.insert(key, payload);
                         },
                         RawEntryMut::Occupied(mut entry) => {
-                            let iter = val
-                                .iter()
-                                .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
+                            let iter = val.iter().map(|chunk_id| {
+                                let (chunk_idx, val_idx) = chunk_id.extract();
+                                ChunkId::store(chunk_idx + chunks_offset, val_idx)
+                            });
                             entry.get_mut().extend(iter);
                         },
                     }

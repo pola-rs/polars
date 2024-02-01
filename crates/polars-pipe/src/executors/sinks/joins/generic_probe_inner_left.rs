@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, BinaryArray};
 use arrow::compute::utils::combine_validities_and;
-use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
@@ -12,6 +11,7 @@ use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::index::ChunkId;
 use polars_utils::nulls::IsNull;
 use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;

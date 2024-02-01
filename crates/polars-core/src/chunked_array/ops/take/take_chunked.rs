@@ -1,3 +1,4 @@
+use polars_utils::index::ChunkId;
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::*;
@@ -22,9 +23,10 @@ where
 
             let ca: NoNull<Self> = by
                 .iter()
-                .map(|[chunk_idx, array_idx]| {
-                    let arr = arrs.get_unchecked_release(*chunk_idx as usize);
-                    *arr.get_unchecked_release(*array_idx as usize)
+                .map(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
+                    let arr = arrs.get_unchecked_release(chunk_idx as usize);
+                    *arr.get_unchecked_release(array_idx as usize)
                 })
                 .collect_trusted();
 
@@ -32,9 +34,10 @@ where
         } else {
             let arrs = self.downcast_iter().collect::<Vec<_>>();
             by.iter()
-                .map(|[chunk_idx, array_idx]| {
-                    let arr = arrs.get_unchecked(*chunk_idx as usize);
-                    arr.get_unchecked(*array_idx as usize)
+                .map(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
+                    let arr = arrs.get_unchecked(chunk_idx as usize);
+                    arr.get_unchecked(array_idx as usize)
                 })
                 .collect_trusted()
         };
@@ -48,7 +51,8 @@ where
         let mut ca: Self = by
             .iter()
             .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
+                opt_idx.and_then(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
                     let arr = arrs.get_unchecked_release(chunk_idx as usize);
                     arr.get_unchecked(array_idx as usize)
                 })
@@ -77,9 +81,10 @@ impl TakeChunked for BinaryOffsetChunked {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let mut ca: Self = by
             .iter()
-            .map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize)
+            .map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let arr = arrs.get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
             })
             .collect_trusted();
         ca.rename(self.name());
@@ -92,7 +97,8 @@ impl TakeChunked for BinaryOffsetChunked {
         let mut ca: Self = by
             .iter()
             .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
+                opt_idx.and_then(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
                     let arr = arrs.get_unchecked(chunk_idx as usize);
                     arr.get_unchecked(array_idx as usize)
                 })
@@ -109,9 +115,10 @@ impl TakeChunked for BinaryChunked {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let mut ca: Self = by
             .iter()
-            .map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize)
+            .map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let arr = arrs.get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
             })
             .collect_trusted();
         ca.rename(self.name());
@@ -124,7 +131,8 @@ impl TakeChunked for BinaryChunked {
         let mut ca: Self = by
             .iter()
             .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
+                opt_idx.and_then(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
                     let arr = arrs.get_unchecked(chunk_idx as usize);
                     arr.get_unchecked(array_idx as usize)
                 })
@@ -141,9 +149,10 @@ impl TakeChunked for BooleanChunked {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let mut ca: Self = by
             .iter()
-            .map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize)
+            .map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let arr = arrs.get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
             })
             .collect_trusted();
         ca.rename(self.name());
@@ -156,7 +165,8 @@ impl TakeChunked for BooleanChunked {
         let mut ca: Self = by
             .iter()
             .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
+                opt_idx.and_then(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
                     let arr = arrs.get_unchecked(chunk_idx as usize);
                     arr.get_unchecked(array_idx as usize)
                 })
@@ -173,9 +183,10 @@ impl TakeChunked for ListChunked {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let mut ca: Self = by
             .iter()
-            .map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize)
+            .map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let arr = arrs.get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
             })
             .collect();
         ca.rename(self.name());
@@ -188,7 +199,8 @@ impl TakeChunked for ListChunked {
         let mut ca: Self = by
             .iter()
             .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
+                opt_idx.and_then(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
                     let arr = arrs.get_unchecked(chunk_idx as usize);
                     arr.get_unchecked(array_idx as usize)
                 })
@@ -204,9 +216,10 @@ impl TakeChunked for ListChunked {
 impl TakeChunked for ArrayChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let iter = by.iter().map(|[chunk_idx, array_idx]| {
-            let arr = arrs.get_unchecked(*chunk_idx as usize);
-            arr.get_unchecked(*array_idx as usize)
+        let iter = by.iter().map(|chunk_id| {
+            let (chunk_idx, array_idx) = chunk_id.extract();
+            let arr = arrs.get_unchecked(chunk_idx as usize);
+            arr.get_unchecked(array_idx as usize)
         });
         let mut ca = Self::from_iter_and_args(
             iter,
@@ -222,7 +235,8 @@ impl TakeChunked for ArrayChunked {
     unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let iter = by.iter().map(|opt_idx| {
-            opt_idx.and_then(|[chunk_idx, array_idx]| {
+            opt_idx.and_then(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
                 let arr = arrs.get_unchecked(chunk_idx as usize);
                 arr.get_unchecked(array_idx as usize)
             })
@@ -244,9 +258,10 @@ impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
 
         let mut ca: Self = by
             .iter()
-            .map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize).cloned()
+            .map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let arr = arrs.get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize).cloned()
             })
             .collect();
 
@@ -260,7 +275,8 @@ impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
         let mut ca: Self = by
             .iter()
             .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
+                opt_idx.and_then(|chunk_id| {
+                    let (chunk_idx, array_idx) = chunk_id.extract();
                     let arr = arrs.get_unchecked(chunk_idx as usize);
                     arr.get_unchecked(array_idx as usize).cloned()
                 })
