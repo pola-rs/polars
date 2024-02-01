@@ -25,9 +25,20 @@ For it to work well for the Polars code base, add the following settings to your
 
 ### Ruff
 
-The Ruff extension will help you conform to the formatting requirements of the Python code.
-We use both the Ruff linter and formatter.
-It is recommended to configure the extension to use the Ruff installed in your environment.
+We use the Ruff linter and formatter on our Python code. The [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) extension will help you conform to the formatting requirements of the Python code.
+
+If you want to configure Ruff to format automatically on save, add the following settings to your `.vscode/settings.json`:
+
+```json
+{
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+    }
+}
+```
+
+You should also configure the extension to use the Ruff installed in your virtual environment.
 This will make it use the correct Ruff version and configuration.
 
 ```json
