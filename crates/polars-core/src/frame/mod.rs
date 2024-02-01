@@ -156,12 +156,12 @@ impl DataFrame {
     }
 
     // Reduce monomorphization.
-    fn apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Series> {
+    pub fn _apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Series> {
         self.columns.iter().map(func).collect()
     }
 
     // Reduce monomorphization.
-    fn apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
+    pub fn _apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
         POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
@@ -438,7 +438,7 @@ impl DataFrame {
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
         if self.columns.iter().any(|s| s.n_chunks() > 1) {
-            self.columns = self.apply_columns_par(&|s| s.rechunk());
+            self.columns = self._apply_columns_par(&|s| s.rechunk());
         }
         self
     }
@@ -1685,7 +1685,7 @@ impl DataFrame {
 
     unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| self.apply_columns_par(&|s| s.take_unchecked(idx)))
+            POOL.install(|| self._apply_columns_par(&|s| s.take_unchecked(idx)))
         } else {
             self.columns.iter().map(|s| s.take_unchecked(idx)).collect()
         };
@@ -1698,7 +1698,7 @@ impl DataFrame {
 
     unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| self.apply_columns_par(&|s| s.take_slice_unchecked(idx)))
+            POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
             self.columns
                 .iter()
@@ -2247,7 +2247,7 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        DataFrame::new_no_checks(self.apply_columns_par(&|s| s.slice(offset, length)))
+        DataFrame::new_no_checks(self._apply_columns_par(&|s| s.slice(offset, length)))
     }
 
     #[must_use]
@@ -2255,7 +2255,7 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        DataFrame::new_no_checks(self.apply_columns(&|s| {
+        DataFrame::new_no_checks(self._apply_columns(&|s| {
             let mut out = s.slice(offset, length);
             out.shrink_to_fit();
             out
@@ -2391,7 +2391,7 @@ impl DataFrame {
     /// See the method on [Series](crate::series::SeriesTrait::shift) for more info on the `shift` operation.
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
-        let col = self.apply_columns_par(&|s| s.shift(periods));
+        let col = self._apply_columns_par(&|s| s.shift(periods));
 
         DataFrame::new_no_checks(col)
     }
@@ -2665,7 +2665,7 @@ impl DataFrame {
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
@@ -2694,14 +2694,14 @@ impl DataFrame {
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::Last, false) => {
                 let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                df.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
+                df._apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
             },
             (UniqueKeepStrategy::None, _) => {
                 let df_part = df.select(names)?;
@@ -2800,56 +2800,6 @@ impl DataFrame {
             .iter()
             .map(|s| Ok(s.dtype().clone()))
             .reduce(|acc, b| try_get_supertype(&acc?, &b.unwrap()))
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    #[doc(hidden)]
-    /// Take elements by a slice of [`ChunkId`]s.
-    /// # Safety
-    /// Does not do any bound checks.
-    /// `sorted` indicates if the chunks are sorted.
-    #[doc(hidden)]
-    pub unsafe fn _take_chunked_unchecked_seq(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
-        let cols = self.apply_columns(&|s| s._take_chunked_unchecked(idx, sorted));
-
-        DataFrame::new_no_checks(cols)
-    }
-    #[cfg(feature = "chunked_ids")]
-    /// Take elements by a slice of optional [`ChunkId`]s.
-    /// # Safety
-    /// Does not do any bound checks.
-    #[doc(hidden)]
-    pub unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> Self {
-        let cols = self.apply_columns(&|s| match s.dtype() {
-            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
-            _ => s._take_opt_chunked_unchecked(idx),
-        });
-
-        DataFrame::new_no_checks(cols)
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    /// # Safety
-    /// Doesn't perform any bound checks
-    pub unsafe fn _take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
-        let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::String => s._take_chunked_unchecked_threaded(idx, sorted, true),
-            _ => s._take_chunked_unchecked(idx, sorted),
-        });
-
-        DataFrame::new_no_checks(cols)
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    /// # Safety
-    /// Doesn't perform any bound checks
-    pub unsafe fn _take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
-        let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::String => s._take_opt_chunked_unchecked_threaded(idx, true),
-            _ => s._take_opt_chunked_unchecked(idx),
-        });
-
-        DataFrame::new_no_checks(cols)
     }
 
     /// Take by index values given by the slice `idx`.

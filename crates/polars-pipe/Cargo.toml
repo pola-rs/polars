@@ -12,9 +12,9 @@ description = "Lazy query engine for the Polars DataFrame library"
 arrow = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-compute = { workspace = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows", "chunked_ids"] }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows"] }
 polars-io = { workspace = true, features = ["ipc"] }
-polars-ops = { workspace = true, features = ["search_sorted"] }
+polars-ops = { workspace = true, features = ["search_sorted", "chunked_ids"] }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true, features = ["sysinfo"] }
@@ -48,4 +48,3 @@ dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 trigger_ooc = []
-test = ["polars-core/chunked_ids"]

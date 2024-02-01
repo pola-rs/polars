@@ -278,7 +278,7 @@ impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
 
 #[cfg(feature = "dtype-array")]
 impl ArrayChunked {
-    pub(crate) unsafe fn from_iter_and_args<I: IntoIterator<Item = Option<Box<dyn Array>>>>(
+    pub unsafe fn from_iter_and_args<I: IntoIterator<Item = Option<Box<dyn Array>>>>(
         iter: I,
         width: usize,
         capacity: usize,

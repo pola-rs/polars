@@ -27,6 +27,7 @@ pub mod gather_skip_nulls;
 mod hist;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
+pub(crate) mod gather;
 
 pub use binary::*;
 #[cfg(feature = "timezones")]
@@ -44,6 +45,8 @@ pub use scatter::ChunkedSet;
 pub use strings::*;
 #[cfg(feature = "top_k")]
 pub use top_k::*;
+
+pub use gather::*;
 
 #[allow(unused_imports)]
 use crate::prelude::*;

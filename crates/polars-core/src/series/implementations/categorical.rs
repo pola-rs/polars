@@ -188,18 +188,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .map(|ca| ca.into_series())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let cats = self.0.physical().take_chunked_unchecked(by, sorted);
-        self.finish_with_state(false, cats).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        let cats = self.0.physical().take_opt_chunked_unchecked(by);
-        self.finish_with_state(false, cats).into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         self.try_with_state(false, |cats| cats.take(indices))
             .map(|ca| ca.into_series())

@@ -531,37 +531,6 @@ impl Series {
         .unwrap()
     }
 
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    #[cfg(feature = "chunked_ids")]
-    pub(crate) unsafe fn _take_chunked_unchecked_threaded(
-        &self,
-        chunk_ids: &[ChunkId],
-        sorted: IsSorted,
-        rechunk: bool,
-    ) -> Series {
-        self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
-            let chunk_ids = &chunk_ids[offset..offset + len];
-            Ok(self._take_chunked_unchecked(chunk_ids, sorted))
-        })
-        .unwrap()
-    }
-
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    #[cfg(feature = "chunked_ids")]
-    pub(crate) unsafe fn _take_opt_chunked_unchecked_threaded(
-        &self,
-        chunk_ids: &[Option<ChunkId>],
-        rechunk: bool,
-    ) -> Series {
-        self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
-            let chunk_ids = &chunk_ids[offset..offset + len];
-            Ok(self._take_opt_chunked_unchecked(chunk_ids))
-        })
-        .unwrap()
-    }
-
     /// Take by index. This operation is clone.
     ///
     /// # Notes

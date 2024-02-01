@@ -7,6 +7,8 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
+#[cfg(feature = "chunked_ids")]
+use crate::chunked_array::gather::chunked::DfTake;
 
 use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;

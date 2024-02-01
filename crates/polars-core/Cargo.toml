@@ -94,7 +94,6 @@ dataframe_arithmetic = []
 product = []
 unique_counts = []
 partition_by = []
-chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
@@ -144,7 +143,6 @@ docs-selection = [
   "dataframe_arithmetic",
   "product",
   "describe",
-  "chunked_ids",
   "partition_by",
   "algorithm_group_by",
 ]

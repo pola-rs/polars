@@ -20,6 +20,7 @@ use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
+use polars_ops::chunked_array::DfTake;
 
 #[derive(Clone)]
 pub struct GenericJoinProbe {

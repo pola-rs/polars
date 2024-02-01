@@ -394,16 +394,16 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
     match (s_fields.len(), rhs_fields.len()) {
         (_, 1) => {
             let rhs = &rhs.fields()[0];
-            s.apply_fields(|s| func(s, rhs)).into_series()
+            s._apply_fields(|s| func(s, rhs)).into_series()
         },
         (1, _) => {
             let s = &s.fields()[0];
-            rhs.apply_fields(|rhs| func(s, rhs)).into_series()
+            rhs._apply_fields(|rhs| func(s, rhs)).into_series()
         },
         _ => {
             let mut rhs_iter = rhs.fields().iter();
 
-            s.apply_fields(|s| match rhs_iter.next() {
+            s._apply_fields(|s| match rhs_iter.next() {
                 Some(rhs) => func(s, rhs),
                 None => s.clone(),
             })

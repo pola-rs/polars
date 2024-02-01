@@ -14,6 +14,8 @@ use crate::datatypes::AnyValue;
 use crate::prelude::PolarsObject;
 use crate::series::{IntoSeries, Series};
 
+
+/// Takes a `name` and `capacity` and constructs a new builder.
 pub type BuilderConstructor =
     Box<dyn Fn(&str, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
 pub type ObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
@@ -57,6 +59,13 @@ pub trait AnonymousObjectBuilder {
     ///
     /// [ObjectChunked<T>]: crate::chunked_array::object::ObjectChunked
     fn append_value(&mut self, value: &dyn Any);
+
+    fn append_option(&mut self, value: Option<&dyn Any>) {
+        match value {
+            None => self.append_null(),
+            Some(v) => self.append_value(v)
+        }
+    }
 
     /// Take the current state and materialize as a [`Series`]
     /// the builder should not be used after that.
