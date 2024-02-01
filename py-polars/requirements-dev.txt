@@ -59,7 +59,7 @@ gevent
 # -------
 
 hypothesis==6.97.4
-pytest==7.4.0
+pytest==8.0.0
 pytest-cov==4.1.0
 pytest-xdist==3.5.0
 
