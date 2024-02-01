@@ -23,14 +23,14 @@ These tests are intended to make sure all Polars functionality works as intended
 Run unit tests by running `make test` from the `py-polars` folder.
 This will compile the Rust bindings and then run the unit tests.
 
-If you're working in the Python code only, you can avoid recompiling every time by simply running `pytest` instead.
+If you're working in the Python code only, you can avoid recompiling every time by simply running `pytest` instead from your virtual environment.
 
 By default, slow tests are skipped.
 Slow tests are marked as such using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
 If you wish to run slow tests, run `pytest -m slow`.
 Or run `pytest -m ""` to run _all_ tests, regardless of marker.
 
-Tests can be run in parallel using [`pytext-xdist`](https://pytest-xdist.readthedocs.io/en/latest/). Run `pytest -n auto` to parallelize your test run.
+Tests can be run in parallel using [`pytest-xdist`](https://pytest-xdist.readthedocs.io/en/latest/). Run `pytest -n auto` to parallelize your test run.
 
 ### Writing unit tests
 
