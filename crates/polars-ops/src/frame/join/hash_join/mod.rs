@@ -15,6 +15,7 @@ pub(super) use multiple_keys::*;
 use polars_core::utils::slice_slice;
 use polars_core::utils::{_set_partition_size, slice_offsets, split_ca};
 use polars_core::POOL;
+use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
 #[cfg(feature = "asof_join")]
 pub(super) use single_keys_dispatch::prepare_bytes;
