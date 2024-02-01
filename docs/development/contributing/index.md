@@ -228,6 +228,7 @@ From the `py-polars` directory, run `make fmt` to make sure your additions pass 
 Polars uses Sphinx to build the API reference.
 This means docstrings in general should follow the [reST](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html) format.
 If you want to build the API reference locally, go to the `py-polars/docs` directory and run `make html SPHINXOPTS=-W`.
+By default, this uses only one thread. To speed it up, run `make html SPHINXOPTS="-W -j auto"` to use all available cpus.
 The resulting HTML files will be in `py-polars/docs/build/html`.
 
 New additions to the API should be added manually to the API reference by adding an entry to the correct `.rst` file in the `py-polars/docs/source/reference` directory.
