@@ -297,6 +297,6 @@ def test_map_elements_on_empty_col_10639() -> None:
 
 def test_apply_deprecated() -> None:
     with pytest.deprecated_call():
-        pl.col("a").apply(lambda x: x + 1)
+        pl.col("a").apply(np.abs)
     with pytest.deprecated_call():
-        pl.Series([1, 2, 3]).apply(lambda x: x + 1)
+        pl.Series([1, 2, 3]).apply(np.abs)
