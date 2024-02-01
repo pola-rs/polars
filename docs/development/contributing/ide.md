@@ -6,6 +6,8 @@ This page contains some recommendations for configuring popular IDEs.
 ## Visual Studio Code
 
 Make sure to configure VSCode to use the virtual environment created by the Makefile.
+VSCode will prompt you to do this automatically once the Makefile creates the `.venv` folder.
+You can also run the `Python: Select Interpreter` command to manually configure the workspace to use the local `.venv` interpreter.
 
 In addition, the extensions below are recommended.
 
