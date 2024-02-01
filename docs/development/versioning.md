@@ -80,7 +80,11 @@ Such changes will not be warned for, but _will_ be included in the changelog and
 ### Deprecation period
 
 As a rule, deprecated functionality is removed two breaking releases after the deprecation happens.
-For example, a function deprecated in version `0.18.3` will be removed in version `0.20.0`.
+
+For example:
+
+- Pre-1.0: if a function is deprecated in version `0.18.3`, it will be removed in version `0.20.0`.
+- Post-1.0: if a function is deprecated in version `1.3.4`, it will be removed in version `3.0`.
 
 This means that if your program does not raise any deprecation warnings, it should be mostly safe to upgrade to the next breaking release.
 As breaking releases happen about once every three months, this allows three to six months to adjust to any pending breaking changes.
