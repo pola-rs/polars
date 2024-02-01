@@ -1,4 +1,4 @@
-# Integrations and ecosystem
+# Ecosystem
 
 ## Introduction
 
@@ -12,9 +12,11 @@ On this page you can find a non-exhaustive list of libraries and tools that supp
 - [Machine learning](#machine-learning)
 - [Other](#other)
 
-#### [Apache Arrow](https://arrow.apache.org/)
+---
 
-Apache Arrow enables zero-copy reads of data within the same process, meaning that data can be directly accessed in its in-memory format without the need for copying or serialisation. This enhances performance when integrating with different tools using Apache Arrow. Polars is compatible with a wide range of libraries that also make use of Apache Arrow, like Pandas and DuckDB.
+### Apache Arrow
+
+[Apache Arrow](https://arrow.apache.org/) enables zero-copy reads of data within the same process, meaning that data can be directly accessed in its in-memory format without the need for copying or serialisation. This enhances performance when integrating with different tools using Apache Arrow. Polars is compatible with a wide range of libraries that also make use of Apache Arrow, like Pandas and DuckDB.
 
 ### Data visualisation
 
@@ -30,9 +32,9 @@ pip install 'polars[plot]'
 
 Matplotlib is a comprehensive library for creating static, animated, and interactive visualizations in Python. Matplotlib makes easy things easy and hard things possible.
 
-#### [Plotly Dash](https://github.com/plotly/dash)
+#### [Plotly](https://plotly.com/python/)
 
-Dash is the original low-code framework for rapidly building data apps in Python. Learn more about how to build fast Dash apps at [Plotly.com](https://plotly.com/blog/polars-to-build-fast-dash-apps-for-large-datasets/).
+Plotly is an interactive, open-source, and browser-based graphing library for Python. Built on top of plotly.js, it ships with over 30 chart types, including scientific charts, 3D graphs, statistical charts, SVG maps, financial charts, and more.
 
 #### [Seaborn](https://seaborn.pydata.org/)
 
@@ -53,6 +55,10 @@ Read how to use Delta Lake with Polars [at Delta Lake](https://delta-io.github.i
 Since Scikit Learn 1.4, all transformers support Polars output. See the change log for [more details](https://scikit-learn.org/dev/whats_new/v1.4.html#changes-impacting-all-modules).
 
 ### Other
+
+#### [DuckDB](https://duckdb.org)
+
+DuckDB is a high-performance analytical database system. It is designed to be fast, reliable, portable, and easy to use. DuckDB provides a rich SQL dialect, with support far beyond basic SQL. DuckDB supports arbitrary and nested correlated subqueries, window functions, collations, complex types (arrays, structs), and more. Read about integration with Polars [on the DuckDB website](https://duckdb.org/docs/guides/python/polars).
 
 #### [Great Tables](https://posit-dev.github.io/great-tables/articles/intro.html)
 
