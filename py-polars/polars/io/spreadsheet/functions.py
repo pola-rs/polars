@@ -537,21 +537,27 @@ def _initialise_spreadsheet_parser(
     elif engine == "calamine":
         # note: can't read directly from bytes (yet) so
         if read_bytesio := isinstance(source, BytesIO):
-            temp_data = NamedTemporaryFile(delete=True)
+            # note: on windows, a NamedTemporaryFile cannot be reopened while bein already open, so
+            # we need to close it before passing it to read_excel and close it manually afterwards
+            temp_data = NamedTemporaryFile(delete=False)
         with nullcontext() if not read_bytesio else temp_data as tmp:  # type: ignore[attr-defined]
             if read_bytesio:
                 tmp.write(source.getvalue())  # type: ignore[union-attr]
                 source = temp_data.name
 
-            if not Path(source).exists():  # type: ignore[arg-type]
-                raise FileNotFoundError(source)
+        if not Path(source).exists():  # type: ignore[arg-type]
+            raise FileNotFoundError(source)
 
-            fxl = import_optional("fastexcel", min_version="0.7.0")
+        fxl = import_optional("fastexcel", min_version="0.7.0")
+        try:
             parser = fxl.read_excel(source, **engine_options)
             sheets = [
                 {"index": i + 1, "name": nm} for i, nm in enumerate(parser.sheet_names)
             ]
             return _read_spreadsheet_calamine, parser, sheets
+        finally:
+            if read_bytesio:
+                Path(temp_data.name).unlink()
 
     elif engine == "pyxlsb":
         pyxlsb = import_optional("pyxlsb")
