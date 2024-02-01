@@ -73,21 +73,7 @@ def path_ods_mixed(io_files_path: Path) -> Path:
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
-        pytest.param(
-            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         # xlsb file (binary)
-        pytest.param(
-            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
@@ -121,21 +107,7 @@ def test_read_spreadsheet(
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
-        pytest.param(
-            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         # xlsb file (binary)
-        pytest.param(
-            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
@@ -176,21 +148,7 @@ def test_read_excel_multi_sheets(
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
-        pytest.param(
-            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         # xlsb file (binary)
-        pytest.param(
-            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
@@ -231,13 +189,6 @@ def test_read_excel_all_sheets(
     ("engine", "schema_overrides"),
     [
         ("xlsx2csv", {"datetime": pl.Datetime}),
-        pytest.param(
-            *("calamine", None),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         ("openpyxl", None),
     ],
 )
@@ -275,21 +226,7 @@ def test_read_excel_basic_datatypes(
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
-        pytest.param(
-            *(pl.read_excel, "path_xlsx", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         # xlsb file (binary)
-        pytest.param(
-            *(pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
         (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
@@ -378,13 +315,6 @@ def test_read_mixed_dtype_columns(
     [
         "xlsx2csv",
         "openpyxl",
-        pytest.param(
-            "calamine",
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
     ],
 )
 def test_write_excel_bytes(engine: ExcelSpreadsheetEngine) -> None:
@@ -497,13 +427,6 @@ def test_unsupported_binary_workbook(path_xlsx: Path, path_xlsb: Path) -> None:
     [
         "xlsx2csv",
         "openpyxl",
-        pytest.param(
-            "calamine",
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="fastexcel not yet available on Windows",
-            ),
-        ),
     ],
 )
 def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> None:

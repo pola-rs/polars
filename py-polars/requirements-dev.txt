@@ -37,7 +37,7 @@ s3fs[boto3]
 # Spreadsheet
 ezodf
 lxml
-fastexcel>=0.7.0; platform_system != 'Windows'
+fastexcel>=0.8.0
 openpyxl
 pyxlsb
 xlsx2csv
