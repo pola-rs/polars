@@ -29,6 +29,7 @@ __pycache__/
 .coverage
 
 # Rust
+.cargo/
 target/
 
 # Project
