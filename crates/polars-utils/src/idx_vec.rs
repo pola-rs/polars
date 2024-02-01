@@ -137,6 +137,16 @@ impl<T: Copy> UnitVec<T> {
     }
 }
 
+impl<T: Copy> Extend<T> for UnitVec<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        let iter = iter.into_iter();
+        self.reserve(iter.size_hint().0);
+        for v in iter {
+            self.push(v)
+        }
+    }
+}
+
 impl<T: Copy> Drop for UnitVec<T> {
     fn drop(&mut self) {
         self.dealloc()
