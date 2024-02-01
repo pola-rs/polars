@@ -3,6 +3,7 @@ use std::iter::FlatMap;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
@@ -50,22 +51,9 @@ impl PushNode for Vec<Node> {
     }
 }
 
-impl PushNode for [Option<Node>; 2] {
+impl PushNode for UnitVec<Node> {
     fn push_node(&mut self, value: Node) {
-        match self {
-            [None, None] => self[0] = Some(value),
-            [Some(_), None] => self[1] = Some(value),
-            _ => panic!("cannot push more than 2 nodes"),
-        }
-    }
-}
-
-impl PushNode for [Option<Node>; 1] {
-    fn push_node(&mut self, value: Node) {
-        match self {
-            [None] => self[0] = Some(value),
-            _ => panic!("cannot push more than 1 node"),
-        }
+        self.push(value)
     }
 }
 

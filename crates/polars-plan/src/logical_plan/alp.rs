@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use super::projection_expr::*;
 use crate::logical_plan::functions::FunctionNode;
@@ -474,9 +476,9 @@ impl ALogicalPlan {
         feature = "fused"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
-        let mut inputs = [None, None];
+        let mut inputs: UnitVec<Node> = unitvec!();
         self.copy_inputs(&mut inputs);
-        inputs[0]
+        inputs.first().copied()
     }
 }
 

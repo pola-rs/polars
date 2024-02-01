@@ -1,4 +1,5 @@
 use polars_core::prelude::{Field, Schema};
+use polars_utils::unitvec;
 
 use super::*;
 use crate::prelude::*;
@@ -8,11 +9,11 @@ impl TreeWalker for Expr {
         &'a self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
     ) -> PolarsResult<VisitRecursion> {
-        let mut scratch = vec![];
+        let mut scratch = unitvec![];
 
         self.nodes(&mut scratch);
 
-        for child in scratch {
+        for &child in scratch.as_slice() {
             match op(child)? {
                 // let the recursion continue
                 VisitRecursion::Continue | VisitRecursion::Skip => {},

@@ -1,4 +1,6 @@
 use arrow::legacy::error::PolarsResult;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use crate::prelude::*;
 
@@ -99,14 +101,13 @@ macro_rules! push_expr {
 impl Expr {
     /// Expr::mutate().apply(fn())
     pub fn mutate(&mut self) -> ExprMut {
-        let mut stack = Vec::with_capacity(4);
-        stack.push(self);
+        let stack = unitvec!(self);
         ExprMut { stack }
     }
 }
 
 pub struct ExprMut<'a> {
-    stack: Vec<&'a mut Expr>,
+    stack: UnitVec<&'a mut Expr>,
 }
 
 impl<'a> ExprMut<'a> {
@@ -139,7 +140,7 @@ impl<'a> ExprMut<'a> {
 }
 
 pub struct ExprIter<'a> {
-    stack: Vec<&'a Expr>,
+    stack: UnitVec<&'a Expr>,
 }
 
 impl<'a> Iterator for ExprIter<'a> {
@@ -154,12 +155,12 @@ impl<'a> Iterator for ExprIter<'a> {
 }
 
 impl Expr {
-    pub fn nodes<'a>(&'a self, container: &mut Vec<&'a Expr>) {
+    pub fn nodes<'a>(&'a self, container: &mut UnitVec<&'a Expr>) {
         let mut push = |e: &'a Expr| container.push(e);
         push_expr!(self, push, iter);
     }
 
-    pub fn nodes_mut<'a>(&'a mut self, container: &mut Vec<&'a mut Expr>) {
+    pub fn nodes_mut<'a>(&'a mut self, container: &mut UnitVec<&'a mut Expr>) {
         let mut push = |e: &'a mut Expr| container.push(e);
         push_expr!(self, push, iter_mut);
     }
@@ -170,8 +171,7 @@ impl<'a> IntoIterator for &'a Expr {
     type IntoIter = ExprIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut stack = Vec::with_capacity(4);
-        stack.push(self);
+        let stack = unitvec!(self);
         ExprIter { stack }
     }
 }

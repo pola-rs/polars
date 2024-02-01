@@ -3,6 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use crate::prelude::*;
 
@@ -73,9 +75,9 @@ pub(super) fn collect_trails(
         },
         lp => {
             // other nodes have only a single input
-            let nodes = &mut [None];
-            lp.copy_inputs(nodes);
-            if let Some(input) = nodes[0] {
+            let mut nodes: UnitVec<Node> = unitvec![];
+            lp.copy_inputs(&mut nodes);
+            if let Some(input) = nodes.pop() {
                 collect_trails(input, lp_arena, trails, id, collect)?
             }
         },
