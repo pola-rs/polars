@@ -45,8 +45,7 @@ impl Int128Chunked {
         // TODO: if precision is None, do we check that the value fits within precision of 38?...
         if let Some(precision) = precision {
             let precision_max = 10_i128.pow(precision as u32);
-            // note: this is not too efficient as it scans through the data twice...
-            if let (Some(min), Some(max)) = (self.min(), self.max()) {
+            if let Some((min, max)) = self.min_max() {
                 let max_abs = max.abs().max(min.abs());
                 polars_ensure!(
                     max_abs < precision_max,

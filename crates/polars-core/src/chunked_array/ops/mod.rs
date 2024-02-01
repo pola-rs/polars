@@ -263,6 +263,10 @@ pub trait ChunkAgg<T> {
         None
     }
 
+    fn min_max(&self) -> Option<(T, T)> {
+        Some((self.min()?, self.max()?))
+    }
+
     /// Returns the mean value in the array.
     /// Returns `None` if the array is empty or only contains null values.
     fn mean(&self) -> Option<f64> {
