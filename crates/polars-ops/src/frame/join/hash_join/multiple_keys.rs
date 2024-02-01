@@ -8,7 +8,7 @@ use polars_core::utils::{_set_partition_size, split_df};
 use polars_core::POOL;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::idxvec;
+use polars_utils::unitvec;
 
 use super::*;
 
@@ -61,7 +61,7 @@ pub(crate) fn create_probe_table(
                                     idx,
                                     *h,
                                     keys,
-                                    || idxvec![idx],
+                                    || unitvec![idx],
                                     |v| v.push(idx),
                                 )
                             }
@@ -108,7 +108,7 @@ fn create_build_table_outer(
                                 idx,
                                 *h,
                                 keys,
-                                || (false, idxvec![idx]),
+                                || (false, unitvec![idx]),
                                 |v| v.1.push(idx),
                             )
                         }

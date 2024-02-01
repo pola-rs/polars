@@ -1,5 +1,5 @@
 use polars_ops::prelude::ListNameSpaceImpl;
-use polars_utils::idxvec;
+use polars_utils::unitvec;
 
 use super::*;
 
@@ -9,7 +9,7 @@ fn test_agg_list_type() -> PolarsResult<()> {
     let s = Series::new("foo", &[1, 2, 3]);
     let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
-    let l = unsafe { s.agg_list(&GroupsProxy::Idx(vec![(0, idxvec![0, 1, 2])].into())) };
+    let l = unsafe { s.agg_list(&GroupsProxy::Idx(vec![(0, unitvec![0, 1, 2])].into())) };
 
     let result = match l.dtype() {
         DataType::List(inner) => {
