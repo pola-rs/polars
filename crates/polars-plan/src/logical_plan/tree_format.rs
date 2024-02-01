@@ -113,7 +113,7 @@ impl Visitor for TreeFmtVisitor {
     }
 }
 
-/// Claculates the number of digits in a `usize` number
+/// Calculates the number of digits in a `usize` number
 /// Useful for the alignment of of `usize` values when they are displayed
 fn digits(n: usize) -> usize {
     if n == 0 {
