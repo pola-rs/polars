@@ -9580,6 +9580,9 @@ class DataFrame:
         """
         Returns all data in the DataFrame as a list of rows of python-native values.
 
+        By default, each row is a tuple of values in the same order as `self.columns`.
+        You can set `named=True` to get dictionaries instead.
+
         Parameters
         ----------
         named
@@ -9643,7 +9646,10 @@ class DataFrame:
         unique: bool = False,
     ) -> dict[Any, Iterable[Any]]:
         """
-        Returns DataFrame data as a keyed dictionary of python-native values.
+        Returns all data as a dictionary of python-native values keyed by some column.
+
+        This method is like `rows`, but instead of returning rows in a flat list, rows
+        are grouped by the values in the `key` column(s) and returned as a dictionary.
 
         Note that this method should not be used in place of native operations, due to
         the high cost of materializing all frame data out into a dictionary; it should
