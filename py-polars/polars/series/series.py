@@ -1683,7 +1683,7 @@ class Series:
             Ignore null values (default).
 
             If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
+            if the column contains any null values and no `False` values,
             the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic

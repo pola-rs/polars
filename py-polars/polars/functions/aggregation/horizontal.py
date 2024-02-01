@@ -29,8 +29,10 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     Notes
     -----
-    For `None` value, this follows Kleene logic
-    (https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
+    `Kleene logic`_ is used to deal with nulls: if the column contains any null values
+    and no `False` values, the output is null.
+
+    .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
     Examples
     --------
@@ -72,8 +74,10 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     Notes
     -----
-    For `None` value, this follows Kleene logic
-    (https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
+    `Kleene logic`_ is used to deal with nulls: if the column contains any null values
+    and no `True` values, the output is null.
+
+    .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
     Examples
     --------
