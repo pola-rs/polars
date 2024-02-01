@@ -37,6 +37,8 @@ To read from one of the supported databases with `ConnectorX` you need to activa
 $ pip install connectorx
 ```
 
+Note: connectorx does not have wheels for ARM architecture and won't work as a pip install. In that scenario, you must build the package yourself. See [here](https://github.com/sfu-db/connector-x/issues/186) for more details.
+
 #### ADBC
 
 ADBC (Arrow Database Connectivity) is an engine supported by the Apache Arrow project. ADBC aims to be both an API standard for connecting to databases and libraries implementing this standard in a range of languages.
