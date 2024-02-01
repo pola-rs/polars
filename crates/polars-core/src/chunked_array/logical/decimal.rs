@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
@@ -120,5 +122,17 @@ impl DecimalChunked {
             DataType::Decimal(_, scale) => scale.unwrap_or_else(|| unreachable!()),
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn to_scale(&self, scale: usize) -> PolarsResult<Cow<'_, Self>> {
+        if self.scale() == scale {
+            return Ok(Cow::Borrowed(self));
+        }
+
+        let dtype = DataType::Decimal(self.precision(), Some(scale));
+        let chunks = cast_chunks(&self.chunks, &dtype, true)?;
+        let mut dt = Self::new_logical(unsafe { Int128Chunked::from_chunks(self.name(), chunks) });
+        dt.2 = Some(dtype);
+        Ok(Cow::Owned(dt))
     }
 }
