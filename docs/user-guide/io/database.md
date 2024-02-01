@@ -37,7 +37,7 @@ To read from one of the supported databases with `ConnectorX` you need to activa
 $ pip install connectorx
 ```
 
-Note: connectorx does not have wheels for ARM architecture and won't work as a pip install. In that scenario, you must build the package yourself. See [here](https://github.com/sfu-db/connector-x/issues/186) for more details.
+Note: connectorx cannot be installed on ARM architectures from pip. See [this thread](https://github.com/sfu-db/connector-x/issues/186) for manual build instructions.
 
 #### ADBC
 
