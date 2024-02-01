@@ -1,7 +1,5 @@
-use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::NoNull;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::index::ChunkId;
 use polars_utils::slice::GetSaferUnchecked;
@@ -169,259 +167,69 @@ impl TakeChunked for Series {
     }
 }
 
-trait Sealed {}
-impl Sealed for UInt8Type {}
-impl Sealed for UInt16Type {}
-impl Sealed for UInt32Type {}
-impl Sealed for UInt64Type {}
-impl Sealed for Int8Type {}
-impl Sealed for Int16Type {}
-impl Sealed for Int32Type {}
-impl Sealed for Int64Type {}
-#[cfg(feature = "dtype-decimal")]
-impl Sealed for Int128Type {}
-impl Sealed for Float32Type {}
-impl Sealed for Float64Type {}
-
 impl<T> TakeChunked for ChunkedArray<T>
 where
-    T: PolarsNumericType + Sealed,
+    T: PolarsDataType,
 {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let mut ca = if self.null_count() == 0 {
-            let arrs = self
-                .downcast_iter()
-                .map(|arr| arr.values().as_slice())
-                .collect::<Vec<_>>();
+        let arrow_dtype = self.dtype().to_arrow(true);
 
-            let ca: NoNull<Self> = by
+        let mut out = if let Some(iter) = self.downcast_slices() {
+            let targets = iter.collect::<Vec<_>>();
+            let iter = by.iter().map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let vals = targets.get_unchecked_release(chunk_idx as usize);
+                vals.get_unchecked_release(array_idx as usize).clone()
+            });
+
+            let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
+            ChunkedArray::with_chunk(self.name(), arr)
+        } else {
+            let targets = self.downcast_iter().collect::<Vec<_>>();
+            let iter = by.iter().map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let vals = targets.get_unchecked_release(chunk_idx as usize);
+                vals.get_unchecked(array_idx as usize)
+            });
+            let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
+            ChunkedArray::with_chunk(self.name(), arr)
+        };
+        out.set_sorted_flag(sorted);
+        out
+    }
+
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+        let arrow_dtype = self.dtype().to_arrow(true);
+
+        if let Some(iter) = self.downcast_slices() {
+            let targets = iter.collect::<Vec<_>>();
+            let arr = by
                 .iter()
                 .map(|chunk_id| {
-                    let (chunk_idx, array_idx) = chunk_id.extract();
-                    let arr = arrs.get_unchecked_release(chunk_idx as usize);
-                    *arr.get_unchecked_release(array_idx as usize)
+                    chunk_id.map(|chunk_id| {
+                        let (chunk_idx, array_idx) = chunk_id.extract();
+                        let vals = *targets.get_unchecked_release(chunk_idx as usize);
+                        vals.get_unchecked_release(array_idx as usize).clone()
+                    })
                 })
-                .collect_trusted();
+                .collect_arr_trusted_with_dtype(arrow_dtype);
 
-            ca.into_inner()
+            ChunkedArray::with_chunk(self.name(), arr)
         } else {
-            let arrs = self.downcast_iter().collect::<Vec<_>>();
-            by.iter()
+            let targets = self.downcast_iter().collect::<Vec<_>>();
+            let arr = by
+                .iter()
                 .map(|chunk_id| {
-                    let (chunk_idx, array_idx) = chunk_id.extract();
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
+                    chunk_id.and_then(|chunk_id| {
+                        let (chunk_idx, array_idx) = chunk_id.extract();
+                        let vals = *targets.get_unchecked_release(chunk_idx as usize);
+                        vals.get_unchecked(array_idx as usize)
+                    })
                 })
-                .collect_trusted()
-        };
-        ca.rename(self.name());
-        ca.set_sorted_flag(sorted);
-        ca
-    }
+                .collect_arr_trusted_with_dtype(arrow_dtype);
 
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|opt_idx| {
-                opt_idx.and_then(|chunk_id| {
-                    let (chunk_idx, array_idx) = chunk_id.extract();
-                    let arr = arrs.get_unchecked_release(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
-                })
-            })
-            .collect_trusted();
-
-        ca.rename(self.name());
-        ca
-    }
-}
-
-impl TakeChunked for StringChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        self.as_binary()
-            .take_chunked_unchecked(by, sorted)
-            .to_string()
-    }
-
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        self.as_binary().take_opt_chunked_unchecked(by).to_string()
-    }
-}
-
-impl TakeChunked for BinaryOffsetChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|chunk_id| {
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = arrs.get_unchecked(chunk_idx as usize);
-                arr.get_unchecked(array_idx as usize)
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca.set_sorted_flag(sorted);
-        ca
-    }
-
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|opt_idx| {
-                opt_idx.and_then(|chunk_id| {
-                    let (chunk_idx, array_idx) = chunk_id.extract();
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
-                })
-            })
-            .collect_trusted();
-
-        ca.rename(self.name());
-        ca
-    }
-}
-
-impl TakeChunked for BinaryChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|chunk_id| {
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = arrs.get_unchecked(chunk_idx as usize);
-                arr.get_unchecked(array_idx as usize)
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca.set_sorted_flag(sorted);
-        ca
-    }
-
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|opt_idx| {
-                opt_idx.and_then(|chunk_id| {
-                    let (chunk_idx, array_idx) = chunk_id.extract();
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
-                })
-            })
-            .collect_trusted();
-
-        ca.rename(self.name());
-        ca
-    }
-}
-
-impl TakeChunked for BooleanChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|chunk_id| {
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = arrs.get_unchecked(chunk_idx as usize);
-                arr.get_unchecked(array_idx as usize)
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca.set_sorted_flag(sorted);
-        ca
-    }
-
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|opt_idx| {
-                opt_idx.and_then(|chunk_id| {
-                    let (chunk_idx, array_idx) = chunk_id.extract();
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
-                })
-            })
-            .collect_trusted();
-
-        ca.rename(self.name());
-        ca
-    }
-}
-
-impl TakeChunked for ListChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|chunk_id| {
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = arrs.get_unchecked(chunk_idx as usize);
-                arr.get_unchecked(array_idx as usize)
-            })
-            .collect();
-        ca.rename(self.name());
-        ca.set_sorted_flag(sorted);
-        ca
-    }
-
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|opt_idx| {
-                opt_idx.and_then(|chunk_id| {
-                    let (chunk_idx, array_idx) = chunk_id.extract();
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
-                })
-            })
-            .collect();
-
-        ca.rename(self.name());
-        ca
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl TakeChunked for ArrayChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let iter = by.iter().map(|chunk_id| {
-            let (chunk_idx, array_idx) = chunk_id.extract();
-            let arr = arrs.get_unchecked(chunk_idx as usize);
-            arr.get_unchecked(array_idx as usize)
-        });
-        let mut ca = Self::from_iter_and_args(
-            iter,
-            self.width(),
-            by.len(),
-            Some(self.inner_dtype()),
-            self.name(),
-        );
-        ca.set_sorted_flag(sorted);
-        ca
-    }
-
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let iter = by.iter().map(|opt_idx| {
-            opt_idx.and_then(|chunk_id| {
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = arrs.get_unchecked(chunk_idx as usize);
-                arr.get_unchecked(array_idx as usize)
-            })
-        });
-
-        Self::from_iter_and_args(
-            iter,
-            self.width(),
-            by.len(),
-            Some(self.inner_dtype()),
-            self.name(),
-        )
+            ChunkedArray::with_chunk(self.name(), arr)
+        }
     }
 }
 
