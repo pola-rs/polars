@@ -368,7 +368,7 @@ fn array_set_operation(
 
             binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
         },
-        ArrowDataType::LargeBinary => {
+        ArrowDataType::BinaryView => {
             let a = values_a.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             let b = values_b.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             binary(a, b, offsets_a, offsets_b, set_op, validity, false)
