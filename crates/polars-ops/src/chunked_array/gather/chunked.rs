@@ -435,7 +435,7 @@ unsafe fn take_unchecked_object(s: &Series, by: &[ChunkId], _sorted: IsSorted) -
     by.iter().map(|chunk_id| {
         let (chunk_idx, array_idx) = chunk_id.extract();
         let object = s.get_object_chunked_unchecked(chunk_idx as usize, array_idx as usize);
-        builder.append_option(object)
+        builder.append_option(object.map(|v| v.as_any()))
     });
     builder.to_series()
 }
@@ -457,7 +457,7 @@ unsafe fn take_opt_unchecked_object(
         Some(chunk_id) => {
             let (chunk_idx, array_idx) = chunk_id.extract();
             let object = s.get_object_chunked_unchecked(chunk_idx as usize, array_idx as usize);
-            builder.append_option(object)
+            builder.append_option(object.map(|v| v.as_any()))
         },
     });
     builder.to_series()
