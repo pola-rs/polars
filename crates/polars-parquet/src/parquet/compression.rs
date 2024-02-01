@@ -99,7 +99,10 @@ pub fn compress(
             // Make sure the buffer is large enough; the tests at least have a
             // weird assumption that decompressed data is appended...
             let old_len = output_buf.len();
-            output_buf.resize(old_len + zstd::zstd_safe::compress_bound(input_buf.len()), 0);
+            output_buf.resize(
+                old_len + zstd::zstd_safe::compress_bound(input_buf.len()),
+                0,
+            );
             match zstd::bulk::compress_to_buffer(input_buf, &mut output_buf[old_len..], level) {
                 Ok(written_size) => {
                     output_buf.truncate(old_len + written_size);
