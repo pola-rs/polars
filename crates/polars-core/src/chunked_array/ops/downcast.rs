@@ -67,6 +67,19 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         })
     }
 
+    #[inline]
+    pub fn downcast_slices(&self) -> Option<impl DoubleEndedIterator<Item = &[T::Physical<'_>]>> {
+        if self.null_count != 0 {
+            return None;
+        }
+        let arr = self.downcast_iter().next().unwrap();
+        if arr.as_slice().is_some() {
+            Some(self.downcast_iter().map(|arr| arr.as_slice().unwrap()))
+        } else {
+            None
+        }
+    }
+
     /// # Safety
     /// The caller must ensure:
     ///     * the length remains correct.
