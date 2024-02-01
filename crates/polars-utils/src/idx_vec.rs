@@ -250,7 +250,7 @@ impl<T: Copy> From<&[T]> for UnitVec<T> {
 }
 
 #[macro_export]
-macro_rules! idxvec {
+macro_rules! unitvec {
     () => (
         $crate::idx_vec::UnitVec::new()
     );

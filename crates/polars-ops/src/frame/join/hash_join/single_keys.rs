@@ -1,8 +1,8 @@
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::idxvec;
 use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
+use polars_utils::unitvec;
 
 use super::*;
 
@@ -142,7 +142,7 @@ where
                                     o.get_mut().push(idx as IdxSize);
                                 },
                                 Entry::Vacant(v) => {
-                                    let iv = idxvec![idx as IdxSize];
+                                    let iv = unitvec![idx as IdxSize];
                                     v.insert(iv);
                                 },
                             };

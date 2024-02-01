@@ -2,8 +2,8 @@ use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::idxvec;
 use polars_utils::nulls::IsNull;
+use polars_utils::unitvec;
 
 use super::*;
 
@@ -72,7 +72,7 @@ where
 
                                 match entry {
                                     RawEntryMut::Vacant(entry) => {
-                                        entry.insert_hashed_nocheck(*h, *k, (false, idxvec![idx]));
+                                        entry.insert_hashed_nocheck(*h, *k, (false, unitvec![idx]));
                                     },
                                     RawEntryMut::Occupied(mut entry) => {
                                         let (_k, v) = entry.get_key_value_mut();

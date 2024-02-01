@@ -661,7 +661,7 @@ fn update_subgroups_idx(
 mod test {
     use chrono::prelude::*;
     use polars_ops::prelude::*;
-    use polars_utils::idxvec;
+    use polars_utils::unitvec;
 
     use super::*;
 
@@ -899,12 +899,12 @@ mod test {
 
         let expected = GroupsProxy::Idx(
             vec![
-                (0 as IdxSize, idxvec![0 as IdxSize, 1, 2]),
-                (2, idxvec![2]),
-                (5, idxvec![5, 6]),
-                (6, idxvec![6]),
-                (3, idxvec![3, 4]),
-                (4, idxvec![4]),
+                (0 as IdxSize, unitvec![0 as IdxSize, 1, 2]),
+                (2, unitvec![2]),
+                (5, unitvec![5, 6]),
+                (6, unitvec![6]),
+                (3, unitvec![3, 4]),
+                (4, unitvec![4]),
             ]
             .into(),
         );
