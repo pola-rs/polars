@@ -263,7 +263,7 @@ jobs:
 
       - name: Trigger other workflows related to the release
         if: inputs.dry-run == false && steps.version.outputs.is_prerelease == 'false'
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
           event-type: python-release
           client-payload: >
