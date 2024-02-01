@@ -96,11 +96,13 @@ pub fn compress(
         #[cfg(feature = "zstd")]
         CompressionOptions::Zstd(level) => {
             let level = level.map(|v| v.compression_level()).unwrap_or_default();
-            // Make sure the buffer is large enough:
-            output_buf.resize(zstd::zstd_safe::compress_bound(input_buf.len()), 0);
-            match zstd::bulk::compress_to_buffer(input_buf, output_buf, level) {
+            // Make sure the buffer is large enough; the tests at least have a
+            // weird assumption that decompressed data is appended...
+            let old_len = output_buf.len();
+            output_buf.resize(old_len + zstd::zstd_safe::compress_bound(input_buf.len()), 0);
+            match zstd::bulk::compress_to_buffer(input_buf, &mut output_buf[old_len..], level) {
                 Ok(written_size) => {
-                    output_buf.truncate(written_size);
+                    output_buf.truncate(old_len + written_size);
                     Ok(())
                 },
                 Err(e) => Err(e.into()),
