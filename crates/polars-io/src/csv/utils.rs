@@ -3,12 +3,14 @@ use std::borrow::Cow;
 use std::io::Read;
 use std::mem::MaybeUninit;
 
+use polars_core::config::verbose;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::string::Pattern;
+use polars_utils::slice::GetSaferUnchecked;
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;
@@ -150,6 +152,7 @@ pub fn infer_file_schema_inner(
     try_parse_dates: bool,
     recursion_count: u8,
     raise_if_empty: bool,
+    n_threads: &mut Option<usize>,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -249,6 +252,7 @@ pub fn infer_file_schema_inner(
             try_parse_dates,
             recursion_count + 1,
             raise_if_empty,
+            n_threads,
         );
     } else if !raise_if_empty {
         return Ok((Schema::new(), 0, 0));
@@ -317,7 +321,7 @@ pub fn infer_file_schema_inner(
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
                 if slice.is_empty() {
-                    nulls[i] = true;
+                    unsafe { *nulls.get_unchecked_release_mut(i) = true };
                 } else {
                     let slice_escaped = if needs_escaping && (slice.len() >= 2) {
                         &slice[1..(slice.len() - 1)]
@@ -325,32 +329,57 @@ pub fn infer_file_schema_inner(
                         slice
                     };
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    match &null_values {
-                        None => {
-                            column_types[i].insert(infer_field_schema(&s, try_parse_dates));
-                        },
+                    let dtype = match &null_values {
+                        None => Some(infer_field_schema(&s, try_parse_dates)),
                         Some(NullValues::AllColumns(names)) => {
                             if !names.iter().any(|nv| nv == s.as_ref()) {
-                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                Some(infer_field_schema(&s, try_parse_dates))
+                            } else {
+                                None
                             }
                         },
                         Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
-                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                Some(infer_field_schema(&s, try_parse_dates))
+                            } else {
+                                None
                             }
                         },
                         Some(NullValues::Named(names)) => {
-                            let current_name = &headers[i];
+                            // SAFETY:
+                            // we iterate over headers length.
+                            let current_name = unsafe { headers.get_unchecked_release(i) };
                             let null_name = &names.iter().find(|name| &name.0 == current_name);
 
                             if let Some(null_name) = null_name {
                                 if null_name.1 != s.as_ref() {
-                                    column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                    Some(infer_field_schema(&s, try_parse_dates))
+                                } else {
+                                    None
                                 }
                             } else {
-                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                Some(infer_field_schema(&s, try_parse_dates))
                             }
                         },
+                    };
+                    if let Some(dtype) = dtype {
+                        if matches!(&dtype, DataType::String)
+                            && needs_escaping
+                            && n_threads.unwrap_or(2) > 1
+                        {
+                            // The parser will chunk the file.
+                            // However this will be increasingly unlikely to be correct if there are many
+                            // new line characters in an escaped field. So we set a (somewhat arbitrary)
+                            // upper bound to the number of escaped lines we accept.
+                            // On the chunking side we also have logic to make this more robust.
+                            if slice.iter().filter(|b| **b == eol_char).count() > 8 {
+                                if verbose() {
+                                    eprintln!("falling back to single core reading because of many escaped new line chars.")
+                                }
+                                *n_threads = Some(1);
+                            }
+                        }
+                        unsafe { column_types.get_unchecked_release_mut(i).insert(dtype) };
                     }
                 }
             }
@@ -426,6 +455,7 @@ pub fn infer_file_schema_inner(
             try_parse_dates,
             recursion_count + 1,
             raise_if_empty,
+            n_threads,
         );
     }
 
@@ -458,6 +488,7 @@ pub fn infer_file_schema(
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
     raise_if_empty: bool,
+    n_threads: &mut Option<usize>,
 ) -> PolarsResult<(Schema, usize, usize)> {
     infer_file_schema_inner(
         reader_bytes,
@@ -474,6 +505,7 @@ pub fn infer_file_schema(
         try_parse_dates,
         0,
         raise_if_empty,
+        n_threads,
     )
 }
 

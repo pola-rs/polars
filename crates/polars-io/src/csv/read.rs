@@ -532,6 +532,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.null_values.as_ref(),
                     self.try_parse_dates,
                     self.raise_if_empty,
+                    &mut self.n_threads,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
@@ -561,6 +562,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.null_values.as_ref(),
                     self.try_parse_dates,
                     self.raise_if_empty,
+                    &mut self.n_threads,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))

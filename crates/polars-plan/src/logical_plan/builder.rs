@@ -298,6 +298,7 @@ impl LogicalPlanBuilder {
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        mut n_threads: Option<usize>,
     ) -> PolarsResult<Self> {
         let path = path.into();
         let mut file = polars_utils::open_file(&path)?;
@@ -336,6 +337,7 @@ impl LogicalPlanBuilder {
             null_values.as_ref(),
             try_parse_dates,
             raise_if_empty,
+            &mut n_threads,
         )?;
 
         if let Some(rc) = &row_index {
@@ -390,6 +392,7 @@ impl LogicalPlanBuilder {
                     try_parse_dates,
                     raise_if_empty,
                     truncate_ragged_lines,
+                    n_threads,
                 },
             },
         }
