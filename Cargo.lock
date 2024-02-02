@@ -2789,6 +2789,7 @@ version = "0.38.2"
 dependencies = [
  "ahash",
  "chrono",
+ "chrono-tz",
  "fallible-streaming-iterator",
  "hashbrown 0.14.3",
  "indexmap",

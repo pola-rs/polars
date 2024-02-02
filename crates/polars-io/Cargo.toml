@@ -91,6 +91,7 @@ timezones = [
   "chrono-tz",
   "dtype-datetime",
   "arrow/timezones",
+  "polars-json?/chrono-tz",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
