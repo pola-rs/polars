@@ -3162,6 +3162,7 @@ version = "0.41.2"
 dependencies = [
  "ahash",
  "chrono",
+ "chrono-tz",
  "fallible-streaming-iterator",
  "hashbrown",
  "indexmap",
