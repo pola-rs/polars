@@ -120,6 +120,7 @@ if TYPE_CHECKING:
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
+    from polars.array_interface.protocol import ArrayInterface
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         BufferInfo,
@@ -597,6 +598,28 @@ class Series:
         (3,)
         """
         return (self._s.len(),)
+
+    @property
+    def __array_interface__(self) -> ArrayInterface:
+        """
+        Interface to the underlying data buffers of this Series.
+
+        Returns
+        -------
+        dict
+
+        Notes
+        -----
+        Details on the NumPy array interface protocol:
+        https://numpy.org/doc/stable/reference/arrays.interface.html
+
+        Examples
+        --------
+        ...
+        """
+        from polars.array_interface.array_interface import series_array_interface
+
+        return series_array_interface(self)
 
     def __bool__(self) -> NoReturn:
         msg = (
@@ -1394,14 +1417,14 @@ class Series:
             msg = f'cannot use "{key!r}" for indexing'
             raise TypeError(msg)
 
-    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+    def __array__(self, dtype: Any | None = None) -> np.ndarray[Any, Any]:
         """
         Numpy __array__ interface protocol.
 
         Ensures that `np.asarray(pl.Series(..))` works as expected, see
         https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
         """
-        if not dtype and self.dtype == String and not self.null_count():
+        if dtype is None and self.null_count() == 0 and self.dtype == String:
             dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
