@@ -1518,3 +1518,21 @@ def test_df_init_dict_raise_on_expression_input() -> None:
     # Passing a list of expressions is allowed
     df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
     assert df.get_column("a").dtype == pl.Object
+
+
+def test_init_list_of_dicts_with_timezone() -> None:
+    dt1 = datetime(2023, 1, 1, 0, 0, 0, 0, ZoneInfo("Asia/Tokyo"))
+    dt2 = datetime(2023, 1, 2, 0, 0, 0, 0, ZoneInfo("UTC"))
+    dt3 = datetime(2023, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        df = pl.DataFrame([{"dt1": dt1}, {"dt1": dt1}])
+        expected = pl.DataFrame({"dt1": [dt1, dt1]})
+    assert_frame_equal(df, expected)
+    df = pl.DataFrame([{"dt2": dt2}, {"dt2": dt2}])
+    expected = pl.DataFrame({"dt2": [dt2, dt2]})
+    assert_frame_equal(df, expected)
+    df = pl.DataFrame([{"dt3": dt3}, {"dt3": dt3}])
+    expected = pl.DataFrame({"dt3": [dt3, dt3]})
+    assert_frame_equal(df, expected)

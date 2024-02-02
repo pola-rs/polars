@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as PyDecimal
 from functools import lru_cache, singledispatch
 from itertools import islice, zip_longest
@@ -724,6 +724,7 @@ def _post_apply_columns(
     columns: SchemaDefinition | None,
     structs: dict[str, Struct] | None = None,
     schema_overrides: SchemaDict | None = None,
+    cols_has_tz: list | None = None,
 ) -> PyDataFrame:
     """Apply 'columns' param *after* PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
@@ -736,7 +737,7 @@ def _post_apply_columns(
             column_subset = columns
         else:
             pydf.set_column_names(columns)
-
+    cols_has_tz = cols_has_tz if cols_has_tz else []
     column_casts = []
     for i, col in enumerate(columns):
         dtype = dtypes.get(col)
@@ -749,6 +750,8 @@ def _post_apply_columns(
             column_casts.append(F.col(col).cast(struct)._pyexpr)
         elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
             column_casts.append(F.col(col).cast(dtype)._pyexpr)
+        elif col in cols_has_tz:
+            column_casts.append(F.col(col).dt.replace_time_zone("UTC")._pyexpr)
 
     if column_casts or column_subset:
         pydf = pydf.lazy()
@@ -1054,7 +1057,6 @@ def _sequence_to_pydf_dispatcher(
         "orient": orient,
         "infer_schema_length": infer_schema_length,
     }
-
     to_pydf: Callable[..., PyDataFrame]
     register_with_singledispatch = True
 
@@ -1080,6 +1082,8 @@ def _sequence_to_pydf_dispatcher(
 
     elif is_pydantic_model(first_element):
         to_pydf = _pydantic_models_to_pydf
+    elif isinstance(first_element, dict):
+        to_pydf = _sequence_of_dict_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -1218,17 +1222,51 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
+    cols_has_tz = []
+    to_warn = False
+    for column_name, first_value in first_element.items():
+        has_tz = (
+            isinstance(first_value, datetime)
+            and hasattr(first_value, "tzinfo")
+            and first_value.tzinfo is not None
+            and column_name not in schema_overrides
+            and (schema is None or column_name not in schema)
+        )
+        if has_tz:
+            cols_has_tz.append(column_name)
+            if (
+                hasattr(first_value.tzinfo, "key")
+                and first_value.tzinfo.key.upper() != "UTC"
+            ) or (
+                first_value.tzinfo.__class__ == timezone
+                and first_value.tzinfo != timezone.utc
+            ):
+                to_warn = True
+    if to_warn is True:
+        warnings.warn(
+            "Constructing a Series with time-zone-aware "
+            "datetimes results in a Series with UTC time zone. "
+            "To silence this warning, you can filter "
+            "warnings of class TimeZoneAwareConstructorWarning, or "
+            "set 'UTC' as the time zone of your datatype.",
+            TimeZoneAwareConstructorWarning,
+            stacklevel=find_stacklevel(),
+        )
+
     pydf = PyDataFrame.read_dicts(
         data, infer_schema_length, dicts_schema, schema_overrides
     )
 
     # TODO: we can remove this `schema_overrides` block completely
     #  once https://github.com/pola-rs/polars/issues/11044 is fixed
-    if schema_overrides:
+    # The above is no longer true given the tz check for lists of dicts
+    # although the scope of _post_apply_columns could be reduced
+    if schema_overrides or len(cols_has_tz) > 0:
         pydf = _post_apply_columns(
             pydf,
             columns=column_names,
             schema_overrides=schema_overrides,
+            cols_has_tz=cols_has_tz,
         )
     return pydf
 
