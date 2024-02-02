@@ -9,10 +9,17 @@ q3 = pl.DataFrame({"foo": ["a", "b", "c"], "bar": [0, 1, 2]}).lazy()
 print(q3.schema)
 # --8<-- [end:schema]
 
-# --8<-- [start:typecheck]
-pl.DataFrame({"foo": ["a", "b", "c"], "bar": [0, 1, 2]}).lazy().with_columns(
+# --8<-- [start:lazyround]
+q4 = pl.DataFrame({"foo": ["a", "b", "c"], "bar": [0, 1, 2]}).lazy().with_columns(
     pl.col("bar").round(0)
 )
+# --8<-- [end:lazyround]
+
+# --8<-- [start:typecheck]
+try:
+    print(q4.collect())
+except Exception as e:
+    print(e)
 # --8<-- [end:typecheck]
 
 # --8<-- [start:lazyeager]
