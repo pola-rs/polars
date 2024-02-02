@@ -94,7 +94,7 @@ timezones = [
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
-dtype-decimal = ["polars-core/dtype-decimal"]
+dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-parquet", "polars-parquet/compression"]
