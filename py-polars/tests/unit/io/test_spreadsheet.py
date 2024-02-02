@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import warnings
 from collections import OrderedDict
 from datetime import date, datetime
@@ -548,10 +547,6 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 
     engine: ExcelSpreadsheetEngine
     for engine in ("calamine", "xlsx2csv"):  # type: ignore[assignment]
-        # TODO: remove the skip when calamine supported on windows
-        if sys.platform == "win32" and engine == "calamine":
-            continue
-
         table_params = (
             {}
             if write_params.get("include_header", True)
