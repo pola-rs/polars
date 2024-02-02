@@ -5,7 +5,6 @@ from contextlib import nullcontext
 from datetime import time
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
@@ -21,7 +20,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
-from polars.io._utils import _looks_like_url, _process_file_url
+from polars.io._utils import PortableTemporaryFile, _looks_like_url, _process_file_url
 from polars.io.csv.functions import read_csv
 from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import normalize_filepath
@@ -537,11 +536,13 @@ def _initialise_spreadsheet_parser(
     elif engine == "calamine":
         # note: can't read directly from bytes (yet) so
         if read_bytesio := isinstance(source, BytesIO):
-            temp_data = NamedTemporaryFile(delete=True)
-        with nullcontext() if not read_bytesio else temp_data as tmp:  # type: ignore[attr-defined]
-            if read_bytesio:
+            temp_data = PortableTemporaryFile(delete=True)
+
+        with nullcontext() if not read_bytesio else temp_data as tmp:
+            if read_bytesio and tmp is not None:
                 tmp.write(source.getvalue())  # type: ignore[union-attr]
-                source = temp_data.name
+                source = tmp.name
+                tmp.close()
 
             if not Path(source).exists():  # type: ignore[arg-type]
                 raise FileNotFoundError(source)
