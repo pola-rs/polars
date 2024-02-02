@@ -240,7 +240,7 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 
 #[cfg(feature = "dtype-decimal")]
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer {
-    let trim_zeros = polars_core::fmt::get_trim_decimal_zeros();
+    let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let value = arrow::compute::decimal::format_decimal(item, scale, trim_zeros);

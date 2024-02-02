@@ -25,4 +25,5 @@ simd-json = { workspace = true }
 streaming-iterator = { workspace = true }
 
 [features]
+dtype-decimal = ["arrow/dtype-decimal"]
 timezones = ["arrow/chrono-tz"]
