@@ -301,6 +301,6 @@ class ExprNameNameSpace:
         --------
         >>> df = pl.DataFrame({"x": {"a": 1, "b": 2}})
         >>> df.select(pl.col("x").name.map_fields(lambda x: x.upper())).schema
-        OrderedDict([('x', Struct({'A': Int64, 'B': Int64}))])
+        OrderedDict({'x': Struct({'A': Int64, 'B': Int64})})
         """
         return self._from_pyexpr(self._pyexpr.name_map_fields(function))
