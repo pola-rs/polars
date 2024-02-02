@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from collections import OrderedDict
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -61,3 +62,10 @@ def test_struct_json_encode_logical_type() -> None:
     assert df.to_dict(as_series=False) == {
         "encoded": ['{"a":["1997-01-01"],"b":["2000-01-29 10:30:00"],"c":["P1DT25S"]}']
     }
+
+
+def test_map_fields() -> None:
+    df = pl.DataFrame({"x": {"a": 1, "b": 2}})
+    assert df.schema == OrderedDict([("x", pl.Struct({"a": pl.Int64, "b": pl.Int64}))])
+    df = df.select(pl.col("x").name.map_fields(lambda x: x.upper()))
+    assert df.schema == OrderedDict([("x", pl.Struct({"A": pl.Int64, "B": pl.Int64}))])

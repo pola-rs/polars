@@ -1,3 +1,6 @@
+#[cfg(feature = "dtype-struct")]
+use smartstring::alias::String as SmartString;
+
 use super::*;
 
 /// Specialized expressions for modifying the name of existing expressions.
@@ -56,4 +59,37 @@ impl ExprNameNameSpace {
     pub fn to_uppercase(self) -> Expr {
         self.map(move |name| Ok(name.to_uppercase()))
     }
+
+    #[cfg(feature = "dtype-struct")]
+    pub fn map_fields(self, function: FieldsNameMapper) -> Expr {
+        let f = function.clone();
+        self.0.map(
+            move |s| {
+                let s = s.struct_()?;
+                let fields = s
+                    .fields()
+                    .iter()
+                    .map(|fd| {
+                        let mut fd = fd.clone();
+                        fd.rename(&function(fd.name()));
+                        fd
+                    })
+                    .collect::<Vec<_>>();
+                StructChunked::new(s.name(), &fields).map(|ca| Some(ca.into_series()))
+            },
+            GetOutput::map_dtype(move |dt| match dt {
+                DataType::Struct(fds) => {
+                    let fields = fds
+                        .iter()
+                        .map(|fd| Field::new(&f(fd.name()), fd.data_type().clone()))
+                        .collect();
+                    DataType::Struct(fields)
+                },
+                _ => panic!("Only struct dtype is supported for `map_fields`."),
+            }),
+        )
+    }
 }
+
+#[cfg(feature = "dtype-struct")]
+pub type FieldsNameMapper = Arc<dyn Fn(&str) -> SmartString + Send + Sync>;

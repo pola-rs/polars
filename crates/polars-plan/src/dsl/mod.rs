@@ -52,6 +52,7 @@ pub use functions::*;
 pub use list::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
+pub use name::*;
 pub use options::*;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
