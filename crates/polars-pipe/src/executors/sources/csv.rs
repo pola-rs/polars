@@ -79,6 +79,7 @@ impl CsvSource {
             .with_rechunk(false)
             .with_chunk_size(chunk_size)
             .with_row_index(file_options.row_index)
+            .with_n_threads(options.n_threads)
             .with_try_parse_dates(options.try_parse_dates)
             .truncate_ragged_lines(options.truncate_ragged_lines)
             .raise_if_empty(options.raise_if_empty);

@@ -36,6 +36,7 @@ pub struct LazyCsvReader<'a> {
     row_index: Option<RowIndex>,
     try_parse_dates: bool,
     raise_if_empty: bool,
+    n_threads: Option<usize>,
 }
 
 #[cfg(feature = "csv")]
@@ -70,6 +71,7 @@ impl<'a> LazyCsvReader<'a> {
             try_parse_dates: false,
             raise_if_empty: true,
             truncate_ragged_lines: false,
+            n_threads: None,
         }
     }
 
@@ -233,7 +235,7 @@ impl<'a> LazyCsvReader<'a> {
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
-    pub fn with_schema_modify<F>(self, f: F) -> PolarsResult<Self>
+    pub fn with_schema_modify<F>(mut self, f: F) -> PolarsResult<Self>
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
@@ -264,6 +266,7 @@ impl<'a> LazyCsvReader<'a> {
             None,
             self.try_parse_dates,
             self.raise_if_empty,
+            &mut self.n_threads,
         )?;
         let mut schema = f(schema)?;
 
@@ -303,6 +306,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.try_parse_dates,
             self.raise_if_empty,
             self.truncate_ragged_lines,
+            self.n_threads,
         )?
         .build()
         .into();

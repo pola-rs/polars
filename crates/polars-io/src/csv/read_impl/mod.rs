@@ -142,7 +142,7 @@ impl<'a> CoreReader<'a> {
         schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
         encoding: CsvEncoding,
-        n_threads: Option<usize>,
+        mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
@@ -208,6 +208,7 @@ impl<'a> CoreReader<'a> {
                         null_values.as_ref(),
                         try_parse_dates,
                         raise_if_empty,
+                        &mut n_threads,
                     )?;
                     Arc::new(inferred_schema)
                 }

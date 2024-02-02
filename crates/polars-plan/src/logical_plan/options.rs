@@ -39,6 +39,7 @@ pub struct CsvParserOptions {
     pub try_parse_dates: bool,
     pub raise_if_empty: bool,
     pub truncate_ragged_lines: bool,
+    pub n_threads: Option<usize>,
 }
 
 #[cfg(feature = "parquet")]
