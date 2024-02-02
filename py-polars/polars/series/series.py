@@ -4783,6 +4783,15 @@ class Series:
         """
         return self._from_pyseries(self._s.clone())
 
+    def no_operation_for_linting_chain_calls(self) -> Self:
+        """
+        Return Series (no-operation).
+
+        Useful to elongate short chain calls so `black` and `ruff format`
+        do not collapse them to one line.
+        """
+        return self
+
     def fill_nan(self, value: int | float | Expr | None) -> Series:
         """
         Fill floating point NaN value with a fill value.

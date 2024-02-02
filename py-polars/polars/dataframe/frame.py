@@ -6983,6 +6983,15 @@ class DataFrame:
         """
         return self._from_pydf(self._df.clone())
 
+    def no_operation_for_linting_chain_calls(self) -> Self:
+        """
+        Return DataFrame (no-operation).
+
+        Useful to elongate short chain calls so `black` and `ruff format`
+        do not collapse them to one line.
+        """
+        return self
+
     def get_columns(self) -> list[Series]:
         """
         Get the DataFrame as a List of Series.

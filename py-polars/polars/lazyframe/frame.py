@@ -2805,6 +2805,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.clone())
 
+    def no_operation_for_linting_chain_calls(self) -> Self:
+        """
+        Return LazyFrame (no-operation).
+
+        Useful to elongate short chain calls so `black` and `ruff format`
+        do not collapse them to one line.
+        """
+        return self
+
     def filter(
         self,
         *predicates: (
