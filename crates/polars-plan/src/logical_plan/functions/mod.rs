@@ -1,3 +1,5 @@
+#[cfg(feature = "parquet")]
+mod count;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
@@ -197,7 +199,12 @@ impl FunctionNode {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rechunk | Count { .. } => Ok(Cow::Borrowed(input_schema)),
+            Count { .. } => {
+                let mut schema: Schema = Schema::with_capacity(1);
+                schema.insert_at_index(0, SmartString::from("len"), DataType::UInt32)?;
+                Ok(Cow::Owned(Arc::new(schema)))
+            },
+            Rechunk => Ok(Cow::Borrowed(input_schema)),
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
                 {
@@ -252,14 +259,13 @@ impl FunctionNode {
             FastProjection { .. }
             | DropNulls { .. }
             | Rechunk
-            | Count { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
             | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            RowIndex { .. } => false,
+            RowIndex { .. } | Count { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -318,9 +324,7 @@ impl FunctionNode {
                 }
             },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
-            Count { .. } => {
-                todo!();
-            },
+            Count { paths, scan_type } => count::count_rows(paths, scan_type),
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
@@ -385,7 +389,7 @@ impl Display for FunctionNode {
                 fmt_column_delimited(f, subset, "[", "]")
             },
             Rechunk => write!(f, "RECHUNK"),
-            Count { .. } => write!(f, "COUNT(*)"),
+            Count { .. } => write!(f, "FAST COUNT(*)"),
             Unnest { columns } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();

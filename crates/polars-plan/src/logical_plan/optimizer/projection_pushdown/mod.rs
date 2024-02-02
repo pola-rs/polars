@@ -158,6 +158,10 @@ impl ProjectionPushDown {
         Self { count_star: vec![] }
     }
 
+    pub(super) fn get_count_star_nodes(mut self) -> Vec<Node> {
+        std::mem::take(&mut self.count_star)
+    }
+
     /// Projection will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
         &mut self,

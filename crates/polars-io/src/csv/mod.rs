@@ -41,7 +41,7 @@
 //! ```
 //!
 pub(crate) mod buffer;
-pub(crate) mod parser;
+pub mod parser;
 pub mod read_impl;
 
 mod read;

@@ -46,6 +46,7 @@ pub use type_coercion::TypeCoercionRule;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
+use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
 use crate::logical_plan::optimizer::predicate_pushdown::HiveEval;
@@ -138,6 +139,12 @@ pub fn optimize(
 
         if members.has_joins_or_unions && members.has_cache {
             cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
+        }
+
+        let count_star_nodes = projection_pushdown_opt.get_count_star_nodes();
+        if !count_star_nodes.is_empty() {
+            let mut count_star_opt = CountStar::new(count_star_nodes);
+            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top);
         }
     }
 

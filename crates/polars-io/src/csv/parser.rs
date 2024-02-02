@@ -234,14 +234,14 @@ pub(crate) fn get_line_stats(
 ///
 /// This will fail when strings fields are have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
-pub(crate) struct SplitLines<'a> {
+pub struct SplitLines<'a> {
     v: &'a [u8],
     quote_char: u8,
     end_line_char: u8,
 }
 
 impl<'a> SplitLines<'a> {
-    pub(crate) fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
+    pub fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
         Self {
             v: slice,
             quote_char,
