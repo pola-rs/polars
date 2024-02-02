@@ -689,8 +689,9 @@ class ExprArrayNameSpace:
         Convert array to struct with field name assignment by
         index from a list of names:
 
-        >>> df.select(pl.col("n").arr.to_struct(fields=["c1", "c2", "c3"]))
-        ... .rows(named=True)
+        >>> df.select(pl.col("n").arr.to_struct(fields=["c1", "c2", "c3"])).rows(
+        ...     named=True
+        ... )
         [{'n': {'c1': 0, 'c2': 1, 'c3': 2}}, {'n': {'c1': 3, 'c2': 4, 'c3': 5}}]
         """
         if isinstance(fields, Sequence):
