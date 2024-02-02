@@ -724,7 +724,7 @@ def _post_apply_columns(
     columns: SchemaDefinition | None,
     structs: dict[str, Struct] | None = None,
     schema_overrides: SchemaDict | None = None,
-    cols_has_tz: list | None = None,
+    cols_has_tz: list[str] | None = None,
 ) -> PyDataFrame:
     """Apply 'columns' param *after* PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
