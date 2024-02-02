@@ -79,7 +79,6 @@ from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
 from polars.utils._construction import (
-    _post_apply_columns,
     arrow_to_pydf,
     dict_to_pydf,
     frame_to_pydf,
