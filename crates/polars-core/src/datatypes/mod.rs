@@ -195,8 +195,7 @@ unsafe impl PolarsDataType for Int128Type {
     type Structure = Flat;
 
     fn get_dtype() -> DataType {
-        // Scale is not None to allow for get_any_value() to work.
-        DataType::Decimal(None, Some(0))
+        DataType::Decimal(None, None)
     }
 }
 #[cfg(feature = "dtype-decimal")]

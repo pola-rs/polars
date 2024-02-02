@@ -96,7 +96,7 @@ impl PartialEq for DataType {
                     left_width == right_width && left_inner == right_inner
                 },
                 #[cfg(feature = "dtype-decimal")]
-                (Decimal(_, s1), Decimal(_, s2)) => s1 == s2,
+                (Decimal(_, s1), Decimal(_, s2)) => s1.zip(*s2).map_or(true, |(s1, s2)| s1 == s2),
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
