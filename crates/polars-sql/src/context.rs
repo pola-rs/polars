@@ -289,6 +289,7 @@ impl SQLContext {
     /// execute the 'FROM' part of the query
     fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
+        let mut l_names = vec![l_name.clone()];
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
                 let (r_name, rf) = self.get_table(&tbl.relation)?;
@@ -298,31 +299,31 @@ impl SQLContext {
                         lf,
                         rf,
                         constraint,
-                        &l_name,
+                        &l_names,
                         &r_name,
                         JoinType::Outer { coalesce: false },
                     )?,
                     JoinOperator::Inner(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Inner)?
+                        process_join(lf, rf, constraint, &l_names, &r_name, JoinType::Inner)?
                     },
                     JoinOperator::LeftOuter(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Left)?
+                        process_join(lf, rf, constraint, &l_names, &r_name, JoinType::Left)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::LeftAnti(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Anti)?
+                        process_join(lf, rf, constraint, &l_names, &r_name, JoinType::Anti)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::LeftSemi(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Semi)?
+                        process_join(lf, rf, constraint, &l_names, &r_name, JoinType::Semi)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::RightAnti(constraint) => {
-                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Anti)?
+                        process_join(rf, lf, constraint, &l_names, &r_name, JoinType::Anti)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::RightSemi(constraint) => {
-                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Semi)?
+                        process_join(rf, lf, constraint, &l_names, &r_name, JoinType::Semi)?
                     },
                     join_type => {
                         polars_bail!(
@@ -330,7 +331,8 @@ impl SQLContext {
                             "join type '{:?}' not yet supported by polars-sql", join_type
                         );
                     },
-                }
+                };
+                l_names.push(r_name);
             }
         };
         Ok(lf)

@@ -809,11 +809,12 @@ pub(super) fn process_join(
     left_tbl: LazyFrame,
     right_tbl: LazyFrame,
     constraint: &JoinConstraint,
-    tbl_name: &str,
+    left_names: &[String],
     join_tbl_name: &str,
     join_type: JoinType,
 ) -> PolarsResult<LazyFrame> {
-    let (left_on, right_on) = process_join_constraint(constraint, tbl_name, join_tbl_name)?;
+    let left_names = left_names.iter().map(|name| name.as_ref()).collect::<Vec<_>>();
+    let (left_on, right_on) = process_join_constraint(constraint, &left_names, join_tbl_name)?;
 
     Ok(left_tbl
         .join_builder()
@@ -827,19 +828,19 @@ pub(super) fn process_join(
 fn collect_compound_identifiers(
     left: &[Ident],
     right: &[Ident],
-    left_name: &str,
+    left_names: &[&str],
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if left.len() == 2 && right.len() == 2 {
-        let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-        let (tbl_b, col_b) = (&right[0].value, &right[1].value);
+        let (tbl_a, col_a) = (left[0].value.as_str(), left[1].value.as_str());
+        let (tbl_b, col_b) = (right[0].value.as_str(), right[1].value.as_str());
 
-        if left_name == tbl_a && right_name == tbl_b {
+        if left_names.contains(&tbl_a) && right_name == tbl_b {
             Ok((vec![col(col_a)], vec![col(col_b)]))
-        } else if left_name == tbl_b && right_name == tbl_a {
+        } else if left_names.contains(&tbl_b) && right_name == tbl_a {
             Ok((vec![col(col_b)], vec![col(col_a)]))
         } else {
-            polars_bail!(InvalidOperation: "collect_compound_identifiers: left_name={:?}, right_name={:?}, tbl_a={:?}, tbl_b={:?}", left_name, right_name, tbl_a, tbl_b);
+            polars_bail!(InvalidOperation: "collect_compound_identifiers: left_name={:?}, right_name={:?}, tbl_a={:?}, tbl_b={:?}", left_names, right_name, tbl_a, tbl_b);
         }
     } else {
         polars_bail!(InvalidOperation: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
@@ -848,7 +849,7 @@ fn collect_compound_identifiers(
 
 fn process_join_on(
     expression: &sqlparser::ast::Expr,
-    left_name: &str,
+    left_names: &[&str],
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let SQLExpr::BinaryOp { left, op, right } = expression {
@@ -857,14 +858,14 @@ fn process_join_on(
                 if let (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) =
                     (left.as_ref(), right.as_ref())
                 {
-                    collect_compound_identifiers(left, right, left_name, right_name)
+                    collect_compound_identifiers(left, right, left_names, right_name)
                 } else {
                     polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
                 }
             },
             BinaryOperator::And => {
-                let (mut left_i, mut right_i) = process_join_on(left, left_name, right_name)?;
-                let (mut left_j, mut right_j) = process_join_on(right, left_name, right_name)?;
+                let (mut left_i, mut right_i) = process_join_on(left, left_names, right_name)?;
+                let (mut left_j, mut right_j) = process_join_on(right, left_names, right_name)?;
                 left_i.append(&mut left_j);
                 right_i.append(&mut right_j);
                 Ok((left_i, right_i))
@@ -880,13 +881,13 @@ fn process_join_on(
 
 pub(super) fn process_join_constraint(
     constraint: &JoinConstraint,
-    left_name: &str,
+    left_names: &[&str],
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
         if op == &BinaryOperator::And {
-            let (mut left_on, mut right_on) = process_join_on(left, left_name, right_name)?;
-            let (left_on_2, right_on_2) = process_join_on(right, left_name, right_name)?;
+            let (mut left_on, mut right_on) = process_join_on(left, left_names, right_name)?;
+            let (left_on_2, right_on_2) = process_join_on(right, left_names, right_name)?;
             left_on.extend(left_on_2);
             right_on.extend(right_on_2);
             return Ok((left_on, right_on));
@@ -898,7 +899,7 @@ pub(super) fn process_join_constraint(
         }
         match (left.as_ref(), right.as_ref()) {
             (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
-                return collect_compound_identifiers(left, right, left_name, right_name);
+                return collect_compound_identifiers(left, right, left_names, right_name);
             },
             (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
                 return Ok((vec![col(&left.value)], vec![col(&right.value)]))
