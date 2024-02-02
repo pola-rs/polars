@@ -1,5 +1,7 @@
 use polars::prelude::*;
+use polars_plan::dsl::FieldsNameMapper;
 use pyo3::prelude::*;
+use smartstring::alias::String as SmartString;
 
 use crate::PyExpr;
 
@@ -39,5 +41,17 @@ impl PyExpr {
 
     fn name_to_uppercase(&self) -> Self {
         self.inner.clone().name().to_uppercase().into()
+    }
+
+    fn name_map_fields(&self, name_mapper: PyObject) -> Self {
+        let name_mapper = Arc::new(move |name: &str| {
+            Python::with_gil(|py| {
+                let out = name_mapper.call1(py, (name,)).unwrap();
+                let out: SmartString = out.extract::<&str>(py).unwrap().into();
+                out
+            })
+        }) as FieldsNameMapper;
+
+        self.inner.clone().name().map_fields(name_mapper).into()
     }
 }
