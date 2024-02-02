@@ -10,8 +10,10 @@ print(q3.schema)
 # --8<-- [end:schema]
 
 # --8<-- [start:lazyround]
-q4 = pl.DataFrame({"foo": ["a", "b", "c"], "bar": [0, 1, 2]}).lazy().with_columns(
-    pl.col("bar").round(0)
+q4 = (
+    pl.DataFrame({"foo": ["a", "b", "c"], "bar": [0, 1, 2]})
+    .lazy()
+    .with_columns(pl.col("bar").round(0))
 )
 # --8<-- [end:lazyround]
 
