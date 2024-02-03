@@ -23,7 +23,7 @@ jobs:
           override: true
           profile: minimal
           components: llvm-tools-preview
-      - name: Install cargo-llvm-cov 
+      - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v1
         with:
