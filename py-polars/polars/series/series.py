@@ -18,7 +18,6 @@ from typing import (
     NoReturn,
     Sequence,
     Union,
-    cast,
     overload,
 )
 
@@ -1004,19 +1003,7 @@ class Series:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
 
         if isinstance(other, (PyDecimal, int)) and self.dtype.is_decimal():
-            # Infer the number's scale.  Then use the max of the inferred scale and the
-            # Series' scale.  At present, this will cause arithmetic to fail with a
-            # PyDecimal that has a scale greater than the Series' scale, but will ensure
-            # that scale is not lost.
             _s = sequence_to_pyseries(self.name, [other], dtype=Decimal)
-            _s = _s.cast(
-                Decimal(
-                    scale=max(
-                        cast(Decimal, _s.dtype()).scale, cast(Decimal, self.dtype).scale
-                    )
-                ),
-                strict=True,
-            )
 
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))

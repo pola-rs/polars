@@ -142,6 +142,45 @@ where
         }
     }
 
+    fn min_max(&self) -> Option<(T::Native, T::Native)> {
+        if self.is_empty() {
+            return None;
+        }
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => {
+                let min = self.first_non_null().and_then(|idx| {
+                    // SAFETY: first_non_null returns in bound index.
+                    unsafe { self.get_unchecked(idx) }
+                });
+                let max = self.last_non_null().and_then(|idx| {
+                    // SAFETY: last_non_null returns in bound index.
+                    unsafe { self.get_unchecked(idx) }
+                });
+                min.zip(max)
+            },
+            IsSorted::Descending => {
+                let max = self.first_non_null().and_then(|idx| {
+                    // SAFETY: first_non_null returns in bound index.
+                    unsafe { self.get_unchecked(idx) }
+                });
+                let min = self.last_non_null().and_then(|idx| {
+                    // SAFETY: last_non_null returns in bound index.
+                    unsafe { self.get_unchecked(idx) }
+                });
+                min.zip(max)
+            },
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(MinMaxKernel::min_max_ignore_nan_kernel)
+                .reduce(|(min1, max1), (min2, max2)| {
+                    (
+                        MinMax::min_ignore_nan(min1, min2),
+                        MinMax::max_ignore_nan(max1, max2),
+                    )
+                }),
+        }
+    }
+
     fn mean(&self) -> Option<f64> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
