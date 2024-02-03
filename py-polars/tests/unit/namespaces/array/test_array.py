@@ -329,3 +329,27 @@ def test_array_count_matches(
     df = pl.DataFrame({"arr": arr}, schema={"arr": pl.Array(dtype, 2)})
     out = df.select(count_matches=pl.col("arr").arr.count_matches(data))
     assert out.to_dict(as_series=False) == {"count_matches": expected}
+
+
+def test_array_to_struct() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [4, 5, None]]}, schema={"a": pl.Array(pl.Int8, 3)}
+    )
+    assert df.select([pl.col("a").arr.to_struct()]).to_series().to_list() == [
+        {"field_0": 1, "field_1": 2, "field_2": 3},
+        {"field_0": 4, "field_1": 5, "field_2": None},
+    ]
+
+    df = pl.DataFrame(
+        {"a": [[1, 2, None], [1, 2, 3]]}, schema={"a": pl.Array(pl.Int8, 3)}
+    )
+    assert df.select(
+        [pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")]
+    ).to_series().to_list() == [
+        {"col_name_0": 1, "col_name_1": 2, "col_name_2": None},
+        {"col_name_0": 1, "col_name_1": 2, "col_name_2": 3},
+    ]
+
+    assert df.lazy().select(pl.col("a").arr.to_struct()).unnest(
+        "a"
+    ).sum().collect().columns == ["field_0", "field_1", "field_2"]

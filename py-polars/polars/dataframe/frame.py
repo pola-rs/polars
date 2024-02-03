@@ -79,7 +79,6 @@ from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
 from polars.utils._construction import (
-    _post_apply_columns,
     arrow_to_pydf,
     dict_to_pydf,
     frame_to_pydf,
@@ -432,24 +431,6 @@ class DataFrame:
         df = cls.__new__(cls)
         df._df = py_df
         return df
-
-    @classmethod
-    def _from_dicts(
-        cls,
-        data: Sequence[dict[str, Any]],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Self:
-        pydf = PyDataFrame.read_dicts(
-            data, infer_schema_length, schema, schema_overrides
-        )
-        if schema or schema_overrides:
-            pydf = _post_apply_columns(
-                pydf, list(schema or pydf.columns()), schema_overrides=schema_overrides
-            )
-        return cls._from_pydf(pydf)
 
     @classmethod
     def _from_dict(

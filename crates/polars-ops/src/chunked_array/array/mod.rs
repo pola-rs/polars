@@ -7,9 +7,13 @@ mod join;
 mod min_max;
 mod namespace;
 mod sum_mean;
+#[cfg(feature = "array_to_struct")]
+mod to_struct;
 
 pub use namespace::ArrayNameSpace;
 use polars_core::prelude::*;
+#[cfg(feature = "array_to_struct")]
+pub use to_struct::*;
 
 pub trait AsArray {
     fn as_array(&self) -> &ArrayChunked;

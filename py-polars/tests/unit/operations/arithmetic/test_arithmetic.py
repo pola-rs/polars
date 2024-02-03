@@ -204,12 +204,12 @@ def test_boolean_addition() -> None:
         {"a": [True, False, False], "b": [True, False, True]}
     ).sum_horizontal()
 
-    assert s.dtype == pl.utils.get_index_type()
+    assert s.dtype == pl.get_index_type()
     assert s.to_list() == [2, 0, 1]
     df = pl.DataFrame(
         {"a": [True], "b": [False]},
     ).select(pl.sum_horizontal("a", "b"))
-    assert df.dtypes == [pl.utils.get_index_type()]
+    assert df.dtypes == [pl.get_index_type()]
 
 
 def test_bitwise_6311() -> None:

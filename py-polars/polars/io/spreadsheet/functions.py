@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 from contextlib import nullcontext
 from datetime import time
-from io import BytesIO, StringIO
+from io import BufferedReader, BytesIO, StringIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
@@ -21,7 +20,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
-from polars.io._utils import _looks_like_url, _process_file_url
+from polars.io._utils import PortableTemporaryFile, _looks_like_url, _process_file_url
 from polars.io.csv.functions import read_csv
 from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import normalize_filepath
@@ -407,6 +406,46 @@ def read_ods(
     )
 
 
+def _identify_from_magic_bytes(data: bytes | BinaryIO | BytesIO) -> str | None:
+    if isinstance(data, bytes):
+        data = BytesIO(data)
+
+    xls_bytes = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # excel 97-2004
+    xlsx_bytes = b"PK\x03\x04"  # xlsx/openoffice
+
+    initial_position = data.tell()
+    try:
+        magic_bytes = data.read(8)
+        if magic_bytes == xls_bytes:
+            return "xls"
+        elif magic_bytes[:4] == xlsx_bytes:
+            return "xlsx"
+        return None
+    finally:
+        data.seek(initial_position)
+
+
+def _identify_workbook(wb: str | bytes | Path | BinaryIO | BytesIO) -> str | None:
+    """Use file extension (and magic bytes) to identify Workbook type."""
+    if not isinstance(wb, (str, Path)):
+        # raw binary data (bytesio, etc)
+        return _identify_from_magic_bytes(wb)
+    else:
+        p = Path(wb)
+        ext = p.suffix[1:].lower()
+
+        # unambiguous file extensions
+        if ext in ("xlsx", "xlsm", "xlsb"):
+            return ext
+        elif ext[:2] == "od":
+            return "ods"
+
+        # check magic bytes to resolve ambiguity (eg: xls/xlsx, or no extension)
+        with p.open("rb") as f:
+            magic_bytes = BytesIO(f.read(8))
+            return _identify_from_magic_bytes(magic_bytes)
+
+
 def _read_spreadsheet(
     sheet_id: int | Sequence[int] | None,
     sheet_name: str | list[str] | tuple[str] | None,
@@ -418,16 +457,25 @@ def _read_spreadsheet(
     *,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-    if isinstance(source, (str, Path)):
+    if is_file := isinstance(source, (str, Path)):
         source = normalize_filepath(source)
         if _looks_like_url(source):
             source = _process_file_url(source)
 
     if engine is None:
-        if (src := str(source).lower()).endswith(".ods"):
-            engine = "ods"
+        if is_file and str(source).lower().endswith(".ods"):
+            # note: engine cannot be 'None' here (if called from read_ods)
+            msg = "OpenDocumentSpreadsheet files require use of `read_ods`, not `read_excel`"
+            raise ValueError(msg)
+
+        # note: eventually want 'calamine' to be the default for all extensions
+        file_type = _identify_workbook(source)
+        if file_type == "xlsb":
+            engine = "pyxlsb"
+        elif file_type == "xls":
+            engine = "calamine"
         else:
-            engine = "pyxlsb" if src.endswith(".xlsb") else "xlsx2csv"
+            engine = "xlsx2csv"
 
     # establish the reading function, parser, and available worksheets
     reader_fn, parser, worksheets = _initialise_spreadsheet_parser(
@@ -469,6 +517,7 @@ def _get_sheet_names(
     if sheet_id is not None and sheet_name is not None:
         msg = f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
         raise ValueError(msg)
+
     sheet_names = []
     if sheet_id is None and sheet_name is None:
         sheet_names.append(worksheets[0]["name"])
@@ -512,6 +561,9 @@ def _initialise_spreadsheet_parser(
     engine_options: dict[str, Any],
 ) -> tuple[Callable[..., pl.DataFrame], Any, list[dict[str, Any]]]:
     """Instantiate the indicated spreadsheet parser and establish related properties."""
+    if isinstance(source, (str, Path)) and not Path(source).exists():
+        raise FileNotFoundError(source)
+
     if engine == "xlsx2csv":  # default
         xlsx2csv = import_optional("xlsx2csv")
 
@@ -536,15 +588,17 @@ def _initialise_spreadsheet_parser(
 
     elif engine == "calamine":
         # note: can't read directly from bytes (yet) so
-        if read_bytesio := isinstance(source, BytesIO):
-            temp_data = NamedTemporaryFile(delete=True)
-        with nullcontext() if not read_bytesio else temp_data as tmp:  # type: ignore[attr-defined]
-            if read_bytesio:
-                tmp.write(source.getvalue())  # type: ignore[union-attr]
-                source = temp_data.name
+        read_buffered = False
+        if read_bytesio := isinstance(source, BytesIO) or (
+            read_buffered := isinstance(source, BufferedReader)
+        ):
+            temp_data = PortableTemporaryFile(delete=True)
 
-            if not Path(source).exists():  # type: ignore[arg-type]
-                raise FileNotFoundError(source)
+        with temp_data if (read_bytesio or read_buffered) else nullcontext() as tmp:
+            if read_bytesio and tmp is not None:
+                tmp.write(source.read() if read_buffered else source.getvalue())  # type: ignore[union-attr]
+                source = tmp.name
+                tmp.close()
 
             fxl = import_optional("fastexcel", min_version="0.7.0")
             parser = fxl.read_excel(source, **engine_options)

@@ -80,6 +80,7 @@ nav:
     - user-guide/ecosystem.md
     - Misc:
       - user-guide/misc/multiprocessing.md
+      - user-guide/misc/visualization.md
       - user-guide/misc/comparison.md
 
   - API reference: api/index.md

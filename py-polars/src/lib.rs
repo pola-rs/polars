@@ -203,11 +203,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Functions - meta
-    m.add_wrapped(wrap_pyfunction!(functions::get_polars_version))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::threadpool_size))
+    m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
         .unwrap();
@@ -297,9 +295,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     .unwrap();
 
     // Build info
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     #[cfg(feature = "build_info")]
     m.add(
-        "_build_info_",
+        "__build__",
         pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
     )?;
 
