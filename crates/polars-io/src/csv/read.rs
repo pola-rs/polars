@@ -437,7 +437,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
 
         let schema = overwriting_schema
             .iter_fields()
-            .filter_map(|mut fld| {
+            .filter_map(|fld| {
                 use DataType::*;
                 match fld.data_type() {
                     Time => {
