@@ -205,7 +205,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     // Functions - meta
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::threadpool_size))
+    m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
         .unwrap();

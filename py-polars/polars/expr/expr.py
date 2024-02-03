@@ -41,7 +41,7 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
-from polars.meta import threadpool_size
+from polars.meta import thread_pool_size
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -4374,7 +4374,7 @@ class Expr:
                 if x.len() == 0:
                     return get_lazy_promise(df).collect().to_series()
 
-                n_threads = threadpool_size()
+                n_threads = thread_pool_size()
                 chunk_size = x.len() // n_threads
                 remainder = x.len() % n_threads
                 if chunk_size == 0:

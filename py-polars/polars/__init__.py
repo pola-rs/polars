@@ -197,7 +197,13 @@ from polars.io import (
     scan_pyarrow_dataset,
 )
 from polars.lazyframe import InProcessQuery, LazyFrame
-from polars.meta import build_info, get_index_type, show_versions, threadpool_size
+from polars.meta import (
+    build_info,
+    get_index_type,
+    show_versions,
+    thread_pool_size,
+    threadpool_size,
+)
 from polars.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import (
@@ -415,6 +421,7 @@ __all__ = [
     "build_info",
     "get_index_type",
     "show_versions",
+    "thread_pool_size",
     "threadpool_size",
     # selectors
     "selectors",

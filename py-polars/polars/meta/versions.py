@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from polars.meta.get_index_type import get_index_type
+from polars.meta.index_type import get_index_type
 from polars.utils._polars_version import get_polars_version
 
 
