@@ -528,6 +528,10 @@ pub(crate) fn create_physical_expr(
                 schema.cloned(),
             )))
         },
+        InnerStructFunction { .. } => {
+            // TODO AHH
+            todo!("TODO AHH")
+        },
         Slice {
             input,
             offset,

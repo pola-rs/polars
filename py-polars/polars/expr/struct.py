@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
 
+from polars.utils._parse_expr_input import (
+    parse_as_list_of_expressions,
+)
 from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
+    from polars.type_aliases import IntoExpr
 
 
 class ExprStructNameSpace:
@@ -168,3 +172,11 @@ class ExprStructNameSpace:
         └──────────────────┴────────────────────────┘
         """
         return wrap_expr(self._pyexpr.struct_json_encode())
+
+    def select_fields(
+        self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+    ) -> Expr:
+        """TODO docstring."""
+        # TODO: structify
+        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs, __structify=False)
+        return wrap_expr(self._pyexpr.struct_select_fields(pyexprs))

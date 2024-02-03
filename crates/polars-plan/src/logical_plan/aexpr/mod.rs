@@ -176,6 +176,10 @@ pub enum AExpr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
+    InnerStructFunction {
+        input: Node,
+        function: Node,
+    },
     Window {
         function: Node,
         partition_by: Vec<Node>,
@@ -239,6 +243,7 @@ impl AExpr {
             | Ternary { .. }
             | Wildcard
             | Cast { .. }
+            | InnerStructFunction { .. }  // TODO: THIS PROBABLY ISN'T TRUE
             | Filter { .. } => false,
         }
     }
@@ -309,6 +314,11 @@ impl AExpr {
                     .rev()
                     .copied()
                     .for_each(|node| container.push(node))
+            },
+            InnerStructFunction { input, function } => {
+                // TODO: I DONT KNOW WHAT THIS DOES
+                container.push(*input);
+                container.push(*function);
             },
             Explode(e) => container.push(*e),
             Window {
@@ -389,6 +399,12 @@ impl AExpr {
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 input.clear();
                 input.extend(inputs.iter().rev().copied());
+                return self;
+            },
+            InnerStructFunction { input, function } => {
+                // TODO: I DONT KNOW WHAT THIS DOES
+                *input = inputs[0];
+                *function = inputs[1];
                 return self;
             },
             Slice {

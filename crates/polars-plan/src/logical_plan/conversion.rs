@@ -132,6 +132,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             function,
             options,
         },
+        Expr::InnerStructFunction { input, function } => AExpr::InnerStructFunction {
+            input: to_aexpr(*input, arena),
+            function: to_aexpr(*function, arena),
+        },
         Expr::Window {
             function,
             partition_by,
@@ -575,6 +579,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             input: nodes_to_exprs(&input, expr_arena),
             function,
             options,
+        },
+        AExpr::InnerStructFunction { input, function } => Expr::InnerStructFunction {
+            input: Box::new(node_to_expr(input, expr_arena)),
+            function: Box::new(node_to_expr(function, expr_arena)),
         },
         AExpr::Window {
             function,

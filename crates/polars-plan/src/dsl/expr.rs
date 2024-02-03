@@ -112,6 +112,10 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
+    InnerStructFunction {
+        input: Box<Expr>,
+        function: Box<Expr>,
+    },
     Explode(Box<Expr>),
     Filter {
         input: Box<Expr>,

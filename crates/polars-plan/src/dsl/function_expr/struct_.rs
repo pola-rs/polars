@@ -1,7 +1,7 @@
 use polars_core::utils::slice_offsets;
 
 use super::*;
-use crate::map;
+use crate::{map, wrap};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -11,6 +11,7 @@ pub enum StructFunction {
     RenameFields(Arc<Vec<String>>),
     #[cfg(feature = "json")]
     JsonEncode,
+    SelectFields,
 }
 
 impl StructFunction {
@@ -62,6 +63,7 @@ impl StructFunction {
             }),
             #[cfg(feature = "json")]
             JsonEncode => mapper.with_dtype(DataType::String),
+            SelectFields => mapper.with_same_dtype(), // TODO: FALSE
         }
     }
 }
@@ -75,6 +77,7 @@ impl Display for StructFunction {
             RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
+            SelectFields => write!(f, "struct.select_fields"),
         }
     }
 }
@@ -88,6 +91,7 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             RenameFields(names) => map!(struct_::rename_fields, names.clone()),
             #[cfg(feature = "json")]
             JsonEncode => map!(struct_::to_json),
+            SelectFields => wrap!(struct_::select_fields),
         }
     }
 }
@@ -118,6 +122,19 @@ pub(super) fn rename_fields(s: &Series, names: Arc<Vec<String>>) -> PolarsResult
         })
         .collect::<Vec<_>>();
     StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+}
+
+// pub(super) fn select_fields(s: &Series, exprs: Vec<Expr>) -> PolarsResult<Series> {
+pub(super) fn select_fields(args: &mut [Series]) -> PolarsResult<Option<Series>> {
+    // let name = s.name();
+    // s.struct_()?
+    //     .unnest()
+    //     .lazy()
+    //     .select(exprs)
+    //     .collect()?
+    //     .into_struct(name)
+    //     .into_series()
+    StructChunked::new(args.first().unwrap().name(), args).map(|ca| Some(ca.into_series()))
 }
 
 #[cfg(feature = "json")]

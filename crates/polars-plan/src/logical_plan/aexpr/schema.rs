@@ -222,6 +222,17 @@ impl AExpr {
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
+            InnerStructFunction { input, function } => {
+                let input = arena.get(*input).to_field(schema, ctxt, arena)?;
+                let function = arena.get(*function);
+
+                if let Struct(fields) = input.data_type().clone() {
+                    let inner_schema = Schema::from_iter(fields);
+                    function.to_field(&inner_schema, ctxt, arena)
+                } else {
+                    polars_bail!(ComputeError: "encountered non-struct field")
+                }
+            },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => {
                 polars_bail!(ComputeError: "wildcard column selection not supported at this point")
