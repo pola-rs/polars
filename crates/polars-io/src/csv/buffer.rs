@@ -29,6 +29,18 @@ impl PrimitiveParser for Float64Type {
     }
 }
 
+impl PrimitiveParser for UInt8Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<u8> {
+        atoi_simd::parse_skipped(bytes).ok()
+    }
+}
+impl PrimitiveParser for UInt16Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<u16> {
+        atoi_simd::parse_skipped(bytes).ok()
+    }
+}
 impl PrimitiveParser for UInt32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u32> {
@@ -38,6 +50,18 @@ impl PrimitiveParser for UInt32Type {
 impl PrimitiveParser for UInt64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u64> {
+        atoi_simd::parse_skipped(bytes).ok()
+    }
+}
+impl PrimitiveParser for Int8Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<i8> {
+        atoi_simd::parse_skipped(bytes).ok()
+    }
+}
+impl PrimitiveParser for Int16Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<i16> {
         atoi_simd::parse_skipped(bytes).ok()
     }
 }
@@ -457,8 +481,12 @@ pub(crate) fn init_buffers(
             let (name, dtype) = schema.get_at_index(i).unwrap();
             let builder = match dtype {
                 &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
+                &DataType::Int8 => Buffer::Int8(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int16 => Buffer::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt8 => Buffer::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt16 => Buffer::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
@@ -491,8 +519,12 @@ pub(crate) fn init_buffers(
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Buffer {
     Boolean(BooleanChunkedBuilder),
+    Int8(PrimitiveChunkedBuilder<Int8Type>),
+    Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
+    UInt8(PrimitiveChunkedBuilder<UInt8Type>),
+    UInt16(PrimitiveChunkedBuilder<UInt16Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
@@ -515,8 +547,12 @@ impl Buffer {
     pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
+            Buffer::Int8(v) => v.finish().into_series(),
+            Buffer::Int16(v) => v.finish().into_series(),
             Buffer::Int32(v) => v.finish().into_series(),
             Buffer::Int64(v) => v.finish().into_series(),
+            Buffer::UInt8(v) => v.finish().into_series(),
+            Buffer::UInt16(v) => v.finish().into_series(),
             Buffer::UInt32(v) => v.finish().into_series(),
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
@@ -562,8 +598,12 @@ impl Buffer {
     pub(crate) fn add_null(&mut self, valid: bool) {
         match self {
             Buffer::Boolean(v) => v.append_null(),
+            Buffer::Int8(v) => v.append_null(),
+            Buffer::Int16(v) => v.append_null(),
             Buffer::Int32(v) => v.append_null(),
             Buffer::Int64(v) => v.append_null(),
+            Buffer::UInt8(v) => v.append_null(),
+            Buffer::UInt16(v) => v.append_null(),
             Buffer::UInt32(v) => v.append_null(),
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
@@ -596,8 +636,12 @@ impl Buffer {
     pub(crate) fn dtype(&self) -> DataType {
         match self {
             Buffer::Boolean(_) => DataType::Boolean,
+            Buffer::Int8(_) => DataType::Int8,
+            Buffer::Int16(_) => DataType::Int16,
             Buffer::Int32(_) => DataType::Int32,
             Buffer::Int64(_) => DataType::Int64,
+            Buffer::UInt8(_) => DataType::UInt8,
+            Buffer::UInt16(_) => DataType::UInt16,
             Buffer::UInt32(_) => DataType::UInt32,
             Buffer::UInt64(_) => DataType::UInt64,
             Buffer::Float32(_) => DataType::Float32,
@@ -639,6 +683,22 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
+            Int8(buf) => <PrimitiveChunkedBuilder<Int8Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
+            Int16(buf) => <PrimitiveChunkedBuilder<Int16Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
             Int32(buf) => <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
@@ -655,7 +715,15 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer>::parse_bytes(
+            UInt8(buf) => <PrimitiveChunkedBuilder<UInt8Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
+            UInt16(buf) => <PrimitiveChunkedBuilder<UInt16Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -664,6 +732,14 @@ impl Buffer {
                 None,
             ),
             UInt32(buf) => <PrimitiveChunkedBuilder<UInt32Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
+            UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
