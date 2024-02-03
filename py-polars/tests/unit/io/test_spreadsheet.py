@@ -4,6 +4,7 @@ import warnings
 from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
@@ -11,19 +12,37 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import NoDataError, ParameterCollisionError
+from polars.io.spreadsheet.functions import _identify_workbook
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict, SelectorType
 
 pytestmark = pytest.mark.slow()
 
 
 @pytest.fixture()
+def path_xls(io_files_path: Path) -> Path:
+    # old excel 97-2004 format
+    return io_files_path / "example.xls"
+
+
+@pytest.fixture()
 def path_xlsx(io_files_path: Path) -> Path:
+    # modern excel format
     return io_files_path / "example.xlsx"
+
+
+@pytest.fixture()
+def path_xlsb(io_files_path: Path) -> Path:
+    # excel binary format
+    return io_files_path / "example.xlsb"
+
+
+@pytest.fixture()
+def path_ods(io_files_path: Path) -> Path:
+    # open document spreadsheet
+    return io_files_path / "example.ods"
 
 
 @pytest.fixture()
@@ -37,11 +56,6 @@ def path_xlsx_mixed(io_files_path: Path) -> Path:
 
 
 @pytest.fixture()
-def path_xlsb(io_files_path: Path) -> Path:
-    return io_files_path / "example.xlsb"
-
-
-@pytest.fixture()
 def path_xlsb_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.xlsb"
 
@@ -49,11 +63,6 @@ def path_xlsb_empty(io_files_path: Path) -> Path:
 @pytest.fixture()
 def path_xlsb_mixed(io_files_path: Path) -> Path:
     return io_files_path / "mixed.xlsb"
-
-
-@pytest.fixture()
-def path_ods(io_files_path: Path) -> Path:
-    return io_files_path / "example.ods"
 
 
 @pytest.fixture()
@@ -69,8 +78,12 @@ def path_ods_mixed(io_files_path: Path) -> Path:
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "engine_params"),
     [
+        # xls file
+        (pl.read_excel, "path_xls", {"engine": "calamine"}),
+        (pl.read_excel, "path_xls", {"engine": None}),  # << autodetect
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": None}),  # << autodetect
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
@@ -105,6 +118,8 @@ def test_read_spreadsheet(
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
+        # xls file
+        (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
@@ -148,6 +163,8 @@ def test_read_excel_multi_sheets(
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
+        # xls file
+        (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
@@ -229,6 +246,8 @@ def test_read_excel_basic_datatypes(
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
+        # xls file
+        (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
@@ -335,6 +354,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name="test4",
         schema_overrides={"cardinality": pl.UInt16},
     ).drop_nulls()
+
     assert df1.schema["cardinality"] == pl.UInt16
     assert df1.schema["rows_by_key"] == pl.Float64
     assert df1.schema["iter_groups"] == pl.Float64
@@ -344,6 +364,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name="test4",
         read_options={"dtypes": {"cardinality": pl.UInt16}},
     ).drop_nulls()
+
     assert df2.schema["cardinality"] == pl.UInt16
     assert df2.schema["rows_by_key"] == pl.Float64
     assert df2.schema["iter_groups"] == pl.Float64
@@ -359,12 +380,16 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             },
         },
     ).drop_nulls()
+
     assert df3.schema["cardinality"] == pl.UInt16
     assert df3.schema["rows_by_key"] == pl.Float32
     assert df3.schema["iter_groups"] == pl.Float32
 
     for workbook_path in (path_xlsx, path_xlsb, path_ods):
-        df4 = pl.read_excel(
+        read_spreadsheet = (
+            pl.read_ods if workbook_path.suffix == ".ods" else pl.read_excel
+        )
+        df4 = read_spreadsheet(  # type: ignore[operator]
             workbook_path,
             sheet_name="test5",
             schema_overrides={"dtm": pl.Datetime("ns"), "dt": pl.Date},
@@ -751,10 +776,15 @@ def test_excel_empty_sheet(
     request: pytest.FixtureRequest,
 ) -> None:
     empty_spreadsheet_path = request.getfixturevalue(source)
+    read_spreadsheet = (
+        pl.read_ods  # type: ignore[assignment]
+        if empty_spreadsheet_path.suffix == ".ods"
+        else pl.read_excel
+    )
     with pytest.raises(NoDataError, match="empty Excel sheet"):
-        pl.read_excel(empty_spreadsheet_path)
+        read_spreadsheet(empty_spreadsheet_path)
 
-    df = pl.read_excel(empty_spreadsheet_path, raise_if_empty=False)
+    df = read_spreadsheet(empty_spreadsheet_path, raise_if_empty=False)
     assert_frame_equal(df, pl.DataFrame())
 
 
@@ -809,3 +839,36 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
         },
     )
     assert_frame_equal(df, read_df)
+
+
+@pytest.mark.parametrize(
+    ("path", "file_type"),
+    [
+        ("path_xls", "xls"),
+        ("path_xlsx", "xlsx"),
+        ("path_xlsb", "xlsb"),
+    ],
+)
+def test_identify_workbook(
+    path: str, file_type: str, request: pytest.FixtureRequest
+) -> None:
+    # identify from file path
+    spreadsheet_path = request.getfixturevalue(path)
+    assert _identify_workbook(spreadsheet_path) == file_type
+
+    # note that we can't distinguish between xlsx and xlsb
+    # from the magic bytes block alone (so we default to xlsx)
+    if file_type == "xlsb":
+        file_type = "xlsx"
+
+    # identify from BinaryIO
+    with Path.open(spreadsheet_path, "rb") as f:
+        assert _identify_workbook(f) == file_type
+
+    # identify from bytes
+    with Path.open(spreadsheet_path, "rb") as f:
+        assert _identify_workbook(f.read()) == file_type
+
+    # identify from BytesIO
+    with Path.open(spreadsheet_path, "rb") as f:
+        assert _identify_workbook(BytesIO(f.read())) == file_type
