@@ -23,40 +23,40 @@ impl PySeries {
     /// Non-nullable types are handled with `view()`.
     /// This will cast to floats so that `None = np.nan`.
     fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
+        use DataType::*;
         let s = &self.series;
         match s.dtype() {
-            dt if dt.is_numeric() => {
-                if s.bit_repr_is_large() {
-                    let s = s.cast(&DataType::Float64).unwrap();
-                    let ca = s.f64().unwrap();
-                    let np_arr =
-                        PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f64::NAN)));
-                    Ok(np_arr.into_py(py))
-                } else {
-                    let s = s.cast(&DataType::Float32).unwrap();
-                    let ca = s.f32().unwrap();
-                    let np_arr =
-                        PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f32::NAN)));
-                    Ok(np_arr.into_py(py))
-                }
-            },
-            DataType::String => {
-                let ca = s.str().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+            Int32 | UInt32 | Int64 | UInt64 | Float64 => {
+                let s = s.cast(&DataType::Float64).unwrap();
+                let ca = s.f64().unwrap();
+                let np_arr =
+                    PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f64::NAN)));
                 Ok(np_arr.into_py(py))
             },
-            DataType::Binary => {
-                let ca = s.binary().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+            Int8 | UInt8 | Int16 | UInt16 | Float32 => {
+                let s = s.cast(&DataType::Float32).unwrap();
+                let ca = s.f32().unwrap();
+                let np_arr =
+                    PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f32::NAN)));
                 Ok(np_arr.into_py(py))
             },
-            DataType::Boolean => {
+            Boolean => {
                 let ca = s.bool().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 Ok(np_arr.into_py(py))
             },
+            String => {
+                let ca = s.str().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                Ok(np_arr.into_py(py))
+            },
+            Binary => {
+                let ca = s.binary().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                Ok(np_arr.into_py(py))
+            },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            Object(_, _) => {
                 let ca = s
                     .as_any()
                     .downcast_ref::<ObjectChunked<ObjectValue>>()
@@ -65,7 +65,7 @@ impl PySeries {
                     PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
                 Ok(np_arr.into_py(py))
             },
-            DataType::Null => {
+            Null => {
                 let n = s.len();
                 let np_arr = PyArray1::from_iter(py, std::iter::repeat(f32::NAN).take(n));
                 Ok(np_arr.into_py(py))
