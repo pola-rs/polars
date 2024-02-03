@@ -1,8 +1,8 @@
 """Public functions that provide information about the Polars package or the environment it runs in."""  # noqa: W505
-from polars.meta.build_info import build_info
-from polars.meta.get_index_type import get_index_type
-from polars.meta.show_versions import show_versions
-from polars.meta.thread_pool_size import thread_pool_size, threadpool_size
+from polars.meta.build import build_info
+from polars.meta.index_type import get_index_type
+from polars.meta.thread_pool import thread_pool_size, threadpool_size
+from polars.meta.versions import show_versions
 
 __all__ = [
     "build_info",
