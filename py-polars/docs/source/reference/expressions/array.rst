@@ -30,3 +30,4 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.explode
     Expr.arr.contains
     Expr.arr.count_matches
+    Expr.arr.to_struct

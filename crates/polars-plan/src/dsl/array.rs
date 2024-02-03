@@ -1,12 +1,13 @@
-use polars_core::prelude::SortOptions;
+use polars_core::prelude::*;
+#[cfg(feature = "array_to_struct")]
+use polars_ops::chunked_array::array::{
+    arr_default_struct_name_gen, ArrToStructNameGenerator, ToStruct,
+};
 
 use crate::dsl::function_expr::{ArrayFunction, FunctionExpr};
 use crate::prelude::*;
 
-/// Specialized expressions for [`Series`][Series] of [`DataType::List`][DataType::List].
-///
-/// [Series]: polars_core::prelude::Series
-/// [DataType::List]: polars_core::prelude::DataType::List
+/// Specialized expressions for [`Series`] of [`DataType::Array`].
 pub struct ArrayNameSpace(pub Expr);
 
 impl ArrayNameSpace {
@@ -149,5 +150,31 @@ impl ArrayNameSpace {
                 options.input_wildcard_expansion = true;
                 options
             })
+    }
+
+    #[cfg(feature = "array_to_struct")]
+    pub fn to_struct(self, name_generator: Option<ArrToStructNameGenerator>) -> Expr {
+        self.0
+            .map(
+                move |s| {
+                    s.array()?
+                        .to_struct(name_generator.clone())
+                        .map(|s| Some(s.into_series()))
+                },
+                GetOutput::map_dtype(move |dt: &DataType| {
+                    let DataType::Array(inner, width) = dt else {
+                        panic!("Only array dtype is expected for `arr.to_struct`.")
+                    };
+
+                    let fields = (0..*width)
+                        .map(|i| {
+                            let name = arr_default_struct_name_gen(i);
+                            Field::from_owned(name, inner.as_ref().clone())
+                        })
+                        .collect();
+                    DataType::Struct(fields)
+                }),
+            )
+            .with_fmt("arr.to_struct")
     }
 }
