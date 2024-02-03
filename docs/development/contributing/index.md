@@ -150,9 +150,9 @@ The user guide is maintained in the `docs/user-guide` folder. Before creating a 
 
 #### Building and serving the user guide
 
-The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make requirements` in the root of the repo.
+The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make build` in the root of the repo.
 
-Run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
+Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
 
 #### Creating a new user guide page
 
