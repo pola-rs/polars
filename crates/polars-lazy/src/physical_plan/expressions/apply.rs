@@ -6,6 +6,8 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::{BatchStats, StatsEvaluator};
+#[cfg(feature = "is_between")]
+use polars_ops::prelude::ClosedInterval;
 #[cfg(feature = "parquet")]
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
@@ -386,6 +388,8 @@ impl PhysicalExpr for ApplyExpr {
             FunctionExpr::Boolean(BooleanFunction::IsNull) => Some(self),
             #[cfg(feature = "is_in")]
             FunctionExpr::Boolean(BooleanFunction::IsIn) => Some(self),
+            #[cfg(feature = "is_between")]
+            FunctionExpr::Boolean(BooleanFunction::IsBetween { closed: _ }) => Some(self),
             _ => None,
         }
     }
@@ -521,6 +525,63 @@ impl ApplyExpr {
                     let bigger = ChunkCompare::gt(input, max).ok()?;
 
                     Some(!(smaller | bigger).all())
+                };
+
+                Ok(should_read().unwrap_or(true))
+            },
+            #[cfg(feature = "is_between")]
+            FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }) => {
+                let should_read = || -> Option<bool> {
+                    let root: Arc<str> = expr_to_leaf_column_name(&input[0]).ok()?;
+                    let Expr::Literal(left) = &input[1] else {
+                        return None;
+                    };
+                    let Expr::Literal(right) = &input[2] else {
+                        return None;
+                    };
+
+                    let st = stats.get_stats(&root).ok()?;
+                    let min = st.to_min()?;
+                    let max = st.to_max()?;
+
+                    let (left, left_dtype) = (left.to_any_value()?, left.get_datatype());
+                    let (right, right_dtype) = (right.to_any_value()?, right.get_datatype());
+
+                    let left =
+                        Series::from_any_values_and_dtype("", &[left], &left_dtype, false).ok()?;
+                    let right =
+                        Series::from_any_values_and_dtype("", &[right], &right_dtype, false)
+                            .ok()?;
+
+                    // don't read the row_group anyways as
+                    // the condition will evaluate to false.
+                    // e.g. in_between(10, 5)
+                    if ChunkCompare::gt(&left, &right).ok()?.all() {
+                        return Some(false);
+                    }
+
+                    let (left_open, right_open) = match closed {
+                        ClosedInterval::None => (true, true),
+                        ClosedInterval::Both => (false, false),
+                        ClosedInterval::Left => (false, true),
+                        ClosedInterval::Right => (true, false),
+                    };
+                    // check the right limit of the interval.
+                    // if the end is open, we should be stricter (lt_eq instead of lt).
+                    if right_open && ChunkCompare::lt_eq(&right, min).ok()?.all()
+                        || !right_open && ChunkCompare::lt(&right, min).ok()?.all()
+                    {
+                        return Some(false);
+                    }
+                    // we couldn't conclude anything using the right limit,
+                    // check the left limit of the interval
+                    if left_open && ChunkCompare::gt_eq(&left, max).ok()?.all()
+                        || !left_open && ChunkCompare::gt(&left, max).ok()?.all()
+                    {
+                        return Some(false);
+                    }
+                    // read the row_group
+                    Some(true)
                 };
 
                 Ok(should_read().unwrap_or(true))
