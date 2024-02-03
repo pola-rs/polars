@@ -49,3 +49,17 @@ def test_numpy_disambiguation() -> None:
         "b": [1, 2],
     }
     assert result == expected
+
+
+def test_series_to_numpy_bool() -> None:
+    s = pl.Series([True, False])
+    result = s.to_numpy(use_pyarrow=False)
+    assert s.to_list() == result.tolist()
+    assert result.dtype == np.bool_
+
+
+def test_series_to_numpy_bool_with_nulls() -> None:
+    s = pl.Series([True, False, None])
+    result = s.to_numpy(use_pyarrow=False)
+    assert s.to_list() == result.tolist()
+    assert result.dtype == np.object_

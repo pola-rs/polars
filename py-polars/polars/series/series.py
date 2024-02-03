@@ -42,6 +42,7 @@ from polars.datatypes import (
     Object,
     String,
     Time,
+    UInt8,
     UInt32,
     UInt64,
     Unknown,
@@ -4364,6 +4365,9 @@ class Series:
                     np_array = convert_to_date(self._view(ignore_nulls=True))
                 elif self.dtype.is_numeric():
                     np_array = self._view(ignore_nulls=True)
+                elif self.dtype == Boolean:
+                    raise_no_zero_copy()
+                    np_array = self.cast(UInt8)._view(ignore_nulls=True).astype(bool)
                 else:
                     raise_no_zero_copy()
                     np_array = self._s.to_numpy()
