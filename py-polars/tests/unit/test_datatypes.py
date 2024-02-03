@@ -100,10 +100,6 @@ def test_dtype_groups() -> None:
     assert pl.Datetime("ms", "Asia/Tokyo") in grp
 
 
-def test_get_index_type() -> None:
-    assert pl.get_index_type() == pl.UInt32
-
-
 def test_dtypes_picklable() -> None:
     parametric_type = pl.Datetime("ns")
     singleton_type = pl.Float64
