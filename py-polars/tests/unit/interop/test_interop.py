@@ -476,6 +476,32 @@ def test_from_numpy() -> None:
         _ = pl.from_numpy(np.array(1))
 
 
+def test_from_numpy_array_value() -> None:
+    df = pl.DataFrame({"A": [[2, 3]]})
+    assert df.rows() == [([2, 3],)]
+    assert df.schema == {"A": pl.List(pl.Int64)}
+
+
+def test_construct_from_nparray_value() -> None:
+    array_cell = np.array([2, 3])
+    df = pl.DataFrame(np.array([[array_cell, 4]], dtype=object))
+    assert df.dtypes == [pl.Object, pl.Object]
+    to_numpy = df.to_numpy()
+    assert to_numpy.shape == (1, 2)
+    assert_array_equal(to_numpy[0][0], array_cell)
+    assert to_numpy[0][1] == 4
+
+
+def test_from_numpy_nparray_value() -> None:
+    array_cell = np.array([2, 3])
+    df = pl.from_numpy(np.array([[array_cell, 4]], dtype=object))
+    assert df.dtypes == [pl.Object, pl.Object]
+    to_numpy = df.to_numpy()
+    assert to_numpy.shape == (1, 2)
+    assert_array_equal(to_numpy[0][0], array_cell)
+    assert to_numpy[0][1] == 4
+
+
 def test_from_numpy_structured() -> None:
     test_data = [
         ("Google Pixel 7", 521.90, True),

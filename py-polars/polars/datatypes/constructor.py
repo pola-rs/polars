@@ -135,7 +135,9 @@ def numpy_type_to_constructor(
         return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]  # type:ignore[index]
     except KeyError:
         if len(values) > 0:
-            first_non_nan = next((v for v in values if v == v), None)
+            first_non_nan = next(
+                (v for v in values if isinstance(v, np.ndarray) or v == v), None
+            )
             if isinstance(first_non_nan, str):
                 return PySeries.new_str
             if isinstance(first_non_nan, bytes):
