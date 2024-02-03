@@ -1,31 +1,9 @@
-"""Various public utility functions."""
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
-
-if TYPE_CHECKING:
-    from polars.datatypes import DataType
-
-
-def get_index_type() -> DataType:
-    """
-    Get the datatype used for Polars indexing.
-
-    Returns
-    -------
-    DataType
-        :class:`UInt32` in regular Polars, :class:`UInt64` in bigidx Polars.
-
-    Examples
-    --------
-    >>> pl.get_index_type()
-    UInt32
-    """
-    return plr.get_index_type()
 
 
 def threadpool_size() -> int:
@@ -44,6 +22,6 @@ def threadpool_size() -> int:
     Examples
     --------
     >>> pl.threadpool_size()  # doctest: +SKIP
-    24
+    16
     """
     return plr.threadpool_size()

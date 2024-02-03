@@ -69,8 +69,8 @@ from polars.exceptions import (
     ShapeError,
     TimeZoneAwareConstructorWarning,
 )
+from polars.meta import get_index_type, threadpool_size
 from polars.utils._wrap import wrap_df, wrap_s
-from polars.utils.meta import get_index_type, threadpool_size
 from polars.utils.various import (
     _is_generator,
     arrlen,

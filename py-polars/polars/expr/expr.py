@@ -41,6 +41,7 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
+from polars.meta import threadpool_size
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -55,7 +56,6 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
-from polars.utils.meta import threadpool_size
 from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
     no_default,

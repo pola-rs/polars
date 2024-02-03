@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import sys
 
-from polars.utils.meta import get_index_type
-from polars.utils.polars_version import get_polars_version
+from polars.meta.get_index_type import get_index_type
+from polars.utils._polars_version import get_polars_version
 
 
 def show_versions() -> None:
-    r"""
+    """
     Print out version of Polars and dependencies to stdout.
 
     Examples

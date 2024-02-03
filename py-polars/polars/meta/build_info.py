@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from polars.utils.polars_version import get_polars_version
+from polars.utils._polars_version import get_polars_version
 
 try:
-    from polars.polars import _build_info_
+    from polars.polars import __build__
 except ImportError:
-    _build_info_ = {}
+    __build__ = {}
 
-_build_info_["version"] = get_polars_version() or "<missing>"
+__build__["version"] = get_polars_version() or "<missing>"
 
 
 def build_info() -> dict[str, Any]:
@@ -21,4 +21,4 @@ def build_info() -> dict[str, Any]:
     the following keys ['build', 'info-time', 'dependencies', 'features', 'host',
     'target', 'git', 'version'].
     """
-    return _build_info_
+    return __build__
