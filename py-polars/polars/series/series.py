@@ -4366,6 +4366,7 @@ class Series:
                 elif self.dtype.is_numeric():
                     np_array = self._view(ignore_nulls=True)
                 elif self.dtype == Boolean:
+                    raise_no_zero_copy()
                     np_array = self.cast(UInt8)._view(ignore_nulls=True).astype(bool)
                 else:
                     raise_no_zero_copy()
