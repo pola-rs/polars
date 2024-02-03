@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import contextlib
 
+from polars.utils.deprecation import deprecate_renamed_function
+
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 
-def threadpool_size() -> int:
+def thread_pool_size() -> int:
     """
     Return the number of threads in the Polars thread pool.
 
@@ -21,7 +23,18 @@ def threadpool_size() -> int:
 
     Examples
     --------
-    >>> pl.threadpool_size()  # doctest: +SKIP
+    >>> pl.thread_pool_size()  # doctest: +SKIP
     16
     """
-    return plr.threadpool_size()
+    return plr.thread_pool_size()
+
+
+@deprecate_renamed_function("thread_pool_size", version="0.20.7")
+def threadpool_size() -> int:
+    """
+    Return the number of threads in the Polars thread pool.
+
+    .. deprecated:: 0.20.7
+        This function has been renamed to :func:`thread_pool_size`.
+    """
+    return thread_pool_size()

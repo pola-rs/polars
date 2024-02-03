@@ -2,11 +2,12 @@
 from polars.meta.build_info import build_info
 from polars.meta.get_index_type import get_index_type
 from polars.meta.show_versions import show_versions
-from polars.meta.threadpool_size import threadpool_size
+from polars.meta.thread_pool_size import thread_pool_size, threadpool_size
 
 __all__ = [
     "build_info",
     "get_index_type",
     "show_versions",
+    "thread_pool_size",
     "threadpool_size",
 ]
