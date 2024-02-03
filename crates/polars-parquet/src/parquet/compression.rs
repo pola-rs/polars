@@ -95,13 +95,19 @@ pub fn compress(
         )),
         #[cfg(feature = "zstd")]
         CompressionOptions::Zstd(level) => {
-            use std::io::Write;
             let level = level.map(|v| v.compression_level()).unwrap_or_default();
-
-            let mut encoder = zstd::Encoder::new(output_buf, level)?;
-            encoder.write_all(input_buf)?;
-            match encoder.finish() {
-                Ok(_) => Ok(()),
+            // Make sure the buffer is large enough; the interface assumption is
+            // that decompressed data is appended to the output buffer.
+            let old_len = output_buf.len();
+            output_buf.resize(
+                old_len + zstd::zstd_safe::compress_bound(input_buf.len()),
+                0,
+            );
+            match zstd::bulk::compress_to_buffer(input_buf, &mut output_buf[old_len..], level) {
+                Ok(written_size) => {
+                    output_buf.truncate(old_len + written_size);
+                    Ok(())
+                },
                 Err(e) => Err(e.into()),
             }
         },
