@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 def get_index_type() -> DataType:
     """
-    Return the datatype used for Polars indexing.
+    Return the data type used for Polars indexing.
 
     Returns
     -------

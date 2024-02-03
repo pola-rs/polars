@@ -8,7 +8,7 @@ from polars.utils._polars_version import get_polars_version
 
 def show_versions() -> None:
     """
-    Print out version of Polars and dependencies to stdout.
+    Print out the version of Polars and its optional dependencies.
 
     Examples
     --------
@@ -38,8 +38,8 @@ def show_versions() -> None:
     xlsx2csv:             0.8.1
     xlsxwriter:           3.1.9
     """  # noqa: W505
-    # note: we import 'platform' here (rather than at the top of the
-    # module) as a micro-optimisation for polars' initial import
+    # Note: we import 'platform' here (rather than at the top of the
+    # module) as a micro-optimization for polars' initial import
     import platform
 
     deps = _get_dependency_info()
