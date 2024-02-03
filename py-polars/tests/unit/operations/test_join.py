@@ -662,69 +662,86 @@ def test_outer_join_list_() -> None:
 @pytest.mark.slow()
 def test_join_validation() -> None:
     def test_each_join_validation(
-        unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy
+        unique: pl.DataFrame, duplicate: pl.DataFrame, on: str, how: JoinStrategy
     ) -> None:
         # one_to_many
         _one_to_many_success_inner = unique.join(
-            duplicate, on="id", how=how, validate="1:m"
+            duplicate, on=on, how=how, validate="1:m"
         )
 
         with pytest.raises(pl.ComputeError):
             _one_to_many_fail_inner = duplicate.join(
-                unique, on="id", how=how, validate="1:m"
+                unique, on=on, how=how, validate="1:m"
             )
 
         # one to one
         with pytest.raises(pl.ComputeError):
             _one_to_one_fail_1_inner = unique.join(
-                duplicate, on="id", how=how, validate="1:1"
+                duplicate, on=on, how=how, validate="1:1"
             )
 
         with pytest.raises(pl.ComputeError):
             _one_to_one_fail_2_inner = duplicate.join(
-                unique, on="id", how=how, validate="1:1"
+                unique, on=on, how=how, validate="1:1"
             )
 
         # many to one
         with pytest.raises(pl.ComputeError):
             _many_to_one_fail_inner = unique.join(
-                duplicate, on="id", how=how, validate="m:1"
+                duplicate, on=on, how=how, validate="m:1"
             )
 
         _many_to_one_success_inner = duplicate.join(
-            unique, on="id", how=how, validate="m:1"
+            unique, on=on, how=how, validate="m:1"
         )
 
         # many to many
         _many_to_many_success_1_inner = duplicate.join(
-            unique, on="id", how=how, validate="m:m"
+            unique, on=on, how=how, validate="m:m"
         )
 
         _many_to_many_success_2_inner = unique.join(
-            duplicate, on="id", how=how, validate="m:m"
+            duplicate, on=on, how=how, validate="m:m"
         )
 
     # test data
     short_unique = pl.DataFrame(
-        {"id": [1, 2, 3, 4], "name": ["hello", "world", "rust", "polars"]}
+        {
+            "id": [1, 2, 3, 4],
+            "id_str": ["1", "2", "3", "4"],
+            "name": ["hello", "world", "rust", "polars"],
+        }
     )
-    short_duplicate = pl.DataFrame({"id": [1, 2, 3, 1], "cnt": [2, 4, 6, 1]})
+    short_duplicate = pl.DataFrame(
+        {"id": [1, 2, 3, 1], "id_str": ["1", "2", "3", "1"], "cnt": [2, 4, 6, 1]}
+    )
     long_unique = pl.DataFrame(
-        {"id": [1, 2, 3, 4, 5], "name": ["hello", "world", "rust", "polars", "meow"]}
+        {
+            "id": [1, 2, 3, 4, 5],
+            "id_str": ["1", "2", "3", "4", "5"],
+            "name": ["hello", "world", "rust", "polars", "meow"],
+        }
     )
-    long_duplicate = pl.DataFrame({"id": [1, 2, 3, 1, 5], "cnt": [2, 4, 6, 1, 8]})
+    long_duplicate = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 1, 5],
+            "id_str": ["1", "2", "3", "1", "5"],
+            "cnt": [2, 4, 6, 1, 8],
+        }
+    )
 
     join_strategies: list[JoinStrategy] = ["inner", "outer", "left"]
 
-    for how in join_strategies:
-        # same size
-        test_each_join_validation(long_unique, long_duplicate, how)
+    for join_col in ["id", "id_str"]:
+        for how in join_strategies:
+            # same size
+            test_each_join_validation(long_unique, long_duplicate, join_col, how)
 
-        # left longer
-        test_each_join_validation(long_unique, short_duplicate, how)
+            # left longer
+            test_each_join_validation(long_unique, short_duplicate, join_col, how)
 
-        # right longer
-        test_each_join_validation(short_unique, long_duplicate, how)
+            # right longer
+            test_each_join_validation(short_unique, long_duplicate, join_col, how)
 
 
 def test_outer_join_bool() -> None:
