@@ -19,31 +19,23 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         validate.validate_probe(&lhs, &rhs, false)?;
 
         use DataType::*;
-        match lhs.dtype() {
-            String => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
-                lhs.hash_join_left(&rhs, JoinValidation::ManyToMany, join_nulls)
-            },
-            Binary => {
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
-                let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-                let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-                hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
-            },
-            _ => {
-                if s_self.bit_repr_is_large() {
-                    let lhs = lhs.bit_repr_large();
-                    let rhs = rhs.bit_repr_large();
-                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
-                } else {
-                    let lhs = lhs.bit_repr_small();
-                    let rhs = rhs.bit_repr_small();
-                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
-                }
-            },
+        if matches!(lhs.dtype(), String | Binary) {
+            let lhs = lhs.cast(&Binary).unwrap();
+            let rhs = rhs.cast(&Binary).unwrap();
+            let lhs = lhs.binary().unwrap();
+            let rhs = rhs.binary().unwrap();
+            let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
+            let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+            let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+            hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
+        } else if s_self.bit_repr_is_large() {
+            let lhs = lhs.bit_repr_large();
+            let rhs = rhs.bit_repr_large();
+            num_group_join_left(&lhs, &rhs, validate, join_nulls)
+        } else {
+            let lhs = lhs.bit_repr_small();
+            let rhs = rhs.bit_repr_small();
+            num_group_join_left(&lhs, &rhs, validate, join_nulls)
         }
     }
 
