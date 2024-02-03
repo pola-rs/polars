@@ -79,8 +79,9 @@ def scan_ndjson(
     ----------
     source
         Path to a file.
-    infer_schema_length
+    infer_schema_length : int, default N_INFER_DEFAULT
         Infer the schema from the first `infer_schema_length` rows.
+        If set to `None`, a full table scan will be done (slow).
     batch_size
         Number of rows to read in each batch.
     n_rows

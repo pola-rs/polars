@@ -119,7 +119,7 @@ def read_csv(
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
-    infer_schema_length
+    infer_schema_length : int, default N_INFER_DEFAULT
         Maximum number of lines to read to infer schema.
         If schema is inferred wrongly (e.g. as `pl.Int64` instead of `pl.Float64`),
         try to increase the number of lines used to infer the schema or override

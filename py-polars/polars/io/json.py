@@ -29,8 +29,9 @@ def read_json(
         Path to a file or a file-like object (by file-like object, we refer to objects
         that have a `read()` method, such as a file handler (e.g. via builtin `open`
         function) or `BytesIO`).
-    infer_schema_length
+    infer_schema_length : int, default N_INFER_DEFAULT
         Infer the schema from the first `infer_schema_length` rows.
+        If set to `None`, a full table scan will be done (slow).
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
