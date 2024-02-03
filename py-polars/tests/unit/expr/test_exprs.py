@@ -129,15 +129,15 @@ def test_unique_stable() -> None:
 def test_entropy() -> None:
     df = pl.DataFrame(
         {
-            "group": ["A", "A", "A", "B", "B", "B", "B"],
-            "id": [1, 2, 1, 4, 5, 4, 6],
+            "group": ["A", "A", "A", "B", "B", "B", "B", "C"],
+            "id": [1, 2, 1, 4, 5, 4, 6, 7],
         }
     )
     result = df.group_by("group", maintain_order=True).agg(
         pl.col("id").entropy(normalize=True)
     )
     expected = pl.DataFrame(
-        {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+        {"group": ["A", "B", "C"], "id": [1.0397207708399179, 1.371381017771811, 0.0]}
     )
     assert_frame_equal(result, expected)
 
