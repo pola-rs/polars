@@ -149,3 +149,19 @@ def test_with_columns_single_series() -> None:
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     assert_frame_equal(result.collect(), expected)
+
+
+def test_with_columns_seq() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    result = df.with_columns_seq(
+        pl.lit(5).alias("b"),
+        pl.lit("foo").alias("c"),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": pl.Series([5, 5], dtype=pl.Int32),
+            "c": ["foo", "foo"],
+        }
+    )
+    assert_frame_equal(result, expected)
