@@ -6,12 +6,6 @@ use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-#[pyfunction]
-pub fn get_polars_version() -> &'static str {
-    VERSION
-}
-
 #[pyfunction]
 pub fn get_index_type(py: Python) -> PyObject {
     Wrap(IDX_DTYPE).to_object(py)

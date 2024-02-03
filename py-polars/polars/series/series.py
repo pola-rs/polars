@@ -66,6 +66,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ModuleUpgradeRequired, ShapeError
+from polars.meta import get_index_type
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -99,7 +100,6 @@ from polars.utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars.utils.meta import get_index_type
 from polars.utils.unstable import unstable
 from polars.utils.various import (
     _is_generator,

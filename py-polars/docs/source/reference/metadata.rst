@@ -1,6 +1,6 @@
-=====
-Utils
-=====
+========
+Metadata
+========
 .. currentmodule:: polars
 
 .. autosummary::
