@@ -7,11 +7,12 @@ import warnings
 from datetime import datetime
 from typing import Any
 
-import polars as pl
 import pytest
 from hypothesis import given, settings
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import sampled_from
+
+import polars as pl
 from polars.datatypes import TEMPORAL_DTYPES
 from polars.testing.parametric import (
     column,

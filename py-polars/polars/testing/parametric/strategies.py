@@ -347,7 +347,7 @@ def create_array_strategy(
 
     Create a strategy that generates arrays of specific strings:
 
-    >>> arr = create_array_strategy(dtype=pl.String, width=2)
+    >>> arr = create_array_strategy(inner_dtype=pl.String, width=2)
     >>> arr.example()  # doctest: +SKIP
     ['xx', 'yy']
     """
@@ -452,7 +452,7 @@ def create_list_strategy(
             st = create_array_strategy(
                 inner_dtype=inner_dtype.inner,  # type: ignore[union-attr]
                 select_from=select_from,
-                width=width,  # type: ignore[union-attr]
+                width=width,
             )
         else:
             st = create_list_strategy(
