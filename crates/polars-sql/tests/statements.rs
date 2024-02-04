@@ -354,6 +354,52 @@ fn test_compound_join_nested_and() {
 }
 
 #[test]
+fn test_compound_join_nested_and_with_brackets() {
+    let df1 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 2, 3, 4, 5],
+        "c" => [0, 3, 4, 5, 6],
+        "d" => [0, 3, 4, 5, 6],
+    }
+    .unwrap();
+    let df2 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 3, 3, 5, 6],
+        "c" => [0, 3, 4, 5, 6],
+        "d" => [0, 3, 4, 5, 6]
+    }
+    .unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("df1", df1.lazy());
+    ctx.register("df2", df2.lazy());
+
+    let sql = r#"
+        SELECT * FROM df1
+            INNER JOIN df2 ON
+                df1.a = df2.a AND
+                ((df1.b = df2.b AND
+                df1.c = df2.c) AND
+                df1.d = df2.d)
+     "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "a" => [1, 3],
+        "b" => [1, 3],
+        "c" => [0, 4],
+        "d" => [0, 4],
+    }
+    .unwrap();
+
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
+}
+
+#[test]
 #[should_panic]
 fn test_compound_invalid_1() {
     let mut ctx = prepare_compound_join_context();
