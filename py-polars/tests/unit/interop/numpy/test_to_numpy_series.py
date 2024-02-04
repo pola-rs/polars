@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 )
 @settings(max_examples=250)
 def test_series_to_numpy(s: pl.Series) -> None:
-    result = s.to_numpy()
+    result = s.to_numpy(use_pyarrow=False)
 
     values = s.to_list()
     dtype_map = {
@@ -62,6 +62,18 @@ def test_to_numpy_empty_no_pyarrow() -> None:
     assert result.dtype == pl.Float32
     assert result.shape == (0,)
     assert result.size == 0
+
+
+def test_to_numpy_categorical() -> None:
+    s = pl.Series(["a", "b", "a", None], dtype=pl.Categorical)
+    result = s.to_numpy(use_pyarrow=False)
+    assert result.tolist() == s.to_list()
+
+
+def test_to_numpy_enum() -> None:
+    s = pl.Series(["a", "b", "a", None], dtype=pl.Enum(["a", "b", "c"]))
+    result = s.to_numpy(use_pyarrow=False)
+    assert result.tolist() == s.to_list()
 
 
 @pytest.mark.parametrize("writable", [False, True])
