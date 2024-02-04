@@ -4145,12 +4145,18 @@ class Series:
 
     def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
         """
-        Convert this Series to a Python List. This operation clones data.
+        Convert this Series to a Python list.
+
+        This operation copies data.
 
         Parameters
         ----------
         use_pyarrow
-            Use pyarrow for the conversion.
+            Use PyArrow to perform the conversion.
+
+            .. deprecated:: 0.19.9
+                This parameter will be removed. The function can safely be called
+                without the parameter - it should give the exact same result.
 
         Examples
         --------
@@ -4283,32 +4289,31 @@ class Series:
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert this Series to numpy.
+        Convert this Series to a NumPy ndarray.
 
-        This operation may clone data but is completely safe. Note that:
+        This operation may copy data, but is completely safe. Note that:
 
-        - data which is purely numeric AND without null values is not cloned;
-        - floating point `nan` values can be zero-copied;
-        - booleans can't be zero-copied.
+        - Data which is purely numeric AND without null values is not cloned
+        - Floating point `nan` values can be zero-copied
+        - Booleans cannot be zero-copied
 
-        To ensure that no data is cloned, set `zero_copy_only=True`.
+        To ensure that no data is copied, set `zero_copy_only=True`.
 
         Parameters
         ----------
         zero_copy_only
-            If True, an exception will be raised if the conversion to a numpy
-            array would require copying the underlying data (e.g. in presence
-            of nulls, or for non-primitive types).
+            Raise an exception if the conversion to a NumPy would require copying
+            the underlying data. Data copy occurs, for example, when the Series contains
+            nulls or non-numeric types.
         writable
-            For numpy arrays created with zero copy (view on the Arrow data),
+            For NumPy arrays created with zero copy (view on the Arrow data),
             the resulting array is not writable (Arrow data is immutable).
             By setting this to True, a copy of the array is made to ensure
             it is writable.
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            for the conversion to numpy.
+            for the conversion to NumPy.
 
         Examples
         --------
@@ -4417,7 +4422,7 @@ class Series:
 
     def to_arrow(self) -> pa.Array:
         """
-        Get the underlying Arrow Array.
+        Return the underlying Arrow array.
 
         If the Series contains only a single chunk this operation is zero copy.
 
