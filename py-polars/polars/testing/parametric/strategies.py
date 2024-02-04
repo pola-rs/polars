@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 from itertools import chain
-from random import choice, shuffle
+from random import choice, randint, shuffle
 from string import ascii_uppercase
 from typing import (
     TYPE_CHECKING,
@@ -36,6 +36,7 @@ from hypothesis.strategies import (
 )
 
 from polars.datatypes import (
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -59,7 +60,6 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.type_aliases import PolarsDataType
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
@@ -315,14 +315,68 @@ def _flexhash(elem: Any) -> int:
     return hash(elem)
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["inner_dtype"], version="0.19.3")
+def create_array_strategy(
+    inner_dtype: PolarsDataType | None = None,
+    width: int | None = None,
+    *,
+    select_from: Sequence[Any] | None = None,
+    unique: bool = False,
+) -> SearchStrategy[list[Any]]:
+    """
+    Hypothesis strategy for producing polars Array data.
+
+    Parameters
+    ----------
+    inner_dtype : PolarsDataType
+        type of the inner array elements (can also be another Array).
+    width : int, optional
+        generated arrays will have this length.
+    select_from : list, optional
+        randomly select the innermost values from this list (otherwise
+        the default strategy associated with the innermost dtype is used).
+    unique : bool, optional
+        ensure that the generated lists contain unique values.
+
+    Examples
+    --------
+    Create a strategy that generates arrays of i32 values:
+
+    >>> arr = create_array_strategy(inner_dtype=pl.Int32, width=3)
+    >>> arr.example()  # doctest: +SKIP
+    [-11330, 24030, 116]
+
+    Create a strategy that generates arrays of specific strings:
+
+    >>> arr = create_array_strategy(dtype=pl.String, width=2)
+    >>> arr.example()  # doctest: +SKIP
+    ['xx', 'yy']
+    """
+    if width is None:
+        width = randint(a=1, b=8)
+
+    if inner_dtype is None:
+        strats = list(_get_strategy_dtypes(base_type=True))
+        shuffle(strats)
+        inner_dtype = choice(strats)
+
+    strat = create_list_strategy(
+        inner_dtype=inner_dtype,
+        select_from=select_from,
+        size=width,
+        unique=unique,
+    )
+    strat._dtype = Array(inner_dtype, width=width)  # type: ignore[attr-defined]
+    return strat
+
+
 def create_list_strategy(
-    inner_dtype: PolarsDataType | None,
+    inner_dtype: PolarsDataType | None = None,
+    *,
     select_from: Sequence[Any] | None = None,
     size: int | None = None,
     min_size: int | None = None,
     max_size: int | None = None,
-    unique: bool = False,  # noqa: FBT001
+    unique: bool = False,
 ) -> SearchStrategy[list[Any]]:
     """
     Hypothesis strategy for producing polars List data.
@@ -391,13 +445,23 @@ def create_list_strategy(
         if max_size is None:
             max_size = 3 if not min_size else (min_size * 2)
 
-    if inner_dtype == List:
-        st = create_list_strategy(
-            inner_dtype=inner_dtype.inner,  # type: ignore[union-attr]
-            select_from=select_from,
-            min_size=min_size,
-            max_size=max_size,
-        )
+    if inner_dtype in (Array, List):
+        if inner_dtype == Array:
+            if (width := getattr(inner_dtype, "width", None)) is None:
+                width = randint(a=1, b=8)
+            st = create_array_strategy(
+                inner_dtype=inner_dtype.inner,  # type: ignore[union-attr]
+                select_from=select_from,
+                width=width,  # type: ignore[union-attr]
+            )
+        else:
+            st = create_list_strategy(
+                inner_dtype=inner_dtype.inner,  # type: ignore[union-attr]
+                select_from=select_from,
+                min_size=min_size,
+                max_size=max_size,
+            )
+
         if inner_dtype.inner is None and hasattr(st, "_dtype"):  # type: ignore[union-attr]
             inner_dtype = st._dtype
     else:
@@ -421,6 +485,7 @@ def create_list_strategy(
 # def create_struct_strategy(
 
 
+nested_strategies[Array] = create_array_strategy
 nested_strategies[List] = create_list_strategy
 # nested_strategies[Struct] = create_struct_strategy(inner_dtype=None)
 

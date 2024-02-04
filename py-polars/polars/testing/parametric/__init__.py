@@ -7,6 +7,7 @@ if _HYPOTHESIS_AVAILABLE:
     from polars.testing.parametric.profiles import load_profile, set_profile
     from polars.testing.parametric.strategies import (
         all_strategies,
+        create_array_strategy,
         create_list_strategy,
         nested_strategies,
         scalar_strategies,
@@ -22,6 +23,7 @@ __all__ = [
     "all_strategies",
     "column",
     "columns",
+    "create_array_strategy",
     "create_list_strategy",
     "dataframes",
     "load_profile",

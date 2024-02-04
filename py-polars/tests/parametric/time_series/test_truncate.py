@@ -8,7 +8,8 @@ import polars as pl
 
 @given(
     value=st.datetimes(
-        min_value=dt.datetime(1000, 1, 1), max_value=dt.datetime(3000, 1, 1)
+        min_value=dt.datetime(1000, 1, 1),
+        max_value=dt.datetime(3000, 1, 1),
     ),
     n=st.integers(min_value=1, max_value=100),
 )
