@@ -31,7 +31,11 @@ pub(crate) fn collect_statistics(
     Ok(if stats.is_empty() {
         None
     } else {
-        Some(BatchStats::new(Arc::new(schema.into()), stats))
+        Some(BatchStats::new(
+            Arc::new(schema.into()),
+            stats,
+            Some(md.num_rows()),
+        ))
     })
 }
 

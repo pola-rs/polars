@@ -91,6 +91,7 @@ impl HivePartitions {
                     .into_iter()
                     .map(ColumnStats::from_column_literal)
                     .collect(),
+                None,
             );
 
             Some(HivePartitions { stats })

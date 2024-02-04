@@ -4289,7 +4289,7 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: Literal[False],
+        return_as_string: Literal[False] = ...,
     ) -> None:
         ...
 
@@ -4301,6 +4301,16 @@ class DataFrame:
         max_colname_length: int = ...,
         return_as_string: Literal[True],
     ) -> str:
+        ...
+
+    @overload
+    def glimpse(
+        self,
+        *,
+        max_items_per_column: int = ...,
+        max_colname_length: int = ...,
+        return_as_string: bool,
+    ) -> str | None:
         ...
 
     def glimpse(

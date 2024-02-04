@@ -197,6 +197,18 @@ fn test_parquet_statistics() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
+    // is_not_null
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(col("nutri_score").is_not_null())
+        .collect()?;
+    assert_eq!(out.shape(), (0, 5));
+
+    // not(is_null) (~pl.col('nutri_score').is_null())
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(not(col("nutri_score").is_null()))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 5));
+
     // Test multiple predicates
 
     // And operation
@@ -243,7 +255,7 @@ fn test_parquet_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
-    let glob = "../../examples/datasets/*.parquet";
+    let glob = "../../examples/datasets/foods*.parquet";
     let df = LazyFrame::scan_parquet(
         glob,
         ScanArgsParquet {
@@ -289,7 +301,7 @@ fn test_scan_parquet_limit_9001() {
 fn test_ipc_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
-    let glob = "../../examples/datasets/*.ipc";
+    let glob = "../../examples/datasets/foods*.ipc";
     let df = LazyFrame::scan_ipc(
         glob,
         ScanArgsIpc {
@@ -321,7 +333,7 @@ fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 
 #[test]
 fn test_csv_globbing() -> PolarsResult<()> {
-    let glob = "../../examples/datasets/*.csv";
+    let glob = "../../examples/datasets/foods*.csv";
     let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
 
     // all 5 files * 27 rows
@@ -358,7 +370,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
 fn test_ndjson_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
-    let glob = "../../examples/datasets/*.ndjson";
+    let glob = "../../examples/datasets/foods*.ndjson";
     let df = LazyJsonLineReader::new(glob).finish()?.collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;

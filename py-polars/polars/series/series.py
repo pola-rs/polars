@@ -1394,15 +1394,16 @@ class Series:
             msg = f'cannot use "{key!r}" for indexing'
             raise TypeError(msg)
 
-    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+    def __array__(self, dtype: Any | None = None) -> np.ndarray[Any, Any]:
         """
         Numpy __array__ interface protocol.
 
         Ensures that `np.asarray(pl.Series(..))` works as expected, see
         https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
         """
-        if not dtype and self.dtype == String and not self.null_count():
+        if dtype is None and self.null_count() == 0 and self.dtype == String:
             dtype = np.dtype("U")
+
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
@@ -4337,21 +4338,25 @@ class Series:
         <class 'numpy.ndarray'>
         """
 
-        def convert_to_date(arr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
-            if self.dtype == Date:
-                tp = "datetime64[D]"
-            elif self.dtype == Duration:
-                tp = f"timedelta64[{self.dtype.time_unit}]"  # type: ignore[attr-defined]
-            else:
-                tp = f"datetime64[{self.dtype.time_unit}]"  # type: ignore[attr-defined]
-            return arr.astype(tp)
-
         def raise_no_zero_copy() -> None:
             if zero_copy_only:
                 msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 
-        if self.dtype == Array:
+        def temporal_dtype_to_numpy(dtype: PolarsDataType) -> Any:
+            if dtype == Date:
+                return np.dtype("datetime64[D]")
+            elif dtype == Duration:
+                return np.dtype(f"timedelta64[{dtype.time_unit}]")  # type: ignore[union-attr]
+            elif dtype == Datetime:
+                return np.dtype(f"datetime64[{dtype.time_unit}]")  # type: ignore[union-attr]
+            else:
+                msg = f"invalid temporal type: {dtype}"
+                raise TypeError(msg)
+
+        dtype = self.dtype
+
+        if dtype == Array:
             np_array = self.explode().to_numpy(
                 zero_copy_only=zero_copy_only,
                 writable=writable,
@@ -4363,41 +4368,47 @@ class Series:
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
-            and self.dtype != Object
-            and (self.dtype == Time or not self.dtype.is_temporal())
+            and dtype != Object
+            and (dtype == Time or not dtype.is_temporal())
         ):
             return self.to_arrow().to_numpy(
                 zero_copy_only=zero_copy_only, writable=writable
             )
 
-        elif self.dtype in (Time, Decimal):
+        if dtype in (Time, Decimal):
+            # There are no native NumPy "time" or "decimal" dtypes
             raise_no_zero_copy()
-            # note: there are no native numpy "time" or "decimal" dtypes
-            return np.array(self.to_list(), dtype="object")
-        else:
-            if not self.null_count():
-                if self.dtype.is_temporal():
-                    np_array = convert_to_date(self._view(ignore_nulls=True))
-                elif self.dtype.is_numeric():
-                    np_array = self._view(ignore_nulls=True)
-                elif self.dtype == Boolean:
-                    raise_no_zero_copy()
-                    np_array = self.cast(UInt8)._view(ignore_nulls=True).astype(bool)
-                else:
-                    raise_no_zero_copy()
-                    np_array = self._s.to_numpy()
+            return np.array(self.to_list(), dtype="object", copy=False)
 
-            elif self.dtype.is_temporal():
-                np_array = convert_to_date(self.to_physical()._s.to_numpy())
+        if self.null_count() == 0:
+            if dtype.is_numeric():
+                np_array = self._view(ignore_nulls=True)
+            elif dtype == Boolean:
+                raise_no_zero_copy()
+                np_array = self.cast(UInt8)._view(ignore_nulls=True).view(bool)
+            elif dtype in (Datetime, Duration):
+                np_dtype = temporal_dtype_to_numpy(dtype)
+                np_array = self._view(ignore_nulls=True).view(np_dtype)
+            elif dtype == Date:
+                raise_no_zero_copy()
+                np_dtype = temporal_dtype_to_numpy(dtype)
+                np_array = self.to_physical()._view(ignore_nulls=True).astype(np_dtype)
             else:
                 raise_no_zero_copy()
                 np_array = self._s.to_numpy()
 
-            if writable and not np_array.flags.writeable:
-                raise_no_zero_copy()
-                return np_array.copy()
-            else:
-                return np_array
+        else:
+            raise_no_zero_copy()
+            np_array = self._s.to_numpy()
+            if dtype.is_temporal():
+                np_dtype = temporal_dtype_to_numpy(dtype)
+                np_array = np_array.view(np_dtype)
+
+        if writable and not np_array.flags.writeable:
+            raise_no_zero_copy()
+            np_array = np_array.copy()
+
+        return np_array
 
     def _view(self, *, ignore_nulls: bool = False) -> SeriesView:
         """

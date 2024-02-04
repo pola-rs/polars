@@ -1,6 +1,9 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use super::*;
+use crate::series::IsSorted;
+use crate::utils::align_chunks_binary;
 
 fn slots_to_mut(slots: &Utf8ViewArray) -> MutablePlString {
     slots.clone().make_mut()
@@ -210,4 +213,43 @@ pub fn make_categoricals_compatible(
     };
 
     Ok((new_ca_left, new_ca_right))
+}
+
+pub fn make_list_categoricals_compatible(
+    mut list_ca_left: ListChunked,
+    list_ca_right: ListChunked,
+) -> PolarsResult<(ListChunked, ListChunked)> {
+    // Make categoricals compatible
+
+    let cat_left = list_ca_left.get_inner();
+    let cat_right = list_ca_right.get_inner();
+    let (cat_left, cat_right) =
+        make_categoricals_compatible(cat_left.categorical()?, cat_right.categorical()?)?;
+
+    // we only appended categories to the rev_map at the end, so only change the inner dtype
+    list_ca_left.set_inner_dtype(cat_left.dtype().clone());
+
+    // We changed the physicals and the rev_map, offsets and validity buffers are still good
+    let (list_ca_right, cat_physical): (Cow<ListChunked>, Cow<UInt32Chunked>) =
+        align_chunks_binary(&list_ca_right, cat_right.physical());
+    let mut list_ca_right = list_ca_right.into_owned();
+    // SAFETY
+    // Chunks are aligned, length / dtype remains correct
+    unsafe {
+        list_ca_right
+            .downcast_iter_mut()
+            .zip(cat_physical.chunks())
+            .for_each(|(arr, new_phys)| {
+                *arr = ListArray::new(
+                    arr.data_type().clone(),
+                    arr.offsets().clone(),
+                    new_phys.clone(),
+                    arr.validity().cloned(),
+                )
+            });
+    }
+    // reset the sorted flag and add extra categories back in
+    list_ca_right.set_sorted_flag(IsSorted::Not);
+    list_ca_right.set_inner_dtype(cat_right.dtype().clone());
+    Ok((list_ca_left, list_ca_right))
 }
