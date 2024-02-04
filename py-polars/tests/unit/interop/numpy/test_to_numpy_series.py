@@ -76,6 +76,14 @@ def test_to_numpy_enum() -> None:
     assert result.tolist() == s.to_list()
 
 
+def test_to_numpy_null() -> None:
+    s = pl.Series([None, None], dtype=pl.Null)
+    result = s.to_numpy(use_pyarrow=False)
+    expected = np.array([np.nan, np.nan], dtype=np.float32)
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float32
+
+
 @pytest.mark.parametrize("writable", [False, True])
 @pytest.mark.parametrize("pyarrow_available", [False, True])
 def test_to_numpy2(
