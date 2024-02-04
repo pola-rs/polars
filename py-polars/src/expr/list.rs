@@ -181,7 +181,16 @@ impl PyExpr {
         self.inner
             .clone()
             .list()
-            .take(index.inner, null_on_oob)
+            .gather(index.inner, null_on_oob)
+            .into()
+    }
+
+    #[cfg(feature = "list_gather")]
+    fn list_gather_every(&self, n: PyExpr, offset: PyExpr) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .gather_every(n.inner, offset.inner)
             .into()
     }
 

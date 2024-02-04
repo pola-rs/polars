@@ -228,6 +228,54 @@ impl ListChunked {
         out
     }
 
+    #[must_use]
+    pub fn binary_zip_and_apply_amortized<'a, T, U, F>(
+        &'a self,
+        ca1: &'a ChunkedArray<T>,
+        ca2: &'a ChunkedArray<U>,
+        mut f: F,
+    ) -> Self
+    where
+        T: PolarsDataType,
+        U: PolarsDataType,
+        F: FnMut(
+            Option<UnstableSeries<'a>>,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+        ) -> Option<Series>,
+    {
+        if self.is_empty() {
+            return self.clone();
+        }
+        let mut fast_explode = self.null_count() == 0;
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut out: ListChunked = unsafe {
+            self.amortized_iter()
+                .zip(ca1.iter())
+                .zip(ca2.iter())
+                .map(|((opt_s, opt_u), opt_v)| {
+                    let out = f(opt_s, opt_u, opt_v);
+                    match out {
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
+                            Some(out)
+                        },
+                        None => {
+                            fast_explode = false;
+                            out
+                        },
+                    }
+                })
+                .collect_trusted()
+        };
+
+        out.rename(self.name());
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        out
+    }
+
     pub fn try_zip_and_apply_amortized<'a, T, I, F>(
         &'a self,
         ca: &'a ChunkedArray<T>,

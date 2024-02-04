@@ -352,6 +352,69 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     #[cfg(feature = "list_gather")]
+    fn lst_gather_every(&self, n: &IdxCa, offset: &IdxCa) -> PolarsResult<Series> {
+        let list_ca = self.as_list();
+        let out = match (n.len(), offset.len()) {
+            (1, 1) => match (n.get(0), offset.get(0)) {
+                (Some(n), Some(offset)) => list_ca
+                    .apply_amortized(|s| s.as_ref().gather_every(n as usize, offset as usize)),
+                _ => ListChunked::full_null_with_dtype(
+                    list_ca.name(),
+                    list_ca.len(),
+                    &list_ca.inner_dtype(),
+                ),
+            },
+            (1, len_offset) if len_offset == list_ca.len() => {
+                if let Some(n) = n.get(0) {
+                    list_ca.zip_and_apply_amortized(offset, |opt_s, opt_offset| {
+                        match (opt_s, opt_offset) {
+                            (Some(s), Some(offset)) => {
+                                Some(s.as_ref().gather_every(n as usize, offset as usize))
+                            },
+                            _ => None,
+                        }
+                    })
+                } else {
+                    ListChunked::full_null_with_dtype(
+                        list_ca.name(),
+                        list_ca.len(),
+                        &list_ca.inner_dtype(),
+                    )
+                }
+            },
+            (len_n, 1) if len_n == list_ca.len() => {
+                if let Some(offset) = offset.get(0) {
+                    list_ca.zip_and_apply_amortized(n, |opt_s, opt_n| match (opt_s, opt_n) {
+                        (Some(s), Some(n)) => {
+                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                        },
+                        _ => None,
+                    })
+                } else {
+                    ListChunked::full_null_with_dtype(
+                        list_ca.name(),
+                        list_ca.len(),
+                        &list_ca.inner_dtype(),
+                    )
+                }
+            },
+            (len_n, len_offset) if len_n == len_offset && len_n == list_ca.len() => list_ca
+                .binary_zip_and_apply_amortized(n, offset, |opt_s, opt_n, opt_offset| {
+                    match (opt_s, opt_n, opt_offset) {
+                        (Some(s), Some(n), Some(offset)) => {
+                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                        },
+                        _ => None,
+                    }
+                }),
+            _ => {
+                polars_bail!(ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of list.")
+            },
+        };
+        Ok(out.into_series())
+    }
+
+    #[cfg(feature = "list_gather")]
     fn lst_gather(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
         let list_ca = self.as_list();
 
