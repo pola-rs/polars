@@ -38,6 +38,33 @@ impl PartialOrd for CompareRow<'_> {
 }
 
 impl DataFrame {
+    /**
+    get a DataFrame with the top k rows.
+
+    # Example
+    ```
+    # use polars_core::prelude::*;
+
+    let df = df!(
+        "foo" => &[1,2,3],
+        "bar" => &["c","b","a"]
+    )?;
+
+    let df_top1 = df.top_k(1, true, ["foo"])?;
+    assert_eq!(df_top1, df!(
+        "foo" => &[3],
+        "bar" => &["a"]
+    )?);
+
+    let df_top2 = df.top_k(2, false, ["bar"])?;
+    assert_eq!(df_top2, df!(
+        "foo" => &[3, 2],
+        "bar" => &["a", "b"]
+    )?);
+
+    # Ok::<(), PolarsError>(())
+    ```
+    **/
     pub fn top_k(
         &self,
         k: usize,
