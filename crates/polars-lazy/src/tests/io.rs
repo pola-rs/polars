@@ -1,4 +1,6 @@
 use polars_io::RowIndex;
+#[cfg(feature = "is_between")]
+use polars_ops::prelude::ClosedInterval;
 
 use super::*;
 
@@ -62,6 +64,38 @@ fn test_parquet_statistics_no_skip() {
         .unwrap();
     assert_eq!(out.shape(), (27, 4));
 
+    // statistics and `is_between`
+    // normal case
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(40, 300, ClosedInterval::Both))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (19, 4));
+    // normal case
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(10, 50, ClosedInterval::Both))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (11, 4));
+    // edge case: 20 = min(calories) but the right end is closed
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 20, ClosedInterval::Right))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (1, 4));
+    // edge case: 200 = max(calories) but the left end is closed
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 250, ClosedInterval::Left))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (3, 4));
+    // edge case: left == right but both ends are closed
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 200, ClosedInterval::Both))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (3, 4));
+
     // Or operation
     let out = scan_foods_parquet(par)
         .filter(
@@ -100,6 +134,61 @@ fn test_parquet_statistics() -> PolarsResult<()> {
     // issue: 13427
     let out = scan_foods_parquet(par)
         .filter(col("calories").is_in(lit(Series::new("", [0, 500]))))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // statistics and `is_between`
+    // 15 < min(calories)=20
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 15, ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 300 > max(calories)=200
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(300, 500, ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 20 == min(calories) but right end is open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 20, ClosedInterval::Left))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 20 == min(calories) but both  ends are open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 20, ClosedInterval::None))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 200 == max(calories) but left end is open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 250, ClosedInterval::Right))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 200 == max(calories) but both ends are open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 250, ClosedInterval::None))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // between(100, 40) is impossible
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(100, 40, ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // with strings
+    let out = scan_foods_parquet(par)
+        .filter(col("category").is_between(lit("yams"), lit("zest"), ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // with strings
+    let out = scan_foods_parquet(par)
+        .filter(col("category").is_between(lit("dairy"), lit("eggs"), ClosedInterval::Both))
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
