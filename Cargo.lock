@@ -3065,6 +3065,7 @@ dependencies = [
  "libc",
  "mimalloc",
  "ndarray",
+ "num-traits",
  "numpy",
  "once_cell",
  "polars",

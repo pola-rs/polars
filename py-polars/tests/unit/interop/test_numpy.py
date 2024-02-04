@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 import polars as pl
@@ -63,3 +64,26 @@ def test_series_to_numpy_bool_with_nulls() -> None:
     result = s.to_numpy(use_pyarrow=False)
     assert s.to_list() == result.tolist()
     assert result.dtype == np.object_
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (pl.Int8, np.float32),
+        (pl.Int16, np.float32),
+        (pl.Int32, np.float64),
+        (pl.Int64, np.float64),
+        (pl.UInt8, np.float32),
+        (pl.UInt16, np.float32),
+        (pl.UInt32, np.float64),
+        (pl.UInt64, np.float64),
+        (pl.Float32, np.float32),
+        (pl.Float64, np.float64),
+    ],
+)
+def test_series_to_numpy_numeric_with_nulls(
+    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+) -> None:
+    s = pl.Series([1, 2, None], dtype=dtype, strict=False)
+    result = s.to_numpy(use_pyarrow=False)
+    assert result.dtype == expected_dtype
