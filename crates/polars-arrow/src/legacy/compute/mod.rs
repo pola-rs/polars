@@ -3,7 +3,6 @@ use crate::compute::utils::combine_validities_and;
 use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
-pub mod arithmetics;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
 // pub mod take;

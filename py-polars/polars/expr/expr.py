@@ -31,7 +31,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsInefficientMapWarning
+from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -41,6 +41,7 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
+from polars.meta import thread_pool_size
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -55,9 +56,9 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
-from polars.utils.meta import threadpool_size
 from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
+    find_stacklevel,
     no_default,
     sphinx_accessor,
     warn_null_comparison,
@@ -286,6 +287,7 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Self:
         """Numpy universal functions."""
+        is_custom_ufunc = ufunc.__class__ != np.ufunc
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         if num_expr > 1:
             if num_expr < len(inputs):
@@ -302,7 +304,20 @@ class Expr:
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
             return ufunc(*args, **kwargs)
 
-        return self.map_batches(function)
+        if is_custom_ufunc is True:
+            msg = (
+                "Native numpy ufuncs are dispatched using `map_batches(ufunc, is_elementwise=True)` which "
+                "is safe for native Numpy and Scipy ufuncs but custom ufuncs in a group_by "
+                "context won't be properly grouped. Custom ufuncs are dispatched with is_elementwise=False. "
+                f"If {ufunc.__name__} needs elementwise then please use map_batches directly."
+            )
+            warnings.warn(
+                msg,
+                CustomUFuncWarning,
+                stacklevel=find_stacklevel(),
+            )
+            return self.map_batches(function, is_elementwise=False)
+        return self.map_batches(function, is_elementwise=True)
 
     @classmethod
     def from_json(cls, value: str) -> Self:
@@ -4359,7 +4374,7 @@ class Expr:
                 if x.len() == 0:
                     return get_lazy_promise(df).collect().to_series()
 
-                n_threads = threadpool_size()
+                n_threads = thread_pool_size()
                 chunk_size = x.len() // n_threads
                 remainder = x.len() % n_threads
                 if chunk_size == 0:

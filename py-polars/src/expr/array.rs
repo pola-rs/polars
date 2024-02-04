@@ -1,5 +1,8 @@
 use polars::prelude::*;
+use polars_ops::prelude::array::ArrToStructNameGenerator;
+use pyo3::prelude::*;
 use pyo3::pymethods;
+use smartstring::alias::String as SmartString;
 
 use crate::expr::PyExpr;
 
@@ -93,5 +96,20 @@ impl PyExpr {
     #[cfg(feature = "array_count")]
     fn arr_count_matches(&self, expr: PyExpr) -> Self {
         self.inner.clone().arr().count_matches(expr.inner).into()
+    }
+
+    #[pyo3(signature = (name_gen))]
+    fn arr_to_struct(&self, name_gen: Option<PyObject>) -> PyResult<Self> {
+        let name_gen = name_gen.map(|lambda| {
+            Arc::new(move |idx: usize| {
+                Python::with_gil(|py| {
+                    let out = lambda.call1(py, (idx,)).unwrap();
+                    let out: SmartString = out.extract::<&str>(py).unwrap().into();
+                    out
+                })
+            }) as ArrToStructNameGenerator
+        });
+
+        Ok(self.inner.clone().arr().to_struct(name_gen).into())
     }
 }

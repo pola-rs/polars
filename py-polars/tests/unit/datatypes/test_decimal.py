@@ -203,16 +203,16 @@ def test_decimal_arithmetic() -> None:
         out4=pl.col("a") - pl.col("b"),
     )
     assert out.dtypes == [
+        pl.Decimal(precision=None, scale=4),
         pl.Decimal(precision=None, scale=2),
-        pl.Decimal(precision=None, scale=2),
-        pl.Decimal(precision=None, scale=2),
+        pl.Decimal(precision=None, scale=6),
         pl.Decimal(precision=None, scale=2),
     ]
 
     assert out.to_dict(as_series=False) == {
-        "out1": [D("2.01"), D("102.91"), D("3921.39")],
+        "out1": [D("2.0100"), D("102.9190"), D("3921.3921")],
         "out2": [D("20.20"), D("20.29"), D("139.22")],
-        "out3": [D("0.00"), D("0.99"), D("2.55")],
+        "out3": [D("0.004975"), D("0.991167"), D("2.550624")],
         "out4": [D("-20.00"), D("-0.09"), D("60.80")],
     }
 
@@ -222,26 +222,27 @@ def test_decimal_series_value_arithmetic() -> None:
 
     out1 = s + 10
     out2 = s + D("10")
-    with pytest.raises(pl.InvalidOperationError):
-        s + D("10.0001")
+    out3 = s + D("10.0001")
     out4 = s * 2 / 3
     out5 = s / D("1.5")
     out6 = s - 5
 
     assert out1.dtype == pl.Decimal(precision=None, scale=2)
     assert out2.dtype == pl.Decimal(precision=None, scale=2)
-    assert out4.dtype == pl.Decimal(precision=None, scale=2)
-    assert out5.dtype == pl.Decimal(precision=None, scale=2)
+    assert out3.dtype == pl.Decimal(precision=None, scale=4)
+    assert out4.dtype == pl.Decimal(precision=None, scale=6)
+    assert out5.dtype == pl.Decimal(precision=None, scale=6)
     assert out6.dtype == pl.Decimal(precision=None, scale=2)
 
     assert out1.to_list() == [D("10.1"), D("20.1"), D("110.01")]
     assert out2.to_list() == [D("10.1"), D("20.1"), D("110.01")]
+    assert out3.to_list() == [D("10.1001"), D("20.1001"), D("110.0101")]
     assert out4.to_list() == [
-        D("0.06"),
-        D("6.73"),
-        D("66.67"),
+        D("0.066666"),
+        D("6.733333"),
+        D("66.673333"),
     ]  # TODO: do we want floor instead of round?
-    assert out5.to_list() == [D("0.06"), D("6.73"), D("66.67")]
+    assert out5.to_list() == [D("0.066666"), D("6.733333"), D("66.673333")]
     assert out6.to_list() == [D("-4.9"), D("5.1"), D("95.01")]
 
 

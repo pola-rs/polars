@@ -197,6 +197,13 @@ from polars.io import (
     scan_pyarrow_dataset,
 )
 from polars.lazyframe import InProcessQuery, LazyFrame
+from polars.meta import (
+    build_info,
+    get_index_type,
+    show_versions,
+    thread_pool_size,
+    threadpool_size,
+)
 from polars.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import (
@@ -206,11 +213,10 @@ from polars.string_cache import (
     using_string_cache,
 )
 from polars.type_aliases import PolarsDataType
-from polars.utils import build_info, get_index_type, show_versions, threadpool_size
+from polars.utils._polars_version import get_polars_version as _get_polars_version
 
 # TODO: remove need for importing wrap utils at top level
 from polars.utils._wrap import wrap_df, wrap_s  # noqa: F401
-from polars.utils.polars_version import get_polars_version as _get_polars_version
 
 __version__: str = _get_polars_version()
 del _get_polars_version
@@ -415,6 +421,7 @@ __all__ = [
     "build_info",
     "get_index_type",
     "show_versions",
+    "thread_pool_size",
     "threadpool_size",
     # selectors
     "selectors",

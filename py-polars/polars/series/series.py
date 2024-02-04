@@ -18,7 +18,6 @@ from typing import (
     NoReturn,
     Sequence,
     Union,
-    cast,
     overload,
 )
 
@@ -43,6 +42,7 @@ from polars.datatypes import (
     Object,
     String,
     Time,
+    UInt8,
     UInt32,
     UInt64,
     Unknown,
@@ -66,6 +66,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ModuleUpgradeRequired, ShapeError
+from polars.meta import get_index_type
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -99,7 +100,6 @@ from polars.utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars.utils.meta import get_index_type
 from polars.utils.unstable import unstable
 from polars.utils.various import (
     _is_generator,
@@ -1004,19 +1004,7 @@ class Series:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
 
         if isinstance(other, (PyDecimal, int)) and self.dtype.is_decimal():
-            # Infer the number's scale.  Then use the max of the inferred scale and the
-            # Series' scale.  At present, this will cause arithmetic to fail with a
-            # PyDecimal that has a scale greater than the Series' scale, but will ensure
-            # that scale is not lost.
             _s = sequence_to_pyseries(self.name, [other], dtype=Decimal)
-            _s = _s.cast(
-                Decimal(
-                    scale=max(
-                        cast(Decimal, _s.dtype()).scale, cast(Decimal, self.dtype).scale
-                    )
-                ),
-                strict=True,
-            )
 
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
@@ -4377,6 +4365,9 @@ class Series:
                     np_array = convert_to_date(self._view(ignore_nulls=True))
                 elif self.dtype.is_numeric():
                     np_array = self._view(ignore_nulls=True)
+                elif self.dtype == Boolean:
+                    raise_no_zero_copy()
+                    np_array = self.cast(UInt8)._view(ignore_nulls=True).astype(bool)
                 else:
                     raise_no_zero_copy()
                     np_array = self._s.to_numpy()

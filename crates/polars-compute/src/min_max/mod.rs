@@ -8,8 +8,18 @@ pub trait MinMaxKernel {
 
     fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>>;
     fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>>;
+    fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
+        Some((self.min_ignore_nan_kernel()?, self.max_ignore_nan_kernel()?))
+    }
+
     fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>>;
     fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>>;
+    fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
+        Some((
+            self.min_propagate_nan_kernel()?,
+            self.max_propagate_nan_kernel()?,
+        ))
+    }
 }
 
 // Trait to enable the scalar blanket implementation.
