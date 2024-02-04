@@ -85,6 +85,26 @@ pub(super) fn optimize_functions(
                 AExpr::Literal(LiteralValue::Boolean(b)) => {
                     Some(AExpr::Literal(LiteralValue::Boolean(!b)))
                 },
+                // not(x.is_null) => x.is_not_null
+                AExpr::Function {
+                    input,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    options,
+                } => Some(AExpr::Function {
+                    input: input.clone(),
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    options: *options,
+                }),
+                // not(x.is_not_null) => x.is_null
+                AExpr::Function {
+                    input,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    options,
+                } => Some(AExpr::Function {
+                    input: input.clone(),
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    options: *options,
+                }),
                 _ => None,
             }
         },

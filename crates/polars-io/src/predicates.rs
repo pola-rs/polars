@@ -168,15 +168,26 @@ impl ColumnStats {
 pub struct BatchStats {
     schema: SchemaRef,
     stats: Vec<ColumnStats>,
+    // This might not be available,
+    // as when prunnign hive partitions.
+    num_rows: Option<usize>,
 }
 
 impl BatchStats {
-    pub fn new(schema: SchemaRef, stats: Vec<ColumnStats>) -> Self {
-        Self { schema, stats }
+    pub fn new(schema: SchemaRef, stats: Vec<ColumnStats>, num_rows: Option<usize>) -> Self {
+        Self {
+            schema,
+            stats,
+            num_rows,
+        }
     }
 
     pub fn get_stats(&self, column: &str) -> polars_core::error::PolarsResult<&ColumnStats> {
         self.schema.try_index_of(column).map(|i| &self.stats[i])
+    }
+
+    pub fn num_rows(&self) -> Option<usize> {
+        self.num_rows
     }
 
     pub fn schema(&self) -> &SchemaRef {
