@@ -65,3 +65,14 @@ def test_numpy_to_lit() -> None:
     assert out == [1, 2, 3]
     out = pl.select(pl.lit(np.float32(0))).to_series().to_list()
     assert out == [0.0]
+
+
+def test_to_numpy_zero_copy_path() -> None:
+    rows = 10
+    cols = 5
+    x = np.ones((rows, cols), order="F")
+    x[:, 1] = 2.0
+    df = pl.DataFrame(x)
+    x = df.to_numpy()
+    assert x.flags["F_CONTIGUOUS"]
+    assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"

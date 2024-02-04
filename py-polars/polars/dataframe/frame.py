@@ -2161,6 +2161,11 @@ class DataFrame:
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
         else:
+            if order == "fortran":
+                array = self._df.to_numpy_view()
+                if array is not None:
+                    return array
+
             out = self._df.to_numpy(order)
             if out is None:
                 return np.vstack(
