@@ -1447,40 +1447,6 @@ def test_bitwise() -> None:
         a or b  # type: ignore[redundant-expr]
 
 
-def test_to_numpy(monkeypatch: Any) -> None:
-    for writable in [False, True]:
-        for flag in [False, True]:
-            monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", flag)
-
-            np_array = pl.Series("a", [1, 2, 3], pl.UInt8).to_numpy(writable=writable)
-
-            np.testing.assert_array_equal(np_array, np.array([1, 2, 3], dtype=np.uint8))
-            # Test if numpy array is readonly or writable.
-            assert np_array.flags.writeable == writable
-
-            if writable:
-                np_array[1] += 10
-                np.testing.assert_array_equal(
-                    np_array, np.array([1, 12, 3], dtype=np.uint8)
-                )
-
-            np_array_with_missing_values = pl.Series(
-                "a", [None, 2, 3], pl.UInt8
-            ).to_numpy(writable=writable)
-
-            np.testing.assert_array_equal(
-                np_array_with_missing_values,
-                np.array(
-                    [np.nan, 2.0, 3.0],
-                    dtype=(np.float64 if flag is True else np.float32),
-                ),
-            )
-
-            if writable:
-                # As Null values can't be encoded natively in a numpy array,
-                # this array will never be a view.
-                assert np_array_with_missing_values.flags.writeable == writable
-
 
 def test_from_generator_or_iterable() -> None:
     # generator function

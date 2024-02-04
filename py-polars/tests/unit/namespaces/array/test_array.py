@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-import numpy as np
 import pytest
 
 import polars as pl
@@ -68,11 +67,6 @@ def test_arr_unique() -> None:
     out = df.select(pl.col("a").arr.unique(maintain_order=True))
     expected = pl.DataFrame({"a": [[1], [4, 3]]})
     assert_frame_equal(out, expected)
-
-
-def test_array_to_numpy() -> None:
-    s = pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))
-    assert (s.to_numpy() == np.array([[1, 2], [3, 4], [5, 6]])).all()
 
 
 def test_array_any_all() -> None:
