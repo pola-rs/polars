@@ -96,6 +96,21 @@ def test_comparisons() -> None:
     assert_frame_equal(
         df == other, pl.DataFrame({"a": [True, True], "b": [False, False]})
     )
+    assert_frame_equal(
+        df != other, pl.DataFrame({"a": [False, False], "b": [True, True]})
+    )
+    assert_frame_equal(
+        df > other, pl.DataFrame({"a": [False, False], "b": [True, True]})
+    )
+    assert_frame_equal(
+        df < other, pl.DataFrame({"a": [False, False], "b": [False, False]})
+    )
+    assert_frame_equal(
+        df >= other, pl.DataFrame({"a": [True, True], "b": [True, True]})
+    )
+    assert_frame_equal(
+        df <= other, pl.DataFrame({"a": [True, True], "b": [False, False]})
+    )
 
     # DataFrame columns mismatch
     with pytest.raises(ValueError):
@@ -380,6 +395,9 @@ def test_to_series() -> None:
 
     assert_series_equal(df.to_series(2), df["z"])
     assert_series_equal(df.to_series(-1), df["z"])
+
+    with pytest.raises(TypeError, match="should be an int"):
+        df.to_series("x")  # type: ignore[arg-type]
 
 
 def test_gather_every() -> None:
@@ -2226,6 +2244,12 @@ def test_getitem() -> None:
     with pytest.raises(TypeError):
         _ = df[np.array([1.0])]
 
+    with pytest.raises(
+        TypeError,
+        match="multi-dimensional NumPy arrays not supported",
+    ):
+        df[np.array([[0], [1]])]
+
     # sequences (lists or tuples; tuple only if length != 2)
     # if strings or list of expressions, assumed to be column names
     # if bools, assumed to be a row mask
@@ -2276,6 +2300,13 @@ def test_getitem() -> None:
     with pytest.raises(TypeError):
         df[pl.Series([True, False, True]), "b"]
 
+    # wrong length boolean mask for column selection
+    with pytest.raises(
+        ValueError,
+        match=f"expected {df.width} values when selecting columns by boolean mask",
+    ):
+        df[:, [True, False, True]]
+
     # 5343
     df = pl.DataFrame(
         {
@@ -2324,6 +2355,7 @@ def test_product() -> None:
             "flt": [-1.0, 12.0, 9.0],
             "bool_0": [True, False, True],
             "bool_1": [True, True, True],
+            "str": ["a", "b", "c"],
         },
         schema_overrides={
             "int": pl.UInt16,
@@ -2331,7 +2363,9 @@ def test_product() -> None:
         },
     )
     out = df.product()
-    expected = pl.DataFrame({"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1]})
+    expected = pl.DataFrame(
+        {"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1], "str": [None]}
+    )
     assert_frame_not_equal(out, expected, check_dtype=True)
     assert_frame_equal(out, expected, check_dtype=False)
 

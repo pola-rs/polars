@@ -1883,3 +1883,32 @@ def test_partial_read_compressed_file(tmp_path: Path) -> None:
         file_path, skip_rows=40, has_header=False, skip_rows_after_header=20, n_rows=30
     )
     assert df.shape == (30, 3)
+
+
+def test_read_csv_invalid_dtypes() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,foo
+        2,bar
+        3,baz
+        """
+    )
+    f = io.StringIO(csv)
+    with pytest.raises(TypeError, match="`dtypes` should be of type list or dict"):
+        pl.read_csv(f, dtypes={pl.Int64, pl.String})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("columns", [["b"], "b"])
+def test_read_csv_single_column(columns: list[str] | str) -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b,c
+        1,2,3
+        4,5,6
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, columns=columns)
+    expected = pl.DataFrame({"b": [2, 5]})
+    assert_frame_equal(df, expected)
