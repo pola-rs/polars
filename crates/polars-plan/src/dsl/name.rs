@@ -89,6 +89,22 @@ impl ExprNameNameSpace {
             }),
         )
     }
+
+    #[cfg(feature = "dtype-struct")]
+    pub fn prefix_fields(self, prefix: &str) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StructExpr(StructFunction::PrefixFields(
+                Arc::from(prefix),
+            )))
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    pub fn suffix_fields(self, suffix: &str) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StructExpr(StructFunction::SuffixFields(
+                Arc::from(suffix),
+            )))
+    }
 }
 
 #[cfg(feature = "dtype-struct")]
