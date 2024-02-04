@@ -4277,7 +4277,7 @@ class Series:
 
     def to_numpy(
         self,
-        *args: Any,
+        *,
         zero_copy_only: bool = False,
         writable: bool = False,
         use_pyarrow: bool = True,
@@ -4295,8 +4295,6 @@ class Series:
 
         Parameters
         ----------
-        *args
-            args will be sent to pyarrow.Array.to_numpy.
         zero_copy_only
             If True, an exception will be raised if the conversion to a numpy
             array would require copying the underlying data (e.g. in presence
@@ -4352,7 +4350,7 @@ class Series:
             and (self.dtype == Time or not self.dtype.is_temporal())
         ):
             return self.to_arrow().to_numpy(
-                *args, zero_copy_only=zero_copy_only, writable=writable
+                zero_copy_only=zero_copy_only, writable=writable
             )
 
         elif self.dtype in (Time, Decimal):
