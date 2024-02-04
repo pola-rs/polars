@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_df
@@ -11,6 +11,8 @@ from polars.utils.various import sphinx_accessor
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, Series
     from polars.polars import PySeries
+    from polars.type_aliases import IntoExpr
+
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -105,3 +107,8 @@ class StructNameSpace:
             "{"a":[9,1,3],"…
         ]
         """
+
+    def select_fields(
+        self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+    ) -> Series:
+        """TODO docstring."""

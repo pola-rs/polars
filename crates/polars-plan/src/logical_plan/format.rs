@@ -382,7 +382,7 @@ impl Debug for Expr {
                 input,
                 struct_exprs,
             } => {
-                write!(f, "{:?}.OVERTODO.{:?}", input, struct_exprs)
+                write!(f, "{:?}.select_fields({:?})", input, struct_exprs)
             },
             AnonymousFunction { input, options, .. } => {
                 if input.len() >= 2 {
