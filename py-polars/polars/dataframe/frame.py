@@ -41,6 +41,7 @@ from polars.datatypes import (
     Float64,
     Object,
     String,
+    dtype_to_ctype,
     py_type_to_dtype,
 )
 from polars.dependencies import (
@@ -2161,6 +2162,15 @@ class DataFrame:
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
         else:
+            ptr = self._df.to_numpy_view()
+            if ptr is not None:
+                from polars.series._numpy import SeriesView, _ptr_to_numpy
+
+                ptr_type = dtype_to_ctype(self[:, 0].dtype)
+                array = _ptr_to_numpy(ptr, (self.height, self.width), ptr_type)
+                array.setflags(write=False)
+                return np.array(SeriesView(array, self), copy=False)
+
             out = self._df.to_numpy(order)
             if out is None:
                 return np.vstack(
