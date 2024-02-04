@@ -37,7 +37,7 @@ impl PhysicalExpr for InnerStructExpr {
             .lazy()
             .select(&self.struct_exprs)
             .collect()?
-            .into_struct(&name)
+            .into_struct(name)
             .into_series())
     }
 
