@@ -87,3 +87,14 @@ def test_series_to_numpy_numeric_with_nulls(
     s = pl.Series([1, 2, None], dtype=dtype, strict=False)
     result = s.to_numpy(use_pyarrow=False)
     assert result.dtype == expected_dtype
+
+
+def test_to_numpy_zero_copy_path() -> None:
+    rows = 10
+    cols = 5
+    x = np.ones((rows, cols), order="F")
+    x[:, 1] = 2.0
+    df = pl.DataFrame(x)
+    x = df.to_numpy()
+    assert x.flags["F_CONTIGUOUS"]
+    assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"

@@ -81,6 +81,7 @@ impl PyDataFrame {
 
                     // This keeps the memory alive
                     let owner_ptr = owner.as_ptr();
+                    std::mem::forget(owner);
                     PY_ARRAY_API.PyArray_SetBaseObject(py, array as *mut PyArrayObject, owner_ptr);
 
                     let any: &PyAny = py.from_owned_ptr(array);
