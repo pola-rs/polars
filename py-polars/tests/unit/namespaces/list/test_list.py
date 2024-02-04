@@ -760,3 +760,31 @@ def test_list_eval_gater_every_13410() -> None:
     out = df.with_columns(result=pl.col("a").list.eval(pl.element().gather_every(2)))
     expected = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]], "result": [[1, 3], [4, 6]]})
     assert_frame_equal(out, expected)
+
+
+def test_list_gather_every() -> None:
+    df = pl.DataFrame(
+        {
+            "lst": [[1, 2, 3], [], [4, 5], None, [6, 7, 8], [9, 10, 11, 12]],
+            "n": [2, 2, 1, 3, None, 2],
+            "offset": [None, 1, 0, 1, 2, 2],
+        }
+    )
+
+    out = df.select(
+        n_expr=pl.col("lst").list.gather_every(pl.col("n"), 0),
+        offset_expr=pl.col("lst").list.gather_every(2, pl.col("offset")),
+        all_expr=pl.col("lst").list.gather_every(pl.col("n"), pl.col("offset")),
+        all_lit=pl.col("lst").list.gather_every(2, 0),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "n_expr": [[1, 3], [], [4, 5], None, None, [9, 11]],
+            "offset_expr": [None, [], [4], None, [8], [11]],
+            "all_expr": [None, [], [4, 5], None, None, [11]],
+            "all_lit": [[1, 3], [], [4], None, [6, 8], [9, 11]],
+        }
+    )
+
+    assert_frame_equal(out, expected)
