@@ -4284,7 +4284,7 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: Literal[False],
+        return_as_string: Literal[False] = False,
     ) -> None:
         ...
 
