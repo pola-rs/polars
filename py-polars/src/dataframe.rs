@@ -797,6 +797,10 @@ impl PyDataFrame {
     }
 
     pub fn to_numpy_view(&self) -> Option<Py_uintptr_t> {
+        if cfg!(windows) {
+            return None;
+        }
+
         if self.df.is_empty() {
             return None;
         }
