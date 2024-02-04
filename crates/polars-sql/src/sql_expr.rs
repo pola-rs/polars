@@ -813,7 +813,10 @@ pub(super) fn process_join(
     join_tbl_name: &str,
     join_type: JoinType,
 ) -> PolarsResult<LazyFrame> {
-    let left_names = left_names.iter().map(|name| name.as_ref()).collect::<Vec<_>>();
+    let left_names = left_names
+        .iter()
+        .map(|name| name.as_ref())
+        .collect::<Vec<_>>();
     let (left_on, right_on) = process_join_constraint(constraint, &left_names, join_tbl_name)?;
 
     Ok(left_tbl
