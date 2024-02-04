@@ -45,6 +45,21 @@ def test_all_any_horizontally() -> None:
     assert "horizontal" not in dfltr.explain().lower()
 
 
+def test_all_any_single_input() -> None:
+    df = pl.DataFrame({"a": [0, 1, None]})
+    out = df.select(
+        all=pl.all_horizontal(pl.col("a")), any=pl.any_horizontal(pl.col("a"))
+    )
+
+    expected = pl.DataFrame(
+        {
+            "all": [False, True, None],
+            "any": [False, True, None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_all_any_accept_expr() -> None:
     lf = pl.LazyFrame(
         {
