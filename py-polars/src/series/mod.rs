@@ -1,6 +1,7 @@
 mod aggregation;
 mod arithmetic;
 mod buffers;
+mod c_interface;
 mod comparison;
 mod construction;
 mod export;
