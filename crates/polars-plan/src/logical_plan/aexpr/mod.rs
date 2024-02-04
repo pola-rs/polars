@@ -178,7 +178,7 @@ pub enum AExpr {
     },
     InnerStructFunction {
         input: Node,
-        function: Node,
+        struct_exprs: Vec<Expr>,
     },
     Window {
         function: Node,
@@ -315,10 +315,8 @@ impl AExpr {
                     .copied()
                     .for_each(|node| container.push(node))
             },
-            InnerStructFunction { input, function } => {
-                // TODO: I DONT KNOW WHAT THIS DOES
+            InnerStructFunction { input, .. } => {
                 container.push(*input);
-                container.push(*function);
             },
             Explode(e) => container.push(*e),
             Window {
@@ -401,10 +399,9 @@ impl AExpr {
                 input.extend(inputs.iter().rev().copied());
                 return self;
             },
-            InnerStructFunction { input, function } => {
+            InnerStructFunction { input, .. } => {
                 // TODO: I DONT KNOW WHAT THIS DOES
                 *input = inputs[0];
-                *function = inputs[1];
                 return self;
             },
             Slice {

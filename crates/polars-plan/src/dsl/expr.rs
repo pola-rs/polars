@@ -114,7 +114,7 @@ pub enum Expr {
     },
     InnerStructFunction {
         input: Box<Expr>,
-        function: Box<Expr>,
+        struct_exprs: Vec<Expr>,
     },
     Explode(Box<Expr>),
     Filter {

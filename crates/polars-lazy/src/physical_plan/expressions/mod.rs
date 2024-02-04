@@ -7,6 +7,7 @@ mod column;
 mod count;
 mod filter;
 mod group_iter;
+mod inner_struct;
 mod literal;
 #[cfg(feature = "dynamic_group_by")]
 mod rolling;
@@ -30,6 +31,7 @@ pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
 pub(crate) use filter::*;
+pub(crate) use inner_struct::*;
 pub(crate) use literal::*;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;

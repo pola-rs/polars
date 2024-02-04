@@ -132,9 +132,12 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             function,
             options,
         },
-        Expr::InnerStructFunction { input, function } => AExpr::InnerStructFunction {
+        Expr::InnerStructFunction {
+            input,
+            struct_exprs,
+        } => AExpr::InnerStructFunction {
             input: to_aexpr(*input, arena),
-            function: to_aexpr(*function, arena),
+            struct_exprs,
         },
         Expr::Window {
             function,
@@ -580,9 +583,12 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             function,
             options,
         },
-        AExpr::InnerStructFunction { input, function } => Expr::InnerStructFunction {
+        AExpr::InnerStructFunction {
+            input,
+            struct_exprs,
+        } => Expr::InnerStructFunction {
             input: Box::new(node_to_expr(input, expr_arena)),
-            function: Box::new(node_to_expr(function, expr_arena)),
+            struct_exprs,
         },
         AExpr::Window {
             function,

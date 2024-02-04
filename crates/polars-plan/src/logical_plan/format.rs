@@ -378,8 +378,11 @@ impl Debug for Expr {
                     write!(f, "{:?}.{function}()", input[0])
                 }
             },
-            InnerStructFunction { input, function } => {
-                write!(f, "{:?}.OVERTODO.{:?}", input, function)
+            InnerStructFunction {
+                input,
+                struct_exprs,
+            } => {
+                write!(f, "{:?}.OVERTODO.{:?}", input, struct_exprs)
             },
             AnonymousFunction { input, options, .. } => {
                 if input.len() >= 2 {

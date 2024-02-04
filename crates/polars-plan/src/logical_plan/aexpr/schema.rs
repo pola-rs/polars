@@ -222,13 +222,16 @@ impl AExpr {
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
-            InnerStructFunction { input, function } => {
+            InnerStructFunction {
+                input,
+                struct_exprs,
+            } => {
                 let input = arena.get(*input).to_field(schema, ctxt, arena)?;
-                let function = arena.get(*function);
 
                 if let Struct(fields) = input.data_type().clone() {
-                    let inner_schema = Schema::from_iter(fields);
-                    function.to_field(&inner_schema, ctxt, arena)
+                    // let inner_schema = Schema::from_iter(fields);
+                    // todo!("Need to apply struct_exprs to inner schema")
+                    Ok(fields.last().unwrap().clone())
                 } else {
                     polars_bail!(ComputeError: "encountered non-struct field")
                 }

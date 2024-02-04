@@ -528,9 +528,17 @@ pub(crate) fn create_physical_expr(
                 schema.cloned(),
             )))
         },
-        InnerStructFunction { .. } => {
+        InnerStructFunction {
+            input,
+            struct_exprs,
+        } => {
             // TODO AHH
-            todo!("TODO AHH")
+            let input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
+            Ok(Arc::new(InnerStructExpr::new(
+                input,
+                struct_exprs,
+                node_to_expr(expression, expr_arena),
+            )))
         },
         Slice {
             input,
