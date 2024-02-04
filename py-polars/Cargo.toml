@@ -22,6 +22,7 @@ either = { workspace = true }
 itoa = { workspace = true }
 libc = "0.2"
 ndarray = { workspace = true }
+num-traits = { workspace = true }
 numpy = { version = "0.20", default-features = false }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
