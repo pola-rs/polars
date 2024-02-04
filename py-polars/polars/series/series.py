@@ -4379,7 +4379,7 @@ class Series:
                 if self.dtype.is_temporal():
                     np_array = convert_to_date(self._view(ignore_nulls=True))
                 elif self.dtype.is_numeric():
-                    np_array = np.array(self._view(ignore_nulls=True), copy=False)
+                    np_array = self._view(ignore_nulls=True)
                 elif self.dtype == Boolean:
                     raise_no_zero_copy()
                     np_array = self.cast(UInt8)._view(ignore_nulls=True).astype(bool)

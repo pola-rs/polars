@@ -797,10 +797,6 @@ impl PyDataFrame {
     }
 
     pub fn to_numpy_view(&self) -> Option<Py_uintptr_t> {
-        if cfg!(windows) {
-            return None;
-        }
-
         if self.df.is_empty() {
             return None;
         }
@@ -866,9 +862,9 @@ impl PyDataFrame {
         #[rustfmt::skip]
         let pyarray = match st {
             DataType::UInt8 => self.df.to_ndarray::<UInt8Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int8 => self.df.to_ndarray::<Int64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::Int8 => self.df.to_ndarray::<Int8Type>(order.0).ok()?.into_pyarray(py).into_py(py),
             DataType::UInt16 => self.df.to_ndarray::<UInt16Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int16 => self.df.to_ndarray::<Int64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::Int16 => self.df.to_ndarray::<Int16Type>(order.0).ok()?.into_pyarray(py).into_py(py),
             DataType::UInt32 => self.df.to_ndarray::<UInt32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
             DataType::UInt64 => self.df.to_ndarray::<UInt64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
             DataType::Int32 => self.df.to_ndarray::<Int32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
