@@ -37,13 +37,10 @@ fn sink_aws() {
 
     // Propagate the credentials and other cloud options.
     let cloud_options = cloud::CloudOptions::default().with_aws([
-        // (Key::AccessKeyId, &cred.access_key.unwrap()),
-        // (Key::SecretAccessKey, &cred.secret_key.unwrap()),
-        // (Key::Region, &"eu-central-1".into()),
-        (Key::AccessKeyId, "test".to_string()),
-        (Key::SecretAccessKey, "test".to_string()),
-        (Key::Endpoint, "http://localhost:4566".to_string()),
-        (Key::Region, "us-east-1".to_string()),
+        (Key::AccessKeyId, &cred.access_key.unwrap()),
+        (Key::SecretAccessKey, &cred.secret_key.unwrap()),
+        (Key::Region, &"eu-central-1".into()),
+        (Key::Endpoint, &"http://localhost:4566".to_string()),
     ]);
     let cloud_options = Some(cloud_options);
 
