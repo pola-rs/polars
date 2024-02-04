@@ -62,7 +62,11 @@ pub(super) fn optimize_functions(
         },
         FunctionExpr::Boolean(BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal) => {
             if input.len() == 1 {
-                Some(expr_arena.get(input[0]).clone())
+                Some(AExpr::Cast {
+                    expr: input[0],
+                    data_type: DataType::Boolean,
+                    strict: false,
+                })
             } else {
                 None
             }
