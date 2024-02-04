@@ -269,7 +269,28 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult
     )
 }
 
-/// Collect all [`LazyFrame`] computations.
+/** Collect all [`LazyFrame`] computations.
+
+# Example
+```
+# use polars_lazy::prelude::*;
+# use polars_core::prelude::*;
+
+let collected = collect_all([
+    df!("a" => &[1,2])?.lazy(),
+    df!("b" => &[3,4])?.lazy()
+])?;
+
+assert_eq!(collected,
+    [
+        df!("a" => &[1,2])?,
+        df!("b" => &[3,4])?
+    ]
+);
+
+# Ok::<(), PolarsError>(())
+```
+**/
 pub fn collect_all<I>(lfs: I) -> PolarsResult<Vec<DataFrame>>
 where
     I: IntoParallelIterator<Item = LazyFrame>,
