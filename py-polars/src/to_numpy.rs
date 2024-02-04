@@ -74,9 +74,9 @@ impl PyDataFrame {
                         dims.ndim_cint(),
                         dims.as_dims_ptr(),
                         std::ptr::null_mut(),
-                        start_ptr as _,              // data
-                        flags::NPY_ARRAY_OUT_FARRAY, // flag
-                        std::ptr::null_mut(),        //obj
+                        start_ptr as _,
+                        flags::NPY_ARRAY_OUT_FARRAY,
+                        std::ptr::null_mut(),
                     );
 
                     // This keeps the memory alive
