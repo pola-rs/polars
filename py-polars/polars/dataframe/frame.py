@@ -2162,14 +2162,15 @@ class DataFrame:
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
         else:
-            ptr = self._df.to_numpy_view()
-            if ptr is not None:
-                from polars.series._numpy import SeriesView, _ptr_to_numpy
+            if order == "fortran":
+                ptr = self._df.to_numpy_view()
+                if ptr is not None:
+                    from polars.series._numpy import SeriesView, _ptr_to_numpy
 
-                ptr_type = dtype_to_ctype(self[:, 0].dtype)
-                array = _ptr_to_numpy(ptr, (self.height, self.width), ptr_type)
-                array.setflags(write=False)
-                return np.array(SeriesView(array, self), copy=False)
+                    ptr_type = dtype_to_ctype(self[:, 0].dtype)
+                    array = _ptr_to_numpy(ptr, (self.height, self.width), ptr_type)
+                    array.setflags(write=False)
+                    return np.array(SeriesView(array, self), copy=False, order="F")
 
             out = self._df.to_numpy(order)
             if out is None:
