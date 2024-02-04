@@ -183,6 +183,8 @@ impl PySeries {
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 np_arr.into_py(py)
             },
+            Date => date_series_to_numpy(py, s),
+            Datetime(_, _) | Duration(_) => temporal_series_to_numpy(py, s),
             String => {
                 let ca = s.str().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
@@ -218,7 +220,7 @@ impl PySeries {
         Ok(out)
     }
 }
-
+/// Convert numeric types to f32 or f64 with NaN representing a null value
 fn numeric_series_to_numpy<T, U>(py: Python, s: &Series) -> PyObject
 where
     T: PolarsNumericType,
@@ -230,5 +232,23 @@ where
         None => U::nan(),
     };
     let np_arr = PyArray1::from_iter(py, ca.iter().map(mapper));
+    np_arr.into_py(py)
+}
+/// Convert dates directly to i64 with i64::MIN representing a null value
+fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    let s_phys = s.to_physical_repr();
+    let ca = s_phys.i32().unwrap();
+    let mapper = |opt_v: Option<i32>| match opt_v {
+        Some(v) => v as i64,
+        None => i64::MIN,
+    };
+    let np_arr = PyArray1::from_iter(py, ca.iter().map(mapper));
+    np_arr.into_py(py)
+}
+/// Convert datetimes and durations with i64::MIN representing a null value
+fn temporal_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    let s_phys = s.to_physical_repr();
+    let ca = s_phys.i64().unwrap();
+    let np_arr = PyArray1::from_iter(py, ca.iter().map(|v| v.unwrap_or(i64::MIN)));
     np_arr.into_py(py)
 }
