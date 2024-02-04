@@ -390,6 +390,7 @@ impl PhysicalExpr for ApplyExpr {
             FunctionExpr::Boolean(BooleanFunction::IsIn) => Some(self),
             #[cfg(feature = "is_between")]
             FunctionExpr::Boolean(BooleanFunction::IsBetween { closed: _ }) => Some(self),
+            FunctionExpr::Boolean(BooleanFunction::IsNotNull) => Some(self),
             _ => None,
         }
     }
@@ -497,6 +498,23 @@ impl ApplyExpr {
                 match stats.get_stats(&root).ok() {
                     Some(st) => match st.null_count() {
                         Some(0) => Ok(false),
+                        _ => Ok(true),
+                    },
+                    None => Ok(true),
+                }
+            },
+            FunctionExpr::Boolean(BooleanFunction::IsNotNull) => {
+                let root = expr_to_leaf_column_name(&self.expr)?;
+
+                match stats.get_stats(&root).ok() {
+                    Some(st) => match st.null_count() {
+                        Some(null_count)
+                            if stats
+                                .num_rows()
+                                .map_or(false, |num_rows| num_rows == null_count) =>
+                        {
+                            Ok(false)
+                        },
                         _ => Ok(true),
                     },
                     None => Ok(true),
