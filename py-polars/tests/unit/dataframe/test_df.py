@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 import numpy as np
 import pyarrow as pa
 import pytest
-from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
 import polars.selectors as cs
@@ -28,7 +27,7 @@ from polars.testing.parametric import columns
 from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
-    from polars.type_aliases import IndexOrder, JoinStrategy, UniqueKeepStrategy
+    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -987,97 +986,6 @@ def test_assign() -> None:
     # test if we can assign in case of single column
     df = df.with_columns(pl.col("a") * 2)
     assert list(df["a"]) == [2, 4, 6]
-
-
-@pytest.mark.parametrize(
-    ("order", "f_contiguous", "c_contiguous"),
-    [("fortran", True, False), ("c", False, True)],
-)
-def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-
-    out_array = df.to_numpy(order=order)
-    expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
-    assert_array_equal(out_array, expected_array)
-    assert out_array.flags["F_CONTIGUOUS"] == f_contiguous
-    assert out_array.flags["C_CONTIGUOUS"] == c_contiguous
-
-    structured_array = df.to_numpy(structured=True, order=order)
-    expected_array = np.array(
-        [(1, 1.0), (2, 2.0), (3, 3.0)], dtype=[("a", "<i8"), ("b", "<f8")]
-    )
-    assert_array_equal(structured_array, expected_array)
-    assert structured_array.flags["F_CONTIGUOUS"]
-
-    # check string conversion; if no nulls can optimise as a fixed-width dtype
-    df = pl.DataFrame({"s": ["x", "y", None]})
-    assert df["s"].has_validity()
-    assert_array_equal(
-        df.to_numpy(structured=True),
-        np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
-    )
-    assert not df["s"][:2].has_validity()
-    assert_array_equal(
-        df[:2].to_numpy(structured=True),
-        np.array([("x",), ("y",)], dtype=[("s", "<U1")]),
-    )
-
-
-def test_to_numpy_structured() -> None:
-    # round-trip structured array: validate init/export
-    structured_array = np.array(
-        [
-            ("Google Pixel 7", 521.90, True),
-            ("Apple iPhone 14 Pro", 999.00, True),
-            ("OnePlus 11", 699.00, True),
-            ("Samsung Galaxy S23 Ultra", 1199.99, False),
-        ],
-        dtype=np.dtype(
-            [
-                ("product", "U24"),
-                ("price_usd", "float64"),
-                ("in_stock", "bool"),
-            ]
-        ),
-    )
-    df = pl.from_numpy(structured_array)
-    assert df.schema == {
-        "product": pl.String,
-        "price_usd": pl.Float64,
-        "in_stock": pl.Boolean,
-    }
-    exported_array = df.to_numpy(structured=True)
-    assert exported_array["product"].dtype == np.dtype("U24")
-    assert_array_equal(exported_array, structured_array)
-
-    # none/nan values
-    df = pl.DataFrame({"x": ["a", None, "b"], "y": [5.5, None, -5.5]})
-    exported_array = df.to_numpy(structured=True)
-
-    assert exported_array.dtype == np.dtype([("x", object), ("y", float)])
-    for name in df.columns:
-        assert_equal(
-            list(exported_array[name]),
-            (
-                df[name].fill_null(float("nan"))
-                if df.schema[name].is_float()
-                else df[name]
-            ).to_list(),
-        )
-
-
-def test__array__() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-
-    out_array = np.asarray(df.to_numpy())
-    expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
-    assert_array_equal(out_array, expected_array)
-    assert out_array.flags["F_CONTIGUOUS"] is True
-
-    out_array = np.asarray(df.to_numpy(), np.uint8)
-    expected_array = np.array([[1, 1], [2, 2], [3, 3]], dtype=np.uint8)
-    assert_array_equal(out_array, expected_array)
-    assert out_array.flags["F_CONTIGUOUS"] is True
 
 
 def test_arg_sort_by(df: pl.DataFrame) -> None:
@@ -3149,81 +3057,6 @@ def test_round() -> None:
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
     assert df.select(pl.col("a").dot(pl.col("b"))).item() == 12.96
-
-
-def test_ufunc() -> None:
-    df = pl.DataFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
-    out = df.select(
-        [
-            np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
-            np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
-            np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
-        ]
-    )
-    expected = pl.DataFrame(
-        [
-            pl.Series("power_uint8", [1, 4, 9, 16], dtype=pl.UInt8),
-            pl.Series("power_float64", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
-            pl.Series("power_uint16", [1, 4, 9, 16], dtype=pl.UInt16),
-        ]
-    )
-    assert_frame_equal(out, expected)
-    assert out.dtypes == expected.dtypes
-
-
-def test_ufunc_expr_not_first() -> None:
-    """Check numpy ufunc expressions also work if expression not the first argument."""
-    df = pl.DataFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
-    out = df.select(
-        [
-            np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
-            (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-            (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
-        ]
-    )
-    expected = pl.DataFrame(
-        [
-            pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
-            pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
-            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
-        ]
-    )
-    assert_frame_equal(out, expected)
-
-
-def test_ufunc_multiple_expressions() -> None:
-    # example from https://github.com/pola-rs/polars/issues/6770
-    df = pl.DataFrame(
-        {
-            "v": [
-                -4.293,
-                -2.4659,
-                -1.8378,
-                -0.2821,
-                -4.5649,
-                -3.8128,
-                -7.4274,
-                3.3443,
-                3.8604,
-                -4.2200,
-            ],
-            "u": [
-                -11.2268,
-                6.3478,
-                7.1681,
-                3.4986,
-                2.7320,
-                -1.0695,
-                -10.1408,
-                11.2327,
-                6.6623,
-                -8.1412,
-            ],
-        }
-    )
-    expected = np.arctan2(df.get_column("v"), df.get_column("u"))
-    result = df.select(np.arctan2(pl.col("v"), pl.col("u")))[:, 0]  # type: ignore[call-overload]
-    assert_series_equal(expected, result)  # type: ignore[arg-type]
 
 
 def test_unstack() -> None:
