@@ -37,6 +37,7 @@ mod py_modules;
 mod series;
 #[cfg(feature = "sql")]
 mod sql;
+mod to_numpy;
 mod utils;
 
 #[cfg(all(target_family = "unix", not(use_mimalloc)))]

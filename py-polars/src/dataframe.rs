@@ -3,7 +3,6 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 
 use either::Either;
-use numpy::IntoPyArray;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
 use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
@@ -16,14 +15,9 @@ use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
-use polars_core::prelude::IndexOrder;
 use polars_core::utils::arrow::compute::cast::CastOptions;
-use polars_core::utils::try_get_supertype;
-use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
-use polars_utils::index::Bounded;
-use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 
@@ -794,86 +788,6 @@ impl PyDataFrame {
             )
             .into_py(py)
         })
-    }
-
-    pub fn to_numpy_view(&self) -> Option<Py_uintptr_t> {
-        if self.df.is_empty() {
-            return None;
-        }
-        let first = self.df.get_columns().first().unwrap().dtype();
-        if !first.is_numeric() {
-            return None;
-        }
-        if !self
-            .df
-            .get_columns()
-            .iter()
-            .all(|s| s.null_count() == 0 && s.dtype() == first && s.chunks().len() == 1)
-        {
-            return None;
-        }
-        fn get_ptr<T: PolarsNumericType>(columns: &[Series]) -> Option<Py_uintptr_t> {
-            let slices = columns
-                .iter()
-                .map(|s| {
-                    let ca: &ChunkedArray<T> = s.unpack().unwrap();
-                    ca.cont_slice().unwrap()
-                })
-                .collect::<Vec<_>>();
-
-            let first = slices.first().unwrap();
-            unsafe {
-                let mut end_ptr = first.as_ptr().add(first.len());
-                // Check if all arrays are from the same buffer
-                let all_contiguous = slices[1..].iter().all(|slice| {
-                    let valid = slice.as_ptr() == end_ptr;
-
-                    end_ptr = slice.as_ptr().add(slice.len());
-
-                    valid
-                });
-
-                if all_contiguous {
-                    let start_ptr = first.as_ptr();
-                    Some(start_ptr as usize)
-                } else {
-                    None
-                }
-            }
-        }
-        with_match_physical_numeric_polars_type!(first, |$T| {
-            get_ptr::<$T>(self.df.get_columns())
-        })
-    }
-
-    pub fn to_numpy(&self, py: Python, order: Wrap<IndexOrder>) -> Option<PyObject> {
-        let mut st = None;
-        for s in self.df.iter() {
-            let dt_i = s.dtype();
-            match st {
-                None => st = Some(dt_i.clone()),
-                Some(ref mut st) => {
-                    *st = try_get_supertype(st, dt_i).ok()?;
-                },
-            }
-        }
-        let st = st?;
-
-        #[rustfmt::skip]
-        let pyarray = match st {
-            DataType::UInt8 => self.df.to_ndarray::<UInt8Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int8 => self.df.to_ndarray::<Int8Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::UInt16 => self.df.to_ndarray::<UInt16Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int16 => self.df.to_ndarray::<Int16Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::UInt32 => self.df.to_ndarray::<UInt32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::UInt64 => self.df.to_ndarray::<UInt64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int32 => self.df.to_ndarray::<Int32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int64 => self.df.to_ndarray::<Int64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Float32 => self.df.to_ndarray::<Float32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Float64 => self.df.to_ndarray::<Float64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            _ => return None,
-        };
-        Some(pyarray)
     }
 
     #[cfg(feature = "parquet")]
