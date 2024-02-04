@@ -4,7 +4,7 @@ use polars::prelude::*;
 
 // Login to your aws account and then copy the ../datasets/foods1.parquet file to your own bucket.
 // Adjust the link below.
-const TEST_S3_LOCATION: &str = "s3://polarstesting/polars_write_example_cloud.parquet";
+const TEST_S3_LOCATION: &str = "s3://test-bucket/test-writes/polars_write_example_cloud.parquet";
 
 fn main() -> PolarsResult<()> {
     sink_file();
@@ -37,9 +37,13 @@ fn sink_aws() {
 
     // Propagate the credentials and other cloud options.
     let cloud_options = cloud::CloudOptions::default().with_aws([
-        (Key::AccessKeyId, &cred.access_key.unwrap()),
-        (Key::SecretAccessKey, &cred.secret_key.unwrap()),
-        (Key::Region, &"eu-central-1".into()),
+        // (Key::AccessKeyId, &cred.access_key.unwrap()),
+        // (Key::SecretAccessKey, &cred.secret_key.unwrap()),
+        // (Key::Region, &"eu-central-1".into()),
+        (Key::AccessKeyId, "test".to_string()),
+        (Key::SecretAccessKey, "test".to_string()),
+        (Key::Endpoint, "http://localhost:4566".to_string()),
+        (Key::Region, "us-east-1".to_string()),
     ]);
     let cloud_options = Some(cloud_options);
 

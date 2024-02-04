@@ -187,7 +187,7 @@ impl CloudWriter {
         Ok((multipart_id, s3_writer))
     }
 
-    async fn abort(&self) -> PolarsResult<()> {
+    async fn abort(&mut self) -> PolarsResult<()> {
         self.object_store
             .abort_multipart(&self.path, &self.multipart_id)
             .await
@@ -197,21 +197,17 @@ impl CloudWriter {
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                get_runtime().block_on(async {
-                    let res = self.writer.write(buf).await;
-                    if res.is_err() {
-                        let _ = self.abort().await;
-                    }
-                    res
-                })
-            }).join().unwrap()
+        get_runtime().block_on_potential_spawn(async {
+            let res = self.writer.write(buf).await;
+            if res.is_err() {
+                let _ = self.abort().await;
+            }
+            res
         })
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        get_runtime().block_on(async {
+        get_runtime().block_on_potential_spawn(async {
             let res = self.writer.flush().await;
             if res.is_err() {
                 let _ = self.abort().await;
@@ -223,11 +219,7 @@ impl std::io::Write for CloudWriter {
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                let _ = get_runtime().block_on(self.writer.shutdown());
-            }).join().unwrap()
-        })
+        let _ = get_runtime().block_on_potential_spawn(self.writer.shutdown());
     }
 }
 

@@ -43,7 +43,6 @@ pub struct IpcCloudSink {}
 #[cfg(feature = "cloud")]
 impl IpcCloudSink {
     #[allow(clippy::new_ret_no_self)]
-    #[tokio::main(flavor = "current_thread")]
     pub async fn new(
         uri: &str,
         cloud_options: Option<&polars_io::cloud::CloudOptions>,
