@@ -197,12 +197,16 @@ impl CloudWriter {
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        get_runtime().block_on(async {
-            let res = self.writer.write(buf).await;
-            if res.is_err() {
-                let _ = self.abort().await;
-            }
-            res
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                get_runtime().block_on(async {
+                    let res = self.writer.write(buf).await;
+                    if res.is_err() {
+                        let _ = self.abort().await;
+                    }
+                    res
+                })
+            }).join().unwrap()
         })
     }
 
@@ -219,7 +223,11 @@ impl std::io::Write for CloudWriter {
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        let _ = get_runtime().block_on(self.writer.shutdown());
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let _ = get_runtime().block_on(self.writer.shutdown());
+            }).join().unwrap()
+        })
     }
 }
 
