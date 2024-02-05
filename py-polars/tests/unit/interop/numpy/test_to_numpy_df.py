@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -107,3 +108,14 @@ def test_numpy_preserve_uint64_4112() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").hash())
     assert df.to_numpy().dtype == np.dtype("uint64")
     assert df.to_numpy(structured=True).dtype == np.dtype([("a", "uint64")])
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_df_to_numpy_decimal(use_pyarrow: bool) -> None:
+    decimal_data = [D("1.234"), D("2.345"), D("-3.456")]
+    df = pl.Series("n", decimal_data).to_frame()
+
+    result = df.to_numpy(use_pyarrow=use_pyarrow)
+
+    expected = np.array(decimal_data).reshape((-1, 1))
+    assert_array_equal(result, expected)

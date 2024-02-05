@@ -90,13 +90,14 @@ def test_series_to_numpy_numeric_with_nulls(
         (pl.Enum(["a", "b", "c"]), ["a", "b", "a"]),
         (pl.String, ["a", "bc", "def"]),
         (pl.Binary, [b"a", b"bc", b"def"]),
+        (pl.Decimal, [D("1.234"), D("2.345"), D("-3.456")]),
         (pl.Object, [Path(), Path("abc")]),
         # TODO: Implement for List types
         # (pl.List, [[1], [2, 3]]),
         # (pl.List, [["a"], ["b", "c"], []]),
     ],
 )
-def test_to_numpy_various_dtypes(dtype: pl.PolarsDataType, values: list[Any]) -> None:
+def test_to_numpy_object_dtypes(dtype: pl.PolarsDataType, values: list[Any]) -> None:
     values.append(None)
     s = pl.Series(values, dtype=dtype)
     result = s.to_numpy(use_pyarrow=False)
@@ -346,20 +347,3 @@ def test_series_to_numpy_temporal() -> None:
     s4 = pl.Series([time(10, 30, 45), time(23, 59, 59)])
     out = np.array([time(10, 30, 45), time(23, 59, 59)], dtype="object")
     assert (s4.to_numpy() == out).all()
-
-
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-def test_decimal_numpy_export(use_pyarrow: bool) -> None:
-    decimal_data = [D("1.234"), D("2.345"), D("-3.456")]
-
-    s = pl.Series("n", decimal_data)
-    df = s.to_frame()
-
-    assert_array_equal(
-        np.array(decimal_data),
-        s.to_numpy(use_pyarrow=use_pyarrow),
-    )
-    assert_array_equal(
-        np.array(decimal_data).reshape((-1, 1)),
-        df.to_numpy(use_pyarrow=use_pyarrow),
-    )
