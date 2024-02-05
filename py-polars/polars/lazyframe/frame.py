@@ -53,7 +53,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import dataframe_api_compat, subprocess
+from polars.dependencies import subprocess
 from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
@@ -692,19 +692,6 @@ class LazyFrame:
         OrderedDict({'foo': Int64, 'bar': Float64, 'ham': String})
         """
         return OrderedDict(self._ldf.schema())
-
-    def __dataframe_consortium_standard__(
-        self, *, api_version: str | None = None
-    ) -> Any:
-        """
-        Provide entry point to the Consortium DataFrame Standard API.
-
-        This is developed and maintained outside of polars.
-        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
-        """
-        return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
-            self, api_version=api_version
-        )
 
     @property
     def width(self) -> int:

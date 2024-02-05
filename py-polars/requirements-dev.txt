@@ -43,8 +43,6 @@ pyxlsb
 xlsx2csv
 XlsxWriter
 deltalake>=0.14.0
-# Dataframe interchange protocol
-dataframe-api-compat>=0.1.6
 pyiceberg>=0.5.0
 # Csv
 zstandard
