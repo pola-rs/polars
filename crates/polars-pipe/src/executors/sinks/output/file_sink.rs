@@ -40,7 +40,10 @@ impl BufferedWriter {
         } else {
             self.current_frame = Some(next_chunk.data);
         };
-        if self.current_frame.as_ref().unwrap().estimated_size() > 1024 * 1024 {
+        // 4 MB was chosen based on some empirical experiments that showed it to
+        // be decently faster than lower or higher values, and it's small enough
+        // it won't impact memory usage significantly.
+        if self.current_frame.as_ref().unwrap().estimated_size() > 4 * 1024 * 1024 {
             self._flush();
         }
     }
