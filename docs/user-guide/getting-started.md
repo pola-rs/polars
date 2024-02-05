@@ -38,7 +38,7 @@ In the example below we write the DataFrame to a csv file called `output.csv`. A
 --8<-- "python/user-guide/basics/reading-writing.py:csv"
 ```
 
-For more examples on the CSV file format and other data formats, start with the [IO section](io/index.md) of the User Guide.
+For more examples on the CSV file format and other data formats, start with the [IO section](io/index.md) of the user guide.
 
 ## Expressions
 
@@ -49,7 +49,7 @@ For more examples on the CSV file format and other data formats, start with the 
 - `with_columns`
 - `group_by`
 
-To learn more about expressions and the context in which they operate, see the User Guide sections: [Contexts](concepts/contexts.md) and [Expressions](concepts/expressions.md).
+To learn more about expressions and the context in which they operate, see the user guide sections: [Contexts](concepts/contexts.md) and [Expressions](concepts/expressions.md).
 
 ### Select
 
@@ -79,7 +79,7 @@ print(
 )
 ```
 
-Follow these links to other parts of the User guide to learn more about [basic operations](expressions/operators.md) or [column selections](expressions/column-selections.md).
+Follow these links to other parts of the user guide to learn more about [basic operations](expressions/operators.md) or [column selections](expressions/column-selections.md).
 
 ### Filter
 
@@ -115,7 +115,7 @@ print(
 )
 ```
 
-### Group_by
+### Group by
 
 We will create a new `DataFrame` for the Group by functionality. This new `DataFrame` will include several 'groups' that we want to group by.
 
