@@ -5435,7 +5435,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         columns
             Column names, expressions, or a selector defining them. The underlying
-            columns being exploded must be of List or String datatype.
+            columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 
