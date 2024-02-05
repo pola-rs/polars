@@ -241,6 +241,13 @@ def test_pivot_struct_13120() -> None:
     assert result == expected
 
 
+def test_pivot_index_struct_14101() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [{"a": 1}, {"a": 1}], "c": ["x", "y"]})
+    result = df.pivot(index="b", values="a", columns="c")
+    expected = pl.DataFrame({"b": [{"a": 1}], "x": [1], "y": [2]})
+    assert_frame_equal(result, expected)
+
+
 def test_pivot_name_already_exists() -> None:
     # This should be extremely rare...but still, good to check it
     df = pl.DataFrame(

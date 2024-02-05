@@ -280,28 +280,31 @@ pub(super) fn compute_col_idx(
 
 fn compute_row_index<'a, T>(
     index: &[String],
+    index_agg: &Series,
     index_agg_physical: &'a ChunkedArray<T>,
     count: usize,
-    logical_type: &DataType,
 ) -> (Vec<IdxSize>, usize, Option<Vec<Series>>)
 where
     T: PolarsDataType,
     T::Physical<'a>: Hash + Eq + Copy,
-    ChunkedArray<T>: FromIterator<Option<T::Physical<'a>>>,
-    ChunkedArray<T>: IntoSeries,
 {
     let mut row_to_idx =
         PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
     let mut idx = 0 as IdxSize;
 
     let mut row_locations = Vec::with_capacity(index_agg_physical.len());
+    let mut unique_indices = Vec::with_capacity(index_agg_physical.len());
+    let mut row_number: IdxSize = 0;
     for arr in index_agg_physical.downcast_iter() {
         for opt_v in arr.iter() {
             let idx = *row_to_idx.entry(opt_v).or_insert_with(|| {
+                // SAFETY: we pre-allocated
+                unsafe { unique_indices.push_unchecked(row_number) };
                 let old_idx = idx;
                 idx += 1;
                 old_idx
             });
+            row_number += 1;
 
             // SAFETY:
             // we pre-allocated
@@ -312,13 +315,8 @@ where
     }
     let row_index = match count {
         0 => {
-            let mut s = row_to_idx
-                .into_iter()
-                .map(|(k, _)| k)
-                .collect::<ChunkedArray<T>>()
-                .into_series();
+            let mut s = index_agg.take_slice(&unique_indices).unwrap();
             s.rename(&index[0]);
-            let s = restore_logical_type(&s, logical_type);
             Some(vec![s])
         },
         _ => None,
@@ -343,19 +341,24 @@ pub(super) fn compute_row_idx(
         match index_agg_physical.dtype() {
             Int32 | UInt32 | Float32 => {
                 let ca = index_agg_physical.bit_repr_small();
-                compute_row_index(index, &ca, count, index_s.dtype())
+                compute_row_index(index, &index_agg, &ca, count)
             },
             Int64 | UInt64 | Float64 => {
                 let ca = index_agg_physical.bit_repr_large();
-                compute_row_index(index, &ca, count, index_s.dtype())
+                compute_row_index(index, &index_agg, &ca, count)
             },
             Boolean => {
                 let ca = index_agg_physical.bool().unwrap();
-                compute_row_index(index, ca, count, index_s.dtype())
+                compute_row_index(index, &index_agg, ca, count)
+            },
+            Struct(_) => {
+                let ca = index_agg_physical.struct_().unwrap();
+                let ca = ca.rows_encode()?;
+                compute_row_index(index, &index_agg, &ca, count)
             },
             String => {
                 let ca = index_agg_physical.str().unwrap();
-                compute_row_index(index, ca, count, index_s.dtype())
+                compute_row_index(index, &index_agg, ca, count)
             },
             _ => {
                 let mut row_to_idx =
