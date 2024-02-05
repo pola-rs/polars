@@ -4361,13 +4361,8 @@ class Series:
                 zero_copy_only=zero_copy_only, writable=writable
             )
 
-        if dtype == Decimal:
-            # There are no native NumPy "time" or "decimal" dtypes
-            raise_no_zero_copy()
-            return np.array(self.to_list(), dtype="object", copy=False)
-
         if self.null_count() == 0:
-            if dtype.is_numeric():
+            if dtype.is_numeric() and dtype != Decimal:
                 np_array = self._view(ignore_nulls=True)
             elif dtype == Boolean:
                 raise_no_zero_copy()

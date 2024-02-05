@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::conversion::chunked_array::time_to_pyobject_iter;
+use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
 use crate::prelude::{ObjectValue, *};
 use crate::{arrow_interop, raise_err, PySeries};
@@ -205,6 +205,12 @@ impl PySeries {
             Categorical(_, _) | Enum(_, _) => {
                 let ca = s.categorical().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.iter_str().map(|s| s.into_py(py)));
+                np_arr.into_py(py)
+            },
+            Decimal(_, _) => {
+                let ca = s.decimal().unwrap();
+                let iter = decimal_to_pyobject_iter(py, ca);
+                let np_arr = PyArray1::from_iter(py, iter.map(|v| v.into_py(py)));
                 np_arr.into_py(py)
             },
             #[cfg(feature = "object")]
