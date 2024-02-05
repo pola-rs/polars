@@ -195,6 +195,11 @@ impl PySeries {
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 np_arr.into_py(py)
             },
+            Categorical(_, _) | Enum(_, _) => {
+                let ca = s.categorical().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.iter_str().map(|s| s.into_py(py)));
+                np_arr.into_py(py)
+            },
             #[cfg(feature = "object")]
             Object(_, _) => {
                 let ca = s
