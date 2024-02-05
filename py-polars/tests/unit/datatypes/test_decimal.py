@@ -193,18 +193,21 @@ def test_decimal_arithmetic() -> None:
             "b": [D("20.1"), D("10.19"), D("39.21")],
         }
     )
+    dt = pl.Decimal(20, 10)
 
     out = df.select(
         out1=pl.col("a") * pl.col("b"),
         out2=pl.col("a") + pl.col("b"),
         out3=pl.col("a") / pl.col("b"),
         out4=pl.col("a") - pl.col("b"),
+        out5=pl.col("a").cast(dt) / pl.col("b").cast(dt),
     )
     assert out.dtypes == [
         pl.Decimal(precision=None, scale=4),
         pl.Decimal(precision=None, scale=2),
         pl.Decimal(precision=None, scale=6),
         pl.Decimal(precision=None, scale=2),
+        pl.Decimal(precision=None, scale=14),
     ]
 
     assert out.to_dict(as_series=False) == {
@@ -212,6 +215,7 @@ def test_decimal_arithmetic() -> None:
         "out2": [D("20.20"), D("20.29"), D("139.22")],
         "out3": [D("0.004975"), D("0.991167"), D("2.550624")],
         "out4": [D("-20.00"), D("-0.09"), D("60.80")],
+        "out5": [D("0.00497512437810"), D("0.99116781157998"), D("2.55062484060188")],
     }
 
 
