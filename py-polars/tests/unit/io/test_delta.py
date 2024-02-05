@@ -409,4 +409,6 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
 
     table = pl.read_delta(str(tmp_path))
 
-    assert_frame_equal(df.filter(pl.col("a") <= 2), table)
+    # TODO: Re-enable row order check after issue is resolved:
+    # https://github.com/delta-io/delta-rs/issues/2165
+    assert_frame_equal(df.filter(pl.col("a") <= 2), table, check_row_order=False)
