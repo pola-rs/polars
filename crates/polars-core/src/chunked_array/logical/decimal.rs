@@ -129,7 +129,7 @@ impl DecimalChunked {
             return Ok(Cow::Borrowed(self));
         }
 
-        let dtype = DataType::Decimal(self.precision(), Some(scale));
+        let dtype = DataType::Decimal(None, Some(scale));
         let chunks = cast_chunks(&self.chunks, &dtype, true)?;
         let mut dt = Self::new_logical(unsafe { Int128Chunked::from_chunks(self.name(), chunks) });
         dt.2 = Some(dtype);
