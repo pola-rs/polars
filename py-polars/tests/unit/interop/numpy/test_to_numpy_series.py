@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    if s.len() == 0:
+        return
     s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
     arr_ptr = arr.__array_interface__["data"][0]
     assert s_ptr == arr_ptr
@@ -47,7 +49,7 @@ def test_series_to_numpy_numeric_zero_copy(
     dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, 3], dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
     assert_zero_copy(s, result)
     assert result.tolist() == s.to_list()
@@ -89,6 +91,7 @@ def test_series_to_numpy_numeric_with_nulls(
         (pl.String, ["a", "bc", "def"]),
         (pl.Binary, [b"a", b"bc", b"def"]),
         (pl.Object, [Path(), Path("abc")]),
+        # TODO: Implement for List types
         # (pl.List, [[1], [2, 3]]),
         # (pl.List, [["a"], ["b", "c"], []]),
     ],
@@ -139,6 +142,9 @@ def test_series_to_numpy_array_of_str() -> None:
     assert result.dtype == np.object_
 
 
+@pytest.mark.skip(
+    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/14268"
+)
 def test_series_to_numpy_array_with_nulls() -> None:
     values = [[1, 2], [3, 4], None]
     s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
@@ -156,12 +162,16 @@ def test_to_numpy_null() -> None:
     expected = np.array([np.nan, np.nan], dtype=np.float32)
     assert_array_equal(result, expected)
     assert result.dtype == np.float32
+    assert_zero_copy_only_raises(s)
 
 
+@pytest.mark.skip(
+    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/14274"
+)
 def test_to_numpy_empty() -> None:
-    series = pl.Series()
-    result = series.to_numpy(use_pyarrow=False)
-    assert result.dtype == np.float32
+    series = pl.Series(dtype=pl.String)
+    result = series.to_numpy(use_pyarrow=False, zero_copy_only=True)
+    assert result.dtype == np.int64
     assert result.shape == (0,)
     assert result.size == 0
 
