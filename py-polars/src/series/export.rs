@@ -195,15 +195,9 @@ impl PySeries {
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 np_arr.into_py(py)
             },
-            Categorical(rev_map, _) | Enum(rev_map, _) => {
-                let rev_map = rev_map.clone().unwrap();
-                let mapping = &*rev_map;
-                let f = |idx: u32| mapping.get(idx);
+            Categorical(_, _) | Enum(_, _) => {
                 let ca = s.categorical().unwrap();
-                let np_arr = PyArray1::from_iter(
-                    py,
-                    ca.physical().into_iter().map(|s| s.map(f).into_py(py)),
-                );
+                let np_arr = PyArray1::from_iter(py, ca.iter_str().map(|s| s.into_py(py)));
                 np_arr.into_py(py)
             },
             #[cfg(feature = "object")]
