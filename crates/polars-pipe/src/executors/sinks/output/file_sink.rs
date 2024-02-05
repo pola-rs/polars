@@ -7,73 +7,104 @@ use polars_core::prelude::*;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 pub(super) trait SinkWriter {
+    fn _write_chunk(&mut self, chunk: DataChunk) -> PolarsResult<()> {
+        self._write_batch(&chunk.data)
+    }
+
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()>;
+
     fn _finish(&mut self) -> PolarsResult<()>;
+}
+
+impl SinkWriter for Box<dyn SinkWriter + Send> {
+    fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        self.as_mut()._write_batch(df)
+    }
+
+    fn _finish(&mut self) -> PolarsResult<()> {
+        self.as_mut()._finish()
+    }
+}
+
+impl SinkWriter for Vec<DataChunk> {
+    fn _write_chunk(&mut self, chunk: DataChunk) -> PolarsResult<()> {
+        self.push(chunk);
+        Ok(())
+    }
+
+    fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        panic!("Shouldn't be called");
+    }
+
+    fn _finish(&mut self) -> PolarsResult<()> {
+        Ok(())
+    }
 }
 
 /// Write DataChunks in sufficiently large chunks that we don't suffer from
 /// overhead of many small writes.
-struct BufferedWriter {
-    current_frame: Option<DataFrame>,
+#[derive(Clone)]
+pub(crate) struct BufferedWriter<SW> {
+    current_chunk: Option<DataChunk>,
     /// Have we vstack()ed on to the current chunk?
     stacked: bool,
-    writer: Box<dyn SinkWriter + Send>,
+    writer: SW,
 }
 
-impl BufferedWriter {
+impl<SW: SinkWriter> BufferedWriter<SW> {
     /// Create a new instance.
-    fn new(writer: Box<dyn SinkWriter + Send>) -> Self {
+    pub fn new(writer: SW) -> Self {
         Self {
-            current_frame: None,
+            current_chunk: None,
             stacked: false,
             writer,
         }
     }
 
     /// Write (or vstack) another chunk.
-    fn write(&mut self, next_chunk: DataChunk) {
+    pub fn write(&mut self, next_chunk: DataChunk) {
         // If the next chunk is too large, we probably don't want make copies of
-        // it when we do as_single_chunk() in _flush(), so we flush in advance.
-        if self.current_frame.is_some() && next_chunk.data.estimated_size() > 10 * 1024 * 1024 {
-            self._flush();
+        // it when we do as_single_chunk() in flush(), so we flush in advance.
+        if self.current_chunk.is_some() && next_chunk.data.estimated_size() > 10 * 1024 * 1024 {
+            self.flush();
         }
 
-        if let Some(ref mut current_frame) = self.current_frame {
-            current_frame
+        if let Some(ref mut current_chunk) = self.current_chunk {
+            current_chunk
+                .data
                 .vstack_mut(&next_chunk.data)
                 .expect("These are chunks from the same dataframe");
             self.stacked = true;
         } else {
-            self.current_frame = Some(next_chunk.data);
+            self.current_chunk = Some(next_chunk);
         };
         // 4 MB was chosen based on some empirical experiments that showed it to
         // be decently faster than lower or higher values, and it's small enough
         // it won't impact memory usage significantly.
-        if self.current_frame.as_ref().unwrap().estimated_size() > 4 * 1024 * 1024 {
-            self._flush();
+        if self.current_chunk.as_ref().unwrap().data.estimated_size() > 4 * 1024 * 1024 {
+            self.flush();
         }
-    }
-
-    /// Finish writing, flushing remaining data.
-    fn finish(mut self) {
-        if self.current_frame.is_some() {
-            self._flush();
-        }
-        self.writer._finish().unwrap();
     }
 
     /// Do the actual write of any buffered data.
-    fn _flush(&mut self) {
-        let current_frame = self.current_frame.as_mut().unwrap();
-        // If we've stacked multiple small batches we want to make the data
-        // contiguous.
-        if self.stacked {
-            current_frame.as_single_chunk();
+    pub fn flush(&mut self) {
+        if let Some(mut current_chunk) = std::mem::take(&mut self.current_chunk) {
+            // If we've stacked multiple small batches we want to make the data
+            // contiguous.
+            if self.stacked {
+                current_chunk.data.as_single_chunk();
+            }
+            self.writer._write_chunk(current_chunk).unwrap();
+            self.current_chunk = None;
+            self.stacked = false;
         }
-        self.writer._write_batch(current_frame).unwrap();
-        self.current_frame = None;
-        self.stacked = false;
     }
+
+    /// Get a reference to the underlying SinkWriter.
+    pub fn underlying(&mut self) -> &mut SW {
+        &mut self.writer
+    }
+
 }
 
 pub(super) fn init_writer_thread(
@@ -89,7 +120,8 @@ pub(super) fn init_writer_thread(
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
         let mut chunks = Vec::with_capacity(morsels_per_sink);
-        let mut buffered_writer = BufferedWriter::new(writer);
+        let mut buffered_writer: BufferedWriter<Box<dyn SinkWriter + Send>> =
+            BufferedWriter::new(writer);
 
         while let Ok(chunk) = receiver.recv() {
             // `last_write` indicates if all chunks are processed, e.g. this is the last write.
@@ -111,7 +143,8 @@ pub(super) fn init_writer_thread(
                 }
 
                 if last_write {
-                    buffered_writer.finish();
+                    buffered_writer.flush();
+                    buffered_writer.underlying()._finish().unwrap();
                     return;
                 }
             }

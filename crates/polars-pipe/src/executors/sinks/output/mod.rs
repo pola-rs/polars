@@ -6,7 +6,7 @@ mod csv;
     feature = "csv",
     feature = "json"
 ))]
-mod file_sink;
+pub mod file_sink;
 #[cfg(feature = "ipc")]
 mod ipc;
 #[cfg(feature = "json")]
