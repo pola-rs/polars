@@ -76,3 +76,14 @@ def test_to_numpy_zero_copy_path() -> None:
     x = df.to_numpy()
     assert x.flags["F_CONTIGUOUS"]
     assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"
+
+
+def test_numpy_disambiguation() -> None:
+    a = np.array([1, 2])
+    df = pl.DataFrame({"a": a})
+    result = df.with_columns(b=a).to_dict(as_series=False)  # type: ignore[arg-type]
+    expected = {
+        "a": [1, 2],
+        "b": [1, 2],
+    }
+    assert result == expected

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -48,7 +48,7 @@ def assert_zero_copy_only_raises(s: pl.Series) -> None:
 def test_series_to_numpy_numeric_zero_copy(
     dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
-    s = pl.Series([1, 2, 3], dtype=dtype, strict=False)
+    s = pl.Series([1, 2, 3]).cast(dtype)  # =dtype, strict=False)
     result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
     assert_zero_copy(s, result)
@@ -84,8 +84,78 @@ def test_series_to_numpy_numeric_with_nulls(
 
 
 @pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (pl.Duration, np.dtype("timedelta64[us]")),
+        (pl.Duration("ms"), np.dtype("timedelta64[ms]")),
+        (pl.Duration("us"), np.dtype("timedelta64[us]")),
+        (pl.Duration("ns"), np.dtype("timedelta64[ns]")),
+        (pl.Datetime, np.dtype("datetime64[us]")),
+        (pl.Datetime("ms"), np.dtype("datetime64[ms]")),
+        (pl.Datetime("us"), np.dtype("datetime64[us]")),
+        (pl.Datetime("ns"), np.dtype("datetime64[ns]")),
+    ],
+)
+def test_series_to_numpy_temporal_zero_copy(
+    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+) -> None:
+    values = [0, 2_000, 1_000_000]
+    s = pl.Series(values, dtype=dtype, strict=False)
+    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+
+    assert_zero_copy(s, result)
+    # NumPy tolist returns integers for ns precision
+    if s.dtype.time_unit == "ns":  # type: ignore[attr-defined]
+        assert result.tolist() == values
+    else:
+        assert result.tolist() == s.to_list()
+    assert result.dtype == expected_dtype
+
+
+def test_series_to_numpy_date() -> None:
+    values = [date(1970, 1, 1), date(2024, 2, 28)]
+    s = pl.Series(values)
+
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert s.to_list() == result.tolist()
+    assert result.dtype == np.dtype("datetime64[D]")
+    assert_zero_copy_only_raises(s)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (pl.Date, np.dtype("datetime64[D]")),
+        (pl.Duration("ms"), np.dtype("timedelta64[ms]")),
+        (pl.Duration("us"), np.dtype("timedelta64[us]")),
+        (pl.Duration("ns"), np.dtype("timedelta64[ns]")),
+        (pl.Datetime, np.dtype("datetime64[us]")),
+        (pl.Datetime("ms"), np.dtype("datetime64[ms]")),
+        (pl.Datetime("us"), np.dtype("datetime64[us]")),
+        (pl.Datetime("ns"), np.dtype("datetime64[ns]")),
+    ],
+)
+def test_series_to_numpy_temporal_with_nulls(
+    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+) -> None:
+    values = [0, 2_000, 1_000_000, None]
+    s = pl.Series(values, dtype=dtype, strict=False)
+    result = s.to_numpy(use_pyarrow=False)
+
+    # NumPy tolist returns integers for ns precision
+    if getattr(s.dtype, "time_unit", None) == "ns":
+        assert result.tolist() == values
+    else:
+        assert result.tolist() == s.to_list()
+    assert result.dtype == expected_dtype
+    assert_zero_copy_only_raises(s)
+
+
+@pytest.mark.parametrize(
     ("dtype", "values"),
     [
+        (pl.Time, [time(10, 30, 45), time(23, 59, 59)]),
         (pl.Categorical, ["a", "b", "a"]),
         (pl.Enum(["a", "b", "c"]), ["a", "b", "a"]),
         (pl.String, ["a", "bc", "def"]),
@@ -97,8 +167,13 @@ def test_series_to_numpy_numeric_with_nulls(
         # (pl.List, [["a"], ["b", "c"], []]),
     ],
 )
-def test_to_numpy_object_dtypes(dtype: pl.PolarsDataType, values: list[Any]) -> None:
-    values.append(None)
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_to_numpy_object_dtypes(
+    dtype: pl.PolarsDataType, values: list[Any], with_nulls: bool
+) -> None:
+    if with_nulls:
+        values.append(None)
+
     s = pl.Series(values, dtype=dtype)
     result = s.to_numpy(use_pyarrow=False)
 
@@ -174,6 +249,32 @@ def test_to_numpy_empty() -> None:
     assert result.size == 0
 
 
+def test_series_to_numpy_temporal() -> None:
+    s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
+    s1 = pl.Series(
+        "datetime", [datetime(2021, 1, 2, 3, 4, 5), datetime(2021, 2, 3, 4, 5, 6)]
+    )
+    s2 = pl.datetime_range(
+        datetime(2021, 1, 1, 0),
+        datetime(2021, 1, 1, 1),
+        interval="1h",
+        time_unit="ms",
+        eager=True,
+    )
+    assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
+    assert (
+        str(s1.to_numpy()[:2])
+        == "['2021-01-02T03:04:05.000000' '2021-02-03T04:05:06.000000']"
+    )
+    assert (
+        str(s2.to_numpy()[:2])
+        == "['2021-01-01T00:00:00.000' '2021-01-01T01:00:00.000']"
+    )
+    s3 = pl.Series([timedelta(hours=1), timedelta(hours=-2)])
+    out = np.array([3_600_000_000_000, -7_200_000_000_000], dtype="timedelta64[ns]")
+    assert (s3.to_numpy() == out).all()
+
+
 @given(
     s=series(
         min_size=1, max_size=10, excluded_dtypes=[pl.Categorical, pl.List, pl.Struct]
@@ -200,18 +301,6 @@ def test_series_to_numpy(s: pl.Series) -> None:
     expected = np.array(values, dtype=np_dtype)
 
     assert_array_equal(result, expected)
-
-
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-@pytest.mark.parametrize("has_null", [True, False])
-@pytest.mark.parametrize("dtype", [pl.Time, pl.Boolean, pl.String])
-def test_to_numpy_no_zero_copy(
-    use_pyarrow: bool, has_null: bool, dtype: pl.PolarsDataType
-) -> None:
-    data: list[Any] = ["a", None] if dtype == pl.String else [0, None]
-    series = pl.Series(data if has_null else data[:1], dtype=dtype)
-    with pytest.raises(ValueError):
-        series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
 
 
 @pytest.mark.parametrize("writable", [False, True])
@@ -283,67 +372,3 @@ def test_view_deprecated() -> None:
         result = s.view()
     assert isinstance(result, np.ndarray)
     assert np.all(result == np.array([1.0, 2.5, 3.0]))
-
-
-def test_numpy_disambiguation() -> None:
-    a = np.array([1, 2])
-    df = pl.DataFrame({"a": a})
-    result = df.with_columns(b=a).to_dict(as_series=False)  # type: ignore[arg-type]
-    expected = {
-        "a": [1, 2],
-        "b": [1, 2],
-    }
-    assert result == expected
-
-
-def test_to_numpy_datelike() -> None:
-    s = pl.Series(
-        "dt",
-        [
-            datetime(2022, 7, 5, 10, 30, 45, 123456),
-            None,
-            datetime(2023, 2, 5, 15, 22, 30, 987654),
-        ],
-    )
-    assert str(s.to_numpy()) == str(
-        np.array(
-            ["2022-07-05T10:30:45.123456", "NaT", "2023-02-05T15:22:30.987654"],
-            dtype="datetime64[us]",
-        )
-    )
-    assert str(s.drop_nulls().to_numpy()) == str(
-        np.array(
-            ["2022-07-05T10:30:45.123456", "2023-02-05T15:22:30.987654"],
-            dtype="datetime64[us]",
-        )
-    )
-
-
-def test_series_to_numpy_temporal() -> None:
-    s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = pl.Series(
-        "datetime", [datetime(2021, 1, 2, 3, 4, 5), datetime(2021, 2, 3, 4, 5, 6)]
-    )
-    s2 = pl.datetime_range(
-        datetime(2021, 1, 1, 0),
-        datetime(2021, 1, 1, 1),
-        interval="1h",
-        time_unit="ms",
-        eager=True,
-    )
-    assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
-    assert (
-        str(s1.to_numpy()[:2])
-        == "['2021-01-02T03:04:05.000000' '2021-02-03T04:05:06.000000']"
-    )
-    assert (
-        str(s2.to_numpy()[:2])
-        == "['2021-01-01T00:00:00.000' '2021-01-01T01:00:00.000']"
-    )
-    s3 = pl.Series([timedelta(hours=1), timedelta(hours=-2)])
-    out = np.array([3_600_000_000_000, -7_200_000_000_000], dtype="timedelta64[ns]")
-    assert (s3.to_numpy() == out).all()
-
-    s4 = pl.Series([time(10, 30, 45), time(23, 59, 59)])
-    out = np.array([time(10, 30, 45), time(23, 59, 59)], dtype="object")
-    assert (s4.to_numpy() == out).all()
