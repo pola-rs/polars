@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, collections::VecDeque};
 use std::thread::JoinHandle;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -23,13 +23,13 @@ pub(super) fn init_writer_thread(
     std::thread::spawn(move || {
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
-        let mut chunks = Vec::with_capacity(morsels_per_sink);
+        let mut chunks = VecDeque::with_capacity(morsels_per_sink);
 
         while let Ok(chunk) = receiver.recv() {
             // `last_write` indicates if all chunks are processed, e.g. this is the last write.
             // this is when `write_chunks` is called with `None`.
             let last_write = if let Some(chunk) = chunk {
-                chunks.push(chunk);
+                chunks.push_back(chunk);
                 false
             } else {
                 true
@@ -37,14 +37,28 @@ pub(super) fn init_writer_thread(
 
             if chunks.len() == morsels_per_sink || last_write {
                 if maintain_order {
-                    chunks.sort_by_key(|chunk| chunk.chunk_index);
+                    chunks.make_contiguous().sort_by_key(|chunk| chunk.chunk_index);
                 }
 
-                for chunk in chunks.iter() {
-                    writer._write_batch(&chunk.data).unwrap()
+                // Combine small chunks so we're not doing lots of small writes,
+                // which add expensive overhead. TODO might want to disable for
+                // some data formats where it might be pointless, e.g. JSON?
+                while !chunks.is_empty() {
+                    let mut chunk = chunks.pop_front().expect("we checked it's not empty");
+                    let mut stacked = false;
+                    while chunk.data.estimated_size() < 1024 * 1024 {
+                        if let Some(next_chunk) = chunks.pop_front() {
+                            chunk.data.vstack_mut(&next_chunk.data).expect("Should be same schema!");
+                            stacked = true;
+                        } else {
+                            break;
+                        }
+                    }
+                    if stacked {
+                        chunk.data.as_single_chunk();
+                    }
+                    writer._write_batch(&chunk.data).unwrap();
                 }
-                // all chunks are written remove them
-                chunks.clear();
 
                 if last_write {
                     writer._finish().unwrap();
