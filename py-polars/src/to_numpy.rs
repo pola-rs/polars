@@ -1,4 +1,6 @@
-use ndarray::IntoDimension;
+use std::ffi::{c_int, c_void};
+
+use ndarray::{Dim, Dimension, IntoDimension};
 use numpy::npyffi::{flags, PyArrayObject};
 use numpy::{npyffi, Element, IntoPyArray, ToNpyDims, PY_ARRAY_API};
 use polars_core::prelude::*;
@@ -9,6 +11,41 @@ use pyo3::{IntoPy, PyAny, PyObject, Python};
 
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
+
+pub(crate) unsafe fn create_borrowed_np_array<T: NumericNative + Element, I>(
+    py: Python,
+    mut shape: Dim<I>,
+    flags: c_int,
+    data: *mut c_void,
+    owner: PyObject,
+) -> PyObject
+where
+    Dim<I>: Dimension + ToNpyDims,
+{
+    // See: https://numpy.org/doc/stable/reference/c-api/array.html
+    let array = PY_ARRAY_API.PyArray_NewFromDescr(
+        py,
+        PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
+        T::get_dtype(py).into_dtype_ptr(),
+        shape.ndim_cint(),
+        shape.as_dims_ptr(),
+        // We don't provide strides, but provide flags that tell c/f-order
+        std::ptr::null_mut(),
+        data,
+        flags,
+        std::ptr::null_mut(),
+    );
+
+    // This keeps the memory alive
+    let owner_ptr = owner.as_ptr();
+    // SetBaseObject steals a reference
+    // so we can forget.
+    std::mem::forget(owner);
+    PY_ARRAY_API.PyArray_SetBaseObject(py, array as *mut PyArrayObject, owner_ptr);
+
+    let any: &PyAny = py.from_owned_ptr(array);
+    any.into_py(py)
+}
 
 #[pymethods]
 #[allow(clippy::wrong_self_convention)]
@@ -63,29 +100,14 @@ impl PyDataFrame {
 
                 if all_contiguous {
                     let start_ptr = first.as_ptr();
-
-                    let mut dims = [first.len(), columns.len()].into_dimension();
-
-                    // See: https://numpy.org/doc/stable/reference/c-api/array.html
-                    let array = PY_ARRAY_API.PyArray_NewFromDescr(
+                    let dims = [first.len(), columns.len()].into_dimension();
+                    Some(create_borrowed_np_array::<T::Native, _>(
                         py,
-                        PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
-                        T::Native::get_dtype(py).into_dtype_ptr(),
-                        dims.ndim_cint(),
-                        dims.as_dims_ptr(),
-                        std::ptr::null_mut(),
+                        dims,
+                        flags::NPY_ARRAY_FARRAY_RO,
                         start_ptr as _,
-                        flags::NPY_ARRAY_OUT_FARRAY,
-                        std::ptr::null_mut(),
-                    );
-
-                    // This keeps the memory alive
-                    let owner_ptr = owner.as_ptr();
-                    std::mem::forget(owner);
-                    PY_ARRAY_API.PyArray_SetBaseObject(py, array as *mut PyArrayObject, owner_ptr);
-
-                    let any: &PyAny = py.from_owned_ptr(array);
-                    Some(any.into_py(py))
+                        owner,
+                    ))
                 } else {
                     None
                 }
