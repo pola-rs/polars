@@ -141,14 +141,19 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
 
 impl ToPyObject for Wrap<&TimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
-        let iter = self
-            .0
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
+        let iter = time_to_pyobject_iter(py, self.0);
         PyList::new(py, iter).into_py(py)
     }
+}
+
+pub(crate) fn time_to_pyobject_iter<'a>(
+    py: Python<'a>,
+    ca: &'a TimeChunked,
+) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
+    let utils = UTILS.as_ref(py);
+    let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
+    ca.0.into_iter()
+        .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()))
 }
 
 impl ToPyObject for Wrap<&DateChunked> {

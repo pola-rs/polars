@@ -4361,7 +4361,7 @@ class Series:
                 zero_copy_only=zero_copy_only, writable=writable
             )
 
-        if dtype in (Time, Decimal):
+        if dtype == Decimal:
             # There are no native NumPy "time" or "decimal" dtypes
             raise_no_zero_copy()
             return np.array(self.to_list(), dtype="object", copy=False)
@@ -4386,7 +4386,7 @@ class Series:
         else:
             raise_no_zero_copy()
             np_array = self._s.to_numpy()
-            if dtype.is_temporal():
+            if dtype in (Datetime, Duration, Date):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = np_array.view(np_dtype)
 
