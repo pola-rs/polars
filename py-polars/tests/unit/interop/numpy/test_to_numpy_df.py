@@ -101,3 +101,9 @@ def test__array__() -> None:
     expected_array = np.array([[1, 1], [2, 2], [3, 3]], dtype=np.uint8)
     assert_array_equal(out_array, expected_array)
     assert out_array.flags["F_CONTIGUOUS"] is True
+
+
+def test_numpy_preserve_uint64_4112() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").hash())
+    assert df.to_numpy().dtype == np.dtype("uint64")
+    assert df.to_numpy(structured=True).dtype == np.dtype([("a", "uint64")])

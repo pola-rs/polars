@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 from decimal import Decimal as D
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -14,6 +15,155 @@ from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     import numpy.typing as npt
+
+
+def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
+    arr_ptr = arr.__array_interface__["data"][0]
+    assert s_ptr == arr_ptr
+
+
+def assert_zero_copy_only_raises(s: pl.Series) -> None:
+    with pytest.raises(ValueError, match="cannot return a zero-copy array"):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (pl.Int8, np.int8),
+        (pl.Int16, np.int16),
+        (pl.Int32, np.int32),
+        (pl.Int64, np.int64),
+        (pl.UInt8, np.uint8),
+        (pl.UInt16, np.uint16),
+        (pl.UInt32, np.uint32),
+        (pl.UInt64, np.uint64),
+        (pl.Float32, np.float32),
+        (pl.Float64, np.float64),
+    ],
+)
+def test_series_to_numpy_numeric_zero_copy(
+    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+) -> None:
+    s = pl.Series([1, 2, 3], dtype=dtype, strict=False)
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert_zero_copy(s, result)
+    assert result.tolist() == s.to_list()
+    assert result.dtype == expected_dtype
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (pl.Int8, np.float32),
+        (pl.Int16, np.float32),
+        (pl.Int32, np.float64),
+        (pl.Int64, np.float64),
+        (pl.UInt8, np.float32),
+        (pl.UInt16, np.float32),
+        (pl.UInt32, np.float64),
+        (pl.UInt64, np.float64),
+        (pl.Float32, np.float32),
+        (pl.Float64, np.float64),
+    ],
+)
+def test_series_to_numpy_numeric_with_nulls(
+    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+) -> None:
+    s = pl.Series([1, 2, None], dtype=dtype, strict=False)
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert result.tolist()[:-1] == s.to_list()[:-1]
+    assert np.isnan(result[-1])
+    assert result.dtype == expected_dtype
+    assert_zero_copy_only_raises(s)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values"),
+    [
+        (pl.Categorical, ["a", "b", "a"]),
+        (pl.Enum(["a", "b", "c"]), ["a", "b", "a"]),
+        (pl.String, ["a", "bc", "def"]),
+        (pl.Binary, [b"a", b"bc", b"def"]),
+        (pl.Object, [Path(), Path("abc")]),
+        # (pl.List, [[1], [2, 3]]),
+        # (pl.List, [["a"], ["b", "c"], []]),
+    ],
+)
+def test_to_numpy_various_dtypes(dtype: pl.PolarsDataType, values: list[Any]) -> None:
+    values.append(None)
+    s = pl.Series(values, dtype=dtype)
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert result.tolist() == values
+    assert result.dtype == np.object_
+    assert_zero_copy_only_raises(s)
+
+
+def test_series_to_numpy_bool() -> None:
+    s = pl.Series([True, False])
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert s.to_list() == result.tolist()
+    assert result.dtype == np.bool_
+    assert_zero_copy_only_raises(s)
+
+
+def test_series_to_numpy_bool_with_nulls() -> None:
+    s = pl.Series([True, False, None])
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert s.to_list() == result.tolist()
+    assert result.dtype == np.object_
+    assert_zero_copy_only_raises(s)
+
+
+def test_series_to_numpy_array_of_int() -> None:
+    values = [[1, 2], [3, 4], [5, 6]]
+    s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
+    result = s.to_numpy(use_pyarrow=False)
+
+    expected = np.array(values)
+    assert_array_equal(result, expected)
+    assert result.dtype == np.int64
+
+
+def test_series_to_numpy_array_of_str() -> None:
+    values = [["1", "2", "3"], ["4", "5", "10000"]]
+    s = pl.Series(values, dtype=pl.Array(pl.String, 3))
+    result = s.to_numpy(use_pyarrow=False)
+    assert result.tolist() == values
+    assert result.dtype == np.object_
+
+
+def test_series_to_numpy_array_with_nulls() -> None:
+    values = [[1, 2], [3, 4], None]
+    s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
+    result = s.to_numpy(use_pyarrow=False)
+
+    expected = np.array([[1.0, 2.0], [3.0, 4.0], [np.nan, np.nan]])
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float64
+    assert_zero_copy_only_raises(s)
+
+
+def test_to_numpy_null() -> None:
+    s = pl.Series([None, None], dtype=pl.Null)
+    result = s.to_numpy(use_pyarrow=False)
+    expected = np.array([np.nan, np.nan], dtype=np.float32)
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float32
+
+
+def test_to_numpy_empty() -> None:
+    series = pl.Series()
+    result = series.to_numpy(use_pyarrow=False)
+    assert result.dtype == np.float32
+    assert result.shape == (0,)
+    assert result.size == 0
 
 
 @given(
@@ -54,34 +204,6 @@ def test_to_numpy_no_zero_copy(
     series = pl.Series(data if has_null else data[:1], dtype=dtype)
     with pytest.raises(ValueError):
         series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
-
-
-def test_to_numpy_empty_no_pyarrow() -> None:
-    series = pl.Series([], dtype=pl.Null)
-    result = series.to_numpy()
-    assert result.dtype == pl.Float32
-    assert result.shape == (0,)
-    assert result.size == 0
-
-
-def test_to_numpy_categorical() -> None:
-    s = pl.Series(["a", "b", "a", None], dtype=pl.Categorical)
-    result = s.to_numpy(use_pyarrow=False)
-    assert result.tolist() == s.to_list()
-
-
-def test_to_numpy_enum() -> None:
-    s = pl.Series(["a", "b", "a", None], dtype=pl.Enum(["a", "b", "c"]))
-    result = s.to_numpy(use_pyarrow=False)
-    assert result.tolist() == s.to_list()
-
-
-def test_to_numpy_null() -> None:
-    s = pl.Series([None, None], dtype=pl.Null)
-    result = s.to_numpy(use_pyarrow=False)
-    expected = np.array([np.nan, np.nan], dtype=np.float32)
-    assert_array_equal(result, expected)
-    assert result.dtype == np.float32
 
 
 @pytest.mark.parametrize("writable", [False, True])
@@ -166,31 +288,6 @@ def test_numpy_disambiguation() -> None:
     assert result == expected
 
 
-def test_series_to_numpy_bool() -> None:
-    s = pl.Series([True, False])
-    result = s.to_numpy(use_pyarrow=False)
-    assert s.to_list() == result.tolist()
-    assert result.dtype == np.bool_
-
-
-def test_series_to_numpy_bool_with_nulls() -> None:
-    s = pl.Series([True, False, None])
-    result = s.to_numpy(use_pyarrow=False)
-    assert s.to_list() == result.tolist()
-    assert result.dtype == np.object_
-
-
-def test_array_to_numpy() -> None:
-    s = pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))
-    assert (s.to_numpy() == np.array([[1, 2], [3, 4], [5, 6]])).all()
-
-
-def test_numpy_preserve_uint64_4112() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").hash())
-    assert df.to_numpy().dtype == np.dtype("uint64")
-    assert df.to_numpy(structured=True).dtype == np.dtype([("a", "uint64")])
-
-
 def test_to_numpy_datelike() -> None:
     s = pl.Series(
         "dt",
@@ -259,26 +356,3 @@ def test_decimal_numpy_export(use_pyarrow: bool) -> None:
         np.array(decimal_data).reshape((-1, 1)),
         df.to_numpy(use_pyarrow=use_pyarrow),
     )
-
-
-@pytest.mark.parametrize(
-    ("dtype", "expected_dtype"),
-    [
-        (pl.Int8, np.float32),
-        (pl.Int16, np.float32),
-        (pl.Int32, np.float64),
-        (pl.Int64, np.float64),
-        (pl.UInt8, np.float32),
-        (pl.UInt16, np.float32),
-        (pl.UInt32, np.float64),
-        (pl.UInt64, np.float64),
-        (pl.Float32, np.float32),
-        (pl.Float64, np.float64),
-    ],
-)
-def test_series_to_numpy_numeric_with_nulls(
-    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
-) -> None:
-    s = pl.Series([1, 2, None], dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False)
-    assert result.dtype == expected_dtype
