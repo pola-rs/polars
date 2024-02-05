@@ -59,7 +59,6 @@ from polars.dependencies import (
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    dataframe_api_compat,
     hvplot,
 )
 from polars.dependencies import numpy as np
@@ -1485,19 +1484,6 @@ class Series:
                 f"`{method!r}`"
             )
             raise NotImplementedError(msg)
-
-    def __column_consortium_standard__(self, *, api_version: str | None = None) -> Any:
-        """
-        Provide entry point to the Consortium DataFrame Standard API.
-
-        This is developed and maintained outside of polars.
-        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
-        """
-        return (
-            dataframe_api_compat.polars_standard.convert_to_standard_compliant_column(
-                self, api_version=api_version
-            )
-        )
 
     def _repr_html_(self) -> str:
         """Format output data in HTML for display in Jupyter Notebooks."""
