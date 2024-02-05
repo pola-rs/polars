@@ -32,6 +32,12 @@ impl BufferedWriter {
 
     /// Write (or vstack) another chunk.
     fn write(&mut self, next_chunk: DataChunk) {
+        // If the next chunk is too large, we probably don't want make copies of
+        // it when we do as_single_chunk() in _flush(), so we flush in advance.
+        if self.current_frame.is_some() && next_chunk.data.estimated_size() > 10 * 1024 * 1024 {
+            self._flush();
+        }
+
         if let Some(ref mut current_frame) = self.current_frame {
             current_frame
                 .vstack_mut(&next_chunk.data)
@@ -59,11 +65,9 @@ impl BufferedWriter {
     /// Do the actual write of any buffered data.
     fn _flush(&mut self) {
         let current_frame = self.current_frame.as_mut().unwrap();
-        // In general, if we've stacked small batches we want to make the data
-        // contiguous. However, it's theoretically possible we had a bunch of
-        // small writes followed by a giant write, in which case it's probably
-        // not worth the extra memory usage.
-        if self.stacked && current_frame.estimated_size() < 50_000_000 {
+        // If we've stacked multiple small batches we want to make the data
+        // contiguous.
+        if self.stacked {
             current_frame.as_single_chunk();
         }
         self.writer._write_batch(current_frame).unwrap();
