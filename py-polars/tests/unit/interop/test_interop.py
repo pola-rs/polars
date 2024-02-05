@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
 
@@ -982,3 +983,22 @@ def test_from_avro_valid_time_zone_13032() -> None:
     result = cast(pl.Series, pl.from_arrow(arr))
     expected = pl.Series([datetime(2021, 1, 1)], dtype=pl.Datetime("ns", "UTC"))
     assert_series_equal(result, expected)
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="Earlier versions of Python do not support __buffer__",
+)
+def test_buffer_protocol() -> None:
+    # use numpy's 'frombuffer' to test __buffer__ support
+    if numpy_from_buffer := getattr(np, "frombuffer", None):
+        srs = pl.Series("foo", [-1234.5, 6.0, 789.0])
+        assert numpy_from_buffer(srs).tolist() == [-1234.5, 6.0, 789.0]
+
+        # note: 'np.frombuffer' does not support reconstruction from a buffer
+        # representing a 2D array, but other packages do (such as apple's "mlx")
+        df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        assert [numpy_from_buffer(srs, dtype=np.int64).tolist() for srs in df] == [
+            [1, 2, 3],
+            [4, 5, 6],
+        ]

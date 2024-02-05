@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
+import sys
 from collections import OrderedDict, defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -120,7 +121,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
-    import sys
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -1305,6 +1305,12 @@ class DataFrame:
             return self.to_numpy().__array__(dtype)
         else:
             return self.to_numpy().__array__()
+
+    if sys.version_info >= (3, 12):
+
+        def __buffer__(self, flags: int) -> memoryview:
+            # see: https://peps.python.org/pep-0688/
+            return self.to_numpy().__buffer__(flags)
 
     def __dataframe__(
         self,

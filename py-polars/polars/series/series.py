@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import (
@@ -114,8 +115,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    import sys
-
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
@@ -1484,6 +1483,12 @@ class Series:
                 f"`{method!r}`"
             )
             raise NotImplementedError(msg)
+
+    if sys.version_info >= (3, 12):
+
+        def __buffer__(self, flags: int) -> memoryview:
+            # see: https://peps.python.org/pep-0688/
+            return self.__array__().__buffer__(flags)
 
     def _repr_html_(self) -> str:
         """Format output data in HTML for display in Jupyter Notebooks."""
