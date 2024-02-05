@@ -1,4 +1,4 @@
-use std::{any::Any, collections::VecDeque};
+use std::any::Any;
 use std::thread::JoinHandle;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -11,9 +11,67 @@ pub(super) trait SinkWriter {
     fn _finish(&mut self) -> PolarsResult<()>;
 }
 
+/// Write DataChunks in sufficiently large chunks that we don't suffer from
+/// overhead of many small writes.
+struct BufferedWriter {
+    current_frame: Option<DataFrame>,
+    /// Have we vstack()ed on to the current chunk?
+    stacked: bool,
+    writer: Box<dyn SinkWriter + Send>,
+}
+
+impl BufferedWriter {
+    /// Create a new instance.
+    fn new(writer: Box<dyn SinkWriter + Send>) -> Self {
+        Self {
+            current_frame: None,
+            stacked: false,
+            writer,
+        }
+    }
+
+    /// Write (or vstack) another chunk.
+    fn write(&mut self, next_chunk: DataChunk) {
+        if let Some(ref mut current_frame) = self.current_frame {
+            current_frame
+                .vstack_mut(&next_chunk.data)
+                .expect("These are chunks from the same dataframe");
+            self.stacked = true;
+        } else {
+            self.current_frame = Some(next_chunk.data);
+        };
+        if self.current_frame.as_ref().unwrap().estimated_size() > 1024 * 1024 {
+            self._flush();
+        }
+    }
+
+    /// Finish writing, flushing remaining data.
+    fn finish(mut self) {
+        if self.current_frame.is_some() {
+            self._flush();
+        }
+        self.writer._finish().unwrap();
+    }
+
+    /// Do the actual write of any buffered data.
+    fn _flush(&mut self) {
+        let current_frame = self.current_frame.as_mut().unwrap();
+        // In general, if we've stacked small batches we want to make the data
+        // contiguous. However, it's theoretically possible we had a bunch of
+        // small writes followed by a giant write, in which case it's probably
+        // not worth the extra memory usage.
+        if self.stacked && current_frame.estimated_size() < 50_000_000 {
+            current_frame.as_single_chunk();
+        }
+        self.writer._write_batch(current_frame).unwrap();
+        self.current_frame = None;
+        self.stacked = false;
+    }
+}
+
 pub(super) fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
-    mut writer: Box<dyn SinkWriter + Send>,
+    writer: Box<dyn SinkWriter + Send>,
     maintain_order: bool,
     // this is used to determine when a batch of chunks should be written to disk
     // all chunks per push should be collected to determine in which order they should
@@ -23,13 +81,14 @@ pub(super) fn init_writer_thread(
     std::thread::spawn(move || {
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
-        let mut chunks = VecDeque::with_capacity(morsels_per_sink);
+        let mut chunks = Vec::with_capacity(morsels_per_sink);
+        let mut buffered_writer = BufferedWriter::new(writer);
 
         while let Ok(chunk) = receiver.recv() {
             // `last_write` indicates if all chunks are processed, e.g. this is the last write.
             // this is when `write_chunks` is called with `None`.
             let last_write = if let Some(chunk) = chunk {
-                chunks.push_back(chunk);
+                chunks.push(chunk);
                 false
             } else {
                 true
@@ -37,31 +96,15 @@ pub(super) fn init_writer_thread(
 
             if chunks.len() == morsels_per_sink || last_write {
                 if maintain_order {
-                    chunks.make_contiguous().sort_by_key(|chunk| chunk.chunk_index);
+                    chunks.sort_by_key(|chunk| chunk.chunk_index);
                 }
 
-                // Combine small chunks so we're not doing lots of small writes,
-                // which add expensive overhead. TODO might want to disable for
-                // some data formats where it might be pointless, e.g. JSON?
-                while !chunks.is_empty() {
-                    let mut chunk = chunks.pop_front().expect("we checked it's not empty");
-                    let mut stacked = false;
-                    while chunk.data.estimated_size() < 1024 * 1024 {
-                        if let Some(next_chunk) = chunks.pop_front() {
-                            chunk.data.vstack_mut(&next_chunk.data).expect("Should be same schema!");
-                            stacked = true;
-                        } else {
-                            break;
-                        }
-                    }
-                    if stacked {
-                        chunk.data.as_single_chunk();
-                    }
-                    writer._write_batch(&chunk.data).unwrap();
+                for chunk in chunks.drain(0..) {
+                    buffered_writer.write(chunk);
                 }
 
                 if last_write {
-                    writer._finish().unwrap();
+                    buffered_writer.finish();
                     return;
                 }
             }
