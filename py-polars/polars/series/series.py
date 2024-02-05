@@ -4339,7 +4339,7 @@ class Series:
         """
 
         def raise_no_zero_copy() -> None:
-            if zero_copy_only:
+            if zero_copy_only and not self.is_empty():
                 msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 

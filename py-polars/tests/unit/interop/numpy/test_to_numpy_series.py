@@ -165,13 +165,10 @@ def test_to_numpy_null() -> None:
     assert_zero_copy_only_raises(s)
 
 
-@pytest.mark.skip(
-    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/14274"
-)
 def test_to_numpy_empty() -> None:
     series = pl.Series(dtype=pl.String)
     result = series.to_numpy(use_pyarrow=False, zero_copy_only=True)
-    assert result.dtype == np.int64
+    assert result.dtype == np.object_
     assert result.shape == (0,)
     assert result.size == 0
 
