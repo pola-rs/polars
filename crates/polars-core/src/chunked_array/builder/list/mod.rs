@@ -142,12 +142,15 @@ pub fn get_list_builder(
             Some(inner_type_logical.clone()),
         ))),
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => Ok(Box::new(ListPrimitiveChunkedBuilder::<Int128Type>::new(
-            name,
-            list_capacity,
-            value_capacity,
-            inner_type_logical.clone(),
-        ))),
+        DataType::Decimal(_, _) => Ok(Box::new(
+            ListPrimitiveChunkedBuilder::<Int128Type>::new_with_values_type(
+                name,
+                list_capacity,
+                value_capacity,
+                physical_type,
+                inner_type_logical.clone(),
+            ),
+        )),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{

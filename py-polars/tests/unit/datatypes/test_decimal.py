@@ -300,3 +300,12 @@ def test_decimal_write_parquet_12375() -> None:
     assert df["bye"].dtype == pl.Decimal
 
     df.write_parquet(f)
+
+
+def test_decimal_list_get_13847() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+        df = pl.DataFrame({"a": [[D("1.1"), D("1.2")], [D("2.1")]]})
+        out = df.select(pl.col("a").list.get(0))
+        expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
+        assert_frame_equal(out, expected)

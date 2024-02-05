@@ -32,7 +32,7 @@ mod list;
 mod primitive;
 mod structure;
 
-use crate::with_match_primitive_type;
+use crate::with_match_primitive_type_full;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
@@ -50,7 +50,7 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(values, indices))
         },
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(primitive::take_primitive_unchecked::<$T>(&values, indices))
         }),
