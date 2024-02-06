@@ -6,7 +6,7 @@ import operator
 import os
 import warnings
 from datetime import timedelta
-from functools import partial, reduce
+from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -66,7 +66,6 @@ from polars.utils.various import (
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
-    from polars.polars import reduce as pyreduce
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr
@@ -298,19 +297,14 @@ class Expr:
         ]
         if num_expr == 1:
             root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
-
-            # def function(s: Series) -> Series:
-            #     return ufunc(s, **kwargs)
         else:
-            root_expr = F.struct(
-                expr[0].alias(f"__arg{expr[2]}") for expr in exprs if expr[1] == Expr
-            )
+            root_expr = F.struct(expr[0] for expr in exprs if expr[1] == Expr)
 
         def function(s: Series) -> Series:  # pragma: no cover
             args = []
-            for expr in exprs:
+            for i, expr in enumerate(exprs):
                 if expr[1] == Expr and num_expr > 1:
-                    args.append(s.struct.field(f"__arg{expr[2]}"))
+                    args.append(s.struct[i])
                 elif expr[1] == Expr:
                     args.append(s)
                 else:
@@ -329,8 +323,10 @@ class Expr:
                 CustomUFuncWarning,
                 stacklevel=find_stacklevel(),
             )
-            return root_expr.map_batches(function, is_elementwise=False)
-        return root_expr.map_batches(function, is_elementwise=True)
+            return root_expr.map_batches(
+                function, is_elementwise=False
+            ).meta.undo_aliases()
+        return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
     def from_json(cls, value: str) -> Self:
