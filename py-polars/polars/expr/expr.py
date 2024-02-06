@@ -287,21 +287,34 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Self:
         """Numpy universal functions."""
+        if method != "__call__":
+            msg = f"Only call is implemented not {method}"
+            raise NotImplementedError(msg)
         is_custom_ufunc = ufunc.__class__ != np.ufunc
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
-        if num_expr > 1:
-            if num_expr < len(inputs):
-                msg = (
-                    "NumPy ufunc with more than one expression can only be used"
-                    " if all non-expression inputs are provided as keyword arguments only"
-                )
-                raise ValueError(msg)
+        exprs = [
+            (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
+            for i, inp in enumerate(inputs)
+        ]
+        if num_expr == 1:
+            root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
 
-            exprs = parse_as_list_of_expressions(inputs)
-            return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
+            # def function(s: Series) -> Series:
+            #     return ufunc(s, **kwargs)
+        else:
+            root_expr = F.struct(
+                expr[0].alias(f"__arg{expr[2]}") for expr in exprs if expr[1] == Expr
+            )
 
         def function(s: Series) -> Series:  # pragma: no cover
-            args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
+            args = []
+            for expr in exprs:
+                if expr[1] == Expr and num_expr > 1:
+                    args.append(s.struct.field(f"__arg{expr[2]}"))
+                elif expr[1] == Expr:
+                    args.append(s)
+                else:
+                    args.append(expr[0])
             return ufunc(*args, **kwargs)
 
         if is_custom_ufunc is True:
@@ -316,8 +329,8 @@ class Expr:
                 CustomUFuncWarning,
                 stacklevel=find_stacklevel(),
             )
-            return self.map_batches(function, is_elementwise=False)
-        return self.map_batches(function, is_elementwise=True)
+            return root_expr.map_batches(function, is_elementwise=False)
+        return root_expr.map_batches(function, is_elementwise=True)
 
     @classmethod
     def from_json(cls, value: str) -> Self:
