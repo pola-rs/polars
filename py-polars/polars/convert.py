@@ -512,6 +512,30 @@ def from_numpy(
 # simply result in mypy inferring "Any", which isn't useful...
 
 
+@overload
+def from_arrow(
+    data: pa.Table
+        | pa.RecordBatch
+        | Iterable[pa.RecordBatch | pa.Table],
+    schema: SchemaDefinition | None = ...,
+    *,
+    schema_overrides: SchemaDict | None = ...,
+    rechunk: bool = ...,
+) -> DataFrame:
+    ...
+
+
+@overload
+def from_arrow(
+    data: pa.Array | pa.ChunkedArray,
+    schema: SchemaDefinition | None = ...,
+    *,
+    schema_overrides: SchemaDict | None = ...,
+    rechunk: bool = ...,
+) -> Series:
+    ...
+
+    
 def from_arrow(
     data: (
         pa.Table
