@@ -535,7 +535,7 @@ def from_arrow(
 ) -> Series:
     ...
 
-    
+
 def from_arrow(
     data: (
         pa.Table
