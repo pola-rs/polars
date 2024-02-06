@@ -49,5 +49,6 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.to_array
     Expr.list.to_struct
     Expr.list.unique
+    Expr.list.n_unique
     Expr.list.var
     Expr.list.gather_every
