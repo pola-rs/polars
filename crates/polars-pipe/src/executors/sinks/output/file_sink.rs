@@ -4,7 +4,7 @@ use std::thread::JoinHandle;
 use crossbeam_channel::{Receiver, Sender};
 use polars_core::prelude::*;
 
-use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, SemicontiguousVstacker};
 
 pub(super) trait SinkWriter {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()>;
@@ -12,68 +12,6 @@ pub(super) trait SinkWriter {
     fn _finish(&mut self) -> PolarsResult<()>;
 }
 
-/// Combine `DataFrame`s into sufficiently large contiguous memory allocations
-/// that we don't suffer from overhead of many small writes. At the same time,
-/// don't use too much memory by creating overly large allocations.
-#[derive(Clone)]
-pub(crate) struct SemicontiguousVstacker {
-    current_dataframe: Option<DataFrame>,
-    /// Have we vstack()ed on to the current chunk?
-    stacked: bool,
-}
-
-impl SemicontiguousVstacker {
-    /// Create a new instance.
-    pub fn new() -> Self {
-        Self {
-            current_dataframe: None,
-            stacked: false,
-        }
-    }
-
-    /// Add another chunk.
-    pub fn add(&mut self, next_frame: DataFrame) -> impl Iterator<Item=DataFrame> {
-        let mut result : [Option<DataFrame>; 2] = [None, None];
-
-        // If the next chunk is too large, we probably don't want make copies of
-        // it when we do as_single_chunk() in flush(), so we flush in advance.
-        if self.current_dataframe.is_some() && next_frame.estimated_size() > 1024 * 1024 {
-            result[0] = self.flush();
-        }
-
-        if let Some(ref mut current_frame) = self.current_dataframe {
-            current_frame
-                .vstack_mut(&next_frame)
-                .expect("These are chunks from the same dataframe");
-            self.stacked = true;
-        } else {
-            self.current_dataframe = Some(next_frame);
-        };
-
-        // 4 MB was chosen based on some empirical experiments that showed it to
-        // be decently faster than lower or higher values, and it's small enough
-        // it won't impact memory usage significantly.
-        if self.current_dataframe.as_ref().unwrap().estimated_size() > 4 * 1024 * 1024 {
-            result[1] = self.flush();
-        }
-        result.into_iter().flatten()
-    }
-
-    /// Do the actual write of any buffered data.
-    pub fn flush(&mut self) -> Option<DataFrame> {
-        if let Some(mut current_frame) = std::mem::take(&mut self.current_dataframe) {
-            // If we've stacked multiple small batches we want to make the data
-            // contiguous.
-            if self.stacked {
-                current_frame.as_single_chunk();
-            }
-            self.stacked = false;
-            Some(current_frame)
-        } else {
-            None
-        }
-    }
-}
 
 pub(super) fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
@@ -114,7 +52,7 @@ pub(super) fn init_writer_thread(
                 chunks.clear();
 
                 if last_write {
-                    if let Some(dataframe) = vstacker.flush() {
+                    if let Some(dataframe) = vstacker.finish() {
                         writer._write_batch(&dataframe).unwrap();
                     }
                     writer._finish().unwrap();
