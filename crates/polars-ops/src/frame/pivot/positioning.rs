@@ -315,7 +315,9 @@ where
     }
     let row_index = match count {
         0 => {
-            let mut s = index_agg.take_slice(&unique_indices).unwrap();
+            // SAFETY: `unique_indices` is filled with elements between
+            // 0 and `index_agg.len() - 1`.
+            let mut s = unsafe { index_agg.take_slice_unchecked(&unique_indices) };
             s.rename(&index[0]);
             Some(vec![s])
         },
