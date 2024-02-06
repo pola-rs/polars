@@ -454,7 +454,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.with_columns(n_unique=pl.col("a").list.n_unique())
-        shape: (1, 2)
+        shape: (2, 2)
         ┌───────────┬──────────┐
         │ a         ┆ n_unique │
         │ ---       ┆ ---      │
