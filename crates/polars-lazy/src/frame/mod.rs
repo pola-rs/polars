@@ -209,8 +209,8 @@ impl LazyFrame {
     }
 
     /// Return a String describing the naive (un-optimized) logical plan in tree format.
-    pub fn describe_plan_tree(&self, expand_expressions: bool) -> String {
-        self.logical_plan.describe_tree_format(expand_expressions)
+    pub fn describe_plan_tree(&self) -> String {
+        self.logical_plan.describe_tree_format()
     }
 
     fn optimized_plan(&self) -> PolarsResult<LogicalPlan> {
@@ -235,10 +235,8 @@ impl LazyFrame {
     /// Return a String describing the optimized logical plan in tree format.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
-    pub fn describe_optimized_plan_tree(&self, expand_expressions: bool) -> PolarsResult<String> {
-        Ok(self
-            .optimized_plan()?
-            .describe_tree_format(expand_expressions))
+    pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
+        Ok(self.optimized_plan()?.describe_tree_format())
     }
 
     /// Return a String describing the logical plan.

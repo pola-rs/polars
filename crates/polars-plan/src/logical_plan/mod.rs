@@ -273,9 +273,9 @@ impl LogicalPlan {
         format!("{self:#?}")
     }
 
-    pub fn describe_tree_format(&self, expand_expressions: bool) -> String {
+    pub fn describe_tree_format(&self) -> String {
         let mut visitor = TreeFmtVisitor::default();
-        TreeFmtNode::root_logical_plan(self).traverse(&mut visitor, expand_expressions);
+        TreeFmtNode::root_logical_plan(self).traverse(&mut visitor);
         format!("{visitor:#?}")
     }
 

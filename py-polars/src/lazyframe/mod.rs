@@ -379,14 +379,14 @@ impl PyLazyFrame {
         Ok(result)
     }
 
-    fn describe_plan_tree(&self, expand_expressions: bool) -> String {
-        self.ldf.describe_plan_tree(expand_expressions)
+    fn describe_plan_tree(&self) -> String {
+        self.ldf.describe_plan_tree()
     }
 
-    fn describe_optimized_plan_tree(&self, expand_expressions: bool) -> PyResult<String> {
+    fn describe_optimized_plan_tree(&self) -> PyResult<String> {
         let result = self
             .ldf
-            .describe_optimized_plan_tree(expand_expressions)
+            .describe_optimized_plan_tree()
             .map_err(PyPolarsErr::from)?;
         Ok(result)
     }
