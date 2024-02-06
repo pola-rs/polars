@@ -579,25 +579,29 @@ def test_strict_cast_string_and_binary(
 
 
 @pytest.mark.parametrize(
-    "dtype_out",
+    ("dtype_in", "dtype_out"),
     [
-        (pl.UInt8),
-        (pl.Int8),
-        (pl.UInt16),
-        (pl.Int16),
-        (pl.UInt32),
-        (pl.Int32),
-        (pl.UInt64),
-        (pl.Int64),
-        (pl.Date),
-        (pl.Datetime),
-        (pl.Time),
-        (pl.Duration),
-        (pl.Enum(["1"])),
+        (pl.Categorical, pl.UInt8),
+        (pl.Categorical, pl.Int8),
+        (pl.Categorical, pl.UInt16),
+        (pl.Categorical, pl.Int16),
+        (pl.Categorical, pl.UInt32),
+        (pl.Categorical, pl.Int32),
+        (pl.Categorical, pl.UInt64),
+        (pl.Categorical, pl.Int64),
+        (pl.Categorical, pl.Date),
+        (pl.Categorical, pl.Datetime),
+        (pl.Categorical, pl.Time),
+        (pl.Categorical, pl.Duration),
+        (pl.Categorical, pl.Enum(["1"])),
+        (pl.Enum(["1"]), pl.Enum(["1", "2"])),
+        (pl.Enum(["1"]), pl.Categorical),
     ],
 )
-def test_cast_categorical_name_retention(dtype_out: PolarsDataType) -> None:
-    assert pl.Series("a", ["1"], dtype=pl.Categorical).cast(dtype_out).name == "a"
+def test_cast_categorical_name_retention(
+    dtype_in: PolarsDataType, dtype_out: PolarsDataType
+) -> None:
+    assert pl.Series("a", ["1"], dtype=dtype_in).cast(dtype_out).name == "a"
 
 
 def test_cast_date_to_time() -> None:

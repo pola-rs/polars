@@ -373,7 +373,8 @@ impl LogicalType for CategoricalChunked {
                 Ok(self
                     .to_enum(categories, *hash)?
                     .set_ordering(*ordering, true)
-                    .into_series())
+                    .into_series()
+                    .with_name(self.name()))
             },
             DataType::Enum(None, _) => {
                 polars_bail!(ComputeError: "can not cast to enum without categories present")
