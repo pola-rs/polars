@@ -54,7 +54,8 @@ impl HivePartitions {
                 if value.contains('*') {
                     return None;
                 }
-                
+
+                // Identify file by index location
                 if index == url.display().to_string().split(sep).count() - 1 {
                     return None;
                 }
