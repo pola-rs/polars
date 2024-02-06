@@ -42,7 +42,9 @@ impl HivePartitions {
             .display()
             .to_string()
             .split(sep)
-            .filter_map(|part| {
+            .enumerate()
+            .peekable()
+            .filter_map(|(index, part)| {
                 let mut it = part.split('=');
                 let name = it.next()?;
                 let value = it.next()?;
@@ -52,8 +54,8 @@ impl HivePartitions {
                 if value.contains('*') {
                     return None;
                 }
-                let value_path = Path::new(value);
-                if value_path.extension().is_some() {
+                
+                if index == url.display().to_string().split(sep).count() - 1 {
                     return None;
                 }
 
