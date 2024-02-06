@@ -34,7 +34,6 @@ use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
-use crate::logical_plan::ErrorState;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
