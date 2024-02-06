@@ -594,7 +594,8 @@ def test_strict_cast_string_and_binary(
         (pl.Time),
         (pl.Duration),
         (pl.String),
-        (pl.Enum(["1"])),
+        (pl.Categorical),
+        (pl.Enum(["1", "2"])),
     ],
 )
 def test_cast_categorical_name_retention(dtype_out: PolarsDataType) -> None:
