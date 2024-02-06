@@ -138,6 +138,14 @@ def test_decimal_cast() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
+def test_decimal_cast_no_scale() -> None:
+    s = pl.Series().cast(pl.Decimal)
+    assert s.dtype == pl.Decimal(precision=None, scale=0)
+
+    s = pl.Series([D("10.0")]).cast(pl.Decimal)
+    assert s.dtype == pl.Decimal(precision=None, scale=1)
+
+
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
