@@ -98,7 +98,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ModuleUpgradeRequired, ShapeError
+from polars.exceptions import CopyNotAllowedError, ModuleUpgradeRequired, ShapeError
 from polars.meta import get_index_type
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
@@ -4287,6 +4287,11 @@ class Series:
                 Use the `allow_copy` parameter instead, which is the inverse of this
                 one.
 
+        Raises
+        ------
+        CopyNotAllowedError
+            If data copy is required, but `zero_copy_only` was set to True.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -4304,10 +4309,9 @@ class Series:
             )
             allow_copy = not zero_copy_only
 
-        def raise_on_copy() -> None:
+        def raise_on_copy(msg: str) -> None:
             if not allow_copy and not self.is_empty():
-                msg = "cannot return a zero-copy array"
-                raise ValueError(msg)
+                raise CopyNotAllowedError(msg)
 
         def temporal_dtype_to_numpy(dtype: PolarsDataType) -> Any:
             if dtype == Date:
@@ -4321,7 +4325,7 @@ class Series:
                 raise TypeError(msg)
 
         if self.n_chunks() > 1:
-            raise_on_copy()
+            raise_on_copy("Series must be rechunked")
             self = self.rechunk()
 
         dtype = self.dtype
@@ -4348,7 +4352,9 @@ class Series:
             if dtype.is_integer() or dtype.is_float():
                 np_array = self._s.to_numpy_view()
             elif dtype == Boolean:
-                raise_on_copy()
+                raise_on_copy(
+                    "bit packed boolean buffer must be converted into byte packed boolean buffer"
+                )
                 s_u8 = self.cast(UInt8)
                 np_array = s_u8._s.to_numpy_view().view(bool)
             elif dtype in (Datetime, Duration):
@@ -4356,23 +4362,27 @@ class Series:
                 s_i64 = self.to_physical()
                 np_array = s_i64._s.to_numpy_view().view(np_dtype)
             elif dtype == Date:
-                raise_on_copy()
+                raise_on_copy(
+                    "32-bit date buffer must be converted into 64-bit date buffer"
+                )
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 s_i32 = self.to_physical()
                 np_array = s_i32._s.to_numpy_view().astype(np_dtype)
             else:
-                raise_on_copy()
+                raise_on_copy(
+                    f"buffer of type {dtype} must be converted into object type"
+                )
                 np_array = self._s.to_numpy()
 
         else:
-            raise_on_copy()
+            raise_on_copy("cannot handle null values without copying data")
             np_array = self._s.to_numpy()
             if dtype in (Datetime, Duration, Date):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = np_array.view(np_dtype)
 
         if writable and not np_array.flags.writeable:
-            raise_on_copy()
+            raise_on_copy("cannot create a writeable array without copying data")
             np_array = np_array.copy()
 
         return np_array
