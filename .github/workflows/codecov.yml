@@ -9,8 +9,8 @@ jobs:
     name: Coverage for ${{ matrix.os }}
     strategy:
       matrix:
-        os: ["macos"]
-    runs-on: ${{ matrix.os }}-latest
+        os: ["ubuntu"]
+    runs-on: ${{ matrix.os }}-20.04
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
