@@ -65,6 +65,10 @@ except ImportError:
         """Warning raised when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
 
 
+class CopyNotAllowedError(PolarsError, RuntimeError):  # type: ignore[misc]
+    """Exception raised when data copy is required, but copying data was explicitly disallowed."""  # noqa: W505
+
+
 class InvalidAssert(PolarsError):  # type: ignore[misc]
     """Exception raised when an unsupported testing assert is made."""
 
@@ -128,6 +132,7 @@ class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
 __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
+    "CopyNotAllowedError",
     "ComputeError",
     "ChronoFormatWarning",
     "DuplicateError",
