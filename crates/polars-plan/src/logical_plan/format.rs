@@ -216,7 +216,7 @@ impl LogicalPlan {
                 write!(f, "{:indent$}{function_fmt}", "")?;
                 input._format(f, sub_indent)
             },
-            Error { input, err } => write!(f, "{err:?}\n{input:?}"),
+            Error { err, .. } => write!(f, "{err:?}"),
             ExtContext { input, .. } => {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
                 input._format(f, sub_indent)

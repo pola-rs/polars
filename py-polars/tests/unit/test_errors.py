@@ -689,3 +689,13 @@ def test_error_list_to_array() -> None:
         pl.DataFrame(
             data={"a": [[1, 2], [3, 4, 5]]}, schema={"a": pl.List(pl.Int8)}
         ).with_columns(array=pl.col("a").list.to_array(2))
+
+
+# https://github.com/pola-rs/polars/issues/8079
+def test_error_lazyframe_not_repeating() -> None:
+    lf = pl.LazyFrame({"a": 1, "b": range(2)})
+    with pytest.raises(pl.ColumnNotFoundError) as exc_info:
+        lf.select("c").select("d").select("e").collect()
+
+    match = "Error originated just after this operation:"
+    assert str(exc_info).count(match) == 1
