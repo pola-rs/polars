@@ -3,9 +3,10 @@ use std::any::Any;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
 use crate::operators::{
-    chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
+    DataChunk, FinalizedSink, PExecutionContext, SemicontiguousVstacker, Sink, SinkResult,
 };
 
 // Ensure the data is return in the order it was streamed
@@ -53,8 +54,23 @@ impl Sink for OrderedSink {
             )));
         }
         self.sort();
+
         let chunks = std::mem::take(&mut self.chunks);
-        Ok(FinalizedSink::Finished(chunks_to_df_unchecked(chunks)))
+        let mut combiner = SemicontiguousVstacker::default();
+        let mut frames_iterator = chunks
+            .into_iter()
+            .flat_map(|c| combiner.add(c.data))
+            .peekable();
+        let result = if frames_iterator.peek().is_some() {
+            let mut result = accumulate_dataframes_vertical_unchecked(frames_iterator);
+            if let Some(df) = combiner.finish() {
+                let _ = result.vstack_mut(&df);
+            }
+            result
+        } else {
+            combiner.finish().unwrap()
+        };
+        Ok(FinalizedSink::Finished(result))
     }
     fn as_any(&mut self) -> &mut dyn Any {
         self
