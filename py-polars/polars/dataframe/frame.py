@@ -2076,8 +2076,11 @@ class DataFrame:
         Parameters
         ----------
         structured
-            Optionally return a structured array, with field names and
-            dtypes that correspond to the DataFrame schema.
+            Return a `structured array`_ with a data type that corresponds to the
+            DataFrame schema. If set to `False` (default), a regular `ndarray` is
+            returned instead.
+
+            .. structured array: https://numpy.org/doc/stable/user/basics.rec.html
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -2130,36 +2133,33 @@ class DataFrame:
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """
         if structured:
-            # see: https://numpy.org/doc/stable/user/basics.rec.html
             arrays = []
-            for c, tp in self.schema.items():
-                s = self[c]
-                a = s.to_numpy(use_pyarrow=use_pyarrow)
-                arrays.append(
-                    a.astype(str, copy=False)
-                    if tp == String and not s.null_count()
-                    else a
-                )
+            struct_dtype = []
+            for s in self.iter_columns():
+                arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                if s.dtype == String and s.null_count() == 0:
+                    arr = arr.astype(str, copy=False)
+                arrays.append(arr)
+                struct_dtype.append((s.name, arr.dtype))
 
-            out = np.empty(
-                len(self), dtype=list(zip(self.columns, (a.dtype for a in arrays)))
-            )
+            out = np.empty(self.height, dtype=struct_dtype)
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
-        else:
-            if order == "fortran":
-                array = self._df.to_numpy_view()
-                if array is not None:
-                    return array
+            return out
 
-            out = self._df.to_numpy(order)
-            if out is None:
-                return np.vstack(
-                    [
-                        self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
-                        for i in range(self.width)
-                    ]
-                ).T
+        if order == "fortran":
+            array = self._df.to_numpy_view()
+            if array is not None:
+                return array
+
+        out = self._df.to_numpy(order)
+        if out is None:
+            return np.vstack(
+                [
+                    self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
+                    for i in range(self.width)
+                ]
+            ).T
 
         return out
 
@@ -9888,16 +9888,16 @@ class DataFrame:
 
     def iter_columns(self) -> Iterator[Series]:
         """
-        Returns an iterator over the DataFrame's columns.
+        Returns an iterator over the columns of this DataFrame.
+
+        Yields
+        ------
+        Series
 
         Notes
         -----
         Consider whether you can use :func:`all` instead.
         If you can, it will be more efficient.
-
-        Returns
-        -------
-        Iterator of Series.
 
         Examples
         --------
@@ -9939,7 +9939,8 @@ class DataFrame:
         │ 10  ┆ 12  │
         └─────┴─────┘
         """
-        return (wrap_s(s) for s in self._df.get_columns())
+        for s in self._df.get_columns():
+            yield wrap_s(s)
 
     def iter_slices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
         r"""
