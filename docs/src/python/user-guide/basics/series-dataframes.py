@@ -5,27 +5,6 @@ s = pl.Series("a", [1, 2, 3, 4, 5])
 print(s)
 # --8<-- [end:series]
 
-# --8<-- [start:minmax]
-s = pl.Series("a", [1, 2, 3, 4, 5])
-print(s.min())
-print(s.max())
-# --8<-- [end:minmax]
-
-# --8<-- [start:string]
-s = pl.Series("a", ["polar", "bear", "arctic", "polar fox", "polar bear"])
-s2 = s.str.replace("polar", "pola")
-print(s2)
-# --8<-- [end:string]
-
-# --8<-- [start:dt]
-from datetime import date
-
-start = date(2001, 1, 1)
-stop = date(2001, 1, 9)
-s = pl.date_range(start, stop, interval="2d", eager=True)
-print(s.dt.day())
-# --8<-- [end:dt]
-
 # --8<-- [start:dataframe]
 from datetime import datetime
 
