@@ -185,7 +185,34 @@ impl PySeries {
                 np_arr.into_py(py)
             },
             Date => date_series_to_numpy(py, s),
-            Datetime(_, _) | Duration(_) => temporal_series_to_numpy(py, s),
+            Datetime(tu, _) => {
+                use numpy::datetime::{units, Datetime};
+                match tu {
+                    TimeUnit::Milliseconds => {
+                        temporal_series_to_numpy::<Datetime<units::Milliseconds>>(py, s)
+                    },
+                    TimeUnit::Microseconds => {
+                        temporal_series_to_numpy::<Datetime<units::Microseconds>>(py, s)
+                    },
+                    TimeUnit::Nanoseconds => {
+                        temporal_series_to_numpy::<Datetime<units::Nanoseconds>>(py, s)
+                    },
+                }
+            },
+            Duration(tu) => {
+                use numpy::datetime::{units, Timedelta};
+                match tu {
+                    TimeUnit::Milliseconds => {
+                        temporal_series_to_numpy::<Timedelta<units::Milliseconds>>(py, s)
+                    },
+                    TimeUnit::Microseconds => {
+                        temporal_series_to_numpy::<Timedelta<units::Microseconds>>(py, s)
+                    },
+                    TimeUnit::Nanoseconds => {
+                        temporal_series_to_numpy::<Timedelta<units::Nanoseconds>>(py, s)
+                    },
+                }
+            },
             Time => {
                 let ca = s.time().unwrap();
                 let iter = time_to_pyobject_iter(py, ca);
@@ -254,19 +281,27 @@ where
 }
 /// Convert dates directly to i64 with i64::MIN representing a null value
 fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    use numpy::datetime::{units, Datetime};
+
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i32().unwrap();
-    let mapper = |opt_v: Option<i32>| match opt_v {
-        Some(v) => v as i64,
-        None => i64::MIN,
+    let mapper = |opt_v: Option<i32>| {
+        let int = match opt_v {
+            Some(v) => v as i64,
+            None => i64::MIN,
+        };
+        int.into()
     };
-    let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(mapper));
-    np_arr.into_py(py)
+    let iter = ca.iter().map(mapper);
+    PyArray1::<Datetime<units::Days>>::from_iter_bound(py, iter).into_py(py)
 }
 /// Convert datetimes and durations with i64::MIN representing a null value
-fn temporal_series_to_numpy(py: Python, s: &Series) -> PyObject {
+fn temporal_series_to_numpy<T>(py: Python, s: &Series) -> PyObject
+where
+    T: From<i64> + numpy::Element,
+{
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i64().unwrap();
-    let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(|v| v.unwrap_or(i64::MIN)));
-    np_arr.into_py(py)
+    let iter = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
+    PyArray1::<T>::from_iter_bound(py, iter).into_py(py)
 }
