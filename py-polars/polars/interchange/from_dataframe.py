@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 import polars.functions as F
 from polars.datatypes import Boolean, Enum, Int64, String, UInt8, UInt32
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, CopyNotAllowedError
 from polars.interchange.dataframe import PolarsDataFrame
-from polars.interchange.protocol import ColumnNullType, CopyNotAllowedError, DtypeKind
+from polars.interchange.protocol import ColumnNullType, DtypeKind
 from polars.interchange.utils import (
     dtype_to_polars_dtype,
     get_buffer_length_in_elements,

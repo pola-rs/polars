@@ -4,7 +4,7 @@ import pytest
 
 import polars as pl
 from polars.interchange.buffer import PolarsBuffer
-from polars.interchange.protocol import CopyNotAllowedError, DlpackDeviceType
+from polars.interchange.protocol import DlpackDeviceType
 
 
 @pytest.mark.parametrize(
@@ -25,7 +25,7 @@ def test_init_invalid_input() -> None:
     data = pl.concat([s, s], rechunk=False)
 
     with pytest.raises(
-        CopyNotAllowedError, match="non-contiguous buffer must be made contiguous"
+        pl.CopyNotAllowedError, match="non-contiguous buffer must be made contiguous"
     ):
         PolarsBuffer(data, allow_copy=False)
 

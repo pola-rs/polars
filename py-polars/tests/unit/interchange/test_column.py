@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.interchange.column import PolarsColumn
-from polars.interchange.protocol import ColumnNullType, CopyNotAllowedError, DtypeKind
+from polars.interchange.protocol import ColumnNullType, DtypeKind
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -271,7 +271,7 @@ def test_get_buffers_string_zero_copy_fails() -> None:
     col = PolarsColumn(s, allow_copy=False)
 
     msg = "string buffers must be converted"
-    with pytest.raises(CopyNotAllowedError, match=msg):
+    with pytest.raises(pl.CopyNotAllowedError, match=msg):
         col.get_buffers()
 
 
@@ -292,7 +292,7 @@ def test_get_buffers_global_categorical() -> None:
     col = PolarsColumn(s, allow_copy=False)
 
     msg = "column 'a' must be converted to a local categorical"
-    with pytest.raises(CopyNotAllowedError, match=msg):
+    with pytest.raises(pl.CopyNotAllowedError, match=msg):
         col.get_buffers()
 
 
@@ -302,7 +302,7 @@ def test_get_buffers_chunked_zero_copy_fails() -> None:
     col = PolarsColumn(s, allow_copy=False)
 
     with pytest.raises(
-        CopyNotAllowedError, match="non-contiguous buffer must be made contiguous"
+        pl.CopyNotAllowedError, match="non-contiguous buffer must be made contiguous"
     ):
         col.get_buffers()
 

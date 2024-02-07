@@ -252,7 +252,3 @@ class Endianness:
     BIG = ">"
     NATIVE = "="
     NA = "|"
-
-
-class CopyNotAllowedError(RuntimeError):
-    """Exception raised when a copy is required, but `allow_copy` is set to `False`."""
