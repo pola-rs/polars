@@ -35,6 +35,9 @@ path = "user-guide/basics/joins.rs"
 name = "user-guide-basics-reading-writing"
 path = "user-guide/basics/reading-writing.rs"
 required-features = ["polars/json"]
+[[bin]]
+name = "user-guide-basics-series-dataframes"
+path = "user-guide/basics/series-dataframes.rs"
 
 [[bin]]
 name = "user-guide-concepts-contexts"
