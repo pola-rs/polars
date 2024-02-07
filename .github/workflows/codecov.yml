@@ -41,7 +41,7 @@ jobs:
           cd py-polars
           cargo llvm-cov clean --workspace 
           maturin develop
-          pytest tests --cov=polars --cov-report xml
+          pytest tests --cov=polars --cov-fail-under=50 --cov-report xml
           cargo llvm-cov report --lcov --output-path coverage.lcov
       - uses: codecov/codecov-action@v3
         with:
