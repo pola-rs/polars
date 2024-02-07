@@ -77,3 +77,21 @@ def test_map_deprecated() -> None:
         pl.col("a").map(lambda x: x)
     with pytest.deprecated_call():
         pl.LazyFrame({"a": [1, 2]}).map(lambda x: x)
+
+
+def test_ufunc_args() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [2, 4, 6]})
+    result = df.select(
+        z=np.add(  # type: ignore[call-overload]
+            pl.col("a"), pl.col("b")
+        )
+    )
+    expected = pl.DataFrame({"z": [3, 6, 9]})
+    assert_frame_equal(result, expected)
+    result = df.select(
+        z=np.add(  # type: ignore[call-overload]
+            2, pl.col("a")
+        )
+    )
+    expected = pl.DataFrame({"z": [3, 4, 5]})
+    assert_frame_equal(result, expected)

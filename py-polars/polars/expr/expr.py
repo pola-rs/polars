@@ -6,7 +6,7 @@ import operator
 import os
 import warnings
 from datetime import timedelta
-from functools import partial, reduce
+from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -66,7 +66,6 @@ from polars.utils.various import (
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
-    from polars.polars import reduce as pyreduce
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr
@@ -287,21 +286,29 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Self:
         """Numpy universal functions."""
+        if method != "__call__":
+            msg = f"Only call is implemented not {method}"
+            raise NotImplementedError(msg)
         is_custom_ufunc = ufunc.__class__ != np.ufunc
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
-        if num_expr > 1:
-            if num_expr < len(inputs):
-                msg = (
-                    "NumPy ufunc with more than one expression can only be used"
-                    " if all non-expression inputs are provided as keyword arguments only"
-                )
-                raise ValueError(msg)
-
-            exprs = parse_as_list_of_expressions(inputs)
-            return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
+        exprs = [
+            (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
+            for i, inp in enumerate(inputs)
+        ]
+        if num_expr == 1:
+            root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
+        else:
+            root_expr = F.struct(expr[0] for expr in exprs if expr[1] == Expr)
 
         def function(s: Series) -> Series:  # pragma: no cover
-            args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
+            args = []
+            for i, expr in enumerate(exprs):
+                if expr[1] == Expr and num_expr > 1:
+                    args.append(s.struct[i])
+                elif expr[1] == Expr:
+                    args.append(s)
+                else:
+                    args.append(expr[0])
             return ufunc(*args, **kwargs)
 
         if is_custom_ufunc is True:
@@ -316,8 +323,10 @@ class Expr:
                 CustomUFuncWarning,
                 stacklevel=find_stacklevel(),
             )
-            return self.map_batches(function, is_elementwise=False)
-        return self.map_batches(function, is_elementwise=True)
+            return root_expr.map_batches(
+                function, is_elementwise=False
+            ).meta.undo_aliases()
+        return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
     def from_json(cls, value: str) -> Self:
