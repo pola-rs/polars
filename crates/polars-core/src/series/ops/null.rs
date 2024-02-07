@@ -39,10 +39,7 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => Int128Chunked::full_null(name, size)
-                .into_decimal_unchecked(
-                    *precision,
-                    scale.unwrap_or_else(|| unreachable!("scale should be set")),
-                )
+                .into_decimal_unchecked(*precision, scale.unwrap_or(0))
                 .into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
