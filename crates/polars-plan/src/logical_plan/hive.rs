@@ -38,12 +38,9 @@ impl HivePartitions {
     pub(crate) fn parse_url(url: &Path) -> Option<Self> {
         let sep = separator(url);
 
-        let url_string = url
-            .display()
-            .to_string();
+        let url_string = url.display().to_string();
 
-        let pre_filt = url_string
-            .split(sep);
+        let pre_filt = url_string.split(sep);
 
         let split_count_m1 = pre_filt.clone().count() - 1;
 
