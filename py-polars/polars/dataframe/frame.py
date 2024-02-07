@@ -2078,7 +2078,7 @@ class DataFrame:
             DataFrame schema. If set to `False` (default), a 2D ndarray is
             returned instead.
 
-            .. structured array: https://numpy.org/doc/stable/user/basics.rec.html
+            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
