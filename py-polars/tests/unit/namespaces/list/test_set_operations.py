@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_list_set_oob() -> None:
@@ -161,3 +162,29 @@ def test_list_set_operations_binary() -> None:
         [b"2", b"12"],
         [],
     ]
+
+
+def test_set_operations_14290() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [2, 3]],
+            "b": [None, [1, 2]],
+        }
+    )
+
+    out = df.with_columns(pl.col("a").shift(1).alias("shifted_a")).select(
+        b_dif_a=pl.col("b").list.set_difference("a"),
+        shifted_a_dif_a=pl.col("shifted_a").list.set_difference("a"),
+    )
+    expected = pl.DataFrame({"b_dif_a": [None, [1]], "shifted_a_dif_a": [None, [1]]})
+    assert_frame_equal(out, expected)
+
+
+def test_broadcast_sliced() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]]})
+    out = df.select(
+        pl.col("a").list.set_difference(pl.Series([[1], [2, 3, 4]]).slice(0, 1))
+    )
+    expected = pl.DataFrame({"a": [[2], [3, 4]]})
+
+    assert_frame_equal(out, expected)
