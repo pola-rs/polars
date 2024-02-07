@@ -335,25 +335,25 @@ def test_series_to_numpy(s: pl.Series) -> None:
     assert_array_equal(result, expected)
 
 
-@pytest.mark.parametrize("writable", [False, True])
+@pytest.mark.parametrize("writeable", [False, True])
 @pytest.mark.parametrize("pyarrow_available", [False, True])
 def test_to_numpy2(
-    writable: bool, pyarrow_available: bool, monkeypatch: pytest.MonkeyPatch
+    writeable: bool, pyarrow_available: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", pyarrow_available)
 
-    np_array = pl.Series("a", [1, 2, 3], pl.UInt8).to_numpy(writable=writable)
+    np_array = pl.Series("a", [1, 2, 3], pl.UInt8).to_numpy(writeable=writeable)
 
     np.testing.assert_array_equal(np_array, np.array([1, 2, 3], dtype=np.uint8))
-    # Test if numpy array is readonly or writable.
-    assert np_array.flags.writeable == writable
+    # Test if numpy array is readonly or writeable.
+    assert np_array.flags.writeable == writeable
 
-    if writable:
+    if writeable:
         np_array[1] += 10
         np.testing.assert_array_equal(np_array, np.array([1, 12, 3], dtype=np.uint8))
 
     np_array_with_missing_values = pl.Series("a", [None, 2, 3], pl.UInt8).to_numpy(
-        writable=writable
+        writeable=writeable
     )
 
     np.testing.assert_array_equal(
@@ -364,10 +364,10 @@ def test_to_numpy2(
         ),
     )
 
-    if writable:
+    if writeable:
         # As Null values can't be encoded natively in a numpy array,
         # this array will never be a view.
-        assert np_array_with_missing_values.flags.writeable == writable
+        assert np_array_with_missing_values.flags.writeable == writeable
 
 
 def test_view() -> None:

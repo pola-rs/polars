@@ -4280,11 +4280,12 @@ class Series:
 
         return out
 
+    @deprecate_renamed_parameter("writable", "writeable", version="0.20.8")
     def to_numpy(
         self,
         *,
         zero_copy_only: bool = False,
-        writable: bool = False,
+        writeable: bool = False,
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
@@ -4304,11 +4305,11 @@ class Series:
             Raise an exception if the conversion to a NumPy would require copying
             the underlying data. Data copy occurs, for example, when the Series contains
             nulls or non-numeric types.
-        writable
+        writeable
             For NumPy arrays created with zero copy (view on the Arrow data),
-            the resulting array is not writable (Arrow data is immutable).
+            the resulting array is not writeable (Arrow data is immutable).
             By setting this to True, a copy of the array is made to ensure
-            it is writable.
+            it is writeable.
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
@@ -4349,7 +4350,7 @@ class Series:
         if dtype == Array:
             np_array = self.explode().to_numpy(
                 zero_copy_only=zero_copy_only,
-                writable=writable,
+                writeable=writeable,
                 use_pyarrow=use_pyarrow,
             )
             np_array.shape = (self.len(), self.dtype.width)  # type: ignore[attr-defined]
@@ -4361,7 +4362,7 @@ class Series:
             and dtype not in (Object, Datetime, Duration, Date)
         ):
             return self.to_arrow().to_numpy(
-                zero_copy_only=zero_copy_only, writable=writable
+                zero_copy_only=zero_copy_only, writable=writeable
             )
 
         if self.null_count() == 0:
@@ -4388,7 +4389,7 @@ class Series:
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = np_array.view(np_dtype)
 
-        if writable and not np_array.flags.writeable:
+        if writeable and not np_array.flags.writeable:
             raise_no_zero_copy()
             np_array = np_array.copy()
 

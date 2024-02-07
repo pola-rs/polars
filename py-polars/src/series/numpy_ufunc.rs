@@ -16,7 +16,7 @@ use crate::series::PySeries;
 /// # Safety
 /// All elements in the array are non initialized
 ///
-/// The array is also writable from Python.
+/// The array is also writeable from Python.
 unsafe fn aligned_array<T: Element + NativeType>(
     py: Python<'_>,
     size: usize,
