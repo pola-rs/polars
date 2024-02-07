@@ -23,6 +23,23 @@ fn assert_errors_eq(e1: &PolarsError, e2: &PolarsError) {
 
 #[test]
 fn col_not_found_error_messages() {
+    fn get_err_msg(err_msg: &str, n: usize) -> String {
+        let plural_s;
+        let was_were;
+
+        if n == 1 {
+            plural_s = "";
+            was_were = "was"
+        } else {
+            plural_s = "s";
+            was_were = "were";
+        };
+        format!(
+            "{err_msg}\n\nLogicalPlan had already failed with the above error; \
+             after failure, {n} additional operation{plural_s} \
+             {was_were} attempted on the LazyFrame"
+        )
+    }
     fn test_col_not_found(df: LazyFrame, n: usize) {
         let err_msg = format!(
             "xyz\n\nError originated just after this \
@@ -35,9 +52,7 @@ fn col_not_found_error_messages() {
         let collect_err = if n == 0 {
             PolarsError::ColumnNotFound(ErrString::from(err_msg.to_owned()))
         } else {
-            PolarsError::ColumnNotFound(ErrString::from(format!(
-                "LogicalPlan already failed (depth: {n}) with error: '{err_msg}'"
-            )))
+            PolarsError::ColumnNotFound(ErrString::from(get_err_msg(&err_msg, n)))
         };
 
         assert_eq!(df.describe_plan(), plan_err_str);

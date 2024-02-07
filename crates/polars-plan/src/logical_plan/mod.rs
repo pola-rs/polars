@@ -111,9 +111,22 @@ impl ErrorState {
             this.err.wrap_msg(&|msg| msg.to_owned())
         } else {
             this.err.wrap_msg(&|msg| {
+                let n_times = this.n_times;
+
+                let plural_s;
+                let was_were;
+
+                if n_times == 1 {
+                    plural_s = "";
+                    was_were = "was"
+                } else {
+                    plural_s = "s";
+                    was_were = "were";
+                };
                 format!(
-                    "LogicalPlan already failed (depth: {}) with error: '{}'",
-                    this.n_times, msg
+                    "{msg}\n\nLogicalPlan had already failed with the above error; \
+                     after failure, {n_times} additional operation{plural_s} \
+                     {was_were} attempted on the LazyFrame",
                 )
             })
         };
