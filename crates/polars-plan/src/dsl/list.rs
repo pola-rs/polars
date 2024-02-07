@@ -146,6 +146,11 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Unique(true)))
     }
 
+    pub fn n_unique(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::NUnique))
+    }
+
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr) -> Expr {
         self.0.map_many_private(

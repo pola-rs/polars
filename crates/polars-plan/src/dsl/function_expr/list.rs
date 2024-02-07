@@ -46,6 +46,7 @@ pub enum ListFunction {
     Sort(SortOptions),
     Reverse,
     Unique(bool),
+    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
     #[cfg(feature = "list_any_all")]
@@ -101,6 +102,7 @@ impl ListFunction {
             Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
+            NUnique => mapper.with_dtype(IDX_DTYPE),
         }
     }
 }
@@ -162,6 +164,7 @@ impl Display for ListFunction {
                     "unique"
                 }
             },
+            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
             #[cfg(feature = "list_any_all")]
@@ -231,6 +234,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => map!(to_array, width),
+            NUnique => map!(n_unique),
         }
     }
 }
@@ -606,4 +610,8 @@ pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
 pub(super) fn to_array(s: &Series, width: usize) -> PolarsResult<Series> {
     let array_dtype = map_list_dtype_to_array_dtype(s.dtype(), width)?;
     s.cast(&array_dtype)
+}
+
+pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_n_unique()?.into_series())
 }
