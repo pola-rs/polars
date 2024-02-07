@@ -9,8 +9,8 @@ jobs:
     name: Coverage for ${{ matrix.os }}
     strategy:
       matrix:
-        os: ["ubuntu"]
-    runs-on: ${{ matrix.os }}-20.04
+        os: ["macos"]
+    runs-on: ${{ matrix.os }}-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
@@ -37,12 +37,14 @@ jobs:
       - name: Run coverage
         run: |
           source venv/bin/activate
-          source <(cargo llvm-cov show-env --export-prefix)
           cd py-polars
           cargo llvm-cov clean --workspace 
           maturin develop
           pytest tests --cov=polars --cov-fail-under=50 --cov-report xml
           cargo llvm-cov report --lcov --output-path coverage.lcov
+        env: | 
+          RUSTFLAGS='-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+          RUST_BACKTRACE: 1
       - uses: codecov/codecov-action@v3
         with:
           files: coverage.lcov,coverage.xml
