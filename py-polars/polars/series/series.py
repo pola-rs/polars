@@ -4314,6 +4314,11 @@ class Series:
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
             for the conversion to NumPy.
 
+        Raises
+        ------
+        ValueError
+            If data copy is required, but `zero_copy_only` was set to True.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -4324,9 +4329,8 @@ class Series:
         <class 'numpy.ndarray'>
         """
 
-        def raise_no_zero_copy() -> None:
+        def raise_no_zero_copy(msg: str) -> None:
             if zero_copy_only and not self.is_empty():
-                msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 
         def temporal_dtype_to_numpy(dtype: PolarsDataType) -> Any:
@@ -4341,7 +4345,7 @@ class Series:
                 raise TypeError(msg)
 
         if self.n_chunks() > 1:
-            raise_no_zero_copy()
+            raise_no_zero_copy("Series must be rechunked")
             self = self.rechunk()
 
         dtype = self.dtype
@@ -4368,28 +4372,34 @@ class Series:
             if dtype.is_integer() or dtype.is_float():
                 np_array = self._view(ignore_nulls=True)
             elif dtype == Boolean:
-                raise_no_zero_copy()
+                raise_no_zero_copy(
+                    "bit packed boolean buffer must be converted into byte packed boolean buffer"
+                )
                 np_array = self.cast(UInt8)._view(ignore_nulls=True).view(bool)
             elif dtype in (Datetime, Duration):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = self._view(ignore_nulls=True).view(np_dtype)
             elif dtype == Date:
-                raise_no_zero_copy()
+                raise_no_zero_copy(
+                    "32-bit date buffer must be converted into 64-bit date buffer"
+                )
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = self.to_physical()._view(ignore_nulls=True).astype(np_dtype)
             else:
-                raise_no_zero_copy()
+                raise_no_zero_copy(
+                    f"buffer of type {dtype} must be converted into object type"
+                )
                 np_array = self._s.to_numpy()
 
         else:
-            raise_no_zero_copy()
+            raise_no_zero_copy("cannot handle null values without copying data")
             np_array = self._s.to_numpy()
             if dtype in (Datetime, Duration, Date):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = np_array.view(np_dtype)
 
         if writable and not np_array.flags.writeable:
-            raise_no_zero_copy()
+            raise_no_zero_copy("cannot create a writeable array without copying data")
             np_array = np_array.copy()
 
         return np_array

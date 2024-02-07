@@ -25,11 +25,6 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
     assert s_ptr == arr_ptr
 
 
-def assert_zero_copy_only_raises(s: pl.Series) -> None:
-    with pytest.raises(ValueError, match="cannot return a zero-copy array"):
-        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
-
-
 @pytest.mark.parametrize(
     ("dtype", "expected_dtype"),
     [
@@ -80,7 +75,10 @@ def test_series_to_numpy_numeric_with_nulls(
     assert result.tolist()[:-1] == s.to_list()[:-1]
     assert np.isnan(result[-1])
     assert result.dtype == expected_dtype
-    assert_zero_copy_only_raises(s)
+
+    msg = "cannot handle null values without copying data"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 @pytest.mark.parametrize(
@@ -130,7 +128,10 @@ def test_series_to_numpy_date() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.dtype("datetime64[D]")
-    assert_zero_copy_only_raises(s)
+
+    msg = "32-bit date buffer must be converted into 64-bit date buffer"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 @pytest.mark.parametrize(
@@ -159,7 +160,10 @@ def test_series_to_numpy_temporal_with_nulls(
     else:
         assert result.tolist() == s.to_list()
     assert result.dtype == expected_dtype
-    assert_zero_copy_only_raises(s)
+
+    msg = "cannot handle null values without copying data"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
@@ -169,7 +173,10 @@ def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
 
     assert result.tolist() == values
     assert result.dtype == np.dtype("datetime64[us]")
-    assert_zero_copy_only_raises(s)
+
+    msg = "cannot handle null values without copying data"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 @pytest.mark.parametrize(
@@ -199,7 +206,13 @@ def test_to_numpy_object_dtypes(
 
     assert result.tolist() == values
     assert result.dtype == np.object_
-    assert_zero_copy_only_raises(s)
+
+    if with_nulls:
+        msg = "cannot handle null values without copying data"
+    else:
+        msg = "must be converted into object type"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 def test_series_to_numpy_bool() -> None:
@@ -208,7 +221,10 @@ def test_series_to_numpy_bool() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.bool_
-    assert_zero_copy_only_raises(s)
+
+    msg = "bit packed boolean buffer must be converted into byte packed boolean buffer"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 def test_series_to_numpy_bool_with_nulls() -> None:
@@ -217,7 +233,10 @@ def test_series_to_numpy_bool_with_nulls() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.object_
-    assert_zero_copy_only_raises(s)
+
+    msg = "cannot handle null values without copying data"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 def test_series_to_numpy_array_of_int() -> None:
@@ -249,7 +268,10 @@ def test_series_to_numpy_array_with_nulls() -> None:
     expected = np.array([[1.0, 2.0], [3.0, 4.0], [np.nan, np.nan]])
     assert_array_equal(result, expected)
     assert result.dtype == np.float64
-    assert_zero_copy_only_raises(s)
+
+    msg = "cannot handle null values without copying data"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 def test_to_numpy_null() -> None:
@@ -258,7 +280,10 @@ def test_to_numpy_null() -> None:
     expected = np.array([np.nan, np.nan], dtype=np.float32)
     assert_array_equal(result, expected)
     assert result.dtype == np.float32
-    assert_zero_copy_only_raises(s)
+
+    msg = "cannot handle null values without copying data"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 def test_to_numpy_empty() -> None:
@@ -278,7 +303,10 @@ def test_to_numpy_chunked() -> None:
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.int64
-    assert_zero_copy_only_raises(s)
+
+    msg = "Series must be rechunked"
+    with pytest.raises(ValueError, match=msg):
+        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
 
 
 def test_series_to_numpy_temporal() -> None:
