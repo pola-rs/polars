@@ -4354,15 +4354,14 @@ class Series:
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
-            and dtype != Object
-            and (dtype == Time or not dtype.is_temporal())
+            and dtype not in (Object, Datetime, Duration, Date)
         ):
             return self.to_arrow().to_numpy(
                 zero_copy_only=zero_copy_only, writable=writable
             )
 
         if self.null_count() == 0:
-            if dtype.is_numeric() and dtype != Decimal:
+            if dtype.is_integer() or dtype.is_float():
                 np_array = self._view(ignore_nulls=True)
             elif dtype == Boolean:
                 raise_no_zero_copy()
