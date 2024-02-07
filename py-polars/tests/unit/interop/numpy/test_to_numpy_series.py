@@ -112,6 +112,16 @@ def test_series_to_numpy_temporal_zero_copy(
     assert result.dtype == expected_dtype
 
 
+def test_series_to_numpy_datetime_with_tz_zero_copy() -> None:
+    values = [datetime(1970, 1, 1), datetime(2024, 2, 28)]
+    s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
+    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+
+    assert_zero_copy(s, result)
+    assert result.tolist() == values
+    assert result.dtype == np.dtype("datetime64[us]")
+
+
 def test_series_to_numpy_date() -> None:
     values = [date(1970, 1, 1), date(2024, 2, 28)]
     s = pl.Series(values)
@@ -149,6 +159,16 @@ def test_series_to_numpy_temporal_with_nulls(
     else:
         assert result.tolist() == s.to_list()
     assert result.dtype == expected_dtype
+    assert_zero_copy_only_raises(s)
+
+
+def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
+    values = [datetime(1970, 1, 1), datetime(2024, 2, 28), None]
+    s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert result.tolist() == values
+    assert result.dtype == np.dtype("datetime64[us]")
     assert_zero_copy_only_raises(s)
 
 
