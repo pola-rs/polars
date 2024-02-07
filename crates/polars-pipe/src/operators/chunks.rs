@@ -28,7 +28,7 @@ impl DataChunk {
 }
 
 pub(crate) fn chunks_to_df_unchecked(chunks: Vec<DataChunk>) -> DataFrame {
-    let mut combiner = SemicontiguousVstacker::<4194304>::new();
+    let mut combiner = SemicontiguousVstacker::default();
     let mut frames_iterator = chunks
         .into_iter()
         .flat_map(|c| combiner.add(c.data))
@@ -55,22 +55,22 @@ pub(crate) fn chunks_to_df_unchecked(chunks: Vec<DataChunk>) -> DataFrame {
 /// The assumption is that added `DataFrame`s are already in the correct order,
 /// and can therefore be combined.
 ///
-/// 4 MB was chosen based on some empirical experiments that showed it to
-/// be decently faster than lower or higher values, and it's small enough
-/// it won't impact memory usage significantly.
 #[derive(Clone)]
-pub(crate) struct SemicontiguousVstacker<const BIG_ENOUGH: usize = 4194304> {
+pub(crate) struct SemicontiguousVstacker {
     current_dataframe: Option<DataFrame>,
     /// Have we vstack()ed on to the current chunk?
     stacked: bool,
+    /// How big should resulting chunks be, if possible?
+    output_chunk_size: usize,
 }
 
-impl<const BIG_ENOUGH: usize> SemicontiguousVstacker<BIG_ENOUGH> {
+impl SemicontiguousVstacker {
     /// Create a new instance.
-    pub fn new() -> Self {
+    pub fn new(output_chunk_size: usize) -> Self {
         Self {
             current_dataframe: None,
             stacked: false,
+            output_chunk_size,
         }
     }
 
@@ -81,7 +81,9 @@ impl<const BIG_ENOUGH: usize> SemicontiguousVstacker<BIG_ENOUGH> {
 
         // If the next chunk is too large, we probably don't want make copies of
         // it when we do as_single_chunk() in flush(), so we flush in advance.
-        if self.current_dataframe.is_some() && next_frame.estimated_size() > BIG_ENOUGH / 4 {
+        if self.current_dataframe.is_some()
+            && next_frame.estimated_size() > self.output_chunk_size / 4
+        {
             result[0] = self.flush();
         }
 
@@ -94,7 +96,7 @@ impl<const BIG_ENOUGH: usize> SemicontiguousVstacker<BIG_ENOUGH> {
             self.current_dataframe = Some(next_frame);
         };
 
-        if self.current_dataframe.as_ref().unwrap().estimated_size() > BIG_ENOUGH {
+        if self.current_dataframe.as_ref().unwrap().estimated_size() > self.output_chunk_size {
             result[1] = self.flush();
         }
         result.into_iter().flatten()
@@ -125,6 +127,15 @@ impl<const BIG_ENOUGH: usize> SemicontiguousVstacker<BIG_ENOUGH> {
     }
 }
 
+impl Default for SemicontiguousVstacker {
+    /// 4 MB was chosen based on some empirical experiments that showed it to
+    /// be decently faster than lower or higher values, and it's small enough
+    /// it won't impact memory usage significantly.
+    fn default() -> Self {
+        SemicontiguousVstacker::new(4 * 1024 * 1024)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use proptest::prelude::*;
@@ -138,7 +149,7 @@ mod test {
         #[cfg_attr(miri, ignore)] // miri and proptest do not work well
         fn semicontiguous_vstacker_merges(df_lengths in prop::collection::vec(1..40usize, 1..50)) {
             // Convert the lengths into a series of DataFrames:
-            let mut vstacker = SemicontiguousVstacker::<4096>::new();
+            let mut vstacker = SemicontiguousVstacker::new(4096);
             let dfs : Vec<DataFrame> = df_lengths.iter().enumerate().map(|(i, length)| {
                 let series = Series::new("val", vec![i as u64; *length]);
                 DataFrame::new(vec![series]).unwrap()

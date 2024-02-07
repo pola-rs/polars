@@ -27,7 +27,7 @@ pub(super) fn init_writer_thread(
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
         let mut chunks = Vec::with_capacity(morsels_per_sink);
-        let mut vstacker = SemicontiguousVstacker::<4194304>::new();
+        let mut vstacker = SemicontiguousVstacker::default();
 
         while let Ok(chunk) = receiver.recv() {
             // `last_write` indicates if all chunks are processed, e.g. this is the last write.
