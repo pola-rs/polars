@@ -4,14 +4,15 @@ use std::thread::JoinHandle;
 use crossbeam_channel::{Receiver, Sender};
 use polars_core::prelude::*;
 
-use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, SemicontiguousVstacker};
+use crate::operators::{
+    DataChunk, FinalizedSink, PExecutionContext, SemicontiguousVstacker, Sink, SinkResult,
+};
 
 pub(super) trait SinkWriter {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()>;
 
     fn _finish(&mut self) -> PolarsResult<()>;
 }
-
 
 pub(super) fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
