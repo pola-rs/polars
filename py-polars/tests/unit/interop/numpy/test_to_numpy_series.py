@@ -262,11 +262,23 @@ def test_to_numpy_null() -> None:
 
 
 def test_to_numpy_empty() -> None:
-    series = pl.Series(dtype=pl.String)
-    result = series.to_numpy(use_pyarrow=False, zero_copy_only=True)
+    s = pl.Series(dtype=pl.String)
+    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
     assert result.dtype == np.object_
     assert result.shape == (0,)
     assert result.size == 0
+
+
+def test_to_numpy_chunked() -> None:
+    s1 = pl.Series([1, 2])
+    s2 = pl.Series([3, 4])
+    s = pl.concat([s1, s2], rechunk=False)
+
+    result = s.to_numpy(use_pyarrow=False)
+
+    assert result.tolist() == s.to_list()
+    assert result.dtype == np.int64
+    assert_zero_copy_only_raises(s)
 
 
 def test_series_to_numpy_temporal() -> None:

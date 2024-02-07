@@ -4340,6 +4340,10 @@ class Series:
                 msg = f"invalid temporal type: {dtype}"
                 raise TypeError(msg)
 
+        if self.n_chunks() > 1:
+            raise_no_zero_copy()
+            self = self.rechunk()
+
         dtype = self.dtype
 
         if dtype == Array:
