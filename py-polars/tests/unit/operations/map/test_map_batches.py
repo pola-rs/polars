@@ -81,9 +81,17 @@ def test_map_deprecated() -> None:
 
 def test_ufunc_args() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [2, 4, 6]})
-    result = df.select(z=np.add(pl.col("a"), pl.col("b"))) # type: ignore[call-overload]
+    result = df.select(
+        z=np.add(  # type: ignore[call-overload]
+            pl.col("a"), pl.col("b")
+        )
+    )
     expected = pl.DataFrame({"z": [3, 6, 9]})
     assert_frame_equal(result, expected)
-    result = df.select(z=np.add(2, pl.col("a"))) # type: ignore[call-overload]
+    result = df.select(
+        z=np.add(  # type: ignore[call-overload]
+            2, pl.col("a")
+        )
+    )
     expected = pl.DataFrame({"z": [3, 4, 5]})
     assert_frame_equal(result, expected)
