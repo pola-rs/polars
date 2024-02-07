@@ -2069,15 +2069,13 @@ class DataFrame:
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert DataFrame to a 2D NumPy array.
-
-        This operation clones data.
+        Convert this DataFrame to a NumPy ndarray.
 
         Parameters
         ----------
         structured
             Return a `structured array`_ with a data type that corresponds to the
-            DataFrame schema. If set to `False` (default), a regular `ndarray` is
+            DataFrame schema. If set to `False` (default), a 2D ndarray is
             returned instead.
 
             .. structured array: https://numpy.org/doc/stable/user/basics.rec.html
