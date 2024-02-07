@@ -38,12 +38,17 @@ impl HivePartitions {
     pub(crate) fn parse_url(url: &Path) -> Option<Self> {
         let sep = separator(url);
 
-        let partitions = url
+        let url_string = url
             .display()
-            .to_string()
-            .split(sep)
+            .to_string();
+
+        let pre_filt = url_string
+            .split(sep);
+
+        let split_count_m1 = pre_filt.clone().count() - 1;
+
+        let partitions = pre_filt
             .enumerate()
-            .peekable()
             .filter_map(|(index, part)| {
                 let mut it = part.split('=');
                 let name = it.next()?;
@@ -56,7 +61,7 @@ impl HivePartitions {
                 }
 
                 // Identify file by index location
-                if index == url.display().to_string().split(sep).count() - 1 {
+                if index == split_count_m1 {
                     return None;
                 }
 
