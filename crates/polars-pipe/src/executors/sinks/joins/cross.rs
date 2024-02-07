@@ -94,7 +94,13 @@ impl Operator for CrossJoinProbe {
         // However, if one of the DataFrames is much smaller than 250, we want
         // to take rather more from the other DataFrame so we don't end up with
         // overly small chunks.
-        let size = 250 * (250 / chunk.data.height()).max(1) * (250 / self.df.height()).max(1);
+        let mut size = 250;
+        if chunk.data.height() > 0 {
+            size *= (250 / chunk.data.height()).max(1);
+        }
+        if self.df.height() > 0 {
+            size *= (250 / self.df.height()).max(1);
+        }
 
         if self.in_process_left.is_none() {
             let mut iter_left = (0..self.df.height()).step_by(size);
