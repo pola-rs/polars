@@ -207,7 +207,9 @@ def test_decimal_eq_number() -> None:
 def test_decimal_compare(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
-    s = pl.Series([None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")], dtype=pl.Decimal)
+    s = pl.Series(
+        [None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")], dtype=pl.Decimal
+    )
     s2 = pl.Series([None, D("1.200"), D("2.13"), D("4.99"), D("4.99"), D("2.13")])
 
     assert_series_equal(op(s, s2), expected)
