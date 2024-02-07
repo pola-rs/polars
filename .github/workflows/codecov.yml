@@ -42,8 +42,8 @@ jobs:
           maturin develop
           pytest tests --cov=polars --cov-fail-under=50 --cov-report xml
           cargo llvm-cov report --lcov --output-path coverage.lcov
-        env: | 
-          RUSTFLAGS='-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+        env:
+          RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
           RUST_BACKTRACE: 1
       - uses: codecov/codecov-action@v3
         with:
