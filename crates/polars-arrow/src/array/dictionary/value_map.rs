@@ -85,11 +85,12 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
             let value = unsafe { values.value_unchecked_at(index) };
             let hash = ahash_hash(value.borrow());
 
-            match map.raw_entry_mut().from_hash(hash, |item| {
+            let entry = map.raw_entry_mut().from_hash(hash, |item| {
                 // safety: invariant of the struct, it's always in bounds since we maintain it
                 let stored_value = unsafe { values.value_unchecked_at(item.key.as_usize()) };
                 stored_value.borrow() == value.borrow()
-            }) {
+            });
+            match entry {
                 RawEntryMut::Occupied(_) => {
                     polars_bail!(InvalidOperation: "duplicate value in dictionary values array")
                 },
@@ -133,26 +134,25 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         M::Type: Eq + Hash,
     {
         let hash = ahash_hash(value.as_indexed());
-        Ok(
-            match self.map.raw_entry_mut().from_hash(hash, |item| {
-                // safety: we've already checked (the inverse) when we pushed it, so it should be ok?
-                let index = unsafe { item.key.as_usize() };
-                // safety: invariant of the struct, it's always in bounds since we maintain it
-                let stored_value = unsafe { self.values.value_unchecked_at(index) };
-                stored_value.borrow() == value.as_indexed()
-            }) {
-                RawEntryMut::Occupied(entry) => entry.key().key,
-                RawEntryMut::Vacant(entry) => {
-                    let index = self.values.len();
-                    let key =
-                        K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
-                    entry.insert_hashed_nocheck(hash, Hashed { hash, key }, ()); // NB: don't use .insert() here!
-                    push(&mut self.values, value)?;
-                    debug_assert_eq!(self.values.len(), index + 1);
-                    key
-                },
+        let entry = self.map.raw_entry_mut().from_hash(hash, |item| {
+            // safety: we've already checked (the inverse) when we pushed it, so it should be ok?
+            let index = unsafe { item.key.as_usize() };
+            // safety: invariant of the struct, it's always in bounds since we maintain it
+            let stored_value = unsafe { self.values.value_unchecked_at(index) };
+            stored_value.borrow() == value.as_indexed()
+        });
+        let out = match entry {
+            RawEntryMut::Occupied(entry) => entry.key().key,
+            RawEntryMut::Vacant(entry) => {
+                let index = self.values.len();
+                let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
+                entry.insert_hashed_nocheck(hash, Hashed { hash, key }, ()); // NB: don't use .insert() here!
+                push(&mut self.values, value)?;
+                debug_assert_eq!(self.values.len(), index + 1);
+                key
             },
-        )
+        };
+        Ok(out)
     }
 
     pub fn shrink_to_fit(&mut self) {
