@@ -12,6 +12,8 @@ jobs:
         os: ["macos"]
     runs-on: ${{ matrix.os }}-latest
     steps:
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with:
