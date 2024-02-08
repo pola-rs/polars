@@ -314,7 +314,7 @@ For float columns Polars permits the use of `NaN` values. These `NaN` values are
 
 In pandas an integer column with missing values is cast to be a float column with `NaN` values for the missing values (unless using optional nullable integer dtypes). In Polars any missing values in an integer column are simply `null` values and the column remains an integer column.
 
-See the [missing data](../expressions/null.md) section for more details.
+See the [missing data](../expressions/missing-data.md) section for more details.
 
 ## Pipe littering
 
@@ -344,7 +344,7 @@ def add_ham(df: pd.DataFrame) -> pd.DataFrame:
 )
 ```
 
-If we do this in polars, we would create 3 `with_column` contexts, that forces Polars to run the 3 pipes sequentially,
+If we do this in polars, we would create 3 `with_columns` contexts, that forces Polars to run the 3 pipes sequentially,
 utilizing zero parallelism.
 
 The way to get similar abstractions in polars is creating functions that create expressions.
