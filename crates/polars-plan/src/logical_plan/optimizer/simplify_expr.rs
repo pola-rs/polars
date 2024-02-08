@@ -396,9 +396,9 @@ impl OptimizationRule for SimplifyExprRule {
         _lp_arena: &Arena<ALogicalPlan>,
         _lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
-        let expr = expr_arena.get(expr_node);
+        let expr = expr_arena.get(expr_node).clone();
 
-        let out = match expr {
+        let out = match &expr {
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
