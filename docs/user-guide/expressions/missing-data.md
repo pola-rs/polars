@@ -10,11 +10,11 @@ Polars also allows `NotaNumber` or `NaN` values for float columns. These `NaN` v
 
 You can manually define a missing value with the python `None` value:
 
-{{code_block('user-guide/expressions/null','dataframe',['DataFrame'])}}
+{{code_block('user-guide/expressions/missing-data','dataframe',['DataFrame'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:setup"
---8<-- "python/user-guide/expressions/null.py:dataframe"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:setup"
+--8<-- "python/user-guide/expressions/missing-data.py:dataframe"
 ```
 
 !!! info
@@ -27,10 +27,10 @@ Each Arrow array used by Polars stores two kinds of metadata related to missing 
 
 The first piece of metadata is the `null_count` - this is the number of rows with `null` values in the column:
 
-{{code_block('user-guide/expressions/null','count',['null_count'])}}
+{{code_block('user-guide/expressions/missing-data','count',['null_count'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:count"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:count"
 ```
 
 The `null_count` method can be called on a `DataFrame`, a column from a `DataFrame` or a `Series`. The `null_count` method is a cheap operation as `null_count` is already calculated for the underlying Arrow array.
@@ -40,10 +40,10 @@ The validity bitmap is memory efficient as it is bit encoded - each value is eit
 
 You can return a `Series` based on the validity bitmap for a column in a `DataFrame` or a `Series` with the `is_null` method:
 
-{{code_block('user-guide/expressions/null','isnull',['is_null'])}}
+{{code_block('user-guide/expressions/missing-data','isnull',['is_null'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:isnull"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:isnull"
 ```
 
 The `is_null` method is a cheap operation that does not require scanning the full column for `null` values. This is because the validity bitmap already exists and can be returned as a Boolean array.
@@ -59,30 +59,30 @@ Missing data in a `Series` can be filled with the `fill_null` method. You have t
 
 We illustrate each way to fill nulls by defining a simple `DataFrame` with a missing value in `col2`:
 
-{{code_block('user-guide/expressions/null','dataframe2',['DataFrame'])}}
+{{code_block('user-guide/expressions/missing-data','dataframe2',['DataFrame'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:dataframe2"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:dataframe2"
 ```
 
 ### Fill with specified literal value
 
 We can fill the missing data with a specified literal value with `pl.lit`:
 
-{{code_block('user-guide/expressions/null','fill',['fill_null'])}}
+{{code_block('user-guide/expressions/missing-data','fill',['fill_null'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:fill"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:fill"
 ```
 
 ### Fill with a strategy
 
 We can fill the missing data with a strategy such as filling forward:
 
-{{code_block('user-guide/expressions/null','fillstrategy',['fill_null'])}}
+{{code_block('user-guide/expressions/missing-data','fillstrategy',['fill_null'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:fillstrategy"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:fillstrategy"
 ```
 
 You can find other fill strategies in the API docs.
@@ -92,10 +92,10 @@ You can find other fill strategies in the API docs.
 For more flexibility we can fill the missing data with an expression. For example,
 to fill nulls with the median value from that column:
 
-{{code_block('user-guide/expressions/null','fillexpr',['fill_null'])}}
+{{code_block('user-guide/expressions/missing-data','fillexpr',['fill_null'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:fillexpr"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:fillexpr"
 ```
 
 In this case the column is cast from integer to float because the median is a float statistic.
@@ -104,20 +104,20 @@ In this case the column is cast from integer to float because the median is a fl
 
 In addition, we can fill nulls with interpolation (without using the `fill_null` function):
 
-{{code_block('user-guide/expressions/null','fillinterpolate',['interpolate'])}}
+{{code_block('user-guide/expressions/missing-data','fillinterpolate',['interpolate'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:fillinterpolate"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:fillinterpolate"
 ```
 
 ## `NotaNumber` or `NaN` values
 
 Missing data in a `Series` has a `null` value. However, you can use `NotaNumber` or `NaN` values in columns with float datatypes. These `NaN` values can be created from Numpy's `np.nan` or the native python `float('nan')`:
 
-{{code_block('user-guide/expressions/null','nan',['DataFrame'])}}
+{{code_block('user-guide/expressions/missing-data','nan',['DataFrame'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:nan"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:nan"
 ```
 
 !!! info
@@ -133,8 +133,8 @@ Polars has `is_nan` and `fill_nan` methods which work in a similar way to the `i
 
 One further difference between `null` and `NaN` values is that taking the `mean` of a column with `null` values excludes the `null` values from the calculation but with `NaN` values taking the mean results in a `NaN`. This behaviour can be avoided by replacing the `NaN` values with `null` values;
 
-{{code_block('user-guide/expressions/null','nanfill',['fill_nan'])}}
+{{code_block('user-guide/expressions/missing-data','nanfill',['fill_nan'])}}
 
-```python exec="on" result="text" session="user-guide/null"
---8<-- "python/user-guide/expressions/null.py:nanfill"
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:nanfill"
 ```
