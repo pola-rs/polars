@@ -25,8 +25,6 @@ jobs:
         with:
           key: coverage-cargo-${{ matrix.os }}
         continue-on-error: true
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
       - name: Setup virtual environment
         run: |
           python -m venv venv
@@ -40,9 +38,14 @@ jobs:
           cargo llvm-cov clean --workspace 
           maturin develop
           pytest tests --cov=polars --cov-fail-under=50 --cov-report xml
+          cargo llvm-cov report --lcov --output-path coverage.lcov
         env:
           RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
           RUST_BACKTRACE: 1
+          LLVM_PROFILE_FILE: '/Users/runner/work/polars/polars/target/polars-%p-%3m.profraw'
+          CARGO_LLVM_COV: 1
+          CARGO_LLVM_COV_SHOW_ENV: 1
+          CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
       - uses: codecov/codecov-action@v3
         with:
           files: coverage.lcov,coverage.xml
