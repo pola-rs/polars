@@ -619,24 +619,16 @@ def test_series_equal_nested_lengths_mismatch() -> None:
         assert_series_equal(s1, s2)
 
 
-def test_series_equal_decimals_exact() -> None:
+@pytest.mark.parametrize("check_exact", [True, False])
+def test_series_equal_decimals(check_exact: bool) -> None:
     s1 = pl.Series([D("1.00000"), D("2.00000")], dtype=pl.Decimal)
     s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
+
+    assert_series_equal(s1, s1, check_exact=check_exact)
+    assert_series_equal(s2, s2, check_exact=check_exact)
+
     with pytest.raises(AssertionError, match="exact value mismatch"):
-        assert_series_equal(s1, s2, check_exact=True)
-
-
-def test_series_equal_decimals_inexact() -> None:
-    s1 = pl.Series([D("1.00000"), D("2.00000")], dtype=pl.Decimal)
-    s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
-    assert_series_equal(s1, s2, check_exact=False)
-
-
-def test_series_equal_decimals_inexact_fail() -> None:
-    s1 = pl.Series([D("1.00000"), D("2.00000")], dtype=pl.Decimal)
-    s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
-    with pytest.raises(AssertionError, match="value mismatch"):
-        assert_series_equal(s1, s2, check_exact=False, rtol=0)
+        assert_series_equal(s1, s2, check_exact=check_exact)
 
 
 def test_assert_series_equal_w_large_integers_12328() -> None:

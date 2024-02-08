@@ -6,8 +6,6 @@ from polars.datatypes import (
     FLOAT_DTYPES,
     Array,
     Categorical,
-    Decimal,
-    Float64,
     List,
     String,
     Struct,
@@ -128,14 +126,6 @@ def _assert_series_values_equal(
             left = left.cast(String)
         if right.dtype == Categorical:
             right = right.cast(String)
-
-    # Handle decimals
-    # TODO: Delete this branch when Decimal equality is implemented
-    # https://github.com/pola-rs/polars/issues/12118
-    if left.dtype == Decimal:
-        left = left.cast(Float64)
-    if right.dtype == Decimal:
-        right = right.cast(Float64)
 
     # Determine unequal elements
     try:
