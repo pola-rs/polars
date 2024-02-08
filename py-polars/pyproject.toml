@@ -45,6 +45,7 @@ connectorx = ["connectorx >= 0.3.2"]
 deltalake = ["deltalake >= 0.14.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
+joblib = ["joblib"]
 plot = ["hvplot >= 0.9.1"]
 matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0"]
@@ -59,7 +60,7 @@ timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_syst
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,plot,connectorx,xlsx2csv,deltalake,timezone,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[pyarrow,pandas,numpy,fsspec,plot,connectorx,xlsx2csv,deltalake,timezone,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent,joblib]",
 ]
 
 [tool.maturin]
@@ -89,6 +90,7 @@ module = [
   "ezodf.*",
   "fsspec.*",
   "gevent",
+  "joblib",
   "hvplot.*",
   "matplotlib.*",
   "moto.server",

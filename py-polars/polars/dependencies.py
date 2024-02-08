@@ -13,6 +13,7 @@ _FSSPEC_AVAILABLE = True
 _GEVENT_AVAILABLE = True
 _HVPLOT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
+_JOBLIB_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
@@ -154,6 +155,7 @@ if TYPE_CHECKING:
     import gevent
     import hvplot
     import hypothesis
+    import joblib
     import numpy
     import pandas
     import pyarrow
@@ -177,6 +179,7 @@ else:
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     hvplot, _HVPLOT_AVAILABLE = _lazy_import("hvplot")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
+    joblib, _JOBLIB_AVAILABLE = _lazy_import("joblib")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
@@ -280,6 +283,7 @@ __all__ = [
     "fsspec",
     "gevent",
     "hvplot",
+    "joblib",
     "numpy",
     "pandas",
     "pydantic",
@@ -299,6 +303,7 @@ __all__ = [
     "_GEVENT_AVAILABLE",
     "_HVPLOT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
+    "_JOBLIB_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",
     "_PYARROW_AVAILABLE",

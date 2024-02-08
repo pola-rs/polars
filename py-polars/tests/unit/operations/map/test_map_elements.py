@@ -295,6 +295,17 @@ def test_map_elements_on_empty_col_10639() -> None:
     }
 
 
+def test_map_elements_loky() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match=r"CANNOT",
+    ):
+        result = df.select(pl.col("a").map_elements(lambda x: 2 * x, strategy="loky"))
+    expected = pl.DataFrame({"a": [2, 4]})
+    assert_frame_equal(result, expected)
+
+
 def test_apply_deprecated() -> None:
     with pytest.deprecated_call():
         pl.col("a").apply(np.abs)

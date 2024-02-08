@@ -51,6 +51,7 @@ hvplot>=0.9.1
 matplotlib
 # Other
 gevent
+joblib
 
 # -------
 # TOOLING

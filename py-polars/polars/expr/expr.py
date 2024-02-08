@@ -29,7 +29,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import _check_for_numpy
+from polars.dependencies import _JOBLIB_AVAILABLE, _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
 from polars.expr.array import ExprArrayNameSpace
@@ -4193,7 +4193,7 @@ class Expr:
             Don't map the function over values that contain nulls (this is faster).
         pass_name
             Pass the Series name to the custom function (this is more expensive).
-        strategy : {'thread_local', 'threading'}
+        strategy : {'thread_local', 'threading', 'loky'}
             The threading strategy to use.
 
             - 'thread_local': run the python function on a single thread.
@@ -4203,9 +4203,16 @@ class Expr:
               and the python function releases the GIL (e.g. via calling
               a c function)
 
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+              .. warning::
+                  This functionality is considered **unstable**. It may be changed
+                  at any point without it being considered a breaking change.
+            - 'loky': run the python function on separate processes. This has a
+              greater overhead that the other strategies, and should only be used
+              for relatively expensive UDFs. Requires ``joblib`` to be installed.
+
+              .. warning::
+                  This functionality is considered **unstable**. It may be changed
+                  at any point without it being considered a breaking change.
 
         Warnings
         --------
@@ -4368,7 +4375,7 @@ class Expr:
 
         if strategy == "thread_local":
             return self.map_batches(wrap_f, agg_list=True, return_dtype=return_dtype)
-        elif strategy == "threading":
+        elif strategy in ("threading", "loky"):
 
             def wrap_threading(x: Series) -> Series:
                 def get_lazy_promise(df: DataFrame) -> LazyFrame:
@@ -4404,7 +4411,18 @@ class Expr:
                     partition_df = df[a:b]
                     partitions.append(get_lazy_promise(partition_df))
 
-                out = [df.to_series() for df in F.collect_all(partitions)]
+                if strategy == "threading":
+                    out = [df.to_series() for df in F.collect_all(partitions)]
+                else:
+                    if not _JOBLIB_AVAILABLE:
+                        msg = "map_elements with strategy='loky' requires joblib.\n\nInstall with: pip install joblib"
+                        raise ModuleNotFoundError(msg)
+                    from joblib import Parallel, delayed
+
+                    out = Parallel(n_jobs=n_threads)(
+                        delayed(lambda x: x.collect().to_series())(x)
+                        for x in partitions
+                    )
                 return F.concat(out, rechunk=False)
 
             return self.map_batches(
