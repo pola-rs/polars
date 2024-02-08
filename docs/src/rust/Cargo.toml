@@ -25,19 +25,19 @@ path = "home/example.rs"
 required-features = ["polars/lazy"]
 
 [[bin]]
-name = "user-guide-basics-expressions"
-path = "user-guide/basics/expressions.rs"
+name = "user-guide-getting-started-expressions"
+path = "user-guide/getting-started/expressions.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-basics-joins"
-path = "user-guide/basics/joins.rs"
+name = "user-guide-getting-started-joins"
+path = "user-guide/getting-started/joins.rs"
 [[bin]]
-name = "user-guide-basics-reading-writing"
-path = "user-guide/basics/reading-writing.rs"
+name = "user-guide-getting-started-reading-writing"
+path = "user-guide/getting-started/reading-writing.rs"
 required-features = ["polars/json"]
 [[bin]]
-name = "user-guide-basics-series-dataframes"
-path = "user-guide/basics/series-dataframes.rs"
+name = "user-guide-concepts-data-structures"
+path = "user-guide/concepts/data-structures.rs"
 
 [[bin]]
 name = "user-guide-concepts-contexts"
@@ -81,8 +81,8 @@ name = "user-guide-expressions-lists"
 path = "user-guide/expressions/lists.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-expressions-null"
-path = "user-guide/expressions/null.rs"
+name = "user-guide-expressions-missing-data"
+path = "user-guide/expressions/missing-data.rs"
 required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-expressions-operators"
