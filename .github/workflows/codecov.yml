@@ -12,8 +12,6 @@ jobs:
         os: ["macos"]
     runs-on: ${{ matrix.os }}-latest
     steps:
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with:
@@ -40,10 +38,11 @@ jobs:
           cargo llvm-cov clean --workspace 
           maturin develop
           pytest tests --cov=polars --cov-fail-under=50 --cov-report xml
-          cargo llvm-cov report --lcov --output-path coverage.lcov
         env:
           RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
           RUST_BACKTRACE: 1
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - uses: codecov/codecov-action@v3
         with:
           files: coverage.lcov,coverage.xml
