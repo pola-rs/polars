@@ -378,6 +378,19 @@ impl PyLazyFrame {
             .map_err(PyPolarsErr::from)?;
         Ok(result)
     }
+
+    fn describe_plan_tree(&self) -> String {
+        self.ldf.describe_plan_tree()
+    }
+
+    fn describe_optimized_plan_tree(&self) -> PyResult<String> {
+        let result = self
+            .ldf
+            .describe_optimized_plan_tree()
+            .map_err(PyPolarsErr::from)?;
+        Ok(result)
+    }
+
     fn to_dot(&self, optimized: bool) -> PyResult<String> {
         let result = self.ldf.to_dot(optimized).map_err(PyPolarsErr::from)?;
         Ok(result)
