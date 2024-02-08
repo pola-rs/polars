@@ -344,7 +344,7 @@ def add_ham(df: pd.DataFrame) -> pd.DataFrame:
 )
 ```
 
-If we do this in polars, we would create 3 `with_column` contexts, that forces Polars to run the 3 pipes sequentially,
+If we do this in polars, we would create 3 `with_columns` contexts, that forces Polars to run the 3 pipes sequentially,
 utilizing zero parallelism.
 
 The way to get similar abstractions in polars is creating functions that create expressions.
