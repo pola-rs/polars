@@ -9,23 +9,19 @@ jobs:
     name: Coverage for ${{ matrix.os }}
     strategy:
       matrix:
-        os: ["macos"]
-    runs-on: ${{ matrix.os }}-latest
+        os: ["ubuntu"]
+    runs-on: ${{ matrix.os }}-20.04
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with:
           python-version: "3.10"
           cache: "pip"
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          profile: minimal
-          components: llvm-tools-preview
+      - name: install rust nightly
+        uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
         with:
           key: coverage-cargo-${{ matrix.os }}
         continue-on-error: true
@@ -38,6 +34,7 @@ jobs:
         run: |
           source venv/bin/activate
           cd py-polars
+          rustup component add llvm-tools-preview
           cargo llvm-cov clean --workspace 
           maturin develop
           pytest tests --cov=polars --cov-fail-under=50 --cov-report xml
