@@ -25,6 +25,8 @@ jobs:
         with:
           key: coverage-cargo-${{ matrix.os }}
         continue-on-error: true
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - name: Setup virtual environment
         run: |
           python -m venv venv
@@ -41,8 +43,6 @@ jobs:
         env:
           RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
           RUST_BACKTRACE: 1
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
       - uses: codecov/codecov-action@v3
         with:
           files: coverage.lcov,coverage.xml
