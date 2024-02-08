@@ -2465,7 +2465,7 @@ impl DataFrame {
         }
     }
 
-    /// Aggregate the column horizontally to their sum values.
+    /// Sum all values horizontally across columns.
     pub fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         let apply_null_strategy =
             |s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
@@ -2519,7 +2519,7 @@ impl DataFrame {
         }
     }
 
-    /// Aggregate the column horizontally to their mean values.
+    /// Compute the mean of all values horizontally across columns.
     pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
