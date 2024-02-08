@@ -269,9 +269,10 @@ impl FunctionExpr {
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
             BackwardFill { .. } => mapper.with_same_dtype(),
             ForwardFill { .. } => mapper.with_same_dtype(),
-            SumHorizontal => mapper.map_to_supertype(),
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
+            SumHorizontal => mapper.map_to_supertype(),
+            MeanHorizontal => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
