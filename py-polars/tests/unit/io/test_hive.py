@@ -176,3 +176,28 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
 
     with pytest.raises(pl.ComputeError, match="invalid hive partitions"):
         pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+
+
+@pytest.mark.write_disk()
+def test_hive_partitioned_projection_skip_files(
+    io_files_path: Path, tmp_path: Path
+) -> None:
+    # ensure that it makes hive columns even when . in dir value
+    # and that it doesn't make hive columns from filename with =
+    df = pl.DataFrame(
+        {"sqlver": [10012.0, 10013.0], "namespace": ["eos", "fda"], "a": [1, 2]}
+    )
+    root = tmp_path / "partitioned_data"
+    for dir_tuple, sub_df in df.partition_by(
+        ["sqlver", "namespace"], include_key=False, as_dict=True
+    ).items():
+        new_path = root / f"sqlver={dir_tuple[0]}" / f"namespace={dir_tuple[1]}"
+        new_path.mkdir(parents=True, exist_ok=True)
+        sub_df.write_parquet(new_path / "file=8484.parquet")
+    test_df = (
+        pl.scan_parquet(str(root) + "/**/**/*.parquet")
+        # don't care about column order
+        .select("sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a"))
+        .collect()
+    )
+    assert_frame_equal(df, test_df)

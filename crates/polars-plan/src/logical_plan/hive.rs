@@ -38,11 +38,15 @@ impl HivePartitions {
     pub(crate) fn parse_url(url: &Path) -> Option<Self> {
         let sep = separator(url);
 
-        let partitions = url
-            .display()
-            .to_string()
-            .split(sep)
-            .filter_map(|part| {
+        let url_string = url.display().to_string();
+
+        let pre_filt = url_string.split(sep);
+
+        let split_count_m1 = pre_filt.clone().count() - 1;
+
+        let partitions = pre_filt
+            .enumerate()
+            .filter_map(|(index, part)| {
                 let mut it = part.split('=');
                 let name = it.next()?;
                 let value = it.next()?;
@@ -52,8 +56,9 @@ impl HivePartitions {
                 if value.contains('*') {
                     return None;
                 }
-                let value_path = Path::new(value);
-                if value_path.extension().is_some() {
+
+                // Identify file by index location
+                if index == split_count_m1 {
                     return None;
                 }
 
