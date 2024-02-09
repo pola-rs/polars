@@ -11,6 +11,7 @@ import polars as pl
 from polars.testing import assert_series_equal, assert_series_not_equal
 
 nan = float("nan")
+pytest_plugins = ["pytester"]
 
 
 def test_compare_series_value_mismatch() -> None:
@@ -636,3 +637,81 @@ def test_assert_series_equal_w_large_integers_12328() -> None:
     right = pl.Series([1577840521123543])
     with pytest.raises(AssertionError):
         assert_series_equal(left, right)
+
+
+def test_tracebackhide(testdir: pytest.Testdir) -> None:
+    testdir.makefile(
+        ".py",
+        test_path="""\
+import polars as pl
+from polars.testing import assert_series_equal, assert_series_not_equal
+
+nan = float("nan")
+
+def test_series_equal_fail():
+    s1 = pl.Series([1, 2])
+    s2 = pl.Series([1, 3])
+    assert_series_equal(s1, s2)
+
+def test_series_not_equal_fail():
+    s1 = pl.Series([1, 2])
+    s2 = pl.Series([1, 2])
+    assert_series_not_equal(s1, s2)
+
+def test_series_nested_fail():
+    s1 = pl.Series([[1, 2], [3, 4]])
+    s2 = pl.Series([[1, 2], [3, 5]])
+    assert_series_equal(s1, s2)
+
+def test_series_null_fail():
+    s1 = pl.Series([1, 2])
+    s2 = pl.Series([1, None])
+    assert_series_equal(s1, s2)
+
+def test_series_nan_fail():
+    s1 = pl.Series([1.0, 2.0])
+    s2 = pl.Series([1.0, nan])
+    assert_series_equal(s1, s2)
+
+def test_series_float_tolerance_fail():
+    s1 = pl.Series([1.0, 2.0])
+    s2 = pl.Series([1.0, 2.1])
+    assert_series_equal(s1, s2)
+
+def test_series_schema_fail():
+    s1 = pl.Series([1, 2], dtype=pl.Int64)
+    s2 = pl.Series([1, 2], dtype=pl.Int32)
+    assert_series_equal(s1, s2)
+
+def test_series_data_type_fail():
+    s1 = pl.Series([1, 2])
+    s2 = [1, 2]
+    assert_series_equal(s1, s2)
+""",
+    )
+    result = testdir.runpytest()
+    result.assert_outcomes(passed=0, failed=8)
+    stdout = "\n".join(result.outlines)
+
+    assert "polars/py-polars/polars/testing" not in stdout
+
+    # The above should catch any polars testing functions that appear in the
+    # stack trace.  But we keep the following checks (for specific function
+    # names) just to double-check.
+
+    assert "def assert_series_equal" not in stdout
+    assert "def assert_series_not_equal" not in stdout
+    assert "def _assert_series_values_equal" not in stdout
+    assert "def _assert_series_nested_values_equal" not in stdout
+    assert "def _assert_series_null_values_match" not in stdout
+    assert "def _assert_series_nan_values_match" not in stdout
+    assert "def _assert_series_values_within_tolerance" not in stdout
+
+    # Make sure the tests are failing for the expected reason (e.g. not because
+    # an import is missing or something like that):
+
+    assert "AssertionError: Series are different (exact value mismatch)" in stdout
+    assert "AssertionError: Series are equal" in stdout
+    assert "AssertionError: Series are different (nan value mismatch)" in stdout
+    assert "AssertionError: Series are different (dtype mismatch)" in stdout
+    assert "AssertionError: inputs are different (unexpected input types)" in stdout
