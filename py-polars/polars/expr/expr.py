@@ -166,11 +166,11 @@ class Expr:
 
     def __and__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr._and(other))
+        return self._from_pyexpr(self._pyexpr.and_(other))
 
     def __rand__(self, other: IntoExprColumn | int | bool) -> Self:
         other_expr = parse_as_expression(other)
-        return self._from_pyexpr(other_expr._and(self._pyexpr))
+        return self._from_pyexpr(other_expr.and_(self._pyexpr))
 
     def __eq__(self, other: IntoExpr) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
@@ -234,11 +234,11 @@ class Expr:
 
     def __or__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr._or(other))
+        return self._from_pyexpr(self._pyexpr.or_(other))
 
     def __ror__(self, other: IntoExprColumn | int | bool) -> Self:
         other_expr = parse_as_expression(other)
-        return self._from_pyexpr(other_expr._or(self._pyexpr))
+        return self._from_pyexpr(other_expr.or_(self._pyexpr))
 
     def __pos__(self) -> Expr:
         return self
@@ -269,11 +269,11 @@ class Expr:
 
     def __xor__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr._xor(other))
+        return self._from_pyexpr(self._pyexpr.xor_(other))
 
     def __rxor__(self, other: IntoExprColumn | int | bool) -> Self:
         other_expr = parse_as_expression(other)
-        return self._from_pyexpr(other_expr._xor(self._pyexpr))
+        return self._from_pyexpr(other_expr.xor_(self._pyexpr))
 
     def __getstate__(self) -> bytes:
         return self._pyexpr.__getstate__()
