@@ -46,13 +46,12 @@ You can also debug Rust code called from Python (see section below).
 Due to the way that Python and Rust interoperate, debugging the Rust side of development from Python calls can be difficult.
 This guide shows how to set up a debugging environment that makes debugging Rust code called from a Python script painless.
 
-#### 1. Install the CodeLLDB extension (see above)
+#### Preparation
 
-#### 2. Add debug launch configurations
-
-Copy the following two configurations to your `launch.json` file.
+Start by installing the CodeLLDB extension (see above).
+Then add the following two configurations to your `launch.json` file.
 This file is usually found in the `.vscode` folder of your project root.
-See the [official VSCode docs](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the `launch.json` file.
+See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the `launch.json` file.
 
 <details><summary><code><b>launch.json</b></code></summary>
 
@@ -61,7 +60,7 @@ See the [official VSCode docs](https://code.visualstudio.com/docs/editor/debuggi
     "configurations": [
         {
             "name": "Debug Rust/Python",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/py-polars/debug/launch.py",
             "args": [
@@ -95,37 +94,33 @@ See the [official VSCode docs](https://code.visualstudio.com/docs/editor/debuggi
 
 </details>
 
-#### 3. (Only if necessary) Disable `ptrace` protection
+!!! info
 
-In some systems, the LLDB debugger will not attach unless [`ptrace` protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope)
-is disabled. To disable, run the following command:
+    On some systems, the LLDB debugger will not attach unless [ptrace protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope) is disabled.
+    To disable, run the following command:
 
-```shell
-echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
-```
+    ```shell
+    echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+    ```
 
-#### Debugging a script
+#### Running the debugger
 
-1. Create a python script containing polars code. Ensure that your polars virtual environment is activated.
+1. Create a Python script containing Polars code. Ensure that your virtual environment is activated.
 
-2. Set breakpoint in any `.rs` or `.py` file.
+2. Set breakpoints in any `.rs` or `.py` file.
 
-3. In the `Run and Debug` panel on the left, select `Python: Debug Rust` from the drop-down menu on top and click
-   the `Start Debugging` button.
+3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on top and click the `Start Debugging` button.
 
-At this point, your debugger should stop on breakpoints in any `.rs` file located within the codebase. To quickly
-re-start the debugger in the future, use the standard `F5` keyboard shortcut to re-launch the `Python: Debug Rust`
-debugging configuration.
+At this point, your debugger should stop on breakpoints in any `.rs` file located within the codebase.
 
 #### Details
 
-The debugging feature runs via the specially-designed VS Code launch configuration shown above. The initial python debugger
-is launched, using a special launch script located at `/py-polars/debug/launch.py`, and passes the name of the script to be
-debugged (the target script) as an input argument. The launch script determines the process ID, writes this value into
-the launch.json configuration file, compiles the target script and runs it in the current environment. At this point, a
-second (Rust) debugger is attached to the Python debugger. The result is two simultaneous debuggers operating on the same
-running instance. Breakpoints in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop
-on the Rust debugger.
+The debugging feature runs via the specially-designed VSCode launch configuration shown above.
+The initial Python debugger is launched using a special launch script located at `py-polars/debug/launch.py` and passes the name of the script to be debugged (the target script) as an input argument.
+The launch script determines the process ID, writes this value into the `launch.json` configuration file, compiles the target script and runs it in the current environment.
+At this point, a second (Rust) debugger is attached to the Python debugger.
+The result is two simultaneous debuggers operating on the same running instance.
+Breakpoints in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop on the Rust debugger.
 
 ## PyCharm / RustRover / CLion
 
