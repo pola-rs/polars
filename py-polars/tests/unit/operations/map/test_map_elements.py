@@ -305,6 +305,6 @@ def test_apply_deprecated() -> None:
 def test_cabbage_strategy_14396() -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
     with pytest.raises(
-        ValueError, match="Strategy cabbage is not supported."
+        ValueError, match="strategy 'cabbage' is not supported"
     ), pytest.warns(PolarsInefficientMapWarning):
         df.select(pl.col("x").map_elements(lambda x: 2 * x, strategy="cabbage"))  # type: ignore[arg-type]
