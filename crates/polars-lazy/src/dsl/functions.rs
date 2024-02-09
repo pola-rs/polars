@@ -32,7 +32,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     };
 
     let lf = match &mut lf.logical_plan {
-        // re-use the same union
+        // reuse the same union
         LogicalPlan::Union {
             inputs: existing_inputs,
             options: opts,

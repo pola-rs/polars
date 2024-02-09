@@ -2903,7 +2903,7 @@ class DataFrame:
               "A2" indicates the split occurs at the top-left of cell A2, which is the
               equivalent of (1, 0).
             * If (row, col, top_row, top_col) are supplied, the panes are split based on
-              the `row` and `col`, and the scrolling region is inititalized to begin at
+              the `row` and `col`, and the scrolling region is initialized to begin at
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.

@@ -9,7 +9,7 @@ use super::*;
 #[test]
 #[cfg(feature = "rank")]
 fn test_filter_sort_diff_2984() -> PolarsResult<()> {
-    // make sort that sort doest not oob if filter returns no values
+    // make sure that sort does not oob if filter returns no values
     let df = df![
     "group"=> ["A" ,"A", "A", "B", "B", "B", "B"],
     "id"=> [1, 2, 1, 4, 5, 4, 6],

@@ -209,7 +209,7 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
 
     while let Some(&val) = iter.next() {
         match val {
-            b'%' => match iter.next().expect("invalid patter") {
+            b'%' => match iter.next().expect("invalid pattern") {
                 b'Y' => cnt += 4,
                 b'y' => cnt += 2,
                 b'd' => cnt += 2,
