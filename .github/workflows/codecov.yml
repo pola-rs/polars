@@ -12,7 +12,14 @@ jobs:
         os: ["macos"]
     runs-on: ${{ matrix.os }}-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Get PR branch
+        uses: xt0rted/pull-request-comment-branch@v1
+        id: comment-branch
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ steps.comment-branch.outputs.head_ref }}
       - uses: actions/setup-python@v2
         with:
           python-version: "3.10"
@@ -49,7 +56,11 @@ jobs:
           CARGO_LLVM_COV: 1
           CARGO_LLVM_COV_SHOW_ENV: 1
           CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
-      - uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v4
         with:
           files: coverage.lcov,coverage.xml
           name: ${{ matrix.os }}
+          override_branch: ${{ steps.comment-branch.outputs.head_ref }}
+          override_pr: ${{ github.event.issue.number }}
+          override_commit: ${{ steps.comment-branch.outputs.head_sha }}
+          token: ${{ secrets.CODECOV_TOKEN }}
