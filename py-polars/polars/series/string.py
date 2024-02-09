@@ -371,6 +371,12 @@ class StringNameSpace:
         equivalent output with much better performance:
         :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
+        A character is defined as a `Unicode scalar value`_. A single character is
+        represented by a single byte when working with ASCII text, and a maximum of
+        4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
         Examples
         --------
         >>> s = pl.Series(["Café", "345", "東京", None])
@@ -1580,7 +1586,7 @@ class StringNameSpace:
         self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
     ) -> Series:
         """
-        Create subslices of the string values of a String Series.
+        Extract a substring from each string value.
 
         Parameters
         ----------
@@ -1593,15 +1599,23 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type
-            :class:`String`.
+            Series of data type :class:`String`.
+
+        Notes
+        -----
+        Both the `offset` and `length` inputs are defined in terms of the number
+        of characters in the (UTF8) string. A character is defined as a
+        `Unicode scalar value`_. A single character is represented by a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
 
         Examples
         --------
-        >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
         >>> s.str.slice(-3)
         shape: (4,)
-        Series: 's' [str]
+        Series: '' [str]
         [
             "ear"
             null
@@ -1613,7 +1627,7 @@ class StringNameSpace:
 
         >>> s.str.slice(4, length=3)
         shape: (4,)
-        Series: 's' [str]
+        Series: '' [str]
         [
             ""
             null
