@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  push:
-  pull_request:
+  issue_comment:
+    types: [created, edited, deleted]
 
 jobs:
   coverage:
