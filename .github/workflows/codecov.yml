@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  issue_comment:
-    types: [created, edited, deleted]
+  push:
 
 jobs:
   coverage:
@@ -12,14 +11,8 @@ jobs:
         os: ["macos"]
     runs-on: ${{ matrix.os }}-latest
     steps:
-      - name: Get PR branch
-        uses: xt0rted/pull-request-comment-branch@v1
-        id: comment-branch
-
-      - name: Checkout PR branch
+      - name: Checkout
         uses: actions/checkout@v3
-        with:
-          ref: ${{ steps.comment-branch.outputs.head_ref }}
       - uses: actions/setup-python@v2
         with:
           python-version: "3.10"
@@ -46,7 +39,9 @@ jobs:
           cargo test --all-features -p polars-arrow -p polars-core -p polars-io -p polars-lazy -p polars-ops -p polars-plan -p polars-row -p polars-sql -p polars-time -p polars-utils
           cargo test --all-features -p polars --test it
           maturin develop
-          pytest tests --cov=polars --cov-fail-under=50 --cov-report xml -m "not benchmark"
+          pytest tests --cov=polars --cov-fail-under=50 --cov-report xml:coverage.xml
+          pytest tests -m slow --cov=polars --cov-fail-under=50 --cov-report xml:slow.xml
+          pytest tests -m hypothesis --cov=polars --cov-fail-under=50 --cov-report xml:hypothesis.xml
           POLARS_FORCE_ASYNC=1 pytest -m "not benchmark and not docs" tests/unit/io/
           cargo llvm-cov report --lcov --output-path coverage.lcov
         env:
@@ -58,9 +53,6 @@ jobs:
           CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
       - uses: codecov/codecov-action@v4
         with:
-          files: coverage.lcov,coverage.xml
+          files: coverage.lcov,coverage.xml,hypothesis.xml,slow.xml
           name: ${{ matrix.os }}
-          override_branch: ${{ steps.comment-branch.outputs.head_ref }}
-          override_pr: ${{ github.event.issue.number }}
-          override_commit: ${{ steps.comment-branch.outputs.head_sha }}
           token: ${{ secrets.CODECOV_TOKEN }}
