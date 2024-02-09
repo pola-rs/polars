@@ -42,7 +42,7 @@ unsafe fn ptr_apply_binary_kernel<L: Copy, R: Copy, O, F: Fn(L, R) -> O>(
 
 /// Applies a function to all the values (regardless of nullability).
 ///
-/// May re-use the memory of the array if possible.
+/// May reuse the memory of the array if possible.
 pub fn prim_unary_values<I, O, F>(mut arr: PrimitiveArray<I>, op: F) -> PrimitiveArray<O>
 where
     I: NativeType,
@@ -75,7 +75,7 @@ where
 /// Apply a binary function to all the values (regardless of nullability)
 /// in (lhs, rhs). Combines the validities with a bitand.
 ///
-/// May re-use the memory of one of its arguments if possible.
+/// May reuse the memory of one of its arguments if possible.
 pub fn prim_binary_values<L, R, O, F>(
     mut lhs: PrimitiveArray<L>,
     mut rhs: PrimitiveArray<R>,

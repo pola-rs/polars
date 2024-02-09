@@ -552,7 +552,7 @@ impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryViewArray {
     // fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
 }
 
-/// We use this to re-use the binary collect implementation for strings.
+/// We use this to reuse the binary collect implementation for strings.
 /// # Safety
 /// The array must be valid UTF-8.
 unsafe fn into_utf8array(arr: BinaryArray<i64>) -> Utf8Array<i64> {

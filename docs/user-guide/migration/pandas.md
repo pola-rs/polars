@@ -368,7 +368,7 @@ df.with_columns(
 )
 ```
 
-If you need the schema in the functions that generate the expressions, you an utilize a single `pipe`:
+If you need the schema in the functions that generate the expressions, you can utilize a single `pipe`:
 
 ```python
 from collections import OrderedDict

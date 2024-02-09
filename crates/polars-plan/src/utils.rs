@@ -116,7 +116,7 @@ pub fn has_aexpr_literal(current_node: Node, arena: &Arena<AExpr>) -> bool {
 }
 
 /// Can check if an expression tree has a matching_expr. This
-/// requires a dummy expression to be created that will be used to patter match against.
+/// requires a dummy expression to be created that will be used to pattern match against.
 pub(crate) fn has_expr<F>(current_expr: &Expr, matches: F) -> bool
 where
     F: Fn(&Expr) -> bool,
