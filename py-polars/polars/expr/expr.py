@@ -4411,7 +4411,8 @@ class Expr:
                 wrap_threading, agg_list=True, return_dtype=return_dtype
             )
         else:
-            ValueError(f"Strategy {strategy} is not supported.")
+            msg = f"strategy {strategy!r} is not supported"
+            raise ValueError(msg)
 
     def flatten(self) -> Self:
         """

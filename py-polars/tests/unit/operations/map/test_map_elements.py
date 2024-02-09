@@ -300,3 +300,11 @@ def test_apply_deprecated() -> None:
         pl.col("a").apply(np.abs)
     with pytest.deprecated_call():
         pl.Series([1, 2, 3]).apply(np.abs)
+
+
+def test_cabbage_strategy_14396() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(
+        ValueError, match="strategy 'cabbage' is not supported"
+    ), pytest.warns(PolarsInefficientMapWarning):
+        df.select(pl.col("x").map_elements(lambda x: 2 * x, strategy="cabbage"))  # type: ignore[arg-type]
