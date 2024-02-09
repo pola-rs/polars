@@ -21,11 +21,12 @@ def launch_debugging() -> None:
     and execute the originally-requested script.
     """
     if len(sys.argv) == 1:
-        raise RuntimeError(
+        msg = (
             "launch.py is not meant to be executed directly; please use the `Python: "
             "Debug Rust` debugging configuration to run a python script that uses the "
             "polars library."
         )
+        raise RuntimeError(msg)
 
     # Get the current process ID.
     pID = os.getpid()
@@ -34,7 +35,8 @@ def launch_debugging() -> None:
     # Rust LLDB configuration automatically.
     launch_file = Path(__file__).parents[2] / ".vscode/launch.json"
     if not launch_file.exists():
-        raise RuntimeError(f"Cannot locate {launch_file}")
+        msg = f"Cannot locate {launch_file}"
+        raise RuntimeError(msg)
     with launch_file.open("r") as f:
         launch_info = f.read()
 
@@ -43,11 +45,12 @@ def launch_debugging() -> None:
     pattern = re.compile('("Rust LLDB",\\s*"pid":\\s*")\\d+(")')
     found = pattern.search(launch_info)
     if not found:
-        raise RuntimeError(
+        msg = (
             "Cannot locate pid definition in launch.json for Rust LLDB configuration. "
             "Please follow the instructions in CONTRIBUTING.md for creating the "
             "launch configuration."
         )
+        raise RuntimeError(msg)
 
     launch_info_with_new_pid = pattern.sub(rf"\g<1>{pID}\g<2>", launch_info)
     with launch_file.open("w") as f:
