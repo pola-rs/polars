@@ -9580,8 +9580,9 @@ class DataFrame:
         """
         Returns all data in the DataFrame as a list of rows of python-native values.
 
-        By default, each row is a tuple of values in the same order as `self.columns`.
-        You can set `named=True` to get dictionaries instead.
+        By default, each row is returned as a tuple of values given in the same order
+        as the frame columns. Setting `named=True` will return rows of dictionaries
+        instead.
 
         Parameters
         ----------
@@ -9601,12 +9602,13 @@ class DataFrame:
         --------
         Row-iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
-        Where possible you should also consider using `iter_rows` instead to avoid
-        materialising all the data at once.
+        You should also consider using `iter_rows` instead, to avoid materialising all
+        the data at once; there is little performance difference between the two, but
+        peak memory can be reduced if processing rows in batches.
 
         Returns
         -------
-        list of tuples (default) or dictionaries of row values
+        list of row value tuples (default), or list of dictionaries (if `named=True`).
 
         See Also
         --------
