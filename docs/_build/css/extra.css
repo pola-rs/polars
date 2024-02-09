@@ -5,6 +5,9 @@
     --md-text-font: 'Proxima Nova', sans-serif;
 }
 
+p {
+  text-align: justify;
+}
 
 span .md-typeset .emojione, .md-typeset .gemoji, .md-typeset .twemoji {
     vertical-align: text-bottom;
