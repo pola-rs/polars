@@ -5,10 +5,9 @@ from polars.testing import assert_frame_equal
 
 
 def test_list_set_oob() -> None:
-    df = pl.DataFrame({"a": [42, 23]})
-    assert df.select(pl.col("a").list.set_intersection([])).to_dict(
-        as_series=False
-    ) == {"a": [[], []]}
+    df = pl.DataFrame({"a": [[42], [23]]})
+    result = df.select(pl.col("a").list.set_intersection([]))
+    assert result.to_dict(as_series=False) == {"a": [[], []]}
 
 
 def test_list_set_operations_float() -> None:
