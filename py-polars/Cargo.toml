@@ -234,6 +234,3 @@ default = [
   "all",
   "nightly",
 ]
-
-[package.metadata.maturin]
-python-source = "python"
