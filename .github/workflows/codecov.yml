@@ -26,7 +26,7 @@ jobs:
         with:
           ref: ${{ steps.comment-branch.outputs.head_ref }}
 
-      - name: Checkout main push
+      - name: Checkout main branch
         if: ${{ github.event_name == 'push' }}
         uses: actions/checkout@v4
 
@@ -45,7 +45,7 @@ jobs:
       - name: Setup virtual environment
         run: |
           python -m venv venv
-          source venv/bin/activatepy-polars/
+          source venv/bin/activate
           pip install -r py-polars/requirements-dev.txt
       - name: Run coverage
         run: |
