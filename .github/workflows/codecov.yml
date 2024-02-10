@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - codecov
 
 jobs:
   coverage:
