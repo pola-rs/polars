@@ -47,6 +47,15 @@ def test_hist() -> None:
     ).to_series().to_list() == [0, 3, 4]
 
 
+@pytest.mark.parametrize("values", [[], [None]])
+def test_hist_empty_or_all_null(values) -> None:
+    ser = pl.Series(values, dtype=pl.Float64)
+    assert (
+        str(ser.hist().to_dict(as_series=False))
+        == "{'break_point': [inf], 'category': ['(-inf, inf]'], 'count': [0]}"
+    )
+
+
 @pytest.mark.parametrize("n", [3, 10, 25])
 def test_hist_rand(n: int) -> None:
     a = pl.Series(np.random.randint(0, 100, n))
