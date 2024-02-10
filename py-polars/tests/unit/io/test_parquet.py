@@ -709,3 +709,13 @@ def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
     assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
     df = pl.scan_parquet([zero_path, utc_path]).head(5).collect()
     assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+
+
+def test_parquet_rle_14333() -> None:
+    vals = [True, False, True, False, True, False, True, False, True, False]
+    table = pa.table({"a": vals})
+
+    f = io.BytesIO()
+    pq.write_table(table, f, data_page_version="2.0")
+    f.seek(0)
+    assert pl.read_parquet(f)["a"].to_list() == vals
