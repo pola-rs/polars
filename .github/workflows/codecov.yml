@@ -12,7 +12,7 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: macos-latest
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')
+    if: (github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')) || github.event_name == 'push'
     steps:
       # Event is run on the main branch, in case of a issue_comment checkout the correct PR
       - name: Get PR branch
