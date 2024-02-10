@@ -116,6 +116,21 @@ def test_clip_datetime(clip_exprs: list[pl.Expr]) -> None:
     assert_frame_equal(result, expected)
 
 
+def test_clip_non_numeric_dtype_fails() -> None:
+    msg = "`clip` only supports physical numeric types"
+
+    s = pl.Series(["a", "b", "c"])
+    with pytest.raises(pl.InvalidOperationError, match=msg):
+        s.clip(pl.lit("b"), pl.lit("z"))
+
+
+def test_clip_string_input() -> None:
+    df = pl.DataFrame({"a": [0, 1, 2], "min": [1, None, 1]})
+    result = df.select(pl.col("a").clip("min"))
+    expected = pl.DataFrame({"a": [1, None, 2]})
+    assert_frame_equal(result, expected)
+
+
 def test_clip_min_max_deprecated() -> None:
     s = pl.Series([-1, 0, 1])
 
