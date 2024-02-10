@@ -105,9 +105,8 @@ pre-commit: fmt clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
+	@rm -rf .ruff_cache/
 	@rm -rf .venv/
-	@rm -rf target/
-	@rm -f Cargo.lock
 	@cargo clean
 	@$(MAKE) -s -C py-polars/ $@
 
