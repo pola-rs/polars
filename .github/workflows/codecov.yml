@@ -27,7 +27,7 @@ jobs:
           ref: ${{ steps.comment-branch.outputs.head_ref }}
 
       - name: Checkout main push
-        if: ${{ github.event_name == 'push }}
+        if: ${{ github.event_name == 'push' }}
         uses: actions/checkout@v4
 
       - uses: actions/setup-python@v2
