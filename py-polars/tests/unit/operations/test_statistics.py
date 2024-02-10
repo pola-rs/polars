@@ -48,7 +48,7 @@ def test_hist() -> None:
 
 
 @pytest.mark.parametrize("values", [[], [None]])
-def test_hist_empty_or_all_null(values) -> None:
+def test_hist_empty_or_all_null(values: list) -> None:
     ser = pl.Series(values, dtype=pl.Float64)
     assert (
         str(ser.hist().to_dict(as_series=False))
