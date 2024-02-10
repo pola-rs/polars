@@ -80,7 +80,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
       # Upload coverage from main
       - uses: codecov/codecov-action@v4
-        if: ${{ github.event_name == 'push }}
+        if: ${{ github.event_name == 'push' }}
         with:
           files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/hypothesis.xml,py-polars/slow.xml
           name: macos
