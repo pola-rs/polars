@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from polars.datatypes import Date, Datetime
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_date, _to_python_datetime
+from polars.utils.convert import _to_python_datetime
 from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
 from polars.utils.unstable import unstable
 
@@ -80,9 +80,7 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.median()
         if out is not None:
-            if s.dtype == Date:
-                return _to_python_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype == Datetime:
+            if s.dtype in (Date, Datetime):
                 return out  # type: ignore[return-value]
             else:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
@@ -104,9 +102,7 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.mean()
         if out is not None:
-            if s.dtype == Date:
-                return _to_python_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype == Datetime:
+            if s.dtype in (Date, Datetime):
                 return out  # type: ignore[return-value]
             else:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]

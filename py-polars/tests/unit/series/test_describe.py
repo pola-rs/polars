@@ -81,7 +81,7 @@ def test_series_describe_date() -> None:
     stats = {
         "count": "3",
         "null_count": "0",
-        "mean": "2010-09-29",
+        "mean": "2010-09-29 16:00:00",
         "min": "1999-12-31",
         "25%": "2005-08-05",
         "50%": "2011-03-11",
