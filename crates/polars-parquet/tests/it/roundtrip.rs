@@ -3,7 +3,6 @@ use std::io::Cursor;
 use arrow::array::{ArrayRef, Utf8ViewArray};
 use arrow::chunk::Chunk;
 use arrow::datatypes::{ArrowSchema, Field};
-use arrow::io::ipc::read::FileReader;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};
 use polars_parquet::read::read_metadata;
