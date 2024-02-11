@@ -536,8 +536,11 @@ impl CategoricalChunked {
                     .min()
             }
         } else {
-            let min_idx = self.physical().min().unwrap();
-            self.get_rev_map().get_categories().get(min_idx as usize)
+            // SAFETY
+            // Indices are in bounds
+            self.physical()
+                .min()
+                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
         }
     }
 
@@ -561,8 +564,11 @@ impl CategoricalChunked {
                     .max()
             }
         } else {
-            let max_idx = self.physical().max().unwrap();
-            self.get_rev_map().get_categories().get(max_idx as usize)
+            // SAFETY
+            // Indices are in bounds
+            self.physical()
+                .max()
+                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
         }
     }
 }
