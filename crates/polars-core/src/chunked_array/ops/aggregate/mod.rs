@@ -523,19 +523,20 @@ impl CategoricalChunked {
         if self.uses_lexical_ordering() {
             // Fast path where all categories are used
             if self.can_fast_unique() {
-                self.get_rev_map()
-                    .get_categories()
-                    .iter()
-                    .flatten()
-                    .reduce(|acc, val| if val < acc { val } else { acc })
+                self.get_rev_map().get_categories().min_ignore_nan_kernel()
             } else {
-                self.iter_str()
-                    .flatten()
-                    .reduce(|acc, val| if val < acc { val } else { acc })
+                let rev_map = self.get_rev_map();
+                // SAFETY
+                // Indices are in bounds
+                self.physical()
+                    .iter()
+                    .flat_map(|opt_el: Option<u32>| {
+                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
+                    })
+                    .min()
             }
         } else {
-            let ca_phys = self.physical();
-            let min_idx = ca_phys.get(ca_phys.first_non_null().unwrap())?;
+            let min_idx = self.physical().min().unwrap();
             self.get_rev_map().get_categories().get(min_idx as usize)
         }
     }
@@ -547,19 +548,20 @@ impl CategoricalChunked {
         if self.uses_lexical_ordering() {
             // Fast path where all categories are used
             if self.can_fast_unique() {
-                self.get_rev_map()
-                    .get_categories()
-                    .iter()
-                    .reduce(|acc, val| if acc < val { val } else { acc })
-                    .unwrap()
+                self.get_rev_map().get_categories().max_ignore_nan_kernel()
             } else {
-                self.iter_str()
-                    .reduce(|acc, val| if acc < val { val } else { acc })
-                    .unwrap()
+                let rev_map = self.get_rev_map();
+                // SAFETY
+                // Indices are in bounds
+                self.physical()
+                    .iter()
+                    .flat_map(|opt_el: Option<u32>| {
+                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
+                    })
+                    .max()
             }
         } else {
-            let ca_phys = self.physical();
-            let max_idx = ca_phys.get(ca_phys.last_non_null().unwrap())?;
+            let max_idx = self.physical().max().unwrap();
             self.get_rev_map().get_categories().get(max_idx as usize)
         }
     }
