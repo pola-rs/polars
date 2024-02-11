@@ -287,53 +287,39 @@ def test_predicate_broadcast() -> None:
         pl.col("x"),
     ],
 )
-@pytest.mark.parametrize(
-    "df",
-    [
-        pl.Series("x", 5 * [1], dtype=pl.Int32)
-        .to_frame()
-        .with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
-    ],
-)
 def test_single_element_broadcast(
     mask_expr: pl.Expr,
     truthy_expr: pl.Expr,
     falsy_expr: pl.Expr,
-    df: pl.DataFrame,
 ) -> None:
+    df = (
+        pl.Series("x", 5 * [1], dtype=pl.Int32)
+        .to_frame()
+        .with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
+    )
+
     # Given that the lengths of the mask, truthy and falsy are all either:
     # - Length 1
     # - Equal length to the maximum length of the 3.
     # This test checks that all length-1 exprs are broadcasted to the max length.
-
-    expect = df.select("x").head(
+    result = df.select(
+        pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
+    )
+    expected = df.select("x").head(
         df.select(
             pl.max_horizontal(mask_expr.len(), truthy_expr.len(), falsy_expr.len())
         ).item()
     )
+    assert_frame_equal(result, expected)
 
-    actual = df.select(
-        pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
-    )
-
-    assert_frame_equal(
-        expect,
-        actual,
-    )
-
-    actual = (
+    result = (
         df.group_by(pl.lit(True).alias("key"))
         .agg(pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr))
         .drop("key")
     )
-
-    if expect.height > 1:
-        actual = actual.explode(pl.all())
-
-    assert_frame_equal(
-        expect,
-        actual,
-    )
+    if expected.height > 1:
+        result = result.explode(pl.all())
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
