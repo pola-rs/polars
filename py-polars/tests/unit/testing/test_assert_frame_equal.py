@@ -10,6 +10,7 @@ from polars.exceptions import InvalidAssert
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 nan = float("nan")
+pytest_plugins = ["pytester"]
 
 
 @pytest.mark.parametrize(
@@ -366,3 +367,66 @@ def test_assert_frame_not_equal() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(AssertionError, match="frames are equal"):
         assert_frame_not_equal(df, df)
+
+
+def test_tracebackhide(testdir: pytest.Testdir) -> None:
+    testdir.makefile(
+        ".py",
+        test_path="""\
+import polars as pl
+from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+def test_frame_equal_fail():
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"a": [1, 3]})
+    assert_frame_equal(df1, df2)
+
+def test_frame_not_equal_fail():
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"a": [1, 2]})
+    assert_frame_not_equal(df1, df2)
+
+def test_frame_data_type_fail():
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = {"a": [1, 2]}
+    assert_frame_equal(df1, df2)
+
+def test_frame_schema_fail():
+    df1 = pl.DataFrame({"a": [1, 2]}, {"a": pl.Int64})
+    df2 = pl.DataFrame({"a": [1, 2]}, {"a": pl.Int32})
+    assert_frame_equal(df1, df2)
+""",
+    )
+    result = testdir.runpytest()
+    result.assert_outcomes(passed=0, failed=4)
+    stdout = "\n".join(result.outlines)
+
+    assert "polars/py-polars/polars/testing" not in stdout
+
+    # The above should catch any polars testing functions that appear in the
+    # stack trace.  But we keep the following checks (for specific function
+    # names) just to double-check.
+
+    assert "def assert_frame_equal" not in stdout
+    assert "def assert_frame_not_equal" not in stdout
+    assert "def _assert_correct_input_type" not in stdout
+    assert "def _assert_frame_schema_equal" not in stdout
+
+    assert "def assert_series_equal" not in stdout
+    assert "def assert_series_not_equal" not in stdout
+    assert "def _assert_series_values_equal" not in stdout
+    assert "def _assert_series_nested_values_equal" not in stdout
+    assert "def _assert_series_null_values_match" not in stdout
+    assert "def _assert_series_nan_values_match" not in stdout
+    assert "def _assert_series_values_within_tolerance" not in stdout
+
+    # Make sure the tests are failing for the expected reason (e.g. not because
+    # an import is missing or something like that):
+
+    assert (
+        "AssertionError: DataFrames are different (value mismatch for column 'a')"
+        in stdout
+    )
+    assert "AssertionError: frames are equal" in stdout
+    assert "AssertionError: inputs are different (unexpected input types)" in stdout
+    assert "AssertionError: DataFrames are different (dtypes do not match)" in stdout
