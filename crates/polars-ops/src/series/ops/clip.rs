@@ -11,7 +11,6 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
     );
 
     let original_type = s.dtype();
-    // cast min & max to the dtype of s first.
     let (min, max) = (min.strict_cast(s.dtype())?, max.strict_cast(s.dtype())?);
 
     let (s, min, max) = (
@@ -27,9 +26,9 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
                 let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
                 let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
                 let out = clip_helper(ca, min, max).into_series();
-                if original_type.is_logical(){
+                if original_type.is_logical() {
                     out.cast(original_type)
-                }else{
+                } else {
                     Ok(out)
                 }
             })
@@ -46,7 +45,6 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
     );
 
     let original_type = s.dtype();
-    // cast max to the dtype of s first.
     let max = max.strict_cast(s.dtype())?;
 
     let (s, max) = (s.to_physical_repr(), max.to_physical_repr());
@@ -57,9 +55,9 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
                 let out = clip_min_max_helper(ca, max, clamp_max).into_series();
-                if original_type.is_logical(){
+                if original_type.is_logical() {
                     out.cast(original_type)
-                }else{
+                } else {
                     Ok(out)
                 }
             })
@@ -76,7 +74,6 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
     );
 
     let original_type = s.dtype();
-    // cast min to the dtype of s first.
     let min = min.strict_cast(s.dtype())?;
 
     let (s, min) = (s.to_physical_repr(), min.to_physical_repr());
@@ -87,9 +84,9 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
                 let out = clip_min_max_helper(ca, min, clamp_min).into_series();
-                if original_type.is_logical(){
+                if original_type.is_logical() {
                     out.cast(original_type)
-                }else{
+                } else {
                     Ok(out)
                 }
             })
