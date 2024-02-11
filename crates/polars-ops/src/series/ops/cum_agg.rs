@@ -1,7 +1,7 @@
 use std::iter::FromIterator;
 use std::ops::{Add, AddAssign, Mul};
 
-use num_traits::Bounded;
+use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
@@ -36,37 +36,29 @@ where
     }
 }
 
-fn det_sum<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
     T: Copy + PartialOrd + AddAssign + Add<Output = T>,
 {
-    match (*state, v) {
-        (Some(state_inner), Some(v)) => {
-            *state = Some(state_inner + v);
-            Some(*state)
+    match v {
+        Some(v) => {
+            *state += v;
+            Some(Some(*state))
         },
-        (None, Some(v)) => {
-            *state = Some(v);
-            Some(*state)
-        },
-        (_, None) => Some(None),
+        None => Some(None),
     }
 }
 
-fn det_prod<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
     T: Copy + PartialOrd + Mul<Output = T>,
 {
-    match (*state, v) {
-        (Some(state_inner), Some(v)) => {
-            *state = Some(state_inner * v);
-            Some(*state)
+    match v {
+        Some(v) => {
+            *state = *state * v;
+            Some(Some(*state))
         },
-        (None, Some(v)) => {
-            *state = Some(v);
-            Some(*state)
-        },
-        (_, None) => Some(None),
+        None => Some(None),
     }
 }
 
@@ -102,7 +94,7 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = None;
+    let init = T::Native::zero();
     let out: ChunkedArray<T> = match reverse {
         false => ca.iter().scan(init, det_sum).collect_trusted(),
         true => ca.iter().rev().scan(init, det_sum).collect_reversed(),
@@ -115,7 +107,7 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = None;
+    let init = T::Native::one();
     let out: ChunkedArray<T> = match reverse {
         false => ca.iter().scan(init, det_prod).collect_trusted(),
         true => ca.iter().rev().scan(init, det_prod).collect_reversed(),

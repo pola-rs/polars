@@ -48,6 +48,15 @@ def test_cum_agg() -> None:
     assert_series_equal(s.cum_prod(), pl.Series("a", [1, 2, 6, 12]))
 
 
+def test_cum_agg_with_nulls() -> None:
+    # confirm that known series give expected results
+    s = pl.Series("a", [None, 2, None, 7, 8, None])
+    assert_series_equal(s.cum_sum(), pl.Series("a", [None, 2, None, 9, 17, None]))
+    assert_series_equal(s.cum_min(), pl.Series("a", [None, 2, None, 2, 2, None]))
+    assert_series_equal(s.cum_max(), pl.Series("a", [None, 2, None, 7, 8, None]))
+    assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
+
+
 def test_cum_agg_deprecated() -> None:
     # confirm that known series give expected results
     s = pl.Series("a", [1, 2, 3, 2])
