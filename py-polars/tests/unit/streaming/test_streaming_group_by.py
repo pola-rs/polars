@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -202,9 +205,14 @@ def random_integers() -> pl.Series:
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q1(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
     s = random_integers
+
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     result = (
@@ -228,9 +236,14 @@ def test_streaming_group_by_ooc_q1(
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q2(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
     s = random_integers
+
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     result = (
@@ -255,9 +268,14 @@ def test_streaming_group_by_ooc_q2(
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q3(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
     s = random_integers
+
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     result = (
