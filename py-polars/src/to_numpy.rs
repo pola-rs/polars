@@ -11,6 +11,7 @@ use pyo3::{IntoPy, PyAny, PyObject, Python};
 
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::series::PySeries;
 
 pub(crate) unsafe fn create_borrowed_np_array<T: NumericNative + Element, I>(
     py: Python,
@@ -45,6 +46,36 @@ where
 
     let any: &PyAny = py.from_owned_ptr(array);
     any.into_py(py)
+}
+
+#[pymethods]
+#[allow(clippy::wrong_self_convention)]
+impl PySeries {
+    pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
+        if self.series.null_count() != 0 || self.series.chunks().len() > 1 {
+            return None;
+        }
+
+        match self.series.dtype() {
+            dt if dt.is_numeric() => {
+                let dims = [self.series.len()].into_dimension();
+                // Object to the series keep the memory alive.
+                let owner = self.clone().into_py(py);
+                with_match_physical_numeric_polars_type!(self.series.dtype(), |$T| {
+                            let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
+                            let slice = ca.cont_slice().unwrap();
+                            unsafe { Some(create_borrowed_np_array::<<$T as PolarsNumericType>::Native, _>(
+                                py,
+                                dims,
+                                flags::NPY_ARRAY_FARRAY_RO,
+                                slice.as_ptr() as _,
+                                owner,
+                            )) }
+                })
+            },
+            _ => None,
+        }
+    }
 }
 
 #[pymethods]
