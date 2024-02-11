@@ -12,7 +12,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
 
     let original_type = s.dtype();
     // cast min & max to the dtype of s first.
-    let (min, max) = (min.cast(s.dtype())?, max.cast(s.dtype())?);
+    let (min, max) = (min.strict_cast(s.dtype())?, max.strict_cast(s.dtype())?);
 
     let (s, min, max) = (
         s.to_physical_repr(),
@@ -47,7 +47,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
 
     let original_type = s.dtype();
     // cast max to the dtype of s first.
-    let max = max.cast(s.dtype())?;
+    let max = max.strict_cast(s.dtype())?;
 
     let (s, max) = (s.to_physical_repr(), max.to_physical_repr());
 
@@ -77,7 +77,7 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
 
     let original_type = s.dtype();
     // cast min to the dtype of s first.
-    let min = min.cast(s.dtype())?;
+    let min = min.strict_cast(s.dtype())?;
 
     let (s, min) = (s.to_physical_repr(), min.to_physical_repr());
 
