@@ -375,38 +375,21 @@ def test_date_agg() -> None:
     assert series.max() == date(9009, 9, 9)
 
 
-def test_categorical_agg() -> None:
-    s = pl.Series(["aa", "cc", "bb"], dtype=pl.Categorical("lexical"))
-    assert s.min() == "aa"
-    assert s.max() == "cc"
-
-    s = pl.Series(["aa", "cc", "bb"], dtype=pl.Categorical)
-    assert s.min() == "aa"
-    assert s.max() == "bb"
-
-    # with nulls
-    s = pl.Series([None, "aa", "cc", None, "bb", None], dtype=pl.Categorical("lexical"))
-    assert s.min() == "aa"
-    assert s.max() == "cc"
-
-    s = pl.Series([None, "cc", "aa", None, "bb", None], dtype=pl.Categorical)
-    assert s.min() == "cc"
-    assert s.max() == "bb"
-
-    # empty
-    s = pl.Series([], dtype=pl.Categorical("lexical"))
-    assert s.min() is None
-    assert s.max() is None
-
-    # Enum
-    s = pl.Series(["cc", "bb", "aa"], dtype=pl.Enum(["cc", "bb", "aa"]))
-    assert s.min() == "cc"
-    assert s.max() == "aa"
-
-    # Enum not all categories used
-    s = pl.Series(["cc", "bb", "aa"], dtype=pl.Enum(["cc", "bb", "aa", "dd"]))
-    assert s.min() == "cc"
-    assert s.max() == "aa"
+@pytest.mark.parametrize(
+    ("s", "min", "max"),
+    [
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
+        (pl.Series(["a", "c", "b"], dtype=pl.Categorical), "a", "b"),
+        (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
+        (pl.Series([None, "c", "a", "b"], dtype=pl.Categorical), "c", "b"),
+        (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
+        (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
+        (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
+    ],
+)
+def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
+    assert s.min() == min
+    assert s.max() == max
 
 
 @pytest.mark.parametrize(
