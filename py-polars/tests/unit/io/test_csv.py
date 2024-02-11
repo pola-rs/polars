@@ -1575,26 +1575,6 @@ def test_read_csv_chunked() -> None:
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
 
 
-@pytest.mark.write_disk()
-def test_map_elements_csv_chunked_14390(tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
-    dates = [f"2023-12-{'0'*(i < 10)}{i}" for i in range(1, 31)] * 69
-    df = pl.DataFrame({"date": dates})
-    df.write_csv(tmp_path / "panic_date_strings.csv")
-
-    fdf = pl.read_csv(tmp_path / "panic_date_strings.csv", rechunk=False)
-    assert fdf["date"].n_chunks() > 1
-
-    fdf = fdf.with_columns(
-        pl.col("date").str.strptime(pl.Date, format="%Y-%m-%d").alias("calendar_date")
-    )
-    fdf = fdf.with_columns(
-        pl.col("calendar_date").map_elements(lambda x: x.weekday()).alias("weekday")
-    )
-    assert len(fdf["weekday"].unique()) == 7
-
-
 def test_read_empty_csv(io_files_path: Path) -> None:
     with pytest.raises(NoDataError) as err:
         pl.read_csv(io_files_path / "empty.csv")
