@@ -67,6 +67,10 @@ where
             count.push(0)
         }
         (breaks, count)
+    } else if ca.null_count() == ca.len() {
+        let breaks: Vec<f64> = vec![f64::INFINITY];
+        let count: Vec<IdxSize> = vec![0];
+        (breaks, count)
     } else {
         let min = ChunkAgg::min(ca).unwrap().to_f64().unwrap();
         let max = ChunkAgg::max(ca).unwrap().to_f64().unwrap();
