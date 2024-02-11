@@ -1636,6 +1636,72 @@ class StringNameSpace:
         ]
         """
 
+    def head(self, n: int | IntoExprColumn = 10) -> Series:
+        """
+        Return the first n characters of each string in a Utf8 Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+
+        Notes
+        -----
+        A "character" is a valid (non-surrogate) UTF-8 codepoint, which is a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.head(3)
+        shape: (4,)
+        Series: 's' [str]
+        [
+            "pea"
+            null
+            "pap"
+            "dra"
+        ]
+        """
+
+    def tail(self, n: int | IntoExprColumn = 10) -> Series:
+        """
+        Return the last n characters of each string in a Utf8 Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+
+        Notes
+        -----
+        A "character" is a valid (non-surrogate) UTF-8 codepoint, which is a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.tail(3)
+        shape: (4,)
+        Series: 's' [str]
+        [
+            "ear"
+            null
+            "aya"
+            "uit"
+        ]
+        """
+
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.

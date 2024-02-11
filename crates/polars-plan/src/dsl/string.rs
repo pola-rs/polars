@@ -526,6 +526,26 @@ impl StringNameSpace {
         )
     }
 
+    /// Take the first `n` characters of the string values.
+    pub fn head(self, n: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Head),
+            &[n],
+            false,
+            false,
+        )
+    }
+
+    /// Take the last `n` characters of the string values.
+    pub fn tail(self, n: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Tail),
+            &[n],
+            false,
+            false,
+        )
+    }
+
     pub fn explode(self) -> Expr {
         self.0
             .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))

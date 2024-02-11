@@ -46,6 +46,72 @@ def test_str_slice_expr() -> None:
         df.select(pl.col("a").str.slice(0, -1))
 
 
+def test_str_head() -> None:
+    df = pl.DataFrame({"a": ["foobar", "barfoo", None]})
+    assert df["a"].str.head(0).to_list() == ["", "", None]
+    assert df["a"].str.head(-3).to_list() == ["foo", "bar", None]
+    assert df["a"].str.head(100).to_list() == ["foobar", "barfoo", None]
+
+
+def test_str_head_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["abcdef", None, "abcdef", "abcd", ""],
+            "n": [1, 3, None, -3, 2],
+        }
+    )
+    out = df.select(
+        n_expr=pl.col("a").str.head("n"),
+        n=pl.col("a").str.head(2),
+        str_lit=pl.col("a").str.head(pl.lit(2)),
+        lit_expr=pl.lit("abcdef").str.head("n"),
+        lit_n=pl.lit("abcdef").str.head(2),
+    )
+    expected = pl.DataFrame(
+        {
+            "n_expr": ["a", None, None, "a", ""],
+            "n": ["ab", None, "ab", "ab", ""],
+            "str_lit": ["ab", None, "ab", "ab", ""],
+            "lit_expr": ["a", "abc", None, "abc", "ab"],
+            "lit_n": ["ab", "ab", "ab", "ab", "ab"],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_str_tail() -> None:
+    df = pl.DataFrame({"a": ["foobar", "barfoo", None]})
+    assert df["a"].str.tail(0).to_list() == ["", "", None]
+    assert df["a"].str.tail(-3).to_list() == ["bar", "foo", None]
+    assert df["a"].str.tail(100).to_list() == ["foobar", "barfoo", None]
+
+
+def test_str_tail_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["abcdef", None, "abcdef", "abcdef", ""],
+            "n": [1, 3, None, -3, 2],
+        }
+    )
+    out = df.select(
+        n_expr=pl.col("a").str.tail("n"),
+        n=pl.col("a").str.tail(2),
+        str_lit=pl.col("a").str.tail(pl.lit(2)),
+        lit_expr=pl.lit("abcdef").str.tail("n"),
+        lit_n=pl.lit("abcdef").str.tail(2),
+    )
+    expected = pl.DataFrame(
+        {
+            "n_expr": ["f", None, None, "def", ""],
+            "n": ["ef", None, "ef", "ef", ""],
+            "str_lit": ["ef", None, "ef", "ef", ""],
+            "lit_expr": ["f", "def", None, "def", "ef"],
+            "lit_n": ["ef", "ef", "ef", "ef", "ef"],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_str_len_bytes() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
     result = s.str.len_bytes()

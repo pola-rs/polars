@@ -2180,6 +2180,82 @@ class ExprStringNameSpace:
         length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
+    def head(self, n: int | IntoExprColumn = 10) -> Expr:
+        """
+        Return the first n characters of each string in a Utf8 Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice. Negative indexing supported.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Utf8`.
+
+        Notes
+        -----
+        A "character" is a valid (non-surrogate) UTF-8 codepoint, which is a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+        >>> df.with_columns(pl.col("s").str.head(3).alias("s_head3"))
+        shape: (4, 2)
+        ┌─────────────┬─────────┐
+        │ s           ┆ s_head3 │
+        │ ---         ┆ ---     │
+        │ str         ┆ str     │
+        ╞═════════════╪═════════╡
+        │ pear        ┆ pea     │
+        │ null        ┆ null    │
+        │ papaya      ┆ pap     │
+        │ dragonfruit ┆ dra     │
+        └─────────────┴─────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.str_head(n))
+
+    def tail(self, n: int | IntoExprColumn = 10) -> Expr:
+        """
+        Return the last n characters of each string in a Utf8 Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice. Negative indexing is supported.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Utf8`.
+
+        Notes
+        -----
+        A "character" is a valid (non-surrogate) UTF-8 codepoint, which is a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+        >>> df.with_columns(pl.col("s").str.tail(3).alias("s_tail3"))
+        shape: (4, 2)
+        ┌─────────────┬─────────┐
+        │ s           ┆ s_tail3 │
+        │ ---         ┆ ---     │
+        │ str         ┆ str     │
+        ╞═════════════╪═════════╡
+        │ pear        ┆ ear     │
+        │ null        ┆ null    │
+        │ papaya      ┆ aya     │
+        │ dragonfruit ┆ uit     │
+        └─────────────┴─────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.str_tail(n))
+
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.

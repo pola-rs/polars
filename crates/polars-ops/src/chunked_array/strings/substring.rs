@@ -1,6 +1,49 @@
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::{Int64Chunked, StringChunked, UInt64Chunked};
 
+fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
+    if let (Some(str_val), Some(mut n)) = (opt_str_val, opt_n) {
+        let str_len = str_val.len() as i64;
+        if n >= str_len {
+            Some(str_val)
+        } else if (n == 0) | (str_len == 0) | (n <= -str_len) {
+            Some("")
+        } else {
+            if n < 0 {
+                // If `n` is negative, it counts from the end of the string.
+                n += str_len; // adding negative value
+            }
+            Some(&str_val[0..n as usize])
+        }
+    } else {
+        None
+    }
+}
+
+fn tail_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
+    if let (Some(str_val), Some(mut n)) = (opt_str_val, opt_n) {
+        let str_len = str_val.len() as i64;
+        if n >= str_len {
+            Some(str_val)
+        } else if (n == 0) | (str_len == 0) | (n <= -str_len) {
+            Some("")
+        } else {
+            // We re-assign `n` to be the start of the slice.
+            // The end of the slice is always the end of the string.
+            if n < 0 {
+                // If `n` is negative, we count from the beginning.
+                n = -n;
+            } else {
+                // If `n` is positive, we count from the end.
+                n = str_len - n;
+            }
+            Some(&str_val[n as usize..str_len as usize])
+        }
+    } else {
+        None
+    }
+}
+
 fn substring_ternary(
     opt_str_val: Option<&str>,
     opt_offset: Option<i64>,
@@ -113,5 +156,37 @@ pub(super) fn substring(
             )
         },
         _ => ternary_elementwise(ca, offset, length, substring_ternary),
+    }
+}
+
+pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> StringChunked {
+    match (ca.len(), n.len()) {
+        (_, 1) => {
+            // SAFETY: index `0` is in bound.
+            let n = unsafe { n.get_unchecked(0) };
+            unary_elementwise(ca, |str_val| head_binary(str_val, n)).with_name(ca.name())
+        },
+        (1, _) => {
+            // SAFETY: index `0` is in bound.
+            let str_val = unsafe { ca.get_unchecked(0) };
+            unary_elementwise(n, |n| head_binary(str_val, n)).with_name(ca.name())
+        },
+        _ => binary_elementwise(ca, n, head_binary),
+    }
+}
+
+pub(super) fn tail(ca: &StringChunked, n: &Int64Chunked) -> StringChunked {
+    match (ca.len(), n.len()) {
+        (_, 1) => {
+            // SAFETY: index `0` is in bound.
+            let n = unsafe { n.get_unchecked(0) };
+            unary_elementwise(ca, |str_val| tail_binary(str_val, n)).with_name(ca.name())
+        },
+        (1, _) => {
+            // SAFETY: index `0` is in bound.
+            let str_val = unsafe { ca.get_unchecked(0) };
+            unary_elementwise(n, |n| tail_binary(str_val, n)).with_name(ca.name())
+        },
+        _ => binary_elementwise(ca, n, tail_binary),
     }
 }
