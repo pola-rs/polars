@@ -391,7 +391,7 @@ def test_rolling_key_projected_13617() -> None:
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
 
 
-def test_projection_drop_with_series_lit_() -> None:
+def test_projection_drop_with_series_lit_14382() -> None:
     df = pl.DataFrame({"b": [1, 6, 8, 7]})
     df2 = pl.DataFrame({"a": [1, 2, 4, 4], "b": [True, True, True, False]})
 
