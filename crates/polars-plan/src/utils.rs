@@ -43,17 +43,27 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
 
 pub trait PushNode {
     fn push_node(&mut self, value: Node);
+
+    fn extend_from_slice(&mut self, values: &[Node]);
 }
 
 impl PushNode for Vec<Node> {
     fn push_node(&mut self, value: Node) {
         self.push(value)
     }
+
+    fn extend_from_slice(&mut self, values: &[Node]) {
+        Vec::extend_from_slice(self, values)
+    }
 }
 
 impl PushNode for UnitVec<Node> {
     fn push_node(&mut self, value: Node) {
         self.push(value)
+    }
+
+    fn extend_from_slice(&mut self, values: &[Node]) {
+        UnitVec::extend(self, values.iter().copied())
     }
 }
 
@@ -62,16 +72,6 @@ pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
         plan,
         ALogicalPlan::Scan { .. } | ALogicalPlan::DataFrameScan { .. }
     )
-}
-
-impl PushNode for &mut [Option<Node>] {
-    fn push_node(&mut self, value: Node) {
-        if self[0].is_some() {
-            self[1] = Some(value)
-        } else {
-            self[0] = Some(value)
-        }
-    }
 }
 
 /// A projection that only takes a column or a column + alias.

@@ -42,7 +42,13 @@ impl<T> UnitVec<T> {
         }
     }
 
+    #[inline]
     pub fn new() -> Self {
+        // This is optimized away, all const.
+        assert!(
+            std::mem::size_of::<T>() <= std::mem::size_of::<*mut T>()
+                && std::mem::align_of::<T>() <= std::mem::align_of::<*mut T>()
+        );
         Self {
             len: 0,
             capacity: NonZeroUsize::new(1).unwrap(),
@@ -120,18 +126,22 @@ impl<T> UnitVec<T> {
         new
     }
 
+    #[inline]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.as_slice().iter()
     }
 
+    #[inline]
     pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
         self.as_mut_slice().iter_mut()
     }
 
+    #[inline]
     pub fn as_slice(&self) -> &[T] {
         self.as_ref()
     }
 
+    #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         self.as_mut()
     }
