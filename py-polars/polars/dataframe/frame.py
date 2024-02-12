@@ -7246,20 +7246,11 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self"],
-        message=(
-            "The order of the parameters of `pivot` will change in the next breaking release."
-            " The order will become `index, columns, values` with `values` as an optional parameter."
-            " Use keyword arguments to silence this warning."
-        ),
-        version="0.20.8",
-    )
     def pivot(
         self,
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
@@ -7274,14 +7265,15 @@ class DataFrame:
 
         Parameters
         ----------
-        values
-            Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well.
         index
             One or multiple keys to group by.
         columns
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
+        values
+            Column values to aggregate. Can be multiple columns if the *columns*
+            arguments contains multiple columns as well. If None, all remaining columns
+            will be used.
         aggregate_function
             Choose from:
 
@@ -7392,9 +7384,10 @@ class DataFrame:
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
         """  # noqa: W505
-        values = _expand_selectors(self, values)
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
+        if values is not None:
+            values = _expand_selectors(self, values)
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
@@ -7430,9 +7423,9 @@ class DataFrame:
 
         return self._from_pydf(
             self._df.pivot_expr(
-                values,
                 index,
                 columns,
+                values,
                 maintain_order,
                 sort_columns,
                 aggregate_expr,
