@@ -382,6 +382,23 @@ def test_date_agg() -> None:
 
 
 @pytest.mark.parametrize(
+    ("s", "min", "max"),
+    [
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
+        (pl.Series(["a", "c", "b"], dtype=pl.Categorical), "a", "b"),
+        (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
+        (pl.Series([None, "c", "a", "b"], dtype=pl.Categorical), "c", "b"),
+        (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
+        (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
+        (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
+    ],
+)
+def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
+    assert s.min() == min
+    assert s.max() == max
+
+
+@pytest.mark.parametrize(
     "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
 )
 def test_arithmetic(s: pl.Series) -> None:

@@ -514,6 +514,75 @@ impl ChunkAggSeries for StringChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+impl CategoricalChunked {
+    fn min_categorical(&self) -> Option<&str> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+        if self.uses_lexical_ordering() {
+            // Fast path where all categories are used
+            if self.can_fast_unique() {
+                self.get_rev_map().get_categories().min_ignore_nan_kernel()
+            } else {
+                let rev_map = self.get_rev_map();
+                // SAFETY
+                // Indices are in bounds
+                self.physical()
+                    .iter()
+                    .flat_map(|opt_el: Option<u32>| {
+                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
+                    })
+                    .min()
+            }
+        } else {
+            // SAFETY
+            // Indices are in bounds
+            self.physical()
+                .min()
+                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+        }
+    }
+
+    fn max_categorical(&self) -> Option<&str> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+        if self.uses_lexical_ordering() {
+            // Fast path where all categories are used
+            if self.can_fast_unique() {
+                self.get_rev_map().get_categories().max_ignore_nan_kernel()
+            } else {
+                let rev_map = self.get_rev_map();
+                // SAFETY
+                // Indices are in bounds
+                self.physical()
+                    .iter()
+                    .flat_map(|opt_el: Option<u32>| {
+                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
+                    })
+                    .max()
+            }
+        } else {
+            // SAFETY
+            // Indices are in bounds
+            self.physical()
+                .max()
+                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+        }
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl ChunkAggSeries for CategoricalChunked {
+    fn min_as_series(&self) -> Series {
+        Series::new(self.name(), &[self.min_categorical()])
+    }
+    fn max_as_series(&self) -> Series {
+        Series::new(self.name(), &[self.max_categorical()])
+    }
+}
+
 impl BinaryChunked {
     pub(crate) fn max_binary(&self) -> Option<&[u8]> {
         if self.is_empty() {
