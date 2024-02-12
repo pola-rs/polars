@@ -431,3 +431,9 @@ def test_pivot_struct() -> None:
             {"num1": 4, "num2": 4},
         ],
     }
+
+
+def test_duplicate_column_names_which_should_raise_14305() -> None:
+    df = pl.DataFrame({"a": [1, 3, 2], "c": ["a", "a", "a"], "d": [7, 8, 9]})
+    with pytest.raises(pl.DuplicateError, match="has more than one occurrences"):
+        df.pivot(index="a", columns="c", values="d")
