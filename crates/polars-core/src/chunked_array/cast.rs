@@ -105,7 +105,7 @@ where
                     self.dtype() == &DataType::UInt32,
                     ComputeError: "cannot cast numeric types to 'Categorical'"
                 );
-                // SAFETY
+                // SAFETY:
                 // we are guarded by the type system
                 let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
 
@@ -139,7 +139,7 @@ where
                         polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
                     }
                 }
-                // SAFETY
+                // SAFETY:
                 // we are guarded by the type system
                 let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
                 // SAFETY indices are in bound

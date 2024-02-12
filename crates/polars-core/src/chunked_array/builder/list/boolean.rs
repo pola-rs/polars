@@ -26,7 +26,7 @@ impl ListBooleanChunkedBuilder {
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // SAFETY
+        // SAFETY:
         // trusted len, trust the type system
         unsafe { values.extend_trusted_len_unchecked(iter) };
         self.builder.try_push_valid().unwrap();

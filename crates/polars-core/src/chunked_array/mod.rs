@@ -303,7 +303,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             series.dtype(),
             self.dtype(),
         );
-        // SAFETY
+        // SAFETY:
         // dtype will be correct.
         Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }

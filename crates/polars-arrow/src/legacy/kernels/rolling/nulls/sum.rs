@@ -66,7 +66,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
             // remove elements that should leave the window
             let mut recompute_sum = false;
             for idx in self.last_start..start {
-                // SAFETY
+                // SAFETY:
                 // we are in bounds
                 let valid = self.validity.get_bit_unchecked(idx);
                 if valid {

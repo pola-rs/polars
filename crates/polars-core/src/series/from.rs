@@ -343,7 +343,7 @@ impl Series {
 
                 if let Some(metadata) = md {
                     if metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
-                        // SAFETY
+                        // SAFETY:
                         // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                         return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                             UInt32Chunked::with_chunk(name, keys.clone()),
@@ -354,7 +354,7 @@ impl Series {
                         .into_series());
                     }
                 }
-                // SAFETY
+                // SAFETY:
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                 Ok(
                     CategoricalChunked::from_keys_and_values(

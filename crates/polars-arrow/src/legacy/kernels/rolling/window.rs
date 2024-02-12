@@ -37,10 +37,10 @@ impl<'a, T: NativeType> SortedBuf<'a, T> {
         } else {
             // remove elements that should leave the window
             for idx in self.last_start..start {
-                // SAFETY
+                // SAFETY:
                 // we are in bounds
                 let val = self.slice.get_unchecked(idx);
-                // SAFETY
+                // SAFETY:
                 // value is present in buf
                 let remove_idx = self
                     .buf
@@ -52,7 +52,7 @@ impl<'a, T: NativeType> SortedBuf<'a, T> {
 
             // insert elements that enter the window, but insert them sorted
             for idx in self.last_end..end {
-                // SAFETY
+                // SAFETY:
                 // we are in bounds
                 let val = *self.slice.get_unchecked(idx);
                 let insertion_idx = self
@@ -130,7 +130,7 @@ impl<'a, T: NativeType> SortedBufNulls<'a, T> {
         } else {
             // remove elements that should leave the window
             for idx in self.last_start..start {
-                // SAFETY
+                // SAFETY:
                 // we are in bounds
                 let val = if self.validity.get_bit_unchecked(idx) {
                     Some(*self.slice.get_unchecked(idx))
@@ -139,7 +139,7 @@ impl<'a, T: NativeType> SortedBufNulls<'a, T> {
                     None
                 };
 
-                // SAFETY
+                // SAFETY:
                 // value is present in buf
                 let remove_idx = self
                     .buf
@@ -151,7 +151,7 @@ impl<'a, T: NativeType> SortedBufNulls<'a, T> {
 
             // insert elements that enter the window, but insert them sorted
             for idx in self.last_end..end {
-                // SAFETY
+                // SAFETY:
                 // we are in bounds
                 let val = if self.validity.get_bit_unchecked(idx) {
                     Some(*self.slice.get_unchecked(idx))

@@ -65,7 +65,7 @@ impl GlobalRevMapMerger {
 
         for (cat, idx) in map.iter() {
             state.map.entry(*cat).or_insert_with(|| {
-                // SAFETY
+                // SAFETY:
                 // within bounds
                 let str_val = unsafe { slots.value_unchecked(*idx as usize) };
                 let new_idx = state.slots.len() as u32;
@@ -233,7 +233,7 @@ pub fn make_list_categoricals_compatible(
     let (list_ca_right, cat_physical): (Cow<ListChunked>, Cow<UInt32Chunked>) =
         align_chunks_binary(&list_ca_right, cat_right.physical());
     let mut list_ca_right = list_ca_right.into_owned();
-    // SAFETY
+    // SAFETY:
     // Chunks are aligned, length / dtype remains correct
     unsafe {
         list_ca_right

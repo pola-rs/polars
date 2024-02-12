@@ -66,11 +66,11 @@ impl<
 
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
                 return if top_idx == idx {
-                    // SAFETY
+                    // SAFETY:
                     // we are in bounds
                     unsafe { *vals.get_unchecked_release(idx) }
                 } else {
-                    // SAFETY
+                    // SAFETY:
                     // we are in bounds
                     let (mid, mid_plus_1) = unsafe {
                         (
@@ -93,7 +93,7 @@ impl<
             },
         };
 
-        // SAFETY
+        // SAFETY:
         // we are in bounds
         unsafe { *vals.get_unchecked_release(idx) }
     }

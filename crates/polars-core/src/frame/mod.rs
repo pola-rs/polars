@@ -201,7 +201,7 @@ impl DataFrame {
     /// Reserve additional slots into the chunks of the series.
     pub(crate) fn reserve_chunks(&mut self, additional: usize) {
         for s in &mut self.columns {
-            // SAFETY
+            // SAFETY:
             // do not modify the data, simply resize.
             unsafe { s.chunks_mut().reserve(additional) }
         }

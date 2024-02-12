@@ -476,7 +476,7 @@ impl PartitionedAggregation for AggregationExpr {
                     GroupsProxy::Idx(groups) => {
                         for (_, idx) in groups {
                             let ca = unsafe {
-                                // SAFETY
+                                // SAFETY:
                                 // The indexes of the group_by operation are never out of bounds
                                 ca.take_unchecked(idx)
                             };

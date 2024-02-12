@@ -811,7 +811,7 @@ impl<'df> GroupBy<'df> {
             .get_groups()
             .par_iter()
             .map(|g| {
-                // SAFETY
+                // SAFETY:
                 // groups are in bounds
                 let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)
@@ -833,7 +833,7 @@ impl<'df> GroupBy<'df> {
             .get_groups()
             .iter()
             .map(|g| {
-                // SAFETY
+                // SAFETY:
                 // groups are in bounds
                 let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)

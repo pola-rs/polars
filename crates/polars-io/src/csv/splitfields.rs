@@ -90,7 +90,7 @@ mod inner {
 
                     if !in_field && self.eof_oel(c) {
                         if c == self.eol_char {
-                            // SAFETY
+                            // SAFETY:
                             // we are in bounds
                             return unsafe {
                                 self.finish_eol(needs_escaping, current_idx as usize)
@@ -124,7 +124,7 @@ mod inner {
 
             unsafe {
                 debug_assert!(pos <= self.v.len());
-                // SAFETY
+                // SAFETY:
                 // we are in bounds
                 let ret = Some((self.v.get_unchecked(..pos), needs_escaping));
                 self.v = self.v.get_unchecked(pos + 1..);
@@ -252,7 +252,7 @@ mod inner {
 
                     if !in_field && self.eof_oel(c) {
                         if c == self.eol_char {
-                            // SAFETY
+                            // SAFETY:
                             // we are in bounds
                             return unsafe {
                                 self.finish_eol(needs_escaping, current_idx as usize)
@@ -318,7 +318,7 @@ mod inner {
 
             unsafe {
                 debug_assert!(pos <= self.v.len());
-                // SAFETY
+                // SAFETY:
                 // we are in bounds
                 let ret = Some((self.v.get_unchecked(..pos), needs_escaping));
                 self.v = self.v.get_unchecked(pos + 1..);

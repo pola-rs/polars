@@ -156,7 +156,7 @@ fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Off
         .step_by(fixed_size)
         .map(|v| O::from_as_usize(v))
         .collect();
-    // SAFETY
+    // SAFETY:
     // * every element is `>= 0`
     // * element at position `i` is >= than element at position `i-1`.
     unsafe { Offsets::new_unchecked(offsets) }

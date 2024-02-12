@@ -186,7 +186,7 @@ where
             let s = s.cast(&T::get_dtype()).unwrap();
             let ca = s.unpack::<T>().unwrap();
 
-            // SAFETY
+            // SAFETY:
             // we access in parallel, but every access is unique, so we don't break aliasing rules
             // we also ensured we allocated enough memory, so we never reallocate and thus
             // the pointers remain valid.

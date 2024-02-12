@@ -205,7 +205,7 @@ macro_rules! get_any_value {
         if $index >= $self.len() {
             polars_bail!(oob = $index, $self.len());
         }
-        // SAFETY
+        // SAFETY:
         // bounds are checked
         Ok(unsafe { $self.get_any_value_unchecked($index) })
     }};
