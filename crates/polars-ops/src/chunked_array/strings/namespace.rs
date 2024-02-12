@@ -606,7 +606,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Slice the last `n` values of the string.
     ///
     /// Determines a substring starting at offset `n` of each element in `array`. `n` can be
-    /// negative, in which case the slice begins `n` characters from the end of the string.
+    /// negative, in which case the slice begins `n` characters from the start of the string.
     fn str_tail(&self, n: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;

@@ -1648,7 +1648,7 @@ class StringNameSpace:
 
         Returns
         -------
-        Expr
+        Series
             Series of data type :class:`String`.
 
         Notes
@@ -1670,6 +1670,7 @@ class StringNameSpace:
         Examples
         --------
         Return up to the first 5 characters.
+
         >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
         >>> s.str.head(5)
         shape: (4,)
@@ -1682,6 +1683,7 @@ class StringNameSpace:
         ]
 
         Return up to the 3rd character from the end.
+
         >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
         >>> s.str.head(-3)
         shape: (4,)
@@ -1706,7 +1708,7 @@ class StringNameSpace:
 
         Returns
         -------
-        Expr
+        Series
             Series of data type :class:`String`.
 
         Notes
@@ -1727,7 +1729,8 @@ class StringNameSpace:
 
         Examples
         --------
-        Return up to the last 5 characters.
+        Return up to the last 5 characters:
+
         >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
         >>> s.str.tail(5)
         shape: (4,)
@@ -1739,7 +1742,8 @@ class StringNameSpace:
             "fruit"
         ]
 
-        Return from the 3rd character to the end.
+        Return from the 3rd character to the end:
+
         >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
         >>> s.str.tail(-3)
         shape: (4,)

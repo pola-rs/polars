@@ -2214,6 +2214,7 @@ class ExprStringNameSpace:
         Examples
         --------
         Return up to the first 5 characters:
+
         >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
         >>> df.with_columns(pl.col("s").str.head(5).alias("s_head_5"))
         shape: (4, 2)
@@ -2229,6 +2230,7 @@ class ExprStringNameSpace:
         └─────────────┴──────────┘
 
         Return characters determined by column `n`:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "s": ["pear", None, "papaya", "dragonfruit"],
@@ -2285,6 +2287,7 @@ class ExprStringNameSpace:
         Examples
         --------
         Return up to the last 5 characters:
+
         >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
         >>> df.with_columns(pl.col("s").str.tail(5).alias("s_tail_5"))
         shape: (4, 2)
@@ -2300,6 +2303,7 @@ class ExprStringNameSpace:
         └─────────────┴──────────┘
 
         Return characters determined by column `n`:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "s": ["pear", None, "papaya", "dragonfruit"],
