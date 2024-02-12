@@ -5,7 +5,8 @@ use crossbeam_channel::{Receiver, Sender};
 use polars_core::prelude::*;
 
 use crate::operators::{
-    DataChunk, FinalizedSink, PExecutionContext, SemicontiguousVstacker, Sink, SinkResult,
+    estimated_chunks, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
+    StreamingVstacker,
 };
 
 pub(super) trait SinkWriter {
@@ -27,7 +28,7 @@ pub(super) fn init_writer_thread(
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
         let mut chunks = Vec::with_capacity(morsels_per_sink);
-        let mut vstacker = SemicontiguousVstacker::default();
+        let mut vstacker = StreamingVstacker::default();
 
         while let Ok(chunk) = receiver.recv() {
             // `last_write` indicates if all chunks are processed, e.g. this is the last write.
@@ -45,7 +46,12 @@ pub(super) fn init_writer_thread(
                 }
 
                 for chunk in chunks.drain(0..) {
-                    for dataframe in vstacker.add(chunk.data) {
+                    for mut dataframe in vstacker.add(chunk.data) {
+                        // The dataframe may only be a single, large chunk, in
+                        // which case we don't want to bother with copying it...
+                        if estimated_chunks(&dataframe) > 1 {
+                            dataframe.as_single_chunk();
+                        }
                         writer._write_batch(&dataframe).unwrap();
                     }
                 }
@@ -53,7 +59,10 @@ pub(super) fn init_writer_thread(
                 chunks.clear();
 
                 if last_write {
-                    if let Some(dataframe) = vstacker.finish() {
+                    if let Some(mut dataframe) = vstacker.finish() {
+                        if estimated_chunks(&dataframe) > 1 {
+                            dataframe.as_single_chunk();
+                        }
                         writer._write_batch(&dataframe).unwrap();
                     }
                     writer._finish().unwrap();

@@ -31,39 +31,42 @@ pub(crate) fn chunks_to_df_unchecked(chunks: Vec<DataChunk>) -> DataFrame {
     accumulate_dataframes_vertical_unchecked(chunks.into_iter().map(|c| c.data))
 }
 
-/// Combine `DataFrame`s into sufficiently large contiguous memory allocations
-/// that we don't suffer from overhead of many small writes. At the same time,
-/// don't use too much memory by creating overly large allocations.
+/// Combine a series of `DataFrame`s, and if they're small enough, combine them
+/// into larger `DataFrame`s using `vstack`. This allows the caller to turn them
+/// into contiguous memory allocations so that we don't suffer from overhead of
+/// many small writes. The assumption is that added `DataFrame`s are already in
+/// the correct order, and can therefore be combined.
 ///
-/// The assumption is that added `DataFrame`s are already in the correct order,
-/// and can therefore be combined.
+/// The benefit of having a series of `DataFrame` that are e.g. 4MB each that
+/// are then made contiguous is that you're not using a lot of memory (an extra
+/// 4MB), but you're still doing better than if you had a series of of 2KB
+/// `DataFrame`s.
 ///
+/// Changing the `DataFrame` into contiguous chunks is the caller's
+/// responsibility.
 #[derive(Clone)]
-pub(crate) struct SemicontiguousVstacker {
+pub(crate) struct StreamingVstacker {
     current_dataframe: Option<DataFrame>,
-    /// Have we vstack()ed on to the current chunk?
-    stacked: bool,
     /// How big should resulting chunks be, if possible?
     output_chunk_size: usize,
 }
 
-impl SemicontiguousVstacker {
+impl StreamingVstacker {
     /// Create a new instance.
     pub fn new(output_chunk_size: usize) -> Self {
         Self {
             current_dataframe: None,
-            stacked: false,
             output_chunk_size,
         }
     }
 
-    /// Add another `DataFrame`, return any (potentially combined) `DataFrame`s
-    /// that result.
+    /// Add another `DataFrame`, return (potentially combined) `DataFrame`s that
+    /// result, if any.
     pub fn add(&mut self, next_frame: DataFrame) -> impl Iterator<Item = DataFrame> {
         let mut result: [Option<DataFrame>; 2] = [None, None];
 
         // If the next chunk is too large, we probably don't want make copies of
-        // it when we do as_single_chunk() in flush(), so we flush in advance.
+        // it if a caller does as_single_chunk(), so we flush in advance.
         if self.current_dataframe.is_some()
             && next_frame.estimated_size() > self.output_chunk_size / 4
         {
@@ -74,7 +77,6 @@ impl SemicontiguousVstacker {
             current_frame
                 .vstack_mut(&next_frame)
                 .expect("These are chunks from the same dataframe");
-            self.stacked = true;
         } else {
             self.current_dataframe = Some(next_frame);
         };
@@ -85,21 +87,10 @@ impl SemicontiguousVstacker {
         result.into_iter().flatten()
     }
 
-    /// Clear and return any cached `DataFrame` data, making it contiguous if
-    /// relevant.
+    /// Clear and return any cached `DataFrame` data.
     #[must_use]
     fn flush(&mut self) -> Option<DataFrame> {
-        if let Some(mut current_frame) = std::mem::take(&mut self.current_dataframe) {
-            // If we've stacked multiple small batches we want to make the data
-            // contiguous.
-            if self.stacked {
-                current_frame.as_single_chunk();
-            }
-            self.stacked = false;
-            Some(current_frame)
-        } else {
-            None
-        }
+        std::mem::take(&mut self.current_dataframe)
     }
 
     /// Finish and return any remaining cached `DataFrame` data. The only way
@@ -110,13 +101,22 @@ impl SemicontiguousVstacker {
     }
 }
 
-impl Default for SemicontiguousVstacker {
+impl Default for StreamingVstacker {
     /// 4 MB was chosen based on some empirical experiments that showed it to
     /// be decently faster than lower or higher values, and it's small enough
     /// it won't impact memory usage significantly.
     fn default() -> Self {
-        SemicontiguousVstacker::new(4 * 1024 * 1024)
+        StreamingVstacker::new(4 * 1024 * 1024)
     }
+}
+
+/// Make a guess at the number of chunks in the `DataFrame` series.
+pub(crate) fn estimated_chunks(df: &DataFrame) -> usize {
+    df.get_columns()
+        .iter()
+        .flat_map(|s| s.chunk_lengths())
+        .next()
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -138,20 +138,26 @@ mod test {
     /// Eventually would be nice to drive this with proptest.
     fn semicontiguous_vstacker_merges_impl(df_lengths: Vec<usize>) {
         // Convert the lengths into a series of DataFrames:
-        let mut vstacker = SemicontiguousVstacker::new(4096);
-        let dfs : Vec<DataFrame> = df_lengths.iter().enumerate().map(|(i, length)| {
-            let series = Series::new("val", vec![i as u64; *length]);
-            DataFrame::new(vec![series]).unwrap()
-        }).collect();
+        let mut vstacker = StreamingVstacker::new(4096);
+        let dfs: Vec<DataFrame> = df_lengths
+            .iter()
+            .enumerate()
+            .map(|(i, length)| {
+                let series = Series::new("val", vec![i as u64; *length]);
+                DataFrame::new(vec![series]).unwrap()
+            })
+            .collect();
 
         // Combine the DataFrames using a SemicontiguousVstacker:
         let mut results = vec![];
         for (i, df) in dfs.iter().enumerate() {
-            for result_df in vstacker.add(df.clone()) {
+            for mut result_df in vstacker.add(df.clone()) {
+                result_df.as_single_chunk();
                 results.push((i, result_df));
             }
         }
-        if let Some(result_df) = vstacker.finish() {
+        if let Some(mut result_df) = vstacker.finish() {
+            result_df.as_single_chunk();
             results.push((df_lengths.len() - 1, result_df));
         }
 
