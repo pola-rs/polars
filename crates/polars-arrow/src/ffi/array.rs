@@ -437,7 +437,7 @@ unsafe fn create_child(
         );
     }
 
-    // SAFETY - part of the invariant
+    // SAFETY: part of the invariant
     let arr_ptr = unsafe { *array.children.add(index) };
 
     // catch what we can
@@ -448,7 +448,7 @@ unsafe fn create_child(
         )
     }
 
-    // SAFETY - invariant of this function
+    // SAFETY: invariant of this function
     let arr_ptr = unsafe { &*arr_ptr };
     Ok(ArrowArrayChild::new(arr_ptr, data_type, parent))
 }

@@ -340,14 +340,14 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// Returns an iterator of the keys' values of the [`DictionaryArray`] as `usize`
     #[inline]
     pub fn keys_values_iter(&self) -> impl TrustedLen<Item = usize> + Clone + '_ {
-        // SAFETY - invariant of the struct
+        // SAFETY: invariant of the struct
         self.keys.values_iter().map(|x| unsafe { x.as_usize() })
     }
 
     /// Returns an iterator of the keys' of the [`DictionaryArray`] as `usize`
     #[inline]
     pub fn keys_iter(&self) -> impl TrustedLen<Item = Option<usize>> + Clone + '_ {
-        // SAFETY - invariant of the struct
+        // SAFETY: invariant of the struct
         self.keys.iter().map(|x| x.map(|x| unsafe { x.as_usize() }))
     }
 
@@ -356,7 +356,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function panics iff `index >= self.len()`
     #[inline]
     pub fn key_value(&self, index: usize) -> usize {
-        // SAFETY - invariant of the struct
+        // SAFETY: invariant of the struct
         unsafe { self.keys.values()[index].as_usize() }
     }
 
@@ -374,7 +374,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function panics iff `index >= self.len()`
     #[inline]
     pub fn value(&self, index: usize) -> Box<dyn Scalar> {
-        // SAFETY - invariant of this struct
+        // SAFETY: invariant of this struct
         let index = unsafe { self.keys.value(index).as_usize() };
         new_scalar(self.values.as_ref(), index)
     }

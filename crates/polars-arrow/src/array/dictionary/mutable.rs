@@ -21,7 +21,7 @@ pub struct MutableDictionaryArray<K: DictionaryKey, M: MutableArray> {
 
 impl<K: DictionaryKey, M: MutableArray> From<MutableDictionaryArray<K, M>> for DictionaryArray<K> {
     fn from(other: MutableDictionaryArray<K, M>) -> Self {
-        // SAFETY - the invariant of this struct ensures that this is up-held
+        // SAFETY: the invariant of this struct ensures that this is up-held
         unsafe {
             DictionaryArray::<K>::try_new_unchecked(
                 other.data_type,
