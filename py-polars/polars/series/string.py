@@ -1675,10 +1675,10 @@ class StringNameSpace:
         shape: (4,)
         Series: '' [str]
         [
-                "pear"
-                null
-                "papay"
-                "drago"
+            "pear"
+            null
+            "papay"
+            "drago"
         ]
 
         Return up to the 3rd character from the end.
@@ -1687,10 +1687,10 @@ class StringNameSpace:
         shape: (4,)
         Series: '' [str]
         [
-                "p"
-                null
-                "pap"
-                "dragonfr"
+            "p"
+            null
+            "pap"
+            "dragonfr"
         ]
         """
 
@@ -1733,10 +1733,10 @@ class StringNameSpace:
         shape: (4,)
         Series: '' [str]
         [
-                "pear"
-                null
-                "apaya"
-                "fruit"
+            "pear"
+            null
+            "apaya"
+            "fruit"
         ]
 
         Return from the 3rd character to the end.
@@ -1745,10 +1745,10 @@ class StringNameSpace:
         shape: (4,)
         Series: '' [str]
         [
-                "r"
-                null
-                "aya"
-                "gonfruit"
+            "r"
+            null
+            "aya"
+            "gonfruit"
         ]
         """
 
