@@ -411,7 +411,8 @@ unsafe fn buffer_len(
     })
 }
 
-/// Safety
+/// # Safety
+///
 /// This function is safe iff:
 /// * `array.children` at `index` is valid
 /// * `array.children` is not mutably shared for the lifetime of `parent`
@@ -453,7 +454,8 @@ unsafe fn create_child(
     Ok(ArrowArrayChild::new(arr_ptr, data_type, parent))
 }
 
-/// Safety
+/// # Safety
+///
 /// This function is safe iff:
 /// * `array.dictionary` is valid
 /// * `array.dictionary` is not mutably shared for the lifetime of `parent`

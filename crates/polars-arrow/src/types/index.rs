@@ -99,5 +99,7 @@ impl<I: Index> Iterator for IndexRange<I> {
     }
 }
 
-/// Safety: a range is always of known length
+/// # Safety
+///
+/// A range is always of known length.
 unsafe impl<I: Index> TrustedLen for IndexRange<I> {}
