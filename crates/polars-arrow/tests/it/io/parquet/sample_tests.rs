@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::io::Cursor;
 
 use polars_arrow::chunk::Chunk;
-use polars_arrow::datatypes::{Field, Metadata, Schema};
+use polars_arrow::datatypes::{ArrowSchema, Field, Metadata};
 use polars_arrow::error::Result;
 use polars_arrow::io::parquet::read as p_read;
 use polars_arrow::io::parquet::write::*;
@@ -55,7 +55,7 @@ fn round_trip_sample(
     let mut g = Random::new();
 
     // TODO: this probably belongs in a helper in sample-arrow2
-    let schema = Schema {
+    let schema = ArrowSchema {
         fields: chunks
             .first()
             .unwrap()

@@ -46,7 +46,7 @@ fn round_trip_opt_stats(
     };
 
     let field = Field::new("a1", array.data_type().clone(), true);
-    let schema = Schema::from(vec![field]);
+    let schema = ArrowSchema::from(vec![field]);
 
     let options = WriteOptions {
         write_statistics: true,

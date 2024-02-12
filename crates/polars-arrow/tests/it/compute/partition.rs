@@ -1,7 +1,7 @@
 use polars_arrow::array::*;
 use polars_arrow::compute::partition::*;
 use polars_arrow::compute::sort::{SortColumn, SortOptions};
-use polars_arrow::datatypes::DataType;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::error::Result;
 
 #[test]
@@ -73,8 +73,8 @@ fn lexicographical_partition_all_equal_values() -> Result<()> {
 
 #[test]
 fn lexicographical_partition_all_null_values() -> Result<()> {
-    let values1 = new_null_array(DataType::Int8, 1000);
-    let values2 = new_null_array(DataType::UInt16, 1000);
+    let values1 = new_null_array(ArrowDataType::Int8, 1000);
+    let values2 = new_null_array(ArrowDataType::UInt16, 1000);
     let input = vec![
         SortColumn {
             values: values1.as_ref(),

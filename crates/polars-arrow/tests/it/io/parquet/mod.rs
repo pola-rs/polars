@@ -1581,7 +1581,7 @@ pub fn pyarrow_map_statistics(column: &str) -> Statistics {
     }
 }
 
-fn integration_write(schema: &Schema, chunks: &[Chunk<Box<dyn Array>>]) -> Result<Vec<u8>> {
+fn integration_write(schema: &ArrowSchema, chunks: &[Chunk<Box<dyn Array>>]) -> Result<Vec<u8>> {
     let options = WriteOptions {
         write_statistics: true,
         compression: CompressionOptions::Uncompressed,
@@ -1618,7 +1618,7 @@ fn integration_write(schema: &Schema, chunks: &[Chunk<Box<dyn Array>>]) -> Resul
     Ok(writer.into_inner().into_inner())
 }
 
-type IntegrationRead = (Schema, Vec<Chunk<Box<dyn Array>>>);
+type IntegrationRead = (ArrowSchema, Vec<Chunk<Box<dyn Array>>>);
 
 fn integration_read(data: &[u8], limit: Option<usize>) -> Result<IntegrationRead> {
     let mut reader = Cursor::new(data);
@@ -1643,7 +1643,7 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> Result<IntegrationRead
     Ok((schema, batches))
 }
 
-fn generic_data() -> Result<(Schema, Chunk<Box<dyn Array>>)> {
+fn generic_data() -> Result<(ArrowSchema, Chunk<Box<dyn Array>>)> {
     let array1 = PrimitiveArray::<i64>::from([Some(1), None, Some(2)])
         .to(ArrowDataType::Duration(TimeUnit::Second));
     let array2 = Utf8Array::<i64>::from([Some("a"), None, Some("bb")]);
@@ -1696,7 +1696,7 @@ fn generic_data() -> Result<(Schema, Chunk<Box<dyn Array>>)> {
         PrimitiveArray::<days_ms>::from_slice([days_ms(1, 1), days_ms(2, 2), days_ms(3, 3)])
             .to(ArrowDataType::Interval(IntervalUnit::DayTime));
 
-    let schema = Schema::from(vec![
+    let schema = ArrowSchema::from(vec![
         Field::new("a1", array1.data_type().clone(), true),
         Field::new("a2", array2.data_type().clone(), true),
         Field::new("a3", array3.data_type().clone(), true),
@@ -1735,7 +1735,7 @@ fn generic_data() -> Result<(Schema, Chunk<Box<dyn Array>>)> {
 }
 
 fn assert_roundtrip(
-    schema: Schema,
+    schema: ArrowSchema,
     chunk: Chunk<Box<dyn Array>>,
     limit: Option<usize>,
 ) -> Result<()> {
@@ -1808,7 +1808,7 @@ fn assert_array_roundtrip(
     array: Box<dyn Array>,
     limit: Option<usize>,
 ) -> Result<()> {
-    let schema = Schema::from(vec![Field::new(
+    let schema = ArrowSchema::from(vec![Field::new(
         "a1",
         array.data_type().clone(),
         is_nullable,
@@ -1987,7 +1987,7 @@ fn limit_list() -> Result<()> {
     test_list_array_required_required(Some(2))
 }
 
-fn nested_dict_data(data_type: ArrowDataType) -> Result<(Schema, Chunk<Box<dyn Array>>)> {
+fn nested_dict_data(data_type: ArrowDataType) -> Result<(ArrowSchema, Chunk<Box<dyn Array>>)> {
     let values = match data_type {
         ArrowDataType::Float32 => PrimitiveArray::from_slice([1.0f32, 3.0]).boxed(),
         ArrowDataType::Utf8 => Utf8Array::<i32>::from_slice(["a", "b"]).boxed(),
@@ -2007,7 +2007,7 @@ fn nested_dict_data(data_type: ArrowDataType) -> Result<(Schema, Chunk<Box<dyn A
         Some([true, false, true, true].into()),
     )?;
 
-    let schema = Schema::from(vec![Field::new("c1", values.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new("c1", values.data_type().clone(), true)]);
     let chunk = Chunk::try_new(vec![values.boxed()])?;
 
     Ok((schema, chunk))
@@ -2038,7 +2038,7 @@ fn nested_dict_limit() -> Result<()> {
 fn filter_chunk() -> Result<()> {
     let chunk1 = Chunk::new(vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
     let chunk2 = Chunk::new(vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
-    let schema = Schema::from(vec![Field::new("c1", ArrowDataType::Int16, true)]);
+    let schema = ArrowSchema::from(vec![Field::new("c1", ArrowDataType::Int16, true)]);
 
     let r = integration_write(&schema, &[chunk1.clone(), chunk2.clone()])?;
 

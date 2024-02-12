@@ -180,7 +180,7 @@ fn read_json_fixed_size_records() -> Result<()> {
 
     let json = json_deserializer::parse(data)?;
 
-    let schema: Schema = vec![Field::new("a", a_expected.data_type().clone(), true)].into();
+    let schema: ArrowSchema = vec![Field::new("a", a_expected.data_type().clone(), true)].into();
     let actual = read::deserialize_records(&json, &schema)?;
 
     for (f, arr) in schema.fields.iter().zip(actual.arrays().iter()) {
@@ -199,7 +199,7 @@ fn read_json_fixed_size_records() -> Result<()> {
 #[test]
 fn read_json_records_with_schema() -> Result<()> {
     let raw = b"[{\"matrix\":[0.0,2.0]},{\"matrix\":[0.0,0.0,2.1,3.0]}]";
-    let schema = Schema {
+    let schema = ArrowSchema {
         fields: vec![Field::new(
             "matrix",
             ArrowDataType::List(Box::new(Field::new("inner", ArrowDataType::Float32, false))),

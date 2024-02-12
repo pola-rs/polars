@@ -4,7 +4,7 @@ use futures::io::Cursor;
 use futures::SinkExt;
 use polars_arrow::array::{Float32Array, Int32Array};
 use polars_arrow::chunk::Chunk;
-use polars_arrow::datatypes::{ArrowDataType, Field, Schema};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, Field};
 use polars_arrow::error::Result;
 use polars_arrow::io::parquet::read::{
     infer_schema, read_columns_many_async, read_metadata_async, RowGroupDeserializer,
@@ -22,7 +22,7 @@ async fn test_parquet_async_roundtrip() {
         let chunk = Chunk::new(vec![a1.boxed(), a2.boxed()]);
         data.push(chunk);
     }
-    let schema = Schema::from(vec![
+    let schema = ArrowSchema::from(vec![
         Field::new("a1", ArrowDataType::Int32, true),
         Field::new("a2", ArrowDataType::Float32, true),
     ]);

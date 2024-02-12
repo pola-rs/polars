@@ -4,7 +4,7 @@ use futures::io::Cursor as AsyncCursor;
 use futures::SinkExt;
 use polars_arrow::array::Array;
 use polars_arrow::chunk::Chunk;
-use polars_arrow::datatypes::Schema;
+use polars_arrow::datatypes::ArrowSchema;
 use polars_arrow::error::Result;
 use polars_arrow::io::ipc::write::stream_async;
 use polars_arrow::io::ipc::write::stream_async::StreamSink;
@@ -13,7 +13,7 @@ use polars_arrow::io::ipc::{read, IpcField};
 use crate::io::ipc::common::{read_arrow_stream, read_gzip_json};
 
 async fn write_(
-    schema: &Schema,
+    schema: &ArrowSchema,
     ipc_fields: &[IpcField],
     batches: &[Chunk<Box<dyn Array>>],
 ) -> Result<Vec<u8>> {

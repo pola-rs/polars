@@ -1,9 +1,9 @@
 use polars_arrow::array::*;
 use polars_arrow::compute::if_then_else::if_then_else;
-use polars_arrow::error::Result;
+use polars_error::PolarsResult;
 
 #[test]
-fn basics() -> Result<()> {
+fn basics() -> PolarsResult<()> {
     let lhs = Int32Array::from_slice([1, 2, 3]);
     let rhs = Int32Array::from_slice([4, 5, 6]);
     let predicate = BooleanArray::from_slice(vec![true, false, true]);
@@ -16,7 +16,7 @@ fn basics() -> Result<()> {
 }
 
 #[test]
-fn basics_nulls() -> Result<()> {
+fn basics_nulls() -> PolarsResult<()> {
     let lhs = Int32Array::from(&[Some(1), None, None]);
     let rhs = Int32Array::from(&[None, Some(5), Some(6)]);
     let predicate = BooleanArray::from_slice(vec![true, false, true]);
@@ -29,7 +29,7 @@ fn basics_nulls() -> Result<()> {
 }
 
 #[test]
-fn basics_nulls_pred() -> Result<()> {
+fn basics_nulls_pred() -> PolarsResult<()> {
     let lhs = Int32Array::from_slice([1, 2, 3]);
     let rhs = Int32Array::from_slice([4, 5, 6]);
     let predicate = BooleanArray::from(&[Some(true), None, Some(false)]);

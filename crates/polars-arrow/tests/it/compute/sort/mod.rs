@@ -15,7 +15,7 @@ fn to_indices_boolean_arrays(data: &[Option<bool>], options: SortOptions, expect
 
 fn primitive_arrays<T>(
     data: &[Option<T>],
-    data_type: DataType,
+    data_type: ArrowDataType,
     options: SortOptions,
     expected_data: &[Option<T>],
 ) where
@@ -141,7 +141,7 @@ fn boolean() {
 fn test_nans() {
     primitive_arrays::<f64>(
         &[None, Some(0.0), Some(2.0), Some(-1.0), Some(f64::NAN), None],
-        DataType::Float64,
+        ArrowDataType::Float64,
         SortOptions {
             descending: true,
             nulls_first: true,
@@ -150,7 +150,7 @@ fn test_nans() {
     );
     primitive_arrays::<f64>(
         &[Some(f64::NAN), Some(f64::NAN), Some(f64::NAN), Some(1.0)],
-        DataType::Float64,
+        ArrowDataType::Float64,
         SortOptions {
             descending: true,
             nulls_first: true,
@@ -160,7 +160,7 @@ fn test_nans() {
 
     primitive_arrays::<f64>(
         &[None, Some(0.0), Some(2.0), Some(-1.0), Some(f64::NAN), None],
-        DataType::Float64,
+        ArrowDataType::Float64,
         SortOptions {
             descending: false,
             nulls_first: true,
@@ -170,7 +170,7 @@ fn test_nans() {
     // nans
     primitive_arrays::<f64>(
         &[Some(f64::NAN), Some(f64::NAN), Some(f64::NAN), Some(1.0)],
-        DataType::Float64,
+        ArrowDataType::Float64,
         SortOptions {
             descending: false,
             nulls_first: true,
@@ -551,7 +551,7 @@ fn test_lex_sort_unaligned_rows() {
 #[test]
 fn consistency() {
     use polars_arrow::array::new_null_array;
-    use polars_arrow::datatypes::DataType::*;
+    use polars_arrow::datatypes::ArrowDataType::*;
     use polars_arrow::datatypes::TimeUnit;
 
     let datatypes = vec![

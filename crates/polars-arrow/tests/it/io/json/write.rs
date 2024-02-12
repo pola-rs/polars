@@ -1,7 +1,7 @@
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::buffer::Buffer;
-use polars_arrow::datatypes::{ArrowDataType, Field, IntegerType, Metadata, Schema, TimeUnit};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntegerType, Metadata, TimeUnit};
 use polars_arrow::error::Result;
 
 use super::*;
@@ -279,7 +279,7 @@ fn nested_list_records() -> Result<()> {
 
     let c2 = Utf8Array::<i32>::from([Some("foo"), Some("bar"), None]);
 
-    let schema: Schema = vec![
+    let schema: ArrowSchema = vec![
         Field::new("c1", c1.data_type().clone(), true),
         Field::new("c2", c2.data_type().clone(), true),
     ]
@@ -314,7 +314,7 @@ fn fixed_size_list_records() -> Result<()> {
     inner.try_extend(iter).unwrap();
     let inner: FixedSizeListArray = inner.into();
 
-    let schema = Schema {
+    let schema = ArrowSchema {
         fields: vec![Field::new("vs", inner.data_type().clone(), true)],
         metadata: Metadata::default(),
     };

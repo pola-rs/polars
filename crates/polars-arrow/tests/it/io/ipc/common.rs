@@ -5,13 +5,13 @@ use ahash::AHashMap;
 use flate2::read::GzDecoder;
 use polars_arrow::array::Array;
 use polars_arrow::chunk::Chunk;
-use polars_arrow::datatypes::Schema;
+use polars_arrow::datatypes::ArrowSchema;
 use polars_arrow::error::Result;
 use polars_arrow::io::ipc::read::{read_stream_metadata, StreamReader};
 use polars_arrow::io::ipc::IpcField;
 use polars_arrow::io::json_integration::{read, ArrowJson};
 
-type IpcRead = (Schema, Vec<IpcField>, Vec<Chunk<Box<dyn Array>>>);
+type IpcRead = (ArrowSchema, Vec<IpcField>, Vec<Chunk<Box<dyn Array>>>);
 
 /// Read gzipped JSON file
 pub fn read_gzip_json(version: &str, file_name: &str) -> Result<IpcRead> {

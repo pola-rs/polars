@@ -1,9 +1,9 @@
 use polars_arrow::array::*;
 use polars_arrow::datatypes::Field;
-use polars_arrow::error::{Error, Result};
 use polars_arrow::ffi;
+use polars_error::{PolarsError, PolarsResult};
 
-fn _test_round_trip(arrays: Vec<Box<dyn Array>>) -> Result<()> {
+fn _test_round_trip(arrays: Vec<Box<dyn Array>>) -> PolarsResult<()> {
     let field = Field::new("a", arrays[0].data_type().clone(), true);
     let iter = Box::new(arrays.clone().into_iter().map(Ok)) as _;
 
@@ -25,7 +25,7 @@ fn _test_round_trip(arrays: Vec<Box<dyn Array>>) -> Result<()> {
 }
 
 #[test]
-fn round_trip() -> Result<()> {
+fn round_trip() -> PolarsResult<()> {
     let array = Int32Array::from(&[Some(2), None, Some(1), None]);
     let array: Box<dyn Array> = Box::new(array);
 
@@ -38,7 +38,7 @@ fn stream_reader_try_new_invalid_argument_error_on_released_stream() {
     let reader = unsafe { ffi::ArrowArrayStreamReader::try_new(released_stream) };
     // poor man's assert_matches:
     match reader {
-        Err(Error::InvalidArgumentError(_)) => {},
+        Err(PolarsError::InvalidOperation(_)) => {},
         _ => panic!("ArrowArrayStreamReader::try_new did not return an InvalidArgumentError"),
     }
 }

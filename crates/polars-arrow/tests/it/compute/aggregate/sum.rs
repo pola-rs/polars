@@ -1,7 +1,6 @@
 use polars_arrow::array::*;
 use polars_arrow::compute::aggregate::{sum, sum_primitive};
-use polars_arrow::compute::arithmetics;
-use polars_arrow::datatypes::DataType;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::scalar::{PrimitiveScalar, Scalar};
 
 #[test]
@@ -12,9 +11,9 @@ fn test_primitive_array_sum() {
         sum(&a).unwrap().as_ref()
     );
 
-    let a = a.to(DataType::Date32);
+    let a = a.to(ArrowDataType::Date32);
     assert_eq!(
-        &PrimitiveScalar::<i32>::from(Some(15)).to(DataType::Date32) as &dyn Scalar,
+        &PrimitiveScalar::<i32>::from(Some(15)).to(ArrowDataType::Date32) as &dyn Scalar,
         sum(&a).unwrap().as_ref()
     );
 }
@@ -35,20 +34,4 @@ fn test_primitive_array_sum_with_nulls() {
 fn test_primitive_array_sum_all_nulls() {
     let a = Int32Array::from(&[None, None, None]);
     assert_eq!(None, sum_primitive(&a));
-}
-
-#[test]
-fn test_primitive_array_sum_large_64() {
-    let a: Int64Array = (1..=100)
-        .map(|i| if i % 3 == 0 { Some(i) } else { None })
-        .collect();
-    let b: Int64Array = (1..=100)
-        .map(|i| if i % 3 == 0 { Some(0) } else { Some(i) })
-        .collect();
-    // create an array that actually has non-zero values at the invalid indices
-    let c = arithmetics::basic::add(&a, &b);
-    assert_eq!(
-        Some((1..=100).filter(|i| i % 3 == 0).sum()),
-        sum_primitive(&c)
-    );
 }

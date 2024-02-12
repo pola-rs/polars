@@ -17,9 +17,9 @@ fn length_test_string<O: Offset>() {
         let result = length(&array).unwrap();
 
         let data_type = if O::IS_LARGE {
-            DataType::Int64
+            ArrowDataType::Int64
         } else {
-            DataType::Int32
+            ArrowDataType::Int32
         };
 
         let expected = expected
@@ -43,7 +43,7 @@ fn utf8() {
 
 #[test]
 fn consistency() {
-    use polars_arrow::datatypes::DataType::*;
+    use polars_arrow::datatypes::ArrowDataType::*;
 
     let datatypes = vec![
         Null,

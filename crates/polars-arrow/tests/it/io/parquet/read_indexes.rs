@@ -8,13 +8,13 @@ use polars_arrow::io::parquet::read::{indexes, *};
 use polars_arrow::io::parquet::write::*;
 
 /// Returns 2 sets of pages with different the same number of rows distributed un-evenly
-fn pages(arrays: &[&dyn Array], encoding: Encoding) -> Result<(Vec<Page>, Vec<Page>, Schema)> {
+fn pages(arrays: &[&dyn Array], encoding: Encoding) -> Result<(Vec<Page>, Vec<Page>, ArrowSchema)> {
     // create pages with different number of rows
     let array11 = PrimitiveArray::<i64>::from_slice([1, 2, 3, 4]);
     let array12 = PrimitiveArray::<i64>::from_slice([5]);
     let array13 = PrimitiveArray::<i64>::from_slice([6]);
 
-    let schema = Schema::from(vec![
+    let schema = ArrowSchema::from(vec![
         Field::new("a1", ArrowDataType::Int64, false),
         Field::new(
             "a2",
@@ -72,7 +72,7 @@ fn pages(arrays: &[&dyn Array], encoding: Encoding) -> Result<(Vec<Page>, Vec<Pa
 
 /// Tests reading pages while skipping indexes
 fn read_with_indexes(
-    (pages1, pages2, schema): (Vec<Page>, Vec<Page>, Schema),
+    (pages1, pages2, schema): (Vec<Page>, Vec<Page>, ArrowSchema),
     expected: Box<dyn Array>,
 ) -> Result<()> {
     let options = WriteOptions {

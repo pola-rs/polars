@@ -5,7 +5,7 @@ use polars_arrow::array::{
 };
 use polars_arrow::compute::sort::row::{RowConverter, SortField};
 use polars_arrow::compute::sort::SortOptions;
-use polars_arrow::datatypes::{DataType, IntegerType};
+use polars_arrow::datatypes::{ArrowDataType, IntegerType};
 use polars_arrow::types::i256;
 
 #[test]
@@ -26,8 +26,8 @@ fn test_fixed_width() {
     ];
 
     let mut converter = RowConverter::new(vec![
-        SortField::new(DataType::Int16),
-        SortField::new(DataType::Float32),
+        SortField::new(ArrowDataType::Int16),
+        SortField::new(ArrowDataType::Float32),
     ]);
     let rows = converter.convert_columns(&cols).unwrap();
 
@@ -40,7 +40,7 @@ fn test_fixed_width() {
 
 #[test]
 fn test_decimal128() {
-    let mut converter = RowConverter::new(vec![SortField::new(DataType::Decimal(38, 7))]);
+    let mut converter = RowConverter::new(vec![SortField::new(ArrowDataType::Decimal(38, 7))]);
     let col = Int128Array::from_iter([
         None,
         Some(i128::MIN),
@@ -49,7 +49,7 @@ fn test_decimal128() {
         Some(5456_i128),
         Some(i128::MAX),
     ])
-    .to(DataType::Decimal(38, 7))
+    .to(ArrowDataType::Decimal(38, 7))
     .to_boxed();
 
     let rows = converter.convert_columns(&[col]).unwrap();
@@ -60,7 +60,7 @@ fn test_decimal128() {
 
 #[test]
 fn test_decimal256() {
-    let mut converter = RowConverter::new(vec![SortField::new(DataType::Decimal256(76, 7))]);
+    let mut converter = RowConverter::new(vec![SortField::new(ArrowDataType::Decimal256(76, 7))]);
     let col = Int256Array::from_iter([
         None,
         Some(i256::from_words(i128::MIN, i128::MIN)),
@@ -71,7 +71,7 @@ fn test_decimal256() {
         Some(i256::from_words(i128::MAX, i128::MAX)),
         Some(i256::from_words(i128::MAX, -1)),
     ])
-    .to(DataType::Decimal256(76, 7))
+    .to(ArrowDataType::Decimal256(76, 7))
     .to_boxed();
 
     let rows = converter.convert_columns(&[col]).unwrap();
@@ -82,7 +82,7 @@ fn test_decimal256() {
 
 #[test]
 fn test_bool() {
-    let mut converter = RowConverter::new(vec![SortField::new(DataType::Boolean)]);
+    let mut converter = RowConverter::new(vec![SortField::new(ArrowDataType::Boolean)]);
 
     let col = BooleanArray::from_iter([None, Some(false), Some(true)]).to_boxed();
 
@@ -92,7 +92,7 @@ fn test_bool() {
     assert!(rows.row(1) > rows.row(0));
 
     let mut converter = RowConverter::new(vec![SortField::new_with_options(
-        DataType::Boolean,
+        ArrowDataType::Boolean,
         SortOptions {
             descending: true,
             nulls_first: false,
@@ -107,8 +107,8 @@ fn test_bool() {
 
 #[test]
 fn test_null_encoding() {
-    let col = NullArray::new(DataType::Null, 10).to_boxed();
-    let mut converter = RowConverter::new(vec![SortField::new(DataType::Null)]);
+    let col = NullArray::new(ArrowDataType::Null, 10).to_boxed();
+    let mut converter = RowConverter::new(vec![SortField::new(ArrowDataType::Null)]);
     let rows = converter.convert_columns(&[col]).unwrap();
     assert_eq!(rows.len(), 10);
 }
@@ -118,7 +118,7 @@ fn test_variable_width() {
     let col =
         Utf8Array::<i32>::from([Some("hello"), Some("he"), None, Some("foo"), Some("")]).to_boxed();
 
-    let mut converter = RowConverter::new(vec![SortField::new(DataType::Utf8)]);
+    let mut converter = RowConverter::new(vec![SortField::new(ArrowDataType::Utf8)]);
     let rows = converter.convert_columns(&[Box::clone(&col)]).unwrap();
 
     assert!(rows.row(1) < rows.row(0));
@@ -141,7 +141,7 @@ fn test_variable_width() {
     ])
     .to_boxed();
 
-    let mut converter = RowConverter::new(vec![SortField::new(DataType::Binary)]);
+    let mut converter = RowConverter::new(vec![SortField::new(ArrowDataType::Binary)]);
     let rows = converter.convert_columns(&[Box::clone(&col)]).unwrap();
 
     for i in 0..rows.len() {
@@ -158,7 +158,7 @@ fn test_variable_width() {
     }
 
     let mut converter = RowConverter::new(vec![SortField::new_with_options(
-        DataType::Binary,
+        ArrowDataType::Binary,
         SortOptions {
             descending: true,
             nulls_first: false,
@@ -261,7 +261,8 @@ fn test_dictionary_nulls() {
     let values = Int32Array::from_iter([Some(1), Some(-1), None, Some(4), None]);
     let keys = Int32Array::from_iter([Some(0), Some(0), Some(1), Some(2), Some(4), None]);
 
-    let data_type = DataType::Dictionary(IntegerType::Int32, Box::new(DataType::Int32), false);
+    let data_type =
+        ArrowDataType::Dictionary(IntegerType::Int32, Box::new(ArrowDataType::Int32), false);
     let data = DictionaryArray::try_from_keys(keys, values.to_boxed()).unwrap();
 
     let mut converter = RowConverter::new(vec![SortField::new(data_type)]);

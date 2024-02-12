@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use polars_arrow::array::*;
 use polars_arrow::chunk::Chunk;
-use polars_arrow::datatypes::{Field, Schema};
+use polars_arrow::datatypes::{ArrowSchema, Field};
 use polars_arrow::error::Result;
 use polars_arrow::io::ipc::read::{read_file_metadata, FileReader};
 use polars_arrow::io::ipc::write::*;
@@ -13,7 +13,7 @@ use crate::io::ipc::common::read_gzip_json;
 
 pub(crate) fn write(
     batches: &[Chunk<Box<dyn Array>>],
-    schema: &Schema,
+    schema: &ArrowSchema,
     ipc_fields: Option<Vec<IpcField>>,
     compression: Option<Compression>,
 ) -> Result<Vec<u8>> {
@@ -29,7 +29,7 @@ pub(crate) fn write(
 
 fn round_trip(
     columns: Chunk<Box<dyn Array>>,
-    schema: Schema,
+    schema: ArrowSchema,
     ipc_fields: Option<Vec<IpcField>>,
     compression: Option<Compression>,
 ) -> Result<()> {
@@ -329,7 +329,7 @@ fn write_generated_017_union() -> Result<()> {
 #[cfg_attr(miri, ignore)] // compression uses FFI, which miri does not support
 fn write_boolean() -> Result<()> {
     let array = BooleanArray::from([Some(true), Some(false), None, Some(true)]).boxed();
-    let schema = Schema::from(vec![Field::new("a", array.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new("a", array.data_type().clone(), true)]);
     let columns = Chunk::try_new(vec![array])?;
     round_trip(columns, schema, None, Some(Compression::ZSTD))
 }
@@ -340,7 +340,7 @@ fn write_sliced_utf8() -> Result<()> {
     let array = Utf8Array::<i32>::from_slice(["aa", "bb"])
         .sliced(1, 1)
         .boxed();
-    let schema = Schema::from(vec![Field::new("a", array.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new("a", array.data_type().clone(), true)]);
     let columns = Chunk::try_new(vec![array])?;
     round_trip(columns, schema, None, Some(Compression::ZSTD))
 }
@@ -357,7 +357,7 @@ fn write_sliced_list() -> Result<()> {
     array.try_extend(data).unwrap();
     let array: Box<dyn Array> = array.into_box().sliced(1, 2);
 
-    let schema = Schema::from(vec![Field::new("a", array.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new("a", array.data_type().clone(), true)]);
     let columns = Chunk::try_new(vec![array])?;
     round_trip(columns, schema, None, None)
 }
@@ -370,7 +370,7 @@ fn write_months_days_ns() -> Result<()> {
         None,
         Some(months_days_ns::new(1, 1, 2)),
     ])) as Box<dyn Array>;
-    let schema = Schema::from(vec![Field::new("a", array.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new("a", array.data_type().clone(), true)]);
     let columns = Chunk::try_new(vec![array])?;
     round_trip(columns, schema, None, None)
 }
@@ -384,7 +384,7 @@ fn write_decimal256() -> Result<()> {
         Some(i256::from_words(0, 1)),
     ])
     .boxed();
-    let schema = Schema::from(vec![Field::new("a", array.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new("a", array.data_type().clone(), true)]);
     let columns = Chunk::try_new(vec![array])?;
     round_trip(columns, schema, None, None)
 }

@@ -172,7 +172,7 @@ fn dictionary_array() {
 
 #[test]
 fn list_array() {
-    let value_data = ArrayData::builder(DataType::Int32)
+    let value_data = ArrayData::builder(ArrowDataType::Int32)
         .len(8)
         .add_buffer(Buffer::from_slice_ref(&[0, 1, 2, 3, 4, 5, 6, 7]))
         .build();
@@ -180,7 +180,7 @@ fn list_array() {
     let value_offsets = Buffer::from_slice_ref(&[0i64, 3, 6, 8, 8]);
 
     let list_data_type =
-        DataType::LargeList(Box::new(Field::new("item", DataType::Int32, false)));
+        ArrowDataType::LargeList(Box::new(Field::new("item", ArrowDataType::Int32, false)));
     let list_data = ArrayData::builder(list_data_type)
         .len(4)
         .add_buffer(value_offsets)
@@ -194,7 +194,7 @@ fn list_array() {
     let result = filter(&a, &b).unwrap();
 
     // expected: [[3, 4, 5], null]
-    let value_data = ArrayData::builder(DataType::Int32)
+    let value_data = ArrayData::builder(ArrowDataType::Int32)
         .len(3)
         .add_buffer(Buffer::from_slice_ref(&[3, 4, 5]))
         .build();
@@ -202,7 +202,7 @@ fn list_array() {
     let value_offsets = Buffer::from_slice_ref(&[0i64, 3, 3]);
 
     let list_data_type =
-        DataType::LargeList(Box::new(Field::new("item", DataType::Int32, false)));
+        ArrowDataType::LargeList(Box::new(Field::new("item", ArrowDataType::Int32, false)));
     let expected = ArrayData::builder(list_data_type)
         .len(2)
         .add_buffer(value_offsets)

@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use polars_arrow::array::*;
 use polars_arrow::chunk::Chunk;
-use polars_arrow::datatypes::{ArrowDataType, Field, Schema};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, Field};
 use polars_arrow::error::Result;
 use polars_arrow::io::ipc::read::read_file_metadata;
 
 use super::write::file::write;
 
 fn round_trip(array: Box<dyn Array>) -> Result<()> {
-    let schema = Schema::from(vec![Field::new("a", array.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new("a", array.data_type().clone(), true)]);
     let columns = Chunk::try_new(vec![array.clone()])?;
 
     let data = Arc::new(write(&[columns], &schema, None, None)?);

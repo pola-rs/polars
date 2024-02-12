@@ -813,7 +813,7 @@ fn read_int96_timestamps() -> Result<()> {
     let parse = |time_unit: TimeUnit| {
         let mut reader = Cursor::new(timestamp_data);
         let metadata = read_metadata(&mut reader)?;
-        let schema = polars_arrow::datatypes::Schema {
+        let schema = polars_arrow::datatypes::ArrowSchema {
             fields: vec![polars_arrow::datatypes::Field::new(
                 "timestamps",
                 polars_arrow::datatypes::ArrowDataType::Timestamp(time_unit, None),

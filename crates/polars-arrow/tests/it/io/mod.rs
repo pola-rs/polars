@@ -16,9 +16,6 @@ mod ipc2;
 #[cfg(feature = "io_parquet")]
 mod parquet;
 
-#[cfg(feature = "io_avro")]
-mod avro;
-
 #[cfg(feature = "io_orc")]
 mod orc;
 
@@ -28,6 +25,3 @@ mod orc;
     feature = "io_csv_read_async"
 ))]
 mod csv;
-
-#[cfg(feature = "io_flight")]
-mod flight;

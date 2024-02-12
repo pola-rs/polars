@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use polars_arrow::array::Array;
 use polars_arrow::chunk::Chunk;
-use polars_arrow::datatypes::Schema;
+use polars_arrow::datatypes::ArrowSchema;
 use polars_arrow::error::Result;
 use polars_arrow::io::ipc::read::{read_stream_metadata, StreamReader};
 use polars_arrow::io::ipc::write::{StreamWriter, WriteOptions};
@@ -11,7 +11,7 @@ use polars_arrow::io::ipc::IpcField;
 use crate::io::ipc::common::{read_arrow_stream, read_gzip_json};
 
 fn write_(
-    schema: &Schema,
+    schema: &ArrowSchema,
     ipc_fields: Option<Vec<IpcField>>,
     batches: &[Chunk<Box<dyn Array>>],
 ) -> Vec<u8> {

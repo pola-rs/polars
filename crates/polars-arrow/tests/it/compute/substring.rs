@@ -301,7 +301,7 @@ fn without_nulls_large_binary() -> Result<()> {
 
 #[test]
 fn consistency() {
-    use polars_arrow::datatypes::DataType::*;
+    use polars_arrow::datatypes::ArrowDataType::*;
     use polars_arrow::datatypes::TimeUnit;
     let datatypes = vec![
         Null,

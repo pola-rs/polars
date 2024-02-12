@@ -143,7 +143,7 @@ fn without_nulls_large_string_lower() -> Result<()> {
 
 #[test]
 fn consistency_lower() {
-    use polars_arrow::datatypes::DataType::*;
+    use polars_arrow::datatypes::ArrowDataType::*;
     use polars_arrow::datatypes::TimeUnit;
     let datatypes = vec![
         Null,
@@ -328,7 +328,7 @@ fn without_nulls_large_string() -> Result<()> {
 
 #[test]
 fn consistency_upper() {
-    use polars_arrow::datatypes::DataType::*;
+    use polars_arrow::datatypes::ArrowDataType::*;
     use polars_arrow::datatypes::TimeUnit;
     let datatypes = vec![
         Null,
