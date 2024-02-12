@@ -1578,76 +1578,62 @@ def test_arg_sort() -> None:
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
-def test_arg_min_and_arg_max() -> None:
-    # numerical no null.
-    s = pl.Series([5, 3, 4, 1, 2])
-    assert s.arg_min() == 3
-    assert s.arg_max() == 0
+@pytest.mark.parametrize(
+    ("series", "argmin", "argmax"),
+    [
+        # Numeric
+        (pl.Series([5, 3, 4, 1, 2]), 3, 0),
+        (pl.Series([None, 5, 1]), 2, 1),
+        # Boolean
+        (pl.Series([True, False]), 1, 0),
+        (pl.Series([True, True]), 0, 0),
+        (pl.Series([False, False]), 0, 0),
+        (pl.Series([None, True, False, True]), 2, 1),
+        (pl.Series([None, True, True]), 1, 1),
+        (pl.Series([None, False, False]), 1, 1),
+        # String
+        (pl.Series(["a", "c", "b"]), 0, 1),
+        (pl.Series([None, "a", None, "b"]), 1, 3),
+        # Categorical
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical), 0, 2),
+        (pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical), 1, 4),
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
+        (
+            pl.Series(
+                [None, "c", "b", None, "a"], dtype=pl.Categorical(ordering="lexical")
+            ),
+            4,
+            1,
+        ),
+    ],
+)
+def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
+    assert series.arg_min() == argmin
+    assert series.arg_max() == argmax
 
-    # numerical has null.
-    s = pl.Series([None, 5, 1])
-    assert s.arg_min() == 2
-    assert s.arg_max() == 1
 
-    # numerical all null.
-    s = pl.Series([None, None], dtype=Int32)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
+@pytest.mark.parametrize(
+    ("series"),
+    [
+        # All nulls
+        pl.Series([None, None], dtype=pl.Int32),
+        pl.Series([None, None], dtype=pl.Boolean),
+        pl.Series([None, None], dtype=pl.String),
+        pl.Series([None, None], dtype=pl.Categorical),
+        pl.Series([None, None], dtype=pl.Categorical(ordering="lexical")),
+        # Empty Series
+        pl.Series([], dtype=pl.Int32),
+        pl.Series([], dtype=pl.Boolean),
+        pl.Series([], dtype=pl.String),
+        pl.Series([], dtype=pl.Categorical),
+    ],
+)
+def test_arg_min_arg_max_all_nulls_or_empty(series: pl.Series) -> None:
+    assert series.arg_min() is None
+    assert series.arg_max() is None
 
-    # boolean no null.
-    s = pl.Series([True, False])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 0
-    s = pl.Series([True, True])
-    assert s.arg_min() == 0
-    assert s.arg_max() == 0
-    s = pl.Series([False, False])
-    assert s.arg_min() == 0
-    assert s.arg_max() == 0
 
-    # boolean has null.
-    s = pl.Series([None, True, False, True])
-    assert s.arg_min() == 2
-    assert s.arg_max() == 1
-    s = pl.Series([None, True, True])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 1
-    s = pl.Series([None, False, False])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 1
-
-    # boolean all null.
-    s = pl.Series([None, None], dtype=pl.Boolean)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # str no null
-    s = pl.Series(["a", "c", "b"])
-    assert s.arg_min() == 0
-    assert s.arg_max() == 1
-
-    # str has null
-    s = pl.Series([None, "a", None, "b"])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 3
-
-    # str all null
-    s = pl.Series([None, None], dtype=pl.String)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # test ascending and descending series
-    s = pl.Series([None, 1, 2, 3, 4, 5])
-    s.sort(in_place=True)  # set ascending sorted flag
-    assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
-    assert s.arg_min() == 1
-    assert s.arg_max() == 5
-    s = pl.Series([None, 5, 4, 3, 2, 1])
-    s.sort(descending=True, in_place=True)  # set descing sorted flag
-    assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
-    assert s.arg_min() == 5
-    assert s.arg_max() == 1
-
+def test_arg_min_and_arg_max_sorted() -> None:
     # test ascending and descending numerical series
     s = pl.Series([None, 1, 2, 3, 4, 5])
     s.sort(in_place=True)  # set ascending sorted flag
@@ -1671,56 +1657,6 @@ def test_arg_min_and_arg_max() -> None:
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
     assert s.arg_min() == 5
     assert s.arg_max() == 1
-
-    # test numerical empty series
-    s = pl.Series([], dtype=pl.Int32)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # test boolean empty series
-    s = pl.Series([], dtype=pl.Boolean)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # test str empty series
-    s = pl.Series([], dtype=pl.String)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # categorical empty series
-    s = pl.Series([], dtype=pl.Categorical)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # categorical with physical ordering no null
-    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical)
-    assert s.arg_min() == 0
-    assert s.arg_max() == 2
-
-    # categorical with physical ordering has null
-    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical)
-    assert s.arg_min() == 1
-    assert s.arg_max() == 4
-
-    # categorical with physical all null
-    s = pl.Series([None, None], dtype=pl.Categorical)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # categorical with lexical ordering no null
-    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical"))
-    assert s.arg_min() == 2
-    assert s.arg_max() == 0
-
-    # categorical with lexical ordering has null
-    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical(ordering="lexical"))
-    assert s.arg_min() == 4
-    assert s.arg_max() == 1
-
-    # categorical with lexical ordering all null
-    s = pl.Series([None, None], dtype=pl.Categorical(ordering="lexical"))
-    assert s.arg_min() is None
-    assert s.arg_max() is None
 
 
 def test_is_null_is_not_null() -> None:
