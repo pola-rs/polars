@@ -118,7 +118,7 @@ def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     np.random.seed(0)
 
-    num_rows = 1_00_000
+    num_rows = 100_000
     num_columns = 2
     num_tables = 10
 
