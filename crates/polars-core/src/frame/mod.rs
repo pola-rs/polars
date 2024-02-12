@@ -255,11 +255,9 @@ impl DataFrame {
                     None => first_len = Some(s.len()),
                 }
 
-                if names.contains(name) {
+                if !names.insert(name) {
                     polars_bail!(duplicate = name);
                 }
-
-                names.insert(name);
             }
             // we drop early as the brchk thinks the &str borrows are used when calling the drop
             // of both `series_cols` and `names`
@@ -402,7 +400,7 @@ impl DataFrame {
 
     /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
     ///
-    /// It is advised to use [Series::new](Series::new) in favor of this method.
+    /// It is advised to use [DataFrame::new](DataFrame::new) in favor of this method.
     ///
     /// # Panic
     /// It is the callers responsibility to uphold the contract of all `Series`
@@ -414,7 +412,7 @@ impl DataFrame {
     /// Create a new `DataFrame` but does not check the length of the `Series`,
     /// only check for duplicates.
     ///
-    /// It is advised to use [Series::new](Series::new) in favor of this method.
+    /// It is advised to use [DataFrame::new](DataFrame::new) in favor of this method.
     ///
     /// # Panic
     /// It is the callers responsibility to uphold the contract of all `Series`
@@ -424,8 +422,7 @@ impl DataFrame {
         for column in &columns {
             let name = column.name();
             if !names.insert(name) {
-                // If insertion fails, it means the element is already in the set (duplicate)
-                polars_bail!(duplicate = name)
+                polars_bail!(duplicate = name);
             }
         }
         // we drop early as the brchk thinks the &str borrows are used when calling the drop
@@ -1542,6 +1539,9 @@ impl DataFrame {
                 polars_bail!(duplicate = name);
             }
         }
+        // we drop early as the brchk thinks the &str borrows are used when calling the drop
+        // of both `series_cols` and `names`
+        drop(names);
         Ok(())
     }
 
