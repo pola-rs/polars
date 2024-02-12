@@ -229,10 +229,37 @@ impl OptimizationRule for SimplifyBooleanRule {
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
             },
+            AExpr::Function {
+                input,
+                function: FunctionExpr::Negate,
+                ..
+            } if input.len() == 1 => {
+                let input = input[0];
+                let ae = expr_arena.get(input);
+                eval_negate(ae)
+            },
             _ => None,
         };
         Ok(out)
     }
+}
+
+fn eval_negate(ae: &AExpr) -> Option<AExpr> {
+    let out = match ae {
+        AExpr::Literal(lv) => match lv {
+            #[cfg(feature = "dtype-i8")]
+            LiteralValue::Int8(v) => LiteralValue::Int8(-*v),
+            #[cfg(feature = "dtype-i16")]
+            LiteralValue::Int16(v) => LiteralValue::Int16(-*v),
+            LiteralValue::Int32(v) => LiteralValue::Int32(-*v),
+            LiteralValue::Int64(v) => LiteralValue::Int64(-*v),
+            LiteralValue::Float32(v) => LiteralValue::Float32(-*v),
+            LiteralValue::Float64(v) => LiteralValue::Float64(-*v),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(AExpr::Literal(out))
 }
 
 fn eval_bitwise<F>(left: &AExpr, right: &AExpr, operation: F) -> Option<AExpr>
