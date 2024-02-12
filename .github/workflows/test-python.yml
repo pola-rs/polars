@@ -3,6 +3,7 @@ name: Test Python
 on:
   pull_request:
     paths:
+      - Cargo.lock
       - py-polars/**
       - docs/src/python/**
       - crates/**
@@ -11,6 +12,7 @@ on:
     branches:
       - main
     paths:
+      - Cargo.lock
       - crates/**
       - docs/src/python/**
       - py-polars/**
