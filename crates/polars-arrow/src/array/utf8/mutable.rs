@@ -145,8 +145,6 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Returns the value of the element at index `i`, ignoring the array's validity.
-    /// # Safety
-    /// This function is safe iff `i < self.len`.
     #[inline]
     pub fn value(&self, i: usize) -> &str {
         self.values.value(i)
