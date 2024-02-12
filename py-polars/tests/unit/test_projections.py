@@ -389,3 +389,22 @@ def test_rolling_key_projected_13617() -> None:
     assert r'DF ["idx", "value"]; PROJECT 2/2 COLUMNS' in plan
     out = ldf.collect(projection_pushdown=True)
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
+
+
+def test_projection_drop_with_series_lit_() -> None:
+    df = pl.DataFrame({"b": [1, 6, 8, 7]})
+    df2 = pl.DataFrame({"a": [1, 2, 4, 4], "b": [True, True, True, False]})
+
+    q = (
+        df2.lazy()
+        .select(
+            *["a", "b"], pl.lit("b").alias("b_name"), df.get_column("b").alias("b_old")
+        )
+        .filter(pl.col("b").not_())
+        .drop("b")
+    )
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [4],
+        "b_name": ["b"],
+        "b_old": [7],
+    }

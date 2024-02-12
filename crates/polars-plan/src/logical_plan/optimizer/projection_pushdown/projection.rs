@@ -23,13 +23,33 @@ fn check_double_projection(
     acc_projections: &mut Vec<Node>,
     projected_names: &mut PlHashSet<Arc<str>>,
 ) {
+    // Factor out the pruning function
+    fn prune_projections_by_name(
+        acc_projections: &mut Vec<Node>,
+        name: &str,
+        expr_arena: &Arena<AExpr>,
+    ) {
+        acc_projections.retain(|expr| {
+            !aexpr_to_leaf_names_iter(*expr, expr_arena).any(|q| q.as_ref() == name)
+        });
+    }
+
     for (_, ae) in (&*expr_arena).iter(*expr) {
-        if let AExpr::Alias(_, name) = ae {
-            if projected_names.remove(name) {
-                acc_projections
-                    .retain(|expr| !aexpr_to_leaf_names(*expr, expr_arena).contains(name));
-            }
-        }
+        match ae {
+            // Series literals come from another source so should not be pushed down.
+            AExpr::Literal(LiteralValue::Series(s)) => {
+                let name = s.name();
+                if projected_names.remove(name) {
+                    prune_projections_by_name(acc_projections, name, expr_arena)
+                }
+            },
+            AExpr::Alias(_, name) => {
+                if projected_names.remove(name) {
+                    prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
+                }
+            },
+            _ => {},
+        };
     }
 }
 
