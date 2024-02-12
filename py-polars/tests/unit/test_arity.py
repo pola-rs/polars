@@ -92,7 +92,7 @@ def test_negate_inlined_14278() -> None:
     ]
 
     q = df.lazy().group_by("group").agg(agg_expr)
-    assert q.collect().sort("group").to_dict(False) == {
+    assert q.collect().sort("group").to_dict(as_series=False) == {
         "group": ["A", "B", "C"],
         "list": [
             [{"group": "A", "value": 1}, {"group": "A", "value": 2}],
