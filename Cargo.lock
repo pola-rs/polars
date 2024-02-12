@@ -2894,7 +2894,6 @@ dependencies = [
  "polars-plan",
  "polars-row",
  "polars-utils",
- "proptest",
  "rayon",
  "smartstring",
  "tokio",

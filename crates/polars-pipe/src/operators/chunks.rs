@@ -121,53 +121,58 @@ impl Default for SemicontiguousVstacker {
 
 #[cfg(test)]
 mod test {
-    use proptest::prelude::*;
-
     use super::*;
 
-    proptest! {
-        /// DataFrames get merged into chunks that are bigger than 4MB when
-        /// possible.
-        #[test]
-        #[cfg_attr(miri, ignore)] // miri and proptest do not work well
-        fn semicontiguous_vstacker_merges(df_lengths in prop::collection::vec(1..40usize, 1..50)) {
-            // Convert the lengths into a series of DataFrames:
-            let mut vstacker = SemicontiguousVstacker::new(4096);
-            let dfs : Vec<DataFrame> = df_lengths.iter().enumerate().map(|(i, length)| {
-                let series = Series::new("val", vec![i as u64; *length]);
-                DataFrame::new(vec![series]).unwrap()
-            }).collect();
+    /// DataFrames get merged into chunks that are bigger than the specified
+    /// size when possible.
+    #[test]
+    fn semicontiguous_vstacker_merges() {
+        let test = semicontiguous_vstacker_merges_impl;
+        test(vec![10]);
+        test(vec![10, 10, 10, 10, 10, 10, 10]);
+        test(vec![10, 40, 10, 10, 10, 10]);
+        test(vec![40, 10, 10, 40, 10, 10, 40]);
+        test(vec![50, 50, 50]);
+    }
 
-            // Combine the DataFrames using a SemicontiguousVstacker:
-            let mut results = vec![];
-            for (i, df) in dfs.iter().enumerate() {
-                for result_df in vstacker.add(df.clone()) {
-                    results.push((i, result_df));
-                }
-            }
-            if let Some(result_df) = vstacker.finish() {
-                results.push((df_lengths.len() - 1, result_df));
-            }
+    /// Eventually would be nice to drive this with proptest.
+    fn semicontiguous_vstacker_merges_impl(df_lengths: Vec<usize>) {
+        // Convert the lengths into a series of DataFrames:
+        let mut vstacker = SemicontiguousVstacker::new(4096);
+        let dfs : Vec<DataFrame> = df_lengths.iter().enumerate().map(|(i, length)| {
+            let series = Series::new("val", vec![i as u64; *length]);
+            DataFrame::new(vec![series]).unwrap()
+        }).collect();
 
-            // Make sure the lengths are as sufficiently large, and the chunks
-            // were merged, the whole point of the exercise:
-            for (original_idx, result_df) in &results {
-                if result_df.height() < 40 {
-                    // This means either this was the last df, or the next one
-                    // was big enough we decided not to aggregate.
-                    if *original_idx < results.len() - 1 {
-                        assert!(dfs[original_idx + 1].height() > 10);
-                    }
-                }
-                // Make sure all result DataFrames only have a single chunk.
-                assert_eq!(result_df.get_columns()[0].chunk_lengths().len(), 1);
+        // Combine the DataFrames using a SemicontiguousVstacker:
+        let mut results = vec![];
+        for (i, df) in dfs.iter().enumerate() {
+            for result_df in vstacker.add(df.clone()) {
+                results.push((i, result_df));
             }
-
-            // Make sure the data was preserved:
-            assert_eq!(
-                accumulate_dataframes_vertical_unchecked(dfs.into_iter()),
-                accumulate_dataframes_vertical_unchecked(results.into_iter().map(|(_, df)| df)),
-            );
         }
+        if let Some(result_df) = vstacker.finish() {
+            results.push((df_lengths.len() - 1, result_df));
+        }
+
+        // Make sure the lengths are as sufficiently large, and the chunks
+        // were merged, the whole point of the exercise:
+        for (original_idx, result_df) in &results {
+            if result_df.height() < 40 {
+                // This means either this was the last df, or the next one
+                // was big enough we decided not to aggregate.
+                if *original_idx < results.len() - 1 {
+                    assert!(dfs[original_idx + 1].height() > 10);
+                }
+            }
+            // Make sure all result DataFrames only have a single chunk.
+            assert_eq!(result_df.get_columns()[0].chunk_lengths().len(), 1);
+        }
+
+        // Make sure the data was preserved:
+        assert_eq!(
+            accumulate_dataframes_vertical_unchecked(dfs.into_iter()),
+            accumulate_dataframes_vertical_unchecked(results.into_iter().map(|(_, df)| df)),
+        );
     }
 }
