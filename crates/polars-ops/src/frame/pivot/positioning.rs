@@ -327,6 +327,51 @@ where
     (row_locations, idx as usize, row_index)
 }
 
+fn compute_row_index_struct(
+    index: &[String],
+    index_agg: &Series,
+    index_agg_physical: &BinaryOffsetChunked,
+    count: usize,
+) -> (Vec<IdxSize>, usize, Option<Vec<Series>>) {
+    let mut row_to_idx =
+        PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+    let mut idx = 0 as IdxSize;
+
+    let mut row_locations = Vec::with_capacity(index_agg_physical.len());
+    let mut unique_indices = Vec::with_capacity(index_agg_physical.len());
+    let mut row_number: IdxSize = 0;
+    for arr in index_agg_physical.downcast_iter() {
+        for opt_v in arr.iter() {
+            let idx = *row_to_idx.entry(opt_v).or_insert_with(|| {
+                // SAFETY: we pre-allocated
+                unsafe { unique_indices.push_unchecked(row_number) };
+                let old_idx = idx;
+                idx += 1;
+                old_idx
+            });
+            row_number += 1;
+
+            // SAFETY:
+            // we pre-allocated
+            unsafe {
+                row_locations.push_unchecked(idx);
+            }
+        }
+    }
+    let row_index = match count {
+        0 => {
+            // SAFETY: `unique_indices` is filled with elements between
+            // 0 and `index_agg.len() - 1`.
+            let mut s = unsafe { index_agg.take_slice_unchecked(&unique_indices) };
+            s.rename(&index[0]);
+            Some(vec![s])
+        },
+        _ => None,
+    };
+
+    (row_locations, idx as usize, row_index)
+}
+
 // TODO! Also create a specialized version for numerics.
 pub(super) fn compute_row_idx(
     pivot_df: &DataFrame,
@@ -352,6 +397,11 @@ pub(super) fn compute_row_idx(
             Boolean => {
                 let ca = index_agg_physical.bool().unwrap();
                 compute_row_index(index, ca, count, index_s.dtype())
+            },
+            Struct(_) => {
+                let ca = index_agg_physical.struct_().unwrap();
+                let ca = ca.rows_encode()?;
+                compute_row_index_struct(index, &index_agg, &ca, count)
             },
             String => {
                 let ca = index_agg_physical.str().unwrap();
