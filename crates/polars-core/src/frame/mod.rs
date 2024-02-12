@@ -403,8 +403,9 @@ impl DataFrame {
     /// It is advised to use [DataFrame::new](DataFrame::new) in favor of this method.
     ///
     /// # Panic
+    ///
     /// It is the callers responsibility to uphold the contract of all `Series`
-    /// having an equal length, if not this may panic down the line.
+    /// having an equal length and a unique name, if not this may panic down the line.
     pub const fn new_no_checks(columns: Vec<Series>) -> DataFrame {
         DataFrame { columns }
     }
