@@ -411,6 +411,26 @@ impl DataFrame {
         DataFrame { columns }
     }
 
+    /// Create a new `DataFrame` but does not check the length of the `Series`,
+    /// only check for duplicates.
+    ///
+    /// It is advised to use [Series::new](Series::new) in favor of this method.
+    ///
+    /// # Panic
+    /// It is the callers responsibility to uphold the contract of all `Series`
+    /// having an equal length, if not this may panic down the line.
+    pub fn new_no_length_checks(columns: Vec<Series>) -> PolarsResult<DataFrame> {
+        let mut names = PlHashSet::with_capacity(columns.len());
+        for column in &columns {
+            let name = column.name();
+            if !names.insert(name) {
+                // If insertion fails, it means the element is already in the set (duplicate)
+                polars_bail!(duplicate = name)
+            }
+        }
+        Ok(DataFrame { columns })
+    }
+
     /// Aggregate all chunks to contiguous memory.
     #[must_use]
     pub fn agg_chunks(&self) -> Self {
