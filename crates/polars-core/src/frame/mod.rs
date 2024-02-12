@@ -414,10 +414,11 @@ impl DataFrame {
     ///
     /// It is advised to use [DataFrame::new](DataFrame::new) in favor of this method.
     ///
-    /// # Panic
+    /// # Safety
+    ///
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length, if not this may panic down the line.
-    pub fn new_no_length_checks(columns: Vec<Series>) -> PolarsResult<DataFrame> {
+    pub unsafe fn new_no_length_checks(columns: Vec<Series>) -> PolarsResult<DataFrame> {
         let mut names = PlHashSet::with_capacity(columns.len());
         for column in &columns {
             let name = column.name();

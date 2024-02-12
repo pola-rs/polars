@@ -341,5 +341,5 @@ fn pivot_impl_single_column(
         Ok(())
     });
     out?;
-    DataFrame::new_no_length_checks(final_cols)
+    unsafe { DataFrame::new_no_length_checks(final_cols) }
 }
