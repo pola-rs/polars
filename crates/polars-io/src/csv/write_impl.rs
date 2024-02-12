@@ -402,7 +402,7 @@ pub(crate) fn write<W: Write>(
             df.as_single_chunk();
             let cols = df.get_columns();
 
-            // Safety:
+            // SAFETY:
             // the bck thinks the lifetime is bounded to write_buffer_pool, but at the time we return
             // the vectors the buffer pool, the series have already been removed from the buffers
             // in other words, the lifetime does not leave this scope

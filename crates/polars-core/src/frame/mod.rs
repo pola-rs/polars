@@ -201,7 +201,7 @@ impl DataFrame {
     /// Reserve additional slots into the chunks of the series.
     pub(crate) fn reserve_chunks(&mut self, additional: usize) {
         for s in &mut self.columns {
-            // Safety
+            // SAFETY
             // do not modify the data, simply resize.
             unsafe { s.chunks_mut().reserve(additional) }
         }
@@ -231,7 +231,7 @@ impl DataFrame {
         };
 
         let series_cols = if S::is_series() {
-            // Safety:
+            // SAFETY:
             // we are guarded by the type system here.
             #[allow(clippy::transmute_undefined_repr)]
             let series_cols = unsafe { std::mem::transmute::<Vec<S>, Vec<Series>>(columns) };
@@ -1262,7 +1262,7 @@ impl DataFrame {
             },
             None => return None,
         }
-        // safety: we just checked bounds
+        // SAFETY: we just checked bounds
         unsafe { Some(self.columns.iter().map(|s| s.get_unchecked(idx)).collect()) }
     }
 
@@ -1868,7 +1868,7 @@ impl DataFrame {
             take = take.slice(offset, len);
         }
 
-        // Safety:
+        // SAFETY:
         // the created indices are in bounds
         let mut df = unsafe { df.take_unchecked_impl(&take, parallel) };
         set_sorted(&mut df);

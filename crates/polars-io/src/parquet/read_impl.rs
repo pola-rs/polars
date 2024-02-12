@@ -445,7 +445,7 @@ pub struct FetchRowGroupsFromMmapReader(ReaderBytes<'static>);
 
 impl FetchRowGroupsFromMmapReader {
     pub fn new(mut reader: Box<dyn MmapBytesReader>) -> PolarsResult<Self> {
-        // safety we will keep ownership on the struct and reference the bytes on the heap.
+        // SAFETY we will keep ownership on the struct and reference the bytes on the heap.
         // this should not work with passed bytes so we check if it is a file
         assert!(reader.to_file().is_some());
         let reader_ptr = unsafe {

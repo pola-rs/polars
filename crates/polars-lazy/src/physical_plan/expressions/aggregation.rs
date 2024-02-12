@@ -64,7 +64,7 @@ impl PhysicalExpr for AggregationExpr {
             }
         }
 
-        // Safety:
+        // SAFETY:
         // groups must always be in bounds.
         let out = unsafe {
             match self.agg_type {
@@ -335,7 +335,7 @@ impl PartitionedAggregation for AggregationExpr {
         let expr = self.input.as_partitioned_aggregator().unwrap();
         let series = expr.evaluate_partitioned(df, groups, state)?;
 
-        // Safety:
+        // SAFETY:
         // groups are in bounds
         unsafe {
             match self.agg_type {
@@ -476,7 +476,7 @@ impl PartitionedAggregation for AggregationExpr {
                     GroupsProxy::Idx(groups) => {
                         for (_, idx) in groups {
                             let ca = unsafe {
-                                // Safety
+                                // SAFETY
                                 // The indexes of the group_by operation are never out of bounds
                                 ca.take_unchecked(idx)
                             };
@@ -586,7 +586,7 @@ impl PhysicalExpr for AggQuantileExpr {
 
         let quantile = self.get_quantile(df, state)?;
 
-        // safety:
+        // SAFETY:
         // groups are in bounds
         let mut agg = unsafe {
             ac.flat_naive()

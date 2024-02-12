@@ -303,7 +303,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             series.dtype(),
             self.dtype(),
         );
-        // Safety
+        // SAFETY
         // dtype will be correct.
         Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
@@ -581,7 +581,7 @@ where
     /// Contiguous mutable slice
     pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            // Safety, we will not swap the PrimitiveArray.
+            // SAFETY, we will not swap the PrimitiveArray.
             let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
             arr.get_mut_values()
         } else {

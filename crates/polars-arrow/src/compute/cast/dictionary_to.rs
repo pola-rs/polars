@@ -15,7 +15,7 @@ macro_rules! key_cast {
         if cast_keys.null_count() > $keys.null_count() {
             polars_bail!(ComputeError: "overflow")
         }
-        // Safety: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
+        // SAFETY: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
         unsafe {
              DictionaryArray::try_new_unchecked($to_datatype, cast_keys, $values.clone())
         }
@@ -92,7 +92,7 @@ where
             Box::new(values.data_type().clone()),
             is_ordered,
         );
-        // Safety: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
+        // SAFETY: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
         unsafe { DictionaryArray::try_new_unchecked(data_type, casted_keys, values.clone()) }
     }
 }
@@ -140,7 +140,7 @@ pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
             // create the appropriate array type
             let to_key_type = (*to_keys_type).into();
 
-            // Safety:
+            // SAFETY:
             // we return an error on overflow so the integers remain within bounds
             match_integer_type!(to_keys_type, |$T| {
                 key_cast!(keys, values, array, &to_key_type, $T, to_type.clone())

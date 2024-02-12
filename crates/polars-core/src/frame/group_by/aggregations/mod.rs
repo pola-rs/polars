@@ -78,7 +78,7 @@ where
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
-    // Safety:
+    // SAFETY:
     // we are in bounds
     let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params) };
 
@@ -90,7 +90,7 @@ where
         .map(|(idx, (start, len))| {
             let end = start + len;
 
-            // safety:
+            // SAFETY:
             // we are in bounds
 
             let agg = if start == end {
@@ -102,7 +102,7 @@ where
             match agg {
                 Some(val) => val,
                 None => {
-                    // safety: we are in bounds
+                    // SAFETY: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
                     T::default()
                 },

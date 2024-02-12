@@ -65,7 +65,7 @@ impl GlobalRevMapMerger {
 
         for (cat, idx) in map.iter() {
             state.map.entry(*cat).or_insert_with(|| {
-                // Safety
+                // SAFETY
                 // within bounds
                 let str_val = unsafe { slots.value_unchecked(*idx as usize) };
                 let new_idx = state.slots.len() as u32;
@@ -177,7 +177,7 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
         },
         _ => polars_bail!(string_cache_mismatch),
     };
-    // Safety: physical and rev map are correctly constructed above
+    // SAFETY: physical and rev map are correctly constructed above
     unsafe {
         Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
             new_physical,
@@ -204,7 +204,7 @@ pub fn make_categoricals_compatible(
 
     // Alter rev map of left
     let mut new_ca_left = ca_left.clone();
-    // Safety: We just made both rev maps compatible only appended categories
+    // SAFETY: We just made both rev maps compatible only appended categories
     unsafe {
         new_ca_left.set_rev_map(
             new_ca_right.get_rev_map().clone(),

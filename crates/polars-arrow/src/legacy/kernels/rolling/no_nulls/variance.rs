@@ -39,7 +39,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
             // remove elements that should leave the window
             let mut recompute_sum = false;
             for idx in self.last_start..start {
-                // safety
+                // SAFETY
                 // we are in bounds
                 let leaving_value = self.slice.get_unchecked(idx);
 

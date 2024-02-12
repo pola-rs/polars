@@ -200,7 +200,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                     )
                 })?;
 
-                // safety:
+                // SAFETY:
                 // we are repr: u8 and check last value that we are in bounds
                 let field = unsafe {
                     if field <= LAST {
@@ -831,13 +831,13 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => {
                 let av = StructOwned(payload);
-                // safety: owned is already static
+                // SAFETY: owned is already static
                 unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
             },
             #[cfg(feature = "object")]
             ObjectOwned(payload) => {
                 let av = ObjectOwned(payload);
-                // safety: owned is already static
+                // SAFETY: owned is already static
                 unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
             },
             #[cfg(feature = "dtype-decimal")]

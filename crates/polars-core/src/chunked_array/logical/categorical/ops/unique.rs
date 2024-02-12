@@ -13,7 +13,7 @@ impl CategoricalChunked {
                     UInt32Chunked::from_iter_values(self.physical().name(), map.keys().copied())
                 },
             };
-            // safety:
+            // SAFETY:
             // we only removed some indexes so we are still in bounds
             unsafe {
                 let mut out = CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -27,7 +27,7 @@ impl CategoricalChunked {
             }
         } else {
             let ca = self.physical().unique()?;
-            // safety:
+            // SAFETY:
             // we only removed some indexes so we are still in bounds
             unsafe {
                 Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(

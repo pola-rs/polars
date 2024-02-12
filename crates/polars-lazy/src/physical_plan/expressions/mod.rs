@@ -343,7 +343,7 @@ impl<'a> AggregationContext<'a> {
             AggState::NotAggregated(s) => {
                 // We should not aggregate literals!!
                 if self.state.safe_to_agg(&self.groups) {
-                    // safety:
+                    // SAFETY:
                     // groups are in bounds
                     let agg = unsafe { s.agg_list(&self.groups) };
                     self.update_groups = UpdateGroups::WithGroupsLen;
@@ -445,7 +445,7 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                // safety:
+                // SAFETY:
                 // groups are in bounds
                 let out = unsafe { s.agg_list(&self.groups) };
                 self.state = AggState::AggregatedList(out.clone());

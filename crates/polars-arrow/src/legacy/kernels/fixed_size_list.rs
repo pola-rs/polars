@@ -39,7 +39,7 @@ fn sub_fixed_size_list_get_indexes(width: usize, index: &PrimitiveArray<i64>) ->
 pub fn sub_fixed_size_list_get_literal(arr: &FixedSizeListArray, index: i64) -> ArrayRef {
     let take_by = sub_fixed_size_list_get_indexes_literal(arr.size(), arr.len(), index);
     let values = arr.values();
-    // Safety:
+    // SAFETY:
     // the indices we generate are in bounds
     unsafe { take_unchecked(&**values, &take_by) }
 }
@@ -47,7 +47,7 @@ pub fn sub_fixed_size_list_get_literal(arr: &FixedSizeListArray, index: i64) -> 
 pub fn sub_fixed_size_list_get(arr: &FixedSizeListArray, index: &PrimitiveArray<i64>) -> ArrayRef {
     let take_by = sub_fixed_size_list_get_indexes(arr.size(), index);
     let values = arr.values();
-    // Safety:
+    // SAFETY:
     // the indices we generate are in bounds
     unsafe { take_unchecked(&**values, &take_by) }
 }

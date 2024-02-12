@@ -178,7 +178,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         }
         let main_thread = POOL.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
-        // safety:
+        // SAFETY:
         // groups are in bounds
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
     }

@@ -81,12 +81,12 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         );
         for index in 0..values.len() {
             let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
-            // safety: we only iterate within bounds
+            // SAFETY: we only iterate within bounds
             let value = unsafe { values.value_unchecked_at(index) };
             let hash = ahash_hash(value.borrow());
 
             let entry = map.raw_entry_mut().from_hash(hash, |item| {
-                // safety: invariant of the struct, it's always in bounds since we maintain it
+                // SAFETY: invariant of the struct, it's always in bounds since we maintain it
                 let stored_value = unsafe { values.value_unchecked_at(item.key.as_usize()) };
                 stored_value.borrow() == value.borrow()
             });
@@ -135,9 +135,9 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
     {
         let hash = ahash_hash(value.as_indexed());
         let entry = self.map.raw_entry_mut().from_hash(hash, |item| {
-            // safety: we've already checked (the inverse) when we pushed it, so it should be ok?
+            // SAFETY: we've already checked (the inverse) when we pushed it, so it should be ok?
             let index = unsafe { item.key.as_usize() };
-            // safety: invariant of the struct, it's always in bounds since we maintain it
+            // SAFETY: invariant of the struct, it's always in bounds since we maintain it
             let stored_value = unsafe { self.values.value_unchecked_at(index) };
             stored_value.borrow() == value.as_indexed()
         });

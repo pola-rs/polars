@@ -74,7 +74,7 @@ pub fn populate_multiple_key_hashmap<V, H, F, G>(
             // before we incur a cache miss
             idx_hash.hash == original_h && {
                 let key_idx = idx_hash.idx;
-                // Safety:
+                // SAFETY:
                 // indices in a group_by operation are always in bounds.
                 unsafe { compare_df_rows(keys, key_idx as usize, idx as usize) }
             }

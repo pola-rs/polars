@@ -89,7 +89,7 @@ impl ListChunked {
             arr.validity().cloned(),
         );
 
-        // safety: arr's inner dtype is derived from out dtype.
+        // SAFETY: arr's inner dtype is derived from out dtype.
         Ok(unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
                 ca.name(),

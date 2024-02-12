@@ -120,7 +120,7 @@ impl StrpTimeState {
             debug_assert!(offset < val.len());
             let b = *val.get_unchecked(offset);
             if *fmt_b == ESCAPE {
-                // Safety: we must ensure we provide valid patterns
+                // SAFETY: we must ensure we provide valid patterns
                 let next = fmt_iter.next();
                 debug_assert!(next.is_some());
                 match next.unwrap_unchecked() {

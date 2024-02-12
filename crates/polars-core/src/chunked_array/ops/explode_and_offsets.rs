@@ -34,11 +34,11 @@ impl ChunkExplode for ListChunked {
             if !offsets.is_empty() {
                 let start = offsets[0] as usize;
                 let len = offsets[offsets.len() - 1] as usize - start;
-                // safety:
+                // SAFETY:
                 // we are in bounds
                 values = unsafe { values.sliced_unchecked(start, len) };
             }
-            // safety: inner_dtype should be correct
+            // SAFETY: inner_dtype should be correct
             unsafe {
                 Series::from_chunks_and_dtype_unchecked(
                     self.name(),
@@ -64,7 +64,7 @@ impl ChunkExplode for ListChunked {
                 }
             }
 
-            // safety: inner_dtype should be correct
+            // SAFETY: inner_dtype should be correct
             let values = unsafe {
                 Series::from_chunks_and_dtype_unchecked(
                     self.name(),
@@ -96,7 +96,7 @@ impl ChunkExplode for ArrayChunked {
                     i * width
                 })
                 .collect::<Vec<_>>();
-            // safety: monotonically increasing
+            // SAFETY: monotonically increasing
             let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
 
             return Ok(offsets);
@@ -114,14 +114,14 @@ impl ChunkExplode for ArrayChunked {
                 if i == 0 {
                     return current_offset;
                 }
-                // Safety: we are within bounds
+                // SAFETY: we are within bounds
                 if unsafe { validity.get_bit_unchecked(i - 1) } {
                     current_offset += width as i64
                 }
                 current_offset
             })
             .collect::<Vec<_>>();
-        // safety: monotonically increasing
+        // SAFETY: monotonically increasing
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
         Ok(offsets)
     }
@@ -141,7 +141,7 @@ impl ChunkExplode for ArrayChunked {
                     i * width
                 })
                 .collect::<Vec<_>>();
-            // safety: monotonically increasing
+            // SAFETY: monotonically increasing
             let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
             return Ok((s, offsets));
         }
@@ -158,7 +158,7 @@ impl ChunkExplode for ArrayChunked {
         let mut current_offset = 0i64;
         offsets.push(current_offset);
         (0..arr.len()).for_each(|i| {
-            // Safety: we are within bounds
+            // SAFETY: we are within bounds
             if unsafe { validity.get_bit_unchecked(i) } {
                 let start = (i * width) as IdxSize;
                 let end = start + width as IdxSize;
@@ -170,13 +170,13 @@ impl ChunkExplode for ArrayChunked {
             offsets.push(current_offset);
         });
 
-        // Safety: the indices we generate are in bounds
+        // SAFETY: the indices we generate are in bounds
         let chunk = unsafe { take_unchecked(&**values, &indices.into()) };
-        // safety: monotonically increasing
+        // SAFETY: monotonically increasing
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
 
         Ok((
-            // Safety: inner_dtype should be correct
+            // SAFETY: inner_dtype should be correct
             unsafe {
                 Series::from_chunks_and_dtype_unchecked(ca.name(), vec![chunk], &ca.inner_dtype())
             },
@@ -229,7 +229,7 @@ impl ChunkExplode for StringChunked {
             let mut bitmap = MutableBitmap::with_capacity(capacity);
             let values = values.as_slice();
             for (&offset, valid) in old_offsets[1..].iter().zip(validity) {
-                // safety:
+                // SAFETY:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };
 
@@ -240,7 +240,7 @@ impl ChunkExplode for StringChunked {
 
                     // take the string value and find the char offsets
                     // create a new offset value for each char boundary
-                    // safety:
+                    // SAFETY:
                     // we know we have string data.
                     let str_val = unsafe { std::str::from_utf8_unchecked(val) };
 
@@ -279,7 +279,7 @@ impl ChunkExplode for StringChunked {
 
             let values = values.as_slice();
             for &offset in &old_offsets[1..] {
-                // safety:
+                // SAFETY:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };
                 debug_assert!(old_offset as usize <= values.len());
@@ -288,7 +288,7 @@ impl ChunkExplode for StringChunked {
 
                 // take the string value and find the char offsets
                 // create a new offset value for each char boundary
-                // safety:
+                // SAFETY:
                 // we know we have string data.
                 let str_val = unsafe { std::str::from_utf8_unchecked(val) };
 

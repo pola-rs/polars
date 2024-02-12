@@ -17,7 +17,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups();
                 let s = self.series().rechunk();
                 let name = if keep_names { s.name() } else { "" };
-                // safety: dtype is correct
+                // SAFETY: dtype is correct
                 unsafe {
                     Box::new(LitIter::new(
                         s.array_ref(0).clone(),
@@ -31,7 +31,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups();
                 let s = self.series();
                 let name = if keep_names { s.name() } else { "" };
-                // safety: dtype is correct
+                // SAFETY: dtype is correct
                 unsafe {
                     Box::new(FlatIter::new(
                         s.array_ref(0).clone(),
@@ -83,7 +83,7 @@ impl<'a> LitIter<'a> {
             offset: 0,
             len,
             series_container,
-            // Safety: we pinned the series so the location is still valid
+            // SAFETY: we pinned the series so the location is still valid
             item: UnstableSeries::new(unsafe { &mut *ref_s }),
         }
     }
@@ -131,7 +131,7 @@ impl<'a> FlatIter<'a> {
             offset: 0,
             len,
             series_container,
-            // Safety: we pinned the series so the location is still valid
+            // SAFETY: we pinned the series so the location is still valid
             item: UnstableSeries::new(unsafe { &mut *ref_s }),
         }
     }

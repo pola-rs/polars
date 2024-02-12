@@ -214,7 +214,7 @@ where
                         for arr in self.downcast_iter() {
                             if arr.null_count() > 0 {
                                 for v in arr.into_iter().flatten() {
-                                    // safety
+                                    // SAFETY
                                     // all these types can be coerced to f64
                                     unsafe {
                                         let val = v.to_f64().unwrap_unchecked();
@@ -223,7 +223,7 @@ where
                                 }
                             } else {
                                 for v in arr.values().as_slice() {
-                                    // safety
+                                    // SAFETY
                                     // all these types can be coerced to f64
                                     unsafe {
                                         let val = v.to_f64().unwrap_unchecked();

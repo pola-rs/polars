@@ -23,7 +23,7 @@ pub struct MutableUtf8ValuesArray<O: Offset> {
 
 impl<O: Offset> From<MutableUtf8ValuesArray<O>> for Utf8Array<O> {
     fn from(other: MutableUtf8ValuesArray<O>) -> Self {
-        // Safety:
+        // SAFETY:
         // `MutableUtf8ValuesArray` has the same invariants as `Utf8Array` and thus
         // `Utf8Array` can be safely created from `MutableUtf8ValuesArray` without checks.
         unsafe {
@@ -39,7 +39,7 @@ impl<O: Offset> From<MutableUtf8ValuesArray<O>> for Utf8Array<O> {
 
 impl<O: Offset> From<MutableUtf8ValuesArray<O>> for MutableUtf8Array<O> {
     fn from(other: MutableUtf8ValuesArray<O>) -> Self {
-        // Safety:
+        // SAFETY:
         // `MutableUtf8ValuesArray` has the same invariants as `MutableUtf8Array`
         unsafe {
             MutableUtf8Array::<O>::new_unchecked(other.data_type, other.offsets, other.values, None)
@@ -187,7 +187,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
         self.offsets.pop()?;
         let start = self.offsets.last().to_usize();
         let value = self.values.split_off(start);
-        // Safety: utf8 is validated on initialization
+        // SAFETY: utf8 is validated on initialization
         Some(unsafe { String::from_utf8_unchecked(value) })
     }
 

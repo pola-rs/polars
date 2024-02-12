@@ -258,7 +258,7 @@ impl<O: Offset> BinaryArray<O> {
         use Either::*;
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                // Safety: invariants are preserved
+                // SAFETY: invariants are preserved
                 Left(bitmap) => Left(BinaryArray::new(
                     self.data_type,
                     self.offsets,

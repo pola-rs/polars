@@ -287,7 +287,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
 
                 let (df_left, df_right) = POOL.join(
-                    // safety: join indices are known to be in bounds
+                    // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df._create_left_df_from_slice(join_idx_left, false, !swap) },
                     || unsafe {
                         // remove join columns
@@ -362,7 +362,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 } else {
                     _left_semi_multiple_keys(&mut left, &mut right, args.join_nulls)
                 };
-                // Safety:
+                // SAFETY:
                 // indices are in bounds
                 Ok(unsafe { left_df._finish_anti_semi_join(&idx, args.slice) })
             },
@@ -497,7 +497,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         }
 
         let (df_left, df_right) = POOL.join(
-            // safety: join indices are known to be in bounds
+            // SAFETY: join indices are known to be in bounds
             || unsafe { left_df._create_left_df_from_slice(join_tuples_left, false, sorted) },
             || unsafe {
                 other

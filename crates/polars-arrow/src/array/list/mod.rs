@@ -144,7 +144,7 @@ impl<O: Offset> ListArray<O> {
     #[inline]
     pub fn value(&self, i: usize) -> Box<dyn Array> {
         assert!(i < self.len());
-        // Safety: invariant of this function
+        // SAFETY: invariant of this function
         unsafe { self.value_unchecked(i) }
     }
 
@@ -153,11 +153,11 @@ impl<O: Offset> ListArray<O> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> Box<dyn Array> {
-        // safety: the invariant of the function
+        // SAFETY: the invariant of the function
         let (start, end) = self.offsets.start_end_unchecked(i);
         let length = end - start;
 
-        // safety: the invariant of the struct
+        // SAFETY: the invariant of the struct
         self.values.sliced_unchecked(start, length)
     }
 

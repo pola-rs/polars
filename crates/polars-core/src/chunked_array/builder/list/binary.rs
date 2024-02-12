@@ -27,7 +27,7 @@ impl ListStringChunkedBuilder {
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // Safety
+        // SAFETY
         // trusted len, trust the type system
         self.builder.mut_values().extend_trusted_len(iter);
         self.builder.try_push_valid().unwrap();
@@ -116,7 +116,7 @@ impl ListBinaryChunkedBuilder {
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // Safety
+        // SAFETY
         // trusted len, trust the type system
         self.builder.mut_values().extend_trusted_len(iter);
         self.builder.try_push_valid().unwrap();

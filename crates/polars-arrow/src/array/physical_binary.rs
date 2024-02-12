@@ -219,7 +219,7 @@ pub(crate) fn extend_validity(
     if let Some(other) = other {
         if let Some(validity) = validity {
             let slice = other.as_slice();
-            // safety: invariant offset + length <= slice.len()
+            // SAFETY: invariant offset + length <= slice.len()
             unsafe { validity.extend_from_slice_unchecked(slice, 0, other.len()) }
         } else {
             let mut new_validity = MutableBitmap::from_len_set(length);

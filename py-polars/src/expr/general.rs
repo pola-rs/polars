@@ -685,7 +685,7 @@ impl PyExpr {
         self.inner.clone().exclude(columns).into()
     }
     fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        // Safety:
+        // SAFETY:
         // Wrap is transparent.
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()

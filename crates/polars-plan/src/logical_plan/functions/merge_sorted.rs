@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_ops::prelude::*;
 
 pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFrame> {
-    // Safety:
+    // SAFETY:
     // the dtype is known
     let (left_cols, right_cols) = unsafe {
         (

@@ -81,7 +81,7 @@ fn finalize_dataframe(
             assert_eq!(encoded.chunks().len(), 1);
             let arr = encoded.downcast_iter().next().unwrap();
 
-            // safety
+            // SAFETY
             // temporary extend lifetime
             // this is safe as the lifetime in rows stays bound to this scope
             let arrays = {
@@ -230,7 +230,7 @@ impl SortSinkMultiple {
         };
 
         debug_assert_eq!(column.chunks().len(), 1);
-        // Safety: length is correct
+        // SAFETY: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())
     }

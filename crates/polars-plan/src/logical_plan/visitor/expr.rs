@@ -55,7 +55,7 @@ impl AexprNode {
     where
         F: FnOnce(AexprNode) -> T,
     {
-        // safety: we drop this context before arena is out of scope
+        // SAFETY: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena)) }
     }
 
@@ -64,7 +64,7 @@ impl AexprNode {
     where
         F: FnOnce(AexprNode, &mut Arena<AExpr>) -> T,
     {
-        // safety: we drop this context before arena is out of scope
+        // SAFETY: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena), arena) }
     }
 
@@ -186,7 +186,7 @@ impl AexprNode {
             loop {
                 match (scratch1.pop(), scratch2.pop()) {
                     (Some(l), Some(r)) => {
-                        // safety: we can pass a *mut pointer
+                        // SAFETY: we can pass a *mut pointer
                         // the equality operation will not access mutable
                         let l = unsafe { AexprNode::from_raw(l, self.arena) };
                         let r = unsafe { AexprNode::from_raw(r, self.arena) };

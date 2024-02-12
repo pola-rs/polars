@@ -26,7 +26,7 @@ impl CategoricalChunked {
                 .map(|(idx, _v)| idx)
                 .collect_ca_trusted(self.name());
 
-            // safety:
+            // SAFETY:
             // we only reordered the indexes so we are still in bounds
             return unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -38,7 +38,7 @@ impl CategoricalChunked {
             };
         }
         let cats = self.physical().sort_with(options);
-        // safety:
+        // SAFETY:
         // we only reordered the indexes so we are still in bounds
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
