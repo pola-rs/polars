@@ -400,7 +400,7 @@ impl DataFrame {
 
     /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
     ///
-    /// It is advised to use [DataFrame::new](DataFrame::new) in favor of this method.
+    /// It is advised to use [DataFrame::new] in favor of this method.
     ///
     /// # Panic
     ///
@@ -413,7 +413,7 @@ impl DataFrame {
     /// Create a new `DataFrame` but does not check the length of the `Series`,
     /// only check for duplicates.
     ///
-    /// It is advised to use [DataFrame::new](DataFrame::new) in favor of this method.
+    /// It is advised to use [DataFrame::new] in favor of this method.
     ///
     /// # Safety
     ///
