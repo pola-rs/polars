@@ -242,9 +242,16 @@ def test_pivot_struct_13120() -> None:
 
 
 def test_pivot_index_struct_14101() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [{"a": 1}, {"a": 1}], "c": ["x", "y"]})
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 1],
+            "b": [{"a": 1}, {"a": 1}, {"a": 2}],
+            "c": ["x", "y", "y"],
+            "d": [1, 1, 3],
+        }
+    )
     result = df.pivot(index="b", values="a", columns="c")
-    expected = pl.DataFrame({"b": [{"a": 1}], "x": [1], "y": [2]})
+    expected = pl.DataFrame({"b": [{"a": 1}, {"a": 2}], "x": [1, None], "y": [2, 1]})
     assert_frame_equal(result, expected)
 
 
