@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use crate::array::PrimitiveArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
@@ -56,6 +58,15 @@ pub trait CustomIterTools: Iterator {
             }
         }
         Some(start)
+    }
+
+    fn contains<Q>(&mut self, query: &Q) -> bool
+    where
+        Self: Sized,
+        Self::Item: Borrow<Q>,
+        Q: PartialEq,
+    {
+        self.any(|x| x.borrow() == query)
     }
 }
 
