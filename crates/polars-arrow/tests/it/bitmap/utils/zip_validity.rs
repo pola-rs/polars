@@ -30,8 +30,8 @@ fn complete() {
 fn slices() {
     let a = Bitmap::from([true, false]);
     let a = Some(a.iter());
-    let offsets = vec![0, 2, 3];
-    let values = vec![1, 2, 3];
+    let offsets = [0, 2, 3];
+    let values = [1, 2, 3];
     let iter = offsets.windows(2).map(|x| {
         let start = x[0];
         let end = x[1];

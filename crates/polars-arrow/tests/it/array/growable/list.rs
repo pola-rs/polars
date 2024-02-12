@@ -35,7 +35,6 @@ fn extension() {
 
     let result: ListArray<i32> = a.into();
     assert_eq!(array_ext.data_type(), result.data_type());
-    dbg!(result);
 }
 
 #[test]

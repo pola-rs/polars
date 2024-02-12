@@ -4,7 +4,7 @@ mod roundtrip;
 mod read;
 mod write;
 
-// The dynamic representation of values in native Rust. This is not exaustive.
+// The dynamic representation of values in native Rust. This is not exhaustive.
 // todo: maybe refactor this into serde/json?
 #[derive(Debug, PartialEq)]
 pub enum Array {
@@ -43,7 +43,7 @@ impl Array {
     }
 }
 
-// The dynamic representation of values in native Rust. This is not exaustive.
+// The dynamic representation of values in native Rust. This is not exhaustive.
 // todo: maybe refactor this into serde/json?
 #[derive(Debug, PartialEq)]
 pub enum Value {

@@ -1,11 +1,11 @@
 use std::borrow::Borrow;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 
 use polars_arrow::array::indexable::{AsIndexed, Indexable};
 use polars_arrow::array::*;
 use polars_error::PolarsResult;
+use polars_utils::aliases::{InitHashMaps, PlHashSet};
 
 #[test]
 fn primitive() -> PolarsResult<()> {
@@ -107,7 +107,7 @@ where
     T: AsIndexed<M> + Default + Clone + Eq + Hash,
 {
     for is_extend in [false, true] {
-        let mut set = HashSet::new();
+        let mut set = PlHashSet::new();
         let mut arr = MutableDictionaryArray::<u8, M>::new();
         macro_rules! push {
             ($v:expr) => {

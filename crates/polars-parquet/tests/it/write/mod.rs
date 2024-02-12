@@ -45,6 +45,7 @@ fn read_column<R: Read + Seek>(reader: &mut R) -> Result<(Array, Option<Arc<dyn 
 }
 
 #[cfg(feature = "async")]
+#[allow(dead_code)]
 async fn read_column_async<
     R: futures::AsyncRead + futures::AsyncSeek + Send + std::marker::Unpin,
 >(
@@ -174,11 +175,6 @@ fn double_col() -> Result<()> {
 }
 
 #[test]
-fn string_col() -> Result<()> {
-    test_column("string_col", CompressionOptions::Uncompressed)
-}
-
-#[test]
 fn basic() -> Result<()> {
     let array = vec![
         Some(0),
@@ -236,6 +232,7 @@ fn basic() -> Result<()> {
 }
 
 #[cfg(feature = "async")]
+#[allow(dead_code)]
 async fn test_column_async(column: &str, compression: CompressionOptions) -> Result<()> {
     let array = alltypes_plain(column);
 

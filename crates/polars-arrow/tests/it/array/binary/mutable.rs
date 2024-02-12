@@ -35,7 +35,7 @@ fn from_iter() {
 
 #[test]
 fn from_trusted_len_iter() {
-    let data = vec![vec![0; 0], vec![1; 1], vec![2; 2]];
+    let data = [vec![0; 0], vec![1; 1], vec![2; 2]];
     let a: MutableBinaryArray<i32> = data.iter().cloned().map(Some).collect();
     assert_eq!(a.values().deref(), &[1u8, 2, 2]);
     assert_eq!(a.offsets().as_slice(), &[0, 0, 1, 3]);

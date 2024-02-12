@@ -43,7 +43,7 @@ fn basic() -> Result<(), Error> {
     // merge their row groups
     let first = metadatas.pop().unwrap();
     let sidecar = metadatas.into_iter().fold(first, |mut acc, metadata| {
-        acc.row_groups.extend(metadata.row_groups.into_iter());
+        acc.row_groups.extend(metadata.row_groups);
         acc
     });
 

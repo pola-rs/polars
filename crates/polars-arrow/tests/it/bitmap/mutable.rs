@@ -370,7 +370,7 @@ fn extend_bitmap() {
 
 // TODO! undo miri ignore once issue is fixed in miri
 // this test was a memory hog and lead to OOM in CI
-// given enough memory it was able to pass succesfully on a local
+// given enough memory it was able to pass successfully on a local
 #[test]
 #[cfg_attr(miri, ignore)]
 fn extend_constant1() {

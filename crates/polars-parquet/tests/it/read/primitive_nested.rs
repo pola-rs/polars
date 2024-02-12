@@ -70,7 +70,7 @@ fn compose_array<
     Ok(Array::List(outer))
 }
 
-fn read_array_impl<T: NativeType, I: Iterator<Item = i64>>(
+fn read_array_impl<I: Iterator<Item = i64>>(
     rep_levels: &[u8],
     def_levels: &[u8],
     values: I,
@@ -125,7 +125,7 @@ fn read_array_impl<T: NativeType, I: Iterator<Item = i64>>(
     }
 }
 
-fn read_array<T: NativeType>(
+fn read_array(
     rep_levels: &[u8],
     def_levels: &[u8],
     values: &[u8],
@@ -134,7 +134,7 @@ fn read_array<T: NativeType>(
     def_level_encoding: (&Encoding, i16),
 ) -> Result<Array, Error> {
     let values = read_buffer::<i64>(values);
-    read_array_impl::<T, _>(
+    read_array_impl::<_>(
         rep_levels,
         def_levels,
         values,
@@ -151,7 +151,7 @@ pub fn page_to_array<T: NativeType>(
     let (rep_levels, def_levels, values) = split_buffer(page)?;
 
     match (&page.encoding(), dict) {
-        (Encoding::Plain, None) => read_array::<T>(
+        (Encoding::Plain, None) => read_array(
             rep_levels,
             def_levels,
             values,
@@ -169,7 +169,7 @@ pub fn page_to_array<T: NativeType>(
     }
 }
 
-fn read_dict_array<T: NativeType>(
+fn read_dict_array(
     rep_levels: &[u8],
     def_levels: &[u8],
     values: &[u8],
@@ -190,7 +190,7 @@ fn read_dict_array<T: NativeType>(
 
     let values = indices.map(|id| dict_values[id as usize]);
 
-    read_array_impl::<T, _>(
+    read_array_impl::<_>(
         rep_levels,
         def_levels,
         values,
@@ -200,7 +200,7 @@ fn read_dict_array<T: NativeType>(
     )
 }
 
-pub fn page_dict_to_array<T: NativeType>(
+pub fn page_dict_to_array(
     page: &DataPage,
     dict: Option<&PrimitivePageDict<i64>>,
 ) -> Result<Array, Error> {
@@ -209,7 +209,7 @@ pub fn page_dict_to_array<T: NativeType>(
     let (rep_levels, def_levels, values) = split_buffer(page)?;
 
     match (page.encoding(), dict) {
-        (Encoding::PlainDictionary, Some(dict)) => read_dict_array::<T>(
+        (Encoding::PlainDictionary, Some(dict)) => read_dict_array(
             rep_levels,
             def_levels,
             values,
@@ -225,7 +225,7 @@ pub fn page_dict_to_array<T: NativeType>(
             ),
         ),
         (_, None) => Err(Error::OutOfSpec(
-            "A dictionary-encoded page MUST be preceeded by a dictionary page".to_string(),
+            "A dictionary-encoded page MUST be preceded by a dictionary page".to_string(),
         )),
         _ => todo!(),
     }
