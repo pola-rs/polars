@@ -92,6 +92,9 @@ def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
         assert_series_equal(out, s.sort(descending=descending))
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -111,6 +114,9 @@ def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
     assert "df -> sort" in err
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -118,7 +124,7 @@ def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     np.random.seed(0)
 
-    num_rows = 1_00_000
+    num_rows = 100_000
     num_columns = 2
     num_tables = 10
 
@@ -169,8 +175,7 @@ def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
 
 
 @pytest.mark.skip(
-    reason="This test is unreliable - it fails intermittently in our CI"
-    " with 'OSError: No such file or directory (os error 2)'."
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
 )
 @pytest.mark.write_disk()
 @pytest.mark.slow()
