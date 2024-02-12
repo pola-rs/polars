@@ -7251,6 +7251,15 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self"],
+        message=(
+            "The order of the parameters of `pivot` will change in the next breaking release."
+            " The order will become `index, columns, values` with `values` as an optional parameter."
+            " Use keyword arguments to silence this warning."
+        ),
+        version="0.20.8",
+    )
     def pivot(
         self,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
@@ -7305,7 +7314,7 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(values="baz", index="foo", columns="bar", aggregate_function="sum")
+        >>> df.pivot(index="foo", columns="bar", values="baz", aggregate_function="sum")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ y   ┆ x   │
@@ -7320,9 +7329,9 @@ class DataFrame:
 
         >>> import polars.selectors as cs
         >>> df.pivot(
-        ...     values=cs.numeric(),
         ...     index=cs.string(),
         ...     columns=cs.string(),
+        ...     values=cs.numeric(),
         ...     aggregate_function="sum",
         ...     sort_columns=True,
         ... ).sort(
@@ -7374,17 +7383,10 @@ class DataFrame:
         >>> values = pl.col("col3")
         >>> unique_column_values = ["x", "y"]
         >>> aggregate_function = lambda col: col.tanh().mean()
-        >>> (
-        ...     df.lazy()
-        ...     .group_by(index)
-        ...     .agg(
-        ...         *[
-        ...             aggregate_function(values.filter(columns == value)).alias(value)
-        ...             for value in unique_column_values
-        ...         ]
-        ...     )
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
+        >>> df.lazy().group_by(index).agg(
+        ...     aggregate_function(values.filter(columns == value)).alias(value)
+        ...     for value in unique_column_values
+        ... ).collect()  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌──────┬──────────┬──────────┐
         │ col1 ┆ x        ┆ y        │
