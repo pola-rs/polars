@@ -195,6 +195,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     }
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of trusted len.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -224,6 +225,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
     /// This differs from `extend_trusted_len_unchecked` which accepts in iterator of optional values.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -320,6 +322,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// Sets position `index` to `value`.
     /// Note that if it is the first time a null appears in this array,
     /// this initializes the validity bitmap (`O(N)`).
+    ///
     /// # Safety
     /// Caller must ensure `index < self.len()`
     pub unsafe fn set_unchecked(&mut self, index: usize, value: Option<T>) {
@@ -448,6 +451,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     }
 
     /// Creates a [`MutablePrimitiveArray`] from an iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. `size_hint().1` correctly reports its length.
@@ -477,6 +481,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     }
 
     /// Creates a [`MutablePrimitiveArray`] from an fallible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -525,6 +530,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     }
 
     /// Creates a new [`MutablePrimitiveArray`] from an iterator over values
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

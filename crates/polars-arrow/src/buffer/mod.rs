@@ -29,6 +29,7 @@ impl<T> Bytes<T> {
     /// Takes ownership of an allocated memory region.
     /// # Panics
     /// This function panics if and only if pointer is not null
+    ///
     /// # Safety
     /// This function is safe if and only if `ptr` is valid for `length`
     /// # Implementation

@@ -75,6 +75,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     }
 
     /// Returns whether slot `i` is null.
+    ///
     /// # Safety
     /// The caller must ensure `i < self.len()`
     #[inline]
@@ -103,6 +104,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Slices the [`Array`].
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize);
@@ -123,6 +125,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// # Implementation
     /// This operation is `O(1)` over `len`, as it amounts to increase two ref counts
     /// and moving the struct to the heap.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`
     #[must_use]
@@ -496,6 +499,7 @@ macro_rules! impl_sliced {
         /// Returns this array sliced.
         /// # Implementation
         /// This function is `O(1)`.
+        ///
         /// # Safety
         /// The caller must ensure that `offset + length <= self.len()`.
         #[inline]
@@ -746,6 +750,7 @@ pub trait TryPush<A> {
 /// A trait describing the ability of a struct to receive new items.
 pub trait PushUnchecked<A> {
     /// Push a new element that holds the invariants of the struct.
+    ///
     /// # Safety
     /// The items must uphold the invariants of the struct
     /// Read the specific implementation of the trait to understand what these are.

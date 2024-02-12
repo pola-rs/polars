@@ -62,6 +62,7 @@ impl NullArray {
     }
 
     /// Returns a slice of the [`NullArray`].
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
     pub unsafe fn slice_unchecked(&mut self, _offset: usize, length: usize) {

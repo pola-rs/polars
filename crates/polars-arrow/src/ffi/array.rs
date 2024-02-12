@@ -93,6 +93,7 @@ struct PrivateData {
 
 impl ArrowArray {
     /// creates a new `ArrowArray` from existing data.
+    ///
     /// # Safety
     /// This method releases `buffers`. Consumers of this struct *must* call `release` before
     /// releasing this struct, or contents in `buffers` leak.
@@ -490,6 +491,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// returns the null bit buffer.
     /// Rust implementation uses a buffer that is not part of the array of buffers.
     /// The C Data interface's null buffer is part of the array of buffers.
+    ///
     /// # Safety
     /// The caller must guarantee that the buffer `index` corresponds to a bitmap.
     /// This function assumes that the bitmap created from FFI is valid; this is impossible to prove.

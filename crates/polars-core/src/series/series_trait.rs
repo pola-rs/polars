@@ -212,6 +212,7 @@ pub trait SeriesTrait:
     fn chunks(&self) -> &Vec<ArrayRef>;
 
     /// Underlying chunks.
+    ///
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
     unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef>;
@@ -459,6 +460,7 @@ pub trait SeriesTrait:
 
     #[cfg(feature = "object")]
     /// Get the value at this index as a downcastable Any trait ref.
+    ///
     /// # Safety
     /// This function doesn't do any bound checks.
     unsafe fn get_object_chunked_unchecked(

@@ -105,6 +105,7 @@ impl FixedSizeBinaryArray {
     /// Slices this [`FixedSizeBinaryArray`].
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -151,6 +152,7 @@ impl FixedSizeBinaryArray {
     }
 
     /// Returns the element at index `i` as &str
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]

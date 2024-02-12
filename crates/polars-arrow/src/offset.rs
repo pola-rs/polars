@@ -141,6 +141,7 @@ impl<O: Offset> Offsets<O> {
     }
 
     /// Returns [`Offsets`] assuming that `offsets` fulfills its invariants
+    ///
     /// # Safety
     /// This is safe iff the invariants of this struct are guaranteed in `offsets`.
     #[inline]
@@ -168,6 +169,7 @@ impl<O: Offset> Offsets<O> {
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
+    ///
     /// # Safety
     /// `index` must be `< self.len()`
     #[inline]
@@ -441,6 +443,7 @@ impl<O: Offset> OffsetsBuffer<O> {
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
+    ///
     /// # Safety
     /// `index` must be `< self.len()`
     #[inline]
@@ -462,6 +465,7 @@ impl<O: Offset> OffsetsBuffer<O> {
     }
 
     /// Slices this [`OffsetsBuffer`] starting at `offset`.
+    ///
     /// # Safety
     /// The caller must ensure `offset + length <= self.len()`
     #[inline]
