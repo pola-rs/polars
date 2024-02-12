@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
+use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
 use crate::prelude::{ObjectValue, *};
 use crate::{arrow_interop, raise_err, PySeries};
@@ -185,6 +186,12 @@ impl PySeries {
             },
             Date => date_series_to_numpy(py, s),
             Datetime(_, _) | Duration(_) => temporal_series_to_numpy(py, s),
+            Time => {
+                let ca = s.time().unwrap();
+                let iter = time_to_pyobject_iter(py, ca);
+                let np_arr = PyArray1::from_iter(py, iter.map(|v| v.into_py(py)));
+                np_arr.into_py(py)
+            },
             String => {
                 let ca = s.str().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
@@ -198,6 +205,12 @@ impl PySeries {
             Categorical(_, _) | Enum(_, _) => {
                 let ca = s.categorical().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.iter_str().map(|s| s.into_py(py)));
+                np_arr.into_py(py)
+            },
+            Decimal(_, _) => {
+                let ca = s.decimal().unwrap();
+                let iter = decimal_to_pyobject_iter(py, ca);
+                let np_arr = PyArray1::from_iter(py, iter.map(|v| v.into_py(py)));
                 np_arr.into_py(py)
             },
             #[cfg(feature = "object")]

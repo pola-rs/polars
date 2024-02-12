@@ -231,7 +231,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> P
     else:
         if array.num_chunks > 1:
             # somehow going through ffi with a structarray
-            # returns the first chunk everytime
+            # returns the first chunk every time
             if isinstance(array.type, pa.StructType):
                 pys = PySeries.from_arrow(name, array.combine_chunks())
             else:

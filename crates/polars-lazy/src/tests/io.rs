@@ -197,17 +197,120 @@ fn test_parquet_statistics() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
+    // not(a > b) => a <= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt(5)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a >= b) => a < b
+    // note that min(calories)=20
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt_eq(20)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a < b) => a >= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").lt(250)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a <= b) => a > b
+    // note that max(calories)=200
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").lt_eq(200)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a == b) => a != b
+    // note that proteins_g=10 for all rows
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(not(col("proteins_g").eq(10)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 6));
+
+    // not(a != b) => a == b
+    // note that proteins_g=10 for all rows
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(not(col("proteins_g").neq(5)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 6));
+
+    // not(col(c) is between [a, b]) => col(c) < a or col(c) > b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            20,
+            200,
+            ClosedInterval::Both,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between [a, b[) => col(c) < a or col(c) >= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            20,
+            201,
+            ClosedInterval::Left,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between ]a, b]) => col(c) <= a or col(c) > b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            19,
+            200,
+            ClosedInterval::Right,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between ]a, b]) => col(c) <= a or col(c) > b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            19,
+            200,
+            ClosedInterval::Right,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between ]a, b[) => col(c) <= a or col(c) >= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            19,
+            201,
+            ClosedInterval::None,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not (a or b) => not(a) and not(b)
+    // note that not(fats_g <= 9) is possible; not(calories > 5) should allow us skip the rg
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt(5).or(col("fats_g").lt_eq(9))))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not (a and b) => not(a) or not(b)
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt(5).and(col("fats_g").lt_eq(12))))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
     // is_not_null
     let out = scan_nutri_score_null_column_parquet(par)
         .filter(col("nutri_score").is_not_null())
         .collect()?;
-    assert_eq!(out.shape(), (0, 5));
+    assert_eq!(out.shape(), (0, 6));
 
     // not(is_null) (~pl.col('nutri_score').is_null())
     let out = scan_nutri_score_null_column_parquet(par)
         .filter(not(col("nutri_score").is_null()))
         .collect()?;
-    assert_eq!(out.shape(), (0, 5));
+    assert_eq!(out.shape(), (0, 6));
 
     // Test multiple predicates
 

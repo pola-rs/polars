@@ -83,9 +83,7 @@ impl LogicalType for DecimalChunked {
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let (precision_src, scale_src) = (self.precision(), self.scale());
         if let &DataType::Decimal(precision_dst, scale_dst) = dtype {
-            let scale_dst = scale_dst.ok_or_else(
-                || polars_err!(ComputeError: "cannot cast to Decimal with unknown scale"),
-            )?;
+            let scale_dst = scale_dst.unwrap_or(scale_src);
             // for now, let's just allow same-scale conversions
             // where precision is either the same or bigger or gets converted to `None`
             // (these are the easy cases requiring no checks and arithmetics which we can add later)
@@ -95,6 +93,7 @@ impl LogicalType for DecimalChunked {
                 _ => false,
             };
             if scale_src == scale_dst && is_widen {
+                let dtype = &DataType::Decimal(precision_dst, Some(scale_dst));
                 return self.0.cast(dtype); // no conversion or checks needed
             }
         }

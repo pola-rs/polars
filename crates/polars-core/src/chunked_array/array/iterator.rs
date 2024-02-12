@@ -123,6 +123,31 @@ impl ArrayChunked {
             .collect_ca_with_dtype(self.name(), self.dtype().clone())
     }
 
+    /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
+    /// # Safety
+    //  Return series of `F` must has the same dtype and number of elements as input series.
+    #[must_use]
+    pub unsafe fn zip_and_apply_amortized_same_type<'a, T, F>(
+        &'a self,
+        ca: &'a ChunkedArray<T>,
+        mut f: F,
+    ) -> Self
+    where
+        T: PolarsDataType,
+        F: FnMut(Option<UnstableSeries<'a>>, Option<T::Physical<'a>>) -> Option<Series>,
+    {
+        if self.is_empty() {
+            return self.clone();
+        }
+        self.amortized_iter()
+            .zip(ca.iter())
+            .map(|(opt_s, opt_v)| {
+                let out = f(opt_s, opt_v);
+                out.map(|s| to_arr(&s))
+            })
+            .collect_ca_with_dtype(self.name(), self.dtype().clone())
+    }
+
     /// Apply a closure `F` elementwise.
     #[must_use]
     pub fn apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> ChunkedArray<V>

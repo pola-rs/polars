@@ -65,6 +65,7 @@ These functions are available from the polars module root and can be used as exp
    max
    max_horizontal
    mean
+   mean_horizontal
    median
    min
    min_horizontal

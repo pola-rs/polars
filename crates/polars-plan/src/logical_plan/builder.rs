@@ -59,18 +59,23 @@ fn format_err(msg: &str, input: &LogicalPlan) -> String {
     format!("{msg}\n\nError originated just after this operation:\n{input:?}")
 }
 
-/// Returns every error or msg: &str as `ComputeError`.
-/// It also shows the logical plan node where the error
-/// originated.
+/// Returns every error or msg: &str as `ComputeError`. It also shows the logical plan node where the error originated.
+/// If `input` is already a `LogicalPlan::Error`, then return it as is; errors already keep track of their previous
+/// inputs, so we don't have to do it again here.
 macro_rules! raise_err {
     ($err:expr, $input:expr, $convert:ident) => {{
-        let format_err_outer = |msg: &str| format_err(msg, &$input);
+        let input: LogicalPlan = $input.clone();
+        match &input {
+            LogicalPlan::Error { .. } => input,
+            _ => {
+                let format_err_outer = |msg: &str| format_err(msg, &input);
+                let err = $err.wrap_msg(&format_err_outer);
 
-        let err = $err.wrap_msg(&format_err_outer);
-
-        LogicalPlan::Error {
-            input: Box::new($input.clone()),
-            err: err.into(),
+                LogicalPlan::Error {
+                    input: Box::new(input),
+                    err: err.into(), // PolarsError -> ErrorState
+                }
+            },
         }
         .$convert()
     }};

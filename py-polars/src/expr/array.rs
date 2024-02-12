@@ -112,4 +112,8 @@ impl PyExpr {
 
         Ok(self.inner.clone().arr().to_struct(name_gen).into())
     }
+
+    fn arr_shift(&self, n: PyExpr) -> Self {
+        self.inner.clone().arr().shift(n.inner).into()
+    }
 }

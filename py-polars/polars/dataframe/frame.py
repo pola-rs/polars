@@ -2069,15 +2069,16 @@ class DataFrame:
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert DataFrame to a 2D NumPy array.
-
-        This operation clones data.
+        Convert this DataFrame to a NumPy ndarray.
 
         Parameters
         ----------
         structured
-            Optionally return a structured array, with field names and
-            dtypes that correspond to the DataFrame schema.
+            Return a `structured array`_ with a data type that corresponds to the
+            DataFrame schema. If set to `False` (default), a 2D ndarray is
+            returned instead.
+
+            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -2130,36 +2131,33 @@ class DataFrame:
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """
         if structured:
-            # see: https://numpy.org/doc/stable/user/basics.rec.html
             arrays = []
-            for c, tp in self.schema.items():
-                s = self[c]
-                a = s.to_numpy(use_pyarrow=use_pyarrow)
-                arrays.append(
-                    a.astype(str, copy=False)
-                    if tp == String and not s.null_count()
-                    else a
-                )
+            struct_dtype = []
+            for s in self.iter_columns():
+                arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                if s.dtype == String and s.null_count() == 0:
+                    arr = arr.astype(str, copy=False)
+                arrays.append(arr)
+                struct_dtype.append((s.name, arr.dtype))
 
-            out = np.empty(
-                len(self), dtype=list(zip(self.columns, (a.dtype for a in arrays)))
-            )
+            out = np.empty(self.height, dtype=struct_dtype)
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
-        else:
-            if order == "fortran":
-                array = self._df.to_numpy_view()
-                if array is not None:
-                    return array
+            return out
 
-            out = self._df.to_numpy(order)
-            if out is None:
-                return np.vstack(
-                    [
-                        self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
-                        for i in range(self.width)
-                    ]
-                ).T
+        if order == "fortran":
+            array = self._df.to_numpy_view()
+            if array is not None:
+                return array
+
+        out = self._df.to_numpy(order)
+        if out is None:
+            return np.vstack(
+                [
+                    self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
+                    for i in range(self.width)
+                ]
+            ).T
 
         return out
 
@@ -2905,7 +2903,7 @@ class DataFrame:
               "A2" indicates the split occurs at the top-left of cell A2, which is the
               equivalent of (1, 0).
             * If (row, col, top_row, top_col) are supplied, the panes are split based on
-              the `row` and `col`, and the scrolling region is inititalized to begin at
+              the `row` and `col`, and the scrolling region is initialized to begin at
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
@@ -9582,6 +9580,10 @@ class DataFrame:
         """
         Returns all data in the DataFrame as a list of rows of python-native values.
 
+        By default, each row is returned as a tuple of values given in the same order
+        as the frame columns. Setting `named=True` will return rows of dictionaries
+        instead.
+
         Parameters
         ----------
         named
@@ -9600,12 +9602,13 @@ class DataFrame:
         --------
         Row-iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
-        Where possible you should also consider using `iter_rows` instead to avoid
-        materialising all the data at once.
+        You should also consider using `iter_rows` instead, to avoid materialising all
+        the data at once; there is little performance difference between the two, but
+        peak memory can be reduced if processing rows in batches.
 
         Returns
         -------
-        list of tuples (default) or dictionaries of row values
+        list of row value tuples (default), or list of dictionaries (if `named=True`).
 
         See Also
         --------
@@ -9645,7 +9648,10 @@ class DataFrame:
         unique: bool = False,
     ) -> dict[Any, Iterable[Any]]:
         """
-        Returns DataFrame data as a keyed dictionary of python-native values.
+        Returns all data as a dictionary of python-native values keyed by some column.
+
+        This method is like `rows`, but instead of returning rows in a flat list, rows
+        are grouped by the values in the `key` column(s) and returned as a dictionary.
 
         Note that this method should not be used in place of native operations, due to
         the high cost of materializing all frame data out into a dictionary; it should
@@ -9888,16 +9894,16 @@ class DataFrame:
 
     def iter_columns(self) -> Iterator[Series]:
         """
-        Returns an iterator over the DataFrame's columns.
+        Returns an iterator over the columns of this DataFrame.
+
+        Yields
+        ------
+        Series
 
         Notes
         -----
         Consider whether you can use :func:`all` instead.
         If you can, it will be more efficient.
-
-        Returns
-        -------
-        Iterator of Series.
 
         Examples
         --------
@@ -9939,7 +9945,8 @@ class DataFrame:
         │ 10  ┆ 12  │
         └─────┴─────┘
         """
-        return (wrap_s(s) for s in self._df.get_columns())
+        for s in self._df.get_columns():
+            yield wrap_s(s)
 
     def iter_slices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
         r"""

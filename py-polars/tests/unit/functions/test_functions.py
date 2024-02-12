@@ -89,6 +89,19 @@ def test_concat_diagonal(
         assert_frame_equal(out, expected)
 
 
+def test_concat_diagonal_relaxed_with_empty_frame() -> None:
+    df1 = pl.DataFrame()
+    df2 = pl.DataFrame(
+        {
+            "a": ["a", "b"],
+            "b": [1, 2],
+        }
+    )
+    out = pl.concat((df1, df2), how="diagonal_relaxed")
+    expected = df2
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.parametrize("lazy", [False, True])
 def test_concat_horizontal(lazy: bool) -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})

@@ -223,6 +223,10 @@ impl PyExpr {
             .into())
     }
 
+    fn list_n_unique(&self) -> Self {
+        self.inner.clone().list().n_unique().into()
+    }
+
     fn list_unique(&self, maintain_order: bool) -> Self {
         let e = self.inner.clone();
 

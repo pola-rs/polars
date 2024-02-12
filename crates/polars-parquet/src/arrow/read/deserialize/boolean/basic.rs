@@ -11,8 +11,10 @@ use super::super::utils::{
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
 use super::super::{utils, PagesIter};
-use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::Encoding;
+use crate::parquet::deserialize::{
+    HybridDecoderBitmapIter, HybridRleBooleanIter, SliceFilteredIter,
+};
+use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 
 #[derive(Debug)]
@@ -75,6 +77,10 @@ enum State<'a> {
     Required(Required<'a>),
     FilteredRequired(FilteredRequired<'a>),
     FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
+    RleOptional(
+        OptionalPageValidity<'a>,
+        HybridRleBooleanIter<'a, HybridDecoderBitmapIter<'a>>,
+    ),
 }
 
 impl<'a> State<'a> {
@@ -84,6 +90,7 @@ impl<'a> State<'a> {
             State::Required(page) => page.length - page.offset,
             State::FilteredRequired(page) => page.len(),
             State::FilteredOptional(optional, _) => optional.len(),
+            State::RleOptional(optional, _) => optional.len(),
         }
     }
 }
@@ -129,6 +136,17 @@ impl<'a> Decoder<'a> for BooleanDecoder {
             (Encoding::Plain, false, true) => {
                 Ok(State::FilteredRequired(FilteredRequired::try_new(page)?))
             },
+            (Encoding::Rle, true, false) => {
+                let optional = OptionalPageValidity::try_new(page)?;
+                let (_, _, values) = split_buffer(page)?;
+                // For boolean values the length is pre-pended.
+                let (_len_in_bytes, values) = values.split_at(4);
+                let iter = hybrid_rle::Decoder::new(values, 1);
+                let values = HybridDecoderBitmapIter::new(iter, page.num_values());
+                let values = HybridRleBooleanIter::new(values);
+
+                Ok(State::RleOptional(optional, values))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -173,6 +191,15 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                     Some(remaining),
                     values,
                     page_values.0.by_ref(),
+                );
+            },
+            State::RleOptional(page_validity, page_values) => {
+                utils::extend_from_decoder(
+                    validity,
+                    page_validity,
+                    Some(remaining),
+                    values,
+                    page_values.map(|v| v.unwrap()),
                 );
             },
         }

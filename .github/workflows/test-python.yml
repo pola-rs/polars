@@ -49,7 +49,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up Graphviz
-        uses: ts-graphviz/setup-graphviz@v1
+        uses: ts-graphviz/setup-graphviz@v2
 
       - name: Create virtual environment
         env:
@@ -80,7 +80,7 @@ jobs:
         run: |
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
-  
+
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
         env:

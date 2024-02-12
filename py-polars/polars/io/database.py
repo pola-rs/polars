@@ -151,7 +151,7 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # iif we created it and are finished with it, we can
+        # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
         if self.can_close_cursor:
             self.cursor.close()

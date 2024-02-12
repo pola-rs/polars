@@ -257,6 +257,14 @@ pub trait ListNameSpaceImpl: AsList {
         self.same_type(out)
     }
 
+    fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
+        let ca = self.as_list();
+        ca.try_apply_amortized_generic(|s| {
+            let opt_v = s.map(|s| s.as_ref().n_unique()).transpose()?;
+            Ok(opt_v.map(|idx| idx as IdxSize))
+        })
+    }
+
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let out = ca.try_apply_amortized(|s| s.as_ref().unique())?;
@@ -274,7 +282,6 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
         })
-        .with_name(ca.name())
     }
 
     fn lst_arg_max(&self) -> IdxCa {
@@ -282,7 +289,6 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
         })
-        .with_name(ca.name())
     }
 
     #[cfg(feature = "diff")]

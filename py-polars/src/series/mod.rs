@@ -389,7 +389,8 @@ impl PySeries {
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
-                let iter = self.series.iter().map(|av| match (skip_nulls, av) {
+                let s = self.series.rechunk();
+                let iter = s.iter().map(|av| match (skip_nulls, av) {
                     (true, AnyValue::Null) => AnyValue::Null,
                     (_, av) => {
                         let input = Wrap(av);

@@ -4340,6 +4340,10 @@ class Series:
                 msg = f"invalid temporal type: {dtype}"
                 raise TypeError(msg)
 
+        if self.n_chunks() > 1:
+            raise_no_zero_copy()
+            self = self.rechunk()
+
         dtype = self.dtype
 
         if dtype == Array:
@@ -4354,20 +4358,14 @@ class Series:
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
-            and dtype != Object
-            and (dtype == Time or not dtype.is_temporal())
+            and dtype not in (Object, Datetime, Duration, Date)
         ):
             return self.to_arrow().to_numpy(
                 zero_copy_only=zero_copy_only, writable=writable
             )
 
-        if dtype in (Time, Decimal):
-            # There are no native NumPy "time" or "decimal" dtypes
-            raise_no_zero_copy()
-            return np.array(self.to_list(), dtype="object", copy=False)
-
         if self.null_count() == 0:
-            if dtype.is_numeric():
+            if dtype.is_integer() or dtype.is_float():
                 np_array = self._view(ignore_nulls=True)
             elif dtype == Boolean:
                 raise_no_zero_copy()
@@ -4386,7 +4384,7 @@ class Series:
         else:
             raise_no_zero_copy()
             np_array = self._s.to_numpy()
-            if dtype.is_temporal():
+            if dtype in (Datetime, Duration, Date):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = np_array.view(np_dtype)
 

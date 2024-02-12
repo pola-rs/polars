@@ -347,3 +347,22 @@ def test_array_to_struct() -> None:
     assert df.lazy().select(pl.col("a").arr.to_struct()).unnest(
         "a"
     ).sum().collect().columns == ["field_0", "field_1", "field_2"]
+
+
+def test_array_shift() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], None, [4, 5, 6], [7, 8, 9]], "n": [None, 1, 1, -2]},
+        schema={"a": pl.Array(pl.Int64, 3), "n": pl.Int64},
+    )
+
+    out = df.select(
+        lit=pl.col("a").arr.shift(1), expr=pl.col("a").arr.shift(pl.col("n"))
+    )
+    expected = pl.DataFrame(
+        {
+            "lit": [[None, 1, 2], None, [None, 4, 5], [None, 7, 8]],
+            "expr": [None, None, [None, 4, 5], [9, None, None]],
+        },
+        schema={"lit": pl.Array(pl.Int64, 3), "expr": pl.Array(pl.Int64, 3)},
+    )
+    assert_frame_equal(out, expected)

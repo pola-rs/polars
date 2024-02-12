@@ -31,7 +31,7 @@ Quite unexpected an output, especially if coming from tools that do not have suc
 
 !!! note "Why `value_counts` returns a `Struct`"
 
-    Polars expressions always have a `Fn(Series) -> Series` signature and `Struct` is thus the data type that allows us to provide multiple columns as input/ouput of an expression. In other words, all expressions have to return a `Series` object, and `Struct` allows us to stay consistent with that requirement.
+    Polars expressions always have a `Fn(Series) -> Series` signature and `Struct` is thus the data type that allows us to provide multiple columns as input/output of an expression. In other words, all expressions have to return a `Series` object, and `Struct` allows us to stay consistent with that requirement.
 
 ## Structs as `dict`s
 

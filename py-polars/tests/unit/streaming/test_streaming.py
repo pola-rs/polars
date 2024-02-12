@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import time
 from datetime import date
 from pathlib import Path
@@ -347,19 +346,17 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_custom_temp_dir(monkeypatch: Any) -> None:
-    test_temp_dir = "test_temp_dir"
-    temp_dir = Path(tempfile.gettempdir()) / test_temp_dir
-
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(temp_dir))
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
     df = s.shuffle().to_frame()
     df.lazy().sort("idx").collect(streaming=True)
 
-    assert os.listdir(temp_dir), f"Temp directory '{temp_dir}' is empty"
+    assert os.listdir(tmp_path), f"Temp directory '{tmp_path}' is empty"
 
 
 @pytest.mark.write_disk()
