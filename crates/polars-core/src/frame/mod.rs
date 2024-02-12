@@ -428,6 +428,9 @@ impl DataFrame {
                 polars_bail!(duplicate = name)
             }
         }
+        // we drop early as the brchk thinks the &str borrows are used when calling the drop
+        // of both `columns` and `names`
+        drop(names);
         Ok(DataFrame { columns })
     }
 
