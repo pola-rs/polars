@@ -235,7 +235,7 @@ jobs:
 
       - name: Create GitHub release
         id: github-release
-        uses: release-drafter/release-drafter@v5
+        uses: release-drafter/release-drafter@v6
         with:
           config-name: release-drafter-python.yml
           name: Python Polars ${{ steps.version.outputs.version }}
