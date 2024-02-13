@@ -241,3 +241,14 @@ def test_struct_nested_enum() -> None:
     df.write_ipc(buffer)
     df = pl.read_ipc(buffer)
     assert df.get_column("struct_cat").dtype == dtype
+
+
+@pytest.mark.slow()
+def test_ipc_view_gc_14448() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        pl.Series(["small"] * 10 + ["looooooong string......."] * 1000).slice(20, 20)
+    )
+    df.write_ipc(f, future=True)
+    f.seek(0)
+    assert_frame_equal(pl.read_ipc(f), df)
