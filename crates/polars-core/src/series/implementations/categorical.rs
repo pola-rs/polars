@@ -296,6 +296,9 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn max_as_series(&self) -> PolarsResult<Series> {
         Ok(ChunkAggSeries::max_as_series(&self.0))
     }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {

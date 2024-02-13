@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -267,6 +268,9 @@ impl SeriesTrait for NullChunked {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

@@ -257,4 +257,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             Int128Chunked::from_slice_options(self.name(), &[max])
         }))
     }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
 }
