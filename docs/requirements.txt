@@ -2,7 +2,7 @@ pandas
 pyarrow
 graphviz
 matplotlib
-
+numba
 mkdocs-material==9.5.2
 mkdocs-macros-plugin==1.0.4
 material-plausible-plugin==0.2.0
