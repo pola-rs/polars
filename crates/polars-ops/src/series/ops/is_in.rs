@@ -575,7 +575,7 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
             match &**rev_map {
                 RevMapping::Global(hash_map, categories, _) => {
                     for (global_idx, local_idx) in hash_map.iter() {
-                        // Safety: index is in bounds
+                        // SAFETY: index is in bounds
                         if others
                             .contains(unsafe { categories.value_unchecked(*local_idx as usize) })
                         {

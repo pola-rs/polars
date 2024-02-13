@@ -154,7 +154,7 @@ fn cast_fixed_size_list_to_list<O: Offset>(
     let offsets = (0..=fixed.len())
         .map(|ix| O::from_as_usize(ix * fixed.size()))
         .collect::<Vec<_>>();
-    // Safety: offsets _are_ monotonically increasing
+    // SAFETY: offsets _are_ monotonically increasing
     let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
     Ok(ListArray::<O>::new(
@@ -370,7 +370,7 @@ pub fn cast(
             let values = cast(array, &to.data_type, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
             let offsets = (0..=array.len() as i32).collect::<Vec<_>>();
-            // Safety: offsets _are_ monotonically increasing
+            // SAFETY: offsets _are_ monotonically increasing
             let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
             let list_array = ListArray::<i32>::new(to_type.clone(), offsets.into(), values, None);
@@ -383,7 +383,7 @@ pub fn cast(
             let values = cast(array, &to.data_type, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
             let offsets = (0..=array.len() as i64).collect::<Vec<_>>();
-            // Safety: offsets _are_ monotonically increasing
+            // SAFETY: offsets _are_ monotonically increasing
             let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
             let list_array = ListArray::<i64>::new(

@@ -136,7 +136,7 @@ impl MutableBooleanArray {
     where
         I: TrustedLen<Item = bool>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { self.extend_trusted_len_values_unchecked(iterator) }
     }
 
@@ -167,7 +167,7 @@ impl MutableBooleanArray {
         P: std::borrow::Borrow<bool>,
         I: TrustedLen<Item = Option<P>>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { self.extend_trusted_len_unchecked(iterator) }
     }
 
@@ -297,7 +297,7 @@ impl MutableBooleanArray {
         P: std::borrow::Borrow<bool>,
         I: TrustedLen<Item = Option<P>>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -331,7 +331,7 @@ impl MutableBooleanArray {
         P: std::borrow::Borrow<bool>,
         I: TrustedLen<Item = std::result::Result<Option<P>, E>>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { Self::try_from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -555,7 +555,7 @@ impl TryExtendFromSelf for MutableBooleanArray {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         let slice = other.values.as_slice();
-        // safety: invariant offset + length <= slice.len()
+        // SAFETY: invariant offset + length <= slice.len()
         unsafe {
             self.values
                 .extend_from_slice_unchecked(slice, 0, other.values.len());

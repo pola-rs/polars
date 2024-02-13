@@ -12,7 +12,7 @@ impl Arrow2Arrow for FixedSizeListArray {
             .nulls(self.validity.as_ref().map(|b| b.clone().into()))
             .child_data(vec![to_data(self.values.as_ref())]);
 
-        // Safety: Array is valid
+        // SAFETY: Array is valid
         unsafe { builder.build_unchecked() }
     }
 

@@ -93,7 +93,7 @@ where
                 unsafe {
                     new.extend_from_slice_unchecked(chunk.to_ne_bytes().as_ref(), 0, size);
 
-                    // safety: invariant offset + length <= slice.len()
+                    // SAFETY: invariant offset + length <= slice.len()
                     new_validity.extend_from_slice_unchecked(
                         validity_chunk.to_ne_bytes().as_ref(),
                         0,

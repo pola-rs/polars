@@ -78,7 +78,7 @@ where
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // Safety
+        // SAFETY:
         // trusted len, trust the type system
         unsafe { values.extend_trusted_len_values_unchecked(iter) };
         self.builder.try_push_valid().unwrap();
@@ -92,7 +92,7 @@ where
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // Safety
+        // SAFETY:
         // trusted len, trust the type system
         unsafe { values.extend_trusted_len_unchecked(iter) };
         self.builder.try_push_valid().unwrap();
@@ -122,7 +122,7 @@ where
             if !arr.has_validity() {
                 values.extend_from_slice(arr.values().as_slice())
             } else {
-                // Safety:
+                // SAFETY:
                 // Arrow arrays are trusted length iterators.
                 unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
             }

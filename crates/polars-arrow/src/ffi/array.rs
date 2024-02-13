@@ -437,7 +437,7 @@ unsafe fn create_child(
         );
     }
 
-    // Safety - part of the invariant
+    // SAFETY: part of the invariant
     let arr_ptr = unsafe { *array.children.add(index) };
 
     // catch what we can
@@ -448,7 +448,7 @@ unsafe fn create_child(
         )
     }
 
-    // Safety - invariant of this function
+    // SAFETY: invariant of this function
     let arr_ptr = unsafe { &*arr_ptr };
     Ok(ArrowArrayChild::new(arr_ptr, data_type, parent))
 }
@@ -472,7 +472,7 @@ unsafe fn create_dictionary(
             )
         }
 
-        // safety: part of the invariant
+        // SAFETY: part of the invariant
         let array = unsafe { &*array.dictionary };
         Ok(Some(ArrowArrayChild::new(array, data_type, parent)))
     } else {

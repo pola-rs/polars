@@ -30,7 +30,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
         (dt @ DataType::Categorical(Some(rev_map), ordering), _)
         | (dt @ DataType::Enum(Some(rev_map), ordering), _) => {
             let cats = s.u32().unwrap().clone();
-            // safety:
+            // SAFETY:
             // the rev-map comes from these categoricals
             unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(

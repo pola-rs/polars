@@ -780,7 +780,7 @@ impl PyDataFrame {
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
                             },
-                            // safety: we are in bounds.
+                            // SAFETY: we are in bounds.
                             _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
                         }),
                     )

@@ -67,7 +67,7 @@ pub trait ListFromIter {
 
         let values: PrimitiveArray<T> = iter_to_values!(iterator, validity, offsets, length_so_far);
 
-        // Safety:
+        // SAFETY:
         // offsets are monotonically increasing
         ListArray::new(
             ListArray::<i64>::default_datatype(data_type.clone()),
@@ -97,7 +97,7 @@ pub trait ListFromIter {
 
         let values: BooleanArray = iter_to_values!(iterator, validity, offsets, length_so_far);
 
-        // Safety:
+        // SAFETY:
         // Offsets are monotonically increasing.
         ListArray::new(
             ListArray::<i64>::default_datatype(ArrowDataType::Boolean),
@@ -145,7 +145,7 @@ pub trait ListFromIter {
             .trust_my_length(n_elements)
             .collect();
 
-        // Safety:
+        // SAFETY:
         // offsets are monotonically increasing
         ListArray::new(
             ListArray::<i64>::default_datatype(T::DATA_TYPE),

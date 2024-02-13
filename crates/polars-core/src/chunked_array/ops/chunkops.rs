@@ -37,7 +37,7 @@ pub(crate) fn slice(
 
         debug_assert!(remaining_offset + take_len <= chunk.len());
         unsafe {
-            // Safety:
+            // SAFETY:
             // this function ensures the slices are in bounds
             new_chunks.push(chunk.sliced_unchecked(remaining_offset, take_len));
         }

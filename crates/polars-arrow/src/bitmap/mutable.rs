@@ -524,7 +524,7 @@ impl MutableBitmap {
     /// Extends `self` from a [`TrustedLen`] iterator.
     #[inline]
     pub fn extend_from_trusted_len_iter<I: TrustedLen<Item = bool>>(&mut self, iterator: I) {
-        // safety: I: TrustedLen
+        // SAFETY: I: TrustedLen
         unsafe { self.extend_from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -597,7 +597,7 @@ impl MutableBitmap {
     where
         I: TrustedLen<Item = bool>,
     {
-        // Safety: Iterator is `TrustedLen`
+        // SAFETY: Iterator is `TrustedLen`
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -729,7 +729,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_slice(&mut self, slice: &[u8], offset: usize, length: usize) {
         assert!(offset + length <= slice.len() * 8);
-        // safety: invariant is asserted
+        // SAFETY: invariant is asserted
         unsafe { self.extend_from_slice_unchecked(slice, offset, length) }
     }
 
@@ -737,7 +737,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_bitmap(&mut self, bitmap: &Bitmap) {
         let (slice, offset, length) = bitmap.as_slice();
-        // safety: bitmap.as_slice adheres to the invariant
+        // SAFETY: bitmap.as_slice adheres to the invariant
         unsafe {
             self.extend_from_slice_unchecked(slice, offset, length);
         }

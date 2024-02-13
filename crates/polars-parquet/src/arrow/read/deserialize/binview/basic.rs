@@ -278,7 +278,7 @@ pub(super) fn finish(
             .boxed())
         },
         PhysicalType::Utf8View => {
-            // Safety: we already checked utf8
+            // SAFETY: we already checked utf8
             unsafe {
                 Ok(Utf8ViewArray::new_unchecked(
                     data_type.clone(),

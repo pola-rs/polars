@@ -349,7 +349,7 @@ impl StructChunked {
 
                 let mut length_so_far = 0_i64;
                 unsafe {
-                    // safety: we have pre-allocated
+                    // SAFETY: we have pre-allocated
                     offsets.push_unchecked(length_so_far);
                 }
                 for row in 0..ca.len() {
@@ -366,7 +366,7 @@ impl StructChunked {
                     unsafe {
                         *values.last_mut().unwrap_unchecked() = b'}';
 
-                        // safety: we have pre-allocated
+                        // SAFETY: we have pre-allocated
                         length_so_far = values.len() as i64;
                         offsets.push_unchecked(length_so_far);
                     }
@@ -438,7 +438,7 @@ impl LogicalType for StructChunked {
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
         if let DataType::Struct(flds) = self.dtype() {
-            // safety: we already have a single chunk and we are
+            // SAFETY: we already have a single chunk and we are
             // guarded by the type system.
             unsafe {
                 let arr = &**self.chunks.get_unchecked(chunk_idx);

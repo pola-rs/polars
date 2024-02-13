@@ -44,7 +44,7 @@ pub(super) fn position_aggregates(
                     .zip(col_locations)
                     .zip(value_agg_phys.phys_iter())
                 {
-                    // Safety:
+                    // SAFETY:
                     // in bounds
                     unsafe {
                         let idx = *row_idx as usize + *col_idx as usize * n_rows;
@@ -139,7 +139,7 @@ where
                     .zip(col_locations)
                     .zip(value_agg_phys.into_iter())
                 {
-                    // Safety:
+                    // SAFETY:
                     // in bounds
                     unsafe {
                         let idx = *row_idx as usize + *col_idx as usize * n_rows;

@@ -38,7 +38,7 @@ pub fn utf8_to_large_utf8(from: &Utf8Array<i32>) -> Utf8Array<i64> {
     let values = from.values().clone();
 
     let offsets = from.offsets().into();
-    // Safety: sound because `values` fulfills the same invariants as `from.values()`
+    // SAFETY: sound because `values` fulfills the same invariants as `from.values()`
     unsafe { Utf8Array::<i64>::new_unchecked(data_type, offsets, values, validity) }
 }
 
@@ -49,7 +49,7 @@ pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> PolarsResult<Utf8Array<i32>>
     let values = from.values().clone();
     let offsets = from.offsets().try_into()?;
 
-    // Safety: sound because `values` fulfills the same invariants as `from.values()`
+    // SAFETY: sound because `values` fulfills the same invariants as `from.values()`
     Ok(unsafe { Utf8Array::<i32>::new_unchecked(data_type, offsets, values, validity) })
 }
 
@@ -58,7 +58,7 @@ pub fn utf8_to_binary<O: Offset>(
     from: &Utf8Array<O>,
     to_data_type: ArrowDataType,
 ) -> BinaryArray<O> {
-    // Safety: erasure of an invariant is always safe
+    // SAFETY: erasure of an invariant is always safe
     unsafe {
         BinaryArray::<O>::new(
             to_data_type,

@@ -438,7 +438,7 @@ pub(super) fn parse_lines(
                                 field
                             };
 
-                            // safety:
+                            // SAFETY:
                             // process fields is in bounds
                             add_null = unsafe { null_values.is_null(field, processed_fields) }
                         }

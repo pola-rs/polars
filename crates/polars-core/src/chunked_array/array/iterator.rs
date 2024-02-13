@@ -44,7 +44,7 @@ impl ArrayChunked {
             _ => inner_dtype.clone(),
         };
 
-        // Safety:
+        // SAFETY:
         // inner type passed as physical type
         let series_container = unsafe {
             Box::pin(Series::from_chunks_and_dtype_unchecked(

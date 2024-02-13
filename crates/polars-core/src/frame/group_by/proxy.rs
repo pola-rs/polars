@@ -500,7 +500,7 @@ impl GroupsProxy {
     }
 
     pub fn slice(&self, offset: i64, len: usize) -> SlicedGroups {
-        // Safety:
+        // SAFETY:
         // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
         // so that we never call drop on them.
         // These groups lifetimes are bounded to the `self`. This must remain valid

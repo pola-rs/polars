@@ -377,7 +377,7 @@ impl<O: Offset> OffsetsBuffer<O> {
     pub fn into_mut(self) -> either::Either<Self, Offsets<O>> {
         self.0
             .into_mut()
-            // Safety: Offsets and OffsetsBuffer share invariants
+            // SAFETY: Offsets and OffsetsBuffer share invariants
             .map_right(|offsets| unsafe { Offsets::new_unchecked(offsets) })
             .map_left(Self)
     }
