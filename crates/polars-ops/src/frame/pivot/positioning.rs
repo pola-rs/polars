@@ -439,61 +439,23 @@ pub(super) fn compute_row_idx(
             },
         }
     } else {
-        let index_s = pivot_df.columns(index)?;
-        let index_agg_physical = index_s
-            .iter()
-            .map(|s| unsafe { s.agg_first(groups).to_physical_repr().into_owned() })
-            .collect::<Vec<_>>();
-        let mut iters = index_agg_physical
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-        let mut row_to_idx =
-            PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
-        let mut idx = 0 as IdxSize;
-
-        let mut row_locations = Vec::with_capacity(groups.len());
-        loop {
-            match iters
-                .iter_mut()
-                .map(|it| it.next())
-                .collect::<Option<Vec<_>>>()
-            {
-                None => break,
-                Some(items) => {
-                    let idx = *row_to_idx.entry(items).or_insert_with(|| {
-                        let old_idx = idx;
-                        idx += 1;
-                        old_idx
-                    });
-                    row_locations.push(idx)
-                },
-            }
-        }
-        let row_index = match count {
-            0 => Some(
-                index
-                    .iter()
-                    .enumerate()
-                    .map(|(i, name)| {
-                        let s = Series::new(
-                            name,
-                            row_to_idx
-                                .iter()
-                                .map(|(k, _)| {
-                                    debug_assert!(i < k.len());
-                                    unsafe { k.get_unchecked(i).clone() }
-                                })
-                                .collect::<Vec<_>>(),
-                        );
-                        restore_logical_type(&s, index_s[i].dtype())
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        };
-
-        (row_locations, idx as usize, row_index)
+        let binding = pivot_df.select(index)?;
+        let fields = binding.get_columns();
+        let index_struct_series = StructChunked::new("placeholder", fields)?.into_series();
+        let index_agg = unsafe { index_struct_series.agg_first(groups) };
+        let index_agg_physical = index_agg.to_physical_repr();
+        let ca = index_agg_physical.struct_()?;
+        let ca = ca.rows_encode()?;
+        let (row_locations, n_rows, row_index) =
+            compute_row_index_struct(index, &index_agg, &ca, count);
+        let row_index = row_index.map(|x| {
+            unsafe { x.get_unchecked(0) }
+                .struct_()
+                .unwrap()
+                .fields()
+                .to_vec()
+        });
+        (row_locations, n_rows, row_index)
     };
 
     Ok((row_locations, n_rows, row_index))
