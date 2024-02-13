@@ -4,10 +4,13 @@ use std::thread::JoinHandle;
 use crossbeam_channel::{Receiver, Sender};
 use polars_core::prelude::*;
 
-use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::operators::{
+    DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, StreamingVstacker,
+};
 
 pub(super) trait SinkWriter {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()>;
+
     fn _finish(&mut self) -> PolarsResult<()>;
 }
 
@@ -24,6 +27,7 @@ pub(super) fn init_writer_thread(
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
         let mut chunks = Vec::with_capacity(morsels_per_sink);
+        let mut vstacker = StreamingVstacker::default();
 
         while let Ok(chunk) = receiver.recv() {
             // `last_write` indicates if all chunks are processed, e.g. this is the last write.
@@ -40,13 +44,26 @@ pub(super) fn init_writer_thread(
                     chunks.sort_by_key(|chunk| chunk.chunk_index);
                 }
 
-                for chunk in chunks.iter() {
-                    writer._write_batch(&chunk.data).unwrap()
+                for chunk in chunks.drain(0..) {
+                    for mut df in vstacker.add(chunk.data) {
+                        // The dataframe may only be a single, large chunk, in
+                        // which case we don't want to bother with copying it...
+                        if df.n_chunks() > 1 {
+                            df.as_single_chunk();
+                        }
+                        writer._write_batch(&df).unwrap();
+                    }
                 }
                 // all chunks are written remove them
                 chunks.clear();
 
                 if last_write {
+                    if let Some(mut df) = vstacker.finish() {
+                        if df.n_chunks() > 1 {
+                            df.as_single_chunk();
+                        }
+                        writer._write_batch(&df).unwrap();
+                    }
                     writer._finish().unwrap();
                     return;
                 }
