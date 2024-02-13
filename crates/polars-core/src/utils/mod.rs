@@ -552,17 +552,12 @@ macro_rules! df {
     }
 }
 
+/// Get the time unit with the highest precision out of two time units.
 pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     use TimeUnit::*;
     match (tu_l, tu_r) {
-        (Nanoseconds, Nanoseconds)
-        | (Nanoseconds, Microseconds)
-        | (Microseconds, Nanoseconds)
-        | (Nanoseconds, Milliseconds)
-        | (Milliseconds, Nanoseconds) => Nanoseconds,
-        (Microseconds, Microseconds)
-        | (Milliseconds, Microseconds)
-        | (Microseconds, Milliseconds) => Microseconds,
+        (Nanoseconds, _) | (_, Nanoseconds) => Nanoseconds,
+        (Microseconds, _) | (_, Microseconds) => Microseconds,
         (Milliseconds, Milliseconds) => Milliseconds,
     }
 }
