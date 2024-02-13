@@ -15,7 +15,7 @@ This means that if a function is not provided by Polars, we can use NumPy and we
 
 ## Numba
 
-[NumBa](https://numba.pydata.org/) is an open source JIT compiler that allows you to create your own ufuncs entirely within python. The key is to use the [@guvectorize](https://numba.readthedocs.io/en/stable/user/vectorize.html#the-guvectorize-decorator) decorator. One popular use case is conditional cumulative functions. For example, suppose you want to take a cumulative sum but have it reset whenever it gets to a threshold.
+[Numba](https://numba.pydata.org/) is an open source JIT compiler that allows you to create your own ufuncs entirely within python. The key is to use the [@guvectorize](https://numba.readthedocs.io/en/stable/user/vectorize.html#the-guvectorize-decorator) decorator. One popular use case is conditional cumulative functions. For example, suppose you want to take a cumulative sum but have it reset whenever it gets to a threshold.
 
 ### Example
 
