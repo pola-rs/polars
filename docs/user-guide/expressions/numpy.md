@@ -1,9 +1,9 @@
 # Numpy ufuncs
 
 Polars expressions support NumPy [ufuncs](https://numpy.org/doc/stable/reference/ufuncs.html). See [here](https://numpy.org/doc/stable/reference/ufuncs.html#available-ufuncs)
-for a list on all supported numpy functions. Additionally, SciPy offers a wide host of ufuncs. Specifically, the [scipy.special](https://docs.scipy.org/doc/scipy/reference/special.html#module-scipy.special) namespace has ufunc versions of many (possibly most) of what is available under stats. 
+for a list on all supported numpy functions. Additionally, SciPy offers a wide host of ufuncs. Specifically, the [scipy.special](https://docs.scipy.org/doc/scipy/reference/special.html#module-scipy.special) namespace has ufunc versions of many (possibly most) of what is available under stats.
 
-This means that if a function is not provided by Polars, we can use NumPy and we still have fast columnar operation through the NumPy API. ufuncs have a hook that diverts their own execution when one of its inputs is a class with the [`__array_ufunc__`](https://numpy.org/doc/stable/reference/arrays.classes.html#special-attributes-and-methods) method. Polars Expr class has this method which allows ufuncs to be input directly in a context (`select`, `with_columns`, `agg`) with relevant expressions as the input. This syntax extends even to multiple input functions. 
+This means that if a function is not provided by Polars, we can use NumPy and we still have fast columnar operation through the NumPy API. ufuncs have a hook that diverts their own execution when one of its inputs is a class with the [`__array_ufunc__`](https://numpy.org/doc/stable/reference/arrays.classes.html#special-attributes-and-methods) method. Polars Expr class has this method which allows ufuncs to be input directly in a context (`select`, `with_columns`, `agg`) with relevant expressions as the input. This syntax extends even to multiple input functions.
 
 ### Example
 
