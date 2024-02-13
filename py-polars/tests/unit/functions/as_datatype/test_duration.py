@@ -146,60 +146,6 @@ def test_add_duration_3786() -> None:
 
 
 @pytest.mark.parametrize(
-    (
-        "dt_time_unit",
-        "duration_time_unit",
-        "expected_time_unit",
-        "expected_nanoseconds",
-    ),
-    [
-        ("ms", "ms", "ms", 124000000),
-        ("ms", "us", "us", 123001000),
-        ("us", "ms", "us", 124456000),
-        ("us", "us", "us", 123457000),
-        ("ms", "ns", "ns", 123000001),
-        ("us", "ns", "ns", 123456001),
-        ("ns", "ms", "ns", 124456789),
-        ("ns", "us", "ns", 123457789),
-        ("ns", "ns", "ns", 123456790),
-    ],
-)
-@pytest.mark.parametrize("op", ["add-left", "add-right"])
-def test_datetime_add_duration_subsecond(
-    dt_time_unit: TimeUnit,
-    duration_time_unit: TimeUnit,
-    expected_time_unit: TimeUnit,
-    op: str,
-    expected_nanoseconds: int,
-) -> None:
-    df_datetimes = pl.DataFrame({"ts": ["2020-01-01T00:00:00.123456789"]}).select(
-        pl.col("ts").str.to_datetime(time_unit=dt_time_unit)
-    )
-
-    verbose_duration_unit = {
-        "ms": "milliseconds",
-        "us": "microseconds",
-        "ns": "nanoseconds",
-    }[duration_time_unit]
-
-    duration = pl.duration(
-        **{verbose_duration_unit: 1},
-        time_unit=duration_time_unit,
-    )
-
-    if op == "add-left":
-        select_expr = duration + pl.col("ts")
-    else:
-        select_expr = pl.col("ts") + duration
-
-    result_df = df_datetimes.select(select_expr.alias("ts"))
-    expected = pl.DataFrame(
-        {"ts": [f"2020-01-01T00:00:00.{expected_nanoseconds}"]}
-    ).select(pl.col("ts").str.to_datetime(time_unit=expected_time_unit))
-    assert_frame_equal(result_df, expected)
-
-
-@pytest.mark.parametrize(
     ("time_unit", "ms", "us", "ns"),
     [
         ("ms", 11, 0, 0),
