@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-latest
     if: (github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')) || github.event_name == 'push'
     steps:
-      # Event is run on the main branch, in case of a issue_comment checkout the correct PR
+      # Event is run on the main branch, in case of an issue_comment checkout the correct PR
       - name: Get PR branch
         uses: xt0rted/pull-request-comment-branch@v1
         if: github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')
@@ -72,7 +72,7 @@ jobs:
       - uses: codecov/codecov-action@v4
         if: github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')
         with:
-          files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/hypothesis.xml,py-polars/slow.xml
+          files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/hypothesis.xml,py-polars/slow.xml,py-polars/async.xml
           name: macos
           override_branch: ${{ steps.comment-branch.outputs.head_ref }}
           override_pr: ${{ github.event.issue.number }}
