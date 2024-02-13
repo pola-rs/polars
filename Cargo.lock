@@ -2498,14 +2498,21 @@ name = "polars"
 version = "0.37.0"
 dependencies = [
  "ahash",
+ "either",
+ "futures",
  "getrandom",
+ "polars-arrow",
  "polars-core",
+ "polars-error",
  "polars-io",
  "polars-lazy",
  "polars-ops",
+ "polars-parquet",
  "polars-plan",
  "polars-sql",
  "polars-time",
+ "polars-utils",
+ "proptest",
  "rand",
  "version_check",
 ]
