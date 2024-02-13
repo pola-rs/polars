@@ -470,10 +470,7 @@ pub trait SeriesTrait:
     }
 
     /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
-    fn as_any(&self) -> &dyn Any {
-        invalid_operation_panic!(as_any, self)
-    }
+    fn as_any(&self) -> &dyn Any;
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
