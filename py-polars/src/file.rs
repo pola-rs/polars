@@ -6,7 +6,7 @@ use polars::io::mmap::MmapBytesReader;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
-use polars_error::{polars_warn, PolarsWarning};
+use polars_error::polars_warn;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
