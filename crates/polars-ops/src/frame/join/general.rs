@@ -1,5 +1,8 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "chunked_ids")]
+use polars_utils::index::ChunkId;
+
 use super::*;
 use crate::series::coalesce_series;
 
@@ -47,7 +50,17 @@ pub(super) fn coalesce_outer_join(
     keys_left: &[&str],
     keys_right: &[&str],
     suffix: Option<&str>,
+    df_left: &DataFrame,
 ) -> DataFrame {
+    // No need to allocate the schema because we already
+    // know for certain that the column name for left left is `name`
+    // and for right is `name + suffix`
+    let schema_left = if keys_left == keys_right {
+        Schema::default()
+    } else {
+        df_left.schema()
+    };
+
     let schema = df.schema();
     let mut to_remove = Vec::with_capacity(keys_right.len());
 
@@ -56,7 +69,7 @@ pub(super) fn coalesce_outer_join(
     for (&l, &r) in keys_left.iter().zip(keys_right.iter()) {
         let pos_l = schema.get_full(l).unwrap().0;
 
-        let r = if l == r {
+        let r = if l == r || schema_left.contains(r) {
             let suffix = get_suffix(suffix);
             Cow::Owned(_join_suffix_name(r, suffix))
         } else {
@@ -83,7 +96,9 @@ pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> V
     let mut vals = Vec::with_capacity(len);
 
     for (chunk_i, chunk) in chunks.iter().enumerate() {
-        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
+        vals.extend(
+            (0..chunk.len()).map(|array_i| ChunkId::store(chunk_i as IdxSize, array_i as IdxSize)),
+        )
     }
 
     vals

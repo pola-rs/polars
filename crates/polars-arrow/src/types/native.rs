@@ -93,6 +93,7 @@ native_type!(i64, PrimitiveType::Int64);
 native_type!(f32, PrimitiveType::Float32);
 native_type!(f64, PrimitiveType::Float64);
 native_type!(i128, PrimitiveType::Int128);
+native_type!(u128, PrimitiveType::UInt128);
 
 /// The in-memory representation of the DayMillisecond variant of arrow's "Interval" logical type.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, Pod)]

@@ -75,9 +75,9 @@ impl FileScan {
             #[cfg(feature = "csv")]
             Self::Csv { .. } => true,
             #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => _file_options.row_count.is_some(),
+            Self::Ipc { .. } => _file_options.row_index.is_some(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => _file_options.row_count.is_some(),
+            Self::Parquet { .. } => _file_options.row_index.is_some(),
             #[allow(unreachable_patterns)]
             _ => false,
         }

@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use either::Either;
@@ -9,6 +10,8 @@ use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitCh
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
 use crate::buffer::Bytes;
 use crate::trusted_len::TrustedLen;
+
+const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 
 /// An immutable container semantically equivalent to `Arc<Vec<bool>>` but represented as `Arc<Vec<u8>>` where
 /// each boolean is represented as a single bit.
@@ -42,14 +45,31 @@ use crate::trusted_len::TrustedLen;
 /// // when sliced (or cloned), it is no longer possible to `into_mut`.
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
-#[derive(Clone)]
 pub struct Bitmap {
     bytes: Arc<Bytes<u8>>,
-    // both are measured in bits. They are used to bound the bitmap to a region of Bytes.
+    // Both offset and length are measured in bits. They are used to bound the
+    // bitmap to a region of Bytes.
     offset: usize,
     length: usize,
-    // this is a cache: it is computed on initialization
-    unset_bits: usize,
+
+    // A bit field that contains our cache for the number of unset bits.
+    // If it is u64::MAX, we have no known value at all.
+    // Other bit patterns where the top bit is set is reserved for future use.
+    // If the top bit is not set we have an exact count.
+    unset_bit_count_cache: AtomicU64,
+}
+
+impl Clone for Bitmap {
+    fn clone(&self) -> Self {
+        Self {
+            bytes: Arc::clone(&self.bytes),
+            offset: self.offset,
+            length: self.length,
+            unset_bit_count_cache: AtomicU64::new(
+                self.unset_bit_count_cache.load(Ordering::Relaxed),
+            ),
+        }
+    }
 }
 
 impl std::fmt::Debug for Bitmap {
@@ -89,12 +109,11 @@ impl Bitmap {
     #[inline]
     pub fn try_new(bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
         check(&bytes, 0, length)?;
-        let unset_bits = count_zeros(&bytes, 0, length);
         Ok(Self {
             length,
             offset: 0,
             bytes: Arc::new(bytes.into()),
-            unset_bits,
+            unset_bit_count_cache: AtomicU64::new(UNKNOWN_BIT_COUNT),
         })
     }
 
@@ -143,18 +162,21 @@ impl Bitmap {
     /// Returns the number of unset bits on this [`Bitmap`].
     ///
     /// Guaranteed to be `<= self.len()`.
+    ///
     /// # Implementation
-    /// This function is `O(1)` - the number of unset bits is computed when the bitmap is
-    /// created
-    pub const fn unset_bits(&self) -> usize {
-        self.unset_bits
-    }
-
-    /// Returns the number of unset bits on this [`Bitmap`].
-    #[inline]
-    #[deprecated(since = "0.13.0", note = "use `unset_bits` instead")]
-    pub fn null_count(&self) -> usize {
-        self.unset_bits
+    ///
+    /// This function counts the number of unset bits if it is not already
+    /// computed. Repeated calls use the cached bitcount.
+    pub fn unset_bits(&self) -> usize {
+        let cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
+        if cache >> 63 != 0 {
+            let zeros = count_zeros(&self.bytes, self.offset, self.length);
+            self.unset_bit_count_cache
+                .store(zeros as u64, Ordering::Relaxed);
+            zeros
+        } else {
+            cache as usize
+        }
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
@@ -178,24 +200,34 @@ impl Bitmap {
         }
 
         // Fast path: we have no nulls or are full-null.
-        if self.unset_bits == 0 || self.unset_bits == self.length {
+        let unset_bit_count_cache = self.unset_bit_count_cache.get_mut();
+        if *unset_bit_count_cache == 0 || *unset_bit_count_cache == self.length as u64 {
+            let new_count = if *unset_bit_count_cache > 0 {
+                length as u64
+            } else {
+                0
+            };
+            *unset_bit_count_cache = new_count;
             self.offset += offset;
             self.length = length;
-            self.unset_bits = if self.unset_bits > 0 { length } else { 0 };
             return;
         }
 
-        // If we keep the majority of the slice it's faster to count the parts
-        // we didn't keep rather than counting directly.
-        if length > self.length / 2 {
-            // Subtract the null count of the chunks we slice off.
-            let start_end = self.offset + offset + length;
-            let head_count = count_zeros(&self.bytes, self.offset, offset);
-            let tail_count = count_zeros(&self.bytes, start_end, self.length - length - offset);
-            self.unset_bits -= head_count + tail_count;
-        } else {
-            // Count the null values in the slice.
-            self.unset_bits = count_zeros(&self.bytes, self.offset + offset, length);
+        if *unset_bit_count_cache >> 63 == 0 {
+            // If we keep all but a small portion of the array it is worth
+            // doing an eager re-count since we can reuse the old count via the
+            // inclusion-exclusion principle.
+            let small_portion = (self.length / 5).max(32);
+            if length + small_portion >= self.length {
+                // Subtract the null count of the chunks we slice off.
+                let slice_end = self.offset + offset + length;
+                let head_count = count_zeros(&self.bytes, self.offset, offset);
+                let tail_count = count_zeros(&self.bytes, slice_end, self.length - length - offset);
+                let new_count = *unset_bit_count_cache - head_count as u64 - tail_count as u64;
+                *unset_bit_count_cache = new_count;
+            } else {
+                *unset_bit_count_cache = UNKNOWN_BIT_COUNT;
+            }
         }
 
         self.offset += offset;
@@ -306,7 +338,7 @@ impl Bitmap {
             vec![0; length.saturating_add(7) / 8]
         };
         let unset_bits = if value { 0 } else { length };
-        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, unset_bits) }
+        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, Some(unset_bits)) }
     }
 
     /// Counts the nulls (unset bits) starting from `offset` bits and for `length` bits.
@@ -342,38 +374,6 @@ impl Bitmap {
         }
     }
 
-    /// Returns its internal representation
-    #[must_use]
-    pub fn into_inner(self) -> (Arc<Bytes<u8>>, usize, usize, usize) {
-        let Self {
-            bytes,
-            offset,
-            length,
-            unset_bits,
-        } = self;
-        (bytes, offset, length, unset_bits)
-    }
-
-    /// Creates a `[Bitmap]` from its internal representation.
-    /// This is the inverted from `[Bitmap::into_inner]`
-    ///
-    /// # Safety
-    /// The invariants of this struct must be upheld
-    pub unsafe fn from_inner(
-        bytes: Arc<Bytes<u8>>,
-        offset: usize,
-        length: usize,
-        unset_bits: usize,
-    ) -> PolarsResult<Self> {
-        check(&bytes, offset, length)?;
-        Ok(Self {
-            bytes,
-            offset,
-            length,
-            unset_bits,
-        })
-    }
-
     /// Creates a `[Bitmap]` from its internal representation.
     /// This is the inverted from `[Bitmap::into_inner]`
     ///
@@ -383,13 +383,20 @@ impl Bitmap {
         bytes: Arc<Bytes<u8>>,
         offset: usize,
         length: usize,
-        unset_bits: usize,
+        unset_bits: Option<usize>,
     ) -> Self {
+        debug_assert!(check(&bytes[..], offset, length).is_ok());
+
+        let unset_bit_count_cache = if let Some(n) = unset_bits {
+            AtomicU64::new(n as u64)
+        } else {
+            AtomicU64::new(UNKNOWN_BIT_COUNT)
+        };
         Self {
             bytes,
             offset,
             length,
-            unset_bits,
+            unset_bit_count_cache,
         }
     }
 }
@@ -456,7 +463,7 @@ impl Bitmap {
         Self {
             offset,
             length,
-            unset_bits,
+            unset_bit_count_cache: AtomicU64::new(unset_bits as u64),
             bytes: Arc::new(crate::buffer::to_bytes(value.buffer().clone())),
         }
     }
@@ -483,7 +490,7 @@ impl IntoIterator for Bitmap {
 #[cfg(feature = "arrow_rs")]
 impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
     fn from(value: Bitmap) -> Self {
-        let null_count = value.unset_bits;
+        let null_count = value.unset_bits();
         let buffer = crate::buffer::to_buffer(value.bytes);
         let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
         // Safety: null count is accurate

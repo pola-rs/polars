@@ -1,3 +1,5 @@
+use std::ops::BitOr;
+
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
@@ -13,6 +15,11 @@ pub fn replace(
     default: &Series,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
+    polars_ensure!(
+        old.n_unique()? == old.len(),
+        ComputeError: "`old` input for `replace` must not contain duplicates"
+    );
+
     let return_dtype = match return_dtype {
         Some(dtype) => dtype,
         None => try_get_supertype(new.dtype(), default.dtype())?,
@@ -35,13 +42,8 @@ pub fn replace(
 
     let old = match (s.dtype(), old.dtype()) {
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(opt_rev_map, ord), DataType::String) => {
-            let dt = opt_rev_map
-                .as_ref()
-                .filter(|rev_map| rev_map.is_enum())
-                .map(|rev_map| DataType::Categorical(Some(rev_map.clone()), *ord))
-                .unwrap_or(DataType::Categorical(None, *ord));
-
+        (DataType::Categorical(_, ord), DataType::String) => {
+            let dt = DataType::Categorical(None, *ord);
             old.strict_cast(&dt)?
         },
         _ => old.strict_cast(s.dtype())?,
@@ -62,9 +64,18 @@ fn replace_by_single(
     new: &Series,
     default: &Series,
 ) -> PolarsResult<Series> {
-    let mask = is_in(s, old)?;
-    let new_broadcast = new.new_from_index(0, default.len());
-    new_broadcast.zip_with(&mask, default)
+    let mask = if old.null_count() == old.len() {
+        s.is_null()
+    } else {
+        let mask = is_in(s, old)?;
+
+        if old.null_count() == 0 {
+            mask
+        } else {
+            mask.bitor(s.is_null())
+        }
+    };
+    new.zip_with(&mask, default)
 }
 
 /// General case for replacing by multiple values
@@ -101,7 +112,7 @@ fn replace_by_multiple(
 
     match joined.column("__POLARS_REPLACE_MASK") {
         Ok(col) => {
-            let mask = col.bool()?;
+            let mask = col.bool().unwrap();
             replaced.zip_with(mask, default)
         },
         Err(_) => {

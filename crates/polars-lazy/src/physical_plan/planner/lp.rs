@@ -38,7 +38,7 @@ fn partitionable_gb(
                 let depth = (expr_arena).iter(*agg).count();
 
                 // These single expressions are partitionable
-                if matches!(aexpr, AExpr::Count) {
+                if matches!(aexpr, AExpr::Len) {
                     continue;
                 }
                 // col()
@@ -55,7 +55,7 @@ fn partitionable_gb(
                     // count().alias() is allowed: count of 2
                     if depth <= 2 {
                         match expr_arena.get(*input) {
-                            AExpr::Count => {},
+                            AExpr::Len => {},
                             _ => {
                                 partitionable = false;
                                 break;
@@ -103,7 +103,7 @@ fn partitionable_gb(
                         Ternary {truthy, falsy, predicate,..} => {
                             !has_aggregation(*truthy) && !has_aggregation(*falsy) && !has_aggregation(*predicate)
                         }
-                        Column(_) | Alias(_, _) | Count | Literal(_) | Cast {..} => {
+                        Column(_) | Alias(_, _) | Len | Literal(_) | Cast {..} => {
                             true
                         }
                         _ => {
@@ -172,7 +172,6 @@ pub fn create_physical_plan(
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         },
-        #[cfg(feature = "horizontal_concat")]
         HConcat {
             inputs, options, ..
         } => {

@@ -145,7 +145,6 @@ impl LogicalPlan {
                 }
                 Ok(())
             },
-            #[cfg(feature = "horizontal_concat")]
             HConcat { inputs, .. } => {
                 let current_node = DotNode {
                     branch,
@@ -407,7 +406,7 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             },
             Error { err, .. } => {
-                let fmt = format!("{:?}", &**err);
+                let fmt = format!("{:?}", &err.0);
                 let current_node = DotNode {
                     branch,
                     id,

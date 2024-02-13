@@ -171,7 +171,6 @@ def get_ffi_func(
     -------
     callable or None
         FFI function, or None if not found.
-
     """
     ffi_name = dtype_to_ffiname(dtype)
     fname = name.replace("<>", ffi_name)

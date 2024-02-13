@@ -71,7 +71,6 @@ def lit(
 
     >>> pl.lit([[1, 2], [3, 4]])  # doctest: +SKIP
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
-
     """
     time_unit: TimeUnit
 
@@ -87,9 +86,8 @@ def lit(
             and getattr(dtype, "time_zone", None) is not None
             and dtype.time_zone != str(value.tzinfo)  # type: ignore[union-attr]
         ):
-            raise TypeError(
-                f"time zone of dtype ({dtype.time_zone!r}) differs from time zone of value ({value.tzinfo!r})"  # type: ignore[union-attr]
-            )
+            msg = f"time zone of dtype ({dtype.time_zone!r}) differs from time zone of value ({value.tzinfo!r})"  # type: ignore[union-attr]
+            raise TypeError(msg)
         e = lit(
             _datetime_to_pl_timestamp(value.replace(tzinfo=timezone.utc), time_unit)
         ).cast(Datetime(time_unit))

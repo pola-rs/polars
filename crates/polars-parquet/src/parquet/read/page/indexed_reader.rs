@@ -30,7 +30,7 @@ pub struct IndexedPageReader<R: Read + Seek> {
     // buffer to read the whole page [header][data] into memory
     buffer: Vec<u8>,
 
-    // buffer to store the data [data] and re-use across pages
+    // buffer to store the data [data] and reuse across pages
     data_buffer: Vec<u8>,
 
     pages: VecDeque<FilteredPage>,

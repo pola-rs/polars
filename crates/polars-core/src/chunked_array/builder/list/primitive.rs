@@ -30,6 +30,26 @@ where
         }
     }
 
+    pub fn new_with_values_type(
+        name: &str,
+        capacity: usize,
+        values_capacity: usize,
+        values_type: DataType,
+        logical_type: DataType,
+    ) -> Self {
+        let values = MutablePrimitiveArray::<T::Native>::with_capacity_from(
+            values_capacity,
+            values_type.to_arrow(true),
+        );
+        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
+        let field = Field::new(name, DataType::List(Box::new(logical_type)));
+        Self {
+            builder,
+            field,
+            fast_explode: true,
+        }
+    }
+
     #[inline]
     pub fn append_slice(&mut self, items: &[T::Native]) {
         let values = self.builder.mut_values();

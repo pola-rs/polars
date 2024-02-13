@@ -16,7 +16,7 @@ use std::hash::Hash;
 
 use ahash::RandomState;
 pub use args::*;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
 #[cfg(feature = "dtype-categorical")]
@@ -309,10 +309,10 @@ pub trait DataFrameJoinOps: IntoDf {
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
             JoinType::Outer { .. } => {
-                let left = DataFrame::new_no_checks(selected_left_physical);
-                let right = DataFrame::new_no_checks(selected_right_physical);
+                let df_left = DataFrame::new_no_checks(selected_left_physical);
+                let df_right = DataFrame::new_no_checks(selected_right_physical);
 
-                let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
+                let (mut left, mut right, swap) = det_hash_prone_order!(df_left, df_right);
                 let (mut join_idx_l, mut join_idx_r) =
                     _outer_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
 
@@ -342,6 +342,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         &names_left,
                         &names_right,
                         args.suffix.as_deref(),
+                        left_df,
                     ))
                 } else {
                     out

@@ -45,7 +45,7 @@ fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
         let pa =
             PrimitiveArray::from_data_default(reinterpreted_buf, inner_arr.validity().cloned());
         LargeListArray::new(
-            DataType::List(Box::new(U::get_dtype())).to_arrow(),
+            DataType::List(Box::new(U::get_dtype())).to_arrow(true),
             array.offsets().clone(),
             pa.to_boxed(),
             array.validity().cloned(),

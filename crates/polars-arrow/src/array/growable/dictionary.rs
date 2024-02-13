@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
@@ -28,7 +30,7 @@ fn concatenate_values<K: DictionaryKey>(
     let mut offsets = Vec::with_capacity(arrays_keys.len() + 1);
     offsets.push(0);
     for (i, values) in arrays_values.iter().enumerate() {
-        mutable.extend(i, 0, values.len());
+        unsafe { mutable.extend(i, 0, values.len()) };
         offsets.push(offsets[i] + values.len());
     }
     (mutable.as_box(), offsets)
@@ -94,12 +96,14 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
 
 impl<'a, T: DictionaryKey> Growable<'a> for GrowableDictionary<'a, T> {
     #[inline]
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let keys_array = self.keys[index];
+    unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
+        let keys_array = *self.keys.get_unchecked_release(index);
         extend_validity(&mut self.validity, keys_array, start, len);
 
-        let values = &keys_array.values()[start..start + len];
-        let offset = self.offsets[index];
+        let values = &keys_array
+            .values()
+            .get_unchecked_release(start..start + len);
+        let offset = self.offsets.get_unchecked_release(index);
         self.key_values.extend(
             values
                 .iter()

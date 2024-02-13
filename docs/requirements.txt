@@ -3,8 +3,13 @@ pyarrow
 graphviz
 matplotlib
 numba
+seaborn
+plotly
+altair
+
 mkdocs-material==9.5.2
 mkdocs-macros-plugin==1.0.4
+mkdocs-redirects==1.2.1
 material-plausible-plugin==0.2.0
-markdown-exec[ansi]==1.7.0
-PyGithub==2.1.1
+markdown-exec[ansi]==1.8.0
+PyGithub==2.2.0

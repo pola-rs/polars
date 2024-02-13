@@ -54,7 +54,8 @@ def _create_namespace(
 
     def namespace(ns_class: type[NS]) -> type[NS]:
         if name in _reserved_namespaces:
-            raise AttributeError(f"cannot override reserved namespace {name!r}")
+            msg = f"cannot override reserved namespace {name!r}"
+            raise AttributeError(msg)
         elif hasattr(cls, name):
             warn(
                 f"Overriding existing custom namespace {name!r} (on {cls.__name__!r})",
@@ -118,7 +119,6 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 55.0   ┆ 64        ┆ 32        ┆ 64           │
     │ 64.001 ┆ 128       ┆ 64        ┆ 64           │
     └────────┴───────────┴───────────┴──────────────┘
-
     """
     return _create_namespace(name, pl.Expr)
 
@@ -217,7 +217,6 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yy  ┆ 5   ┆ 6   ┆ 7   │
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘]
-
     """
     return _create_namespace(name, pl.DataFrame)
 
@@ -321,7 +320,6 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 5   ┆ 6   ┆ 7   │
     │ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┘]
-
     """
     return _create_namespace(name, pl.LazyFrame)
 
@@ -375,6 +373,5 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
         64
         125
     ]
-
     """
     return _create_namespace(name, pl.Series)

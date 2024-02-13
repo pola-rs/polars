@@ -394,16 +394,16 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
     match (s_fields.len(), rhs_fields.len()) {
         (_, 1) => {
             let rhs = &rhs.fields()[0];
-            s.apply_fields(|s| func(s, rhs)).into_series()
+            s._apply_fields(|s| func(s, rhs)).into_series()
         },
         (1, _) => {
             let s = &s.fields()[0];
-            rhs.apply_fields(|rhs| func(s, rhs)).into_series()
+            rhs._apply_fields(|rhs| func(s, rhs)).into_series()
         },
         _ => {
             let mut rhs_iter = rhs.fields().iter();
 
-            s.apply_fields(|s| match rhs_iter.next() {
+            s._apply_fields(|s| match rhs_iter.next() {
                 Some(rhs) => func(s, rhs),
                 None => s.clone(),
             })
@@ -619,6 +619,22 @@ where
 
     fn div(self, rhs: T) -> Self::Output {
         (&self).div(rhs)
+    }
+}
+
+// TODO: remove this, temporary band-aid.
+impl Series {
+    pub fn wrapping_trunc_div_scalar<T: Num + NumCast>(&self, rhs: T) -> Self {
+        let s = self.to_physical_repr();
+        macro_rules! div {
+            ($ca:expr) => {{
+                let rhs = NumCast::from(rhs).unwrap();
+                $ca.wrapping_trunc_div_scalar(rhs).into_series()
+            }};
+        }
+
+        let out = downcast_as_macro_arg_physical!(s, div);
+        finish_cast(self, out)
     }
 }
 

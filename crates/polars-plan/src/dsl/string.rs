@@ -120,10 +120,13 @@ impl StringNameSpace {
     }
 
     /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
-    pub fn extract(self, pat: &str, group_index: usize) -> Expr {
-        let pat = pat.to_string();
-        self.0
-            .map_private(StringFunction::Extract { pat, group_index }.into())
+    pub fn extract(self, pat: Expr, group_index: usize) -> Expr {
+        self.0.map_many_private(
+            StringFunction::Extract(group_index).into(),
+            &[pat],
+            false,
+            true,
+        )
     }
 
     #[cfg(feature = "extract_groups")]
@@ -188,8 +191,37 @@ impl StringNameSpace {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    pub fn zfill(self, length: usize) -> Expr {
-        self.0.map_private(StringFunction::ZFill(length).into())
+    pub fn zfill(self, length: Expr) -> Expr {
+        self.0
+            .map_many_private(StringFunction::ZFill.into(), &[length], false, false)
+    }
+
+    /// Find the index of a literal substring within another string value.
+    #[cfg(feature = "regex")]
+    pub fn find_literal(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Find {
+                literal: true,
+                strict: false,
+            }),
+            &[pat],
+            false,
+            true,
+        )
+    }
+
+    /// Find the index of a substring defined by a regular expressons within another string value.
+    #[cfg(feature = "regex")]
+    pub fn find(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Find {
+                literal: false,
+                strict,
+            }),
+            &[pat],
+            false,
+            true,
+        )
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
@@ -485,11 +517,13 @@ impl StringNameSpace {
     }
 
     /// Slice the string values.
-    pub fn slice(self, start: i64, length: Option<u64>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Slice(
-                start, length,
-            )))
+    pub fn slice(self, offset: Expr, length: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Slice),
+            &[offset, length],
+            false,
+            false,
+        )
     }
 
     pub fn explode(self) -> Expr {

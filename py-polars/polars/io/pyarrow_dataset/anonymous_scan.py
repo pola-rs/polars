@@ -32,7 +32,6 @@ def _scan_pyarrow_dataset(
         different than polars does.
     batch_size
         The maximum row count for scanned pyarrow record batches.
-
     """
     func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
     return pl.LazyFrame._scan_python_function(
@@ -66,7 +65,6 @@ def _scan_pyarrow_dataset_impl(
     Returns
     -------
     DataFrame
-
     """
     from polars import from_arrow
 

@@ -2,9 +2,9 @@ use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
-use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
@@ -123,7 +123,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
     let blocks = if let Some(blocks) = &metadata.dictionaries {
         blocks
     } else {
-        return Ok(AHashMap::new());
+        return Ok(PlHashMap::new());
     };
     // use a temporary smaller scratch for the messages
     let mut message_scratch = Default::default();

@@ -13,6 +13,7 @@ use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::TotalOrdKernel;
 
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 use crate::series::IsSorted;
 
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
@@ -164,6 +165,52 @@ where
 
     fn gt_eq(&self, rhs: &Self) -> BooleanChunked {
         rhs.lt_eq(self)
+    }
+}
+
+impl ChunkCompare<&NullChunked> for NullChunked {
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn equal_missing(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full(self.name(), true, get_broadcast_length(self, rhs))
+    }
+
+    fn not_equal(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn not_equal_missing(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full(self.name(), false, get_broadcast_length(self, rhs))
+    }
+
+    fn gt(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn gt_eq(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn lt(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+
+    fn lt_eq(&self, rhs: &NullChunked) -> Self::Item {
+        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+    }
+}
+
+#[inline]
+fn get_broadcast_length(lhs: &NullChunked, rhs: &NullChunked) -> usize {
+    match (lhs.len(), rhs.len()) {
+        (1, len_r) => len_r,
+        (len_l, 1) => len_l,
+        (len_l, len_r) if len_l == len_r => len_l,
+        _ => panic!("Cannot compare two series of different lengths."),
     }
 }
 
@@ -815,7 +862,8 @@ where
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const ChunkedArray<T>);
         // Should be get and not get_unchecked, because there could be nulls
-        self.get(idx_self).tot_eq(&ca_other.get(idx_other))
+        self.get_unchecked(idx_self)
+            .tot_eq(&ca_other.get_unchecked(idx_other))
     }
 }
 
@@ -824,7 +872,7 @@ impl ChunkEqualElement for BooleanChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const BooleanChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
     }
 }
 
@@ -833,7 +881,7 @@ impl ChunkEqualElement for StringChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const StringChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
     }
 }
 
@@ -842,7 +890,16 @@ impl ChunkEqualElement for BinaryChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const BinaryChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+    }
+}
+
+impl ChunkEqualElement for BinaryOffsetChunked {
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const BinaryOffsetChunked);
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
     }
 }
 
@@ -854,9 +911,16 @@ impl ChunkEqualElement for ArrayChunked {}
 mod test {
     use std::iter::repeat;
 
-    use super::super::arithmetic::test::create_two_chunked;
     use super::super::test::get_chunked_array;
     use crate::prelude::*;
+
+    pub(crate) fn create_two_chunked() -> (Int32Chunked, Int32Chunked) {
+        let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
+        let a2 = Int32Chunked::new("a", &[4, 5, 6]);
+        let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
+        a1.append(&a2);
+        (a1, a3)
+    }
 
     #[test]
     fn test_bitwise_ops() {

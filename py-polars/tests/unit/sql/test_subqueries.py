@@ -4,7 +4,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-def test_sql_join_on_subquery() -> None:
+def test_join_on_subquery() -> None:
     df1 = pl.DataFrame(
         {
             "x": [-1, 0, 1, 2, 3, 4],
@@ -36,7 +36,7 @@ def test_sql_join_on_subquery() -> None:
     )
 
 
-def test_sql_from_subquery() -> None:
+def test_from_subquery() -> None:
     df1 = pl.DataFrame(
         {
             "x": [-1, 0, 1, 2, 3, 4],
@@ -68,7 +68,7 @@ def test_sql_from_subquery() -> None:
     )
 
 
-def test_sql_in_subquery() -> None:
+def test_in_subquery() -> None:
     df = pl.DataFrame(
         {
             "x": [1, 2, 3, 4, 5, 6],

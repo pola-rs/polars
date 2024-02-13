@@ -123,7 +123,8 @@ class CPUID_struct(ctypes.Structure):
 class CPUID:
     def __init__(self) -> None:
         if _POLARS_ARCH != "x86-64":
-            raise SystemError("CPUID is only available for x86")
+            msg = "CPUID is only available for x86"
+            raise SystemError(msg)
 
         if _IS_WINDOWS:
             if _IS_64BIT:
@@ -156,7 +157,8 @@ class CPUID:
                 None, size, _MEM_COMMIT | _MEM_RESERVE, _PAGE_EXECUTE_READWRITE
             )
             if not self.addr:
-                raise MemoryError("could not allocate memory for CPUID check")
+                msg = "could not allocate memory for CPUID check"
+                raise MemoryError(msg)
             ctypes.memmove(self.addr, code, size)
         else:
             import mmap  # Only import if necessary.
@@ -225,7 +227,8 @@ def check_cpu_flags() -> None:
     missing_features = []
     for f in expected_cpu_flags:
         if f not in supported_cpu_flags:
-            raise RuntimeError(f'unknown feature flag "{f}"')
+            msg = f'unknown feature flag "{f}"'
+            raise RuntimeError(msg)
 
         if not supported_cpu_flags[f]:
             missing_features.append(f)

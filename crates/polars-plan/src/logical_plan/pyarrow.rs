@@ -65,7 +65,7 @@ pub(super) fn predicate_to_pa(
             }
         },
         AExpr::Literal(lv) => {
-            let av = lv.to_anyvalue()?;
+            let av = lv.to_any_value()?;
             let dtype = av.dtype();
             match av.as_borrowed() {
                 AnyValue::String(s) => Some(format!("'{s}'")),

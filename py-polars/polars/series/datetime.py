@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date
+from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
+from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     import datetime as dt
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TemporalLiteral, TimeUnit
 
 
 @expr_dispatch
@@ -39,7 +40,6 @@ class DateTimeNameSpace:
         >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
         >>> s.dt.min()
         datetime.date(2001, 1, 1)
-
         """
         return wrap_s(self._s).min()  # type: ignore[return-value]
 
@@ -53,11 +53,10 @@ class DateTimeNameSpace:
         >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
         >>> s.dt.max()
         datetime.date(2001, 1, 3)
-
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> dt.date | dt.datetime | dt.timedelta | None:
+    def median(self) -> TemporalLiteral | float | None:
         """
         Return median as python DateTime.
 
@@ -77,18 +76,19 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.median()
         datetime.datetime(2001, 1, 2, 0, 0)
-
         """
         s = wrap_s(self._s)
         out = s.median()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
+                return _to_python_date(int(out))  # type: ignore[arg-type]
+            elif s.dtype in (Datetime, Duration):
+                return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
-    def mean(self) -> dt.date | dt.datetime | None:
+    def mean(self) -> TemporalLiteral | float | None:
         """
         Return mean as python DateTime.
 
@@ -100,15 +100,16 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.mean()
         datetime.datetime(2001, 1, 2, 0, 0)
-
         """
         s = wrap_s(self._s)
         out = s.mean()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
+                return _to_python_date(int(out))  # type: ignore[arg-type]
+            elif s.dtype in (Datetime, Duration):
+                return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
     def to_string(self, format: str) -> Series:
@@ -141,6 +142,26 @@ class DateTimeNameSpace:
             "2020/05/01"
         ]
 
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.to_string("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.to_string("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
+        ]
         """
 
     def strftime(self, format: str) -> Series:
@@ -179,8 +200,104 @@ class DateTimeNameSpace:
             "2020/05/01"
         ]
 
+        If you're interested in the day name / month name, you can use
+        `'%A'` / `'%B'`:
+
+        >>> s.dt.strftime("%A")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "Sunday"
+                "Wednesday"
+                "Friday"
+        ]
+
+        >>> s.dt.strftime("%B")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "March"
+                "April"
+                "May"
+        ]
         """
         return self.to_string(format)
+
+    def millennium(self) -> Expr:
+        """
+        Extract the millennium from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the millennium number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "dt",
+        ...     [
+        ...         date(999, 12, 31),
+        ...         date(1897, 5, 7),
+        ...         date(2000, 1, 1),
+        ...         date(2001, 7, 5),
+        ...         date(3002, 10, 20),
+        ...     ],
+        ... )
+        >>> s.dt.millennium()
+        shape: (5,)
+        Series: 'dt' [i32]
+        [
+            1
+            2
+            2
+            3
+            4
+        ]
+        """
+
+    def century(self) -> Expr:
+        """
+        Extract the century from underlying representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the century number in the calendar date.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int32`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "dt",
+        ...     [
+        ...         date(999, 12, 31),
+        ...         date(1897, 5, 7),
+        ...         date(2000, 1, 1),
+        ...         date(2001, 7, 5),
+        ...         date(3002, 10, 20),
+        ...     ],
+        ... )
+        >>> s.dt.century()
+        shape: (5,)
+        Series: 'dt' [i32]
+        [
+            10
+            19
+            20
+            21
+            31
+        ]
+        """
 
     def year(self) -> Series:
         """
@@ -206,7 +323,6 @@ class DateTimeNameSpace:
                 2001
                 2002
         ]
-
         """
 
     def is_leap_year(self) -> Series:
@@ -234,7 +350,6 @@ class DateTimeNameSpace:
                 false
                 false
         ]
-
         """
 
     def iso_year(self) -> Series:
@@ -261,7 +376,6 @@ class DateTimeNameSpace:
         [
                 2021
         ]
-
         """
 
     def quarter(self) -> Series:
@@ -292,7 +406,6 @@ class DateTimeNameSpace:
                 1
                 2
         ]
-
         """
 
     def month(self) -> Series:
@@ -324,7 +437,6 @@ class DateTimeNameSpace:
                 3
                 4
         ]
-
         """
 
     def week(self) -> Series:
@@ -356,7 +468,6 @@ class DateTimeNameSpace:
                 9
                 13
         ]
-
         """
 
     def weekday(self) -> Series:
@@ -390,7 +501,6 @@ class DateTimeNameSpace:
                 6
                 7
         ]
-
         """
 
     def day(self) -> Series:
@@ -423,7 +533,6 @@ class DateTimeNameSpace:
                 7
                 9
         ]
-
         """
 
     def ordinal_day(self) -> Series:
@@ -454,7 +563,6 @@ class DateTimeNameSpace:
                 32
                 60
         ]
-
         """
 
     def time(self) -> Series:
@@ -519,9 +627,13 @@ class DateTimeNameSpace:
         ]
         """
 
+    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
     def datetime(self) -> Series:
         """
         Extract (local) datetime.
+
+        .. deprecated:: 0.20.4
+            Use `dt.replace_time_zone(None)` instead.
 
         Applies to Datetime columns.
 
@@ -542,7 +654,7 @@ class DateTimeNameSpace:
         [
                 2021-01-02 05:00:00 +0545
         ]
-        >>> ser.dt.datetime()
+        >>> ser.dt.datetime()  # doctest: +SKIP
         shape: (1,)
         Series: '' [datetime[μs]]
         [
@@ -589,7 +701,6 @@ class DateTimeNameSpace:
                 2
                 3
         ]
-
         """
 
     def minute(self) -> Series:
@@ -629,7 +740,6 @@ class DateTimeNameSpace:
                 2
                 4
         ]
-
         """
 
     def second(self, *, fractional: bool = False) -> Series:
@@ -679,7 +789,6 @@ class DateTimeNameSpace:
                 3.11111
                 5.765431
         ]
-
         """
 
     def millisecond(self) -> Series:
@@ -715,7 +824,6 @@ class DateTimeNameSpace:
                 500
                 0
         ]
-
         """
 
     def microsecond(self) -> Series:
@@ -765,7 +873,6 @@ class DateTimeNameSpace:
                 500000
                 0
         ]
-
         """
 
     def nanosecond(self) -> Series:
@@ -815,7 +922,6 @@ class DateTimeNameSpace:
                 500000000
                 0
         ]
-
         """
 
     def timestamp(self, time_unit: TimeUnit = "us") -> Series:
@@ -859,7 +965,6 @@ class DateTimeNameSpace:
                 978393600000000000
                 978480000000000000
         ]
-
         """
 
     def epoch(self, time_unit: EpochTimeUnit = "us") -> Series:
@@ -903,12 +1008,14 @@ class DateTimeNameSpace:
                 978393600
                 978480000
         ]
-
         """
 
     def with_time_unit(self, time_unit: TimeUnit) -> Series:
         """
         Set time unit a Series of dtype Datetime or Duration.
+
+        .. deprecated:: 0.20.5
+            First cast to `Int64` and then cast to the desired data type.
 
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
@@ -916,7 +1023,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` Series.
+            Unit of time for the `Datetime` or `Duration` Series.
 
         Examples
         --------
@@ -926,7 +1033,7 @@ class DateTimeNameSpace:
         ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)],
         ...     dtype=pl.Datetime(time_unit="ns"),
         ... )
-        >>> s.dt.with_time_unit("us")
+        >>> s.dt.with_time_unit("us")  # doctest: +SKIP
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
@@ -934,7 +1041,6 @@ class DateTimeNameSpace:
                 +32974-01-22 00:00:00
                 +32976-10-18 00:00:00
         ]
-
         """
 
     def cast_time_unit(self, time_unit: TimeUnit) -> Series:
@@ -976,7 +1082,6 @@ class DateTimeNameSpace:
                 2001-01-02 00:00:00
                 2001-01-03 00:00:00
         ]
-
         """
 
     def convert_time_zone(self, time_zone: str) -> Series:
@@ -987,6 +1092,11 @@ class DateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` Series.
+
+        Notes
+        -----
+        If converting from a time-zone-naive datetime, then conversion will happen
+        as if converting from UTC, regardless of your system's time zone.
 
         Examples
         --------
@@ -1115,7 +1225,6 @@ class DateTimeNameSpace:
         │ 2018-10-28 02:30:00 ┆ earliest  ┆ 2018-10-28 02:30:00 CEST      │
         │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
         └─────────────────────┴───────────┴───────────────────────────────┘
-
         """
 
     def total_days(self) -> Series:
@@ -1149,7 +1258,6 @@ class DateTimeNameSpace:
                 31
                 30
         ]
-
         """
 
     def total_hours(self) -> Series:
@@ -1185,7 +1293,6 @@ class DateTimeNameSpace:
                 24
                 24
         ]
-
         """
 
     def total_minutes(self) -> Series:
@@ -1221,7 +1328,6 @@ class DateTimeNameSpace:
                 1440
                 1440
         ]
-
         """
 
     def total_seconds(self) -> Series:
@@ -1259,7 +1365,6 @@ class DateTimeNameSpace:
                 60
                 60
         ]
-
         """
 
     def total_milliseconds(self) -> Series:
@@ -1296,7 +1401,6 @@ class DateTimeNameSpace:
                 1
                 1
         ]
-
         """
 
     def total_microseconds(self) -> Series:
@@ -1333,7 +1437,6 @@ class DateTimeNameSpace:
                 1000
                 1000
         ]
-
         """
 
     def total_nanoseconds(self) -> Series:
@@ -1370,7 +1473,6 @@ class DateTimeNameSpace:
                 1000000
                 1000000
         ]
-
         """
 
     def offset_by(self, by: str | Expr) -> Series:
@@ -1589,9 +1691,9 @@ class DateTimeNameSpace:
                 2001-01-01 00:30:00
                 2001-01-01 01:00:00
         ]
-
         """
 
+    @unstable()
     def round(
         self,
         every: str | dt.timedelta,
@@ -1602,38 +1704,18 @@ class DateTimeNameSpace:
         """
         Divide the date/ datetime range into buckets.
 
-        Each date/datetime in the first half of the interval
-        is mapped to the start of its bucket.
-        Each date/datetime in the second half of the interval
-        is mapped to the end of its bucket.
-        Ambiguous results are localised using the DST offset of the original timestamp -
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Each date/datetime in the first half of the interval is mapped to the start of
+        its bucket.
+        Each date/datetime in the second half of the interval is mapped to the end of
+        its bucket.
+        Ambiguous results are localized using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
         `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
-
-        The `every` and `offset` argument are created with the
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
 
         Parameters
         ----------
@@ -1656,10 +1738,30 @@ class DateTimeNameSpace:
         Series
             Series of data type :class:`Date` or :class:`Datetime`.
 
-        Warnings
-        --------
-        This functionality is currently experimental and may
-        change without it being considered a breaking change.
+        Notes
+        -----
+        The `every` and `offset` argument are created with the
+        the following string language:
+
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
+        - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
+        - 1y    (1 calendar year)
+
+        These strings can be combined:
+
+        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Examples
         --------
@@ -1717,7 +1819,6 @@ class DateTimeNameSpace:
                 2001-01-01 01:00:00
                 2001-01-01 01:00:00
         ]
-
         """
 
     def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Expr:
@@ -1748,7 +1849,6 @@ class DateTimeNameSpace:
             2022-12-31 01:02:03.456
             2023-07-05 01:02:03.456
         ]
-
         """
 
     def month_start(self) -> Series:
@@ -1892,7 +1992,6 @@ class DateTimeNameSpace:
                 1h
                 0ms
         ]
-
         """
 
     @deprecate_renamed_function("total_days", version="0.19.13")
@@ -1902,7 +2001,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_days` instead.
-
         """
         return self.total_days()
 
@@ -1913,7 +2011,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_hours` instead.
-
         """
         return self.total_hours()
 
@@ -1924,7 +2021,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_minutes` instead.
-
         """
         return self.total_minutes()
 
@@ -1935,7 +2031,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_seconds` instead.
-
         """
         return self.total_seconds()
 
@@ -1946,7 +2041,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_milliseconds` instead.
-
         """
         return self.total_milliseconds()
 
@@ -1957,7 +2051,6 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_microseconds` instead.
-
         """
         return self.total_microseconds()
 
@@ -1968,6 +2061,5 @@ class DateTimeNameSpace:
 
         .. deprecated:: 0.19.13
             Use :meth:`total_nanoseconds` instead.
-
         """
         return self.total_nanoseconds()

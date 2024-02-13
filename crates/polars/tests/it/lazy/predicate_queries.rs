@@ -221,7 +221,7 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
                 ..Default::default()
             },
         )?
-        .filter(count().over([col("k")]).gt(lit(1)))
+        .filter(len().over([col("k")]).gt(lit(1)))
         .collect()?;
 
         assert!(out.equals(&expected));

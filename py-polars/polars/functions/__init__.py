@@ -9,6 +9,7 @@ from polars.functions.aggregation import (
     cumsum_horizontal,
     max,
     max_horizontal,
+    mean_horizontal,
     min,
     min_horizontal,
     sum,
@@ -39,6 +40,7 @@ from polars.functions.lazy import (
     corr,
     count,
     cov,
+    cum_count,
     cum_fold,
     cum_reduce,
     cumfold,
@@ -68,6 +70,7 @@ from polars.functions.lazy import (
     tail,
     var,
 )
+from polars.functions.len import len
 from polars.functions.lit import lit
 from polars.functions.random import set_random_seed
 from polars.functions.range import (
@@ -130,6 +133,7 @@ __all__ = [
     "corr",
     "count",
     "cov",
+    "cum_count",
     "cum_fold",
     "cum_reduce",
     "cumfold",
@@ -153,6 +157,7 @@ __all__ = [
     "map_batches",
     "map_groups",
     "mean",
+    "mean_horizontal",
     "median",
     "n_unique",
     "quantile",
@@ -166,6 +171,8 @@ __all__ = [
     "tail",
     "time",
     "var",
+    # polars.functions.len
+    "len",
     # polars.functions.whenthen
     "when",
     "sql_expr",

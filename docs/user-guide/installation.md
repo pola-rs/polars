@@ -82,7 +82,7 @@ The opt-in features are:
     - `dtype-categorical`
     - `dtype-struct`
 - `lazy` - Lazy API
-    - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+    - `regex` - Use regexes in [column selection](crate::lazy::dsl::col)
     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 - `sql` - Pass SQL queries to polars.
 - `streaming` - Be able to process datasets that are larger than RAM.
@@ -128,7 +128,6 @@ The opt-in features are:
     - `group_by_list` - Allow group by operation on keys of type List.
     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
-    - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
     - `partition_by` - Split into multiple DataFrames partitioned by groups.
 - `Series`/`Expression` operations:

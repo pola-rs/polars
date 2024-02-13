@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 
 use crate::chunked_array::ChunkedArrayLayout;
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 #[repr(transparent)]
 struct NonNull<T>(T);
@@ -64,10 +65,22 @@ where
     }
 }
 
+impl TotalEqInner for &NullChunked {
+    unsafe fn eq_element_unchecked(&self, _idx_a: usize, _idx_b: usize) -> bool {
+        true
+    }
+}
+
 /// Create a type that implements TotalEqInner.
 pub(crate) trait IntoTotalEqInner<'a> {
     /// Create a type that implements `TakeRandom`.
     fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a>;
+}
+
+impl<'a> IntoTotalEqInner<'a> for &'a NullChunked {
+    fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a> {
+        Box::new(self)
+    }
 }
 
 /// We use a trait object because we want to call this from Series and cannot use a typed enum.
@@ -122,7 +135,7 @@ where
 
 #[cfg(feature = "dtype-categorical")]
 struct LocalCategorical<'a> {
-    rev_map: &'a Utf8Array<i64>,
+    rev_map: &'a Utf8ViewArray,
     cats: &'a UInt32Chunked,
 }
 
@@ -138,7 +151,7 @@ impl<'a> GetInner for LocalCategorical<'a> {
 #[cfg(feature = "dtype-categorical")]
 struct GlobalCategorical<'a> {
     p1: &'a PlHashMap<u32, u32>,
-    p2: &'a Utf8Array<i64>,
+    p2: &'a Utf8ViewArray,
     cats: &'a UInt32Chunked,
 }
 
@@ -159,7 +172,6 @@ impl<'a> IntoTotalOrdInner<'a> for &'a CategoricalChunked {
         match &**self.get_rev_map() {
             RevMapping::Global(p1, p2, _) => Box::new(GlobalCategorical { p1, p2, cats }),
             RevMapping::Local(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
-            RevMapping::Enum(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
         }
     }
 }

@@ -257,6 +257,8 @@ fn serialize_type(data_type: &ArrowDataType) -> arrow_format::ipc::Type {
         Struct(_) => ipc::Type::Struct(Box::new(ipc::Struct {})),
         Dictionary(_, v, _) => serialize_type(v),
         Extension(_, v, _) => serialize_type(v),
+        Utf8View => ipc::Type::Utf8View(Box::new(ipc::Utf8View {})),
+        BinaryView => ipc::Type::BinaryView(Box::new(ipc::BinaryView {})),
     }
 }
 
@@ -292,6 +294,8 @@ fn serialize_children(
         | Utf8
         | LargeUtf8
         | Decimal(_, _)
+        | Utf8View
+        | BinaryView
         | Decimal256(_, _) => vec![],
         FixedSizeList(inner, _) | LargeList(inner) | List(inner) | Map(inner, _) => {
             vec![serialize_field(inner, &ipc_field.fields[0])]

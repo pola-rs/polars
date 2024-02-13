@@ -35,7 +35,7 @@ def create_feature_flag_link(feature_name: str) -> str:
     Returns:
         str: Markdown formatted string with a link and the feature flag message
     """
-    return f'[:material-flag-plus:  Available on feature {feature_name}](/polars/user-guide/installation/#feature-flags "To use this functionality enable the feature flag {feature_name}"){{.feature-flag}}'
+    return f'[:material-flag-plus:  Available on feature {feature_name}](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag {feature_name}"){{.feature-flag}}'
 
 
 def create_feature_flag_links(language: str, api_functions: List[str]) -> List[str]:

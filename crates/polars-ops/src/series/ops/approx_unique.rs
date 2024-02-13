@@ -9,11 +9,10 @@ use crate::series::ops::approx_algo::HyperLogLog;
 fn approx_n_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator,
-    <<&'a ChunkedArray<T> as IntoIterator>::IntoIter as IntoIterator>::Item: Hash + Eq,
+    T::Physical<'a>: Hash + Eq,
 {
     let mut hllp = HyperLogLog::new();
-    ca.into_iter().for_each(|item| hllp.add(&item));
+    ca.iter().for_each(|item| hllp.add(&item));
     let c = hllp.count() as IdxSize;
 
     Ok(Series::new(ca.name(), &[c]))
@@ -26,9 +25,8 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
         Boolean => s.bool().and_then(approx_n_unique_ca),
         Binary => s.binary().and_then(approx_n_unique_ca),
         String => {
-            let s = s.cast(&Binary).unwrap();
-            let ca = s.binary().unwrap();
-            approx_n_unique_ca(ca)
+            let ca = s.str().unwrap().as_binary();
+            approx_n_unique_ca(&ca)
         },
         Float32 => approx_n_unique_ca(&s.bit_repr_small()),
         Float64 => approx_n_unique_ca(&s.bit_repr_large()),

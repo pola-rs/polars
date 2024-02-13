@@ -88,7 +88,7 @@ pub enum FunctionNode {
         args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
-    RowCount {
+    RowIndex {
         name: Arc<str>,
         schema: SchemaRef,
         offset: Option<IdxSize>,
@@ -125,7 +125,7 @@ impl PartialEq for FunctionNode {
             ) => existing_l == existing_r && new_l == new_r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
-            (RowCount { name: l, .. }, RowCount { name: r, .. }) => l == r,
+            (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
             _ => false,
         }
     }
@@ -148,7 +148,7 @@ impl FunctionNode {
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
             OpaquePython { streamable, .. } => *streamable,
-            RowCount { .. } => false,
+            RowIndex { .. } => false,
         }
     }
 
@@ -233,7 +233,7 @@ impl FunctionNode {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
-            Explode { schema, .. } | RowCount { schema, .. } | Melt { schema, .. } => {
+            Explode { schema, .. } | RowIndex { schema, .. } | Melt { schema, .. } => {
                 Ok(Cow::Owned(schema.clone()))
             },
         }
@@ -254,7 +254,7 @@ impl FunctionNode {
             | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            RowCount { .. } => false,
+            RowIndex { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -274,7 +274,7 @@ impl FunctionNode {
             | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            RowCount { .. } => true,
+            RowIndex { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -347,7 +347,7 @@ impl FunctionNode {
                 let args = (**args).clone();
                 df.melt2(args)
             },
-            RowCount { name, offset, .. } => df.with_row_count(name.as_ref(), *offset),
+            RowIndex { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
         }
     }
 }
@@ -396,7 +396,7 @@ impl Display for FunctionNode {
             Rename { .. } => write!(f, "RENAME"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
-            RowCount { .. } => write!(f, "WITH ROW COUNT"),
+            RowIndex { .. } => write!(f, "WITH ROW INDEX"),
         }
     }
 }

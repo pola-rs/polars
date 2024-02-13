@@ -4,9 +4,10 @@ use std::io::{Read, Seek};
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::read_basic::*;
-use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
+use super::super::{Compression, IpcBuffer, Node};
 use crate::array::FixedSizeBinaryArray;
 use crate::datatypes::ArrowDataType;
+use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_fixed_size_binary<R: Read + Seek>(
@@ -20,11 +21,7 @@ pub fn read_fixed_size_binary<R: Read + Seek>(
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<FixedSizeBinaryArray> {
-    let field_node = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(ComputeError:
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
-        )
-    })?;
+    let field_node = try_get_field_node(field_nodes, &data_type)?;
 
     let validity = read_validity(
         buffers,
@@ -37,11 +34,7 @@ pub fn read_fixed_size_binary<R: Read + Seek>(
         scratch,
     )?;
 
-    let length: usize = field_node
-        .length()
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+    let length = try_get_array_length(field_node, limit)?;
 
     let length = length.saturating_mul(FixedSizeBinaryArray::maybe_get_size(&data_type)?);
     let values = read_buffer(

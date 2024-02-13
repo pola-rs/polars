@@ -629,21 +629,16 @@ impl PhysicalExpr for WindowExpr {
 }
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
-    #[cfg(feature = "chunked_ids")]
     {
         use arrow::Either;
+        use polars_ops::chunked_array::TakeChunked;
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
                 out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
             },
-            Either::Right(ids) => unsafe { out_column._take_opt_chunked_unchecked(ids) },
+            Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
         }
-    }
-
-    #[cfg(not(feature = "chunked_ids"))]
-    unsafe {
-        out_column.take_unchecked(&join_opt_ids.iter().copied().collect_ca(""))
     }
 }
 
@@ -685,20 +680,6 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
-    let mut idx_mapping = Vec::with_capacity(len);
-    let mut iter = 0..len as IdxSize;
-    match groups {
-        GroupsProxy::Idx(groups) => {
-            for g in groups.all() {
-                idx_mapping.extend((&mut iter).take(g.len()).zip(g.iter().copied()));
-            }
-        },
-        GroupsProxy::Slice { groups, .. } => {
-            for &[first, len] in groups {
-                idx_mapping.extend((&mut iter).take(len as usize).zip(first..first + len));
-            }
-        },
-    }
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
     // safety:
@@ -765,7 +746,7 @@ where
                 let values_ptr = sync_ptr_values.get();
                 let validity_ptr = sync_ptr_validity.get();
 
-                ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
+                ca.iter().zip(groups.iter()).for_each(|(opt_v, g)| {
                     for idx in g.as_slice() {
                         let idx = *idx as usize;
                         debug_assert!(idx < len);
@@ -793,7 +774,7 @@ where
                     let values_ptr = sync_ptr_values.get();
                     let validity_ptr = sync_ptr_validity.get();
 
-                    for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
+                    for (opt_v, [start, g_len]) in ca.iter().zip(groups.iter()) {
                         let start = *start as usize;
                         let end = start + *g_len as usize;
                         for idx in start..end {
@@ -820,7 +801,7 @@ where
         unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_physical().to_arrow(),
+            T::get_dtype().to_physical().to_arrow(true),
             values.into(),
             Some(validity),
         );

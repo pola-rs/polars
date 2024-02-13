@@ -70,7 +70,7 @@ def test_drop_nulls(subset: Any) -> None:
 
 def test_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    df = df.drop(columns="a")
+    df = df.drop("a")
     assert df.shape == (3, 2)
 
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
@@ -106,7 +106,7 @@ def test_drop_columns() -> None:
     out2 = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).drop("a", "b")
     assert out2.columns == ["c"]
 
-    out2 = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).drop({"a"}, "b", "c")
+    out2 = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).drop({"a", "b", "c"})
     assert out2.columns == []
 
 
@@ -119,3 +119,21 @@ def test_drop_nan_ignore_null_3525() -> None:
         3.0,
         4.0,
     ]
+
+
+def test_drop_without_parameters() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    assert_frame_equal(df.drop(), df)
+    assert_frame_equal(df.lazy().drop(*[]), df.lazy())
+
+
+def test_drop_keyword_deprecated() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    expected = df.select("b")
+    with pytest.deprecated_call():
+        result_df = df.drop(columns="a")
+    assert_frame_equal(result_df, expected)
+
+    with pytest.deprecated_call():
+        result_lf = df.lazy().drop(columns="a")
+    assert_frame_equal(result_lf, expected.lazy())

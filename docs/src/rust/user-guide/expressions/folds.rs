@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out = df
         .lazy()
-        .select([concat_str([col("a"), col("b")], "")])
+        .select([concat_str([col("a"), col("b")], "", false)])
         .collect()?;
     println!("{:?}", out);
     // --8<-- [end:string]

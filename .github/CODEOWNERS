@@ -1,5 +1,6 @@
-*  @ritchie46 @stinodego @orlp @c-peters
+*  @ritchie46 @stinodego @c-peters
 
+/crates/  @ritchie46 @stinodego @orlp @orlp @c-peters
 /crates/polars-sql/  @ritchie46 @stinodego @orlp @c-peters @universalmind303
 /crates/polars-time/  @ritchie46 @stinodego @orlp @c-peters @MarcoGorelli
-/py-polars/  @ritchie46 @stinodego @orlp @c-peters @alexander-beedie @MarcoGorelli
+/py-polars/  @ritchie46 @stinodego @c-peters @alexander-beedie @MarcoGorelli

@@ -209,7 +209,7 @@ fn to_leaves_recursive<'a>(array: &'a dyn Array, leaves: &mut Vec<&'a dyn Array>
             to_leaves_recursive(array.field().as_ref(), leaves);
         },
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
-        | LargeUtf8 | Dictionary(_) => leaves.push(array),
+        | LargeUtf8 | Dictionary(_) | BinaryView | Utf8View => leaves.push(array),
         other => todo!("Writing {:?} to parquet not yet implemented", other),
     }
 }

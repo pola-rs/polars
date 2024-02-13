@@ -1,4 +1,4 @@
-use arrow::array::{Array, PrimitiveArray, ValueSize};
+use arrow::array::{Array, PrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
@@ -125,6 +125,11 @@ where
                 arr.set_values(new_values.into());
             },
         };
+
+        // The null count may have changed - make sure to update the ChunkedArray
+        let new_null_count = arr.null_count();
+        unsafe { ca.set_null_count(new_null_count.try_into().unwrap()) };
+
         Ok(ca.into_series())
     }
 }
@@ -137,8 +142,7 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         check_bounds(idx, self.len() as IdxSize)?;
         check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder =
-            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
 
         for (current_idx, current_value) in idx.iter().zip(values) {
             for (cnt_idx, opt_val_self) in &mut ca_iter {

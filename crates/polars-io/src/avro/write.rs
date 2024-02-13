@@ -61,12 +61,12 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        let schema = df.schema().to_arrow();
+        let schema = df.schema().to_arrow(false);
         let record = write::to_record(&schema, self.name.clone())?;
 
         let mut data = vec![];
         let mut compressed_block = avro_schema::file::CompressedBlock::default();
-        for chunk in df.iter_chunks() {
+        for chunk in df.iter_chunks(false) {
             let mut serializers = chunk
                 .iter()
                 .zip(record.fields.iter())

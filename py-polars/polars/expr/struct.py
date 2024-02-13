@@ -22,9 +22,8 @@ class ExprStructNameSpace:
         elif isinstance(item, int):
             return wrap_expr(self._pyexpr.struct_field_by_index(item))
         else:
-            raise TypeError(
-                f"expected type 'int | str', got {type(item).__name__!r} ({item!r})"
-            )
+            msg = f"expected type 'int | str', got {type(item).__name__!r} ({item!r})"
+            raise TypeError(msg)
 
     def field(self, name: str) -> Expr:
         """
@@ -82,7 +81,6 @@ class ExprStructNameSpace:
         │ ab  ┆ [1, 2]    │
         │ cd  ┆ [3]       │
         └─────┴───────────┘
-
         """
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
 
@@ -147,7 +145,6 @@ class ExprStructNameSpace:
 
         >>> df.select(pl.col("struct_col").struct.field("aaa"))  # doctest: +SKIP
         StructFieldNotFoundError: aaa
-
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
@@ -169,6 +166,5 @@ class ExprStructNameSpace:
         │ {[1, 2],[45]}    ┆ {"a":[1,2],"b":[45]}   │
         │ {[9, 1, 3],null} ┆ {"a":[9,1,3],"b":null} │
         └──────────────────┴────────────────────────┘
-
         """
         return wrap_expr(self._pyexpr.struct_json_encode())

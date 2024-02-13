@@ -174,13 +174,13 @@ pub(crate) fn overwrite_schema(
 }
 
 pub static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\s*[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
+    Regex::new(r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
 });
 
-pub static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
+pub static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^-?(\d+)$").unwrap());
 
 pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new(r"^\s*(true)$|^(false)$")
+    RegexBuilder::new(r"^(true|false)$")
         .case_insensitive(true)
         .build()
         .unwrap()
@@ -190,13 +190,13 @@ pub fn materialize_projection(
     with_columns: Option<&[String]>,
     schema: &Schema,
     hive_partitions: Option<&[Series]>,
-    has_row_count: bool,
+    has_row_index: bool,
 ) -> Option<Vec<usize>> {
     match hive_partitions {
         None => with_columns.map(|with_columns| {
             with_columns
                 .iter()
-                .map(|name| schema.index_of(name).unwrap() - has_row_count as usize)
+                .map(|name| schema.index_of(name).unwrap() - has_row_index as usize)
                 .collect()
         }),
         Some(part_cols) => {
@@ -209,7 +209,7 @@ pub fn materialize_projection(
                         if part_cols.iter().any(|s| s.name() == name.as_str()) {
                             None
                         } else {
-                            Some(schema.index_of(name).unwrap() - has_row_count as usize)
+                            Some(schema.index_of(name).unwrap() - has_row_index as usize)
                         }
                     })
                     .collect()

@@ -5,14 +5,10 @@ Attributes
 .. currentmodule:: polars
 .. autosummary::
    :toctree: api/
+   :template: autosummary/accessor_attribute.rst
 
-   Series.cat
-   Series.dt
    Series.dtype
    Series.inner_dtype
-   Series.list
    Series.name
    Series.shape
-   Series.str
    Series.flags
-   Series.plot

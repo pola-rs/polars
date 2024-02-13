@@ -190,16 +190,14 @@ where
 impl CategoricalChunked {
     // Use the indexes as perfect groups
     pub fn group_tuples_perfect(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        let DataType::Categorical(Some(rev_map), _) = self.dtype() else {
-            unreachable!()
-        };
+        let rev_map = self.get_rev_map();
         if self.is_empty() {
             return GroupsProxy::Idx(GroupsIdx::new(vec![], vec![], true));
         }
         let cats = self.physical();
 
         let mut out = match &**rev_map {
-            RevMapping::Local(cached, _) | RevMapping::Enum(cached, _) => {
+            RevMapping::Local(cached, _) => {
                 if self.can_fast_unique() {
                     if verbose() {
                         eprintln!("grouping categoricals, run perfect hash function");

@@ -287,10 +287,7 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the sum of the values in each row.
-///
-/// The name of the resulting column will be `"sum"`.
-/// Use [`alias`](Expr::alias) to choose a different name.
+/// Sum all values horizontally across columns.
 pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
@@ -303,7 +300,24 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
             input_wildcard_expansion: true,
             returns_scalar: false,
             cast_to_supertypes: false,
-            allow_rename: true,
+            ..Default::default()
+        },
+    })
+}
+
+/// Compute the mean of all values horizontally across columns.
+pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+    let exprs = exprs.as_ref().to_vec();
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    Ok(Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MeanHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            input_wildcard_expansion: true,
+            returns_scalar: false,
+            cast_to_supertypes: false,
             ..Default::default()
         },
     })

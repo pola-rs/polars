@@ -110,7 +110,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     v0 = df.select(pl.col(pl.String))
     v1 = df.select(pl.col(pl.Int64))
-    df_supported = df.drop(["cat", "time"])
+    df_supported = df.drop(["cat", "enum", "time"])
 
     # Case: Success (version 0)
     v0.write_delta(tmp_path)
@@ -340,6 +340,7 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     assert tbl.version() == 1
 
 
+@pytest.mark.write_disk()
 def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -347,6 +348,7 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize(
     "expr",
     [
@@ -382,10 +384,11 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.write_disk()
 def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    df.write_delta(tmp_path, mode="append")
+    df.write_delta(tmp_path)
 
     merger = df.write_delta(
         tmp_path,
@@ -404,6 +407,7 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
 
     merger.when_matched_delete(predicate="t.a > 2").execute()
 
-    table = pl.read_delta(str(tmp_path))
+    result = pl.read_delta(str(tmp_path))
 
-    assert_frame_equal(df.filter(pl.col("a") <= 2), table)
+    expected = df.filter(pl.col("a") <= 2)
+    assert_frame_equal(result, expected, check_row_order=False)

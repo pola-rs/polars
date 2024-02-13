@@ -13,21 +13,28 @@ impl AnonymousScan for LazyJsonLineReader {
             .with_chunk_size(self.batch_size)
             .low_memory(self.low_memory)
             .with_n_rows(scan_opts.n_rows)
-            .with_chunk_size(self.batch_size)
+            .with_ignore_errors(self.ignore_errors)
             .finish()
     }
 
     fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<SchemaRef> {
-        // Short-circuit schema inference if the schema has been explicitly provided.
-        if let Some(schema) = &self.schema {
+        // Short-circuit schema inference if the schema has been explicitly provided,
+        // or already inferred
+        if let Some(schema) = &(*self.schema.read().unwrap()) {
             return Ok(schema.clone());
         }
 
         let f = polars_utils::open_file(&self.path)?;
         let mut reader = std::io::BufReader::new(f);
 
-        let schema = polars_io::ndjson::infer_schema(&mut reader, infer_schema_length)?;
-        Ok(Arc::new(schema))
+        let schema = Arc::new(polars_io::ndjson::infer_schema(
+            &mut reader,
+            infer_schema_length,
+        )?);
+        let mut guard = self.schema.write().unwrap();
+        *guard = Some(schema.clone());
+
+        Ok(schema)
     }
     fn allows_projection_pushdown(&self) -> bool {
         true

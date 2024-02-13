@@ -46,6 +46,7 @@ Polars development flow relies on both Rust and Python, which means setting up y
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
 _Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
+_Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links._
 
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
@@ -149,9 +150,9 @@ The user guide is maintained in the `docs/user-guide` folder. Before creating a 
 
 #### Building and serving the user guide
 
-The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make requirements` in the root of the repo.
+The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make build` in the root of the repo.
 
-Run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
+Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
 
 #### Creating a new user guide page
 
@@ -226,7 +227,7 @@ From the `py-polars` directory, run `make fmt` to make sure your additions pass 
 
 Polars uses Sphinx to build the API reference.
 This means docstrings in general should follow the [reST](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html) format.
-If you want to build the API reference locally, go to the `py-polars/docs` directory and run `make html SPHINXOPTS=-W`.
+If you want to build the API reference locally, go to the `py-polars/docs` directory and run `make html`.
 The resulting HTML files will be in `py-polars/docs/build/html`.
 
 New additions to the API should be added manually to the API reference by adding an entry to the correct `.rst` file in the `py-polars/docs/source/reference` directory.

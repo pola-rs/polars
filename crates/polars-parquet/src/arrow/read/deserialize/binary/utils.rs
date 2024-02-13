@@ -102,7 +102,8 @@ impl<'a> Iterator for BinaryIter<'a> {
             return None;
         }
         let (length, remaining) = self.values.split_at(4);
-        let length = u32::from_le_bytes(length.try_into().unwrap()) as usize;
+        let length: [u8; 4] = unsafe { length.try_into().unwrap_unchecked() };
+        let length = u32::from_le_bytes(length) as usize;
         let (result, remaining) = remaining.split_at(length);
         self.values = remaining;
         Some(result)

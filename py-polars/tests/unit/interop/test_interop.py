@@ -1,90 +1,19 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
-from typing import Any, cast
+from datetime import date, datetime, time, timedelta, timezone
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
-
-@pytest.fixture(
-    params=[
-        ("int8", [1, 3, 2], pl.Int8, np.int8),
-        ("int16", [1, 3, 2], pl.Int16, np.int16),
-        ("int32", [1, 3, 2], pl.Int32, np.int32),
-        ("int64", [1, 3, 2], pl.Int64, np.int64),
-        ("uint8", [1, 3, 2], pl.UInt8, np.uint8),
-        ("uint16", [1, 3, 2], pl.UInt16, np.uint16),
-        ("uint32", [1, 3, 2], pl.UInt32, np.uint32),
-        ("uint64", [1, 3, 2], pl.UInt64, np.uint64),
-        ("float32", [21.7, 21.8, 21], pl.Float32, np.float32),
-        ("float64", [21.7, 21.8, 21], pl.Float64, np.float64),
-        ("bool", [True, False, False], pl.Boolean, np.bool_),
-        ("object", [21.7, "string1", object()], pl.Object, np.object_),
-        ("str", ["string1", "string2", "string3"], pl.String, np.str_),
-        ("intc", [1, 3, 2], pl.Int32, np.intc),
-        ("uintc", [1, 3, 2], pl.UInt32, np.uintc),
-        ("str_fixed", ["string1", "string2", "string3"], pl.String, np.str_),
-        (
-            "bytes",
-            [b"byte_string1", b"byte_string2", b"byte_string3"],
-            pl.Binary,
-            np.bytes_,
-        ),
-    ]
-)
-def numpy_interop_test_data(request: Any) -> Any:
-    return request.param
-
-
-def test_df_from_numpy(numpy_interop_test_data: Any) -> None:
-    name, values, pl_dtype, np_dtype = numpy_interop_test_data
-    df = pl.DataFrame({name: np.array(values, dtype=np_dtype)})
-    assert [pl_dtype] == df.dtypes
-
-
-def test_asarray(numpy_interop_test_data: Any) -> None:
-    name, values, pl_dtype, np_dtype = numpy_interop_test_data
-    pl_series_to_numpy_array = np.asarray(pl.Series(name, values, pl_dtype))
-    numpy_array = np.asarray(values, dtype=np_dtype)
-    assert_array_equal(pl_series_to_numpy_array, numpy_array)
-
-
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-def test_to_numpy(numpy_interop_test_data: Any, use_pyarrow: bool) -> None:
-    name, values, pl_dtype, np_dtype = numpy_interop_test_data
-    pl_series_to_numpy_array = pl.Series(name, values, pl_dtype).to_numpy(
-        use_pyarrow=use_pyarrow
-    )
-    numpy_array = np.asarray(values, dtype=np_dtype)
-    assert_array_equal(pl_series_to_numpy_array, numpy_array)
-
-
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-@pytest.mark.parametrize("has_null", [True, False])
-@pytest.mark.parametrize("dtype", [pl.Time, pl.Boolean, pl.String])
-def test_to_numpy_no_zero_copy(
-    use_pyarrow: bool, has_null: bool, dtype: pl.PolarsDataType
-) -> None:
-    data: list[Any] = ["a", None] if dtype == pl.String else [0, None]
-    series = pl.Series(data if has_null else data[:1], dtype=dtype)
-    with pytest.raises(ValueError):
-        series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
-
-
-def test_to_numpy_empty_no_pyarrow() -> None:
-    series = pl.Series([], dtype=pl.Null)
-    result = series.to_numpy()
-    assert result.dtype == pl.Float32
-    assert result.shape == (0,)
-    assert result.size == 0
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 def test_from_pandas() -> None:
@@ -176,10 +105,48 @@ def test_from_pandas_datetime() -> None:
     assert s.dt.minute()[0] == 20
     assert s.dt.second()[0] == 20
 
-    date_times = pd.date_range("2021-06-24 00:00:00", "2021-06-24 09:00:00", freq="1H")
+    date_times = pd.date_range("2021-06-24 00:00:00", "2021-06-24 09:00:00", freq="1h")
     s = pl.from_pandas(date_times)
     assert s[0] == datetime(2021, 6, 24, 0, 0)
     assert s[-1] == datetime(2021, 6, 24, 9, 0)
+
+
+@pytest.mark.parametrize(
+    ("index_class", "index_data", "index_params", "expected_data", "expected_dtype"),
+    [
+        (pd.Index, [100, 200, 300], {}, None, pl.Int64),
+        (pd.Index, [1, 2, 3], {"dtype": "uint32"}, None, pl.UInt32),
+        (pd.RangeIndex, 5, {}, [0, 1, 2, 3, 4], pl.Int64),
+        (pd.CategoricalIndex, ["N", "E", "S", "W"], {}, None, pl.Categorical),
+        (
+            pd.DatetimeIndex,
+            [datetime(1960, 12, 31), datetime(2077, 10, 20)],
+            {"dtype": "datetime64[ms]"},
+            None,
+            pl.Datetime("ms"),
+        ),
+        (
+            pd.TimedeltaIndex,
+            ["24 hours", "2 days 8 hours", "3 days 42 seconds"],
+            {},
+            [timedelta(1), timedelta(days=2, hours=8), timedelta(days=3, seconds=42)],
+            pl.Duration("ns"),
+        ),
+    ],
+)
+def test_from_pandas_index(
+    index_class: Any,
+    index_data: Any,
+    index_params: dict[str, Any],
+    expected_data: list[Any] | None,
+    expected_dtype: PolarsDataType,
+) -> None:
+    if expected_data is None:
+        expected_data = index_data
+
+    s = pl.from_pandas(index_class(index_data, **index_params))
+    assert s.to_list() == expected_data
+    assert s.dtype == expected_dtype
 
 
 def test_from_pandas_include_indexes() -> None:
@@ -408,69 +375,6 @@ def test_from_records() -> None:
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
 
-def test_from_numpy() -> None:
-    data = np.array([[1, 2, 3], [4, 5, 6]])
-    df = pl.from_numpy(
-        data,
-        schema=["a", "b"],
-        orient="col",
-        schema_overrides={"a": pl.UInt32, "b": pl.UInt32},
-    )
-    assert df.shape == (3, 2)
-    assert df.rows() == [(1, 4), (2, 5), (3, 6)]
-    assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
-
-
-def test_from_numpy_structured() -> None:
-    test_data = [
-        ("Google Pixel 7", 521.90, True),
-        ("Apple iPhone 14 Pro", 999.00, True),
-        ("Samsung Galaxy S23 Ultra", 1199.99, False),
-        ("OnePlus 11", 699.00, True),
-    ]
-    # create a numpy structured array...
-    arr_structured = np.array(
-        test_data,
-        dtype=np.dtype(
-            [
-                ("product", "U32"),
-                ("price_usd", "float64"),
-                ("in_stock", "bool"),
-            ]
-        ),
-    )
-    # ...and also establish as a record array view
-    arr_records = arr_structured.view(np.recarray)
-
-    # confirm that we can cleanly initialise a DataFrame from both,
-    # respecting the native dtypes and any schema overrides, etc.
-    for arr in (arr_structured, arr_records):
-        df = pl.DataFrame(data=arr).sort(by="price_usd", descending=True)
-
-        assert df.schema == {
-            "product": pl.String,
-            "price_usd": pl.Float64,
-            "in_stock": pl.Boolean,
-        }
-        assert df.rows() == sorted(test_data, key=lambda row: -row[1])
-
-        for df in (
-            pl.DataFrame(
-                data=arr, schema=["phone", ("price_usd", pl.Float32), "available"]
-            ),
-            pl.DataFrame(
-                data=arr,
-                schema=["phone", "price_usd", "available"],
-                schema_overrides={"price_usd": pl.Float32},
-            ),
-        ):
-            assert df.schema == {
-                "phone": pl.String,
-                "price_usd": pl.Float32,
-                "available": pl.Boolean,
-            }
-
-
 def test_from_arrow() -> None:
     data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
     df = pl.from_arrow(data)
@@ -553,85 +457,6 @@ def test_no_rechunk() -> None:
     assert pl.from_arrow(table["x"], rechunk=False).n_chunks() == 2
 
 
-def test_cat_to_pandas() -> None:
-    df = pl.DataFrame({"a": ["best", "test"]})
-    df = df.with_columns(pl.all().cast(pl.Categorical))
-
-    pd_out = df.to_pandas()
-    assert isinstance(pd_out["a"].dtype, pd.CategoricalDtype)
-
-    pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-    assert pd_pa_out["a"].dtype == pd.ArrowDtype(
-        pa.dictionary(pa.int64(), pa.large_string())
-    )
-
-
-def test_to_pandas() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": [6, None, 8],
-            "c": [10.0, 25.0, 50.5],
-            "d": [date(2023, 7, 5), None, date(1999, 12, 13)],
-            "e": ["a", "b", "c"],
-            "f": [None, "e", "f"],
-            "g": [datetime.now(), datetime.now(), None],
-        },
-        schema_overrides={"a": pl.UInt8},
-    ).with_columns(
-        [
-            pl.col("e").cast(pl.Categorical).alias("h"),
-            pl.col("f").cast(pl.Categorical).alias("i"),
-        ]
-    )
-
-    pd_out = df.to_pandas()
-    ns_datetimes = pa.__version__ < "13"
-
-    pd_out_dtypes_expected = [
-        np.dtype(np.uint8),
-        np.dtype(np.float64),
-        np.dtype(np.float64),
-        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'ms'}]"),
-        np.dtype(np.object_),
-        np.dtype(np.object_),
-        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'us'}]"),
-        pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
-        pd.CategoricalDtype(categories=["e", "f"], ordered=False),
-    ]
-    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
-
-    pd_out_dtypes_expected[3] = np.dtype("O")
-    pd_out = df.to_pandas(date_as_object=True)
-    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
-
-    try:
-        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-        pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
-        pd_pa_dtypes_names_expected = [
-            "uint8[pyarrow]",
-            "int64[pyarrow]",
-            "double[pyarrow]",
-            "date32[day][pyarrow]",
-            "large_string[pyarrow]",
-            "large_string[pyarrow]",
-            "timestamp[us][pyarrow]",
-            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
-            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
-        ]
-        assert pd_pa_dtypes_names == pd_pa_dtypes_names_expected
-    except ModuleNotFoundError:
-        # Skip test if Pandas 1.5.x is not installed.
-        pass
-
-
-def test_numpy_to_lit() -> None:
-    out = pl.select(pl.lit(np.array([1, 2, 3]))).to_series().to_list()
-    assert out == [1, 2, 3]
-    out = pl.select(pl.lit(np.float32(0))).to_series().to_list()
-    assert out == [0.0]
-
-
 def test_from_empty_pandas() -> None:
     pandas_df = pd.DataFrame(
         {
@@ -642,32 +467,6 @@ def test_from_empty_pandas() -> None:
     polars_df = pl.from_pandas(pandas_df)
     assert polars_df.columns == ["A", "fruits"]
     assert polars_df.dtypes == [pl.Float64, pl.Float64]
-
-
-def test_from_empty_pandas_with_dtypes() -> None:
-    df = pd.DataFrame(columns=["a", "b"])
-    df["a"] = df["a"].astype(str)
-    df["b"] = df["b"].astype(float)
-    assert pl.from_pandas(df).dtypes == [pl.String, pl.Float64]
-
-    df = pl.DataFrame(
-        data=[],
-        schema={
-            "a": pl.Int32,
-            "b": pl.Datetime,
-            "c": pl.Float32,
-            "d": pl.Duration,
-            "e": pl.String,
-        },
-    ).to_pandas()
-
-    assert pl.from_pandas(df).dtypes == [
-        pl.Int32,
-        pl.Datetime,
-        pl.Float32,
-        pl.Duration,
-        pl.String,
-    ]
 
 
 def test_from_empty_arrow() -> None:
@@ -699,10 +498,6 @@ def test_from_null_column() -> None:
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
     assert df.dtypes[0] == pl.Null
-
-
-def test_to_pandas_series() -> None:
-    assert (pl.Series("a", [1, 2, 3]).to_pandas() == pd.Series([1, 2, 3])).all()
 
 
 def test_respect_dtype_with_series_from_numpy() -> None:
@@ -751,12 +546,6 @@ def test_from_pyarrow_chunked_array() -> None:
     assert series.to_list() == [1, 2]
 
 
-def test_numpy_preserve_uint64_4112() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").hash())
-    assert df.to_numpy().dtype == np.dtype("uint64")
-    assert df.to_numpy(structured=True).dtype == np.dtype([("a", "uint64")])
-
-
 def test_arrow_list_null_5697() -> None:
     # Create a pyarrow table with a list[null] column.
     pa_table = pa.table([[[None]]], names=["mycol"])
@@ -797,29 +586,6 @@ def test_from_pyarrow_map() -> None:
             [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
         ],
     }
-
-
-def test_to_numpy_datelike() -> None:
-    s = pl.Series(
-        "dt",
-        [
-            datetime(2022, 7, 5, 10, 30, 45, 123456),
-            None,
-            datetime(2023, 2, 5, 15, 22, 30, 987654),
-        ],
-    )
-    assert str(s.to_numpy()) == str(
-        np.array(
-            ["2022-07-05T10:30:45.123456", "NaT", "2023-02-05T15:22:30.987654"],
-            dtype="datetime64[us]",
-        )
-    )
-    assert str(s.drop_nulls().to_numpy()) == str(
-        np.array(
-            ["2022-07-05T10:30:45.123456", "2023-02-05T15:22:30.987654"],
-            dtype="datetime64[us]",
-        )
-    )
 
 
 def test_from_fixed_size_binary_list() -> None:
@@ -1140,11 +906,13 @@ def test_to_init_repr() -> None:
 
 
 def test_untrusted_categorical_input() -> None:
-    df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).group_by("x").count().to_dict(as_series=False) == {
-        "x": ["x"],
-        "count": [1],
-    }
+    df_pd = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
+    df = pl.from_pandas(df_pd)
+    result = df.group_by("x").len()
+    expected = pl.DataFrame(
+        {"x": ["x"], "len": [1]}, schema={"x": pl.Categorical, "len": pl.UInt32}
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_sliced_struct_from_arrow() -> None:
@@ -1175,10 +943,36 @@ def test_sliced_struct_from_arrow() -> None:
 
 def test_from_arrow_invalid_time_zone() -> None:
     arr = pa.array(
-        [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="+01:00")
+        [datetime(2021, 1, 1, 0, 0, 0, 0)],
+        type=pa.timestamp("ns", tz="this-is-not-a-time-zone"),
     )
-    with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
+    with pytest.raises(
+        ComputeError, match=r"unable to parse time zone: 'this-is-not-a-time-zone'"
+    ):
         pl.from_arrow(arr)
+
+
+@pytest.mark.parametrize(
+    ("fixed_offset", "etc_tz"),
+    [
+        ("+10:00", "Etc/GMT-10"),
+        ("10:00", "Etc/GMT-10"),
+        ("-10:00", "Etc/GMT+10"),
+        ("+05:00", "Etc/GMT-5"),
+        ("05:00", "Etc/GMT-5"),
+        ("-05:00", "Etc/GMT+5"),
+    ],
+)
+def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
+    arr = pa.array(
+        [datetime(2021, 1, 1, 0, 0, 0, 0)],
+        type=pa.timestamp("us", tz=fixed_offset),
+    )
+    result = cast(pl.Series, pl.from_arrow(arr))
+    expected = pl.Series(
+        [datetime(2021, 1, 1, tzinfo=timezone.utc)]
+    ).dt.convert_time_zone(etc_tz)
+    assert_series_equal(result, expected)
 
 
 def test_from_avro_valid_time_zone_13032() -> None:

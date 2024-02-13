@@ -4,9 +4,9 @@ Polars has developed its own Domain Specific Language (DSL) for transforming dat
 
 A context, as implied by the name, refers to the context in which an expression needs to be evaluated. There are three main contexts [^1]:
 
-1. Selection: `df.select([..])`, `df.with_columns([..])`
+1. Selection: `df.select(...)`, `df.with_columns(...)`
 1. Filtering: `df.filter()`
-1. Group by / Aggregation: `df.group_by(..).agg([..])`
+1. Group by / Aggregation: `df.group_by(...).agg(...)`
 
 The examples below are performed on the following `DataFrame`:
 
@@ -17,11 +17,14 @@ The examples below are performed on the following `DataFrame`:
 --8<-- "python/user-guide/concepts/contexts.py:dataframe"
 ```
 
-## Select
+## Selection
 
-In the `select` context the selection applies expressions over columns. The expressions in this context must produce `Series` that are all the same length or have a length of 1.
+The selection context applies expressions over columns. A `select` may produce new columns that are aggregations, combinations of expressions, or literals.
 
-A `Series` of a length of 1 will be broadcasted to match the height of the `DataFrame`. Note that a select may produce new columns that are aggregations, combinations of expressions, or literals.
+The expressions in a selection context must produce `Series` that are all the same length or have a length of 1. Literals are treated as length-1 `Series`.
+
+When some expressions produce length-1 `Series` and some do not, the length-1 `Series` will be broadcast to match the length of the remaining `Series`.
+Note that broadcasting can also occur within expressions: for instance, in `pl.col.value() / pl.col.value.sum()`, each element of the `value` column is divided by the column's sum.
 
 {{code_block('user-guide/concepts/contexts','select',['select'])}}
 
@@ -29,9 +32,9 @@ A `Series` of a length of 1 will be broadcasted to match the height of the `Data
 --8<-- "python/user-guide/concepts/contexts.py:select"
 ```
 
-As you can see from the query the `select` context is very powerful and allows you to perform arbitrary expressions independent (and in parallel) of each other.
+As you can see from the query, the selection context is very powerful and allows you to evaluate arbitrary expressions independent of (and in parallel to) each other.
 
-Similarly to the `select` statement there is the `with_columns` statement which also is an entrance to the selection context. The main difference is that `with_columns` retains the original columns and adds new ones while `select` drops the original columns.
+Similar to the `select` statement, the `with_columns` statement also enters into the selection context. The main difference between `with_columns` and `select` is that `with_columns` retains the original columns and adds new ones, whereas `select` drops the original columns.
 
 {{code_block('user-guide/concepts/contexts','with_columns',['with_columns'])}}
 
@@ -39,9 +42,9 @@ Similarly to the `select` statement there is the `with_columns` statement which 
 --8<-- "python/user-guide/concepts/contexts.py:with_columns"
 ```
 
-## Filter
+## Filtering
 
-In the `filter` context you filter the existing dataframe based on arbitrary expression which evaluates to the `Boolean` data type.
+The filtering context filters a `DataFrame` based on one or more expressions that evaluate to the `Boolean` data type.
 
 {{code_block('user-guide/concepts/contexts','filter',['filter'])}}
 

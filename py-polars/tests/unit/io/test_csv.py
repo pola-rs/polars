@@ -72,7 +72,11 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 
     read_df = pl.read_csv(buf, try_parse_dates=True)
     read_df = read_df.with_columns(
-        [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
+        [
+            pl.col("cat").cast(pl.Categorical),
+            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+            pl.col("time").cast(pl.Time),
+        ]
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
     with pytest.raises(AssertionError):
@@ -90,7 +94,11 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     read_df = pl.read_csv(file_path, try_parse_dates=True)
 
     read_df = read_df.with_columns(
-        [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
+        [
+            pl.col("cat").cast(pl.Categorical),
+            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+            pl.col("time").cast(pl.Time),
+        ]
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
@@ -233,6 +241,49 @@ def test_csv_missing_utf8_is_empty_string() -> None:
         ("", "", "", "", "", "", ""),
         ("", "", "", None, "", "", ""),
     ]
+
+
+def test_csv_int_types() -> None:
+    f = io.StringIO(
+        "u8,i8,u16,i16,u32,i32,u64,i64\n"
+        "0,0,0,0,0,0,0,0\n"
+        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808\n"
+        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807\n"
+        "01,01,01,01,01,01,01,01\n"
+        "01,-01,01,-01,01,-01,01,-01\n"
+    )
+    df = pl.read_csv(
+        f,
+        schema={
+            "u8": pl.UInt8,
+            "i8": pl.Int8,
+            "u16": pl.UInt16,
+            "i16": pl.Int16,
+            "u32": pl.UInt32,
+            "i32": pl.Int32,
+            "u64": pl.UInt64,
+            "i64": pl.Int64,
+        },
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "u8": pl.Series([0, 0, 255, 1, 1], dtype=pl.UInt8),
+                "i8": pl.Series([0, -128, 127, 1, -1], dtype=pl.Int8),
+                "u16": pl.Series([0, 0, 65535, 1, 1], dtype=pl.UInt16),
+                "i16": pl.Series([0, -32768, 32767, 1, -1], dtype=pl.Int16),
+                "u32": pl.Series([0, 0, 4294967295, 1, 1], dtype=pl.UInt32),
+                "i32": pl.Series([0, -2147483648, 2147483647, 1, -1], dtype=pl.Int32),
+                "u64": pl.Series([0, 0, 18446744073709551615, 1, 1], dtype=pl.UInt64),
+                "i64": pl.Series(
+                    [0, -9223372036854775808, 9223372036854775807, 1, -1],
+                    dtype=pl.Int64,
+                ),
+            }
+        ),
+    )
 
 
 def test_csv_float_parsing() -> None:
@@ -569,7 +620,18 @@ def test_empty_line_with_multiple_columns() -> None:
         comment_prefix="#",
         use_pyarrow=False,
     )
-    expected = pl.DataFrame({"A": ["a", "c"], "B": ["b", "d"]})
+    expected = pl.DataFrame({"A": ["a", None, "c"], "B": ["b", None, "d"]})
+    assert_frame_equal(df, expected)
+
+
+def test_preserve_whitespace_at_line_start() -> None:
+    df = pl.read_csv(
+        b"a\n  b  \n    c\nd",
+        new_columns=["A"],
+        has_header=False,
+        use_pyarrow=False,
+    )
+    expected = pl.DataFrame({"A": ["a", "  b  ", "    c", "d"]})
     assert_frame_equal(df, expected)
 
 
@@ -696,7 +758,7 @@ def test_csv_date_handling() -> None:
         1742-03-21
         1743-06-16
         1730-07-22
-        ""
+
         1739-03-16
         """
     )
@@ -716,6 +778,67 @@ def test_csv_date_handling() -> None:
     assert_frame_equal(out, expected)
     dtypes = {"date": pl.Date}
     out = pl.read_csv(csv.encode(), dtypes=dtypes)
+    assert_frame_equal(out, expected)
+
+
+def test_csv_no_date_dtype_because_string() -> None:
+    csv = textwrap.dedent(
+        """\
+        date
+        2024-01-01
+        2024-01-02
+        hello
+        """
+    )
+    out = pl.read_csv(csv.encode(), try_parse_dates=True)
+    assert out.dtypes == [pl.String]
+
+
+def test_csv_infer_date_dtype() -> None:
+    csv = textwrap.dedent(
+        """\
+        date
+        2024-01-01
+        "2024-01-02"
+
+        2024-01-04
+        """
+    )
+    out = pl.read_csv(csv.encode(), try_parse_dates=True)
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2024, 1, 1),
+                date(2024, 1, 2),
+                None,
+                date(2024, 1, 4),
+            ]
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_csv_date_dtype_ignore_errors() -> None:
+    csv = textwrap.dedent(
+        """\
+        date
+        hello
+        2024-01-02
+        world
+        !!
+        """
+    )
+    out = pl.read_csv(csv.encode(), ignore_errors=True, dtypes={"date": pl.Date})
+    expected = pl.DataFrame(
+        {
+            "date": [
+                None,
+                date(2024, 1, 2),
+                None,
+                None,
+            ]
+        }
+    )
     assert_frame_equal(out, expected)
 
 
@@ -850,6 +973,28 @@ def test_quoting_round_trip() -> None:
     assert_frame_equal(read_df, df)
 
 
+def test_csv_field_schema_inference_with_whitespace() -> None:
+    csv = """\
+bool,bool-,-bool,float,float-,-float,int,int-,-int
+true,true , true,1.2,1.2 , 1.2,1,1 , 1
+"""
+    df = pl.read_csv(io.StringIO(csv), has_header=True)
+    expected = pl.DataFrame(
+        {
+            "bool": [True],
+            "bool-": ["true "],
+            "-bool": [" true"],
+            "float": [1.2],
+            "float-": ["1.2 "],
+            "-float": [" 1.2"],
+            "int": [1],
+            "int-": ["1 "],
+            "-int": [" 1"],
+        }
+    )
+    assert_frame_equal(df, expected)
+
+
 def test_fallback_chrono_parser() -> None:
     data = textwrap.dedent(
         """\
@@ -896,11 +1041,11 @@ def test_csv_overwrite_datetime_dtype(
     try_parse_dates: bool, time_unit: TimeUnit
 ) -> None:
     data = """\
-    a
-    2020-1-1T00:00:00.123456789
-    2020-1-2T00:00:00.987654321
-    2020-1-3T00:00:00.132547698
-    """
+a
+2020-1-1T00:00:00.123456789
+2020-1-2T00:00:00.987654321
+2020-1-3T00:00:00.132547698
+"""
     result = pl.read_csv(
         io.StringIO(data),
         try_parse_dates=try_parse_dates,
@@ -938,8 +1083,8 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     df.write_csv(file_path)
 
     path_glob = tmp_path / "small*.csv"
-    assert pl.scan_csv(path_glob).collect().shape == (3, 11)
-    assert pl.read_csv(path_glob).shape == (3, 11)
+    assert pl.scan_csv(path_glob).collect().shape == (3, 12)
+    assert pl.read_csv(path_glob).shape == (3, 12)
 
 
 def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
@@ -1027,9 +1172,9 @@ def test_csv_write_escape_newlines() -> None:
 
 def test_skip_new_line_embedded_lines() -> None:
     csv = r"""a,b,c,d,e\n
-        1,2,3,"\n Test",\n
-        4,5,6,"Test A",\n
-        7,8,,"Test B \n",\n"""
+1,2,3,"\n Test",\n
+4,5,6,"Test A",\n
+7,8,,"Test B \n",\n"""
 
     for empty_string, missing_value in ((True, ""), (False, None)):
         df = pl.read_csv(
@@ -1196,7 +1341,8 @@ def test_float_precision(dtype: pl.Float32 | pl.Float64) -> None:
 def test_skip_rows_different_field_len() -> None:
     csv = io.StringIO(
         textwrap.dedent(
-            """a,b
+            """\
+        a,b
         1,A
         2,
         3,B
@@ -1423,7 +1569,7 @@ def test_read_csv_chunked() -> None:
     """Check that row count is properly functioning."""
     N = 10_000
     csv = "1\n" * N
-    df = pl.read_csv(io.StringIO(csv), row_count_name="count")
+    df = pl.read_csv(io.StringIO(csv), row_index_name="count")
 
     # The next value should always be higher if monotonically increasing.
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
@@ -1493,6 +1639,24 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
+
+
+def test_read_csv_comments_on_top_with_schema_11667() -> None:
+    csv = """
+# This is a comment
+A,B
+1,Hello
+2,World
+""".strip()
+
+    schema = {
+        "A": pl.Int32(),
+        "B": pl.Utf8(),
+    }
+
+    df = pl.read_csv(io.StringIO(csv), comment_prefix="#", schema=schema)
+    assert len(df) == 2
+    assert df.schema == schema
 
 
 def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1591,11 +1755,11 @@ def test_csv_quote_styles() -> None:
 
 def test_ignore_errors_casting_dtypes() -> None:
     csv = """inventory
-    10
+10
 
-    400
-    90
-    """
+400
+90
+"""
 
     assert pl.read_csv(
         source=io.StringIO(csv),
@@ -1712,6 +1876,13 @@ def test_write_csv_bom() -> None:
     assert f.read() == b"\xef\xbb\xbfa,b\n1,1\n2,2\n3,3\n"
 
 
+def test_write_csv_batch_size_zero() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    with pytest.raises(ValueError, match="invalid zero value"):
+        df.write_csv(f, batch_size=0)
+
+
 def test_empty_csv_no_raise() -> None:
     assert pl.read_csv(io.StringIO(), raise_if_empty=False, has_header=False).shape == (
         0,
@@ -1737,3 +1908,50 @@ def test_invalid_csv_raise() -> None:
     "SK0127960V000","SK BT 0018977","
     """.strip()
         )
+
+
+@pytest.mark.write_disk()
+def test_partial_read_compressed_file(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {"idx": range(1_000), "dt": date(2025, 12, 31), "txt": "hello world"}
+    )
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "large.csv.gz"
+    bytes_io = io.BytesIO()
+    df.write_csv(bytes_io)
+    bytes_io.seek(0)
+    with gzip.open(file_path, mode="wb") as f:
+        f.write(bytes_io.getvalue())
+    df = pl.read_csv(
+        file_path, skip_rows=40, has_header=False, skip_rows_after_header=20, n_rows=30
+    )
+    assert df.shape == (30, 3)
+
+
+def test_read_csv_invalid_dtypes() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,foo
+        2,bar
+        3,baz
+        """
+    )
+    f = io.StringIO(csv)
+    with pytest.raises(TypeError, match="`dtypes` should be of type list or dict"):
+        pl.read_csv(f, dtypes={pl.Int64, pl.String})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("columns", [["b"], "b"])
+def test_read_csv_single_column(columns: list[str] | str) -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b,c
+        1,2,3
+        4,5,6
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, columns=columns)
+    expected = pl.DataFrame({"b": [2, 5]})
+    assert_frame_equal(df, expected)

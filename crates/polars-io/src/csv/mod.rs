@@ -69,4 +69,4 @@ use crate::csv::read_impl::CoreReader;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::{get_reader_bytes, resolve_homedir};
-use crate::{RowCount, SerReader, SerWriter};
+use crate::{RowIndex, SerReader, SerWriter};

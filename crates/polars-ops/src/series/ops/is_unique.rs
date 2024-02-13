@@ -8,15 +8,14 @@ use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator,
-    <<&'a ChunkedArray<T> as IntoIterator>::IntoIter as IntoIterator>::Item: TotalHash + TotalEq,
+    T::Physical<'a>: TotalHash + TotalEq,
 {
     let len = ca.len();
     let mut idx_key = PlHashMap::new();
 
     // Instead of group_tuples, which allocates a full Vec per group, we now
     // just toggle a boolean that's false if a group has multiple entries.
-    ca.into_iter().enumerate().for_each(|(idx, key)| {
+    ca.iter().enumerate().for_each(|(idx, key)| {
         idx_key
             .entry(TotalOrdWrap(key))
             .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)

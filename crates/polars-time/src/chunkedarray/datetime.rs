@@ -13,7 +13,7 @@ fn cast_and_apply<
     ca: &DatetimeChunked,
     func: F,
 ) -> ChunkedArray<T> {
-    let dtype = ca.dtype().to_arrow();
+    let dtype = ca.dtype().to_arrow(true);
     let chunks = ca.downcast_iter().map(|arr| {
         let arr = cast(
             arr,

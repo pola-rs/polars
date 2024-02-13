@@ -118,7 +118,7 @@ impl Series {
         } else {
             match dtype {
                 DataType::String => {
-                    let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                    let arr = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
                     if arr.null_count() == 0 {
                         Box::new(arr.values_iter().map(AnyValue::String))
                             as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>

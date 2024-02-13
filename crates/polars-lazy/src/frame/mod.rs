@@ -33,7 +33,7 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 #[cfg(any(
@@ -67,6 +67,12 @@ impl IntoLazy for DataFrame {
             logical_plan: lp,
             opt_state: Default::default(),
         }
+    }
+}
+
+impl IntoLazy for LazyFrame {
+    fn lazy(self) -> LazyFrame {
+        self
     }
 }
 
@@ -208,10 +214,12 @@ impl LazyFrame {
         self.logical_plan.describe()
     }
 
-    /// Return a String describing the optimized logical plan.
-    ///
-    /// Returns `Err` if optimizing the logical plan fails.
-    pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
+    /// Return a String describing the naive (un-optimized) logical plan in tree format.
+    pub fn describe_plan_tree(&self) -> String {
+        self.logical_plan.describe_tree_format()
+    }
+
+    fn optimized_plan(&self) -> PolarsResult<LogicalPlan> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
         let lp_top = self.clone().optimize_with_scratch(
@@ -220,8 +228,21 @@ impl LazyFrame {
             &mut vec![],
             true,
         )?;
-        let logical_plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-        Ok(logical_plan.describe())
+        Ok(node_to_lp(lp_top, &expr_arena, &mut lp_arena))
+    }
+
+    /// Return a String describing the optimized logical plan.
+    ///
+    /// Returns `Err` if optimizing the logical plan fails.
+    pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
+        Ok(self.optimized_plan()?.describe())
+    }
+
+    /// Return a String describing the optimized logical plan in tree format.
+    ///
+    /// Returns `Err` if optimizing the logical plan fails.
+    pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
+        Ok(self.optimized_plan()?.describe_tree_format())
     }
 
     /// Return a String describing the logical plan.
@@ -436,7 +457,7 @@ impl LazyFrame {
     /// Removes columns from the DataFrame.
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
-    pub fn drop_columns<I, T>(self, columns: I) -> Self
+    pub fn drop<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -447,7 +468,7 @@ impl LazyFrame {
             .collect::<PlHashSet<_>>();
 
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop_columns(to_drop).build();
+        let lp = self.get_plan_builder().drop(to_drop).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -463,7 +484,7 @@ impl LazyFrame {
     /// with the result of the `fill_value` expression.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+    pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.select(vec![col("*").shift_and_fill(n.into(), fill_value.into())])
     }
 
@@ -502,7 +523,12 @@ impl LazyFrame {
                 }
             })
             .collect();
-        self.with_columns(cast_cols)
+
+        if cast_cols.is_empty() {
+            self.clone()
+        } else {
+            self.with_columns(cast_cols)
+        }
     }
 
     /// Cast all frame columns to the given dtype, resulting in a new LazyFrame
@@ -1202,6 +1228,8 @@ impl LazyFrame {
     /// over how columns are renamed and parallelization options, use
     /// [`join_builder`](LazyFrame::join_builder).
     ///
+    /// Any provided `args.slice` parameter is not considered, but set by the internal optimizer.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -1225,12 +1253,23 @@ impl LazyFrame {
 
         let left_on = left_on.as_ref().to_vec();
         let right_on = right_on.as_ref().to_vec();
-        self.join_builder()
+
+        let mut builder = self
+            .join_builder()
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
             .how(args.how)
-            .finish()
+            .validate(args.validation)
+            .join_nulls(args.join_nulls);
+
+        if let Some(suffix) = args.suffix {
+            builder = builder.suffix(suffix);
+        }
+
+        // Note: args.slice is set by the optimizer
+
+        builder.finish()
     }
 
     /// Consume `self` and return a [`JoinBuilder`] to customize a join on this LazyFrame.
@@ -1383,7 +1422,13 @@ impl LazyFrame {
     /// - String columns will have a mean of None.
     pub fn mean(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || matches!(dt, DataType::Boolean | DataType::Duration(_)),
+            |dt| {
+                dt.is_numeric()
+                    || matches!(
+                        dt,
+                        DataType::Boolean | DataType::Duration(_) | DataType::Datetime(_, _)
+                    )
+            },
             |name| col(name).mean(),
         )
     }
@@ -1395,7 +1440,13 @@ impl LazyFrame {
     /// - String columns will sum to None.
     pub fn median(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || dt.is_bool(),
+            |dt| {
+                dt.is_numeric()
+                    || matches!(
+                        dt,
+                        DataType::Boolean | DataType::Duration(_) | DataType::Datetime(_, _)
+                    )
+            },
             |name| col(name).median(),
         )
     }
@@ -1636,15 +1687,15 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
-    pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
-        let add_row_count_in_map = match &mut self.logical_plan {
+    pub fn with_row_index(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
+        let add_row_index_in_map = match &mut self.logical_plan {
             LogicalPlan::Scan {
                 file_options: options,
                 file_info,
                 scan_type,
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
-                options.row_count = Some(RowCount {
+                options.row_index = Some(RowIndex {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
@@ -1659,13 +1710,13 @@ impl LazyFrame {
             _ => true,
         };
 
-        if add_row_count_in_map {
+        if add_row_index_in_map {
             let schema = fallible!(self.schema(), &self);
             let schema = schema
                 .new_inserting_at_index(0, name.into(), IDX_DTYPE)
                 .unwrap();
 
-            self.map_private(FunctionNode::RowCount {
+            self.map_private(FunctionNode::RowIndex {
                 name: Arc::from(name),
                 offset,
                 schema: Arc::new(schema),

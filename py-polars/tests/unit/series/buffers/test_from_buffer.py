@@ -40,8 +40,6 @@ def test_series_from_buffer_unsupported() -> None:
     s = pl.Series([date(2020, 1, 1), date(2020, 2, 5)])
     buffer_info = s._get_buffer_info()
 
-    with pytest.raises(
-        TypeError,
-        match="`from_buffer` requires a physical type as input for `dtype`, got date",
-    ):
+    msg = "`_from_buffer` requires a physical type as input for `dtype`, got date"
+    with pytest.raises(TypeError, match=msg):
         pl.Series._from_buffer(pl.Date, buffer_info, owner=s)

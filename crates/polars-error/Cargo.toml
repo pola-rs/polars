@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "Error definitions for the Polars DataFrame library"
 
 [dependencies]
-arrow-format = { version = "0.8.1", optional = true }
+arrow-format = { workspace = true, optional = true }
 avro-schema = { workspace = true, optional = true }
 object_store = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }

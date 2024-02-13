@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 from polars.utils.convert import (
@@ -14,6 +13,9 @@ from polars.utils.convert import (
     NS_PER_SECOND,
     US_PER_SECOND,
 )
+
+if TYPE_CHECKING:
+    from polars import PolarsDataType
 
 
 def test_string_date() -> None:
@@ -28,7 +30,7 @@ def test_string_date() -> None:
 def test_invalid_string_date() -> None:
     df = pl.DataFrame({"x1": ["2021-01-aa"]})
 
-    with pytest.raises(ComputeError):
+    with pytest.raises(pl.ComputeError):
         df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
 
 
@@ -64,7 +66,7 @@ def test_string_datetime() -> None:
 
 def test_invalid_string_datetime() -> None:
     df = pl.DataFrame({"x1": ["2021-12-19 00:39:57", "2022-12-19 16:39:57"]})
-    with pytest.raises(ComputeError):
+    with pytest.raises(pl.ComputeError):
         df.with_columns(
             **{"x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns"))}
         )
@@ -233,11 +235,11 @@ def test_strict_cast_int(
         assert _cast_expr(*args) == expected_value  # type: ignore[arg-type]
         assert _cast_lit(*args) == expected_value  # type: ignore[arg-type]
     else:
-        with pytest.raises(pl.exceptions.ComputeError):
+        with pytest.raises(pl.ComputeError):
             _cast_series(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.exceptions.ComputeError):
+        with pytest.raises(pl.ComputeError):
             _cast_expr(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.exceptions.ComputeError):
+        with pytest.raises(pl.ComputeError):
             _cast_lit(*args)  # type: ignore[arg-type]
 
 
@@ -372,11 +374,11 @@ def test_strict_cast_temporal(
         assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
-        with pytest.raises(pl.exceptions.ComputeError):
+        with pytest.raises(pl.ComputeError):
             _cast_series_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.exceptions.ComputeError):
+        with pytest.raises(pl.ComputeError):
             _cast_expr_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.exceptions.ComputeError):
+        with pytest.raises(pl.ComputeError):
             _cast_lit_t(*args)  # type: ignore[arg-type]
 
 
@@ -455,3 +457,166 @@ def test_cast_temporal(
     else:
         assert out.item() == expected_value
         assert out.dtype == to_dtype
+
+
+@pytest.mark.parametrize(
+    (
+        "value",
+        "from_dtype",
+        "to_dtype",
+        "expected_value",
+    ),
+    [
+        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, 2**7 - 1),
+        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, 2**15 - 1),
+        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, 2**31 - 1),
+        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, 2**63 - 1),
+        (b"1.0", pl.Binary, pl.Float32, 1.0),
+        (b"1.0", pl.Binary, pl.Float64, 1.0),
+        (str(2**7 - 1), pl.String, pl.Int8, 2**7 - 1),
+        (str(2**15 - 1), pl.String, pl.Int16, 2**15 - 1),
+        (str(2**31 - 1), pl.String, pl.Int32, 2**31 - 1),
+        (str(2**63 - 1), pl.String, pl.Int64, 2**63 - 1),
+        ("1.0", pl.String, pl.Float32, 1.0),
+        ("1.0", pl.String, pl.Float64, 1.0),
+        # overflow
+        (str(2**7), pl.String, pl.Int8, None),
+        (str(2**15), pl.String, pl.Int16, None),
+        (str(2**31), pl.String, pl.Int32, None),
+        (str(2**63), pl.String, pl.Int64, None),
+        (str(2**7).encode(), pl.Binary, pl.Int8, None),
+        (str(2**15).encode(), pl.Binary, pl.Int16, None),
+        (str(2**31).encode(), pl.Binary, pl.Int32, None),
+        (str(2**63).encode(), pl.Binary, pl.Int64, None),
+    ],
+)
+def test_cast_string_and_binary(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, False]
+    out = _cast_series_t(*args)  # type: ignore[arg-type]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+    out = _cast_expr_t(*args)  # type: ignore[arg-type]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+    out = _cast_lit_t(*args)  # type: ignore[arg-type]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+
+@pytest.mark.parametrize(
+    (
+        "value",
+        "from_dtype",
+        "to_dtype",
+        "should_succeed",
+        "expected_value",
+    ),
+    [
+        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, True, 2**7 - 1),
+        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, True, 2**15 - 1),
+        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, True, 2**31 - 1),
+        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, True, 2**63 - 1),
+        (b"1.0", pl.Binary, pl.Float32, True, 1.0),
+        (b"1.0", pl.Binary, pl.Float64, True, 1.0),
+        (str(2**7 - 1), pl.String, pl.Int8, True, 2**7 - 1),
+        (str(2**15 - 1), pl.String, pl.Int16, True, 2**15 - 1),
+        (str(2**31 - 1), pl.String, pl.Int32, True, 2**31 - 1),
+        (str(2**63 - 1), pl.String, pl.Int64, True, 2**63 - 1),
+        ("1.0", pl.String, pl.Float32, True, 1.0),
+        ("1.0", pl.String, pl.Float64, True, 1.0),
+        # overflow
+        (str(2**7), pl.String, pl.Int8, False, None),
+        (str(2**15), pl.String, pl.Int16, False, None),
+        (str(2**31), pl.String, pl.Int32, False, None),
+        (str(2**63), pl.String, pl.Int64, False, None),
+        (str(2**7).encode(), pl.Binary, pl.Int8, False, None),
+        (str(2**15).encode(), pl.Binary, pl.Int16, False, None),
+        (str(2**31).encode(), pl.Binary, pl.Int32, False, None),
+        (str(2**63).encode(), pl.Binary, pl.Int64, False, None),
+    ],
+)
+def test_strict_cast_string_and_binary(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    should_succeed: bool,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, True]
+    if should_succeed:
+        out = _cast_series_t(*args)  # type: ignore[arg-type]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+        out = _cast_expr_t(*args)  # type: ignore[arg-type]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+        out = _cast_lit_t(*args)  # type: ignore[arg-type]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+    else:
+        with pytest.raises(pl.ComputeError):
+            _cast_series_t(*args)  # type: ignore[arg-type]
+        with pytest.raises(pl.ComputeError):
+            _cast_expr_t(*args)  # type: ignore[arg-type]
+        with pytest.raises(pl.ComputeError):
+            _cast_lit_t(*args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "dtype_in",
+    [(pl.Categorical), (pl.Enum(["1"]))],
+)
+@pytest.mark.parametrize(
+    "dtype_out",
+    [
+        (pl.UInt8),
+        (pl.Int8),
+        (pl.UInt16),
+        (pl.Int16),
+        (pl.UInt32),
+        (pl.Int32),
+        (pl.UInt64),
+        (pl.Int64),
+        (pl.Date),
+        (pl.Datetime),
+        (pl.Time),
+        (pl.Duration),
+        (pl.String),
+        (pl.Categorical),
+        (pl.Enum(["1", "2"])),
+    ],
+)
+def test_cast_categorical_name_retention(
+    dtype_in: PolarsDataType, dtype_out: PolarsDataType
+) -> None:
+    assert pl.Series("a", ["1"], dtype=dtype_in).cast(dtype_out).name == "a"
+
+
+def test_cast_date_to_time() -> None:
+    s = pl.Series([date(1970, 1, 1), date(2000, 12, 31)])
+    msg = "cannot cast `Date` to `Time`"
+    with pytest.raises(pl.ComputeError, match=msg):
+        s.cast(pl.Time)
+
+
+def test_cast_time_to_date() -> None:
+    s = pl.Series([time(0, 0), time(20, 00)])
+    msg = "cannot cast `Time` to `Date`"
+    with pytest.raises(pl.ComputeError, match=msg):
+        s.cast(pl.Date)

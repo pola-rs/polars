@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
@@ -18,7 +20,7 @@ impl Int128Chunked {
             let (_, values, validity) = default.into_inner();
 
             *arr = PrimitiveArray::new(
-                DataType::Decimal(precision, Some(scale)).to_arrow(),
+                DataType::Decimal(precision, Some(scale)).to_arrow(true),
                 values,
                 validity,
             );
@@ -38,16 +40,14 @@ impl Int128Chunked {
     }
 
     pub fn into_decimal(
-        mut self,
+        self,
         precision: Option<usize>,
         scale: usize,
     ) -> PolarsResult<DecimalChunked> {
-        self.update_chunks_dtype(precision, scale);
         // TODO: if precision is None, do we check that the value fits within precision of 38?...
         if let Some(precision) = precision {
             let precision_max = 10_i128.pow(precision as u32);
-            // note: this is not too efficient as it scans through the data twice...
-            if let (Some(min), Some(max)) = (self.min(), self.max()) {
+            if let Some((min, max)) = self.min_max() {
                 let max_abs = max.abs().max(min.abs());
                 polars_ensure!(
                     max_abs < precision_max,
@@ -83,9 +83,7 @@ impl LogicalType for DecimalChunked {
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let (precision_src, scale_src) = (self.precision(), self.scale());
         if let &DataType::Decimal(precision_dst, scale_dst) = dtype {
-            let scale_dst = scale_dst.ok_or_else(
-                || polars_err!(ComputeError: "cannot cast to Decimal with unknown scale"),
-            )?;
+            let scale_dst = scale_dst.unwrap_or(scale_src);
             // for now, let's just allow same-scale conversions
             // where precision is either the same or bigger or gets converted to `None`
             // (these are the easy cases requiring no checks and arithmetics which we can add later)
@@ -95,6 +93,7 @@ impl LogicalType for DecimalChunked {
                 _ => false,
             };
             if scale_src == scale_dst && is_widen {
+                let dtype = &DataType::Decimal(precision_dst, Some(scale_dst));
                 return self.0.cast(dtype); // no conversion or checks needed
             }
         }
@@ -122,5 +121,17 @@ impl DecimalChunked {
             DataType::Decimal(_, scale) => scale.unwrap_or_else(|| unreachable!()),
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn to_scale(&self, scale: usize) -> PolarsResult<Cow<'_, Self>> {
+        if self.scale() == scale {
+            return Ok(Cow::Borrowed(self));
+        }
+
+        let dtype = DataType::Decimal(None, Some(scale));
+        let chunks = cast_chunks(&self.chunks, &dtype, true)?;
+        let mut dt = Self::new_logical(unsafe { Int128Chunked::from_chunks(self.name(), chunks) });
+        dt.2 = Some(dtype);
+        Ok(Cow::Owned(dt))
     }
 }

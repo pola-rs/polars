@@ -151,7 +151,7 @@ where
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     try_parse_dates: bool,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
     raise_if_empty: bool,
@@ -173,9 +173,9 @@ where
         self
     }
 
-    /// Add a `row_count` column.
-    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
-        self.row_count = rc;
+    /// Add a row index column.
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -417,7 +417,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.predicate),
             to_cast,
             self.skip_rows_after_header,
-            std::mem::take(&mut self.row_count),
+            std::mem::take(&mut self.row_index),
             self.try_parse_dates,
             self.raise_if_empty,
             self.truncate_ragged_lines,
@@ -435,6 +435,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         let mut _has_categorical = false;
         let mut _err: Option<PolarsError> = None;
 
+        #[allow(unused_mut)]
         let schema = overwriting_schema
             .iter_fields()
             .filter_map(|mut fld| {
@@ -444,12 +445,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         to_cast.push(fld);
                         // let inference decide the column type
                         None
-                    },
-                    Int8 | Int16 | UInt8 | UInt16 => {
-                        // We have not compiled these buffers, so we cast them later.
-                        to_cast.push(fld.clone());
-                        fld.coerce(DataType::Int32);
-                        Some(fld)
                     },
                     #[cfg(feature = "dtype-categorical")]
                     Categorical(_, _) => {
@@ -532,6 +527,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.null_values.as_ref(),
                     self.try_parse_dates,
                     self.raise_if_empty,
+                    &mut self.n_threads,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
@@ -561,6 +557,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.null_values.as_ref(),
                     self.try_parse_dates,
                     self.raise_if_empty,
+                    &mut self.n_threads,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))
@@ -603,7 +600,7 @@ where
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,
             try_parse_dates: false,
-            row_count: None,
+            row_index: None,
             raise_if_empty: true,
             truncate_ragged_lines: false,
         }

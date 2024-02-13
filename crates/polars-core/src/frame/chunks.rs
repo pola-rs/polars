@@ -13,7 +13,7 @@ impl std::convert::TryFrom<(ArrowChunk, &[ArrowField])> for DataFrame {
             .columns()
             .iter()
             .zip(arg.1)
-            .map(|(arr, field)| Series::try_from((field.name.as_ref(), arr.clone())))
+            .map(|(arr, field)| Series::try_from((field, arr.clone())))
             .collect();
 
         DataFrame::new(columns?)

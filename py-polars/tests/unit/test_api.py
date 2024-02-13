@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -120,25 +122,26 @@ def test_custom_series_namespace() -> None:
     ]
 
 
-def test_class_namespaces_are_registered() -> None:
+@pytest.mark.slow()
+@pytest.mark.parametrize("pcls", [pl.Expr, pl.DataFrame, pl.LazyFrame, pl.Series])
+def test_class_namespaces_are_registered(pcls: Any) -> None:
     # confirm that existing (and new) namespaces
     # have been added to that class's "_accessors" attr
-    for pcls in (pl.Expr, pl.DataFrame, pl.LazyFrame, pl.Series):
-        namespaces: set[str] = getattr(pcls, "_accessors", set())
-        for name in dir(pcls):
-            if not name.startswith("_"):
-                attr = getattr(pcls, name)
-                if isinstance(attr, property):
-                    try:
-                        obj = attr.fget(pcls)  # type: ignore[misc]
-                    except Exception:
-                        continue
+    namespaces: set[str] = getattr(pcls, "_accessors", set())
+    for name in dir(pcls):
+        if not name.startswith("_"):
+            attr = getattr(pcls, name)
+            if isinstance(attr, property):
+                try:
+                    obj = attr.fget(pcls)  # type: ignore[misc]
+                except Exception:
+                    continue
 
-                    if obj.__class__.__name__.endswith("NameSpace"):
-                        ns = obj._accessor
-                        assert (
-                            ns in namespaces
-                        ), f"{ns!r} should be registered in {pcls.__name__}._accessors"
+                if obj.__class__.__name__.endswith("NameSpace"):
+                    ns = obj._accessor
+                    assert (
+                        ns in namespaces
+                    ), f"{ns!r} should be registered in {pcls.__name__}._accessors"
 
 
 def test_namespace_cannot_override_builtin() -> None:

@@ -32,7 +32,7 @@ impl Serialize for DataType {
 struct Wrap<T>(T);
 
 #[cfg(feature = "dtype-categorical")]
-impl serde::Serialize for Wrap<Utf8Array<i64>> {
+impl serde::Serialize for Wrap<Utf8ViewArray> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -42,7 +42,7 @@ impl serde::Serialize for Wrap<Utf8Array<i64>> {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'de> serde::Deserialize<'de> for Wrap<Utf8Array<i64>> {
+impl<'de> serde::Deserialize<'de> for Wrap<Utf8ViewArray> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -50,7 +50,7 @@ impl<'de> serde::Deserialize<'de> for Wrap<Utf8Array<i64>> {
         struct Utf8Visitor;
 
         impl<'de> Visitor<'de> for Utf8Visitor {
-            type Value = Wrap<Utf8Array<i64>>;
+            type Value = Wrap<Utf8ViewArray>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str("Utf8Visitor string sequence.")
@@ -60,7 +60,7 @@ impl<'de> serde::Deserialize<'de> for Wrap<Utf8Array<i64>> {
             where
                 A: SeqAccess<'de>,
             {
-                let mut utf8array = MutableUtf8Array::with_capacity(seq.size_hint().unwrap_or(10));
+                let mut utf8array = MutablePlString::with_capacity(seq.size_hint().unwrap_or(10));
                 while let Some(key) = seq.next_element()? {
                     let key: Option<&str> = key;
                     utf8array.push(key)
@@ -107,7 +107,11 @@ enum SerializableDataType {
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
     #[cfg(feature = "dtype-categorical")]
-    Categorical(Option<Wrap<Utf8Array<i64>>>, CategoricalOrdering),
+    Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
+    #[cfg(feature = "dtype-decimal")]
+    Decimal(Option<usize>, Option<usize>),
+    #[cfg(feature = "dtype-categorical")]
+    Enum(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -141,14 +145,15 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(rev_map, ordering) => {
-                let categories = rev_map
-                    .as_ref()
-                    .filter(|rev_map| rev_map.is_enum())
-                    .map(|rev_map| Some(Wrap(rev_map.get_categories().clone())))
-                    .unwrap_or(None);
-                Self::Categorical(categories, *ordering)
+            Categorical(_, ordering) => Self::Categorical(None, *ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(rev_map), ordering) => {
+                Self::Enum(Some(Wrap(rev_map.get_categories().clone())), *ordering)
             },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(None, ordering) => Self::Enum(None, *ordering),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
             Object(name, _) => Self::Object(name.to_string()),
             dt => panic!("{dt:?} not supported"),
@@ -184,9 +189,13 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(categories, ordering) => categories
-                .map(|categories| create_enum_data_type(categories.0))
-                .unwrap_or_else(|| Self::Categorical(None, ordering)),
+            Categorical(_, ordering) => Self::Categorical(None, ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(categories), _) => create_enum_data_type(categories.0),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(None, ordering) => Self::Enum(None, ordering),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown", None),
         }

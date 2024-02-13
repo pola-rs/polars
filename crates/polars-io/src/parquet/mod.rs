@@ -37,7 +37,7 @@ pub fn materialize_empty_df(
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
-    row_count: Option<&RowCount>,
+    row_index: Option<&RowIndex>,
 ) -> DataFrame {
     let schema = if let Some(projection) = projection {
         Cow::Owned(apply_projection(reader_schema, projection))
@@ -46,8 +46,8 @@ pub fn materialize_empty_df(
     };
     let mut df = DataFrame::from(schema.as_ref());
 
-    if let Some(row_count) = row_count {
-        df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))
+    if let Some(row_index) = row_index {
+        df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))
             .unwrap();
     }
 

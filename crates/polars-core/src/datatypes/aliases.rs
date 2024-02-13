@@ -4,9 +4,6 @@ pub use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, 
 use super::*;
 use crate::hashing::IdBuildHasher;
 
-/// [ChunkIdx, DfIdx]
-pub type ChunkId = [IdxSize; 2];
-
 #[cfg(not(feature = "bigidx"))]
 pub type IdxCa = UInt32Chunked;
 #[cfg(feature = "bigidx")]

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::{is_cloud_url, RowCount};
+use polars_io::{is_cloud_url, RowIndex};
 
 use crate::prelude::*;
 
@@ -60,8 +60,8 @@ pub trait LazyFileListReader: Clone {
             if let Some(n_rows) = self.n_rows() {
                 lf = lf.slice(0, n_rows as IdxSize)
             };
-            if let Some(rc) = self.row_count() {
-                lf = lf.with_row_count(&rc.name, Some(rc.offset))
+            if let Some(rc) = self.row_index() {
+                lf = lf.with_row_index(&rc.name, Some(rc.offset))
             };
 
             Ok(lf)
@@ -73,7 +73,7 @@ pub trait LazyFileListReader: Clone {
     /// Recommended concatenation of [LazyFrame]s from many input files.
     ///
     /// This method should not take into consideration [LazyFileListReader::n_rows]
-    /// nor [LazyFileListReader::row_count].
+    /// nor [LazyFileListReader::row_index].
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
         concat_impl(&lfs, self.rechunk(), true, true, false)
     }
@@ -111,8 +111,8 @@ pub trait LazyFileListReader: Clone {
     /// be guaranteed.
     fn n_rows(&self) -> Option<usize>;
 
-    /// Add a `row_count` column.
-    fn row_count(&self) -> Option<&RowCount>;
+    /// Add a row index column.
+    fn row_index(&self) -> Option<&RowIndex>;
 
     /// [CloudOptions] used to list files.
     fn cloud_options(&self) -> Option<&CloudOptions> {

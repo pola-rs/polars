@@ -7,15 +7,17 @@ use polars_error::{polars_err, PolarsResult};
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
-use super::super::{Compression, Dictionaries, IpcBuffer, Node, OutOfSpecKind, Version};
+use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::ListArray;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
+use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 use crate::offset::Offset;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_list<O: Offset, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     data_type: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
@@ -31,11 +33,7 @@ pub fn read_list<O: Offset, R: Read + Seek>(
 where
     Vec<u8>: TryInto<O::Bytes>,
 {
-    let field_node = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(ComputeError:
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
-        )
-    })?;
+    let field_node = try_get_field_node(field_nodes, &data_type)?;
 
     let validity = read_validity(
         buffers,
@@ -48,11 +46,7 @@ where
         scratch,
     )?;
 
-    let length: usize = field_node
-        .length()
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+    let length = try_get_array_length(field_node, limit)?;
 
     let offsets = read_buffer::<O, _>(
         buffers,
@@ -72,6 +66,7 @@ where
 
     let values = read(
         field_nodes,
+        variadic_buffer_counts,
         field,
         &ipc_field.fields[0],
         buffers,

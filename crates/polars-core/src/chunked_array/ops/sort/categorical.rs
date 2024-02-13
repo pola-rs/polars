@@ -32,6 +32,7 @@ impl CategoricalChunked {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     self.get_rev_map().clone(),
+                    self.is_enum(),
                     self.get_ordering(),
                 )
             };
@@ -43,6 +44,7 @@ impl CategoricalChunked {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 cats,
                 self.get_rev_map().clone(),
+                self.is_enum(),
                 self.get_ordering(),
             )
         }

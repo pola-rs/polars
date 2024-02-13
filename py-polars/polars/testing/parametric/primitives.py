@@ -14,6 +14,7 @@ from hypothesis.strategies._internal.utils import defines_strategy
 from polars.dataframe import DataFrame
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
+    Array,
     Categorical,
     DataType,
     DataTypeClass,
@@ -29,6 +30,7 @@ from polars.testing.parametric.strategies import (
     _flexhash,
     all_strategies,
     between,
+    create_array_strategy,
     create_list_strategy,
     scalar_strategies,
 )
@@ -40,7 +42,6 @@ if TYPE_CHECKING:
 
     from polars import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
-
 
 _time_units = list(DTYPE_TEMPORAL_UNITS)
 
@@ -99,7 +100,6 @@ class column:
     column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
     column(name='ccy', dtype=String, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
-
     """  # noqa: W505
 
     name: str
@@ -112,9 +112,8 @@ class column:
         if (self.null_probability is not None) and (
             self.null_probability < 0 or self.null_probability > 1
         ):
-            raise InvalidArgument(
-                f"`null_probability` should be between 0.0 and 1.0, or None; found {self.null_probability!r}"
-            )
+            msg = f"`null_probability` should be between 0.0 and 1.0, or None; found {self.null_probability!r}"
+            raise InvalidArgument(msg)
 
         if self.dtype is None:
             tp = getattr(self.strategy, "_dtype", None)
@@ -124,11 +123,19 @@ class column:
         if self.dtype is None and self.strategy is None:
             self.dtype = random.choice(strategy_dtypes)
 
-        elif self.dtype == List:
+        elif self.dtype in (Array, List):
             if self.strategy is not None:
                 self.dtype = getattr(self.strategy, "_dtype", self.dtype)
             else:
-                self.strategy = create_list_strategy(getattr(self.dtype, "inner", None))
+                if self.dtype == Array:
+                    self.strategy = create_array_strategy(
+                        getattr(self.dtype, "inner", None),
+                        getattr(self.dtype, "width", None),
+                    )
+                else:
+                    self.strategy = create_list_strategy(
+                        getattr(self.dtype, "inner", None)
+                    )
                 self.dtype = self.strategy._dtype  # type: ignore[attr-defined]
 
         # elif self.dtype == Struct:
@@ -136,9 +143,8 @@ class column:
 
         elif self.dtype not in scalar_strategies:
             if self.dtype is not None:
-                raise InvalidArgument(
-                    f"no strategy (currently) available for {self.dtype!r} type"
-                )
+                msg = f"no strategy (currently) available for {self.dtype!r} type"
+                raise InvalidArgument(msg)
             else:
                 # given a custom strategy, but no explicit dtype. infer one
                 # from the first non-None value that the strategy produces.
@@ -160,13 +166,12 @@ class column:
                             )
                         )
                     except StopIteration:
-                        raise InvalidArgument(
-                            "unable to determine dtype for strategy"
-                        ) from None
+                        msg = "unable to determine dtype for strategy"
+                        raise InvalidArgument(msg) from None
 
                 if sample_value_type is not None:
                     value_dtype = py_type_to_dtype(sample_value_type)
-                    if value_dtype is not List:
+                    if value_dtype is not Array and value_dtype is not List:
                         self.dtype = value_dtype
 
 
@@ -227,7 +232,6 @@ def columns(
     ...     df = pl.DataFrame(schema=[(c.name, c.dtype) for c in columns(punctuation)])
     ...     assert len(cols) == len(df.columns)
     ...     assert 0 == len(df.rows())
-
     """
     # create/assign named columns
     if cols is None:
@@ -242,14 +246,16 @@ def columns(
 
     if isinstance(dtype, Sequence):
         if len(dtype) != len(names):
-            raise InvalidArgument(f"given {len(dtype)} dtypes for {len(names)} names")
+            msg = f"given {len(dtype)} dtypes for {len(names)} names"
+            raise InvalidArgument(msg)
         dtypes = list(dtype)
     elif dtype is None:
         dtypes = [random.choice(strategy_dtypes) for _ in range(len(names))]
     elif is_polars_dtype(dtype):
         dtypes = [dtype] * len(names)
     else:
-        raise InvalidArgument(f"{dtype!r} is not a valid polars datatype")
+        msg = f"{dtype!r} is not a valid polars datatype"
+        raise InvalidArgument(msg)
 
     # init list of named/typed columns
     return [column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)]
@@ -347,7 +353,6 @@ def series(
         ["zz", "yy", "zz"]
         ["xx"]
     ]
-
     """
     if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
         allowed_dtypes = [allowed_dtypes]
@@ -360,9 +365,8 @@ def series(
         if dtype not in (excluded_dtypes or ())
     ]
     if null_probability and not (0 <= null_probability <= 1):
-        raise InvalidArgument(
-            f"`null_probability` should be between 0.0 and 1.0, or None; found {null_probability}"
-        )
+        msg = f"`null_probability` should be between 0.0 and 1.0, or None; found {null_probability}"
+        raise InvalidArgument(msg)
     null_probability = float(null_probability or 0.0)
 
     @composite
@@ -385,7 +389,7 @@ def series(
             else:
                 dtype_strategy = strategy
 
-            if series_dtype.is_float() and not allow_infinities:
+            if not allow_infinities and series_dtype.is_float():
                 dtype_strategy = dtype_strategy.filter(
                     lambda x: not isinstance(x, float) or isfinite(x)
                 )
@@ -605,7 +609,6 @@ def dataframes(
     │ -15836    ┆ 1.1755e-38 │
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
-
     """
     _failed_frame_init_msgs_.clear()
 
@@ -682,7 +685,7 @@ def dataframes(
 
             # note: randomly change between column-wise and row-wise frame init
             orient = "col"
-            if draw(booleans()) and not any(c.dtype == List for c in coldefs):
+            if draw(booleans()) and not any(c.dtype in (Array, List) for c in coldefs):
                 data = list(zip(*data.values()))  # type: ignore[assignment]
                 orient = "row"
 
@@ -713,7 +716,7 @@ def dataframes(
                     # failed frame init: reproduce with...
                     pl.DataFrame(
                         data={frame_data},
-                        schema={repr(schema).replace("', ","', pl.")},
+                        schema={repr(schema).replace("', ", "', pl.")},
                         orient={orient!r},
                     )
                     """.replace("datetime.", "")

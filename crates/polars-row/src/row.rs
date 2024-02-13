@@ -1,4 +1,5 @@
-use arrow::array::BinaryArray;
+use arrow::array::{BinaryArray, BinaryViewArray};
+use arrow::compute::cast::binary_to_binview;
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
@@ -74,8 +75,14 @@ impl RowsEncoded {
         }
     }
 
+    /// This conversion is free.
     pub fn into_array(self) -> BinaryArray<i64> {
         unsafe { rows_to_array(self.values, self.offsets) }
+    }
+
+    /// This does allocate views.
+    pub fn into_binview(self) -> BinaryViewArray {
+        binary_to_binview(&self.into_array())
     }
 
     #[cfg(test)]

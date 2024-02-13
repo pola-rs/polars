@@ -20,7 +20,7 @@ class BinaryNameSpace:
         self._s: PySeries = series._s
 
     def contains(self, literal: IntoExpr) -> Series:
-        """
+        r"""
         Check if binaries in Series contain a binary substring.
 
         Parameters
@@ -33,6 +33,17 @@ class BinaryNameSpace:
         Series
             Series of data type :class:`Boolean`.
 
+        Examples
+        --------
+        >>> s = pl.Series("colors", [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
+        >>> s.bin.contains(b"\xff")
+        shape: (3,)
+        Series: 'colors' [bool]
+        [
+            false
+            true
+            true
+        ]
         """
 
     def ends_with(self, suffix: IntoExpr) -> Series:
@@ -43,7 +54,6 @@ class BinaryNameSpace:
         ----------
         suffix
             Suffix substring.
-
         """
 
     def starts_with(self, prefix: IntoExpr) -> Series:
@@ -54,7 +64,6 @@ class BinaryNameSpace:
         ----------
         prefix
             Prefix substring.
-
         """
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
@@ -68,7 +77,6 @@ class BinaryNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
-
         """
 
     def encode(self, encoding: TransferEncoding) -> Series:
@@ -84,5 +92,4 @@ class BinaryNameSpace:
         -------
         Series
             Series of data type :class:`Boolean`.
-
         """

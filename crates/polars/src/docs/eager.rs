@@ -227,7 +227,7 @@
 //! ca.lt_eq(&ca);
 //!
 //! // use iterators
-//! let a: BooleanChunked = ca.into_iter()
+//! let a: BooleanChunked = ca.iter()
 //!     .map(|opt_value| {
 //!          match opt_value {
 //!          Some(value) => value < 10,

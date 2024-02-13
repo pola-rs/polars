@@ -9,10 +9,12 @@ use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::FixedSizeListArray;
 use crate::datatypes::ArrowDataType;
+use crate::io::ipc::read::array::try_get_field_node;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_fixed_size_list<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
     data_type: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
@@ -25,11 +27,7 @@ pub fn read_fixed_size_list<R: Read + Seek>(
     version: Version,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<FixedSizeListArray> {
-    let field_node = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(ComputeError:
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
-        )
-    })?;
+    let field_node = try_get_field_node(field_nodes, &data_type)?;
 
     let validity = read_validity(
         buffers,
@@ -48,6 +46,7 @@ pub fn read_fixed_size_list<R: Read + Seek>(
 
     let values = read(
         field_nodes,
+        variadic_buffer_counts,
         field,
         &ipc_field.fields[0],
         buffers,

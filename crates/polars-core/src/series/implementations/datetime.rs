@@ -205,20 +205,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         })
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let ca = self.0.deref().take_chunked_unchecked(by, sorted);
-        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        let ca = self.0.deref().take_opt_chunked_unchecked(by);
-        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         let ca = self.0.take(indices)?;
         Ok(ca
@@ -356,12 +342,18 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .max_as_series()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
     }
+
     fn min_as_series(&self) -> PolarsResult<Series> {
         Ok(self
             .0
             .min_as_series()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
     }
+
+    fn median_as_series(&self) -> PolarsResult<Series> {
+        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+    }
+
     fn quantile_as_series(
         &self,
         _quantile: f64,
@@ -374,5 +366,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }

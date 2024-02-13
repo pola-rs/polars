@@ -18,13 +18,15 @@ use crate::operators::{
 pub struct CrossJoin {
     chunks: Vec<DataChunk>,
     suffix: SmartString,
+    swapped: bool,
 }
 
 impl CrossJoin {
-    pub(crate) fn new(suffix: SmartString) -> Self {
+    pub(crate) fn new(suffix: SmartString, swapped: bool) -> Self {
         CrossJoin {
             chunks: vec![],
             suffix,
+            swapped,
         }
     }
 }
@@ -44,6 +46,7 @@ impl Sink for CrossJoin {
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         Box::new(Self {
             suffix: self.suffix.clone(),
+            swapped: self.swapped,
             ..Default::default()
         })
     }
@@ -57,6 +60,7 @@ impl Sink for CrossJoin {
             in_process_right: None,
             in_process_left_df: Default::default(),
             output_names: None,
+            swapped: self.swapped,
         })))
     }
 
@@ -77,6 +81,7 @@ pub struct CrossJoinProbe {
     in_process_right: Option<StepBy<Range<usize>>>,
     in_process_left_df: DataFrame,
     output_names: Option<Vec<SmartString>>,
+    swapped: bool,
 }
 
 impl Operator for CrossJoinProbe {
@@ -118,13 +123,17 @@ impl Operator for CrossJoinProbe {
                         let iter_right = self.in_process_right.as_mut().unwrap();
                         let offset = iter_right.next().unwrap();
                         let right_df = chunk.data.slice(offset as i64, size);
-                        let mut df = self.in_process_left_df.cross_join(
-                            &right_df,
-                            Some(self.suffix.as_ref()),
-                            None,
-                        )?;
+
+                        let (a, b) = if self.swapped {
+                            (&right_df, &self.in_process_left_df)
+                        } else {
+                            (&self.in_process_left_df, &right_df)
+                        };
+
+                        let mut df = a.cross_join(b, Some(self.suffix.as_ref()), None)?;
                         // Cross joins can produce multiple chunks.
-                        df.as_single_chunk_par();
+                        // No parallelize in operators
+                        df.as_single_chunk();
                         Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
                     },
                 }
@@ -135,24 +144,24 @@ impl Operator for CrossJoinProbe {
 
                 let right_df = chunk.data.slice(offset as i64, size);
 
+                let (a, b) = if self.swapped {
+                    (&right_df, &self.in_process_left_df)
+                } else {
+                    (&self.in_process_left_df, &right_df)
+                };
+
                 // we use the first join to determine the output names
                 // this we can amortize the name allocations.
                 let mut df = match &self.output_names {
                     None => {
-                        let df = self.in_process_left_df.cross_join(
-                            &right_df,
-                            Some(self.suffix.as_ref()),
-                            None,
-                        )?;
+                        let df = a.cross_join(b, Some(self.suffix.as_ref()), None)?;
                         self.output_names = Some(df.get_column_names_owned());
                         df
                     },
-                    Some(names) => self
-                        .in_process_left_df
-                        ._cross_join_with_names(&right_df, names)?,
+                    Some(names) => a._cross_join_with_names(b, names)?,
                 };
                 // Cross joins can produce multiple chunks.
-                df.as_single_chunk_par();
+                df.as_single_chunk();
 
                 Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
             },

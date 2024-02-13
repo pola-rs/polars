@@ -35,6 +35,5 @@ def read_avro(
     Returns
     -------
     DataFrame
-
     """
     return pl.DataFrame._read_avro(source, n_rows=n_rows, columns=columns)

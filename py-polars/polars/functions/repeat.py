@@ -139,7 +139,6 @@ def repeat(
             3
             3
     ]
-
     """
     if isinstance(n, int):
         n = F.lit(n)
@@ -221,10 +220,10 @@ def ones(
         1
         1
     ]
-
     """
     if (one := _one_or_zero_by_dtype(1, dtype)) is None:
-        raise TypeError(f"invalid dtype for `ones`; found {dtype}")
+        msg = f"invalid dtype for `ones`; found {dtype}"
+        raise TypeError(msg)
 
     return repeat(one, n=n, dtype=dtype, eager=eager).alias("ones")
 
@@ -300,9 +299,9 @@ def zeros(
         0
         0
     ]
-
     """
     if (zero := _one_or_zero_by_dtype(0, dtype)) is None:
-        raise TypeError(f"invalid dtype for `zeros`; found {dtype}")
+        msg = f"invalid dtype for `zeros`; found {dtype}"
+        raise TypeError(msg)
 
     return repeat(zero, n=n, dtype=dtype, eager=eager).alias("zeros")

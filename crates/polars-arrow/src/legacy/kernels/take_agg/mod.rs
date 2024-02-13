@@ -6,7 +6,7 @@ pub use boolean::*;
 use num_traits::{NumCast, ToPrimitive};
 pub use var::*;
 
-use crate::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
+use crate::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray};
 use crate::legacy::index::IdxSize;
 use crate::types::NativeType;
 
@@ -98,16 +98,16 @@ pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
 #[inline]
-pub unsafe fn take_agg_utf8_iter_unchecked<
+pub unsafe fn take_agg_bin_iter_unchecked<
     'a,
     I: IntoIterator<Item = usize>,
-    F: Fn(&'a str, &'a str) -> &'a str,
+    F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
 >(
-    arr: &'a Utf8Array<i64>,
+    arr: &'a BinaryViewArray,
     indices: I,
     f: F,
     len: IdxSize,
-) -> Option<&str> {
+) -> Option<&[u8]> {
     let mut null_count = 0 as IdxSize;
     let validity = arr.validity().unwrap();
 
@@ -139,15 +139,15 @@ pub unsafe fn take_agg_utf8_iter_unchecked<
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
 #[inline]
-pub unsafe fn take_agg_utf8_iter_unchecked_no_null<
+pub unsafe fn take_agg_bin_iter_unchecked_no_null<
     'a,
     I: IntoIterator<Item = usize>,
-    F: Fn(&'a str, &'a str) -> &'a str,
+    F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
 >(
-    arr: &'a Utf8Array<i64>,
+    arr: &'a BinaryViewArray,
     indices: I,
     f: F,
-) -> Option<&str> {
+) -> Option<&[u8]> {
     indices
         .into_iter()
         .map(|idx| arr.value_unchecked(idx))

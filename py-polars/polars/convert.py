@@ -68,7 +68,6 @@ def from_dict(
     │ 1   ┆ 3   │
     │ 2   ┆ 4   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_dict(
         data, schema=schema, schema_overrides=schema_overrides
@@ -164,10 +163,10 @@ def from_dicts(
     │ 2   ┆ 5   ┆ null ┆ null │
     │ 3   ┆ 6   ┆ null ┆ null │
     └─────┴─────┴──────┴──────┘
-
     """
     if not data and not (schema or schema_overrides):
-        raise NoDataError("no data, cannot infer schema")
+        msg = "no data, cannot infer schema"
+        raise NoDataError(msg)
 
     return pl.DataFrame(
         data,
@@ -234,7 +233,6 @@ def from_records(
     │ 2   ┆ 5   │
     │ 3   ┆ 6   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_records(
         data,
@@ -297,9 +295,10 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
-            raise NotImplementedError(
+            msg = (
                 f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
+            raise NotImplementedError(msg)
 
     # construct DataFrame from string series and cast from repr to native dtype
     df = pl.DataFrame(data=data, orient="col", schema=list(schema))
@@ -429,7 +428,6 @@ def from_repr(tbl: str) -> DataFrame | Series:
     ... )
     >>> s.to_list()
     [True, False, True]
-
     """
     # find DataFrame table...
     m = re.search(r"([┌╭].*?[┘╯])", tbl, re.DOTALL)
@@ -445,7 +443,8 @@ def from_repr(tbl: str) -> DataFrame | Series:
     if m is not None:
         return _from_series_repr(m)
 
-    raise ValueError("input string does not contain DataFrame or Series")
+    msg = "input string does not contain DataFrame or Series"
+    raise ValueError(msg)
 
 
 def from_numpy(
@@ -502,7 +501,6 @@ def from_numpy(
     │ 2   ┆ 5   │
     │ 3   ┆ 6   │
     └─────┴─────┘
-
     """
     return pl.DataFrame._from_numpy(
         data, schema=schema, orient=orient, schema_overrides=schema_overrides
@@ -589,7 +587,6 @@ def from_arrow(
         2
         3
     ]
-
     """  # noqa: W505
     if isinstance(data, pa.Table):
         return pl.DataFrame._from_arrow(
@@ -623,9 +620,8 @@ def from_arrow(
             schema_overrides=schema_overrides,
         )
 
-    raise TypeError(
-        f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
-    )
+    msg = f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
+    raise TypeError(msg)
 
 
 @overload
@@ -653,7 +649,7 @@ def from_pandas(
 
 
 def from_pandas(
-    data: pd.DataFrame | pd.Series[Any] | pd.Index[Any],
+    data: pd.DataFrame | pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
     *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
@@ -715,9 +711,8 @@ def from_pandas(
         2
         3
     ]
-
     """
-    if isinstance(data, (pd.Series, pd.DatetimeIndex)):
+    if isinstance(data, (pd.Series, pd.Index, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
     elif isinstance(data, pd.DataFrame):
         return pl.DataFrame._from_pandas(
@@ -728,9 +723,8 @@ def from_pandas(
             include_index=include_index,
         )
     else:
-        raise TypeError(
-            f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
-        )
+        msg = f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
+        raise TypeError(msg)
 
 
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
@@ -754,14 +748,6 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
     efficient method of conversion.
 
-    Polars currently relies on pyarrow's implementation of the dataframe interchange
-    protocol for `from_dataframe`. Therefore, pyarrow>=11.0.0 is required for this
-    function to work.
-
-    Because Polars can not currently guarantee zero-copy conversion from Arrow for
-    categorical columns, `allow_copy=False` will not work if the dataframe contains
-    categorical data.
-
     Examples
     --------
     Convert a pandas dataframe to Polars through the interchange protocol.
@@ -779,7 +765,6 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     │ 1   ┆ 3.0 ┆ x   │
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
-
     """
     from polars.interchange.from_dataframe import from_dataframe
 

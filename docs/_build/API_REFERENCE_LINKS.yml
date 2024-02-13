@@ -169,6 +169,8 @@ rust:
   concat: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/functions/fn.concat.html
   SQLContext: https://docs.pola.rs/py-polars/html/reference/sql.html
 
+  explain: https://docs.rs/polars/latest/polars/prelude/struct.LazyFrame.html#method.explain
+
   operators: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Operator.html
 
   Array: https://docs.pola.rs/docs/rust/dev/polars/datatypes/enum.DataType.html#variant.Array

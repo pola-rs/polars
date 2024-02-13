@@ -93,6 +93,11 @@ pub fn read_record_batch<R: Read + Seek>(
         .buffers()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferBuffers(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageBuffers))?;
+    let mut variadic_buffer_counts = batch
+        .variadic_buffer_counts()
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
+        .map(|v| v.iter().map(|v| v as usize).collect::<VecDeque<usize>>())
+        .unwrap_or_else(VecDeque::new);
     let mut buffers: VecDeque<arrow_format::ipc::BufferRef> = buffers.iter().collect();
 
     // check that the sum of the sizes of all buffers is <= than the size of the file
@@ -129,6 +134,7 @@ pub fn read_record_batch<R: Read + Seek>(
             .map(|maybe_field| match maybe_field {
                 ProjectionResult::Selected((field, ipc_field)) => Ok(Some(read(
                     &mut field_nodes,
+                    &mut variadic_buffer_counts,
                     field,
                     ipc_field,
                     &mut buffers,
@@ -157,6 +163,7 @@ pub fn read_record_batch<R: Read + Seek>(
             .map(|(field, ipc_field)| {
                 read(
                     &mut field_nodes,
+                    &mut variadic_buffer_counts,
                     field,
                     ipc_field,
                     &mut buffers,

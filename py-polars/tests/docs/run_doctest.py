@@ -25,7 +25,6 @@ Notes
   whilst not immediately having to add IGNORE_RESULT directives everywhere or changing
   all outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output
   is being checked anymore.
-
 """
 from __future__ import annotations
 
@@ -42,6 +41,16 @@ import polars
 
 if TYPE_CHECKING:
     from types import ModuleType
+
+
+if sys.version_info < (3, 12):
+    # Tests that print an OrderedDict fail (e.g. DataFrame.schema) as the repr
+    # has changed in Python 3.12
+    warnings.warn(
+        "Certain doctests may fail when running on a Python version below 3.12."
+        " Update your Python version to 3.12 or later to make sure all tests pass.",
+        stacklevel=2,
+    )
 
 
 def doctest_teardown(d: doctest.DocTest) -> None:

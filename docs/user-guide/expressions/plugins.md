@@ -204,7 +204,7 @@ class MyCustomExpr:
 
 ## Output data types
 
-Output data types ofcourse don't have to be fixed. They often depend on the input types of an expression. To accommodate
+Output data types of course don't have to be fixed. They often depend on the input types of an expression. To accommodate
 this you can provide the `#[polars_expr()]` macro with an `output_type_func` argument that points to a function. This
 function can map input fields `&[Field]` to an output `Field` (name and data type).
 
@@ -248,6 +248,8 @@ That's all you need to know to get started. Take a look at this [repo](https://g
 
 Here is a curated (non-exhaustive) list of community implemented plugins.
 
-- [polars-business](https://github.com/MarcoGorelli/polars-business) Polars extension offering utilities for business day operations
+- [polars-xdt](https://github.com/pola-rs/polars-xdt) Polars plugin with extra datetime-related functionality
+  which isn't quite in-scope for the main library
+- [polars-distance](https://github.com/ion-elgreco/polars-distance) Polars plugin for pairwise distance functions
 - [polars-ds](https://github.com/abstractqqq/polars_ds_extension) Polars extension aiming to simplify common numerical/string data analysis procedures
 - [polars-hash](https://github.com/ion-elgreco/polars-hash) Stable non-cryptographic and cryptographic hashing functions for Polars

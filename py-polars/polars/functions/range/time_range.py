@@ -133,14 +133,14 @@ def time_range(
         20:30:00
         23:45:00
     ]
-
     """
     interval = deprecate_saturating(interval)
 
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)
@@ -273,13 +273,13 @@ def time_ranges(
     │ 09:00:00 ┆ 11:00:00 ┆ [09:00:00, 10:00:00, 11:00:00] │
     │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
     └──────────┴──────────┴────────────────────────────────┘
-
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)

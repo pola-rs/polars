@@ -6,12 +6,14 @@ from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
+import polars._reexport as pl
 import polars.datatypes
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
+    from polars import Series
     from polars.type_aliases import (
         CategoricalOrdering,
         PolarsDataType,
@@ -141,7 +143,6 @@ class DataType(metaclass=DataTypeClass):
         True
         >>> pl.List.is_(pl.List(pl.Int32))
         False
-
         """
         return self == other and hash(self) == hash(other)
 
@@ -167,7 +168,6 @@ class DataType(metaclass=DataTypeClass):
         False
         >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
         True
-
         """
         from polars.utils.deprecation import issue_deprecation_warning
 
@@ -249,13 +249,11 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
             iterable of data types
         match_base_type:
             match the base type
-
         """
         for it in items:
             if not isinstance(it, (DataType, DataTypeClass)):
-                raise TypeError(
-                    f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
-                )
+                msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
+                raise TypeError(msg)
         dtype_group = super().__new__(cls, items)  # type: ignore[arg-type]
         dtype_group._match_base_type = match_base_type
         return dtype_group
@@ -339,8 +337,9 @@ class Decimal(NumericType):
     Decimal 128-bit type with an optional precision and non-negative scale.
 
     .. warning::
-        This is an experimental work-in-progress feature and may not work as expected.
-
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
     """
 
     precision: int | None
@@ -351,6 +350,15 @@ class Decimal(NumericType):
         precision: int | None = None,
         scale: int = 0,
     ):
+        # Issuing the warning on `__init__` does not trigger when the class is used
+        # without being instantiated, but it's better than nothing
+        from polars.utils.unstable import issue_unstable_warning
+
+        issue_unstable_warning(
+            "The Decimal data type is considered unstable."
+            " It is a work-in-progress feature and may not always work as expected."
+        )
+
         self.precision = precision
         self.scale = scale
 
@@ -417,7 +425,6 @@ class Datetime(TemporalType):
             `import zoneinfo; zoneinfo.available_timezones()` for a full list).
             When using to match dtypes, can use "*" to check for Datetime columns
             that have any timezone.
-
         """
         if isinstance(time_zone, timezone):
             time_zone = str(time_zone)
@@ -426,10 +433,11 @@ class Datetime(TemporalType):
         self.time_zone = time_zone
 
         if self.time_unit not in ("ms", "us", "ns"):
-            raise ValueError(
+            msg = (
                 "invalid `time_unit`"
                 f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
             )
+            raise ValueError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
@@ -465,14 +473,14 @@ class Duration(TemporalType):
         ----------
         time_unit : {'us', 'ns', 'ms'}
             Unit of time.
-
         """
         self.time_unit = time_unit
         if self.time_unit not in ("ms", "us", "ns"):
-            raise ValueError(
+            msg = (
                 "invalid `time_unit`"
                 f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
             )
+            raise ValueError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
@@ -500,7 +508,6 @@ class Categorical(DataType):
         ordering : {'lexical', 'physical'}
             Ordering by order of appearance (physical, default)
             or string value (lexical).
-
     """
 
     ordering: CategoricalOrdering | None
@@ -532,13 +539,14 @@ class Enum(DataType):
     A fixed set categorical encoding of a set of strings.
 
     .. warning::
-        This is an experimental work-in-progress feature and may not work as expected.
-
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
     """
 
-    categories: list[str]
+    categories: Series
 
-    def __init__(self, categories: Iterable[str]):
+    def __init__(self, categories: Series | Iterable[str]):
         """
         A fixed set categorical encoding of a set of strings.
 
@@ -546,31 +554,44 @@ class Enum(DataType):
         ----------
         categories
             Valid categories in the dataset.
-
         """
-        if not isinstance(categories, list):
-            categories = list(categories)
+        # Issuing the warning on `__init__` does not trigger when the class is used
+        # without being instantiated, but it's better than nothing
+        from polars.utils.unstable import issue_unstable_warning
 
-        seen: set[str] = set()
-        for cat in categories:
-            if cat in seen:
-                raise ValueError(
-                    f"Enum categories must be unique; found duplicate {cat!r}"
-                )
-            if not isinstance(cat, str):
-                raise TypeError(
-                    f"Enum categories must be strings; found {cat!r} ({type(cat).__name__})"
-                )
-            seen.add(cat)
+        issue_unstable_warning(
+            "The Enum data type is considered unstable."
+            " It is a work-in-progress feature and may not always work as expected."
+        )
 
-        self.categories = categories
+        if not isinstance(categories, pl.Series):
+            categories = pl.Series(values=categories)
+
+        if categories.is_empty():
+            self.categories = pl.Series(name="category", dtype=String)
+            return
+
+        if categories.null_count() > 0:
+            msg = "Enum categories must not contain null values"
+            raise TypeError(msg)
+
+        if (dtype := categories.dtype) != String:
+            msg = f"Enum categories must be strings; found data of type {dtype}"
+            raise TypeError(msg)
+
+        if categories.n_unique() != categories.len():
+            duplicate = categories.filter(categories.is_duplicated())[0]
+            msg = f"Enum categories must be unique; found duplicate {duplicate!r}"
+            raise ValueError(msg)
+
+        self.categories = categories.rechunk().alias("category")
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Enum):
             return True
         elif isinstance(other, Enum):
-            return self.categories == other.categories
+            return self.categories.equals(other.categories)
         else:
             return False
 
@@ -579,7 +600,7 @@ class Enum(DataType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(categories={self.categories!r})"
+        return f"{class_name}(categories={self.categories.to_list()!r})"
 
 
 class Object(DataType):
@@ -626,7 +647,6 @@ class List(NestedType):
         │ [1, 2]        ┆ [1.0, 2.0]  │
         │ [3, 4]        ┆ [3.0, 4.0]  │
         └───────────────┴─────────────┘
-
         """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
@@ -683,7 +703,6 @@ class Array(NestedType):
                 [1, 2]
                 [4, 3]
         ]
-
         """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
         self.width = width
@@ -729,7 +748,6 @@ class Field:
             The name of the field within its parent `Struct`
         dtype
             The `DataType` of the field's values
-
         """
         self.name = name
         self.dtype = polars.datatypes.py_type_to_dtype(dtype)

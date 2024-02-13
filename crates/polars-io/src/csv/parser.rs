@@ -174,18 +174,6 @@ pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
 }
 
 #[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(crate) fn skip_whitespace_line_ending_exclude(
-    input: &[u8],
-    exclude: u8,
-    eol_char: u8,
-) -> &[u8] {
-    skip_condition(input, |b| {
-        b != exclude && (is_whitespace(b) || is_line_ending(b, eol_char))
-    })
-}
-
-#[inline]
 pub(crate) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
     skip_condition(input, |b| is_line_ending(b, eol_char))
 }
@@ -355,8 +343,8 @@ pub(crate) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn parse_lines<'a>(
-    mut bytes: &'a [u8],
+pub(super) fn parse_lines(
+    mut bytes: &[u8],
     offset: usize,
     separator: u8,
     comment_prefix: Option<&CommentPrefix>,
@@ -367,7 +355,7 @@ pub(super) fn parse_lines<'a>(
     mut truncate_ragged_lines: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
-    buffers: &mut [Buffer<'a>],
+    buffers: &mut [Buffer],
     n_lines: usize,
     // length of original schema
     schema_len: usize,
@@ -396,19 +384,10 @@ pub(super) fn parse_lines<'a>(
             return Ok(end - start);
         }
 
-        // only when we have one column \n should not be skipped
-        // other widths should have commas.
-        bytes = if schema_len > 1 {
-            skip_whitespace_line_ending_exclude(bytes, separator, eol_char)
-        } else {
-            skip_whitespace_exclude(bytes, separator)
-        };
         if bytes.is_empty() {
             return Ok(original_bytes_len);
-        }
-
-        // deal with comments
-        if is_comment_line(bytes, comment_prefix) {
+        } else if is_comment_line(bytes, comment_prefix) {
+            // deal with comments
             let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
             bytes = bytes_rem;
             continue;

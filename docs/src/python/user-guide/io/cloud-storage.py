@@ -17,7 +17,7 @@ storage_options = {
     "aws_secret_access_key": "<secret>",
     "aws_region": "us-east-1",
 }
-df = pl.scan_parquet(source, storage_options=storage_options)  
+df = pl.scan_parquet(source, storage_options=storage_options)
 # --8<-- [end:scan_parquet]
 
 # --8<-- [start:scan_parquet_query]
@@ -33,13 +33,13 @@ df = pl.scan_parquet(source).filter(pl.col("id") < 100).select("id","value").col
 import polars as pl
 import pyarrow.dataset as ds
 
-dset = ds.dataset("s3://my-partitioned-folder/", format="parquet")  
+dset = ds.dataset("s3://my-partitioned-folder/", format="parquet")
 (
     pl.scan_pyarrow_dataset(dset)
     .filter(pl.col("foo") == "a")
     .select(["foo", "bar"])
     .collect()
-)  
+)
 # --8<-- [end:scan_pyarrow_dataset]
 
 # --8<-- [start:write_parquet]
@@ -59,5 +59,4 @@ destination = "s3://bucket/my_file.parquet"
 with fs.open(destination, mode='wb') as f:
     df.write_parquet(f)
 # --8<-- [end:write_parquet]
-
 """

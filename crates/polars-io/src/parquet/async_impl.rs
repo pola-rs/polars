@@ -80,14 +80,17 @@ impl ParquetObjectStore {
         if self.length.is_some() {
             return Ok(());
         }
-        self.length = Some(
-            self.store
-                .head(&self.path)
-                .await
-                .map_err(to_compute_err)?
-                .size as u64,
-        );
-        Ok(())
+        with_concurrency_budget(1, || async {
+            self.length = Some(
+                self.store
+                    .head(&self.path)
+                    .await
+                    .map_err(to_compute_err)?
+                    .size as u64,
+            );
+            Ok(())
+        })
+        .await
     }
 
     pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
@@ -112,9 +115,12 @@ impl ParquetObjectStore {
         let length = self.length;
         let mut reader = CloudReader::new(length, object_store, path);
 
-        parquet2_read::read_metadata_async(&mut reader)
-            .await
-            .map_err(to_compute_err)
+        with_concurrency_budget(1, || async {
+            parquet2_read::read_metadata_async(&mut reader)
+                .await
+                .map_err(to_compute_err)
+        })
+        .await
     }
 
     /// Fetch and memoize the metadata of the parquet file.

@@ -28,7 +28,7 @@ def test_empty_duration() -> None:
 )
 def test_duration_time_units(time_unit: TimeUnit, expected: timedelta) -> None:
     result = pl.LazyFrame().select(
-        pl.duration(
+        duration=pl.duration(
             days=1,
             minutes=2,
             seconds=3,

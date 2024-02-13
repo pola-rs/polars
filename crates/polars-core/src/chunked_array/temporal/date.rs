@@ -33,13 +33,9 @@ impl DateChunked {
     /// Convert from Date into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> StringChunked {
-        let date = NaiveDate::from_ymd_opt(2001, 1, 1).unwrap();
-        let fmted = format!("{}", date.format(format));
-
         let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
-            let mut mutarr =
-                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+            let mut mutarr = MutablePlString::with_capacity(arr.len());
 
             for opt in arr.into_iter() {
                 match opt {
@@ -48,13 +44,12 @@ impl DateChunked {
                         buf.clear();
                         let datefmt = date32_to_date(*v).format(format);
                         write!(buf, "{datefmt}").unwrap();
-                        mutarr.push(Some(&buf))
+                        mutarr.push_value(&buf)
                     },
                 }
             }
 
-            let arr: Utf8Array<i64> = mutarr.into();
-            Box::new(arr)
+            mutarr.freeze().boxed()
         });
         ca.rename(self.name());
         ca

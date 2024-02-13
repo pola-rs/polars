@@ -69,7 +69,7 @@ pub struct IpcStreamReader<R> {
     n_rows: Option<usize>,
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
-    row_count: Option<RowCount>,
+    row_index: Option<RowIndex>,
     metadata: Option<StreamMetadata>,
 }
 
@@ -95,9 +95,9 @@ impl<R: Read> IpcStreamReader<R> {
         self
     }
 
-    /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
-        self.row_count = row_count;
+    /// Add a row index column.
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -146,7 +146,7 @@ where
             n_rows: None,
             columns: None,
             projection: None,
-            row_count: None,
+            row_index: None,
             metadata: None,
         }
     }
@@ -177,7 +177,7 @@ where
             metadata.schema.clone()
         };
 
-        let include_row_count = self.row_count.is_some();
+        let include_row_index = self.row_index.is_some();
         let ipc_reader =
             read::StreamReader::new(&mut self.reader, metadata.clone(), sorted_projection);
         finish_reader(
@@ -186,15 +186,19 @@ where
             self.n_rows,
             None,
             &schema,
-            self.row_count,
+            self.row_index,
         )
-        .map(|df| fix_column_order(df, self.projection, include_row_count))
+        .map(|df| fix_column_order(df, self.projection, include_row_index))
     }
 }
 
-fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bool) -> DataFrame {
+fn fix_column_order(
+    df: DataFrame,
+    projection: Option<Vec<usize>>,
+    include_row_index: bool,
+) -> DataFrame {
     if let Some(proj) = projection {
-        let offset = usize::from(row_count);
+        let offset = usize::from(include_row_index);
         let mut args = (0..proj.len()).zip(proj).collect::<Vec<_>>();
         // first el of tuple is argument index
         // second el is the projection index
@@ -202,7 +206,7 @@ fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bo
         let cols = df.get_columns();
 
         let iter = args.iter().map(|tpl| cols[tpl.0 + offset].clone());
-        let cols = if row_count {
+        let cols = if include_row_index {
             let mut new_cols = vec![df.get_columns()[0].clone()];
             new_cols.extend(iter);
             new_cols
@@ -238,16 +242,22 @@ fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bo
 pub struct IpcStreamWriter<W> {
     writer: W,
     compression: Option<IpcCompression>,
+    pl_flavor: bool,
 }
 
 use polars_core::frame::ArrowChunk;
 
-use crate::RowCount;
+use crate::RowIndex;
 
 impl<W> IpcStreamWriter<W> {
     /// Set the compression used. Defaults to None.
     pub fn with_compression(mut self, compression: Option<IpcCompression>) -> Self {
         self.compression = compression;
+        self
+    }
+
+    pub fn with_pl_flavor(mut self, pl_flavor: bool) -> Self {
+        self.pl_flavor = pl_flavor;
         self
     }
 }
@@ -260,6 +270,7 @@ where
         IpcStreamWriter {
             writer,
             compression: None,
+            pl_flavor: false,
         }
     }
 
@@ -271,10 +282,10 @@ where
             },
         );
 
-        ipc_stream_writer.start(&df.schema().to_arrow(), None)?;
+        ipc_stream_writer.start(&df.schema().to_arrow(self.pl_flavor), None)?;
 
         df.align_chunks();
-        let iter = df.iter_chunks();
+        let iter = df.iter_chunks(self.pl_flavor);
 
         for batch in iter {
             ipc_stream_writer.write(&batch, None)?

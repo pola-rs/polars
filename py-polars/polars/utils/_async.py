@@ -19,10 +19,11 @@ class _GeventDataFrameResult(Generic[T]):
 
     def __init__(self) -> None:
         if not _GEVENT_AVAILABLE:
-            raise ImportError(
+            msg = (
                 "gevent is required for using LazyFrame.collect_async(gevent=True) or"
                 "polars.collect_all_async(gevent=True)"
             )
+            raise ImportError(msg)
 
         from gevent.event import AsyncResult  # type: ignore[import-untyped]
         from gevent.hub import get_hub  # type: ignore[import-untyped]

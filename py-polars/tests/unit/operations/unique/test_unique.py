@@ -126,3 +126,17 @@ def test_unique_categorical(input: list[str | None], output: list[str | None]) -
     result = s.unique(maintain_order=True)
     expected = pl.Series(output, dtype=pl.Categorical)
     assert_series_equal(result, expected)
+
+
+def test_unique_with_null() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 3, 4],
+            "b": ["a", "a", "b", "b", "c", "c"],
+            "c": [None, None, None, None, None, None],
+        }
+    )
+    expected_df = pl.DataFrame(
+        {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "c"], "c": [None, None, None, None]}
+    )
+    assert_frame_equal(df.unique(maintain_order=True), expected_df)

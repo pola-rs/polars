@@ -9,6 +9,10 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.skip(
+    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
+)
+@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
@@ -66,6 +70,30 @@ def test_hive_partitioned_predicate_pushdown(
 
 
 @pytest.mark.write_disk()
+def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
+    io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    df = pl.DataFrame({"d": pl.arange(0, 5, eager=True)}).with_columns(
+        a=pl.col("d") % 5
+    )
+    root = tmp_path / "test_int_partitions"
+    df.write_parquet(
+        root,
+        use_pyarrow=True,
+        pyarrow_options={"partition_cols": ["a"]},
+    )
+
+    q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+    assert q.filter(pl.col("a").is_in([1, 4])).collect().shape == (2, 2)
+    assert "hive partitioning: skipped 3 files" in capfd.readouterr().err
+
+
+@pytest.mark.skip(
+    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
+)
+@pytest.mark.xdist_group("streaming")
+@pytest.mark.write_disk()
 def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) -> None:
     df = pl.read_ipc(io_files_path / "*.ipc")
 
@@ -98,6 +126,10 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
         ]
 
 
+@pytest.mark.skip(
+    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
+)
+@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_projection_pushdown(
     io_files_path: Path, tmp_path: Path
@@ -144,3 +176,28 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
 
     with pytest.raises(pl.ComputeError, match="invalid hive partitions"):
         pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+
+
+@pytest.mark.write_disk()
+def test_hive_partitioned_projection_skip_files(
+    io_files_path: Path, tmp_path: Path
+) -> None:
+    # ensure that it makes hive columns even when . in dir value
+    # and that it doesn't make hive columns from filename with =
+    df = pl.DataFrame(
+        {"sqlver": [10012.0, 10013.0], "namespace": ["eos", "fda"], "a": [1, 2]}
+    )
+    root = tmp_path / "partitioned_data"
+    for dir_tuple, sub_df in df.partition_by(
+        ["sqlver", "namespace"], include_key=False, as_dict=True
+    ).items():
+        new_path = root / f"sqlver={dir_tuple[0]}" / f"namespace={dir_tuple[1]}"
+        new_path.mkdir(parents=True, exist_ok=True)
+        sub_df.write_parquet(new_path / "file=8484.parquet")
+    test_df = (
+        pl.scan_parquet(str(root) + "/**/**/*.parquet")
+        # don't care about column order
+        .select("sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a"))
+        .collect()
+    )
+    assert_frame_equal(df, test_df)

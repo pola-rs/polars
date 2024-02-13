@@ -1,4 +1,5 @@
 use arrow::array::PrimitiveArray;
+use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
@@ -341,14 +342,15 @@ fn transform_date(val: &str, fmt: &str) -> Option<i32> {
 
 #[cfg(feature = "dtype-datetime")]
 pub(crate) fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
-    let out = NaiveDateTime::parse_from_str(val, fmt)
-        .ok()
-        .map(datetime_to_timestamp_ns);
-    out.or_else(|| {
-        NaiveDate::parse_from_str(val, fmt)
-            .ok()
-            .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap()))
-    })
+    match NaiveDateTime::parse_from_str(val, fmt) {
+        Ok(ndt) => Some(datetime_to_timestamp_ns(ndt)),
+        Err(parse_error) => match parse_error.kind() {
+            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
+                .ok()
+                .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap())),
+            _ => None,
+        },
+    }
 }
 
 fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
@@ -358,14 +360,15 @@ fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
 
 #[cfg(feature = "dtype-datetime")]
 pub(crate) fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
-    let out = NaiveDateTime::parse_from_str(val, fmt)
-        .ok()
-        .map(datetime_to_timestamp_us);
-    out.or_else(|| {
-        NaiveDate::parse_from_str(val, fmt)
-            .ok()
-            .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap()))
-    })
+    match NaiveDateTime::parse_from_str(val, fmt) {
+        Ok(ndt) => Some(datetime_to_timestamp_us(ndt)),
+        Err(parse_error) => match parse_error.kind() {
+            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
+                .ok()
+                .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap())),
+            _ => None,
+        },
+    }
 }
 
 fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
@@ -375,14 +378,15 @@ fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
 
 #[cfg(feature = "dtype-datetime")]
 pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
-    let out = NaiveDateTime::parse_from_str(val, fmt)
-        .ok()
-        .map(datetime_to_timestamp_ms);
-    out.or_else(|| {
-        NaiveDate::parse_from_str(val, fmt)
-            .ok()
-            .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap()))
-    })
+    match NaiveDateTime::parse_from_str(val, fmt) {
+        Ok(ndt) => Some(datetime_to_timestamp_ms(ndt)),
+        Err(parse_error) => match parse_error.kind() {
+            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
+                .ok()
+                .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap())),
+            _ => None,
+        },
+    }
 }
 
 fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {

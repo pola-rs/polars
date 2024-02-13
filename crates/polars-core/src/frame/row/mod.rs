@@ -83,16 +83,6 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     try_get_supertype(lhs, rhs).unwrap_or(String)
 }
 
-fn is_nested_null(av: &AnyValue) -> bool {
-    match av {
-        AnyValue::Null => true,
-        AnyValue::List(s) => s.null_count() == s.len(),
-        #[cfg(feature = "dtype-struct")]
-        AnyValue::Struct(_, _, _) => av._iter_struct_av().all(|av| is_nested_null(&av)),
-        _ => false,
-    }
-}
-
 pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<(DataType, usize)> {
     // we need an index-map as the order of dtypes influences how the
     // struct fields are constructed.
@@ -173,7 +163,7 @@ pub fn rows_to_schema_first_non_null(rows: &[Row], infer_schema_length: Option<u
             for i in nulls {
                 let val = &row.0[i];
 
-                if !is_nested_null(val) {
+                if !val.is_nested_null() {
                     let dtype = val.into();
                     schema.set_dtype_at_index(i, dtype).unwrap();
                 }

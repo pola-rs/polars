@@ -2,13 +2,11 @@
 //!
 //! Functions that might be useful.
 //!
-#[cfg(any(feature = "diagonal_concat", feature = "horizontal_concat"))]
 use crate::prelude::*;
 #[cfg(feature = "diagonal_concat")]
 use crate::utils::concat_df;
 
 /// Concat [`DataFrame`]s horizontally.
-#[cfg(feature = "horizontal_concat")]
 /// Concat horizontally and extend with null values if lengths don't match
 pub fn concat_df_horizontal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let max_len = dfs

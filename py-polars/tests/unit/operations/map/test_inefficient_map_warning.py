@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import re
 from datetime import datetime
+from functools import partial
 from typing import Any, Callable
 
 import numpy
@@ -226,6 +227,7 @@ def test_parse_invalid_function(func: str) -> None:
     ("col", "func", "expr_repr"),
     TEST_CASES,
 )
+@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -250,11 +252,12 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         )
         expected_frame = df.select(
             x=pl.col(col),
-            y=pl.col(col).apply(eval(func)),
+            y=pl.col(col).map_elements(eval(func)),
         )
         assert_frame_equal(result_frame, expected_frame)
 
 
+@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
@@ -333,7 +336,7 @@ def test_parse_apply_miscellaneous() -> None:
     ):
         pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
-            pl_series.apply(lambda x: numpy.cos(3) + x - abs(-1)),
+            pl_series.map_elements(lambda x: numpy.cos(3) + x - abs(-1)),
             numpy.cos(3) + pl_series - 1,
         )
 
@@ -378,7 +381,7 @@ def test_parse_apply_series(
         suggested_expression = parser.to_expression(s.name)
         assert suggested_expression == expr_repr
 
-        expected_series = s.apply(func)
+        expected_series = s.map_elements(func)
         result_series = eval(suggested_expression)
         assert_series_equal(expected_series, result_series)
 
@@ -406,3 +409,13 @@ def test_expr_exact_warning_message() -> None:
         df.select(pl.col("a").map_elements(lambda x: x + 1))
 
     assert len(warnings) == 1
+
+
+def test_partial_functions_13523() -> None:
+    def plus(value, amount: int):  # type: ignore[no-untyped-def]
+        return value + amount
+
+    data = {"a": [1, 2], "b": [3, 4]}
+    df = pl.DataFrame(data)
+    # should not warn
+    _ = df["a"].map_elements(partial(plus, amount=1))

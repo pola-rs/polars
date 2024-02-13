@@ -1,7 +1,6 @@
 mod functions;
 mod generic;
 mod group_by;
-#[cfg(feature = "horizontal_concat")]
 mod hconcat;
 mod hstack;
 mod joins;
@@ -12,7 +11,7 @@ mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
 
@@ -20,7 +19,6 @@ use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
-#[cfg(feature = "horizontal_concat")]
 use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
@@ -43,7 +41,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
-    row_count: Option<&RowCount>,
+    row_index: Option<&RowIndex>,
 ) -> Option<Arc<Vec<String>>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
@@ -52,7 +50,7 @@ fn get_scan_columns(
             for name in aexpr_to_leaf_names(*expr, expr_arena) {
                 // we shouldn't project the row-count column, as that is generated
                 // in the scan
-                let push = match row_count {
+                let push = match row_index {
                     Some(rc) if name.as_ref() != rc.name.as_str() => true,
                     None => true,
                     _ => false,
@@ -136,9 +134,9 @@ fn update_scan_schema(
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
-        for name in aexpr_to_leaf_names(*node, expr_arena) {
+        for name in aexpr_to_leaf_names_iter(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
-                polars_err!(ComputeError: "column '{}' not available in schema {:?}", name, schema)
+                polars_err!(ComputeError: "column '{}' not available in 'DataFrame' with {:?}", name, schema)
             })?;
             new_cols.push(item);
         }
@@ -398,7 +396,7 @@ impl ProjectionPushDown {
                     file_options.with_columns = get_scan_columns(
                         &mut acc_projections,
                         expr_arena,
-                        file_options.row_count.as_ref(),
+                        file_options.row_index.as_ref(),
                     );
 
                     output_schema = if file_options.with_columns.is_none() {
@@ -650,7 +648,6 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            #[cfg(feature = "horizontal_concat")]
             HConcat {
                 inputs,
                 schema,
