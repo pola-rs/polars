@@ -60,6 +60,7 @@ hypothesis==6.97.4
 pytest==8.0.0
 pytest-cov==4.1.0
 pytest-xdist==3.5.0
+numba
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
 moto[s3]==5.0.0
