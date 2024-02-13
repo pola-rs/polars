@@ -246,8 +246,9 @@ def test_struct_nested_enum() -> None:
 @pytest.mark.slow()
 def test_ipc_view_gc_14448() -> None:
     f = io.BytesIO()
+    # This size was required to trigger the bug
     df = pl.DataFrame(
-        pl.Series(["small"] * 10 + ["looooooong string......."] * 1000).slice(20, 20)
+        pl.Series(["small"] * 10 + ["looooooong string......."] * 750).slice(20, 20)
     )
     df.write_ipc(f, future=True)
     f.seek(0)
