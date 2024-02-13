@@ -223,6 +223,9 @@ filterwarnings = [
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated.*:DeprecationWarning",
   # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
+  # TODO: Excel tests lead to unclosed file warnings
+  # https://github.com/pola-rs/polars/issues/14466
+  "ignore:unclosed file.*:ResourceWarning",
 ]
 xfail_strict = true
 
