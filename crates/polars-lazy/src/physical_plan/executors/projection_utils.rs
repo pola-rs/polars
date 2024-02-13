@@ -284,7 +284,17 @@ pub(super) fn check_expand_literals(
                 all_equal_len = false;
             }
             let name = s.name();
-            polars_ensure!(names.insert(name), duplicate = name);
+
+            if !names.insert(name) {
+                let msg = format!(
+                    "the name: '{}' passed to `select` is duplicate\n\n\
+                    It's possible that multiple expressions are returning the same default column \
+                    name. If this is the case, try renaming the columns with \
+                    `.alias(\"new_name\")` to avoid duplicate column names.",
+                    name
+                );
+                return Err(PolarsError::Duplicate(msg.into()));
+            }
         }
     }
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
