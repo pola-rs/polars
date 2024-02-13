@@ -3,7 +3,7 @@
 Polars expressions support NumPy [ufuncs](https://numpy.org/doc/stable/reference/ufuncs.html). See [here](https://numpy.org/doc/stable/reference/ufuncs.html#available-ufuncs)
 for a list on all supported numpy functions. Additionally, SciPy offers a wide host of ufuncs. Specifically, the [scipy.special](https://docs.scipy.org/doc/scipy/reference/special.html#module-scipy.special) namespace has ufunc versions of many (possibly most) of what is available under stats. 
 
-This means that if a function is not provided by Polars, we can use NumPy and we still have fast columnar operation through the NumPy API.
+This means that if a function is not provided by Polars, we can use NumPy and we still have fast columnar operation through the NumPy API. ufuncs have a hook that diverts their own execution when one of its inputs is a class with the [__array_ufunc__](https://numpy.org/doc/stable/reference/arrays.classes.html#special-attributes-and-methods) method. Polars Expr class has this method which allows ufuncs to be input directly in a context (`select`, `with_columns`, `agg`) with relevant expressions as the input. This syntax extends even to multiple input functions. 
 
 ### Example
 
@@ -35,4 +35,4 @@ Convert a Polars `Series` to a NumPy array with the `.to_numpy()` method. Missin
 
 ### Note on Performance
 
-The speed of ufuncs comes from being vectorized, compiled, and their ability to automatically use and return a pl.Series. That said, there's no inherent benefit in avoiding the use of `map_batches`. In fact, when polars sees an object that is a ufunc, it conveniently calls `map_batches`. In other words, even if you're trying to avoid calling `map_batches`, it's being called under the hood anyways.
+The speed of ufuncs comes from being vectorized, and compiled. That said, there's no inherent benefit in using ufuncs just to avoid the use of `map_batches`. As mentioned above, ufuncs use a hook which gives polars the opportunity to run its own code before the ufunc is executed. In that way polars is still executing the ufunc with `map_batches`. 
