@@ -341,5 +341,7 @@ fn pivot_impl_single_column(
         Ok(())
     });
     out?;
+
+    // SAFETY: length has already been checked.
     unsafe { DataFrame::new_no_length_checks(final_cols) }
 }
