@@ -943,6 +943,9 @@ def test_weekday(time_unit: TimeUnit) -> None:
         ([timedelta(days=1)], timedelta(days=1)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=3)], timedelta(days=2)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=2)),
+        ([time(hour=1)], time(hour=1)),
+        ([time(hour=1), time(hour=2), time(hour=3)], time(hour=2)),
+        ([time(hour=1), time(hour=2), time(hour=15)], time(hour=2)),
     ],
     ids=[
         "empty",
@@ -956,6 +959,9 @@ def test_weekday(time_unit: TimeUnit) -> None:
         "single_dur",
         "spread_even_dur",
         "spread_skewed_dur",
+        "single_time",
+        "spread_even_time",
+        "spread_skewed_time",
     ],
 )
 def test_median(
@@ -988,6 +994,9 @@ def test_median(
         ([timedelta(days=1)], timedelta(days=1)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=3)], timedelta(days=2)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=6)),
+        ([time(hour=1)], time(hour=1)),
+        ([time(hour=1), time(hour=2), time(hour=3)], time(hour=2)),
+        ([time(hour=1), time(hour=2), time(hour=15)], time(hour=6)),
     ],
     ids=[
         "empty",
@@ -1001,6 +1010,9 @@ def test_median(
         "single_duration",
         "spread_even_duration",
         "spread_skewed_duration",
+        "single_time",
+        "spread_even_time",
+        "spread_skewed_time",
     ],
 )
 def test_mean(
@@ -1030,6 +1042,27 @@ def test_datetime_mean_with_tu(values: list[datetime], expected_mean: datetime) 
     assert pl.Series(values, dtype=pl.Duration("us")).dt.mean() == expected_mean
     assert pl.Series(values, dtype=pl.Duration("ns")).mean() == expected_mean
     assert pl.Series(values, dtype=pl.Duration("ns")).dt.mean() == expected_mean
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_median"),
+    [
+        (
+            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
+            datetime(2022, 1, 2),
+        ),
+    ],
+    ids=["spread_skewed_dt"],
+)
+def test_datetime_median_with_tu(
+    values: list[datetime], expected_median: datetime
+) -> None:
+    assert pl.Series(values, dtype=pl.Duration("ms")).median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("ms")).dt.median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("us")).median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("us")).dt.median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("ns")).median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("ns")).dt.median() == expected_median
 
 
 @pytest.mark.parametrize(
@@ -1091,6 +1124,10 @@ def test_agg_expr() -> None:
                 [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
                 dtype=pl.Duration("ns"),
             ),
+            "time": pl.Series(
+                [time(hour=1), time(hour=2), time(hour=4)],
+                dtype=pl.Time,
+            ),
         }
     )
 
@@ -1114,6 +1151,7 @@ def test_agg_expr() -> None:
             "duration_ns": pl.Series(
                 [timedelta(days=2, hours=8)], dtype=pl.Duration("ns")
             ),
+            "time": pl.Series([time(hour=2, minute=20)], dtype=pl.Time),
         }
     )
 
