@@ -5,8 +5,7 @@ use crossbeam_channel::{Receiver, Sender};
 use polars_core::prelude::*;
 
 use crate::operators::{
-    estimated_chunks, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
-    StreamingVstacker,
+    DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, StreamingVstacker,
 };
 
 pub(super) trait SinkWriter {
@@ -46,24 +45,24 @@ pub(super) fn init_writer_thread(
                 }
 
                 for chunk in chunks.drain(0..) {
-                    for mut dataframe in vstacker.add(chunk.data) {
+                    for mut df in vstacker.add(chunk.data) {
                         // The dataframe may only be a single, large chunk, in
                         // which case we don't want to bother with copying it...
-                        if estimated_chunks(&dataframe) > 1 {
-                            dataframe.as_single_chunk();
+                        if df.n_chunks() > 1 {
+                            df.as_single_chunk();
                         }
-                        writer._write_batch(&dataframe).unwrap();
+                        writer._write_batch(&df).unwrap();
                     }
                 }
                 // all chunks are written remove them
                 chunks.clear();
 
                 if last_write {
-                    if let Some(mut dataframe) = vstacker.finish() {
-                        if estimated_chunks(&dataframe) > 1 {
-                            dataframe.as_single_chunk();
+                    if let Some(mut df) = vstacker.finish() {
+                        if df.n_chunks() > 1 {
+                            df.as_single_chunk();
                         }
-                        writer._write_batch(&dataframe).unwrap();
+                        writer._write_batch(&df).unwrap();
                     }
                     writer._finish().unwrap();
                     return;

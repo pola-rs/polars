@@ -3,11 +3,9 @@ use std::any::Any;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
 use crate::operators::{
-    estimated_chunks, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
-    StreamingVstacker,
+    chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
 };
 
 // Ensure the data is return in the order it was streamed
@@ -57,32 +55,7 @@ impl Sink for OrderedSink {
         self.sort();
 
         let chunks = std::mem::take(&mut self.chunks);
-        let mut combiner = StreamingVstacker::default();
-        let mut frames_iterator = chunks
-            .into_iter()
-            .flat_map(|c| combiner.add(c.data))
-            .map(|mut df| {
-                // The dataframe may only be a single, large chunk, in
-                // which case we don't want to bother with copying it...
-                if estimated_chunks(&df) > 1 {
-                    df.as_single_chunk_par();
-                }
-                df
-            })
-            .peekable();
-        let result = if frames_iterator.peek().is_some() {
-            let mut result = accumulate_dataframes_vertical_unchecked(frames_iterator);
-            if let Some(mut df) = combiner.finish() {
-                if estimated_chunks(&df) > 1 {
-                    df.as_single_chunk_par();
-                }
-                let _ = result.vstack_mut(&df);
-            }
-            result
-        } else {
-            combiner.finish().unwrap()
-        };
-        Ok(FinalizedSink::Finished(result))
+        Ok(FinalizedSink::Finished(chunks_to_df_unchecked(chunks)))
     }
     fn as_any(&mut self) -> &mut dyn Any {
         self

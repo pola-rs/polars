@@ -110,15 +110,6 @@ impl Default for StreamingVstacker {
     }
 }
 
-/// Make a guess at the number of chunks in the `DataFrame` series.
-pub(crate) fn estimated_chunks(df: &DataFrame) -> usize {
-    df.get_columns()
-        .iter()
-        .flat_map(|s| s.chunk_lengths())
-        .next()
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
