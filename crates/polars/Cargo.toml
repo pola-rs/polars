@@ -11,16 +11,24 @@ repository = { workspace = true }
 description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
+arrow = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-error = { workspace = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
 polars-ops = { workspace = true, optional = true }
+polars-parquet = { workspace = true }
 polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
+polars-utils = { workspace = true }
 
 [dev-dependencies]
 ahash = { workspace = true }
+either = { workspace = true }
+futures = { workspace = true }
+# used to run formal property testing
+proptest = { version = "1", default_features = false, features = ["std"] }
 rand = { workspace = true }
 
 [build-dependencies]
