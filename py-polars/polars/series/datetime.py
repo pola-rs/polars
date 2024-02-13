@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date, Datetime
+from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
@@ -82,7 +82,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 return _to_python_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype == Datetime:
+            elif s.dtype in (Datetime, Duration):
                 return out  # type: ignore[return-value]
             else:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
@@ -106,7 +106,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 return _to_python_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype == Datetime:
+            elif s.dtype in (Datetime, Duration):
                 return out  # type: ignore[return-value]
             else:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
