@@ -6,6 +6,8 @@ import operator
 import warnings
 from datetime import timedelta
 from functools import reduce
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -19,6 +21,7 @@ from typing import (
     Sequence,
     Set,
     TypeVar,
+    overload,
 )
 
 import polars._reexport as pl
@@ -60,6 +63,7 @@ from polars.utils.various import (
     BUILDING_SPHINX_DOCS,
     find_stacklevel,
     no_default,
+    normalize_filepath,
     sphinx_accessor,
     warn_null_comparison,
 )
@@ -72,6 +76,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
     from polars.type_aliases import (
@@ -342,6 +347,33 @@ class Expr:
         expr = cls.__new__(cls)
         expr._pyexpr = PyExpr.deserialize(value)
         return expr
+
+    @overload
+    def serialize(self, file: None = ...) -> str:
+        ...
+
+    @overload
+    def serialize(self, file: IOBase | str | Path) -> None:
+        ...
+
+    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
+        """Write expression to json."""
+        if isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if file is None or to_string_io:
+            with BytesIO() as buf:
+                self._pyexpr.serialize(buf)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._pyexpr.serialize(file)
+        return None
 
     def to_physical(self) -> Self:
         """

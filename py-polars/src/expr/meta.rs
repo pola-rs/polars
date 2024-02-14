@@ -89,7 +89,7 @@ impl PyExpr {
     }
 
     #[cfg(all(feature = "json", feature = "serde_json"))]
-    fn meta_write_json(&self, py_f: PyObject) -> PyResult<()> {
+    fn serialize(&self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         serde_json::to_writer(file, &self.inner)
             .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;

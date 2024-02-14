@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from io import BytesIO, StringIO
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
 from polars.exceptions import ComputeError
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
-from polars.utils.various import normalize_filepath
+from polars.utils.deprecation import (
+    deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
+)
 
 if TYPE_CHECKING:
     from io import IOBase
+    from pathlib import Path
 
     from polars import Expr
 
@@ -225,24 +226,16 @@ class ExprMetaNameSpace:
     def write_json(self, file: IOBase | str | Path) -> None:
         ...
 
+    @deprecate_renamed_function("serialize", version="0.20.9")
     def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """Write expression to json."""
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
-            with BytesIO() as buf:
-                self._pyexpr.meta_write_json(buf)
-                json_bytes = buf.getvalue()
+        """
+        Write expression to json.
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
-        else:
-            self._pyexpr.meta_write_json(file)
-        return None
+        .. deprecated: 0.20.9
+            This method has been renamed to :meth:`Expr.serialize`.
+        """
+        expr = wrap_expr(self._pyexpr)
+        return expr.serialize(file)
 
     @overload
     def tree_format(self, *, return_as_string: Literal[False]) -> None:
