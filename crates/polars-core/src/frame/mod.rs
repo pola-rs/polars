@@ -313,7 +313,7 @@ impl DataFrame {
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
-        // SAFETY: An empty dataframe cannot have length mismatch or duplicate names
+        // SAFETY: An empty dataframe cannot have length mismatches or duplicate names
         unsafe { DataFrame::new_no_checks(Vec::new()) }
     }
 

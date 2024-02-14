@@ -82,7 +82,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     .map(|len| {
                         let s = s.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
-                            let df = unsafe { DataFrame::new_no_checks(vec![s]) };
+                            let df = s.into_frame();
                             let out = phys_expr.evaluate(&df, &state)?;
                             finish(out)
                         } else {

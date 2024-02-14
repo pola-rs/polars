@@ -90,7 +90,7 @@ fn replace_by_multiple(
         ComputeError: "`new` input for `replace` must have the same length as `old` or have length 1"
     );
 
-    let df = unsafe { DataFrame::new_no_checks(vec![s.clone()]) };
+    let df = s.clone().into_frame();
     let replacer = create_replacer(old, new)?;
 
     let joined = df.join(
