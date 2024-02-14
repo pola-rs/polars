@@ -166,7 +166,7 @@ impl LogicalPlan {
                 let fmt = if *count == usize::MAX {
                     Cow::Borrowed("CACHE")
                 } else {
-                    Cow::Owned(format!("CACHE: {}times", *count))
+                    Cow::Owned(format!("CACHE: {} times", *count))
                 };
                 let current_node = DotNode {
                     branch: *cache_id,
