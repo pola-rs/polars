@@ -140,10 +140,10 @@ def _map_py_type_to_dtype(
 
 
 def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
-    """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
+    """Indicate whether the given input is a Polars dtype, or dtype specialization."""
     try:
         if dtype == Unknown:
-            # does not represent a realisable dtype, so ignore by default
+            # does not represent a realizable dtype, so ignore by default
             return include_unknown
         else:
             return isinstance(dtype, (DataType, DataTypeClass))

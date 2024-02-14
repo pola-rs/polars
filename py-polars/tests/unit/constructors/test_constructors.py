@@ -1518,3 +1518,23 @@ def test_df_init_dict_raise_on_expression_input() -> None:
     # Passing a list of expressions is allowed
     df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
     assert df.get_column("a").dtype == pl.Object
+
+
+def test_df_schema_sequences() -> None:
+    schema = [
+        ["address", pl.String],
+        ["key", pl.Int64],
+        ["value", pl.Float32],
+    ]
+    df = pl.DataFrame(schema=schema)  # type: ignore[arg-type]
+    assert df.schema == {"address": pl.String, "key": pl.Int64, "value": pl.Float32}
+
+
+def test_df_schema_sequences_incorrect_length() -> None:
+    schema = [
+        ["address", pl.String, pl.Int8],
+        ["key", pl.Int64],
+        ["value", pl.Float32],
+    ]
+    with pytest.raises(ValueError):
+        pl.DataFrame(schema=schema)  # type: ignore[arg-type]
