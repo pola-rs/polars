@@ -100,11 +100,20 @@ def test_deser_empty_list() -> None:
     assert s.to_list() == [[[42.0]], []]
 
 
-def test_expression_json() -> None:
+def test_expression_roundtrip() -> None:
     e = pl.col("foo").sum().over("bar")
     json = e.meta.write_json()
 
-    round_tripped = pl.Expr.from_json(json)
+    round_tripped = pl.Expr.deserialize(json)
+    assert round_tripped.meta == e
+
+
+def test_expression_from_json_deprecated() -> None:
+    e = pl.col("foo").sum().over("bar")
+    json = e.meta.write_json()
+
+    with pytest.deprecated_call():
+        round_tripped = pl.Expr.from_json(json)
     assert round_tripped.meta == e
 
 
@@ -206,5 +215,5 @@ def test_expression_json_13991() -> None:
     e = pl.col("foo").cast(pl.Decimal)
     json = e.meta.write_json()
 
-    round_tripped = pl.Expr.from_json(json)
+    round_tripped = pl.Expr.deserialize(json)
     assert round_tripped.meta == e

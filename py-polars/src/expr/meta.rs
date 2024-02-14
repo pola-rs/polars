@@ -97,11 +97,11 @@ impl PyExpr {
     }
 
     #[staticmethod]
-    fn meta_read_json(value: &str) -> PyResult<PyExpr> {
+    fn deserialize(value: &str) -> PyResult<PyExpr> {
         #[cfg(feature = "json")]
         {
             let inner: polars_lazy::prelude::Expr = serde_json::from_str(value)
-                .map_err(|_| PyPolarsErr::from(polars_err!(ComputeError: "could not serialize")))?;
+                .map_err(|_| PyPolarsErr::from(polars_err!(ComputeError: "could not deserialize")))?;
             Ok(PyExpr { inner })
         }
         #[cfg(not(feature = "json"))]

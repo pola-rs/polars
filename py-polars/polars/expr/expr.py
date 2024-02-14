@@ -330,7 +330,7 @@ class Expr:
         return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
-    def from_json(cls, value: str) -> Self:
+    def deserialize(cls, value: str) -> Self:
         """
         Read an expression from a JSON encoded string to construct an Expression.
 
@@ -340,7 +340,7 @@ class Expr:
             JSON encoded string value
         """
         expr = cls.__new__(cls)
-        expr._pyexpr = PyExpr.meta_read_json(value)
+        expr._pyexpr = PyExpr.deserialize(value)
         return expr
 
     def to_physical(self) -> Self:
@@ -9849,6 +9849,25 @@ class Expr:
             Set return dtype to override automatic return dtype determination.
         """
         return self.replace(mapping, default=default, return_dtype=return_dtype)
+
+    @classmethod
+    def from_json(cls, value: str) -> Self:
+        """
+        Read an expression from a JSON encoded string to construct an Expression.
+
+        .. deprecated:: 0.20.9
+            This method has been renamed to :meth:`deserialize`.
+
+        Parameters
+        ----------
+        value
+            JSON encoded string value
+        """
+        issue_deprecation_warning(
+            "`Expr.from_json` is deprecated. It has been renamed to `Expr.deserialize`.",
+            version="0.20.9",
+        )
+        return cls.deserialize(value)
 
     @property
     def bin(self) -> ExprBinaryNameSpace:
