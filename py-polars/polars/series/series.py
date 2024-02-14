@@ -23,6 +23,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.api import NameSpaceLookup
 from polars.datatypes import (
     Array,
     Boolean,
@@ -608,6 +609,19 @@ class Series:
         (3,)
         """
         return (self._s.len(),)
+
+    @property
+    def ns(self) -> NameSpaceLookup:
+        """
+        Explicitly access available namespaces.
+
+        Examples
+        --------
+        Assuming a namespace `math` is available, you can access it as follows:
+        >>> s = pl.Series("n", [1.5, 31.0, 42.0, 64.5])
+        >>> s.math.square().alias("s^2")
+        """
+        return NameSpaceLookup(self)
 
     def __bool__(self) -> NoReturn:
         msg = (

@@ -32,6 +32,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.api import NameSpaceLookup
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -1293,6 +1294,19 @@ class DataFrame:
         OrderedDict({'foo': Int64, 'bar': Float64, 'ham': String})
         """
         return OrderedDict(zip(self.columns, self.dtypes))
+
+    @property
+    def ns(self) -> NameSpaceLookup:
+        """
+        Explicitly access available namespaces.
+
+        Examples
+        --------
+        Assuming a namespace `split` is available, you can access it as follows:
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0]})
+        >>> df.ns.split.by_first_letter_of_column_names()
+        """
+        return NameSpaceLookup(self)
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         """

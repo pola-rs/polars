@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import reduce
 from operator import or_
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias, TypeVar
 from warnings import warn
 
 import polars._reexport as pl
@@ -28,7 +28,28 @@ _reserved_namespaces: set[str] = reduce(
 )
 
 
+PolarsClass: TypeAlias = Expr | DataFrame | LazyFrame | Series
+
 NS = TypeVar("NS")
+
+
+class NameSpaceLookup:
+    """Lookup for namespace-like functionality on polars classes."""
+
+    def __init__(self, cls: PolarsClass) -> None:
+        self._cls = cls
+
+    def __getattr__(self, name: str) -> Any:
+        namespace = getattr(self._cls, name, None)
+        if namespace is None:
+            msg = f"{name!r} is not a registered namespace on {self._cls.__name__!r}"
+            raise AttributeError(msg)
+
+        if isinstance(namespace, NameSpace):
+            return namespace.__get__(None, self._cls)
+        else:
+            msg = f"{name!r} is not a NameSpace instance on {self._cls.__name__!r}"
+            raise TypeError(msg)
 
 
 class NameSpace:
@@ -38,7 +59,7 @@ class NameSpace:
         self._accessor = name
         self._ns = namespace
 
-    def __get__(self, instance: NS | None, cls: type[NS]) -> NS | type[NS]:
+    def __get__(self, instance: NS | None, cls: Any) -> NS | type[NS]:
         if instance is None:
             return self._ns
 
@@ -48,7 +69,7 @@ class NameSpace:
 
 
 def _create_namespace(
-    name: str, cls: type[Expr | DataFrame | LazyFrame | Series]
+    name: str, cls: type[PolarsClass]
 ) -> Callable[[type[NS]], type[NS]]:
     """Register custom namespace against the underlying polars class."""
 

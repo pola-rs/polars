@@ -24,6 +24,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.api import NameSpaceLookup
 from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -710,6 +711,19 @@ class LazyFrame:
         2
         """
         return self._ldf.width()
+
+    @property
+    def ns(self) -> NameSpaceLookup:
+        """
+        Explicitly access available namespaces.
+
+        Examples
+        --------
+        Assuming a namespace `split` is available, you can access it as follows:
+        >>> df = pl.LazyFrame({"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0]})
+        >>> df.ns.split.by_first_letter_of_column_names()
+        """
+        return NameSpaceLookup(self)
 
     def __bool__(self) -> NoReturn:
         msg = (

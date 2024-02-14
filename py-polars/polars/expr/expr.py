@@ -24,6 +24,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.api import NameSpaceLookup
 from polars.datatypes import (
     Int64,
     is_polars_dtype,
@@ -9980,6 +9981,25 @@ class Expr:
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    @property
+    def ns(self) -> NameSpaceLookup:
+        """
+        Explicitly access available namespaces.
+
+        Examples
+        --------
+        Assuming a namespace `pow_n` is available, you can access it as follows:
+
+        >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
+        >>> df.select(
+        ...     pl.col("n"),
+        ...     pl.col("n").pow_n.next(p=2).alias("next_pow2"),
+        ...     pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
+        ...     pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
+        ... )
+        """
+        return NameSpaceLookup(self)
 
 
 def _prepare_alpha(
