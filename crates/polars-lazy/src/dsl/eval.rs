@@ -91,7 +91,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?
             } else {
-                let mut df_container = unsafe { DataFrame::new_no_checks(vec![]) };
+                let mut df_container = DataFrame::empty();
                 (1..s.len() + 1)
                     .map(|len| {
                         let s = s.slice(0, len);

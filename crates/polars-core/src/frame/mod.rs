@@ -3031,7 +3031,7 @@ impl Iterator for PhysRecordBatchIter<'_> {
 
 impl Default for DataFrame {
     fn default() -> Self {
-        unsafe { DataFrame::new_no_checks(vec![]) }
+        DataFrame::empty()
     }
 }
 

@@ -76,7 +76,7 @@ fn run_per_sublist(
         err = m_err.into_inner().unwrap();
         ca
     } else {
-        let mut df_container = unsafe { DataFrame::new_no_checks(vec![]) };
+        let mut df_container = DataFrame::empty();
 
         lst.into_iter()
             .map(|s| {
