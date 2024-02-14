@@ -188,8 +188,24 @@ where
 
     /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
-        // ensures all chunks are aligned.
-        df.align_chunks();
+        // There are two reasons why we might want to rechunk:
+        //
+        // 1. The different columns have unaligned chunks.
+        // 2. The chunks are aligned, but very small: writing many small chunks
+        //    leads to slow writing performance. We use average estimated
+        //    in-memory size of less than 64KB as a heuristic.
+        //
+        // Neither of these _require_ converting to a single chunk, and
+        // converting to a single chunk has the downside of doubling memory
+        // usage temporarily. In contrast, converting to a series of e.g. 64MB
+        // chunks would give the same benefits without increasing memory usage
+        // meaningfully. However, converting to a single chunk is how this code
+        // already worked previously (covering case 1 only), and implementing
+        // such a chunking algorithm for unaligned chunks is non-trivial, so a
+        // single chunk is what we'll do for now.
+        if df.should_rechunk() || (df.estimated_size() / df.n_chunks() < 64 * 1024) {
+            df.as_single_chunk_par();
+        }
 
         let n_splits = df.height() / self.row_group_size.unwrap_or(512 * 512);
         if n_splits > 0 {
