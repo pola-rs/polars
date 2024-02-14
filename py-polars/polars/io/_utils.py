@@ -181,6 +181,14 @@ def _prepare_file_arg(
                         raise_if_empty=raise_if_empty,
                     )
             return fsspec.open(file, **storage_options)
+        file = normalize_filepath(file, check_not_directory=check_not_dir)
+        if not has_utf8_utf8_lossy_encoding:
+            with Path(file).open(encoding=encoding_str) as f:
+                return _check_empty(
+                    BytesIO(f.read().encode("utf8")),
+                    context=f"{file!r}",
+                    raise_if_empty=raise_if_empty,
+                )
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
@@ -196,16 +204,6 @@ def _prepare_file_arg(
                     )
             storage_options["encoding"] = encoding
             return fsspec.open_files(file, **storage_options)
-
-    if isinstance(file, str):
-        file = normalize_filepath(file, check_not_directory=check_not_dir)
-        if not has_utf8_utf8_lossy_encoding:
-            with Path(file).open(encoding=encoding_str) as f:
-                return _check_empty(
-                    BytesIO(f.read().encode("utf8")),
-                    context=f"{file!r}",
-                    raise_if_empty=raise_if_empty,
-                )
 
     return managed_file(file)
 
