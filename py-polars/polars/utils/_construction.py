@@ -774,23 +774,33 @@ def _unpack_schema(
     Works for any (name, dtype) pairs or schema dict input,
     overriding any inferred dtypes with explicit dtypes if supplied.
     """
-    # coerce schema_overrides to dict[str, PolarsDataType]
-    if schema_overrides:
-        schema_overrides = {
-            name: dtype
-            if is_polars_dtype(dtype, include_unknown=True)
-            else py_type_to_dtype(dtype)
-            for name, dtype in schema_overrides.items()
-        }
-    else:
-        schema_overrides = {}
 
-    # fastpath for empty schema
+    def _normalize_dtype(dtype: Any) -> PolarsDataType:
+        """Parse non-Polars data types as Polars data types."""
+        if is_polars_dtype(dtype, include_unknown=True):
+            return dtype
+        else:
+            return py_type_to_dtype(dtype)
+
+    def _parse_schema_overrides(
+        schema_overrides: SchemaDict | None = None,
+    ) -> dict[str, PolarsDataType]:
+        """Parse schema overrides as a dictionary of name to Polars data type."""
+        if schema_overrides is None:
+            return {}
+
+        return {
+            name: _normalize_dtype(dtype) for name, dtype in schema_overrides.items()
+        }
+
+    schema_overrides = _parse_schema_overrides(schema_overrides)
+
+    # Fast path for empty schema
     if not schema:
-        return (
-            [f"column_{i}" for i in range(n_expected)] if n_expected else [],
-            schema_overrides,
+        columns = (
+            [f"column_{i}" for i in range(n_expected)] if n_expected is not None else []
         )
+        return columns, schema_overrides
 
     # determine column names from schema
     if isinstance(schema, Mapping):
@@ -805,17 +815,27 @@ def _unpack_schema(
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
-        {col: name for col, name in zip_longest(column_names, lookup_names) if name}
+        {
+            col: name
+            for col, name in zip_longest(column_names, lookup_names)
+            if name is not None
+        }
         if lookup_names
         else None
     )
-    column_dtypes: dict[str, PolarsDataType] = {
-        lookup.get((name := col[0]), name) if lookup else col[0]: dtype  # type: ignore[misc]
-        if is_polars_dtype(dtype, include_unknown=True)
-        else py_type_to_dtype(dtype)
-        for col in schema
-        if isinstance(col, tuple) and (dtype := col[1]) is not None
-    }
+
+    column_dtypes: dict[str, PolarsDataType] = {}
+    for col in schema:
+        if isinstance(col, str):
+            continue
+
+        name, dtype = col
+        if dtype is None:
+            continue
+        else:
+            dtype = _normalize_dtype(dtype)
+        name = lookup.get(name, name) if lookup else name
+        column_dtypes[name] = dtype
 
     # apply schema overrides
     if schema_overrides:
