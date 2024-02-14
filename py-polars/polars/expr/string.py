@@ -2180,7 +2180,7 @@ class ExprStringNameSpace:
         length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
-    def head(self, n: int | IntoExprColumn = 10) -> Expr:
+    def head(self, n: int | IntoExprColumn) -> Expr:
         """
         Return the first n characters of each string in a String Series.
 
@@ -2253,7 +2253,7 @@ class ExprStringNameSpace:
         n = parse_as_expression(n)
         return wrap_expr(self._pyexpr.str_head(n))
 
-    def tail(self, n: int | IntoExprColumn = 10) -> Expr:
+    def tail(self, n: int | IntoExprColumn) -> Expr:
         """
         Return the last n characters of each string in a String Series.
 

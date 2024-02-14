@@ -1636,7 +1636,7 @@ class StringNameSpace:
         ]
         """
 
-    def head(self, n: int | IntoExprColumn = 10) -> Series:
+    def head(self, n: int | IntoExprColumn) -> Series:
         """
         Return the first n characters of each string in a String Series.
 
@@ -1696,7 +1696,7 @@ class StringNameSpace:
         ]
         """
 
-    def tail(self, n: int | IntoExprColumn = 10) -> Series:
+    def tail(self, n: int | IntoExprColumn) -> Series:
         """
         Return the last n characters of each string in a String Series.
 
