@@ -590,6 +590,8 @@ pub(super) fn unique(s: &Series, is_stable: bool) -> PolarsResult<Series> {
 
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResult<Series> {
+    use arrow::Either;
+
     let s0 = &s[0];
     let s1 = &s[1];
 
@@ -610,10 +612,14 @@ pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResul
                     Ok(s0.clone())
                 }
             },
+            SetOperation::IsDisjoint => Ok(Series::new(s0.name(), [true])),
         };
     }
 
-    list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
+    list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| match ca {
+        Either::Left(values) => values.into_series(),
+        Either::Right(boolean) => boolean.into_series(),
+    })
 }
 
 #[cfg(feature = "list_any_all")]

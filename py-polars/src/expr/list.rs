@@ -250,6 +250,7 @@ impl PyExpr {
             SetOperation::Difference => e.set_difference(other.inner),
             SetOperation::Union => e.union(other.inner),
             SetOperation::SymmetricDifference => e.set_symmetric_difference(other.inner),
+            SetOperation::IsDisjoint => e.is_disjoint(other.inner),
         }
         .into()
     }

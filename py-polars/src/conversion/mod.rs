@@ -1098,9 +1098,10 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
             "difference" => SetOperation::Difference,
             "intersection" => SetOperation::Intersection,
             "symmetric_difference" => SetOperation::SymmetricDifference,
+            "is_disjoint" => SetOperation::IsDisjoint,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "set operation must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
+                    "set operation must be one of {{'union', 'difference', 'intersection', 'symmetric_difference', 'is_disjoint'}}, got {v}",
                 )))
             }
         };

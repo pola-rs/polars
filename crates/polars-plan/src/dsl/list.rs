@@ -401,4 +401,11 @@ impl ListNameSpace {
         let other = other.into();
         self.set_operation(other, SetOperation::SymmetricDifference)
     }
+
+    /// Return true if the set has no elements in common with other. Sets are disjoint if and only if their intersection is the empty set.
+    #[cfg(feature = "list_sets")]
+    pub fn is_disjoint<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::IsDisjoint)
+    }
 }
