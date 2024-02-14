@@ -21,7 +21,7 @@ def read_ndjson(
     schema_overrides: SchemaDefinition | None = None,
     ignore_errors: bool = False,
 ) -> DataFrame:
-    """
+    r"""
     Read into a DataFrame from a newline delimited JSON file.
 
     Parameters
