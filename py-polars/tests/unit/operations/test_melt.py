@@ -69,3 +69,15 @@ def test_melt_projection_pd_7747() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+# https://github.com/pola-rs/polars/issues/10075
+def test_melt_no_value_vars() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+
+    result = lf.melt("a")
+
+    expected = pl.LazyFrame(
+        schema={"a": pl.Int64, "variable": pl.String, "value": pl.Null}
+    )
+    assert_frame_equal(result, expected)

@@ -203,3 +203,11 @@ def test_serde_array_dtype() -> None:
         dtype=pl.List(pl.Array(pl.Int32(), width=3)),
     )
     assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)
+
+
+def test_expression_json_13991() -> None:
+    e = pl.col("foo").cast(pl.Decimal)
+    json = e.meta.write_json()
+
+    round_tripped = pl.Expr.from_json(json)
+    assert round_tripped.meta == e

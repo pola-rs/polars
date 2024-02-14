@@ -45,7 +45,7 @@ def read_delta(
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
+        <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
@@ -167,7 +167,7 @@ def scan_delta(
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
+        <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
@@ -291,7 +291,7 @@ def _get_delta_lake_table(
     Notes
     -----
     Make sure to install deltalake>=0.8.0. Read the documentation
-    `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
+    `here <https://delta-io.github.io/delta-rs/usage/installation/>`_.
     """
     _check_if_delta_available()
 

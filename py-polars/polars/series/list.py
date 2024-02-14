@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        IntoExpr,
         IntoExprColumn,
         NullBehavior,
         ToStructStrategy,
@@ -232,7 +233,16 @@ class ListNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False) -> Series:
+    def median(self) -> Series:
+        """Compute the median value of the arrays in the list."""
+
+    def std(self) -> Series:
+        """Compute the std value of the arrays in the list."""
+
+    def var(self) -> Series:
+        """Compute the var value of the arrays in the list."""
+
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -240,6 +250,8 @@ class ListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -294,6 +306,22 @@ class ListNameSpace:
         [
             [1, 2]
             [2, 3]
+        ]
+        """
+
+    def n_unique(self) -> Series:
+        """
+        Count the number of unique values in every sub-lists.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 1, 2], [2, 3, 4]])
+        >>> s.list.n_unique()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            3
         ]
         """
 
@@ -380,10 +408,36 @@ class ListNameSpace:
         ]
         """
 
+    def gather_every(
+        self, n: int | IntoExprColumn, offset: int | IntoExprColumn = 0
+    ) -> Series:
+        """
+        Take every n-th value start from offset in sublists.
+
+        Parameters
+        ----------
+        n
+            Gather every n-th element.
+        offset
+            Starting index.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [], [6, 7, 8, 9]])
+        >>> s.list.gather_every(2, offset=1)
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [2]
+            []
+            [7, 9]
+        ]
+        """
+
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: IntoExprColumn) -> Series:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -393,6 +447,11 @@ class ListNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -692,9 +751,7 @@ class ListNameSpace:
         ]
         """
 
-    def count_matches(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_matches(self, element: IntoExpr) -> Series:
         """
         Count how often the value produced by `element` occurs.
 

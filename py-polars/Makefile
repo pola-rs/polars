@@ -56,8 +56,8 @@ build-release-native: .venv  ## Same as build-release, except with native CPU op
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting
-	$(VENV_BIN)/ruff check .
-	$(VENV_BIN)/ruff format .
+	$(VENV_BIN)/ruff check
+	$(VENV_BIN)/ruff format
 	$(VENV_BIN)/typos
 	cargo fmt --all
 	-dprint fmt
@@ -65,14 +65,14 @@ fmt: .venv  ## Run autoformatting and linting
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy --locked -- -D warnings
+	cargo clippy --locked -- -D warnings -D clippy::dbg_macro
 
 .PHONY: pre-commit
 pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup
+	$(VENV_BIN)/pytest -n auto --dist loadgroup $(PYTEST_ARGS)
 
 .PHONY: doctest
 doctest: .venv build  ## Run doctests
@@ -90,7 +90,6 @@ coverage: .venv build  ## Run tests and report coverage
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/
 	@rm -rf .hypothesis/
@@ -100,8 +99,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so
-	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
-	@cargo clean
+	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -exec rm -r {} +
 
 .PHONY: help
 help:  ## Display this help screen

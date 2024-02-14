@@ -151,7 +151,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             length: to_aexpr(*length, arena),
         },
         Expr::Wildcard => AExpr::Wildcard,
-        Expr::Count => AExpr::Count,
+        Expr::Len => AExpr::Len,
         Expr::Nth(i) => AExpr::Nth(i),
         Expr::SubPlan { .. } => panic!("no SQLSubquery expected at this point"),
         Expr::KeepName(_) => panic!("no `name.keep` expected at this point"),
@@ -598,7 +598,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             offset: Box::new(node_to_expr(offset, expr_arena)),
             length: Box::new(node_to_expr(length, expr_arena)),
         },
-        AExpr::Count => Expr::Count,
+        AExpr::Len => Expr::Len,
         AExpr::Nth(i) => Expr::Nth(i),
         AExpr::Wildcard => Expr::Wildcard,
     }

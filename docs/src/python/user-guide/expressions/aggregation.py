@@ -24,11 +24,11 @@ q = (
     dataset.lazy()
     .group_by("first_name")
     .agg(
-        pl.count(),
+        pl.len(),
         pl.col("gender"),
         pl.first("last_name"),
     )
-    .sort("count", descending=True)
+    .sort("len", descending=True)
     .limit(5)
 )
 

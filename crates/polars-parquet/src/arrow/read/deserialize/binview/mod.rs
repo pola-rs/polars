@@ -1,5 +1,7 @@
 mod basic;
+mod dictionary;
 mod nested;
 
-pub use basic::BinaryViewArrayIter;
-pub use nested::NestedIter;
+pub(crate) use basic::BinaryViewArrayIter;
+pub(crate) use dictionary::{DictIter, NestedDictIter};
+pub(crate) use nested::NestedIter;

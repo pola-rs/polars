@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 
@@ -29,7 +29,7 @@ impl<'a, T: PolarsObject> std::iter::Iterator for ObjectIter<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.current == self.current_end {
             None
-        // Safety:
+        // SAFETY:
         // Se comment below
         } else if unsafe { self.array.is_null_unchecked(self.current) } {
             self.current += 1;
@@ -37,7 +37,7 @@ impl<'a, T: PolarsObject> std::iter::Iterator for ObjectIter<'a, T> {
         } else {
             let old = self.current;
             self.current += 1;
-            // Safety:
+            // SAFETY:
             // we just checked bounds in `self.current_end == self.current`
             // this is safe on the premise that this struct is initialized with
             // current = array.len()
@@ -63,7 +63,7 @@ impl<'a, T: PolarsObject> std::iter::DoubleEndedIterator for ObjectIter<'a, T> {
             Some(if self.array.is_null(self.current_end) {
                 None
             } else {
-                // Safety:
+                // SAFETY:
                 // we just checked bounds in `self.current_end == self.current`
                 // this is safe on the premise that this struct is initialized with
                 // current = array.len()
@@ -118,7 +118,7 @@ impl<T: PolarsObject> std::iter::Iterator for OwnedObjectIter<T> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.current == self.current_end {
             None
-        // Safety:
+        // SAFETY:
         // Se comment below
         } else if unsafe { self.array.is_null_unchecked(self.current) } {
             self.current += 1;
@@ -126,7 +126,7 @@ impl<T: PolarsObject> std::iter::Iterator for OwnedObjectIter<T> {
         } else {
             let old = self.current;
             self.current += 1;
-            // Safety:
+            // SAFETY:
             // we just checked bounds in `self.current_end == self.current`
             // this is safe on the premise that this struct is initialized with
             // current = array.len()

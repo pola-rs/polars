@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import timedelta
 from typing import cast
 
@@ -9,6 +11,11 @@ from polars.testing import assert_frame_equal
 
 
 def test_corr() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    result = df.corr()
+    expected = pl.DataFrame({"a": [1.0]})
+    assert_frame_equal(result, expected)
+
     df = pl.DataFrame(
         {
             "a": [1, 2, 4],
@@ -40,6 +47,15 @@ def test_hist() -> None:
     assert a.hist(
         bins=[0, 2], include_category=False, include_breakpoint=False
     ).to_series().to_list() == [0, 3, 4]
+
+
+@pytest.mark.parametrize("values", [[], [None]])
+def test_hist_empty_or_all_null(values: list[None]) -> None:
+    ser = pl.Series(values, dtype=pl.Float64)
+    assert (
+        str(ser.hist().to_dict(as_series=False))
+        == "{'break_point': [inf], 'category': ['(-inf, inf]'], 'count': [0]}"
+    )
 
 
 @pytest.mark.parametrize("n", [3, 10, 25])

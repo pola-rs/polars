@@ -35,29 +35,23 @@ pub(super) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
     new_schema.with_column(variable_name, DataType::String);
 
     // We need to determine the supertype of all value columns.
-    let mut st = None;
+    let mut supertype = DataType::Null;
 
     // take all columns that are not in `id_vars` as `value_var`
     if args.value_vars.is_empty() {
         let id_vars = PlHashSet::from_iter(&args.id_vars);
         for (name, dtype) in input_schema.iter() {
             if !id_vars.contains(name) {
-                match &st {
-                    None => st = Some(dtype.clone()),
-                    Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
-                }
+                supertype = try_get_supertype(&supertype, dtype).unwrap();
             }
         }
     } else {
         for name in &args.value_vars {
             let dtype = input_schema.get(name).unwrap();
-            match &st {
-                None => st = Some(dtype.clone()),
-                Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
-            }
+            supertype = try_get_supertype(&supertype, dtype).unwrap();
         }
     }
-    new_schema.with_column(value_name, st.unwrap());
+    new_schema.with_column(value_name, supertype);
     Arc::new(new_schema)
 }
 

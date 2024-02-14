@@ -3,7 +3,6 @@ from datetime import date
 import pytest
 
 import polars as pl
-from polars.exceptions import PolarsPanicError
 
 # Calling `plot` the first time is slow
 # https://github.com/pola-rs/polars/issues/13500
@@ -39,8 +38,3 @@ def test_series_hist() -> None:
 
 def test_empty_dataframe() -> None:
     pl.DataFrame({"a": [], "b": []}).plot.scatter(x="a", y="b")
-
-
-def test_unsupported_dtype() -> None:
-    with pytest.raises(PolarsPanicError):
-        pl.DataFrame({"a": [{1, 2}], "b": [4]}).plot.scatter(x="a", y="b")

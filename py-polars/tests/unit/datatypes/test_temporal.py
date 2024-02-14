@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -203,20 +203,6 @@ def test_from_pydatetime() -> None:
     assert s.dt[0] == dates[0]
 
 
-@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_from_numpy_timedelta(time_unit: Literal["ns", "us", "ms"]) -> None:
-    s = pl.Series(
-        "name",
-        np.array(
-            [timedelta(days=1), timedelta(seconds=1)], dtype=f"timedelta64[{time_unit}]"
-        ),
-    )
-    assert s.dtype == pl.Duration(time_unit)
-    assert s.name == "name"
-    assert s.dt[0] == timedelta(days=1)
-    assert s.dt[1] == timedelta(seconds=1)
-
-
 def test_int_to_python_datetime() -> None:
     df = pl.DataFrame({"a": [100_000_000, 200_000_000]}).with_columns(
         [
@@ -283,41 +269,8 @@ def test_int_to_python_timedelta() -> None:
     ]
 
     assert df.select(
-        [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
+        [pl.col(col).cast(pl.Int64) for col in ("c", "d", "e")]
     ).rows() == [(100001, 100001, 100001), (200002, 200002, 200002)]
-
-
-def test_from_numpy() -> None:
-    # note: numpy timeunit support is limited to those supported by polars.
-    # as a result, datetime64[s] raises
-    x = np.asarray(range(100_000, 200_000, 10_000), dtype="datetime64[s]")
-    with pytest.raises(ValueError, match="Please cast to the closest supported unit"):
-        pl.Series(x)
-
-
-@pytest.mark.parametrize(
-    ("numpy_time_unit", "expected_values", "expected_dtype"),
-    [
-        ("ns", ["1970-01-02T01:12:34.123456789"], pl.Datetime("ns")),
-        ("us", ["1970-01-02T01:12:34.123456"], pl.Datetime("us")),
-        ("ms", ["1970-01-02T01:12:34.123"], pl.Datetime("ms")),
-        ("D", ["1970-01-02"], pl.Date),
-    ],
-)
-def test_from_numpy_supported_units(
-    numpy_time_unit: str,
-    expected_values: list[str],
-    expected_dtype: PolarsTemporalType,
-) -> None:
-    values = np.array(
-        ["1970-01-02T01:12:34.123456789123456789"],
-        dtype=f"datetime64[{numpy_time_unit}]",
-    )
-    result = pl.from_numpy(values)
-    expected = (
-        pl.Series("column_0", expected_values).str.strptime(expected_dtype).to_frame()
-    )
-    assert_frame_equal(result, expected)
 
 
 def test_datetime_consistency() -> None:
@@ -467,46 +420,17 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = (
-        pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
-        .cast(pl.Datetime)
-        .dt.with_time_unit("ns")
-    )
+    with pytest.deprecated_call(match="`with_time_unit` is deprecated"):
+        s1 = (
+            pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
+            .cast(pl.Datetime)
+            .dt.with_time_unit("ns")
+        )
     df = pl.DataFrame([s0, s1])
 
     rows = df.rows()
     assert rows[0][0] == date(2308, 4, 2)
     assert rows[0][1] == datetime(1970, 1, 1, 0, 2, 3, 543000)
-
-
-def test_series_to_numpy() -> None:
-    s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = pl.Series(
-        "datetime", [datetime(2021, 1, 2, 3, 4, 5), datetime(2021, 2, 3, 4, 5, 6)]
-    )
-    s2 = pl.datetime_range(
-        datetime(2021, 1, 1, 0),
-        datetime(2021, 1, 1, 1),
-        interval="1h",
-        time_unit="ms",
-        eager=True,
-    )
-    assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
-    assert (
-        str(s1.to_numpy()[:2])
-        == "['2021-01-02T03:04:05.000000' '2021-02-03T04:05:06.000000']"
-    )
-    assert (
-        str(s2.to_numpy()[:2])
-        == "['2021-01-01T00:00:00.000' '2021-01-01T01:00:00.000']"
-    )
-    s3 = pl.Series([timedelta(hours=1), timedelta(hours=-2)])
-    out = np.array([3_600_000_000_000, -7_200_000_000_000], dtype="timedelta64[ns]")
-    assert (s3.to_numpy() == out).all()
-
-    s4 = pl.Series([time(10, 30, 45), time(23, 59, 59)])
-    out = np.array([time(10, 30, 45), time(23, 59, 59)], dtype="object")
-    assert (s4.to_numpy() == out).all()
 
 
 @pytest.mark.parametrize(
@@ -1310,13 +1234,13 @@ def test_rolling_by_() -> None:
     out = (
         df.sort("datetime")
         .rolling(index_column="datetime", by="group", period=timedelta(days=3))
-        .agg([pl.count().alias("count")])
+        .agg([pl.len().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
         .rolling(index_column="datetime", by="group", period="3d")
-        .agg([pl.count().alias("count")])
+        .agg([pl.len().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
     assert out.to_dict(as_series=False) == {
@@ -1340,22 +1264,6 @@ def test_rolling_by_() -> None:
         ],
         "count": [1, 2, 3, 3, 3, 1, 2, 3, 3, 3, 1, 2, 3, 3, 3],
     }
-
-
-def test_date_to_time_cast_5111() -> None:
-    # check date -> time casts (fast-path: always 00:00:00)
-    df = pl.DataFrame(
-        {
-            "xyz": [
-                date(1969, 1, 1),
-                date(1990, 3, 8),
-                date(2000, 6, 16),
-                date(2010, 9, 24),
-                date(2022, 12, 31),
-            ]
-        }
-    ).with_columns(pl.col("xyz").cast(pl.Time))
-    assert df["xyz"].to_list() == [time(0), time(0), time(0), time(0), time(0)]
 
 
 def test_sum_duration() -> None:
@@ -1578,11 +1486,13 @@ def test_convert_time_zone_lazy_schema() -> None:
 
 def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(
-        ComputeError,
-        match="cannot call `convert_time_zone` on tz-naive; set a time zone first with `replace_time_zone`",
-    ):
-        ts.dt.convert_time_zone("Africa/Bamako")
+    result = ts.dt.convert_time_zone("Asia/Kathmandu").item()
+    expected = datetime(2020, 1, 1, 5, 45, tzinfo=ZoneInfo(key="Asia/Kathmandu"))
+    assert result == expected
+    result = (
+        ts.dt.replace_time_zone("UTC").dt.convert_time_zone("Asia/Kathmandu").item()
+    )
+    assert result == expected
 
 
 def test_tz_aware_get_idx_5010() -> None:
@@ -2573,30 +2483,18 @@ def test_datetime_cum_agg_schema() -> None:
 
 
 def test_rolling_group_by_empty_groups_by_take_6330() -> None:
-    df = (
-        pl.DataFrame({"Event": ["Rain", "Sun"]})
-        .join(
-            pl.DataFrame(
-                {
-                    "Date": [1, 2, 3, 4],
-                }
-            ),
-            how="cross",
-        )
-        .set_sorted("Date")
-    )
-    assert (
-        df.rolling(
-            index_column="Date",
-            period="2i",
-            offset="-2i",
-            by="Event",
-            closed="left",
-        ).agg([pl.count()])
-    ).to_dict(as_series=False) == {
+    df1 = pl.DataFrame({"Event": ["Rain", "Sun"]})
+    df2 = pl.DataFrame({"Date": [1, 2, 3, 4]})
+    df = df1.join(df2, how="cross").set_sorted("Date")
+
+    result = df.rolling(
+        index_column="Date", period="2i", offset="-2i", by="Event", closed="left"
+    ).agg(pl.len())
+
+    assert result.to_dict(as_series=False) == {
         "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
-        "count": [0, 1, 2, 2, 0, 1, 2, 2],
+        "len": [0, 1, 2, 2, 0, 1, 2, 2],
     }
 
 

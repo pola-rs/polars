@@ -15,9 +15,16 @@ impl TryFrom<StructArray> for DataFrame {
             .iter()
             .zip(arrs)
             .map(|(fld, arr)| {
-                // Safety
+                // SAFETY:
                 // reported data type is correct
-                unsafe { Series::_try_from_arrow_unchecked(&fld.name, vec![arr], fld.data_type()) }
+                unsafe {
+                    Series::_try_from_arrow_unchecked_with_md(
+                        &fld.name,
+                        vec![arr],
+                        fld.data_type(),
+                        Some(&fld.metadata),
+                    )
+                }
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         DataFrame::new(columns)

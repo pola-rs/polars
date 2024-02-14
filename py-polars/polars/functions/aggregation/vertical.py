@@ -24,8 +24,8 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
         Ignore null values (default).
 
         If set to `False`, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no `True` values,
-        the output is `None`.
+        if the column contains any null values and no `False` values,
+        the output is null.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -90,7 +90,7 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
 
         If set to `False`, `Kleene logic`_ is used to deal with nulls:
         if the column contains any null values and no `True` values,
-        the output is `None`.
+        the output is null.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 

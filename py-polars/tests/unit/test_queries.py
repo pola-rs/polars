@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import numpy as np
@@ -34,7 +34,7 @@ def test_repeat_expansion_in_group_by() -> None:
     out = (
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
         .group_by("g", maintain_order=True)
-        .agg(pl.repeat(1, pl.count()).cum_sum())
+        .agg(pl.repeat(1, pl.len()).cum_sum())
         .to_dict(as_series=False)
     )
     assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}
@@ -126,10 +126,10 @@ def test_sorted_group_by_optimization(monkeypatch: Any) -> None:
         sorted_implicit = (
             df.with_columns(pl.col("a").sort(descending=descending))
             .group_by("a")
-            .agg(pl.count())
+            .agg(pl.len())
         )
         sorted_explicit = (
-            df.group_by("a").agg(pl.count()).sort("a", descending=descending)
+            df.group_by("a").agg(pl.len()).sort("a", descending=descending)
         )
         assert_frame_equal(sorted_explicit, sorted_implicit)
 
@@ -258,7 +258,7 @@ def test_ternary_none_struct() -> None:
                 pl.struct(
                     [
                         pl.sum(name).alias("sum"),
-                        (pl.count() - pl.col(name).null_count()).alias("count"),
+                        (pl.len() - pl.col(name).null_count()).alias("count"),
                     ]
                 ),
             )
@@ -368,3 +368,37 @@ def test_shift_drop_nulls_10875() -> None:
     assert pl.LazyFrame({"a": [1, 2, 3]}).shift(1).drop_nulls().collect()[
         "a"
     ].to_list() == [1, 2]
+
+
+def test_temporal_downcasts() -> None:
+    s = pl.Series([-1, 0, 1]).cast(pl.Datetime("us"))
+
+    assert s.to_list() == [
+        datetime(1969, 12, 31, 23, 59, 59, 999999),
+        datetime(1970, 1, 1),
+        datetime(1970, 1, 1, 0, 0, 0, 1),
+    ]
+
+    # downcast (from us to ms, or from datetime to date) should NOT change the date
+    for s_dt in (s.dt.date(), s.cast(pl.Date)):
+        assert s_dt.to_list() == [
+            date(1969, 12, 31),
+            date(1970, 1, 1),
+            date(1970, 1, 1),
+        ]
+    assert s.cast(pl.Datetime("ms")).to_list() == [
+        datetime(1969, 12, 31, 23, 59, 59, 999000),
+        datetime(1970, 1, 1),
+        datetime(1970, 1, 1),
+    ]
+
+
+def test_temporal_time_casts() -> None:
+    s = pl.Series([-1, 0, 1]).cast(pl.Datetime("us"))
+
+    for s_dt in (s.dt.time(), s.cast(pl.Time)):
+        assert s_dt.to_list() == [
+            time(23, 59, 59, 999999),
+            time(0, 0, 0, 0),
+            time(0, 0, 0, 1),
+        ]

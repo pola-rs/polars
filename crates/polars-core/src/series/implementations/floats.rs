@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::borrow::Cow;
 
 use ahash::RandomState;
@@ -193,14 +194,12 @@ macro_rules! impl_dyn_series {
                 self.0.median().map(|v| v as f64)
             }
 
-            #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-                self.0.take_chunked_unchecked(by, sorted).into_series()
+            fn std(&self, ddof: u8) -> Option<f64> {
+                self.0.std(ddof)
             }
 
-            #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-                self.0.take_opt_chunked_unchecked(by).into_series()
+            fn var(&self, ddof: u8) -> Option<f64> {
+                self.0.var(ddof)
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -328,6 +327,9 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
+            }
+            fn as_any(&self) -> &dyn Any {
+                &self.0
             }
         }
     };

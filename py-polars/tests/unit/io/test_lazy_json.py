@@ -56,6 +56,11 @@ def test_scan_ndjson_with_schema(foods_ndjson_path: Path) -> None:
     assert df["sugars_g"].dtype == pl.Float64
 
 
+def test_scan_ndjson_batch_size_zero() -> None:
+    with pytest.raises(ValueError, match="invalid zero value"):
+        pl.scan_ndjson("test.ndjson", batch_size=0)
+
+
 @pytest.mark.write_disk()
 def test_scan_with_projection(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -135,19 +140,3 @@ def test_anonymous_scan_explain(io_files_path: Path) -> None:
     q = pl.scan_ndjson(source=file)
     assert "Anonymous" in q.explain()
     assert "Anonymous" in q.show_graph(raw_output=True)  # type: ignore[operator]
-
-
-def test_sink_ndjson_should_write_same_data(
-    io_files_path: Path, tmp_path: Path
-) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    # Arrange
-    source_path = io_files_path / "foods1.csv"
-    target_path = tmp_path / "foods_test.ndjson"
-    expected = pl.read_csv(source_path)
-    lf = pl.scan_csv(source_path)
-    # Act
-    lf.sink_ndjson(target_path)
-    df = pl.read_ndjson(target_path)
-    # Assert
-    assert_frame_equal(df, expected)

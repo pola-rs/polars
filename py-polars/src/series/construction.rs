@@ -184,7 +184,7 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 )]
 impl PySeries {
     #[staticmethod]
-    fn new_from_anyvalues(
+    fn new_from_any_values(
         name: &str,
         val: Vec<Wrap<AnyValue<'_>>>,
         strict: bool,
@@ -196,7 +196,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_from_anyvalues_and_dtype(
+    fn new_from_any_values_and_dtype(
         name: &str,
         val: Vec<Wrap<AnyValue<'_>>>,
         dtype: Wrap<DataType>,

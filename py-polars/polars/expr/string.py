@@ -12,6 +12,7 @@ from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -427,6 +428,12 @@ class ExprStringNameSpace:
         equivalent output with much better performance:
         :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
+        A character is defined as a `Unicode scalar value`_. A single character is
+        represented by a single byte when working with ASCII text, and a maximum of
+        4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
@@ -448,9 +455,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_len_chars())
 
-    def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Expr:
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Expr:
         """
-        Vertically concat the values in the Series to a single string value.
+        Vertically concatenate the string values in the column to a single string value.
 
         Parameters
         ----------
@@ -458,9 +467,8 @@ class ExprStringNameSpace:
             The delimiter to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
-
-            If set to ``False``, null values will be propagated.
-            if the column contains any null values, the output is ``None``.
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
 
         Returns
         -------
@@ -479,7 +487,6 @@ class ExprStringNameSpace:
         ╞═════╡
         │ 1-2 │
         └─────┘
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
         >>> df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
         shape: (1, 1)
         ┌──────┐
@@ -490,6 +497,13 @@ class ExprStringNameSpace:
         │ null │
         └──────┘
         """
+        if delimiter is None:
+            issue_deprecation_warning(
+                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
+                " Pass a delimiter to silence this warning.",
+                version="0.20.5",
+            )
+            delimiter = "-"
         return wrap_expr(self._pyexpr.str_concat(delimiter, ignore_nulls))
 
     def to_uppercase(self) -> Expr:
@@ -562,8 +576,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start and end of the string. If set to
+            None (default), all leading and trailing whitespace is removed instead.
 
         Examples
         --------
@@ -625,8 +639,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start of the string. If set to None
+            (default), all leading whitespace is removed instead.
 
         See Also
         --------
@@ -694,8 +708,8 @@ class ExprStringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the end of the string. If set to None
+            (default), all trailing whitespace is removed instead.
 
         See Also
         --------
@@ -911,7 +925,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
     @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
-    def zfill(self, length: int) -> Expr:
+    def zfill(self, length: int | IntoExprColumn) -> Expr:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
@@ -949,6 +963,7 @@ class ExprStringNameSpace:
         │ null   ┆ null   │
         └────────┴────────┘
         """
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_zfill(length))
 
     def contains(
@@ -1908,14 +1923,58 @@ class ExprStringNameSpace:
         value
             String that will replace the matched substring.
         literal
-            Treat pattern as a literal string.
+            Treat `pattern` as a literal string.
         n
             Number of matches to replace.
 
+        See Also
+        --------
+        replace_all
+
         Notes
         -----
+        The dollar sign (`$`) is a special character related to capture groups.
+        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+
         To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. For example:
+        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+        for additional information about the use of inline expression modifiers.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
+        >>> df.with_columns(pl.col("text").str.replace(r"abc\b", "ABC"))
+        shape: (2, 2)
+        ┌─────┬────────┐
+        │ id  ┆ text   │
+        │ --- ┆ ---    │
+        │ i64 ┆ str    │
+        ╞═════╪════════╡
+        │ 1   ┆ 123ABC │
+        │ 2   ┆ abc456 │
+        └─────┴────────┘
+
+        Capture groups are supported. Use `${1}` in the `value` string to refer to the
+        first capture group in the `pattern`, `${2}` to refer to the second capture
+        group, and so on. You can also use named capture groups.
+
+        >>> df = pl.DataFrame({"word": ["hat", "hut"]})
+        >>> df.with_columns(
+        ...     positional=pl.col.word.str.replace("h(.)t", "b${1}d"),
+        ...     named=pl.col.word.str.replace("h(?<vowel>.)t", "b${vowel}d"),
+        ... )
+        shape: (2, 3)
+        ┌──────┬────────────┬───────┐
+        │ word ┆ positional ┆ named │
+        │ ---  ┆ ---        ┆ ---   │
+        │ str  ┆ str        ┆ str   │
+        ╞══════╪════════════╪═══════╡
+        │ hat  ┆ bad        ┆ bad   │
+        │ hut  ┆ bud        ┆ bud   │
+        └──────┴────────────┴───────┘
+
+        Apply case-insensitive string replacement using the `(?i)` flag.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -1925,7 +1984,6 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     # apply case-insensitive string replacement
         ...     pl.col("weather").str.replace(r"(?i)foggy|rainy|cloudy|snowy", "Sunny")
         ... )
         shape: (4, 3)
@@ -1939,30 +1997,6 @@ class ExprStringNameSpace:
         │ Philadelphia ┆ Autumn ┆ Sunny   │
         │ Philadelphia ┆ Winter ┆ Sunny   │
         └──────────────┴────────┴─────────┘
-
-        See the regex crate's section on `grouping and flags
-        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
-        additional information about the use of inline expression modifiers.
-
-        See Also
-        --------
-        replace_all : Replace all matching regex/literal substrings.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
-        >>> df.with_columns(
-        ...     pl.col("text").str.replace(r"abc\b", "ABC")
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
-        ┌─────┬────────┐
-        │ id  ┆ text   │
-        │ --- ┆ ---    │
-        │ i64 ┆ str    │
-        ╞═════╪════════╡
-        │ 1   ┆ 123ABC │
-        │ 2   ┆ abc456 │
-        └─────┴────────┘
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
@@ -1971,7 +2005,7 @@ class ExprStringNameSpace:
     def replace_all(
         self, pattern: str | Expr, value: str | Expr, *, literal: bool = False
     ) -> Expr:
-        """
+        r"""
         Replace all matching regex/literal substrings with a new string value.
 
         Parameters
@@ -1980,13 +2014,23 @@ class ExprStringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            Replacement string.
+            String that will replace the matched substring.
         literal
-            Treat pattern as a literal string.
+            Treat `pattern` as a literal string.
 
         See Also
         --------
-        replace : Replace first matching regex/literal substring.
+        replace
+
+        Notes
+        -----
+        The dollar sign (`$`) is a special character related to capture groups.
+        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+        for additional information about the use of inline expression modifiers.
 
         Examples
         --------
@@ -2001,6 +2045,52 @@ class ExprStringNameSpace:
         │ 1   ┆ -bc-bc  │
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
+
+        Capture groups are supported. Use `${1}` in the `value` string to refer to the
+        first capture group in the `pattern`, `${2}` to refer to the second capture
+        group, and so on. You can also use named capture groups.
+
+        >>> df = pl.DataFrame({"word": ["hat", "hut"]})
+        >>> df.with_columns(
+        ...     positional=pl.col.word.str.replace_all("h(.)t", "b${1}d"),
+        ...     named=pl.col.word.str.replace_all("h(?<vowel>.)t", "b${vowel}d"),
+        ... )
+        shape: (2, 3)
+        ┌──────┬────────────┬───────┐
+        │ word ┆ positional ┆ named │
+        │ ---  ┆ ---        ┆ ---   │
+        │ str  ┆ str        ┆ str   │
+        ╞══════╪════════════╪═══════╡
+        │ hat  ┆ bad        ┆ bad   │
+        │ hut  ┆ bud        ┆ bud   │
+        └──────┴────────────┴───────┘
+
+        Apply case-insensitive string replacement using the `(?i)` flag.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "city": "Philadelphia",
+        ...         "season": ["Spring", "Summer", "Autumn", "Winter"],
+        ...         "weather": ["Rainy", "Sunny", "Cloudy", "Snowy"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     # apply case-insensitive string replacement
+        ...     pl.col("weather").str.replace_all(
+        ...         r"(?i)foggy|rainy|cloudy|snowy", "Sunny"
+        ...     )
+        ... )
+        shape: (4, 3)
+        ┌──────────────┬────────┬─────────┐
+        │ city         ┆ season ┆ weather │
+        │ ---          ┆ ---    ┆ ---     │
+        │ str          ┆ str    ┆ str     │
+        ╞══════════════╪════════╪═════════╡
+        │ Philadelphia ┆ Spring ┆ Sunny   │
+        │ Philadelphia ┆ Summer ┆ Sunny   │
+        │ Philadelphia ┆ Autumn ┆ Sunny   │
+        │ Philadelphia ┆ Winter ┆ Sunny   │
+        └──────────────┴────────┴─────────┘
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         value = parse_as_expression(value, str_as_lit=True)
@@ -2027,9 +2117,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_reverse())
 
-    def slice(self, offset: int, length: int | None = None) -> Expr:
+    def slice(
+        self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
+    ) -> Expr:
         """
-        Create subslices of the string values of a String Series.
+        Extract a substring from each string value.
 
         Parameters
         ----------
@@ -2044,41 +2136,48 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`String`.
 
+        Notes
+        -----
+        Both the `offset` and `length` inputs are defined in terms of the number
+        of characters in the (UTF8) string. A character is defined as a
+        `Unicode scalar value`_. A single character is represented by a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
-        >>> df.with_columns(
-        ...     pl.col("s").str.slice(-3).alias("s_sliced"),
-        ... )
+        >>> df.with_columns(pl.col("s").str.slice(-3).alias("slice"))
         shape: (4, 2)
-        ┌─────────────┬──────────┐
-        │ s           ┆ s_sliced │
-        │ ---         ┆ ---      │
-        │ str         ┆ str      │
-        ╞═════════════╪══════════╡
-        │ pear        ┆ ear      │
-        │ null        ┆ null     │
-        │ papaya      ┆ aya      │
-        │ dragonfruit ┆ uit      │
-        └─────────────┴──────────┘
+        ┌─────────────┬───────┐
+        │ s           ┆ slice │
+        │ ---         ┆ ---   │
+        │ str         ┆ str   │
+        ╞═════════════╪═══════╡
+        │ pear        ┆ ear   │
+        │ null        ┆ null  │
+        │ papaya      ┆ aya   │
+        │ dragonfruit ┆ uit   │
+        └─────────────┴───────┘
 
         Using the optional `length` parameter
 
-        >>> df.with_columns(
-        ...     pl.col("s").str.slice(4, length=3).alias("s_sliced"),
-        ... )
+        >>> df.with_columns(pl.col("s").str.slice(4, length=3).alias("slice"))
         shape: (4, 2)
-        ┌─────────────┬──────────┐
-        │ s           ┆ s_sliced │
-        │ ---         ┆ ---      │
-        │ str         ┆ str      │
-        ╞═════════════╪══════════╡
-        │ pear        ┆          │
-        │ null        ┆ null     │
-        │ papaya      ┆ ya       │
-        │ dragonfruit ┆ onf      │
-        └─────────────┴──────────┘
+        ┌─────────────┬───────┐
+        │ s           ┆ slice │
+        │ ---         ┆ ---   │
+        │ str         ┆ str   │
+        ╞═════════════╪═══════╡
+        │ pear        ┆       │
+        │ null        ┆ null  │
+        │ papaya      ┆ ya    │
+        │ dragonfruit ┆ onf   │
+        └─────────────┴───────┘
         """
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
     def explode(self) -> Expr:
@@ -2112,7 +2211,7 @@ class ExprStringNameSpace:
 
     def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
         """
-        Convert an String column into an Int64 column with base radix.
+        Convert a String column into an Int64 column with base radix.
 
         Parameters
         ----------

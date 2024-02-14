@@ -252,8 +252,7 @@ and then joins the result back to the original `DataFrame` producing:
 In Polars the same can be achieved with `window` functions:
 
 ```python
-df.select(
-    pl.all(),
+df.with_columns(
     pl.col("type").count().over("c").alias("size")
 )
 ```
@@ -266,17 +265,11 @@ shape: (7, 3)
 │ i64 ┆ str  ┆ u32  │
 ╞═════╪══════╪══════╡
 │ 1   ┆ m    ┆ 3    │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
 │ 1   ┆ n    ┆ 3    │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
 │ 1   ┆ o    ┆ 3    │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
 │ 2   ┆ m    ┆ 4    │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
 │ 2   ┆ m    ┆ 4    │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
 │ 2   ┆ n    ┆ 4    │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
 │ 2   ┆ n    ┆ 4    │
 └─────┴──────┴──────┘
 ```
@@ -285,15 +278,14 @@ Because we can store the whole operation in a single expression, we can combine 
 `window` functions and even combine different groups!
 
 Polars will cache window expressions that are applied over the same group, so storing
-them in a single `select` is both convenient **and** optimal. In the following example
+them in a single `with_columns` is both convenient **and** optimal. In the following example
 we look at a case where we are calculating group statistics over `"c"` twice:
 
 ```python
-df.select(
-    pl.all(),
+df.with_columns(
     pl.col("c").count().over("c").alias("size"),
     pl.col("c").sum().over("type").alias("sum"),
-    pl.col("c").reverse().over("c").flatten().alias("reverse_type")
+    pl.col("type").reverse().over("c").alias("reverse_type")
 )
 ```
 
@@ -302,21 +294,15 @@ shape: (7, 5)
 ┌─────┬──────┬──────┬─────┬──────────────┐
 │ c   ┆ type ┆ size ┆ sum ┆ reverse_type │
 │ --- ┆ ---  ┆ ---  ┆ --- ┆ ---          │
-│ i64 ┆ str  ┆ u32  ┆ i64 ┆ i64          │
+│ i64 ┆ str  ┆ u32  ┆ i64 ┆ str          │
 ╞═════╪══════╪══════╪═════╪══════════════╡
-│ 1   ┆ m    ┆ 3    ┆ 5   ┆ 2            │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 1   ┆ n    ┆ 3    ┆ 5   ┆ 2            │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 1   ┆ o    ┆ 3    ┆ 1   ┆ 2            │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 2   ┆ m    ┆ 4    ┆ 5   ┆ 2            │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 2   ┆ m    ┆ 4    ┆ 5   ┆ 1            │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 2   ┆ n    ┆ 4    ┆ 5   ┆ 1            │
-├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 2   ┆ n    ┆ 4    ┆ 5   ┆ 1            │
+│ 1   ┆ m    ┆ 3    ┆ 5   ┆ o            │
+│ 1   ┆ n    ┆ 3    ┆ 5   ┆ n            │
+│ 1   ┆ o    ┆ 3    ┆ 1   ┆ m            │
+│ 2   ┆ m    ┆ 4    ┆ 5   ┆ n            │
+│ 2   ┆ m    ┆ 4    ┆ 5   ┆ n            │
+│ 2   ┆ n    ┆ 4    ┆ 5   ┆ m            │
+│ 2   ┆ n    ┆ 4    ┆ 5   ┆ m            │
 └─────┴──────┴──────┴─────┴──────────────┘
 ```
 
@@ -328,7 +314,7 @@ For float columns Polars permits the use of `NaN` values. These `NaN` values are
 
 In pandas an integer column with missing values is cast to be a float column with `NaN` values for the missing values (unless using optional nullable integer dtypes). In Polars any missing values in an integer column are simply `null` values and the column remains an integer column.
 
-See the [missing data](../expressions/null.md) section for more details.
+See the [missing data](../expressions/missing-data.md) section for more details.
 
 ## Pipe littering
 
@@ -355,10 +341,10 @@ def add_ham(df: pd.DataFrame) -> pd.DataFrame:
  .pipe(add_foo)
  .pipe(add_bar)
  .pipe(add_ham)
- )
+)
 ```
 
-If we do this in polars, we would create 3 `with_column` contexts, that forces Polars to run the 3 pipes sequentially,
+If we do this in polars, we would create 3 `with_columns` contexts, that forces Polars to run the 3 pipes sequentially,
 utilizing zero parallelism.
 
 The way to get similar abstractions in polars is creating functions that create expressions.
@@ -382,7 +368,7 @@ df.with_columns(
 )
 ```
 
-If you need the schema in the functions that generate the expressions, you an utilize a single `pipe`:
+If you need the schema in the functions that generate the expressions, you can utilize a single `pipe`:
 
 ```python
 from collections import OrderedDict
@@ -407,7 +393,7 @@ def get_ham(input_column: str) -> pl.Expr:
     return pl.col(input_column).some_computation().alias("ham")
 
 # Use pipe (just once) to get hold of the schema of the LazyFrame.
-lf.pipe(lambda lf.with_columns(
+lf.pipe(lambda lf: lf.with_columns(
     get_ham("col_a"),
     get_bar("col_b", lf.schema),
     get_foo("col_c", lf.schema),

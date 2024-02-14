@@ -47,9 +47,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .group_by(["first_name"])
-        .agg([count(), col("gender"), col("last_name").first()])
+        .agg([len(), col("gender"), col("last_name").first()])
         .sort(
-            "count",
+            "len",
             SortOptions {
                 descending: true,
                 nulls_last: true,

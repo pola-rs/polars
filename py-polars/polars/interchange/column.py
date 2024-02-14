@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Categorical
+from polars.datatypes import Boolean, Categorical, Enum, String
 from polars.interchange.buffer import PolarsBuffer
 from polars.interchange.protocol import (
     Column,
@@ -35,12 +35,6 @@ class PolarsColumn(Column):
     """
 
     def __init__(self, column: Series, *, allow_copy: bool = True):
-        if column.dtype == Categorical and not column.cat.is_local():
-            if not allow_copy:
-                msg = f"column {column.name!r} must be converted to a local categorical"
-                raise CopyNotAllowedError(msg)
-            column = column.cat.to_local()
-
         self._col = column
         self._allow_copy = allow_copy
 
@@ -51,8 +45,10 @@ class PolarsColumn(Column):
     @property
     def offset(self) -> int:
         """Offset of the first element with respect to the start of the underlying buffer."""  # noqa: W505
-        _, offset, _ = self._col._get_buffer_info()
-        return offset
+        if self._col.dtype == Boolean:
+            return self._col._get_buffer_info()[1]
+        else:
+            return 0
 
     @property
     def dtype(self) -> Dtype:
@@ -70,13 +66,19 @@ class PolarsColumn(Column):
         TypeError
             If the data type of the column is not categorical.
         """
-        if self.dtype[0] != DtypeKind.CATEGORICAL:
+        dtype = self._col.dtype
+        if dtype == Categorical:
+            categories = self._col.cat.get_categories()
+            is_ordered = dtype.ordering == "physical"  # type: ignore[attr-defined]
+        elif dtype == Enum:
+            categories = dtype.categories  # type: ignore[attr-defined]
+            is_ordered = True
+        else:
             msg = "`describe_categorical` only works on categorical columns"
             raise TypeError(msg)
 
-        categories = self._col.cat.get_categories()
         return {
-            "is_ordered": not self._col.cat.uses_lexical_ordering(),
+            "is_ordered": is_ordered,
             "is_dictionary": True,
             "categories": PolarsColumn(categories, allow_copy=self._allow_copy),
         }
@@ -148,32 +150,46 @@ class PolarsColumn(Column):
 
     def get_buffers(self) -> ColumnBuffers:
         """Return a dictionary containing the underlying buffers."""
+        dtype = self._col.dtype
+
+        if dtype == String and not self._allow_copy:
+            msg = "string buffers must be converted"
+            raise CopyNotAllowedError(msg)
+        elif dtype == Categorical and not self._col.cat.is_local():
+            if not self._allow_copy:
+                msg = f"column {self._col.name!r} must be converted to a local categorical"
+                raise CopyNotAllowedError(msg)
+            self._col = self._col.cat.to_local()
+
+        buffers = self._col._get_buffers()
+
         return {
-            "data": self._get_data_buffer(),
-            "validity": self._get_validity_buffer(),
-            "offsets": self._get_offsets_buffer(),
+            "data": self._wrap_data_buffer(buffers["values"]),
+            "validity": self._wrap_validity_buffer(buffers["validity"]),
+            "offsets": self._wrap_offsets_buffer(buffers["offsets"]),
         }
 
-    def _get_data_buffer(self) -> tuple[PolarsBuffer, Dtype]:
-        s = self._col._get_buffer(0)
-        buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
-        dtype = polars_dtype_to_dtype(s.dtype)
-        return buffer, dtype
+    def _wrap_data_buffer(self, buffer: Series) -> tuple[PolarsBuffer, Dtype]:
+        interchange_buffer = PolarsBuffer(buffer, allow_copy=self._allow_copy)
+        dtype = polars_dtype_to_dtype(buffer.dtype)
+        return interchange_buffer, dtype
 
-    def _get_validity_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        s = self._col._get_buffer(1)
-        if s is None:
+    def _wrap_validity_buffer(
+        self, buffer: Series | None
+    ) -> tuple[PolarsBuffer, Dtype] | None:
+        if buffer is None:
             return None
 
-        buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
+        interchange_buffer = PolarsBuffer(buffer, allow_copy=self._allow_copy)
         dtype = (DtypeKind.BOOL, 1, "b", Endianness.NATIVE)
-        return buffer, dtype
+        return interchange_buffer, dtype
 
-    def _get_offsets_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
-        s = self._col._get_buffer(2)
-        if s is None:
+    def _wrap_offsets_buffer(
+        self, buffer: Series | None
+    ) -> tuple[PolarsBuffer, Dtype] | None:
+        if buffer is None:
             return None
 
-        buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
+        interchange_buffer = PolarsBuffer(buffer, allow_copy=self._allow_copy)
         dtype = (DtypeKind.INT, 64, "l", Endianness.NATIVE)
-        return buffer, dtype
+        return interchange_buffer, dtype

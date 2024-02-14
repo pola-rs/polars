@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from decimal import Decimal as D
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 import pytest
 
 import polars as pl
 from polars import ComputeError
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 @pytest.fixture(autouse=True)
@@ -93,6 +96,128 @@ def test_fmt_series(
     print(s)
     out, err = capfd.readouterr()
     assert out == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected"),
+    [
+        (
+            [-127, -1, 0, 1, 127],
+            pl.Int8,
+            """shape: (5,)
+Series: 'foo' [i8]
+[
+	-127
+	-1
+	0
+	1
+	127
+]""",
+        ),
+        (
+            [-32768, -1, 0, 1, 32767],
+            pl.Int16,
+            """shape: (5,)
+Series: 'foo' [i16]
+[
+	-32,768
+	-1
+	0
+	1
+	32,767
+]""",
+        ),
+        (
+            [-2147483648, -1, 0, 1, 2147483647],
+            pl.Int32,
+            """shape: (5,)
+Series: 'foo' [i32]
+[
+	-2,147,483,648
+	-1
+	0
+	1
+	2,147,483,647
+]""",
+        ),
+        (
+            [-9223372036854775808, -1, 0, 1, 9223372036854775807],
+            pl.Int64,
+            """shape: (5,)
+Series: 'foo' [i64]
+[
+	-9,223,372,036,854,775,808
+	-1
+	0
+	1
+	9,223,372,036,854,775,807
+]""",
+        ),
+    ],
+)
+def test_fmt_signed_int_thousands_sep(
+    values: list[int], dtype: PolarsDataType, expected: str
+) -> None:
+    s = pl.Series(name="foo", values=values, dtype=dtype)
+    with pl.Config(thousands_separator=True):
+        assert str(s) == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected"),
+    [
+        (
+            [0, 1, 127],
+            pl.UInt8,
+            """shape: (3,)
+Series: 'foo' [u8]
+[
+	0
+	1
+	127
+]""",
+        ),
+        (
+            [0, 1, 32767],
+            pl.UInt16,
+            """shape: (3,)
+Series: 'foo' [u16]
+[
+	0
+	1
+	32,767
+]""",
+        ),
+        (
+            [0, 1, 2147483647],
+            pl.UInt32,
+            """shape: (3,)
+Series: 'foo' [u32]
+[
+	0
+	1
+	2,147,483,647
+]""",
+        ),
+        (
+            [0, 1, 9223372036854775807],
+            pl.UInt64,
+            """shape: (3,)
+Series: 'foo' [u64]
+[
+	0
+	1
+	9,223,372,036,854,775,807
+]""",
+        ),
+    ],
+)
+def test_fmt_unsigned_int_thousands_sep(
+    values: list[int], dtype: PolarsDataType, expected: str
+) -> None:
+    s = pl.Series(name="foo", values=values, dtype=dtype)
+    with pl.Config(thousands_separator=True):
+        assert str(s) == expected
 
 
 def test_fmt_float(capfd: pytest.CaptureFixture[str]) -> None:

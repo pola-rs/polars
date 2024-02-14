@@ -31,7 +31,7 @@ pub fn if_then_else(
         let mut growable = growable::make_growable(&[lhs, rhs], true, lhs.len());
         for (i, v) in predicate.iter().enumerate() {
             match v {
-                Some(v) => growable.extend(!v as usize, i, 1),
+                Some(v) => unsafe { growable.extend(!v as usize, i, 1) },
                 None => growable.extend_validity(1),
             }
         }
@@ -42,15 +42,15 @@ pub fn if_then_else(
         let mut total_len = 0;
         for (start, len) in SlicesIterator::new(predicate.values()) {
             if start != start_falsy {
-                growable.extend(1, start_falsy, start - start_falsy);
+                unsafe { growable.extend(1, start_falsy, start - start_falsy) };
                 total_len += start - start_falsy;
             };
-            growable.extend(0, start, len);
+            unsafe { growable.extend(0, start, len) };
             total_len += len;
             start_falsy = start + len;
         }
         if total_len != lhs.len() {
-            growable.extend(1, total_len, lhs.len() - total_len);
+            unsafe { growable.extend(1, total_len, lhs.len() - total_len) };
         }
         growable.as_box()
     };

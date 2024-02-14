@@ -202,46 +202,6 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
-    df = pl.DataFrame({"idx": pl.arange(100, 200, eager=True)}).with_columns(
-        (pl.col("idx") // 25).alias("part")
-    )
-    df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)
-    assert df.n_chunks("all") == [4, 4]
-
-    file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
-
-    file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
-
-    for streaming in [False, True]:
-        for pred in [
-            pl.col("idx") == 50,
-            pl.col("idx") == 150,
-            pl.col("idx") == 210,
-        ]:
-            result = (
-                pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
-            )
-            assert_frame_equal(result, df.filter(pred))
-
-        captured = capfd.readouterr().err
-        assert (
-            "parquet file must be read, statistics not sufficient for predicate."
-            in captured
-        )
-        assert (
-            "parquet file can be skipped, the statistics were sufficient"
-            " to apply the predicate." in captured
-        )
-
-
-@pytest.mark.write_disk()
 def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -314,7 +274,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
 
 
 @pytest.mark.write_disk()
-def test_streaming_categorical(tmp_path: Path) -> None:
+def test_categorical(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     df = pl.DataFrame(

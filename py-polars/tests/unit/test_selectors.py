@@ -57,6 +57,8 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         "fgg": pl.Boolean,
         "qqR": pl.String,
     }
+    assert df.select(cs.by_dtype()).schema == {}
+    assert df.select(cs.by_dtype([])).schema == {}
 
 
 def test_selector_by_name(df: pl.DataFrame) -> None:
@@ -75,6 +77,8 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
         "JJK",
         "qqR",
     ]
+    assert df.select(cs.by_name()).columns == []
+    assert df.select(cs.by_name([])).columns == []
 
 
 def test_selector_contains(df: pl.DataFrame) -> None:
@@ -500,14 +504,14 @@ def test_regex_expansion_group_by_9947() -> None:
 
 def test_regex_expansion_exclude_10002() -> None:
     df = pl.DataFrame({"col_1": [1, 2, 3], "col_2": [2, 4, 3]})
-    expected = {"col_1": [10, 20, 30], "col_2": [0.2, 0.4, 0.3]}
+    expected = pl.DataFrame({"col_1": [10, 20, 30], "col_2": [0.2, 0.4, 0.3]})
 
-    assert (
+    assert_frame_equal(
         df.select(
             pl.col("^col_.*$").exclude("col_2").mul(10),
             pl.col("^col_.*$").exclude("col_1") / 10,
-        ).to_dict(as_series=False)
-        == expected
+        ),
+        expected,
     )
 
 

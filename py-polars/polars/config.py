@@ -40,9 +40,10 @@ TableFormatNames: TypeAlias = Literal[
 
 
 # note: register all Config-specific environment variable names here; need to constrain
-# which 'POLARS_' environment variables are recognised, as there are other lower-level
-# and/or experimental settings that should not be saved or reset with the Config vars.
+# which 'POLARS_' environment variables are recognized, as there are other lower-level
+# and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
+    "POLARS_WARN_UNSTABLE",
     "POLARS_ACTIVATE_DECIMAL",
     "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
@@ -607,7 +608,7 @@ class Config(contextlib.ContextDecorator):
             How to format floating point numbers:
 
             - "mixed": Limit the number of decimal places and use scientific
-                notation for large/small values.
+              notation for large/small values.
             - "full": Print the full precision of the floating point number.
 
         Examples
@@ -1259,4 +1260,24 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_VERBOSE", None)
         else:
             os.environ["POLARS_VERBOSE"] = str(int(active))
+        return cls
+
+    @classmethod
+    def warn_unstable(cls, active: bool | None = True) -> type[Config]:
+        """
+        Issue a warning when unstable functionality is used.
+
+        Enabling this setting may help avoid functionality that is still evolving,
+        potentially reducing maintenance burden from API changes and bugs.
+
+        Examples
+        --------
+        >>> pl.Config.warn_unstable(True)  # doctest: +SKIP
+        >>> pl.col("a").qcut(5)  # doctest: +SKIP
+        UnstableWarning: `qcut` is considered unstable. It may be changed at any point without it being considered a breaking change.
+        """  # noqa: W505
+        if active is None:
+            os.environ.pop("POLARS_WARN_UNSTABLE", None)
+        else:
+            os.environ["POLARS_WARN_UNSTABLE"] = str(int(active))
         return cls

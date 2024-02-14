@@ -242,6 +242,7 @@ fn fix_column_order(
 pub struct IpcStreamWriter<W> {
     writer: W,
     compression: Option<IpcCompression>,
+    pl_flavor: bool,
 }
 
 use polars_core::frame::ArrowChunk;
@@ -254,6 +255,11 @@ impl<W> IpcStreamWriter<W> {
         self.compression = compression;
         self
     }
+
+    pub fn with_pl_flavor(mut self, pl_flavor: bool) -> Self {
+        self.pl_flavor = pl_flavor;
+        self
+    }
 }
 
 impl<W> SerWriter<W> for IpcStreamWriter<W>
@@ -264,6 +270,7 @@ where
         IpcStreamWriter {
             writer,
             compression: None,
+            pl_flavor: false,
         }
     }
 
@@ -275,10 +282,10 @@ where
             },
         );
 
-        ipc_stream_writer.start(&df.schema().to_arrow(), None)?;
+        ipc_stream_writer.start(&df.schema().to_arrow(self.pl_flavor), None)?;
 
         df.align_chunks();
-        let iter = df.iter_chunks();
+        let iter = df.iter_chunks(self.pl_flavor);
 
         for batch in iter {
             ipc_stream_writer.write(&batch, None)?

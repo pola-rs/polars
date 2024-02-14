@@ -204,7 +204,7 @@ class MyCustomExpr:
 
 ## Output data types
 
-Output data types ofcourse don't have to be fixed. They often depend on the input types of an expression. To accommodate
+Output data types of course don't have to be fixed. They often depend on the input types of an expression. To accommodate
 this you can provide the `#[polars_expr()]` macro with an `output_type_func` argument that points to a function. This
 function can map input fields `&[Field]` to an output `Field` (name and data type).
 

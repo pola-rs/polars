@@ -41,6 +41,7 @@ Numeric
     Expr.floordiv
     Expr.mod
     Expr.mul
+    Expr.neg
     Expr.sub
     Expr.truediv
     Expr.pow

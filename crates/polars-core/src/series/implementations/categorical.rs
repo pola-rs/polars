@@ -22,6 +22,7 @@ impl SeriesWrap<CategoricalChunked> {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 cats,
                 self.0.get_rev_map().clone(),
+                self.0.is_enum(),
                 self.0.get_ordering(),
             )
         };
@@ -187,18 +188,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .map(|ca| ca.into_series())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let cats = self.0.physical().take_chunked_unchecked(by, sorted);
-        self.finish_with_state(false, cats).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        let cats = self.0.physical().take_opt_chunked_unchecked(by);
-        self.finish_with_state(false, cats).into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         self.try_with_state(false, |cats| cats.take(indices))
             .map(|ca| ca.into_series())
@@ -298,6 +287,17 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+
+    fn min_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::min_as_series(&self.0))
+    }
+
+    fn max_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::max_as_series(&self.0))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }
 

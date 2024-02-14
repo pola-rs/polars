@@ -7,9 +7,12 @@ pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 #[cfg(feature = "ewma")]
 pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
-pub(crate) use arrow::legacy::trusted_len::TrustedLen;
+pub(crate) use arrow::trusted_len::TrustedLen;
+#[cfg(feature = "chunked_ids")]
+pub(crate) use polars_utils::index::ChunkId;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
+pub use crate::chunked_array::arithmetic::ArithmeticChunked;
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
     ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,

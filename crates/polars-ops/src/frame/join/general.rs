@@ -1,5 +1,8 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "chunked_ids")]
+use polars_utils::index::ChunkId;
+
 use super::*;
 use crate::series::coalesce_series;
 
@@ -93,7 +96,9 @@ pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> V
     let mut vals = Vec::with_capacity(len);
 
     for (chunk_i, chunk) in chunks.iter().enumerate() {
-        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
+        vals.extend(
+            (0..chunk.len()).map(|array_i| ChunkId::store(chunk_i as IdxSize, array_i as IdxSize)),
+        )
     }
 
     vals

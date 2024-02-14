@@ -145,7 +145,7 @@ impl<T: ViewType + ?Sized> Pushable<&T> for MutableBinaryViewArray<T> {
         MutableBinaryViewArray::push_value(self, value);
 
         // And then use that new view to extend
-        let views = self.views();
+        let views = self.views_mut();
         let view = *views.last().unwrap();
 
         let remaining = additional - 1;

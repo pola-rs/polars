@@ -662,69 +662,86 @@ def test_outer_join_list_() -> None:
 @pytest.mark.slow()
 def test_join_validation() -> None:
     def test_each_join_validation(
-        unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy
+        unique: pl.DataFrame, duplicate: pl.DataFrame, on: str, how: JoinStrategy
     ) -> None:
         # one_to_many
         _one_to_many_success_inner = unique.join(
-            duplicate, on="id", how=how, validate="1:m"
+            duplicate, on=on, how=how, validate="1:m"
         )
 
         with pytest.raises(pl.ComputeError):
             _one_to_many_fail_inner = duplicate.join(
-                unique, on="id", how=how, validate="1:m"
+                unique, on=on, how=how, validate="1:m"
             )
 
         # one to one
         with pytest.raises(pl.ComputeError):
             _one_to_one_fail_1_inner = unique.join(
-                duplicate, on="id", how=how, validate="1:1"
+                duplicate, on=on, how=how, validate="1:1"
             )
 
         with pytest.raises(pl.ComputeError):
             _one_to_one_fail_2_inner = duplicate.join(
-                unique, on="id", how=how, validate="1:1"
+                unique, on=on, how=how, validate="1:1"
             )
 
         # many to one
         with pytest.raises(pl.ComputeError):
             _many_to_one_fail_inner = unique.join(
-                duplicate, on="id", how=how, validate="m:1"
+                duplicate, on=on, how=how, validate="m:1"
             )
 
         _many_to_one_success_inner = duplicate.join(
-            unique, on="id", how=how, validate="m:1"
+            unique, on=on, how=how, validate="m:1"
         )
 
         # many to many
         _many_to_many_success_1_inner = duplicate.join(
-            unique, on="id", how=how, validate="m:m"
+            unique, on=on, how=how, validate="m:m"
         )
 
         _many_to_many_success_2_inner = unique.join(
-            duplicate, on="id", how=how, validate="m:m"
+            duplicate, on=on, how=how, validate="m:m"
         )
 
     # test data
     short_unique = pl.DataFrame(
-        {"id": [1, 2, 3, 4], "name": ["hello", "world", "rust", "polars"]}
+        {
+            "id": [1, 2, 3, 4],
+            "id_str": ["1", "2", "3", "4"],
+            "name": ["hello", "world", "rust", "polars"],
+        }
     )
-    short_duplicate = pl.DataFrame({"id": [1, 2, 3, 1], "cnt": [2, 4, 6, 1]})
+    short_duplicate = pl.DataFrame(
+        {"id": [1, 2, 3, 1], "id_str": ["1", "2", "3", "1"], "cnt": [2, 4, 6, 1]}
+    )
     long_unique = pl.DataFrame(
-        {"id": [1, 2, 3, 4, 5], "name": ["hello", "world", "rust", "polars", "meow"]}
+        {
+            "id": [1, 2, 3, 4, 5],
+            "id_str": ["1", "2", "3", "4", "5"],
+            "name": ["hello", "world", "rust", "polars", "meow"],
+        }
     )
-    long_duplicate = pl.DataFrame({"id": [1, 2, 3, 1, 5], "cnt": [2, 4, 6, 1, 8]})
+    long_duplicate = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 1, 5],
+            "id_str": ["1", "2", "3", "1", "5"],
+            "cnt": [2, 4, 6, 1, 8],
+        }
+    )
 
     join_strategies: list[JoinStrategy] = ["inner", "outer", "left"]
 
-    for how in join_strategies:
-        # same size
-        test_each_join_validation(long_unique, long_duplicate, how)
+    for join_col in ["id", "id_str"]:
+        for how in join_strategies:
+            # same size
+            test_each_join_validation(long_unique, long_duplicate, join_col, how)
 
-        # left longer
-        test_each_join_validation(long_unique, short_duplicate, how)
+            # left longer
+            test_each_join_validation(long_unique, short_duplicate, join_col, how)
 
-        # right longer
-        test_each_join_validation(short_unique, long_duplicate, how)
+            # right longer
+            test_each_join_validation(short_unique, long_duplicate, join_col, how)
 
 
 def test_outer_join_bool() -> None:
@@ -736,88 +753,6 @@ def test_outer_join_bool() -> None:
         "id_right": [True, False],
         "val_right": [0, -1],
     }
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_join_null_matches(streaming: bool) -> None:
-    # null values in joins should never find a match.
-    df_a = pl.LazyFrame(
-        {
-            "idx_a": [0, 1, 2],
-            "a": [None, 1, 2],
-        }
-    )
-
-    df_b = pl.LazyFrame(
-        {
-            "idx_b": [0, 1, 2, 3],
-            "a": [None, 2, 1, None],
-        }
-    )
-
-    expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
-    assert_frame_equal(
-        df_a.join(df_b, on="a", how="inner").collect(streaming=streaming), expected
-    )
-    expected = pl.DataFrame(
-        {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
-    )
-    assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
-    )
-    expected = pl.DataFrame(
-        {
-            "idx_a": [None, 2, 1, None, 0],
-            "a": [None, 2, 1, None, None],
-            "idx_b": [0, 1, 2, 3, None],
-            "a_right": [None, 2, 1, None, None],
-        }
-    )
-    assert_frame_equal(df_a.join(df_b, on="a", how="outer").collect(), expected)
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_join_null_matches_multiple_keys(streaming: bool) -> None:
-    df_a = pl.LazyFrame(
-        {
-            "a": [None, 1, 2],
-            "idx": [0, 1, 2],
-        }
-    )
-
-    df_b = pl.LazyFrame(
-        {
-            "a": [None, 2, 1, None, 1],
-            "idx": [0, 1, 2, 3, 1],
-            "c": [10, 20, 30, 40, 50],
-        }
-    )
-
-    expected = pl.DataFrame({"a": [1], "idx": [1], "c": [50]})
-    assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="inner").collect(streaming=streaming),
-        expected,
-    )
-    expected = pl.DataFrame(
-        {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
-    )
-    assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
-        expected,
-    )
-
-    expected = pl.DataFrame(
-        {
-            "a": [None, None, None, None, None, 1, 2],
-            "idx": [None, None, None, None, 0, 1, 2],
-            "a_right": [None, 2, 1, None, None, 1, None],
-            "idx_right": [0, 1, 2, 3, None, 1, None],
-            "c": [10, 20, 30, 40, None, 50, None],
-        }
-    )
-    assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
-    )
 
 
 def test_outer_join_coalesce_different_names_13450() -> None:
@@ -835,3 +770,22 @@ def test_outer_join_coalesce_different_names_13450() -> None:
 
     out = df1.join(df2, left_on="L1", right_on="L3", how="outer_coalesce")
     assert_frame_equal(out, expected)
+
+
+# https://github.com/pola-rs/polars/issues/10663
+def test_join_on_wildcard_error() -> None:
+    df = pl.DataFrame({"x": [1]})
+    df2 = pl.DataFrame({"x": [1], "y": [2]})
+    with pytest.raises(
+        pl.ComputeError, match="wildcard column selection not supported at this point"
+    ):
+        df.join(df2, on=pl.all())
+
+
+def test_join_on_nth_error() -> None:
+    df = pl.DataFrame({"x": [1]})
+    df2 = pl.DataFrame({"x": [1], "y": [2]})
+    with pytest.raises(
+        pl.ComputeError, match="nth column selection not supported at this point"
+    ):
+        df.join(df2, on=pl.first())

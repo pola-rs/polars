@@ -649,7 +649,7 @@ def from_pandas(
 
 
 def from_pandas(
-    data: pd.DataFrame | pd.Series[Any] | pd.Index[Any],
+    data: pd.DataFrame | pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
     *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
@@ -712,7 +712,7 @@ def from_pandas(
         3
     ]
     """
-    if isinstance(data, (pd.Series, pd.DatetimeIndex)):
+    if isinstance(data, (pd.Series, pd.Index, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
     elif isinstance(data, pd.DataFrame):
         return pl.DataFrame._from_pandas(

@@ -371,6 +371,12 @@ class StringNameSpace:
         equivalent output with much better performance:
         :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
+        A character is defined as a `Unicode scalar value`_. A single character is
+        represented by a single byte when working with ASCII text, and a maximum of
+        4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
         Examples
         --------
         >>> s = pl.Series(["Café", "345", "東京", None])
@@ -385,9 +391,11 @@ class StringNameSpace:
         ]
         """
 
-    def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Series:
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Series:
         """
-        Vertically concat the values in the Series to a single string value.
+        Vertically concatenate the string values in the column to a single string value.
 
         Parameters
         ----------
@@ -395,9 +403,8 @@ class StringNameSpace:
             The delimiter to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
-
-            If set to ``False``, null values will be propagated.
-            if the column contains any null values, the output is ``None``.
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
 
         Returns
         -------
@@ -1123,24 +1130,58 @@ class StringNameSpace:
         value
             String that will replace the matched substring.
         literal
-            Treat pattern as a literal string.
+            Treat `pattern` as a literal string.
         n
             Number of matches to replace.
 
+        See Also
+        --------
+        replace_all
+
         Notes
         -----
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. For example:
+        The dollar sign (`$`) is a special character related to capture groups.
+        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
 
-        >>> s = pl.Series(
-        ...     name="weather",
-        ...     values=[
-        ...         "Foggy",
-        ...         "Rainy",
-        ...         "Sunny",
-        ...     ],
-        ... )
-        >>> # apply case-insensitive string replacement
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+        for additional information about the use of inline expression modifiers.
+
+        Examples
+        --------
+        >>> s = pl.Series(["123abc", "abc456"])
+        >>> s.str.replace(r"abc\b", "ABC")
+        shape: (2,)
+        Series: '' [str]
+        [
+            "123ABC"
+            "abc456"
+        ]
+
+        Capture groups are supported. Use `${1}` in the `value` string to refer to the
+        first capture group in the `pattern`, `${2}` to refer to the second capture
+        group, and so on. You can also use named capture groups.
+
+        >>> s = pl.Series(["hat", "hut"])
+        >>> s.str.replace("h(.)t", "b${1}d")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "bad"
+                "bud"
+        ]
+        >>> s.str.replace("h(?<vowel>.)t", "b${vowel}d")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "bad"
+                "bud"
+        ]
+
+        Apply case-insensitive string replacement using the `(?i)` flag.
+
+        >>> s = pl.Series("weather", ["Foggy", "Rainy", "Sunny"])
         >>> s.str.replace(r"(?i)foggy|rainy", "Sunny")
         shape: (3,)
         Series: 'weather' [str]
@@ -1149,30 +1190,11 @@ class StringNameSpace:
             "Sunny"
             "Sunny"
         ]
-
-        See the regex crate's section on `grouping and flags
-        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
-        additional information about the use of inline expression modifiers.
-
-        See Also
-        --------
-        replace_all : Replace all matching regex/literal substrings.
-
-        Examples
-        --------
-        >>> s = pl.Series(["123abc", "abc456"])
-        >>> s.str.replace(r"abc\b", "ABC")  # doctest: +IGNORE_RESULT
-        shape: (2,)
-        Series: '' [str]
-        [
-            "123ABC"
-            "abc456"
-        ]
         """
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
-        """
-        Replace all matching regex/literal substrings with a new string value.
+        r"""
+        Replace first matching regex/literal substring with a new string value.
 
         Parameters
         ----------
@@ -1180,23 +1202,67 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            String that will replace the matches.
+            String that will replace the matched substring.
         literal
-            Treat pattern as a literal string.
+            Treat `pattern` as a literal string.
+        n
+            Number of matches to replace.
 
         See Also
         --------
-        replace : Replace first matching regex/literal substring.
+        replace_all
+
+        Notes
+        -----
+        The dollar sign (`$`) is a special character related to capture groups.
+        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+        for additional information about the use of inline expression modifiers.
 
         Examples
         --------
-        >>> df = pl.Series(["abcabc", "123a123"])
-        >>> df.str.replace_all("a", "-")
+        >>> s = pl.Series(["123abc", "abc456"])
+        >>> s.str.replace_all(r"abc\b", "ABC")
         shape: (2,)
         Series: '' [str]
         [
-            "-bc-bc"
-            "123-123"
+            "123ABC"
+            "abc456"
+        ]
+
+        Capture groups are supported. Use `${1}` in the `value` string to refer to the
+        first capture group in the `pattern`, `${2}` to refer to the second capture
+        group, and so on. You can also use named capture groups.
+
+        >>> s = pl.Series(["hat", "hut"])
+        >>> s.str.replace_all("h(.)t", "b${1}d")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "bad"
+                "bud"
+        ]
+        >>> s.str.replace_all("h(?<vowel>.)t", "b${vowel}d")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "bad"
+                "bud"
+        ]
+
+        Apply case-insensitive string replacement using the `(?i)` flag.
+
+        >>> s = pl.Series("weather", ["Foggy", "Rainy", "Sunny"])
+        >>> s.str.replace_all(r"(?i)foggy|rainy", "Sunny")
+        shape: (3,)
+        Series: 'weather' [str]
+        [
+            "Sunny"
+            "Sunny"
+            "Sunny"
         ]
         """
 
@@ -1208,8 +1274,8 @@ class StringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start and end of the string. If set to
+            None (default), all leading and trailing whitespace is removed instead.
 
         Examples
         --------
@@ -1243,8 +1309,8 @@ class StringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the start of the string. If set to None
+            (default), all leading whitespace is removed instead.
 
         Examples
         --------
@@ -1277,8 +1343,8 @@ class StringNameSpace:
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
+            characters will be stripped from the end of the string. If set to None
+            (default), all trailing whitespace is removed instead.
 
         Examples
         --------
@@ -1415,7 +1481,7 @@ class StringNameSpace:
         """
 
     @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
-    def zfill(self, length: int) -> Series:
+    def zfill(self, length: int | IntoExprColumn) -> Series:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
@@ -1516,9 +1582,11 @@ class StringNameSpace:
         ]
         """
 
-    def slice(self, offset: int, length: int | None = None) -> Series:
+    def slice(
+        self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
+    ) -> Series:
         """
-        Create subslices of the string values of a String Series.
+        Extract a substring from each string value.
 
         Parameters
         ----------
@@ -1531,15 +1599,23 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with fields of data type
-            :class:`String`.
+            Series of data type :class:`String`.
+
+        Notes
+        -----
+        Both the `offset` and `length` inputs are defined in terms of the number
+        of characters in the (UTF8) string. A character is defined as a
+        `Unicode scalar value`_. A single character is represented by a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
 
         Examples
         --------
-        >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
         >>> s.str.slice(-3)
         shape: (4,)
-        Series: 's' [str]
+        Series: '' [str]
         [
             "ear"
             null
@@ -1551,7 +1627,7 @@ class StringNameSpace:
 
         >>> s.str.slice(4, length=3)
         shape: (4,)
-        Series: 's' [str]
+        Series: '' [str]
         [
             ""
             null

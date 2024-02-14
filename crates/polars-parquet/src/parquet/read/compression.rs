@@ -246,7 +246,7 @@ impl streaming_decompression::Decompressed for Page {
 /// A [`FallibleStreamingIterator`] that decompresses [`CompressedPage`] into [`DataPage`].
 /// # Implementation
 /// This decompressor uses an internal [`Vec<u8>`] to perform decompressions which
-/// is re-used across pages, so that a single allocation is required.
+/// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
 pub struct BasicDecompressor<I: Iterator<Item = Result<CompressedPage>>> {
     iter: _Decompressor<I>,

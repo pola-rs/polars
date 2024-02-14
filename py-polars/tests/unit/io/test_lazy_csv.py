@@ -24,7 +24,7 @@ def test_scan_csv(io_files_path: Path) -> None:
 
 
 def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
-    dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.threadpool_size() + 1)
+    dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.thread_pool_size() + 1)
     pl.concat(dfs, parallel=True).collect(comm_subplan_elim=False)
 
 
@@ -252,10 +252,10 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
             foods_file_path,
             dtypes={"calories": pl.String, "sugars_g": pl.Int8},
         )
-        .select(pl.count())
+        .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"count": 27}, schema={"count": pl.UInt32})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.UInt32})
     assert_frame_equal(df, expected)
 
 

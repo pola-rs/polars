@@ -4,8 +4,6 @@ use std::borrow::Cow;
 use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
-#[cfg(feature = "chunked_ids")]
-use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::{AsSinglePtr, Settings};
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
@@ -96,16 +94,6 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0.take_chunked_unchecked(by, sorted).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0.take_opt_chunked_unchecked(by).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {

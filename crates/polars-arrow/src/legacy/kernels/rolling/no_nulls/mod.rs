@@ -51,7 +51,7 @@ where
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
-            // safety:
+            // SAFETY:
             // we are in bounds
             unsafe { agg_window.update(start, end) }
         })

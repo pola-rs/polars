@@ -530,7 +530,7 @@ impl<'a> PredicatePushDown<'a> {
 
                 // a count is influenced by a Union/Vstack
                 acc_predicates.retain(|_, predicate| {
-                    if has_aexpr(*predicate, expr_arena, |ae| matches!(ae, AExpr::Count)) {
+                    if has_aexpr(*predicate, expr_arena, |ae| matches!(ae, AExpr::Len)) {
                         local_predicates.push(*predicate);
                         false
                     } else {

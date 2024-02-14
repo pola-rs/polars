@@ -178,11 +178,11 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         let spill_size = self.spill_size;
         self.spill_size = usize::MAX;
         for (key_other, agg_idx_other) in other.inner_map.iter() {
-            // safety: idx is from the hashmap, so is in bounds
+            // SAFETY: idx is from the hashmap, so is in bounds
             let row = unsafe { other.get_keys_row(key_other) };
 
             if on_condition(key_other.hash) {
-                // safety: will not overflow as we set it to usize::MAX;
+                // SAFETY: will not overflow as we set it to usize::MAX;
                 let agg_idx_self = unsafe {
                     self.insert_key(key_other.hash, row)
                         .unwrap_unchecked_release()
@@ -251,7 +251,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     unsafe {
                         let running_agg = running_aggregations.get_unchecked_release_mut(i);
                         let av = running_agg.finalize();
-                        // safety: finalize creates owned anyvalues
+                        // SAFETY: finalize creates owned AnyValues
                         buffer.add_unchecked_owned_physical(&av);
                     }
                 }
@@ -261,7 +261,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .output_schema
             .iter_dtypes()
             .take(self.num_keys)
-            .map(|dtype| dtype.to_physical().to_arrow())
+            .map(|dtype| dtype.to_physical().to_arrow(true))
             .collect::<Vec<_>>();
         let fields = vec![Default::default(); self.num_keys];
         let key_columns =

@@ -229,10 +229,37 @@ impl OptimizationRule for SimplifyBooleanRule {
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
             },
+            AExpr::Function {
+                input,
+                function: FunctionExpr::Negate,
+                ..
+            } if input.len() == 1 => {
+                let input = input[0];
+                let ae = expr_arena.get(input);
+                eval_negate(ae)
+            },
             _ => None,
         };
         Ok(out)
     }
+}
+
+fn eval_negate(ae: &AExpr) -> Option<AExpr> {
+    let out = match ae {
+        AExpr::Literal(lv) => match lv {
+            #[cfg(feature = "dtype-i8")]
+            LiteralValue::Int8(v) => LiteralValue::Int8(-*v),
+            #[cfg(feature = "dtype-i16")]
+            LiteralValue::Int16(v) => LiteralValue::Int16(-*v),
+            LiteralValue::Int32(v) => LiteralValue::Int32(-*v),
+            LiteralValue::Int64(v) => LiteralValue::Int64(-*v),
+            LiteralValue::Float32(v) => LiteralValue::Float32(-*v),
+            LiteralValue::Float64(v) => LiteralValue::Float64(-*v),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(AExpr::Literal(out))
 }
 
 fn eval_bitwise<F>(left: &AExpr, right: &AExpr, operation: F) -> Option<AExpr>
@@ -284,17 +311,23 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_left,
                         function:
-                            ref
-                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep_l)),
+                            ref fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                                delimiter: sep_l,
+                                ignore_nulls: ignore_nulls_l,
+                            }),
                         options,
                     },
                     AExpr::Function {
                         input: input_right,
-                        function: FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep_r)),
+                        function:
+                            FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                                delimiter: sep_r,
+                                ignore_nulls: ignore_nulls_r,
+                            }),
                         ..
                     },
                 ) => {
-                    if sep_l.is_empty() && sep_r.is_empty() {
+                    if sep_l.is_empty() && sep_r.is_empty() && ignore_nulls_l == ignore_nulls_r {
                         let mut input = Vec::with_capacity(input_left.len() + input_right.len());
                         input.extend_from_slice(input_left);
                         input.extend_from_slice(input_right);
@@ -312,12 +345,15 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input,
                         function:
-                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                                delimiter: sep,
+                                ignore_nulls,
+                            }),
                         options,
                     },
                     _,
                 ) => {
-                    if sep.is_empty() {
+                    if sep.is_empty() && !ignore_nulls {
                         let mut input = input.clone();
                         input.push(right_ae);
                         Some(AExpr::Function {
@@ -335,11 +371,14 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                                delimiter: sep,
+                                ignore_nulls,
+                            }),
                         options,
                     },
                 ) => {
-                    if sep.is_empty() {
+                    if sep.is_empty() && !ignore_nulls {
                         let mut input = Vec::with_capacity(1 + input_right.len());
                         input.push(left_ae);
                         input.extend_from_slice(input_right);
@@ -354,7 +393,11 @@ fn string_addition_to_linear_concat(
                 },
                 _ => Some(AExpr::Function {
                     input: vec![left_ae, right_ae],
-                    function: StringFunction::ConcatHorizontal("".to_string()).into(),
+                    function: StringFunction::ConcatHorizontal {
+                        delimiter: "".to_string(),
+                        ignore_nulls: false,
+                    }
+                    .into(),
                     options: FunctionOptions {
                         collect_groups: ApplyOptions::ElementWise,
                         input_wildcard_expansion: true,
@@ -380,9 +423,9 @@ impl OptimizationRule for SimplifyExprRule {
         _lp_arena: &Arena<ALogicalPlan>,
         _lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
-        let expr = expr_arena.get(expr_node);
+        let expr = expr_arena.get(expr_node).clone();
 
-        let out = match expr {
+        let out = match &expr {
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
@@ -518,7 +561,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                 LiteralValue::Series(SpecialEq::new(s))
             },
             _ => {
-                let Some(av) = lv.to_anyvalue() else {
+                let Some(av) = lv.to_any_value() else {
                     return Ok(None);
                 };
                 if dtype == &av.dtype() {
@@ -536,6 +579,8 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
                         return Ok(None)
                     },
+                    #[cfg(feature = "dtype-categorical")]
+                    (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
                     #[cfg(feature = "dtype-struct")]
                     (_, DataType::Struct(_)) => return Ok(None),
                     (av, _) => {

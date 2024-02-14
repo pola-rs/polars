@@ -120,7 +120,7 @@ impl<'a> AnyValueBuffer<'a> {
             #[cfg(feature = "dtype-time")]
             (Time(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
             (Null(builder), AnyValue::Null) => builder.append_null(),
-            // Struct and List can be recursive so use anyvalues for that
+            // Struct and List can be recursive so use AnyValues for that
             (All(_, vals), v) => vals.push(v),
 
             // dynamic types
@@ -215,14 +215,7 @@ impl<'a> AnyValueBuffer<'a> {
                 new.finish().into_series()
             },
             String(b) => {
-                let avg_values_len = b
-                    .builder
-                    .values()
-                    .len()
-                    .saturating_div(b.builder.capacity() + 1)
-                    + 1;
-                let mut new =
-                    StringChunkedBuilder::new(b.field.name(), capacity, avg_values_len * capacity);
+                let mut new = StringChunkedBuilder::new(b.field.name(), capacity);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
@@ -304,9 +297,9 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
-            String => AnyValueBuffer::String(StringChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBuffer::String(StringChunkedBuilder::new("", len)),
             Null => AnyValueBuffer::Null(NullChunkedBuilder::new("", 0)),
-            // Struct and List can be recursive so use anyvalues for that
+            // Struct and List can be recursive so use AnyValues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }
     }
@@ -463,7 +456,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type
     /// belonging to [`Self`]. This should only be used with physical buffers
     ///
-    /// If a type is not primitive or String, the anyvalue will be converted to static
+    /// If a type is not primitive or String, the AnyValues will be converted to static
     ///
     /// # Safety
     /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is owned.
@@ -584,11 +577,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 new.finish().into_series()
             },
             String(b) => {
-                let avg_values_len =
-                    (b.builder.values().len() as f64) / ((b.builder.capacity() + 1) as f64) + 1.0;
-                // alloc some extra to reduce realloc prob.
-                let new_values_len = (avg_values_len * capacity as f64 * 1.3) as usize;
-                let mut new = StringChunkedBuilder::new(b.field.name(), capacity, new_values_len);
+                let mut new = StringChunkedBuilder::new(b.field.name(), capacity);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
@@ -666,7 +655,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
             UInt16 => AnyValueBufferTrusted::UInt16(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBufferTrusted::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBufferTrusted::Float64(PrimitiveChunkedBuilder::new("", len)),
-            String => AnyValueBufferTrusted::String(StringChunkedBuilder::new("", len, len * 5)),
+            String => AnyValueBufferTrusted::String(StringChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let buffers = fields
@@ -679,7 +668,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
                     .collect::<Vec<_>>();
                 AnyValueBufferTrusted::Struct(buffers)
             },
-            // List can be recursive so use anyvalues for that
+            // List can be recursive so use AnyValues for that
             dt => AnyValueBufferTrusted::All(dt.clone(), Vec::with_capacity(len)),
         }
     }

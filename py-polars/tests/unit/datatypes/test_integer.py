@@ -13,3 +13,13 @@ def test_integer_float_functions() -> None:
         "nan": [False, False],
         "not_na": [True, True],
     }
+
+
+def test_int_negate_operation() -> None:
+    assert pl.Series([1, 2, 3, 4, 50912341409]).not_().to_list() == [
+        -2,
+        -3,
+        -4,
+        -5,
+        -50912341410,
+    ]

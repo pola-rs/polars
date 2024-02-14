@@ -12,7 +12,6 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
-from polars.utils.various import parse_version
 
 protocol_dtypes = [
     pl.Int8,
@@ -29,6 +28,8 @@ protocol_dtypes = [
     pl.String,
     pl.Datetime,
     pl.Categorical,
+    # TODO: Add Enum
+    # pl.Enum,
 ]
 
 
@@ -45,7 +46,10 @@ def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
-        excluded_dtypes=[pl.Categorical],
+        excluded_dtypes=[
+            pl.String,  # Polars String type does not match protocol spec
+            pl.Categorical,
+        ],
         chunked=False,
     )
 )
@@ -82,7 +86,10 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
-        excluded_dtypes=[pl.Categorical],
+        excluded_dtypes=[
+            pl.String,  # Polars String type does not match protocol spec
+            pl.Categorical,
+        ],
         chunked=False,
     )
 )
@@ -111,6 +118,7 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dataframes(
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
+            pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Polars copies the categories to construct a mapping
             pl.Boolean,  # pyarrow exports boolean buffers as byte-packed: https://github.com/apache/arrow/issues/37991
         ],
@@ -128,14 +136,8 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
             pl.Categorical,  # Categoricals come back as Enums
-            # large string not yet supported by pandas
-            # https://github.com/pandas-dev/pandas/issues/56702
-            pl.String,
             pl.Float32,  # NaN values come back as nulls
             pl.Float64,  # NaN values come back as nulls
-            # pandas exports nanosecond pyarrow types incorrectly
-            # https://github.com/pandas-dev/pandas/issues/56712
-            pl.Datetime("ns"),
         ],
     )
 )
@@ -153,16 +155,11 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     dataframes(
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
+            pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
-            # large string not yet supported by pandas
-            # https://github.com/pandas-dev/pandas/issues/56702
-            pl.String,
             pl.Float32,  # NaN values come back as nulls
             pl.Float64,  # NaN values come back as nulls
             pl.Boolean,  # pandas exports boolean buffers as byte-packed
-            # pandas exports nanosecond pyarrow types incorrectly
-            # https://github.com/pandas-dev/pandas/issues/56712
-            pl.Datetime("ns"),
         ],
         # Empty dataframes cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56700
@@ -203,6 +200,7 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     dataframes(
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
+            pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
             pl.Float32,  # NaN values come back as nulls
             pl.Float64,  # NaN values come back as nulls
@@ -252,9 +250,9 @@ def test_to_dataframe_pyarrow_boolean_midbyte_slice() -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.xfail(
-    parse_version(pd.__version__) < (2, 2),
-    reason="Bug in pandas: https://github.com/pandas-dev/pandas/issues/56712",
+@pytest.mark.skipif(
+    sys.version_info < (3, 9),
+    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_timestamp_ns() -> None:
     df = pl.Series("a", [datetime(2000, 1, 1)], dtype=pl.Datetime("ns")).to_frame()

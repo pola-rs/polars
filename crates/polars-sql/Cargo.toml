@@ -12,7 +12,7 @@ description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 arrow = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
-polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cross_join", "cum_agg", "dtype-date", "is_in", "log", "meta", "regex", "round_series", "sign", "string_reverse", "strings", "trigonometry"] }
+polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cross_join", "cum_agg", "dtype-date", "dtype-decimal", "is_in", "list_eval", "log", "meta", "regex", "round_series", "sign", "string_reverse", "strings", "timezones", "trigonometry"] }
 polars-plan = { workspace = true }
 
 hex = { workspace = true }
@@ -27,12 +27,15 @@ sqlparser = { workspace = true }
 polars-core = { workspace = true, features = ["fmt"] }
 
 [features]
-csv = ["polars-lazy/csv"]
-json = ["polars-lazy/json"]
 default = []
+nightly = []
+csv = ["polars-lazy/csv"]
 ipc = ["polars-lazy/ipc"]
+json = ["polars-lazy/json"]
+binary_encoding = ["polars-lazy/binary_encoding"]
+diagonal_concat = ["polars-lazy/diagonal_concat"]
+dtype-decimal = ["polars-lazy/dtype-decimal"]
+list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
-diagonal_concat = ["polars-lazy/diagonal_concat"]
-binary_encoding = ["polars-lazy/binary_encoding"]
-nightly = []
+timezones = ["polars-lazy/timezones"]

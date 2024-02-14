@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.deprecation import deprecate_function
+from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     from polars import Series
@@ -31,13 +32,18 @@ class CatNameSpace:
         """
         Determine how this categorical series should be sorted.
 
+        .. deprecated:: 0.19.19
+            Set the ordering directly on the datatype `pl.Categorical('lexical')`
+            or `pl.Categorical('physical')` or `cast()` to the intended data type.
+            This method will be removed in the next breaking change
+
         Parameters
         ----------
         ordering : {'physical', 'lexical'}
             Ordering type:
 
             - 'physical' -> Use the physical representation of the categories to
-                determine the order (default).
+              determine the order (default).
             - 'lexical' -> Use the string values to determine the ordering.
         """
 
@@ -114,20 +120,14 @@ class CatNameSpace:
         """
         return wrap_s(self._s.cat_to_local())
 
+    @unstable()
     def uses_lexical_ordering(self) -> bool:
         """
         Return whether or not the series uses lexical ordering.
 
-        This can be set using :func:`set_ordering`.
-
-        Warnings
-        --------
-        This API is experimental and may change without it being considered a breaking
-        change.
-
-        See Also
-        --------
-        set_ordering
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Examples
         --------

@@ -131,7 +131,7 @@ def test_predicate_order_explode_5950() -> None:
     assert (
         df.lazy()
         .explode("i")
-        .filter(pl.count().over(["i"]) == 2)
+        .filter(pl.len().over(["i"]) == 2)
         .filter(pl.col("n").is_not_null())
     ).collect().to_dict(as_series=False) == {"i": [1], "n": [0]}
 
@@ -184,8 +184,8 @@ def test_clear_window_cache_after_filter_10499() -> None:
         }
     )
 
-    assert df.lazy().filter((pl.col("a").null_count() < pl.count()).over("b")).filter(
-        ((pl.col("a") == 0).sum() < pl.count()).over("b")
+    assert df.lazy().filter((pl.col("a").null_count() < pl.len()).over("b")).filter(
+        ((pl.col("a") == 0).sum() < pl.len()).over("b")
     ).collect().to_dict(as_series=False) == {
         "a": [3, None, 5, 0, 9, 10],
         "b": [2, 2, 3, 3, 5, 5],

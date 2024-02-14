@@ -194,9 +194,9 @@ impl SQLContext {
                 right,
             } => self.process_union(left, right, set_quantifier, query),
             SetExpr::SetOperation { op, .. } => {
-                polars_bail!(InvalidOperation: "{} operation not yet supported", op)
+                polars_bail!(InvalidOperation: "'{}' operation not yet supported", op)
             },
-            op => polars_bail!(InvalidOperation: "{} operation not yet supported", op),
+            op => polars_bail!(InvalidOperation: "'{}' operation not yet supported", op),
         }
     }
 
@@ -232,7 +232,7 @@ impl SQLContext {
                 concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
             },
             #[allow(unreachable_patterns)]
-            _ => polars_bail!(InvalidOperation: "UNION {} is not yet supported", quantifier),
+            _ => polars_bail!(InvalidOperation: "'UNION {}' is not yet supported", quantifier),
         }
     }
 
@@ -451,7 +451,7 @@ impl SQLContext {
                 lf = self.process_order_by(lf, &query.order_by)?;
 
                 column_names.retain(|&name| !retained_names.contains(name));
-                lf.drop_columns(column_names)
+                lf.drop(column_names)
             } else if contains_wildcard_exclude {
                 let mut dropped_names = Vec::with_capacity(projections.len());
 
@@ -471,7 +471,7 @@ impl SQLContext {
                 if exclude_expr.is_some() {
                     lf = lf.with_columns(projections);
                     lf = self.process_order_by(lf, &query.order_by)?;
-                    lf.drop_columns(dropped_names)
+                    lf.drop(dropped_names)
                 } else {
                     lf = lf.select(projections);
                     self.process_order_by(lf, &query.order_by)?
@@ -610,11 +610,11 @@ impl SQLContext {
                     self.table_map.insert(alias.name.value.clone(), lf.clone());
                     Ok((alias.name.value.clone(), lf))
                 } else {
-                    polars_bail!(ComputeError: "Derived tables must have aliases");
+                    polars_bail!(ComputeError: "derived tables must have aliases");
                 }
             },
             // Support bare table, optional with alias for now
-            _ => polars_bail!(ComputeError: "not implemented"),
+            _ => polars_bail!(ComputeError: "not yet implemented: {}", relation),
         }
     }
 
@@ -627,6 +627,7 @@ impl SQLContext {
         let tbl_fn = name.0.first().unwrap().value.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
+        #[allow(clippy::useless_asref)]
         let tbl_name = alias
             .as_ref()
             .map(|a| a.name.value.clone())
@@ -774,7 +775,7 @@ impl SQLContext {
                 cols(schema.iter_names())
             },
             e => polars_bail!(
-                ComputeError: "Invalid wildcard expression: {:?}",
+                ComputeError: "invalid wildcard expression: {:?}",
                 e
             ),
         };

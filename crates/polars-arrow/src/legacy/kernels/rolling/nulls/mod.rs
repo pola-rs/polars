@@ -46,7 +46,7 @@ where
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
-    // Safety; we are in bounds
+    // SAFETY; we are in bounds
     let mut agg_window = unsafe { Agg::new(values, validity, start, end, params) };
 
     let mut validity = create_validity(min_periods, len, window_size, det_offsets_fn)
@@ -59,7 +59,7 @@ where
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
-            // safety:
+            // SAFETY:
             // we are in bounds
             let agg = unsafe { agg_window.update(start, end) };
             match agg {
@@ -67,13 +67,13 @@ where
                     if agg_window.is_valid(min_periods) {
                         val
                     } else {
-                        // safety: we are in bounds
+                        // SAFETY: we are in bounds
                         unsafe { validity.set_unchecked(idx, false) };
                         T::default()
                     }
                 },
                 None => {
-                    // safety: we are in bounds
+                    // SAFETY: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
                     T::default()
                 },

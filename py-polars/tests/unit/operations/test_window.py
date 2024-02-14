@@ -118,7 +118,7 @@ def test_window_function_cache() -> None:
 
 def test_window_range_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    expr = pl.int_range(0, pl.count()).over("x")
+    expr = pl.int_range(0, pl.len()).over("x")
     out = df.with_columns(int=expr)
     assert_frame_equal(
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "int": [0, 1, 0, 1, 0, 1]})
@@ -193,14 +193,14 @@ def test_cumulative_eval_window_functions() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_count_window() -> None:
+def test_len_window() -> None:
     assert (
         pl.DataFrame(
             {
                 "a": [1, 1, 2],
             }
         )
-        .with_columns(pl.count().over("a"))["count"]
+        .with_columns(pl.len().over("a"))["len"]
         .to_list()
     ) == [2, 2, 1]
 

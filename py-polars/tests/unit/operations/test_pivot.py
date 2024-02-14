@@ -22,7 +22,7 @@ def test_pivot() -> None:
             "bar": ["k", "l", "m", "n", "o"],
         }
     )
-    result = df.pivot(values="N", index="foo", columns="bar", aggregate_function=None)
+    result = df.pivot(index="foo", columns="bar", values="N", aggregate_function=None)
 
     expected = pl.DataFrame(
         [
@@ -47,7 +47,11 @@ def test_pivot_list() -> None:
         }
     )
     out = df.pivot(
-        "b", index="a", columns="a", aggregate_function="first", sort_columns=True
+        index="a",
+        columns="a",
+        values="b",
+        aggregate_function="first",
+        sort_columns=True,
     )
     assert_frame_equal(out, expected)
 
@@ -56,7 +60,7 @@ def test_pivot_list() -> None:
     ("agg_fn", "expected_rows"),
     [
         ("first", [("a", 2, None, None), ("b", None, None, 10)]),
-        ("count", [("a", 2, None, None), ("b", None, 2, 1)]),
+        ("len", [("a", 2, None, None), ("b", None, 2, 1)]),
         ("min", [("a", 2, None, None), ("b", None, 8, 10)]),
         ("max", [("a", 4, None, None), ("b", None, 8, 10)]),
         ("sum", [("a", 6, None, None), ("b", None, 8, 10)]),
@@ -106,14 +110,12 @@ def test_pivot_categorical_index() -> None:
         schema=[("A", pl.Categorical), ("B", pl.Categorical)],
     )
 
-    result = df.pivot(values="B", index=["A"], columns="B", aggregate_function="count")
+    result = df.pivot(values="B", index=["A"], columns="B", aggregate_function="len")
     expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
     assert result.to_dict(as_series=False) == expected
 
     # test expression dispatch
-    result = df.pivot(
-        values="B", index=["A"], columns="B", aggregate_function=pl.count()
-    )
+    result = df.pivot(values="B", index=["A"], columns="B", aggregate_function=pl.len())
     assert result.to_dict(as_series=False) == expected
 
     df = pl.DataFrame(
@@ -125,7 +127,7 @@ def test_pivot_categorical_index() -> None:
         schema=[("A", pl.Categorical), ("B", pl.Categorical), ("C", pl.Categorical)],
     )
     result = df.pivot(
-        values="B", index=["A", "C"], columns="B", aggregate_function="count"
+        values="B", index=["A", "C"], columns="B", aggregate_function="len"
     )
     expected = {
         "A": ["Fire", "Water"],
@@ -182,20 +184,97 @@ def test_pivot_duplicate_names_7731() -> None:
             "e": ["x", "y"],
         }
     )
-    assert df.pivot(
+    result = df.pivot(
         values=cs.integer(),
         index=cs.float(),
         columns=cs.string(),
         aggregate_function="first",
-    ).to_dict(as_series=False) == {
+    ).to_dict(as_series=False)
+    expected = {
         "b": [1.5, 2.5],
-        "a_c_x": [1, 4],
-        "d_c_x": [7, 8],
-        "a_e_x": [1, None],
-        "a_e_y": [None, 4],
-        "d_e_x": [7, None],
-        "d_e_y": [None, 8],
+        'a_{"c","e"}_{"x","x"}': [1, None],
+        'a_{"c","e"}_{"x","y"}': [None, 4],
+        'd_{"c","e"}_{"x","x"}': [7, None],
+        'd_{"c","e"}_{"x","y"}': [None, 8],
     }
+    assert result == expected
+
+
+def test_pivot_duplicate_names_11663() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": ["x", "x"], "d": ["x", "y"]})
+    result = df.pivot(values="a", index="b", columns=["c", "d"]).to_dict(
+        as_series=False
+    )
+    expected = {"b": [1, 2], '{"x","x"}': [1, None], '{"x","y"}': [None, 2]}
+    assert result == expected
+
+
+def test_pivot_multiple_columns_12407() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["beep", "bop"],
+            "b": ["a", "b"],
+            "c": ["s", "f"],
+            "d": [7, 8],
+            "e": ["x", "y"],
+        }
+    )
+    result = df.pivot(
+        values=["a"], index="b", columns=["c", "e"], aggregate_function="len"
+    ).to_dict(as_series=False)
+    expected = {"b": ["a", "b"], '{"s","x"}': [1, None], '{"f","y"}': [None, 1]}
+    assert result == expected
+
+
+def test_pivot_struct_13120() -> None:
+    df = pl.DataFrame(
+        {
+            "index": [1, 2, 3, 1, 2, 3],
+            "item_type": ["a", "a", "a", "b", "b", "b"],
+            "item_id": [123, 123, 123, 456, 456, 456],
+            "values": [4, 5, 6, 7, 8, 9],
+        }
+    )
+    df = df.with_columns(pl.struct(["item_type", "item_id"]).alias("columns")).drop(
+        "item_type", "item_id"
+    )
+    result = df.pivot(index="index", columns="columns", values="values").to_dict(
+        as_series=False
+    )
+    expected = {"index": [1, 2, 3], '{"a",123}': [4, 5, 6], '{"b",456}': [7, 8, 9]}
+    assert result == expected
+
+
+def test_pivot_index_struct_14101() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 1],
+            "b": [{"a": 1}, {"a": 1}, {"a": 2}],
+            "c": ["x", "y", "y"],
+            "d": [1, 1, 3],
+        }
+    )
+    result = df.pivot(index="b", values="a", columns="c")
+    expected = pl.DataFrame({"b": [{"a": 1}, {"a": 2}], "x": [1, None], "y": [2, 1]})
+    assert_frame_equal(result, expected)
+
+
+def test_pivot_name_already_exists() -> None:
+    # This should be extremely rare...but still, good to check it
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b"],
+            "b": ["a", "b"],
+            '{"a","b"}': [1, 2],
+        }
+    )
+    with pytest.raises(ComputeError, match="already exists in the DataFrame"):
+        df.pivot(
+            values='{"a","b"}',
+            index="a",
+            columns=["a", "b"],
+            aggregate_function="first",
+        )
 
 
 def test_pivot_floats() -> None:
@@ -314,12 +393,36 @@ def test_pivot_negative_duration() -> None:
     }
 
 
-def test_aggregate_function_deprecation_warning() -> None:
+def test_aggregate_function_default() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
     with pytest.raises(
         pl.ComputeError, match="found multiple elements in the same group"
     ):
-        df.pivot("a", "b", "c")
+        df.pivot(values="a", index="b", columns="c")
+
+
+def test_pivot_positional_args_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+    with pytest.deprecated_call():
+        df.pivot("N", "foo", "bar", aggregate_function=None)
+
+
+def test_pivot_aggregate_function_count_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+    with pytest.deprecated_call():
+        df.pivot(index="foo", columns="bar", values="N", aggregate_function="count")  # type: ignore[arg-type]
 
 
 def test_pivot_struct() -> None:
@@ -356,3 +459,25 @@ def test_pivot_struct() -> None:
             {"num1": 4, "num2": 4},
         ],
     }
+
+
+def test_duplicate_column_names_which_should_raise_14305() -> None:
+    df = pl.DataFrame({"a": [1, 3, 2], "c": ["a", "a", "a"], "d": [7, 8, 9]})
+    with pytest.raises(pl.DuplicateError, match="has more than one occurrences"):
+        df.pivot(index="a", columns="c", values="d")
+
+
+def test_multi_index_containing_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 1],
+            "b": [{"a": 1}, {"a": 1}, {"a": 2}],
+            "c": ["x", "y", "y"],
+            "d": [1, 1, 3],
+        }
+    )
+    result = df.pivot(index=("b", "d"), values="a", columns="c")
+    expected = pl.DataFrame(
+        {"b": [{"a": 1}, {"a": 2}], "d": [1, 3], "x": [1, None], "y": [2, 1]}
+    )
+    assert_frame_equal(result, expected)

@@ -14,7 +14,7 @@ futures = { workspace = true, optional = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
-polars-ops = { workspace = true }
+polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-pipe = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true, optional = true }
@@ -37,7 +37,7 @@ version_check = { workspace = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
-streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids"]
+streaming = ["polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids"]
 parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
 async = [
   "polars-plan/async",
@@ -47,7 +47,7 @@ async = [
 cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures"]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
-json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe/json"]
+json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe?/json"]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv"]
 temporal = [
   "dtype-datetime",
@@ -70,7 +70,7 @@ dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal"]
 dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
-dtype-time = ["polars-core/dtype-time", "temporal"]
+dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-plan/dtype-array", "polars-pipe?/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe?/dtype-categorical"]
 dtype-struct = ["polars-plan/dtype-struct"]
@@ -81,7 +81,7 @@ sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
 list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
-
+array_count = ["polars-ops/array_count", "polars-plan/array_count", "dtype-array"]
 true_div = ["polars-plan/true_div"]
 extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
 
@@ -119,10 +119,11 @@ unique_counts = ["polars-plan/unique_counts"]
 log = ["polars-plan/log"]
 list_eval = []
 cumulative_eval = []
-chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids", "polars-ops/chunked_ids"]
 list_to_struct = ["polars-plan/list_to_struct"]
+array_to_struct = ["polars-plan/array_to_struct"]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 row_hash = ["polars-plan/row_hash"]
+reinterpret = ["polars-plan/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-plan/string_pad"]
 string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
@@ -208,7 +209,6 @@ features = [
   "async",
   "bigidx",
   "binary_encoding",
-  "chunked_ids",
   "cloud",
   "cloud_write",
   "coalesce",
@@ -243,7 +243,6 @@ features = [
   "fused",
   "futures",
   "hist",
-  "horizontal_concat",
   "interpolate",
   "ipc",
   "is_first_distinct",
@@ -272,7 +271,6 @@ features = [
   "peaks",
   "pivot",
   "polars-json",
-  "polars-pipe",
   "polars-time",
   "propagate_nans",
   "random",

@@ -37,6 +37,7 @@ mod py_modules;
 mod series;
 #[cfg(feature = "sql")]
 mod sql;
+mod to_numpy;
 mod utils;
 
 #[cfg(all(target_family = "unix", not(use_mimalloc)))]
@@ -96,6 +97,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_df_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
+        .unwrap();
 
     // Functions - range
     m.add_wrapped(wrap_pyfunction!(functions::int_range))
@@ -126,6 +129,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::sum_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::mean_horizontal))
+        .unwrap();
 
     // Functions - lazy
     m.add_wrapped(wrap_pyfunction!(functions::arg_sort_by))
@@ -148,10 +153,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_str))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::count)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::len)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cov)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::cum_count))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cum_fold))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cum_reduce))
@@ -203,11 +206,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Functions - meta
-    m.add_wrapped(wrap_pyfunction!(functions::get_polars_version))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::threadpool_size))
+    m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
         .unwrap();
@@ -297,9 +298,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     .unwrap();
 
     // Build info
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     #[cfg(feature = "build_info")]
     m.add(
-        "_build_info_",
+        "__build__",
         pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
     )?;
 

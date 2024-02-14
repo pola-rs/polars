@@ -256,7 +256,7 @@ impl<O: Offset> Utf8Array<O> {
         use Either::*;
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                // Safety: invariants are preserved
+                // SAFETY: invariants are preserved
                 Left(bitmap) => Left(unsafe {
                     Utf8Array::new_unchecked(
                         self.data_type,
@@ -267,7 +267,7 @@ impl<O: Offset> Utf8Array<O> {
                 }),
                 Right(mutable_bitmap) => match (self.values.into_mut(), self.offsets.into_mut()) {
                     (Left(values), Left(offsets)) => {
-                        // Safety: invariants are preserved
+                        // SAFETY: invariants are preserved
                         Left(unsafe {
                             Utf8Array::new_unchecked(
                                 self.data_type,
@@ -278,7 +278,7 @@ impl<O: Offset> Utf8Array<O> {
                         })
                     },
                     (Left(values), Right(offsets)) => {
-                        // Safety: invariants are preserved
+                        // SAFETY: invariants are preserved
                         Left(unsafe {
                             Utf8Array::new_unchecked(
                                 self.data_type,
@@ -289,7 +289,7 @@ impl<O: Offset> Utf8Array<O> {
                         })
                     },
                     (Right(values), Left(offsets)) => {
-                        // Safety: invariants are preserved
+                        // SAFETY: invariants are preserved
                         Left(unsafe {
                             Utf8Array::new_unchecked(
                                 self.data_type,

@@ -141,6 +141,14 @@ impl<T: TotalHash> Hash for TotalOrdWrap<T> {
     }
 }
 
+impl<T: Clone> Clone for TotalOrdWrap<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T: Copy> Copy for TotalOrdWrap<T> {}
+
 macro_rules! impl_trivial_total {
     ($T: ty) => {
         impl TotalEq for $T {

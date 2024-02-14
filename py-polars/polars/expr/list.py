@@ -275,7 +275,81 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_mean())
 
-    def sort(self, *, descending: bool = False) -> Expr:
+    def median(self) -> Expr:
+        """
+        Compute the median value of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.median().alias("median"))
+        shape: (2, 2)
+        ┌────────────┬────────┐
+        │ values     ┆ median │
+        │ ---        ┆ ---    │
+        │ list[i64]  ┆ f64    │
+        ╞════════════╪════════╡
+        │ [-1, 0, 1] ┆ 0.0    │
+        │ [1, 10]    ┆ 5.5    │
+        └────────────┴────────┘
+        """
+        return wrap_expr(self._pyexpr.list_median())
+
+    def std(self, ddof: int = 1) -> Expr:
+        """
+        Compute the std value of the lists in the array.
+
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.std().alias("std"))
+        shape: (2, 2)
+        ┌────────────┬──────────┐
+        │ values     ┆ std      │
+        │ ---        ┆ ---      │
+        │ list[i64]  ┆ f64      │
+        ╞════════════╪══════════╡
+        │ [-1, 0, 1] ┆ 1.0      │
+        │ [1, 10]    ┆ 6.363961 │
+        └────────────┴──────────┘
+        """
+        return wrap_expr(self._pyexpr.list_std(ddof))
+
+    def var(self, ddof: int = 1) -> Expr:
+        """
+        Compute the var value of the lists in the array.
+
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> df.with_columns(pl.col("values").list.var().alias("var"))
+        shape: (2, 2)
+        ┌────────────┬──────┐
+        │ values     ┆ var  │
+        │ ---        ┆ ---  │
+        │ list[i64]  ┆ f64  │
+        ╞════════════╪══════╡
+        │ [-1, 0, 1] ┆ 1.0  │
+        │ [1, 10]    ┆ 40.5 │
+        └────────────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.list_var(ddof))
+
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
 
@@ -283,6 +357,8 @@ class ExprListNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -312,7 +388,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [9, 2, 1] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_sort(descending))
+        return wrap_expr(self._pyexpr.list_sort(descending, nulls_last))
 
     def reverse(self) -> Expr:
         """
@@ -365,6 +441,30 @@ class ExprListNameSpace:
         └───────────┴───────────┘
         """
         return wrap_expr(self._pyexpr.list_unique(maintain_order))
+
+    def n_unique(self) -> Expr:
+        """
+        Count the number of unique values in every sub-lists.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 1, 2], [2, 3, 4]],
+        ...     }
+        ... )
+        >>> df.with_columns(n_unique=pl.col("a").list.n_unique())
+        shape: (2, 2)
+        ┌───────────┬──────────┐
+        │ a         ┆ n_unique │
+        │ ---       ┆ ---      │
+        │ list[i64] ┆ u32      │
+        ╞═══════════╪══════════╡
+        │ [1, 1, 2] ┆ 2        │
+        │ [2, 3, 4] ┆ 3        │
+        └───────────┴──────────┘
+        """
+        return wrap_expr(self._pyexpr.list_n_unique())
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
@@ -478,6 +578,50 @@ class ExprListNameSpace:
         indices = parse_as_expression(indices)
         return wrap_expr(self._pyexpr.list_gather(indices, null_on_oob))
 
+    def gather_every(
+        self,
+        n: int | IntoExprColumn,
+        offset: int | IntoExprColumn = 0,
+    ) -> Expr:
+        """
+        Take every n-th value start from offset in sublists.
+
+        Parameters
+        ----------
+        n
+            Gather every n-th element.
+        offset
+            Starting index.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3, 4, 5], [6, 7, 8], [9, 10, 11, 12]],
+        ...         "n": [2, 1, 3],
+        ...         "offset": [0, 1, 0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     gather_every=pl.col("a").list.gather_every(
+        ...         n=pl.col("n"), offset=pl.col("offset")
+        ...     )
+        ... )
+        shape: (3, 4)
+        ┌───────────────┬─────┬────────┬──────────────┐
+        │ a             ┆ n   ┆ offset ┆ gather_every │
+        │ ---           ┆ --- ┆ ---    ┆ ---          │
+        │ list[i64]     ┆ i64 ┆ i64    ┆ list[i64]    │
+        ╞═══════════════╪═════╪════════╪══════════════╡
+        │ [1, 2, … 5]   ┆ 2   ┆ 0      ┆ [1, 3, 5]    │
+        │ [6, 7, 8]     ┆ 1   ┆ 1      ┆ [7, 8]       │
+        │ [9, 10, … 12] ┆ 3   ┆ 0      ┆ [9, 12]      │
+        └───────────────┴─────┴────────┴──────────────┘
+        """
+        n = parse_as_expression(n)
+        offset = parse_as_expression(offset)
+        return wrap_expr(self._pyexpr.list_gather_every(n, offset))
+
     def first(self) -> Expr:
         """
         Get the first value of the sublists.
@@ -554,7 +698,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: IntoExprColumn) -> Expr:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -564,6 +708,11 @@ class ExprListNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -599,7 +748,7 @@ class ExprListNameSpace:
         └─────────────────┴───────────┴───────┘
         """
         separator = parse_as_expression(separator, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_join(separator))
+        return wrap_expr(self._pyexpr.list_join(separator, ignore_nulls))
 
     def arg_min(self) -> Expr:
         """

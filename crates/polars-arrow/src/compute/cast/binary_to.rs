@@ -156,7 +156,7 @@ fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Off
         .step_by(fixed_size)
         .map(|v| O::from_as_usize(v))
         .collect();
-    // Safety
+    // SAFETY:
     // * every element is `>= 0`
     // * element at position `i` is >= than element at position `i-1`.
     unsafe { Offsets::new_unchecked(offsets) }
@@ -175,6 +175,11 @@ pub fn fixed_size_binary_binary<O: Offset>(
         values,
         from.validity().cloned(),
     )
+}
+
+pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewArray {
+    let mutable = MutableBinaryViewArray::from_values_iter(from.values_iter());
+    mutable.freeze().with_validity(from.validity().cloned())
 }
 
 /// Conversion of binary

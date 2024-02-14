@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -26,12 +29,12 @@ def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:
         df.set_sorted("x")
         .lazy()
         .group_by("x")
-        .agg(pl.count())
+        .agg(pl.len())
         .collect(streaming=True)
         .sort("x")
     ).to_dict(as_series=False) == {
         "x": [None, 0, 1, 2, 3],
-        "count": [100, 100, 100, 100, 100],
+        "len": [100, 100, 100, 100, 100],
     }
 
 
@@ -80,7 +83,7 @@ def test_streaming_group_by_types() -> None:
             "str_sum": pl.String,
             "bool_first": pl.Boolean,
             "bool_last": pl.Boolean,
-            "bool_mean": pl.Boolean,
+            "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
             "date_mean": pl.Date,
@@ -147,18 +150,14 @@ def test_streaming_group_by_min_max() -> None:
 def test_streaming_non_streaming_gb() -> None:
     n = 100
     df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
-    q = df.lazy().group_by("a").agg(pl.count()).sort("a")
+    q = df.lazy().group_by("a").agg(pl.len()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
     q = df.lazy().with_columns(pl.col("a").cast(pl.String))
-    q = q.group_by("a").agg(pl.count()).sort("a")
+    q = q.group_by("a").agg(pl.len()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
-    q = (
-        q.group_by(["a", "b"])
-        .agg(pl.count(), pl.col("a").sum().alias("sum_a"))
-        .sort("a")
-    )
+    q = q.group_by(["a", "b"]).agg(pl.len(), pl.col("a").sum().alias("sum_a")).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
@@ -206,15 +205,17 @@ def random_integers() -> pl.Series:
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q1(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.to_frame().lazy()
     result = (
-        s.to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -232,16 +233,17 @@ def test_streaming_group_by_ooc_q1(
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q2(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.cast(str).to_frame().lazy()
     result = (
-        s.cast(str)
-        .to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -257,17 +259,22 @@ def test_streaming_group_by_ooc_q2(
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q3(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = pl.LazyFrame({"a": random_integers, "b": random_integers})
     result = (
-        pl.DataFrame({"a": s, "b": s})
-        .lazy()
-        .group_by(["a", "b"])
+        lf.group_by("a", "b")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -289,11 +296,11 @@ def test_streaming_group_by_struct_key() -> None:
         {"A": [1, 2, 3, 2], "B": ["google", "ms", "apple", "ms"], "C": [2, 3, 4, 3]}
     )
     df1 = df.lazy().with_columns(pl.struct(["A", "C"]).alias("tuples"))
-    assert df1.group_by("tuples").agg(pl.count(), pl.col("B").first()).sort(
-        "B"
-    ).collect(streaming=True).to_dict(as_series=False) == {
+    assert df1.group_by("tuples").agg(pl.len(), pl.col("B").first()).sort("B").collect(
+        streaming=True
+    ).to_dict(as_series=False) == {
         "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
-        "count": [1, 1, 2],
+        "len": [1, 1, 2],
         "B": ["apple", "google", "ms"],
     }
 
@@ -426,3 +433,19 @@ def test_streaming_group_by_literal(literal: Any) -> None:
         "a_count": [20],
         "a_sum": [190],
     }
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_group_by_multiple_keys_one_literal(streaming: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
+
+    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
+    assert (
+        df.lazy()
+        .group_by("a", pl.lit(1))
+        .agg(pl.col("b").max())
+        .sort(["a", "b"])
+        .collect(streaming=streaming)
+        .to_dict(as_series=False)
+        == expected
+    )

@@ -5,12 +5,6 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-pub fn sum_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
-    let df = DataFrame::new_no_checks(Vec::from(s));
-    df.sum_horizontal(NullStrategy::Ignore)
-        .map(|opt_s| opt_s.map(|res| res.with_name(s[0].name())))
-}
-
 pub fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
     let out = POOL
         .install(|| {
@@ -56,6 +50,18 @@ pub fn max_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
 pub fn min_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     let df = DataFrame::new_no_checks(Vec::from(s));
     df.min_horizontal()
+        .map(|opt_s| opt_s.map(|res| res.with_name(s[0].name())))
+}
+
+pub fn sum_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
+    let df = DataFrame::new_no_checks(Vec::from(s));
+    df.sum_horizontal(NullStrategy::Ignore)
+        .map(|opt_s| opt_s.map(|res| res.with_name(s[0].name())))
+}
+
+pub fn mean_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
+    let df = DataFrame::new_no_checks(Vec::from(s));
+    df.mean_horizontal(NullStrategy::Ignore)
         .map(|opt_s| opt_s.map(|res| res.with_name(s[0].name())))
 }
 

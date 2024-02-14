@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 import polars.polars as plr
 from polars.config import _POLARS_CFG_ENV_VARS
+from polars.utils.unstable import issue_unstable_warning
 
 
 @pytest.fixture(autouse=True)
@@ -453,7 +454,11 @@ def test_shape_format_for_big_numbers() -> None:
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 4       ┆ 1004    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 5       ┆ 1005    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 996     ┆ 1996    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 997     ┆ 1997    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
@@ -480,7 +485,11 @@ def test_shape_format_for_big_numbers() -> None:
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 4       ┆ 1004    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 5       ┆ 1005    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 996     ┆ 1996    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 997     ┆ 1997    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
@@ -773,6 +782,21 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
             cfg.set_fmt_str_lengths(-2)
 
 
+def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
+    issue_unstable_warning()
+    assert len(recwarn) == 0
+
+    pl.Config().warn_unstable(True)
+
+    issue_unstable_warning()
+    assert len(recwarn) == 1
+
+    pl.Config().warn_unstable(False)
+
+    issue_unstable_warning()
+    assert len(recwarn) == 1
+
+
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
@@ -834,6 +858,7 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
         ("POLARS_STREAMING_CHUNK_SIZE", "set_streaming_chunk_size", 100, "100"),
         ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
         ("POLARS_VERBOSE", "set_verbose", True, "1"),
+        ("POLARS_WARN_UNSTABLE", "warn_unstable", True, "1"),
     ],
 )
 def test_unset_config_env_vars(

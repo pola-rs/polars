@@ -5,7 +5,8 @@ import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, Any, ContextManager, Iterator, overload
+from tempfile import NamedTemporaryFile
+from typing import IO, Any, ContextManager, Iterator, cast, overload
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
@@ -158,8 +159,8 @@ def _prepare_file_arg(
         # make sure that this is before fsspec
         # as fsspec needs requests to be installed
         # to read from http
-        if file.startswith("http"):
-            return _process_http_file(file, encoding_str)
+        if _looks_like_url(file):
+            return _process_file_url(file, encoding_str)
         if _FSSPEC_AVAILABLE:
             from fsspec.utils import infer_storage_options
 
@@ -222,7 +223,11 @@ def _check_empty(
     return b
 
 
-def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
+def _looks_like_url(path: str) -> bool:
+    return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
+
+
+def _process_file_url(path: str, encoding: str | None = None) -> BytesIO:
     from urllib.request import urlopen
 
     with urlopen(path) as f:
@@ -230,3 +235,44 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read())
         else:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
+
+
+@contextmanager
+def PortableTemporaryFile(
+    mode: str = "w+b",
+    *,
+    buffering: int = -1,
+    encoding: str | None = None,
+    newline: str | None = None,
+    suffix: str | None = None,
+    prefix: str | None = None,
+    dir: str | Path | None = None,
+    delete: bool = True,
+    errors: str | None = None,
+) -> Iterator[Any]:
+    """
+    Slightly more resilient version of the standard `NamedTemporaryFile`.
+
+    Plays better with Windows when using the 'delete' option.
+    """
+    params = cast(
+        Any,
+        {
+            "mode": mode,
+            "buffering": buffering,
+            "encoding": encoding,
+            "newline": newline,
+            "suffix": suffix,
+            "prefix": prefix,
+            "dir": dir,
+            "delete": False,
+            "errors": errors,
+        },
+    )
+    tmp = NamedTemporaryFile(**params)
+    try:
+        yield tmp
+    finally:
+        tmp.close()
+        if delete:
+            Path(tmp.name).unlink(missing_ok=True)

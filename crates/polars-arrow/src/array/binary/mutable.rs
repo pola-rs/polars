@@ -325,7 +325,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         P: AsRef<[u8]>,
         I: TrustedLen<Item = P>,
     {
-        // Safety: The iterator is `TrustedLen`
+        // SAFETY: The iterator is `TrustedLen`
         unsafe { self.extend_trusted_len_values_unchecked(iterator) }
     }
 
@@ -373,7 +373,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         P: AsRef<[u8]>,
         I: TrustedLen<Item = Option<P>>,
     {
-        // Safety: The iterator is `TrustedLen`
+        // SAFETY: The iterator is `TrustedLen`
         unsafe { self.extend_trusted_len_unchecked(iterator) }
     }
 

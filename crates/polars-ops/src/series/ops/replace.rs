@@ -42,8 +42,8 @@ pub fn replace(
 
     let old = match (s.dtype(), old.dtype()) {
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(opt_rev_map, ord), DataType::String) => {
-            let dt = enum_or_default_categorical(opt_rev_map, *ord);
+        (DataType::Categorical(_, ord), DataType::String) => {
+            let dt = DataType::Categorical(None, *ord);
             old.strict_cast(&dt)?
         },
         _ => old.strict_cast(s.dtype())?,

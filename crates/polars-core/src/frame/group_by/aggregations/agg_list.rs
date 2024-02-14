@@ -40,14 +40,14 @@ where
                     }
 
                     length_so_far += idx_len as i64;
-                    // Safety:
+                    // SAFETY:
                     // group tuples are in bounds
                     {
                         list_values.extend(idx.iter().map(|idx| {
                             debug_assert!((*idx as usize) < values.len());
                             *values.get_unchecked(*idx as usize)
                         }));
-                        // Safety:
+                        // SAFETY:
                         // we know that offsets has allocated enough slots
                         offsets.push_unchecked(length_so_far);
                     }
@@ -71,10 +71,13 @@ where
                     None
                 };
 
-                let array =
-                    PrimitiveArray::new(T::get_dtype().to_arrow(), list_values.into(), validity);
-                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
-                // Safety:
+                let array = PrimitiveArray::new(
+                    T::get_dtype().to_arrow(true),
+                    list_values.into(),
+                    validity,
+                );
+                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow(true));
+                // SAFETY:
                 // offsets are monotonically increasing
                 let arr = ListArray::<i64>::new(
                     data_type,
@@ -107,7 +110,7 @@ where
                     length_so_far += len as i64;
                     list_values.extend_from_slice(&values[first as usize..(first + len) as usize]);
                     {
-                        // Safety:
+                        // SAFETY:
                         // we know that offsets has allocated enough slots
                         offsets.push_unchecked(length_so_far);
                     }
@@ -131,9 +134,12 @@ where
                     None
                 };
 
-                let array =
-                    PrimitiveArray::new(T::get_dtype().to_arrow(), list_values.into(), validity);
-                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
+                let array = PrimitiveArray::new(
+                    T::get_dtype().to_arrow(true),
+                    list_values.into(),
+                    validity,
+                );
+                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow(true));
                 let arr = ListArray::<i64>::new(
                     data_type,
                     Offsets::new_unchecked(offsets).into(),

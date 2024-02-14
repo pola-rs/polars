@@ -1,6 +1,6 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::compute::filter::filter as filter_fn;
+use polars_compute::filter::filter as filter_fn;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
@@ -92,6 +92,28 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
     }
 }
 
+impl ChunkFilter<BinaryOffsetType> for BinaryOffsetChunked {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<BinaryOffsetChunked> {
+        // Broadcast.
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => Ok(BinaryOffsetChunked::full_null(self.name(), 0)),
+            };
+        }
+        check_filter_len!(self, filter);
+        Ok(unsafe {
+            arity::binary_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
+    }
+}
+
 impl ChunkFilter<ListType> for ListChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ListChunked> {
         // Broadcast.
@@ -100,7 +122,7 @@ impl ChunkFilter<ListType> for ListChunked {
                 Some(true) => Ok(self.clone()),
                 _ => Ok(ListChunked::from_chunk_iter(
                     self.name(),
-                    [ListArray::new_empty(self.dtype().to_arrow())],
+                    [ListArray::new_empty(self.dtype().to_arrow(true))],
                 )),
             };
         }
@@ -126,7 +148,7 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
                 Some(true) => Ok(self.clone()),
                 _ => Ok(ArrayChunked::from_chunk_iter(
                     self.name(),
-                    [FixedSizeListArray::new_empty(self.dtype().to_arrow())],
+                    [FixedSizeListArray::new_empty(self.dtype().to_arrow(true))],
                 )),
             };
         }

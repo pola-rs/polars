@@ -3,8 +3,8 @@ use std::ops::{AddAssign, DivAssign, MulAssign};
 use num_traits::Float;
 
 use crate::array::PrimitiveArray;
-use crate::legacy::trusted_len::TrustedLen;
 use crate::legacy::utils::CustomIterTools;
+use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
 #[allow(clippy::too_many_arguments)]

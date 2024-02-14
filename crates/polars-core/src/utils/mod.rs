@@ -6,7 +6,8 @@ use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
-pub use arrow::legacy::utils::{TrustMyLength, *};
+pub use arrow::legacy::utils::*;
+pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
 use rayon::prelude::*;
@@ -279,7 +280,7 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }};
 }
@@ -301,7 +302,7 @@ macro_rules! with_match_physical_numeric_type {(
         UInt64 => __with_ty__! { u64 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -320,7 +321,7 @@ macro_rules! with_match_physical_integer_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -333,7 +334,7 @@ macro_rules! with_match_physical_float_polars_type {(
     match $key_type {
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -358,7 +359,7 @@ macro_rules! with_match_physical_numeric_polars_type {(
         UInt64 => __with_ty__! { UInt64Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -382,7 +383,7 @@ macro_rules! with_match_physical_integer_polars_type {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -504,7 +505,7 @@ macro_rules! apply_amortized_generic_list_or_array {
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => $self.array().unwrap().apply_amortized_generic($($args),*),
             DataType::List(_) => $self.list().unwrap().apply_amortized_generic($($args),*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }
 }
@@ -525,7 +526,7 @@ macro_rules! apply_method_physical_integer {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }
 }

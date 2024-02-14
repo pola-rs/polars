@@ -91,7 +91,7 @@ pub(crate) fn create_physical_expr(
     use AExpr::*;
 
     match expr_arena.get(expression).clone() {
-        Count => Ok(Arc::new(phys_expr::CountExpr::new())),
+        Len => Ok(Arc::new(phys_expr::CountExpr::new())),
         Window {
             mut function,
             partition_by,
@@ -129,8 +129,8 @@ pub(crate) fn create_physical_expr(
                     if apply_columns.is_empty() {
                         if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                             apply_columns.push(Arc::from("literal"))
-                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Count)) {
-                            apply_columns.push(Arc::from("count"))
+                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
+                            apply_columns.push(Arc::from("len"))
                         } else {
                             let e = node_to_expr(function, expr_arena);
                             polars_bail!(
@@ -556,8 +556,12 @@ pub(crate) fn create_physical_expr(
                 ApplyOptions::GroupWise,
             )))
         },
-        Wildcard => panic!("should be no wildcard at this point"),
-        Nth(_) => panic!("should be no nth at this point"),
+        Wildcard => {
+            polars_bail!(ComputeError: "wildcard column selection not supported at this point")
+        },
+        Nth(_) => {
+            polars_bail!(ComputeError: "nth column selection not supported at this point")
+        },
     }
 }
 

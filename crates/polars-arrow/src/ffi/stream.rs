@@ -115,7 +115,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
         // last paragraph of https://arrow.apache.org/docs/format/CStreamInterface.html#c.ArrowArrayStream.get_next
         array.release?;
 
-        // Safety: assumed from the C stream interface
+        // SAFETY: assumed from the C stream interface
         unsafe { import_array_from_c(array, self.field.data_type.clone()) }
             .map(Some)
             .transpose()

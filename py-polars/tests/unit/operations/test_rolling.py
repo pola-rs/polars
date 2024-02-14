@@ -57,19 +57,17 @@ def test_rolling_negative_offset_3914() -> None:
             ),
         }
     )
-    assert df.rolling(index_column="datetime", period="2d", offset="-4d").agg(
-        pl.count().alias("count")
-    )["count"].to_list() == [0, 0, 1, 2, 2]
-
-    df = pl.DataFrame(
-        {
-            "ints": range(20),
-        }
+    result = df.rolling(index_column="datetime", period="2d", offset="-4d").agg(
+        pl.len()
     )
+    assert result["len"].to_list() == [0, 0, 1, 2, 2]
 
-    assert df.rolling(index_column="ints", period="2i", offset="-5i").agg(
-        [pl.col("ints").alias("matches")]
-    )["matches"].to_list() == [
+    df = pl.DataFrame({"ints": range(20)})
+
+    result = df.rolling(index_column="ints", period="2i", offset="-5i").agg(
+        pl.col("ints").alias("matches")
+    )
+    expected = [
         [],
         [],
         [],
@@ -91,6 +89,7 @@ def test_rolling_negative_offset_3914() -> None:
         [14, 15],
         [15, 16],
     ]
+    assert result["matches"].to_list() == expected
 
 
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])

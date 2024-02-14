@@ -250,7 +250,7 @@ def df() -> pl.DataFrame:
     ("method", "expected"),
     [
         ("all", [("a", [1, 2], [None, 1]), ("b", [3, 4, 5], [None, 1, None])]),
-        ("count", [("a", 2), ("b", 3)]),
+        ("len", [("a", 2), ("b", 3)]),
         ("first", [("a", 1, None), ("b", 3, None)]),
         ("last", [("a", 2, 1), ("b", 5, None)]),
         ("max", [("a", 2, 1), ("b", 5, 1)]),
@@ -648,19 +648,19 @@ def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> No
     assert result.to_dict(as_series=False) == expected
 
 
+# https://github.com/pola-rs/polars/issues/7181
 def test_group_by_multiple_column_reference() -> None:
-    # Issue #7181
     df = pl.DataFrame(
         {
             "gr": ["a", "b", "a", "b", "a", "b"],
             "val": [1, 20, 100, 2000, 10000, 200000],
         }
     )
-    res = df.group_by("gr").agg(
+    result = df.group_by("gr").agg(
         pl.col("val") + pl.col("val").shift().fill_null(0),
     )
 
-    assert res.sort("gr").to_dict(as_series=False) == {
+    assert result.sort("gr").to_dict(as_series=False) == {
         "gr": ["a", "b"],
         "val": [[1, 101, 10100], [20, 2020, 202000]],
     }
@@ -763,7 +763,7 @@ def test_perfect_hash_table_null_values() -> None:
 def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
-    out = df.group_by(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
 
@@ -831,22 +831,6 @@ def test_group_by_rolling_deprecated() -> None:
     assert_frame_equal(result_lazy, expected, check_row_order=False)
 
 
-def test_group_by_multiple_keys_one_literal() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
-
-    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
-    for streaming in [True, False]:
-        assert (
-            df.lazy()
-            .group_by("a", pl.lit(1))
-            .agg(pl.col("b").max())
-            .sort(["a", "b"])
-            .collect(streaming=streaming)
-            .to_dict(as_series=False)
-            == expected
-        )
-
-
 def test_group_by_list_scalar_11749() -> None:
     df = pl.DataFrame(
         {
@@ -890,8 +874,8 @@ def test_group_by_with_expr_as_key() -> None:
 
 def test_lazy_group_by_reuse_11767() -> None:
     lgb = pl.select(x=1).lazy().group_by("x")
-    a = lgb.count()
-    b = lgb.count()
+    a = lgb.len()
+    b = lgb.len()
     assert_frame_equal(a, b)
 
 
@@ -933,3 +917,35 @@ def test_group_by_all_12869() -> None:
     df = pl.DataFrame({"a": [1]})
     result = next(iter(df.group_by(pl.all())))[1]
     assert_frame_equal(df, result)
+
+
+def test_group_by_named() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    result = df.group_by(z=pl.col("a") * 2, maintain_order=True).agg(pl.col("b").min())
+    expected = df.group_by((pl.col("a") * 2).alias("z"), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_deprecated_by_arg() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    with pytest.deprecated_call():
+        result = df.group_by(by=(pl.col("a") * 2), maintain_order=True).agg(
+            pl.col("b").min()
+        )
+    expected = df.group_by((pl.col("a") * 2), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_with_null() -> None:
+    df = pl.DataFrame(
+        {"a": [None, None, None, None], "b": [1, 1, 2, 2], "c": ["x", "y", "z", "u"]}
+    )
+    expected = pl.DataFrame(
+        {"a": [None, None], "b": [1, 2], "c": [["x", "y"], ["z", "u"]]}
+    )
+    output = df.group_by(["a", "b"], maintain_order=True).agg(pl.col("c"))
+    assert_frame_equal(expected, output)

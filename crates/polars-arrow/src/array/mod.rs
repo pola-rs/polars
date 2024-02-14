@@ -530,6 +530,12 @@ macro_rules! impl_mut_validity {
             }
             self.validity = validity;
         }
+
+        /// Takes the validity of this array, leaving it without a validity mask.
+        #[inline]
+        pub fn take_validity(&mut self) -> Option<Bitmap> {
+            self.validity.take()
+        }
     }
 }
 
@@ -698,7 +704,8 @@ mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use binview::{
-    BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray, Utf8ViewArray, ViewType,
+    BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray, MutablePlBinary,
+    MutablePlString, Utf8ViewArray, View, ViewType,
 };
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};

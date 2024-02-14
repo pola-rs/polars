@@ -8,6 +8,7 @@
 //! use polars_core::prelude::*;
 //! use polars_io::prelude::*;
 //! use std::io::Cursor;
+//! use std::num::NonZeroUsize;
 //!
 //! let basic_json = r#"{"a":1, "b":2.0, "c":false, "d":"4"}
 //! {"a":-10, "b":-3.5, "c":true, "d":"4"}
@@ -25,7 +26,7 @@
 //! let df = JsonReader::new(file)
 //! .with_json_format(JsonFormat::JsonLines)
 //! .infer_schema_len(Some(3))
-//! .with_batch_size(3)
+//! .with_batch_size(NonZeroUsize::new(3).unwrap())
 //! .finish()
 //! .unwrap();
 //!
@@ -65,6 +66,7 @@ pub(crate) mod infer;
 
 use std::convert::TryFrom;
 use std::io::Write;
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 
 use arrow::array::{ArrayRef, StructArray};
@@ -133,9 +135,12 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks();
-        let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
+        let fields = df
+            .iter()
+            .map(|s| s.field().to_arrow(true))
+            .collect::<Vec<_>>();
         let batches = df
-            .iter_chunks()
+            .iter_chunks(true)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
 
         match self.json_format {
@@ -171,8 +176,11 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
-        let chunks = df.iter_chunks();
+        let fields = df
+            .iter()
+            .map(|s| s.field().to_arrow(true))
+            .collect::<Vec<_>>();
+        let chunks = df.iter_chunks(true);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
@@ -193,7 +201,7 @@ where
     rechunk: bool,
     ignore_errors: bool,
     infer_schema_len: Option<usize>,
-    batch_size: usize,
+    batch_size: NonZeroUsize,
     projection: Option<Vec<String>>,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
@@ -210,7 +218,7 @@ where
             rechunk: true,
             ignore_errors: false,
             infer_schema_len: Some(100),
-            batch_size: 8192,
+            batch_size: NonZeroUsize::new(8192).unwrap(),
             projection: None,
             schema: None,
             schema_overwrite: None,
@@ -245,7 +253,7 @@ where
                         overwrite_schema(mut_schema, overwrite)?;
                     }
 
-                    DataType::Struct(schema.iter_fields().collect()).to_arrow()
+                    DataType::Struct(schema.iter_fields().collect()).to_arrow(true)
                 } else {
                     // infer
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
@@ -253,7 +261,7 @@ where
                             values,
                             self.infer_schema_len.unwrap_or(usize::MAX),
                         )?
-                        .to_arrow()
+                        .to_arrow(true)
                     } else {
                         polars_json::json::infer(&json_value)?
                     };
@@ -272,7 +280,7 @@ where
                                 .map(|(name, dt)| Field::new(&name, dt))
                                 .collect(),
                         )
-                        .to_arrow()
+                        .to_arrow(true)
                     } else {
                         inner_dtype
                     }
@@ -300,7 +308,7 @@ where
                     self.schema_overwrite,
                     None,
                     1024, // sample size
-                    1 << 18,
+                    NonZeroUsize::new(1 << 18).unwrap(),
                     false,
                     self.infer_schema_len,
                     self.ignore_errors,
@@ -354,7 +362,7 @@ where
     /// Set the batch size (number of records to load at one time)
     ///
     /// This heavily influences loading time.
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+    pub fn with_batch_size(mut self, batch_size: NonZeroUsize) -> Self {
         self.batch_size = batch_size;
         self
     }

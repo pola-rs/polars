@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.io._utils import _looks_like_url
 from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
@@ -228,3 +229,22 @@ def test_is_str_sequence_check(
     assert is_str_sequence(sequence, include_series=include_series) == expected
     if expected:
         assert is_sequence(sequence, include_series=include_series)
+
+
+@pytest.mark.parametrize(
+    ("url", "result"),
+    [
+        ("HTTPS://pola.rs/data.csv", True),
+        ("http://pola.rs/data.csv", True),
+        ("ftps://pola.rs/data.csv", True),
+        ("FTP://pola.rs/data.csv", True),
+        ("htp://pola.rs/data.csv", False),
+        ("fttp://pola.rs/data.csv", False),
+        ("http_not_a_url", False),
+        ("ftp_not_a_url", False),
+        ("/mnt/data.csv", False),
+        ("file://mnt/data.csv", False),
+    ],
+)
+def test_looks_like_url(url: str, result: bool) -> None:
+    assert _looks_like_url(url) == result

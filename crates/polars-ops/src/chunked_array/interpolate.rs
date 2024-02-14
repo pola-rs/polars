@@ -130,8 +130,11 @@ where
             av.push(Zero::zero())
         }
 
-        let array =
-            PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), Some(validity.into()));
+        let array = PrimitiveArray::new(
+            T::get_dtype().to_arrow(true),
+            av.into(),
+            Some(validity.into()),
+        );
         ChunkedArray::with_chunk(chunked_arr.name(), array)
     } else {
         ChunkedArray::from_vec(chunked_arr.name(), av)
@@ -141,7 +144,7 @@ where
 fn interpolate_nearest(s: &Series) -> Series {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => s.clone(),
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => s.clone(),
         DataType::Binary => s.clone(),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => s.clone(),
@@ -164,7 +167,7 @@ fn interpolate_nearest(s: &Series) -> Series {
 fn interpolate_linear(s: &Series) -> Series {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => s.clone(),
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => s.clone(),
         DataType::Binary => s.clone(),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => s.clone(),

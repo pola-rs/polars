@@ -37,12 +37,27 @@ def test_all_any_horizontally() -> None:
     assert_frame_equal(result, expected)
 
     # note: a kwargs filter will use an internal call to all_horizontal
-    dfltr = df.lazy().filter(var1=None, var3=False)
-    assert dfltr.collect().rows() == [(None, None, False)]
+    dfltr = df.lazy().filter(var1=True, var3=False)
+    assert dfltr.collect().rows() == [(True, False, False)]
 
-    # confirm that we reduce the horizontal filter components
+    # confirm that we reduced the horizontal filter components
     # (eg: explain does not contain an "all_horizontal" node)
     assert "horizontal" not in dfltr.explain().lower()
+
+
+def test_all_any_single_input() -> None:
+    df = pl.DataFrame({"a": [0, 1, None]})
+    out = df.select(
+        all=pl.all_horizontal(pl.col("a")), any=pl.any_horizontal(pl.col("a"))
+    )
+
+    expected = pl.DataFrame(
+        {
+            "all": [False, True, None],
+            "any": [False, True, None],
+        }
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_all_any_accept_expr() -> None:
@@ -240,6 +255,49 @@ def test_sum_max_min() -> None:
     assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
 
 
+def test_str_sum_horizontal() -> None:
+    df = pl.DataFrame(
+        {"A": ["a", "b", None, "c", None], "B": ["f", "g", "h", None, None]}
+    )
+    out = df.select(pl.sum_horizontal("A", "B"))
+    assert_series_equal(out["A"], pl.Series("A", ["af", "bg", "h", "c", ""]))
+
+
+def test_sum_null_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [5, None, 3, 2, 1],
+            "B": [5, 3, None, 2, 1],
+            "C": [None, None, None, None, None],
+        }
+    )
+
+    assert_series_equal(
+        df.select(pl.sum_horizontal("A", "B", "C")).to_series(),
+        pl.Series("A", [10, 3, 3, 4, 2]),
+    )
+    assert_series_equal(
+        df.select(pl.sum_horizontal("C", "B")).to_series(),
+        pl.Series("C", [5, 3, 0, 2, 1]),
+    )
+    assert_series_equal(
+        df.select(pl.sum_horizontal("C", "C")).to_series(),
+        pl.Series("C", [None, None, None, None, None]),
+    )
+
+
+def test_sum_single_col() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [5, None, 3, None, 1],
+        }
+    )
+
+    assert_series_equal(
+        df.select(pl.sum_horizontal("A")).to_series(), pl.Series("A", [5, 0, 3, 0, 1])
+    )
+
+
 def test_cum_sum_horizontal() -> None:
     df = pl.DataFrame(
         {
@@ -311,6 +369,10 @@ def test_horizontal_broadcasting() -> None:
         pl.Series("sum", [5, 10]),
     )
     assert_series_equal(
+        df.select(mean=pl.mean_horizontal(1, "a", "b")).to_series(),
+        pl.Series("mean", [1.66666, 3.33333]),
+    )
+    assert_series_equal(
         df.select(max=pl.max_horizontal(4, "*")).to_series(), pl.Series("max", [4, 6])
     )
     assert_series_equal(
@@ -325,3 +387,37 @@ def test_horizontal_broadcasting() -> None:
         df.select(all=pl.all_horizontal(True, pl.Series([True, False]))).to_series(),
         pl.Series("all", [True, False]),
     )
+
+
+def test_mean_horizontal() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [2.0, 4.0, 6.0], "c": [3, None, 9]})
+
+    result = lf.select(pl.mean_horizontal(pl.all()))
+
+    expected = pl.LazyFrame({"a": [2.0, 3.0, 6.0]}, schema={"a": pl.Float64})
+    assert_frame_equal(result, expected)
+
+
+def test_mean_horizontal_no_columns() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [2.0, 4.0, 6.0], "c": [3, None, 9]})
+
+    with pytest.raises(pl.ComputeError, match="number of output rows is unknown"):
+        lf.select(pl.mean_horizontal())
+
+
+def test_mean_horizontal_no_rows() -> None:
+    lf = pl.LazyFrame({"a": [], "b": [], "c": []}).with_columns(pl.all().cast(pl.Int64))
+
+    result = lf.select(pl.mean_horizontal(pl.all()))
+
+    expected = pl.LazyFrame({"a": []}, schema={"a": pl.Float64})
+    assert_frame_equal(result, expected)
+
+
+def test_mean_horizontal_all_null() -> None:
+    lf = pl.LazyFrame({"a": [1, None], "b": [2, None], "c": [None, None]})
+
+    result = lf.select(pl.mean_horizontal(pl.all()))
+
+    expected = pl.LazyFrame({"a": [1.5, None]}, schema={"a": pl.Float64})
+    assert_frame_equal(result, expected)

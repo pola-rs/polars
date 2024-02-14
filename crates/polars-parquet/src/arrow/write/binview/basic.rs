@@ -24,7 +24,7 @@ pub(crate) fn encode_plain(array: &BinaryViewArray, buffer: &mut Vec<u8>) {
 }
 
 pub(crate) fn encode_delta(array: &BinaryViewArray, buffer: &mut Vec<u8>) {
-    let lengths = array.non_null_views_iter().map(|v| (*v as u32) as i64);
+    let lengths = array.non_null_views_iter().map(|v| v.length as i64);
     delta_bitpacked::encode(lengths, buffer);
 
     for slice in array.non_null_values_iter() {

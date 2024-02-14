@@ -151,7 +151,7 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # iif we created it and are finished with it, we can
+        # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
         if self.can_close_cursor:
             self.cursor.close()
@@ -489,7 +489,8 @@ def read_database(  # noqa: D417
       `connectorx` will optimise translation of the result set into Arrow format
       in Rust, whereas these libraries will return row-wise data to Python *before*
       we can load into Arrow. Note that you can easily determine the connection's
-      URI from a SQLAlchemy engine object by calling `str(conn.engine.url)`.
+      URI from a SQLAlchemy engine object by calling
+      `conn.engine.url.render_as_string(hide_password=False)`.
 
     * If polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;

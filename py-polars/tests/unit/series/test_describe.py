@@ -1,7 +1,5 @@
 from datetime import date
 
-import pytest
-
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
 
@@ -49,9 +47,10 @@ def test_series_describe_string() -> None:
     result = s.describe()
 
     stats = {
-        "count": 3,
-        "null_count": 0,
-        "unique": 3,
+        "count": "3",
+        "null_count": "0",
+        "min": "abc",
+        "max": "xyz",
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
     assert_frame_equal(expected, result)
@@ -64,22 +63,30 @@ def test_series_describe_boolean() -> None:
     stats = {
         "count": 4,
         "null_count": 1,
-        "sum": 3,
+        "mean": 0.75,
+        "min": False,
+        "max": True,
     }
-    expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+    expected = pl.DataFrame(
+        data={"statistic": stats.keys(), "value": stats.values()},
+        schema_overrides={"value": pl.Float64},
+    )
     assert_frame_equal(expected, result)
 
 
 def test_series_describe_date() -> None:
-    s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-    result = s.describe()
+    s = pl.Series([date(1999, 12, 31), date(2011, 3, 11), date(2021, 1, 18)])
+    result = s.describe(interpolation="linear")
 
     stats = {
         "count": "3",
         "null_count": "0",
-        "min": "2021-01-01",
-        "50%": "2021-01-02",
-        "max": "2021-01-03",
+        "mean": "2010-09-29",
+        "min": "1999-12-31",
+        "25%": "2005-08-05",
+        "50%": "2011-03-11",
+        "75%": "2016-02-13",
+        "max": "2021-01-18",
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
     assert_frame_equal(expected, result)
@@ -88,25 +95,34 @@ def test_series_describe_date() -> None:
 def test_series_describe_empty() -> None:
     s = pl.Series(dtype=pl.Float64)
     result = s.describe()
-    print(result)
     stats = {
         "count": 0.0,
         "null_count": 0.0,
-        "mean": None,
-        "std": None,
-        "min": None,
-        "25%": None,
-        "50%": None,
-        "75%": None,
-        "max": None,
     }
     expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
     assert_frame_equal(expected, result)
 
 
-def test_series_describe_unsupported_dtype() -> None:
-    s = pl.Series(dtype=pl.List(pl.Int64))
-    with pytest.raises(
-        TypeError, match="cannot describe Series of data type List\\(Int64\\)"
-    ):
-        s.describe()
+def test_series_describe_null() -> None:
+    s = pl.Series([None, None], dtype=pl.Null)
+    result = s.describe()
+    stats = {
+        "count": 0.0,
+        "null_count": 2.0,
+    }
+    expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+    assert_frame_equal(expected, result)
+
+
+def test_series_describe_nested_list() -> None:
+    s = pl.Series(
+        values=[[10e10, 10e15], [10e12, 10e13], [10e10, 10e15]],
+        dtype=pl.List(pl.Int64),
+    )
+    result = s.describe()
+    stats = {
+        "count": 3.0,
+        "null_count": 0.0,
+    }
+    expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+    assert_frame_equal(expected, result)

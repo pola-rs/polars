@@ -337,7 +337,9 @@ class Decimal(NumericType):
     Decimal 128-bit type with an optional precision and non-negative scale.
 
     .. warning::
-        This is an experimental work-in-progress feature and may not work as expected.
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
     """
 
     precision: int | None
@@ -348,6 +350,15 @@ class Decimal(NumericType):
         precision: int | None = None,
         scale: int = 0,
     ):
+        # Issuing the warning on `__init__` does not trigger when the class is used
+        # without being instantiated, but it's better than nothing
+        from polars.utils.unstable import issue_unstable_warning
+
+        issue_unstable_warning(
+            "The Decimal data type is considered unstable."
+            " It is a work-in-progress feature and may not always work as expected."
+        )
+
         self.precision = precision
         self.scale = scale
 
@@ -528,7 +539,9 @@ class Enum(DataType):
     A fixed set categorical encoding of a set of strings.
 
     .. warning::
-        This is an experimental work-in-progress feature and may not work as expected.
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
     """
 
     categories: Series
@@ -542,6 +555,15 @@ class Enum(DataType):
         categories
             Valid categories in the dataset.
         """
+        # Issuing the warning on `__init__` does not trigger when the class is used
+        # without being instantiated, but it's better than nothing
+        from polars.utils.unstable import issue_unstable_warning
+
+        issue_unstable_warning(
+            "The Enum data type is considered unstable."
+            " It is a work-in-progress feature and may not always work as expected."
+        )
+
         if not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 

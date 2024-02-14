@@ -20,7 +20,9 @@ def test_duration_cum_sum() -> None:
 
 
 def test_duration_std_var() -> None:
-    df = pl.DataFrame({"duration": [10, 5, 3]}, schema={"duration": pl.Duration})
+    df = pl.DataFrame(
+        {"duration": [1000, 5000, 3000]}, schema={"duration": pl.Duration}
+    )
 
     result = df.select(
         pl.col("duration").var().name.suffix("_var"),
@@ -31,12 +33,12 @@ def test_duration_std_var() -> None:
         [
             pl.Series(
                 "duration_var",
-                [timedelta(microseconds=13)],
-                dtype=pl.Duration(time_unit="us"),
+                [timedelta(microseconds=4000)],
+                dtype=pl.Duration(time_unit="ms"),
             ),
             pl.Series(
                 "duration_std",
-                [timedelta(microseconds=3)],
+                [timedelta(microseconds=2000)],
                 dtype=pl.Duration(time_unit="us"),
             ),
         ]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Sequence
 
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr
-    from polars.type_aliases import IntoExprColumn
+    from polars.type_aliases import IntoExpr, IntoExprColumn
 
 
 class ExprArrayNameSpace:
@@ -88,6 +88,75 @@ class ExprArrayNameSpace:
         └─────┘
         """
         return wrap_expr(self._pyexpr.arr_sum())
+
+    def std(self, ddof: int = 1) -> Expr:
+        """
+        Compute the std of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.std())
+        shape: (2, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.707107 │
+        │ 0.707107 │
+        └──────────┘
+        """
+        return wrap_expr(self._pyexpr.arr_std(ddof))
+
+    def var(self, ddof: int = 1) -> Expr:
+        """
+        Compute the var of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.var())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.5 │
+        │ 0.5 │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_var(ddof))
+
+    def median(self) -> Expr:
+        """
+        Compute the median of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.median())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.5 │
+        │ 3.5 │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_median())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
@@ -214,7 +283,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_all())
 
-    def sort(self, *, descending: bool = False) -> Expr:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the arrays in this column.
 
@@ -222,6 +291,8 @@ class ExprArrayNameSpace:
         ----------
         descending
             Sort in descending order.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -253,7 +324,7 @@ class ExprArrayNameSpace:
         └───────────────┴───────────────┘
 
         """
-        return wrap_expr(self._pyexpr.arr_sort(descending))
+        return wrap_expr(self._pyexpr.arr_sort(descending, nulls_last))
 
     def reverse(self) -> Expr:
         """
@@ -430,7 +501,7 @@ class ExprArrayNameSpace:
         """
         return self.get(-1)
 
-    def join(self, separator: IntoExprColumn) -> Expr:
+    def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
         Join all string items in a sub-array and place a separator between them.
 
@@ -440,6 +511,11 @@ class ExprArrayNameSpace:
         ----------
         separator
             string to separate the items with
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            If the sub-list contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -468,7 +544,38 @@ class ExprArrayNameSpace:
 
         """
         separator = parse_as_expression(separator, str_as_lit=True)
-        return wrap_expr(self._pyexpr.arr_join(separator))
+        return wrap_expr(self._pyexpr.arr_join(separator, ignore_nulls))
+
+    def explode(self) -> Expr:
+        """
+        Returns a column with a separate row for every array element.
+
+        Returns
+        -------
+        Expr
+            Expression with the data type of the array elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
+        ... )
+        >>> df.select(pl.col("a").arr.explode())
+        shape: (6, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        │ 4   │
+        │ 5   │
+        │ 6   │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.explode())
 
     def contains(
         self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
@@ -507,3 +614,139 @@ class ExprArrayNameSpace:
         """
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_contains(item))
+
+    def count_matches(self, element: IntoExpr) -> Expr:
+        """
+        Count how often the value produced by `element` occurs.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2], [1, 1], [2, 2]]}, schema={"a": pl.Array(pl.Int64, 2)}
+        ... )
+        >>> df.with_columns(number_of_twos=pl.col("a").arr.count_matches(2))
+        shape: (3, 2)
+        ┌───────────────┬────────────────┐
+        │ a             ┆ number_of_twos │
+        │ ---           ┆ ---            │
+        │ array[i64, 2] ┆ u32            │
+        ╞═══════════════╪════════════════╡
+        │ [1, 2]        ┆ 1              │
+        │ [1, 1]        ┆ 0              │
+        │ [2, 2]        ┆ 2              │
+        └───────────────┴────────────────┘
+        """
+        element = parse_as_expression(element, str_as_lit=True)
+        return wrap_expr(self._pyexpr.arr_count_matches(element))
+
+    def to_struct(
+        self, fields: Sequence[str] | Callable[[int], str] | None = None
+    ) -> Expr:
+        """
+        Convert the Series of type `Array` to a Series of type `Struct`.
+
+        Parameters
+        ----------
+        fields
+            If the name and number of the desired fields is known in advance
+            a list of field names can be given, which will be assigned by index.
+            Otherwise, to dynamically assign field names, a custom function can be
+            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+
+        Examples
+        --------
+        Convert array to struct with default field name assignment:
+
+        >>> df = pl.DataFrame(
+        ...     {"n": [[0, 1, 2], [3, 4, 5]]}, schema={"n": pl.Array(pl.Int8, 3)}
+        ... )
+        >>> df.with_columns(struct=pl.col("n").arr.to_struct())
+        shape: (2, 2)
+        ┌──────────────┬───────────┐
+        │ n            ┆ struct    │
+        │ ---          ┆ ---       │
+        │ array[i8, 3] ┆ struct[3] │
+        ╞══════════════╪═══════════╡
+        │ [0, 1, 2]    ┆ {0,1,2}   │
+        │ [3, 4, 5]    ┆ {3,4,5}   │
+        └──────────────┴───────────┘
+
+        Convert array to struct with field name assignment by function/index:
+
+        >>> df = pl.DataFrame(
+        ...     {"n": [[0, 1, 2], [3, 4, 5]]}, schema={"n": pl.Array(pl.Int8, 3)}
+        ... )
+        >>> df.select(pl.col("n").arr.to_struct(fields=lambda idx: f"n{idx}")).rows(
+        ...     named=True
+        ... )
+        [{'n': {'n0': 0, 'n1': 1, 'n2': 2}}, {'n': {'n0': 3, 'n1': 4, 'n2': 5}}]
+
+        Convert array to struct with field name assignment by
+        index from a list of names:
+
+        >>> df.select(pl.col("n").arr.to_struct(fields=["c1", "c2", "c3"])).rows(
+        ...     named=True
+        ... )
+        [{'n': {'c1': 0, 'c2': 1, 'c3': 2}}, {'n': {'c1': 3, 'c2': 4, 'c3': 5}}]
+        """
+        if isinstance(fields, Sequence):
+            field_names = list(fields)
+            pyexpr = self._pyexpr.arr_to_struct(None)
+            return wrap_expr(pyexpr).struct.rename_fields(field_names)
+        else:
+            pyexpr = self._pyexpr.arr_to_struct(fields)
+            return wrap_expr(pyexpr)
+
+    def shift(self, n: int | IntoExprColumn = 1) -> Expr:
+        """
+        Shift array values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Notes
+        -----
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
+
+        Examples
+        --------
+        By default, array values are shifted forward by one index.
+
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
+        ... )
+        >>> df.with_columns(shift=pl.col("a").arr.shift())
+        shape: (2, 2)
+        ┌───────────────┬───────────────┐
+        │ a             ┆ shift         │
+        │ ---           ┆ ---           │
+        │ array[i64, 3] ┆ array[i64, 3] │
+        ╞═══════════════╪═══════════════╡
+        │ [1, 2, 3]     ┆ [null, 1, 2]  │
+        │ [4, 5, 6]     ┆ [null, 4, 5]  │
+        └───────────────┴───────────────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> df.with_columns(shift=pl.col("a").arr.shift(-2))
+        shape: (2, 2)
+        ┌───────────────┬─────────────────┐
+        │ a             ┆ shift           │
+        │ ---           ┆ ---             │
+        │ array[i64, 3] ┆ array[i64, 3]   │
+        ╞═══════════════╪═════════════════╡
+        │ [1, 2, 3]     ┆ [3, null, null] │
+        │ [4, 5, 6]     ┆ [6, null, null] │
+        └───────────────┴─────────────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.arr_shift(n))

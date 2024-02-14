@@ -1,12 +1,12 @@
 use std::error::Error;
 
-use arrow::array::Array;
+use arrow::array::{Array, StaticArray};
 use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
 
-use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
+use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, PolarsDataType, Series};
-use crate::utils::{align_chunks_binary, align_chunks_ternary};
+use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
 // We need this helper because for<'a> notation can't yet be applied properly
 // on the return type.
@@ -36,6 +36,33 @@ pub trait BinaryFnMut<A1, A2>: FnMut(A1, A2) -> Self::Ret {
 
 impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
     type Ret = R;
+}
+
+/// Applies a kernel that produces `Array` types.
+#[inline]
+pub fn unary_kernel<T, V, F, Arr>(ca: &ChunkedArray<T>, op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(&T::Array) -> Arr,
+{
+    let iter = ca.downcast_iter().map(op);
+    ChunkedArray::from_chunk_iter(ca.name(), iter)
+}
+
+/// Applies a kernel that produces `Array` types.
+#[inline]
+pub fn unary_kernel_owned<T, V, F, Arr>(ca: ChunkedArray<T>, op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(T::Array) -> Arr,
+{
+    let name = ca.name().to_owned();
+    let iter = ca.downcast_into_iter().map(op);
+    ChunkedArray::from_chunk_iter(&name, iter)
 }
 
 #[inline]
@@ -78,7 +105,7 @@ where
     V::Array: ArrayFromIter<<F as UnaryFnMut<T::Physical<'a>>>::Ret>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(true));
         return ChunkedArray::with_chunk(ca.name(), arr);
     }
 
@@ -102,7 +129,7 @@ where
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(true));
         return Ok(ChunkedArray::with_chunk(ca.name(), arr));
     }
 
@@ -280,7 +307,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return ChunkedArray::with_chunk(lhs.name(), arr);
     }
@@ -319,7 +346,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
     }
@@ -433,6 +460,28 @@ where
     F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     binary_mut_with_options(lhs, rhs, op, lhs.name())
+}
+
+/// Applies a kernel that produces `Array` types.
+pub fn binary_owned<L, R, V, F, Arr>(
+    lhs: ChunkedArray<L>,
+    rhs: ChunkedArray<R>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(L::Array, R::Array) -> Arr,
+{
+    let name = lhs.name().to_owned();
+    let (lhs, rhs) = align_chunks_binary_owned(lhs, rhs);
+    let iter = lhs
+        .downcast_into_iter()
+        .zip(rhs.downcast_into_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
+    ChunkedArray::from_chunk_iter(&name, iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -623,9 +672,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            let mut out = unary_elementwise(rhs, |b| op(a.clone(), b));
-            out.rename(lhs.name());
-            out
+            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -650,9 +697,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            let mut out = try_unary_elementwise(rhs, |b| op(a.clone(), b))?;
-            out.rename(lhs.name());
-            Ok(out)
+            Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -678,7 +723,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return ChunkedArray::with_chunk(lhs.name(), arr);
     }
@@ -686,9 +731,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.value_unchecked(0) };
-            let mut out = unary_elementwise_values(rhs, |b| op(a.clone(), b));
-            out.rename(lhs.name());
-            out
+            unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
         },
         (_, 1) => {
             let b = unsafe { rhs.value_unchecked(0) };
@@ -714,7 +757,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow());
+        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
 
         return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
     }
@@ -722,9 +765,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.value_unchecked(0) };
-            let mut out = try_unary_elementwise_values(rhs, |b| op(a.clone(), b))?;
-            out.rename(lhs.name());
-            Ok(out)
+            Ok(try_unary_elementwise_values(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
         },
         (_, 1) => {
             let b = unsafe { rhs.value_unchecked(0) };
@@ -732,4 +773,92 @@ where
         },
         _ => try_binary_elementwise_values(lhs, rhs, op),
     }
+}
+
+pub fn apply_binary_kernel_broadcast<'l, 'r, L, R, O, K, LK, RK>(
+    lhs: &'l ChunkedArray<L>,
+    rhs: &'r ChunkedArray<R>,
+    kernel: K,
+    lhs_broadcast_kernel: LK,
+    rhs_broadcast_kernel: RK,
+) -> ChunkedArray<O>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    O: PolarsDataType,
+    K: Fn(&L::Array, &R::Array) -> O::Array,
+    LK: Fn(L::Physical<'l>, &R::Array) -> O::Array,
+    RK: Fn(&L::Array, R::Physical<'r>) -> O::Array,
+{
+    let name = lhs.name();
+    let out = match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => binary(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
+        // broadcast right path
+        (_, 1) => {
+            let opt_rhs = rhs.get(0);
+            match opt_rhs {
+                None => {
+                    let arr = O::Array::full_null(lhs.len(), O::get_dtype().to_arrow(true));
+                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                },
+                Some(rhs) => unary_kernel(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+            }
+        },
+        (1, _) => {
+            let opt_lhs = lhs.get(0);
+            match opt_lhs {
+                None => {
+                    let arr = O::Array::full_null(rhs.len(), O::get_dtype().to_arrow(true));
+                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                },
+                Some(lhs) => unary_kernel(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+            }
+        },
+        _ => panic!("Cannot apply operation on arrays of different lengths"),
+    };
+    out.with_name(name)
+}
+
+pub fn apply_binary_kernel_broadcast_owned<L, R, O, K, LK, RK>(
+    lhs: ChunkedArray<L>,
+    rhs: ChunkedArray<R>,
+    kernel: K,
+    lhs_broadcast_kernel: LK,
+    rhs_broadcast_kernel: RK,
+) -> ChunkedArray<O>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    O: PolarsDataType,
+    K: Fn(L::Array, R::Array) -> O::Array,
+    for<'a> LK: Fn(L::Physical<'a>, R::Array) -> O::Array,
+    for<'a> RK: Fn(L::Array, R::Physical<'a>) -> O::Array,
+{
+    let name = lhs.name().to_owned();
+    let out = match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => binary_owned(lhs, rhs, kernel),
+        // broadcast right path
+        (_, 1) => {
+            let opt_rhs = rhs.get(0);
+            match opt_rhs {
+                None => {
+                    let arr = O::Array::full_null(lhs.len(), O::get_dtype().to_arrow(true));
+                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                },
+                Some(rhs) => unary_kernel_owned(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+            }
+        },
+        (1, _) => {
+            let opt_lhs = lhs.get(0);
+            match opt_lhs {
+                None => {
+                    let arr = O::Array::full_null(rhs.len(), O::get_dtype().to_arrow(true));
+                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                },
+                Some(lhs) => unary_kernel_owned(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+            }
+        },
+        _ => panic!("Cannot apply operation on arrays of different lengths"),
+    };
+    out.with_name(&name)
 }

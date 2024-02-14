@@ -4,7 +4,7 @@ numpy
 pandas
 pyarrow
 
-hypothesis==6.92.1
+hypothesis==6.97.4
 
 sphinx==7.2.4
 

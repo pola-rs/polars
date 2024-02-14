@@ -38,14 +38,29 @@ impl HivePartitions {
     pub(crate) fn parse_url(url: &Path) -> Option<Self> {
         let sep = separator(url);
 
-        let partitions = url
-            .display()
-            .to_string()
-            .split(sep)
-            .filter_map(|part| {
+        let url_string = url.display().to_string();
+
+        let pre_filt = url_string.split(sep);
+
+        let split_count_m1 = pre_filt.clone().count() - 1;
+
+        let partitions = pre_filt
+            .enumerate()
+            .filter_map(|(index, part)| {
                 let mut it = part.split('=');
                 let name = it.next()?;
                 let value = it.next()?;
+
+                // Don't see files `foo=1.parquet` as hive partitions.
+                // So we return globs and paths with extensions.
+                if value.contains('*') {
+                    return None;
+                }
+
+                // Identify file by index location
+                if index == split_count_m1 {
+                    return None;
+                }
 
                 // Having multiple '=' doesn't seem like valid hive partition,
                 // continue as url.
@@ -63,7 +78,7 @@ impl HivePartitions {
                     let value = value.parse::<f64>().ok()?;
                     Series::new(name, &[value])
                 } else if value == "__HIVE_DEFAULT_PARTITION__" {
-                    Series::full_null(name, 1, &DataType::Null)
+                    Series::new_null(name, 1)
                 } else {
                     Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
                 };
@@ -81,6 +96,7 @@ impl HivePartitions {
                     .into_iter()
                     .map(ColumnStats::from_column_literal)
                     .collect(),
+                None,
             );
 
             Some(HivePartitions { stats })

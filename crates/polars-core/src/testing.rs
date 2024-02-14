@@ -45,7 +45,7 @@ impl Series {
     pub fn get_data_ptr(&self) -> usize {
         let object = self.0.deref();
 
-        // Safety:
+        // SAFETY:
         // A fat pointer consists of a data ptr and a ptr to the vtable.
         // we specifically check that we only transmute &dyn SeriesTrait e.g.
         // a trait object, therefore this is sound.

@@ -96,6 +96,12 @@ def _column_to_series(
 
 
 def _string_column_to_series(column: Column, *, allow_copy: bool) -> Series:
+    if column.size() == 0:
+        return pl.Series(dtype=String)
+    elif not allow_copy:
+        msg = "string buffers must be converted"
+        raise CopyNotAllowedError(msg)
+
     buffers = column.get_buffers()
     offset = column.offset
 

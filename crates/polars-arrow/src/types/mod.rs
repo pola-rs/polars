@@ -71,6 +71,8 @@ pub enum PrimitiveType {
 }
 
 mod private {
+    use crate::array::View;
+
     pub trait Sealed {}
 
     impl Sealed for u8 {}
@@ -89,4 +91,5 @@ mod private {
     impl Sealed for f64 {}
     impl Sealed for super::days_ms {}
     impl Sealed for super::months_days_ns {}
+    impl Sealed for View {}
 }

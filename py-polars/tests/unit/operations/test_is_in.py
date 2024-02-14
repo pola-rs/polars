@@ -306,3 +306,9 @@ def test_cat_is_in_with_lit_str_cache_setup(dtype: pl.DataType) -> None:
     assert_series_equal(pl.Series(["a"], dtype=dtype).is_in(["a"]), pl.Series([True]))
     assert_series_equal(pl.Series(["b"], dtype=dtype).is_in(["b"]), pl.Series([True]))
     assert_series_equal(pl.Series(["c"], dtype=dtype).is_in(["c"]), pl.Series([True]))
+
+
+def test_is_in_with_wildcard_13809() -> None:
+    out = pl.DataFrame({"A": ["B"]}).select(pl.all().is_in(["C"]))
+    expected = pl.DataFrame({"A": [False]})
+    assert_frame_equal(out, expected)

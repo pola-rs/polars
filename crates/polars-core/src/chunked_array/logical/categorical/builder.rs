@@ -16,7 +16,7 @@ pub struct CategoricalChunkedBuilder {
     cat_builder: UInt32Vec,
     name: String,
     ordering: CategoricalOrdering,
-    categories: MutableUtf8Array<i64>,
+    categories: MutablePlString,
     // hashmap utilized by the local builder
     local_mapping: PlHashMap<KeyWrapper, ()>,
 }
@@ -27,7 +27,7 @@ impl CategoricalChunkedBuilder {
             cat_builder: UInt32Vec::with_capacity(capacity),
             name: name.to_string(),
             ordering,
-            categories: MutableUtf8Array::<i64>::with_capacity(_HASHMAP_INIT_SIZE),
+            categories: MutablePlString::with_capacity(_HASHMAP_INIT_SIZE),
             local_mapping: PlHashMap::with_capacity_and_hasher(
                 capacity / 10,
                 StringCache::get_hash_builder(),
@@ -39,7 +39,7 @@ impl CategoricalChunkedBuilder {
         let len = self.local_mapping.len() as u32;
 
         // Custom hashing / equality functions for comparing the &str to the idx
-        // Safety: index in hashmap are within bounds of categories
+        // SAFETY: index in hashmap are within bounds of categories
         let r = unsafe {
             self.local_mapping.raw_table_mut().find_or_find_insert_slot(
                 h,
@@ -53,12 +53,12 @@ impl CategoricalChunkedBuilder {
 
         let idx = match r {
             Ok(v) => {
-                // Safety: Bucket is initialized
+                // SAFETY: Bucket is initialized
                 unsafe { v.as_ref().0 .0 }
             },
             Err(e) => {
                 self.categories.push(Some(s));
-                // Safety: No mutations in hashmap since find_or_find_insert_slot call
+                // SAFETY: No mutations in hashmap since find_or_find_insert_slot call
                 unsafe {
                     self.local_mapping
                         .raw_table_mut()
@@ -125,14 +125,14 @@ impl CategoricalChunkedBuilder {
             }
         }
 
-        let categories: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
+        let categories = std::mem::take(&mut self.categories).freeze();
 
         // we will create a mapping from our local categoricals to global categoricals
         // and a mapping from global categoricals to our local categoricals
         let mut local_to_global: Vec<u32> = Vec::with_capacity(categories.len());
         let (id, local_to_global) = crate::STRING_CACHE.apply(|cache| {
             for (s, h) in categories.values_iter().zip(hashes) {
-                // Safety: we allocated enough
+                // SAFETY: we allocated enough
                 unsafe { local_to_global.push_unchecked(cache.insert_from_hash(h, s)) }
             }
             local_to_global
@@ -160,11 +160,12 @@ impl CategoricalChunkedBuilder {
         let indices = std::mem::take(&mut self.cat_builder).into();
         let indices = UInt32Chunked::with_chunk(&self.name, indices);
 
-        // Safety: indices are in bounds of new rev_map
+        // SAFETY: indices are in bounds of new rev_map
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 indices,
                 Arc::new(RevMapping::Global(global_to_local, categories, id)),
+                false,
                 self.ordering,
             )
         }
@@ -184,7 +185,7 @@ impl CategoricalChunkedBuilder {
     }
 
     pub fn finish(self) -> CategoricalChunked {
-        // Safety: keys and values are in bounds
+        // SAFETY: keys and values are in bounds
         unsafe {
             CategoricalChunked::from_keys_and_values(
                 &self.name,
@@ -237,7 +238,7 @@ impl CategoricalChunked {
 
         let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), _HASHMAP_INIT_SIZE);
         let mut rev_map = PlHashMap::with_capacity(cap);
-        let mut str_values = MutableUtf8Array::with_capacities(cap, cap * 24);
+        let mut str_values = MutablePlString::with_capacity(cap);
 
         for arr in cats.downcast_iter() {
             for cat in arr.into_iter().flatten().copied() {
@@ -253,14 +254,19 @@ impl CategoricalChunked {
 
         let rev_map = RevMapping::Global(rev_map, str_values.into(), cache.uuid);
 
-        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, Arc::new(rev_map), ordering)
+        CategoricalChunked::from_cats_and_rev_map_unchecked(
+            cats,
+            Arc::new(rev_map),
+            false,
+            ordering,
+        )
     }
 
     pub(crate) unsafe fn from_keys_and_values_global(
         name: &str,
         keys: impl IntoIterator<Item = Option<u32>> + Send,
         capacity: usize,
-        values: &Utf8Array<i64>,
+        values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> Self {
         // Vec<u32> where the index is local and the value is the global index
@@ -269,7 +275,7 @@ impl CategoricalChunked {
             // locally we don't need a hashmap because we all categories are 1 integer apart
             // so the index is local, and the values is global
             for s in values.values_iter() {
-                // Safety: we allocated enough
+                // SAFETY: we allocated enough
                 unsafe { local_to_global.push_unchecked(cache.insert(s)) }
             }
             local_to_global
@@ -296,6 +302,7 @@ impl CategoricalChunked {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 UInt32Chunked::with_chunk(name, cats.into()),
                 Arc::new(RevMapping::Global(global_to_local, values.clone(), id)),
+                false,
                 ordering,
             )
         }
@@ -304,12 +311,13 @@ impl CategoricalChunked {
     pub(crate) unsafe fn from_keys_and_values_local(
         name: &str,
         keys: &PrimitiveArray<u32>,
-        values: &Utf8Array<i64>,
+        values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> CategoricalChunked {
         CategoricalChunked::from_cats_and_rev_map_unchecked(
             UInt32Chunked::with_chunk(name, keys.clone()),
             Arc::new(RevMapping::build_local(values.clone())),
+            false,
             ordering,
         )
     }
@@ -319,7 +327,7 @@ impl CategoricalChunked {
     pub(crate) unsafe fn from_keys_and_values(
         name: &str,
         keys: &PrimitiveArray<u32>,
-        values: &Utf8Array<i64>,
+        values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> Self {
         if !using_string_cache() {
@@ -339,7 +347,7 @@ impl CategoricalChunked {
     /// This will error if a string is not in the fixed list of categories
     pub fn from_string_to_enum(
         values: &StringChunked,
-        categories: &Utf8Array<i64>,
+        categories: &Utf8ViewArray,
         ordering: CategoricalOrdering,
     ) -> PolarsResult<CategoricalChunked> {
         polars_ensure!(categories.null_count()  == 0, ComputeError: "categories can not contain null values");
@@ -364,11 +372,12 @@ impl CategoricalChunked {
             })
             .collect::<Result<UInt32Chunked, PolarsError>>()?;
         keys.rename(values.name());
-        let rev_map = RevMapping::build_enum(categories.clone());
+        let rev_map = RevMapping::build_local(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                 keys,
                 Arc::new(rev_map),
+                true,
                 ordering,
             ))
         }

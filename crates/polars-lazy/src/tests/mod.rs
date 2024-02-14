@@ -2,6 +2,7 @@ mod aggregations;
 mod arity;
 #[cfg(all(feature = "strings", feature = "cse"))]
 mod cse;
+mod err_msg;
 #[cfg(feature = "parquet")]
 mod io;
 mod logical;
@@ -56,6 +57,8 @@ static GLOB_CSV: &str = "../../examples/datasets/*.csv";
 static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
 #[cfg(feature = "parquet")]
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
+#[cfg(feature = "parquet")]
+static NUTRI_SCORE_NULL_COLUMN_PARQUET: &str = "../../examples/datasets/null_nutriscore.parquet";
 #[cfg(feature = "csv")]
 static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 #[cfg(feature = "ipc")]
@@ -77,6 +80,7 @@ fn init_files() {
     for path in &[
         "../../examples/datasets/foods1.csv",
         "../../examples/datasets/foods2.csv",
+        "../../examples/datasets/null_nutriscore.csv",
     ] {
         for ext in [".parquet", ".ipc", ".ndjson"] {
             let out_path = path.replace(".csv", ext);
@@ -115,6 +119,26 @@ fn init_files() {
 fn scan_foods_parquet(parallel: bool) -> LazyFrame {
     init_files();
     let out_path = FOODS_PARQUET;
+    let parallel = if parallel {
+        ParallelStrategy::Auto
+    } else {
+        ParallelStrategy::None
+    };
+
+    let args = ScanArgsParquet {
+        n_rows: None,
+        cache: false,
+        parallel,
+        rechunk: true,
+        ..Default::default()
+    };
+    LazyFrame::scan_parquet(out_path, args).unwrap()
+}
+
+#[cfg(feature = "parquet")]
+fn scan_nutri_score_null_column_parquet(parallel: bool) -> LazyFrame {
+    init_files();
+    let out_path = NUTRI_SCORE_NULL_COLUMN_PARQUET;
     let parallel = if parallel {
         ParallelStrategy::Auto
     } else {

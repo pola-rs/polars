@@ -124,7 +124,12 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr = std::mem::take(&mut self.inner)
-            .finish(self.inner_dtype.as_ref().map(|dt| dt.to_arrow()).as_ref())
+            .finish(
+                self.inner_dtype
+                    .as_ref()
+                    .map(|dt| dt.to_arrow(true))
+                    .as_ref(),
+            )
             .unwrap();
         ChunkedArray::with_chunk(self.name.as_str(), arr)
     }

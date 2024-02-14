@@ -6,7 +6,7 @@ import operator
 import os
 import warnings
 from datetime import timedelta
-from functools import partial, reduce
+from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -31,7 +31,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsInefficientMapWarning
+from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -41,6 +41,7 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
+from polars.meta import thread_pool_size
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -55,8 +56,9 @@ from polars.utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
-from polars.utils.meta import threadpool_size
+from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
+    find_stacklevel,
     no_default,
     sphinx_accessor,
     warn_null_comparison,
@@ -64,7 +66,6 @@ from polars.utils.various import (
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
-    from polars.polars import reduce as pyreduce
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr
@@ -83,7 +84,6 @@ if TYPE_CHECKING:
         NullBehavior,
         NumericLiteral,
         PolarsDataType,
-        PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
@@ -142,8 +142,13 @@ class Expr:
     def __bool__(self) -> NoReturn:
         msg = (
             "the truth value of an Expr is ambiguous"
-            "\n\nHint: use '&' or '|' to logically combine Expr, not 'and'/'or', and"
-            " use `x.is_in([y,z])` instead of `x in [y,z]` to check membership."
+            "\n\n"
+            "You probably got here by using a Python standard library function instead "
+            "of the native expressions API.\n"
+            "Here are some things you might want to try:\n"
+            "- instead of `pl.col('a') and pl.col('b')`, use `pl.col('a') & pl.col('b')`\n"
+            "- instead of `pl.col('a') in [y, z]`, use `pl.col('a').is_in([y, z])`\n"
+            "- instead of `max(pl.col('a'), pl.col('b'))`, use `pl.max_horizontal(pl.col('a'), pl.col('b'))`\n"
         )
         raise TypeError(msg)
 
@@ -161,11 +166,11 @@ class Expr:
 
     def __and__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr._and(other))
+        return self._from_pyexpr(self._pyexpr.and_(other))
 
     def __rand__(self, other: IntoExprColumn | int | bool) -> Self:
         other_expr = parse_as_expression(other)
-        return self._from_pyexpr(other_expr._and(self._pyexpr))
+        return self._from_pyexpr(other_expr.and_(self._pyexpr))
 
     def __eq__(self, other: IntoExpr) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
@@ -224,25 +229,19 @@ class Expr:
         other = parse_as_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq(other))
 
-    def __neg__(self) -> Expr:
-        neg_expr = F.lit(0) - self
-        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
-            neg_expr = neg_expr.alias(name)
-        return neg_expr
+    def __neg__(self) -> Self:
+        return self._from_pyexpr(-self._pyexpr)
 
     def __or__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr._or(other))
+        return self._from_pyexpr(self._pyexpr.or_(other))
 
     def __ror__(self, other: IntoExprColumn | int | bool) -> Self:
         other_expr = parse_as_expression(other)
-        return self._from_pyexpr(other_expr._or(self._pyexpr))
+        return self._from_pyexpr(other_expr.or_(self._pyexpr))
 
     def __pos__(self) -> Expr:
-        pos_expr = F.lit(0) + self
-        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
-            pos_expr = pos_expr.alias(name)
-        return pos_expr
+        return self
 
     def __pow__(self, exponent: IntoExprColumn | int | float) -> Self:
         exponent = parse_as_expression(exponent)
@@ -270,11 +269,11 @@ class Expr:
 
     def __xor__(self, other: IntoExprColumn | int | bool) -> Self:
         other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr._xor(other))
+        return self._from_pyexpr(self._pyexpr.xor_(other))
 
     def __rxor__(self, other: IntoExprColumn | int | bool) -> Self:
         other_expr = parse_as_expression(other)
-        return self._from_pyexpr(other_expr._xor(self._pyexpr))
+        return self._from_pyexpr(other_expr.xor_(self._pyexpr))
 
     def __getstate__(self) -> bytes:
         return self._pyexpr.__getstate__()
@@ -287,23 +286,47 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Self:
         """Numpy universal functions."""
+        if method != "__call__":
+            msg = f"Only call is implemented not {method}"
+            raise NotImplementedError(msg)
+        is_custom_ufunc = ufunc.__class__ != np.ufunc
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
-        if num_expr > 1:
-            if num_expr < len(inputs):
-                msg = (
-                    "NumPy ufunc with more than one expression can only be used"
-                    " if all non-expression inputs are provided as keyword arguments only"
-                )
-                raise ValueError(msg)
-
-            exprs = parse_as_list_of_expressions(inputs)
-            return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
+        exprs = [
+            (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
+            for i, inp in enumerate(inputs)
+        ]
+        if num_expr == 1:
+            root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
+        else:
+            root_expr = F.struct(expr[0] for expr in exprs if expr[1] == Expr)
 
         def function(s: Series) -> Series:  # pragma: no cover
-            args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
+            args = []
+            for i, expr in enumerate(exprs):
+                if expr[1] == Expr and num_expr > 1:
+                    args.append(s.struct[i])
+                elif expr[1] == Expr:
+                    args.append(s)
+                else:
+                    args.append(expr[0])
             return ufunc(*args, **kwargs)
 
-        return self.map_batches(function)
+        if is_custom_ufunc is True:
+            msg = (
+                "Native numpy ufuncs are dispatched using `map_batches(ufunc, is_elementwise=True)` which "
+                "is safe for native Numpy and Scipy ufuncs but custom ufuncs in a group_by "
+                "context won't be properly grouped. Custom ufuncs are dispatched with is_elementwise=False. "
+                f"If {ufunc.__name__} needs elementwise then please use map_batches directly."
+            )
+            warnings.warn(
+                msg,
+                CustomUFuncWarning,
+                stacklevel=find_stacklevel(),
+            )
+            return root_expr.map_batches(
+                function, is_elementwise=False
+            ).meta.undo_aliases()
+        return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
     def from_json(cls, value: str) -> Self:
@@ -2955,18 +2978,25 @@ class Expr:
         """
         Count unique values.
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").n_unique())
-        shape: (1, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 2   │
-        └─────┘
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2, 3], "y": [1, 1, 1, None, None]})
+        >>> df.select(
+        ...     x_unique=pl.col("x").n_unique(),
+        ...     y_unique=pl.col("y").n_unique(),
+        ... )
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ x_unique ┆ y_unique │
+        │ ---      ┆ ---      │
+        │ u32      ┆ u32      │
+        ╞══════════╪══════════╡
+        │ 3        ┆ 2        │
+        └──────────┴──────────┘
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
@@ -2978,16 +3008,29 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").approx_n_unique())
+        >>> df = pl.DataFrame({"n": [1, 1, 2]})
+        >>> df.select(pl.col("n").approx_n_unique())
         shape: (1, 1)
         ┌─────┐
-        │ a   │
+        │ n   │
         │ --- │
         │ u32 │
         ╞═════╡
         │ 2   │
         └─────┘
+        >>> df = pl.DataFrame({"n": range(1000)})
+        >>> df.select(
+        ...     exact=pl.col("n").n_unique(),
+        ...     approx=pl.col("n").approx_n_unique(),
+        ... )  # doctest: +SKIP
+        shape: (1, 2)
+        ┌───────┬────────┐
+        │ exact ┆ approx │
+        │ ---   ┆ ---    │
+        │ u32   ┆ u32    │
+        ╞═══════╪════════╡
+        │ 1000  ┆ 1005   │
+        └───────┴────────┘
         """
         return self._from_pyexpr(self._pyexpr.approx_n_unique())
 
@@ -3000,18 +3043,19 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [None, 1, None],
-        ...         "b": [1, 2, 3],
+        ...         "b": [10, None, 300],
+        ...         "c": [350, 650, 850],
         ...     }
         ... )
         >>> df.select(pl.all().null_count())
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 2   ┆ 0   │
-        └─────┴─────┘
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ 1   ┆ 0   │
+        └─────┴─────┴─────┘
         """
         return self._from_pyexpr(self._pyexpr.null_count())
 
@@ -3582,6 +3626,7 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    @unstable()
     def cut(
         self,
         breaks: Sequence[float],
@@ -3592,6 +3637,10 @@ class Expr:
     ) -> Self:
         """
         Bin continuous values into discrete categories.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -3660,6 +3709,7 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
+    @unstable()
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -3671,6 +3721,10 @@ class Expr:
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -4007,6 +4061,8 @@ class Expr:
             Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
+            If not set, the dtype will be inferred based on the first non-null value
+            that is returned by the function.
         is_elementwise
             If set to true this can run in the streaming engine, but may yield
             incorrect results in group-by. Ensure you know what you are doing!
@@ -4131,13 +4187,14 @@ class Expr:
             Lambda/function to map.
         return_dtype
             Dtype of the output Series.
-            If not set, the dtype will be `pl.Unknown`.
+            If not set, the dtype will be inferred based on the first non-null value
+            that is returned by the function.
         skip_nulls
             Don't map the function over values that contain nulls (this is faster).
         pass_name
             Pass the Series name to the custom function (this is more expensive).
         strategy : {'thread_local', 'threading'}
-            This functionality is considered experimental and may be removed/changed.
+            The threading strategy to use.
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with
@@ -4145,6 +4202,15 @@ class Expr:
               your code if the amount of work per element is significant
               and the python function releases the GIL (e.g. via calling
               a c function)
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Warnings
+        --------
+        If `return_dtype` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the user's query.
 
         Notes
         -----
@@ -4158,11 +4224,6 @@ class Expr:
 
         * Window function application using `over` is considered a GroupBy context
           here, so `map_elements` can be used to map functions over window groups.
-
-        Warnings
-        --------
-        If `return_dtype` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
 
         Examples
         --------
@@ -4272,6 +4333,11 @@ class Expr:
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
         ... ).sort("key")  # doctest: +IGNORE_RESULT
         """
+        if strategy == "threading":
+            issue_unstable_warning(
+                "The 'threading' strategy for `map_elements` is considered unstable."
+            )
+
         # input x: Series of type list containing the group values
         from polars.utils.udfs import warn_on_inefficient_map
 
@@ -4317,7 +4383,7 @@ class Expr:
                 if x.len() == 0:
                     return get_lazy_promise(df).collect().to_series()
 
-                n_threads = threadpool_size()
+                n_threads = thread_pool_size()
                 chunk_size = x.len() // n_threads
                 remainder = x.len() % n_threads
                 if chunk_size == 0:
@@ -4345,7 +4411,8 @@ class Expr:
                 wrap_threading, agg_list=True, return_dtype=return_dtype
             )
         else:
-            ValueError(f"Strategy {strategy} is not supported.")
+            msg = f"strategy {strategy!r} is not supported"
+            raise ValueError(msg)
 
     def flatten(self) -> Self:
         """
@@ -5099,6 +5166,28 @@ class Expr:
         """
         return self.__sub__(other)
 
+    def neg(self) -> Self:
+        """
+        Method equivalent of unary minus operator `-expr`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 2, None]})
+        >>> df.with_columns(pl.col("a").neg())
+        shape: (4, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        │ 0    │
+        │ -2   │
+        │ null │
+        └──────┘
+        """
+        return self.__neg__()
+
     def truediv(self, other: Any) -> Self:
         """
         Method equivalent of float division operator `expr / other`.
@@ -5591,7 +5680,8 @@ class Expr:
         │ 2           ┆ 4.0    │
         │ 3           ┆ 6.0    │
         │ 4           ┆ 8.0    │
-        │ …           ┆ …      │
+        │ 5           ┆ 10.0   │
+        │ 6           ┆ 12.0   │
         │ 7           ┆ 14.0   │
         │ 8           ┆ 16.0   │
         │ 9           ┆ 18.0   │
@@ -5600,6 +5690,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
+    @unstable()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
@@ -5613,6 +5704,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling min (moving min) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5682,12 +5777,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -5774,7 +5863,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 │
         │ 2     ┆ 2001-01-01 02:00:00 │
         │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
         │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
         │ 21    ┆ 2001-01-01 21:00:00 │
         │ 22    ┆ 2001-01-01 22:00:00 │
         │ 23    ┆ 2001-01-01 23:00:00 │
@@ -5795,7 +5886,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0               │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 2               │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 18              │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 19              │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 20              │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 21              │
@@ -5812,6 +5905,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_max(
         self,
         window_size: int | timedelta | str,
@@ -5825,6 +5919,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling max (moving max) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5890,12 +5988,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -5982,7 +6074,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 │
         │ 2     ┆ 2001-01-01 02:00:00 │
         │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
         │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
         │ 21    ┆ 2001-01-01 21:00:00 │
         │ 22    ┆ 2001-01-01 22:00:00 │
         │ 23    ┆ 2001-01-01 23:00:00 │
@@ -6006,7 +6100,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
@@ -6030,7 +6126,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 4               │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 20              │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
@@ -6047,6 +6145,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_mean(
         self,
         window_size: int | timedelta | str,
@@ -6060,6 +6159,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling mean (moving mean) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -6129,12 +6232,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6221,7 +6318,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 │
         │ 2     ┆ 2001-01-01 02:00:00 │
         │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
         │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
         │ 21    ┆ 2001-01-01 21:00:00 │
         │ 22    ┆ 2001-01-01 22:00:00 │
         │ 23    ┆ 2001-01-01 23:00:00 │
@@ -6245,7 +6344,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0              │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5              │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.5              │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 2.5              │
         │ …     ┆ …                   ┆ …                │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 18.5             │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 19.5             │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 20.5             │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 21.5             │
@@ -6269,7 +6370,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0              │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.0              │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.0              │
         │ …     ┆ …                   ┆ …                │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.0             │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.0             │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.0             │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.0             │
@@ -6292,6 +6395,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_sum(
         self,
         window_size: int | timedelta | str,
@@ -6305,6 +6409,10 @@ class Expr:
     ) -> Self:
         """
         Apply a rolling sum (moving sum) over the values in this array.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -6370,12 +6478,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6462,7 +6564,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 │
         │ 2     ┆ 2001-01-01 02:00:00 │
         │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
         │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
         │ 21    ┆ 2001-01-01 21:00:00 │
         │ 22    ┆ 2001-01-01 22:00:00 │
         │ 23    ┆ 2001-01-01 23:00:00 │
@@ -6486,7 +6590,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 5               │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 37              │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 39              │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 41              │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 43              │
@@ -6510,7 +6616,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 6               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 9               │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 57              │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 60              │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 63              │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 66              │
@@ -6527,6 +6635,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_std(
         self,
         window_size: int | timedelta | str,
@@ -6541,6 +6650,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling standard deviation.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -6608,12 +6721,6 @@ class Expr:
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6700,7 +6807,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 │
         │ 2     ┆ 2001-01-01 02:00:00 │
         │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
         │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
         │ 21    ┆ 2001-01-01 21:00:00 │
         │ 22    ┆ 2001-01-01 22:00:00 │
         │ 23    ┆ 2001-01-01 23:00:00 │
@@ -6724,7 +6833,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.707107        │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 0.707107        │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.707107        │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.707107        │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.707107        │
@@ -6748,7 +6859,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 1.0             │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 1.0             │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
@@ -6772,6 +6885,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_var(
         self,
         window_size: int | timedelta | str,
@@ -6786,6 +6900,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling variance.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -6853,12 +6971,6 @@ class Expr:
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -6945,7 +7057,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 │
         │ 2     ┆ 2001-01-01 02:00:00 │
         │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
         │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
         │ 21    ┆ 2001-01-01 21:00:00 │
         │ 22    ┆ 2001-01-01 22:00:00 │
         │ 23    ┆ 2001-01-01 23:00:00 │
@@ -6969,7 +7083,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.5             │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 0.5             │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.5             │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.5             │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.5             │
@@ -6993,7 +7109,9 @@ class Expr:
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 1.0             │
         │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 1.0             │
         │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
         │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
@@ -7017,6 +7135,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_median(
         self,
         window_size: int | timedelta | str,
@@ -7030,6 +7149,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling median.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -7095,12 +7218,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -7178,6 +7295,7 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_quantile(
         self,
         quantile: float,
@@ -7193,6 +7311,10 @@ class Expr:
     ) -> Self:
         """
         Compute a rolling quantile.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -7262,12 +7384,6 @@ class Expr:
             applicable if `by` has been set.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
-            Experimental.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Notes
         -----
@@ -7381,9 +7497,14 @@ class Expr:
             )
         )
 
+    @unstable()
     def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         The window at a given row includes the row itself and the
         `window_size - 1` elements before it.
@@ -7418,6 +7539,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
 
+    @unstable()
     def rolling_map(
         self,
         function: Callable[[Series], Any],
@@ -7431,8 +7553,8 @@ class Expr:
         Compute a custom rolling window function.
 
         .. warning::
-            Computing custom functions is extremely slow. Use specialized rolling
-            functions such as :func:`Expr.rolling_sum` if at all possible.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -7452,6 +7574,11 @@ class Expr:
             - 1, if `window_size` is a dynamic temporal size
         center
             Set the labels at the center of the window.
+
+        Warnings
+        --------
+        Computing custom functions is extremely slow. Use specialized rolling
+        functions such as :func:`Expr.rolling_sum` if at all possible.
 
         Examples
         --------
@@ -7839,9 +7966,9 @@ class Expr:
         └──────┴──────┘
         """
         if lower_bound is not None:
-            lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
+            lower_bound = parse_as_expression(lower_bound)
         if upper_bound is not None:
-            upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
+            upper_bound = parse_as_expression(upper_bound)
         return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
     def lower_bound(self) -> Self:
@@ -8693,14 +8820,14 @@ class Expr:
             self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
         )
 
-    def extend_constant(self, value: PythonLiteral | None, n: int) -> Self:
+    def extend_constant(self, value: IntoExpr, n: int | IntoExprColumn) -> Self:
         """
         Extremely fast method for extending the Series with 'n' copies of a value.
 
         Parameters
         ----------
         value
-            A constant literal value (not an expression) with which to extend the
+            A constant literal value or a unit expressioin with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.
@@ -8722,10 +8849,8 @@ class Expr:
         │ 99     │
         └────────┘
         """
-        if isinstance(value, Expr):
-            msg = f"`value` must be a supported literal; found {value!r}"
-            raise TypeError(msg)
-
+        value = parse_as_expression(value, str_as_lit=True)
+        n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
     @deprecate_renamed_parameter("multithreaded", "parallel", version="0.19.0")
@@ -8902,11 +9027,16 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
+    @unstable()
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -8921,9 +9051,6 @@ class Expr:
 
         Warnings
         --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
-
         This can be really slow as it can have `O(n^2)` complexity. Don't use this
         for operations that visit all elements.
 
@@ -9019,6 +9146,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
+    @unstable()
     def hist(
         self,
         bins: IntoExpr | None = None,
@@ -9029,6 +9157,10 @@ class Expr:
     ) -> Self:
         """
         Bin values into buckets and count their occurrences.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -9046,11 +9178,6 @@ class Expr:
         Returns
         -------
         DataFrame
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Examples
         --------
@@ -9331,10 +9458,10 @@ class Expr:
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with
-                        care as this can slow performance. This might only speed up
-                        your code if the amount of work per element is significant
-                        and the python function releases the GIL (e.g. via calling
-                        a c function)
+              care as this can slow performance. This might only speed up
+              your code if the amount of work per element is significant
+              and the python function releases the GIL (e.g. via calling
+              a c function)
         """
         return self.map_elements(
             function,

@@ -177,19 +177,14 @@ pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn concat_str(s: Vec<PyExpr>, separator: &str) -> PyExpr {
+pub fn concat_str(s: Vec<PyExpr>, separator: &str, ignore_nulls: bool) -> PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    dsl::concat_str(s, separator).into()
+    dsl::concat_str(s, separator, ignore_nulls).into()
 }
 
 #[pyfunction]
-pub fn count() -> PyExpr {
-    dsl::count().into()
-}
-
-#[pyfunction]
-pub fn cum_count(reverse: bool) -> PyExpr {
-    dsl::cum_count(reverse).into()
+pub fn len() -> PyExpr {
+    dsl::len().into()
 }
 
 #[pyfunction]
@@ -457,7 +452,7 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
     }
 
     if let Expr::Literal(lv) = &value {
-        let av = lv.to_anyvalue().unwrap();
+        let av = lv.to_any_value().unwrap();
         // Integer inputs that fit in Int32 are parsed as such
         if let DataType::Int64 = av.dtype() {
             let int_value = av.try_extract::<i64>().unwrap();

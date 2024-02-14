@@ -21,6 +21,7 @@ pub mod mode;
 
 #[cfg(feature = "cov")]
 pub mod cov;
+pub(crate) mod gather;
 #[cfg(feature = "gather")]
 pub mod gather_skip_nulls;
 #[cfg(feature = "hist")]
@@ -31,6 +32,8 @@ mod repeat_by;
 pub use binary::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;
+#[cfg(feature = "chunked_ids")]
+pub use gather::*;
 #[cfg(feature = "hist")]
 pub use hist::*;
 #[cfg(feature = "interpolate")]

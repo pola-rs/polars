@@ -70,6 +70,12 @@ impl IntoLazy for DataFrame {
     }
 }
 
+impl IntoLazy for LazyFrame {
+    fn lazy(self) -> LazyFrame {
+        self
+    }
+}
+
 /// Lazy abstraction over an eager `DataFrame`.
 /// It really is an abstraction over a logical plan. The methods of this struct will incrementally
 /// modify a logical plan until output is requested (via [`collect`](crate::frame::LazyFrame::collect)).
@@ -208,10 +214,12 @@ impl LazyFrame {
         self.logical_plan.describe()
     }
 
-    /// Return a String describing the optimized logical plan.
-    ///
-    /// Returns `Err` if optimizing the logical plan fails.
-    pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
+    /// Return a String describing the naive (un-optimized) logical plan in tree format.
+    pub fn describe_plan_tree(&self) -> String {
+        self.logical_plan.describe_tree_format()
+    }
+
+    fn optimized_plan(&self) -> PolarsResult<LogicalPlan> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
         let lp_top = self.clone().optimize_with_scratch(
@@ -220,8 +228,21 @@ impl LazyFrame {
             &mut vec![],
             true,
         )?;
-        let logical_plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-        Ok(logical_plan.describe())
+        Ok(node_to_lp(lp_top, &expr_arena, &mut lp_arena))
+    }
+
+    /// Return a String describing the optimized logical plan.
+    ///
+    /// Returns `Err` if optimizing the logical plan fails.
+    pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
+        Ok(self.optimized_plan()?.describe())
+    }
+
+    /// Return a String describing the optimized logical plan in tree format.
+    ///
+    /// Returns `Err` if optimizing the logical plan fails.
+    pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
+        Ok(self.optimized_plan()?.describe_tree_format())
     }
 
     /// Return a String describing the logical plan.
@@ -436,7 +457,7 @@ impl LazyFrame {
     /// Removes columns from the DataFrame.
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
-    pub fn drop_columns<I, T>(self, columns: I) -> Self
+    pub fn drop<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -447,7 +468,7 @@ impl LazyFrame {
             .collect::<PlHashSet<_>>();
 
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop_columns(to_drop).build();
+        let lp = self.get_plan_builder().drop(to_drop).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -502,7 +523,12 @@ impl LazyFrame {
                 }
             })
             .collect();
-        self.with_columns(cast_cols)
+
+        if cast_cols.is_empty() {
+            self.clone()
+        } else {
+            self.with_columns(cast_cols)
+        }
     }
 
     /// Cast all frame columns to the given dtype, resulting in a new LazyFrame
@@ -1414,7 +1440,13 @@ impl LazyFrame {
     /// - String columns will sum to None.
     pub fn median(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || matches!(dt, DataType::Boolean | DataType::Datetime(_, _)),
+            |dt| {
+                dt.is_numeric()
+                    || matches!(
+                        dt,
+                        DataType::Boolean | DataType::Duration(_) | DataType::Datetime(_, _)
+                    )
+            },
             |name| col(name).median(),
         )
     }

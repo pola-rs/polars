@@ -65,7 +65,7 @@ fn write_integer<I: itoa::Integer>(f: &mut Vec<u8>, val: I) {
 }
 
 #[allow(unused_variables)]
-unsafe fn write_anyvalue(
+unsafe fn write_any_value(
     f: &mut Vec<u8>,
     value: AnyValue,
     options: &SerializeOptions,
@@ -80,7 +80,7 @@ unsafe fn write_anyvalue(
             Ok(())
         },
         #[cfg(feature = "dtype-categorical")]
-        AnyValue::Categorical(idx, rev_map, _) => {
+        AnyValue::Categorical(idx, rev_map, _) | AnyValue::Enum(idx, rev_map, _) => {
             let v = rev_map.get(idx);
             fmt_and_escape_str(f, v, options)?;
             Ok(())
@@ -402,7 +402,7 @@ pub(crate) fn write<W: Write>(
             df.as_single_chunk();
             let cols = df.get_columns();
 
-            // Safety:
+            // SAFETY:
             // the bck thinks the lifetime is bounded to write_buffer_pool, but at the time we return
             // the vectors the buffer pool, the series have already been removed from the buffers
             // in other words, the lifetime does not leave this scope
@@ -425,7 +425,7 @@ pub(crate) fn write<W: Write>(
                 for (i, col) in &mut col_iters.iter_mut().enumerate() {
                     match col.next() {
                         Some(value) => unsafe {
-                            write_anyvalue(
+                            write_any_value(
                                 &mut write_buffer,
                                 value,
                                 options,

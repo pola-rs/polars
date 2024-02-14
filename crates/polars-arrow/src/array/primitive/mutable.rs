@@ -2,6 +2,7 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+use polars_utils::total_ord::TotalOrdWrap;
 
 use super::{check, PrimitiveArray};
 use crate::array::physical_binary::extend_validity;
@@ -283,6 +284,10 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     pub fn capacity(&self) -> usize {
         self.values.capacity()
     }
+
+    pub fn freeze(self) -> PrimitiveArray<T> {
+        self.into()
+    }
 }
 
 /// Accessors
@@ -307,7 +312,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// Panics iff index is larger than `self.len()`.
     pub fn set(&mut self, index: usize, value: Option<T>) {
         assert!(index < self.len());
-        // Safety:
+        // SAFETY:
         // we just checked bounds
         unsafe { self.set_unchecked(index, value) }
     }
@@ -356,6 +361,14 @@ impl<T: NativeType> Extend<Option<T>> for MutablePrimitiveArray<T> {
         let iter = iter.into_iter();
         self.reserve(iter.size_hint().0);
         iter.for_each(|x| self.push(x))
+    }
+}
+
+impl<T: NativeType> Extend<Option<TotalOrdWrap<T>>> for MutablePrimitiveArray<T> {
+    fn extend<I: IntoIterator<Item = Option<TotalOrdWrap<T>>>>(&mut self, iter: I) {
+        let iter = iter.into_iter();
+        self.reserve(iter.size_hint().0);
+        iter.for_each(|x| self.push(x.map(|x| x.0)))
     }
 }
 

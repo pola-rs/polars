@@ -32,7 +32,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     };
 
     let lf = match &mut lf.logical_plan {
-        // re-use the same union
+        // reuse the same union
         LogicalPlan::Union {
             inputs: existing_inputs,
             options: opts,
@@ -146,7 +146,12 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
         .iter()
         // Zip Frames with their Schemas
         .zip(schemas)
-        .map(|(lf, lf_schema)| {
+        .filter_map(|(lf, lf_schema)| {
+            if lf_schema.is_empty() {
+                // if the frame is empty we discard
+                return None;
+            };
+
             let mut lf = lf.clone();
             for (name, dtype) in total_schema.iter() {
                 // If a name from Total Schema is not present - append
@@ -162,7 +167,7 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
                     .map(|col_name| col(col_name))
                     .collect::<Vec<Expr>>(),
             );
-            Ok(reordered_lf)
+            Some(Ok(reordered_lf))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 

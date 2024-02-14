@@ -34,6 +34,7 @@ impl Executor for IpcExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             paths: Arc::new([self.path.clone()]),
+            #[allow(clippy::useless_asref)]
             predicate: self
                 .predicate
                 .as_ref()

@@ -1,6 +1,7 @@
 # --8<-- [start:setup]
-import polars as pl
 from datetime import date, datetime
+
+import polars as pl
 
 # --8<-- [end:setup]
 
@@ -60,10 +61,6 @@ out = df.group_by_dynamic(
     closed="both",
     by="groups",
     include_boundaries=True,
-).agg(
-    [
-        pl.count(),
-    ]
-)
+).agg(pl.len())
 print(out)
 # --8<-- [end:group_by_dyn2]

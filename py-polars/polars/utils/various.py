@@ -396,7 +396,7 @@ class sphinx_accessor(property):  # noqa: D101
                 instance if isinstance(instance, cls) else cls
             )
         except (AttributeError, ImportError):
-            return None  # type: ignore[return-value]
+            return self  # type: ignore[return-value]
 
 
 class _NoDefault(Enum):

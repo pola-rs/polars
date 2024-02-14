@@ -94,8 +94,12 @@ impl PyExpr {
         self.inner.clone().str().strip_suffix(suffix.inner).into()
     }
 
-    fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
-        self.inner.clone().str().slice(start, length).into()
+    fn str_slice(&self, offset: Self, length: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .slice(offset.inner, length.inner)
+            .into()
     }
 
     fn str_explode(&self) -> Self {
@@ -153,8 +157,8 @@ impl PyExpr {
         self.inner.clone().str().pad_end(length, fill_char).into()
     }
 
-    fn str_zfill(&self, length: usize) -> Self {
-        self.inner.clone().str().zfill(length).into()
+    fn str_zfill(&self, length: Self) -> Self {
+        self.inner.clone().str().zfill(length.inner).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]

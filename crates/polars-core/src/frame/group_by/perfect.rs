@@ -78,7 +78,7 @@ where
                         let end = cache_line_offsets[thread_no + 1];
                         let end = T::Native::from_usize(end).unwrap();
 
-                        // safety: we don't alias
+                        // SAFETY: we don't alias
                         let groups =
                             unsafe { std::slice::from_raw_parts_mut(groups_ptr.get(), len) };
                         let first = unsafe { std::slice::from_raw_parts_mut(first_ptr.get(), len) };
@@ -93,7 +93,7 @@ where
 
                                         unsafe {
                                             if buf.len() == 1 {
-                                                // safety: we just  pushed
+                                                // SAFETY: we just  pushed
                                                 let first_value = buf.get_unchecked(0);
                                                 *first.get_unchecked_release_mut(cat) = *first_value
                                             }
@@ -113,7 +113,7 @@ where
 
                                             unsafe {
                                                 if buf.len() == 1 {
-                                                    // safety: we just  pushed
+                                                    // SAFETY: we just  pushed
                                                     let first_value = buf.get_unchecked(0);
                                                     *first.get_unchecked_release_mut(cat) =
                                                         *first_value
@@ -190,16 +190,14 @@ where
 impl CategoricalChunked {
     // Use the indexes as perfect groups
     pub fn group_tuples_perfect(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        let DataType::Categorical(Some(rev_map), _) = self.dtype() else {
-            unreachable!()
-        };
+        let rev_map = self.get_rev_map();
         if self.is_empty() {
             return GroupsProxy::Idx(GroupsIdx::new(vec![], vec![], true));
         }
         let cats = self.physical();
 
         let mut out = match &**rev_map {
-            RevMapping::Local(cached, _) | RevMapping::Enum(cached, _) => {
+            RevMapping::Local(cached, _) => {
                 if self.can_fast_unique() {
                     if verbose() {
                         eprintln!("grouping categoricals, run perfect hash function");

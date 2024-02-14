@@ -1,4 +1,5 @@
 use polars_core::prelude::{Field, Schema};
+use polars_utils::unitvec;
 
 use super::*;
 use crate::prelude::*;
@@ -8,11 +9,11 @@ impl TreeWalker for Expr {
         &'a self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
     ) -> PolarsResult<VisitRecursion> {
-        let mut scratch = vec![];
+        let mut scratch = unitvec![];
 
         self.nodes(&mut scratch);
 
-        for child in scratch {
+        for &child in scratch.as_slice() {
             match op(child)? {
                 // let the recursion continue
                 VisitRecursion::Continue | VisitRecursion::Skip => {},
@@ -54,7 +55,7 @@ impl AexprNode {
     where
         F: FnOnce(AexprNode) -> T,
     {
-        // safety: we drop this context before arena is out of scope
+        // SAFETY: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena)) }
     }
 
@@ -63,7 +64,7 @@ impl AexprNode {
     where
         F: FnOnce(AexprNode, &mut Arena<AExpr>) -> T,
     {
-        // safety: we drop this context before arena is out of scope
+        // SAFETY: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena), arena) }
     }
 
@@ -153,7 +154,7 @@ impl AexprNode {
                 (Gather { .. }, Gather { .. })
                 | (Filter { .. }, Filter { .. })
                 | (Ternary { .. }, Ternary { .. })
-                | (Count, Count)
+                | (Len, Len)
                 | (Slice { .. }, Slice { .. })
                 | (Explode(_), Explode(_)) => true,
                 (SortBy { descending: l, .. }, SortBy { descending: r, .. }) => l == r,
@@ -185,7 +186,7 @@ impl AexprNode {
             loop {
                 match (scratch1.pop(), scratch2.pop()) {
                     (Some(l), Some(r)) => {
-                        // safety: we can pass a *mut pointer
+                        // SAFETY: we can pass a *mut pointer
                         // the equality operation will not access mutable
                         let l = unsafe { AexprNode::from_raw(l, self.arena) };
                         let r = unsafe { AexprNode::from_raw(r, self.arena) };

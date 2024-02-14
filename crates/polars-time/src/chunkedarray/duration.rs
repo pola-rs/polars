@@ -34,36 +34,46 @@ impl DurationMethods for DurationChunked {
     /// Extract the hours from a `Duration`
     fn hours(&self) -> Int64Chunked {
         match self.time_unit() {
-            TimeUnit::Milliseconds => &self.0 / (MILLISECONDS * SECONDS_IN_HOUR),
-            TimeUnit::Microseconds => &self.0 / (MICROSECONDS * SECONDS_IN_HOUR),
-            TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * SECONDS_IN_HOUR),
+            TimeUnit::Milliseconds => {
+                (&self.0).wrapping_trunc_div_scalar(MILLISECONDS * SECONDS_IN_HOUR)
+            },
+            TimeUnit::Microseconds => {
+                (&self.0).wrapping_trunc_div_scalar(MICROSECONDS * SECONDS_IN_HOUR)
+            },
+            TimeUnit::Nanoseconds => {
+                (&self.0).wrapping_trunc_div_scalar(NANOSECONDS * SECONDS_IN_HOUR)
+            },
         }
     }
 
     /// Extract the days from a `Duration`
     fn days(&self) -> Int64Chunked {
         match self.time_unit() {
-            TimeUnit::Milliseconds => &self.0 / MILLISECONDS_IN_DAY,
-            TimeUnit::Microseconds => &self.0 / (MICROSECONDS * SECONDS_IN_DAY),
-            TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * SECONDS_IN_DAY),
+            TimeUnit::Milliseconds => (&self.0).wrapping_trunc_div_scalar(MILLISECONDS_IN_DAY),
+            TimeUnit::Microseconds => {
+                (&self.0).wrapping_trunc_div_scalar(MICROSECONDS * SECONDS_IN_DAY)
+            },
+            TimeUnit::Nanoseconds => {
+                (&self.0).wrapping_trunc_div_scalar(NANOSECONDS * SECONDS_IN_DAY)
+            },
         }
     }
 
     /// Extract the seconds from a `Duration`
     fn minutes(&self) -> Int64Chunked {
         match self.time_unit() {
-            TimeUnit::Milliseconds => &self.0 / (MILLISECONDS * 60),
-            TimeUnit::Microseconds => &self.0 / (MICROSECONDS * 60),
-            TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * 60),
+            TimeUnit::Milliseconds => (&self.0).wrapping_trunc_div_scalar(MILLISECONDS * 60),
+            TimeUnit::Microseconds => (&self.0).wrapping_trunc_div_scalar(MICROSECONDS * 60),
+            TimeUnit::Nanoseconds => (&self.0).wrapping_trunc_div_scalar(NANOSECONDS * 60),
         }
     }
 
     /// Extract the seconds from a `Duration`
     fn seconds(&self) -> Int64Chunked {
         match self.time_unit() {
-            TimeUnit::Milliseconds => &self.0 / MILLISECONDS,
-            TimeUnit::Microseconds => &self.0 / MICROSECONDS,
-            TimeUnit::Nanoseconds => &self.0 / NANOSECONDS,
+            TimeUnit::Milliseconds => (&self.0).wrapping_trunc_div_scalar(MILLISECONDS),
+            TimeUnit::Microseconds => (&self.0).wrapping_trunc_div_scalar(MICROSECONDS),
+            TimeUnit::Nanoseconds => (&self.0).wrapping_trunc_div_scalar(NANOSECONDS),
         }
     }
 
@@ -71,8 +81,10 @@ impl DurationMethods for DurationChunked {
     fn milliseconds(&self) -> Int64Chunked {
         match self.time_unit() {
             TimeUnit::Milliseconds => self.0.clone(),
-            TimeUnit::Microseconds => self.0.clone() / 1000,
-            TimeUnit::Nanoseconds => &self.0 / NANOSECONDS_IN_MILLISECOND,
+            TimeUnit::Microseconds => self.0.clone().wrapping_trunc_div_scalar(1000),
+            TimeUnit::Nanoseconds => {
+                (&self.0).wrapping_trunc_div_scalar(NANOSECONDS_IN_MILLISECOND)
+            },
         }
     }
 
@@ -81,7 +93,7 @@ impl DurationMethods for DurationChunked {
         match self.time_unit() {
             TimeUnit::Milliseconds => &self.0 * 1000,
             TimeUnit::Microseconds => self.0.clone(),
-            TimeUnit::Nanoseconds => &self.0 / 1000,
+            TimeUnit::Nanoseconds => (&self.0).wrapping_trunc_div_scalar(1000),
         }
     }
 

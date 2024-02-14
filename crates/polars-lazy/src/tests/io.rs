@@ -1,4 +1,6 @@
 use polars_io::RowIndex;
+#[cfg(feature = "is_between")]
+use polars_ops::prelude::ClosedInterval;
 
 use super::*;
 
@@ -62,6 +64,38 @@ fn test_parquet_statistics_no_skip() {
         .unwrap();
     assert_eq!(out.shape(), (27, 4));
 
+    // statistics and `is_between`
+    // normal case
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(40, 300, ClosedInterval::Both))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (19, 4));
+    // normal case
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(10, 50, ClosedInterval::Both))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (11, 4));
+    // edge case: 20 = min(calories) but the right end is closed
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 20, ClosedInterval::Right))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (1, 4));
+    // edge case: 200 = max(calories) but the left end is closed
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 250, ClosedInterval::Left))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (3, 4));
+    // edge case: left == right but both ends are closed
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 200, ClosedInterval::Both))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (3, 4));
+
     // Or operation
     let out = scan_foods_parquet(par)
         .filter(
@@ -97,10 +131,186 @@ fn test_parquet_statistics() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
+    // issue: 13427
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_in(lit(Series::new("", [0, 500]))))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // statistics and `is_between`
+    // 15 < min(calories)=20
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 15, ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 300 > max(calories)=200
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(300, 500, ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 20 == min(calories) but right end is open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 20, ClosedInterval::Left))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 20 == min(calories) but both  ends are open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(5, 20, ClosedInterval::None))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 200 == max(calories) but left end is open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 250, ClosedInterval::Right))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // 200 == max(calories) but both ends are open
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(200, 250, ClosedInterval::None))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // between(100, 40) is impossible
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").is_between(100, 40, ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // with strings
+    let out = scan_foods_parquet(par)
+        .filter(col("category").is_between(lit("yams"), lit("zest"), ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // with strings
+    let out = scan_foods_parquet(par)
+        .filter(col("category").is_between(lit("dairy"), lit("eggs"), ClosedInterval::Both))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
     let out = scan_foods_parquet(par)
         .filter(lit(1000i32).lt(col("calories")))
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
+
+    // not(a > b) => a <= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt(5)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a >= b) => a < b
+    // note that min(calories)=20
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt_eq(20)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a < b) => a >= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").lt(250)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a <= b) => a > b
+    // note that max(calories)=200
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").lt_eq(200)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(a == b) => a != b
+    // note that proteins_g=10 for all rows
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(not(col("proteins_g").eq(10)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 6));
+
+    // not(a != b) => a == b
+    // note that proteins_g=10 for all rows
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(not(col("proteins_g").neq(5)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 6));
+
+    // not(col(c) is between [a, b]) => col(c) < a or col(c) > b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            20,
+            200,
+            ClosedInterval::Both,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between [a, b[) => col(c) < a or col(c) >= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            20,
+            201,
+            ClosedInterval::Left,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between ]a, b]) => col(c) <= a or col(c) > b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            19,
+            200,
+            ClosedInterval::Right,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between ]a, b]) => col(c) <= a or col(c) > b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            19,
+            200,
+            ClosedInterval::Right,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not(col(c) is between ]a, b[) => col(c) <= a or col(c) >= b
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").is_between(
+            19,
+            201,
+            ClosedInterval::None,
+        )))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not (a or b) => not(a) and not(b)
+    // note that not(fats_g <= 9) is possible; not(calories > 5) should allow us skip the rg
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt(5).or(col("fats_g").lt_eq(9))))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // not (a and b) => not(a) or not(b)
+    let out = scan_foods_parquet(par)
+        .filter(not(col("calories").gt(5).and(col("fats_g").lt_eq(12))))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // is_not_null
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(col("nutri_score").is_not_null())
+        .collect()?;
+    assert_eq!(out.shape(), (0, 6));
+
+    // not(is_null) (~pl.col('nutri_score').is_null())
+    let out = scan_nutri_score_null_column_parquet(par)
+        .filter(not(col("nutri_score").is_null()))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 6));
 
     // Test multiple predicates
 
@@ -148,7 +358,7 @@ fn test_parquet_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
-    let glob = "../../examples/datasets/*.parquet";
+    let glob = "../../examples/datasets/foods*.parquet";
     let df = LazyFrame::scan_parquet(
         glob,
         ScanArgsParquet {
@@ -194,7 +404,7 @@ fn test_scan_parquet_limit_9001() {
 fn test_ipc_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
-    let glob = "../../examples/datasets/*.ipc";
+    let glob = "../../examples/datasets/foods*.ipc";
     let df = LazyFrame::scan_ipc(
         glob,
         ScanArgsIpc {
@@ -226,7 +436,7 @@ fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 
 #[test]
 fn test_csv_globbing() -> PolarsResult<()> {
-    let glob = "../../examples/datasets/*.csv";
+    let glob = "../../examples/datasets/foods*.csv";
     let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
 
     // all 5 files * 27 rows
@@ -263,7 +473,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
 fn test_ndjson_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
-    let glob = "../../examples/datasets/*.ndjson";
+    let glob = "../../examples/datasets/foods*.ndjson";
     let df = LazyJsonLineReader::new(glob).finish()?.collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;

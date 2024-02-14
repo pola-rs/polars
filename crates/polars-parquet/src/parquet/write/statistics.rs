@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn boolean() -> Result<()> {
-        let iter = vec![
+        let iter = [
             BooleanStatistics {
                 null_count: Some(0),
                 distinct_count: None,
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn primitive() -> Result<()> {
-        let iter = vec![PrimitiveStatistics {
+        let iter = [PrimitiveStatistics {
             null_count: Some(2),
             distinct_count: None,
             min_value: Some(30),

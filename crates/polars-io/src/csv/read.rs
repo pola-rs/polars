@@ -435,6 +435,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         let mut _has_categorical = false;
         let mut _err: Option<PolarsError> = None;
 
+        #[allow(unused_mut)]
         let schema = overwriting_schema
             .iter_fields()
             .filter_map(|mut fld| {
@@ -444,12 +445,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         to_cast.push(fld);
                         // let inference decide the column type
                         None
-                    },
-                    Int8 | Int16 | UInt8 | UInt16 => {
-                        // We have not compiled these buffers, so we cast them later.
-                        to_cast.push(fld.clone());
-                        fld.coerce(DataType::Int32);
-                        Some(fld)
                     },
                     #[cfg(feature = "dtype-categorical")]
                     Categorical(_, _) => {
@@ -532,6 +527,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.null_values.as_ref(),
                     self.try_parse_dates,
                     self.raise_if_empty,
+                    &mut self.n_threads,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
@@ -561,6 +557,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.null_values.as_ref(),
                     self.try_parse_dates,
                     self.raise_if_empty,
+                    &mut self.n_threads,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))

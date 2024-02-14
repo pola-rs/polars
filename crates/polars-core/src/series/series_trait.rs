@@ -20,7 +20,7 @@ pub enum IsSorted {
 }
 
 impl IsSorted {
-    pub(crate) fn reverse(self) -> Self {
+    pub fn reverse(self) -> Self {
         use IsSorted::*;
         match self {
             Ascending => Descending,
@@ -246,14 +246,6 @@ pub trait SeriesTrait:
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
-    #[doc(hidden)]
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series;
-
-    #[doc(hidden)]
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series;
-
     /// Take by index. This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
@@ -295,6 +287,18 @@ pub trait SeriesTrait:
     /// Returns the mean value in the array
     /// Returns an option because the array is nullable.
     fn mean(&self) -> Option<f64> {
+        None
+    }
+
+    /// Returns the std value in the array
+    /// Returns an option because the array is nullable.
+    fn std(&self, _ddof: u8) -> Option<f64> {
+        None
+    }
+
+    /// Returns the var value in the array
+    /// Returns an option because the array is nullable.
+    fn var(&self, _ddof: u8) -> Option<f64> {
         None
     }
 
@@ -453,11 +457,20 @@ pub trait SeriesTrait:
         invalid_operation_panic!(get_object, self)
     }
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
-    fn as_any(&self) -> &dyn Any {
-        invalid_operation_panic!(as_any, self)
+    #[cfg(feature = "object")]
+    /// Get the value at this index as a downcastable Any trait ref.
+    /// # Safety
+    /// This function doesn't do any bound checks.
+    unsafe fn get_object_chunked_unchecked(
+        &self,
+        _chunk: usize,
+        _index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
+        invalid_operation_panic!(get_object_chunked_unchecked, self)
     }
+
+    /// Get a hold to self as `Any` trait reference.
+    fn as_any(&self) -> &dyn Any;
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType

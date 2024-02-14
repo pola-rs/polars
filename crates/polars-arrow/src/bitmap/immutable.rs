@@ -493,7 +493,7 @@ impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
         let null_count = value.unset_bits();
         let buffer = crate::buffer::to_buffer(value.bytes);
         let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
-        // Safety: null count is accurate
+        // SAFETY: null count is accurate
         unsafe { arrow_buffer::buffer::NullBuffer::new_unchecked(buffer, null_count) }
     }
 }
