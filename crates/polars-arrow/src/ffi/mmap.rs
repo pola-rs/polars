@@ -81,6 +81,10 @@ unsafe extern "C" fn release<T>(array: *mut ArrowArray) {
     //   > The release callback MUST free any data area directly owned by the structure
     //     (such as the buffers and children members).
     //
+    if array.private_data.is_null() {
+        return;
+    }
+
     let private = Box::from_raw(array.private_data as *mut PrivateData<T>);
     for child_ptr in private.children_ptr.iter() {
         release::<T>(*child_ptr);
