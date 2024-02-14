@@ -100,23 +100,6 @@ def test_deser_empty_list() -> None:
     assert s.to_list() == [[[42.0]], []]
 
 
-def test_expression_roundtrip() -> None:
-    e = pl.col("foo").sum().over("bar")
-    json = e.meta.write_json()
-
-    round_tripped = pl.Expr.deserialize(json)
-    assert round_tripped.meta == e
-
-
-def test_expression_from_json_deprecated() -> None:
-    e = pl.col("foo").sum().over("bar")
-    json = e.meta.write_json()
-
-    with pytest.deprecated_call():
-        round_tripped = pl.Expr.from_json(json)
-    assert round_tripped.meta == e
-
-
 def times2(x: pl.Series) -> pl.Series:
     return x * 2
 
@@ -209,6 +192,30 @@ def test_serde_array_dtype() -> None:
         dtype=pl.List(pl.Array(pl.Int32(), width=3)),
     )
     assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)
+
+
+def test_expr_serialization_roundtrip() -> None:
+    e = pl.col("foo").sum().over("bar")
+    json = e.meta.write_json()
+
+    round_tripped = pl.Expr.deserialize(json)
+    assert round_tripped.meta == e
+
+
+def test_expr_deserialize_error() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="could not deserialize input into an expression"
+    ):
+        pl.Expr.deserialize("abcdef")
+
+
+def test_expr_from_json_deprecated() -> None:
+    e = pl.col("foo").sum().over("bar")
+    json = e.meta.write_json()
+
+    with pytest.deprecated_call():
+        round_tripped = pl.Expr.from_json(json)
+    assert round_tripped.meta == e
 
 
 def test_expression_json_13991() -> None:

@@ -100,8 +100,10 @@ impl PyExpr {
     fn deserialize(value: &str) -> PyResult<PyExpr> {
         #[cfg(feature = "json")]
         {
-            let inner: polars_lazy::prelude::Expr = serde_json::from_str(value)
-                .map_err(|_| PyPolarsErr::from(polars_err!(ComputeError: "could not deserialize")))?;
+            let inner: polars_lazy::prelude::Expr = serde_json::from_str(value).map_err(|_| {
+                let msg = "could not deserialize input into an expression";
+                PyPolarsErr::from(polars_err!(ComputeError: msg))
+            })?;
             Ok(PyExpr { inner })
         }
         #[cfg(not(feature = "json"))]
