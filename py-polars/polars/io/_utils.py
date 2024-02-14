@@ -180,9 +180,6 @@ def _prepare_file_arg(
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
-            elif storage_protocol == "memory":
-                open_file = fsspec.open(file, **storage_options)
-                return managed_file(open_file.open())
             return fsspec.open(file, **storage_options)
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
