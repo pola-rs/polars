@@ -406,7 +406,7 @@ impl DataFrame {
     ///
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length and a unique name, if not this may panic down the line.
-    pub const fn new_no_checks(columns: Vec<Series>) -> DataFrame {
+    pub const unsafe fn new_no_checks(columns: Vec<Series>) -> DataFrame {
         DataFrame { columns }
     }
 
