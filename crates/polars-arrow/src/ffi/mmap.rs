@@ -73,14 +73,23 @@ unsafe extern "C" fn release<T>(array: *mut ArrowArray) {
     }
     let array = &mut *array;
 
-    // take ownership of `private_data`, therefore dropping it
+    // Take ownership of `private_data`, therefore dropping it
+    //
+    // Make sure to release all children following the Arrow specification:
+    // https://arrow.apache.org/docs/format/CDataInterface.html#release-callback-semantics-for-producers
+    //
+    //   > The release callback MUST free any data area directly owned by the structure
+    //     (such as the buffers and children members).
+    //
     let private = Box::from_raw(array.private_data as *mut PrivateData<T>);
-    for child in private.children_ptr.iter() {
-        let _ = Box::from_raw(*child);
+    for child_ptr in private.children_ptr.iter() {
+        let mut child = Box::from_raw(*child_ptr);
+        release::<T>(&mut *child);
     }
 
     if let Some(ptr) = private.dictionary_ptr {
-        let _ = Box::from_raw(ptr);
+        let mut dict = Box::from_raw(ptr);
+        release::<T>(&mut *dict);
     }
 
     array.release = None;
