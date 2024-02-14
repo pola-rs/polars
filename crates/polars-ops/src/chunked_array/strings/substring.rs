@@ -100,30 +100,30 @@ pub(super) fn substring(
 ) -> StringChunked {
     match (ca.len(), offset.len(), length.len()) {
         (1, 1, _) => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `ca` was verified to have least 1 element.
             let str_val = unsafe { ca.get_unchecked(0) };
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `offset` was verified to have at least 1 element.
             let offset = unsafe { offset.get_unchecked(0) };
             unary_elementwise(length, |length| substring_ternary(str_val, offset, length))
                 .with_name(ca.name())
         },
         (_, 1, 1) => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `offset` was verified to have at least 1 element.
             let offset = unsafe { offset.get_unchecked(0) };
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `length` was verified to have at least 1 element.
             let length = unsafe { length.get_unchecked(0) };
             unary_elementwise(ca, |str_val| substring_ternary(str_val, offset, length))
         },
         (1, _, 1) => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `ca` was verified to have at least 1 element.
             let str_val = unsafe { ca.get_unchecked(0) };
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `length` was verified to have at least 1 element.
             let length = unsafe { length.get_unchecked(0) };
             unary_elementwise(offset, |offset| substring_ternary(str_val, offset, length))
                 .with_name(ca.name())
         },
         (1, len_b, len_c) if len_b == len_c => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `ca` was verified to have at least 1 element.
             let str_val = unsafe { ca.get_unchecked(0) };
             binary_elementwise(offset, length, |offset, length| {
                 substring_ternary(str_val, offset, length)
@@ -162,12 +162,12 @@ pub(super) fn substring(
 pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> StringChunked {
     match (ca.len(), n.len()) {
         (_, 1) => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `n` was verified to have at least 1 element.
             let n = unsafe { n.get_unchecked(0) };
             unary_elementwise(ca, |str_val| head_binary(str_val, n)).with_name(ca.name())
         },
         (1, _) => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `ca` was verified to have at least 1 element.
             let str_val = unsafe { ca.get_unchecked(0) };
             unary_elementwise(n, |n| head_binary(str_val, n)).with_name(ca.name())
         },
@@ -178,12 +178,12 @@ pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> StringChunked {
 pub(super) fn tail(ca: &StringChunked, n: &Int64Chunked) -> StringChunked {
     match (ca.len(), n.len()) {
         (_, 1) => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `n` was verified to have at least 1 element.
             let n = unsafe { n.get_unchecked(0) };
             unary_elementwise(ca, |str_val| tail_binary(str_val, n)).with_name(ca.name())
         },
         (1, _) => {
-            // SAFETY: index `0` is in bound.
+            // SAFETY: `ca` was verified to have at least 1 element.
             let str_val = unsafe { ca.get_unchecked(0) };
             unary_elementwise(n, |n| tail_binary(str_val, n)).with_name(ca.name())
         },
