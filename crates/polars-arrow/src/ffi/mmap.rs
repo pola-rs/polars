@@ -81,19 +81,19 @@ unsafe extern "C" fn release<T>(array: *mut ArrowArray) {
     //   > The release callback MUST free any data area directly owned by the structure
     //     (such as the buffers and children members).
     //
-    if array.private_data.is_null() {
-        return;
-    }
-
     let private = Box::from_raw(array.private_data as *mut PrivateData<T>);
     for child_ptr in private.children_ptr.iter() {
-        release::<T>(*child_ptr);
-        let _ = Box::from_raw(*child_ptr);
+        let mut child = Box::from_raw(*child_ptr);
+        if let Some(release) = child.release {
+            release(&mut *child);
+        }
     }
 
     if let Some(ptr) = private.dictionary_ptr {
-        release::<T>(ptr);
-        let _ = Box::from_raw(ptr);
+        let mut dict = Box::from_raw(ptr);
+        if let Some(release) = dict.release {
+            release(&mut *dict);
+        }
     }
 
     array.release = None;
