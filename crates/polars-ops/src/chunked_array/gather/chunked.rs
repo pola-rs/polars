@@ -16,7 +16,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
     /// Take elements by a slice of optional [`ChunkId`]s.
     /// # Safety
@@ -26,7 +26,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     /// # Safety
@@ -36,7 +36,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     /// # Safety
@@ -46,7 +46,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 }
 

@@ -313,7 +313,8 @@ impl DataFrame {
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
-        DataFrame::new_no_checks(Vec::new())
+        // SAFETY: An empty dataframe cannot have length mismatch or duplicate names
+        unsafe { DataFrame::new_no_checks(Vec::new()) }
     }
 
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
@@ -402,7 +403,7 @@ impl DataFrame {
     ///
     /// It is advised to use [DataFrame::new] in favor of this method.
     ///
-    /// # Panic
+    /// # Safety
     ///
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length and a unique name, if not this may panic down the line.
@@ -439,7 +440,7 @@ impl DataFrame {
         // Don't parallelize this. Memory overhead
         let f = |s: &Series| s.rechunk();
         let cols = self.columns.iter().map(f).collect();
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     /// Shrink the capacity of this DataFrame to fit its length.
@@ -1090,7 +1091,7 @@ impl DataFrame {
             }
         });
 
-        Ok(DataFrame::new_no_checks(new_cols))
+        Ok(unsafe { DataFrame::new_no_checks(new_cols) })
     }
 
     /// Drop columns that are in `names`.
@@ -1108,7 +1109,7 @@ impl DataFrame {
             }
         });
 
-        DataFrame::new_no_checks(new_cols)
+        unsafe { DataFrame::new_no_checks(new_cols) }
     }
 
     /// Insert a new column at a given index without checking for duplicates.
@@ -1456,7 +1457,7 @@ impl DataFrame {
 
     pub fn _select_impl_unchecked(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         let selected = self.select_series_impl(cols)?;
-        Ok(DataFrame::new_no_checks(selected))
+        Ok(unsafe { DataFrame::new_no_checks(selected) })
     }
 
     /// Select with a known schema.
@@ -1499,7 +1500,7 @@ impl DataFrame {
             self.select_check_duplicates(cols)?;
         }
         let selected = self.select_series_impl_with_schema(cols, schema)?;
-        Ok(DataFrame::new_no_checks(selected))
+        Ok(unsafe { DataFrame::new_no_checks(selected) })
     }
 
     /// A non generic implementation to reduce compiler bloat.
@@ -1531,7 +1532,7 @@ impl DataFrame {
     fn select_physical_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
         let selected = self.select_series_physical_impl(cols)?;
-        Ok(DataFrame::new_no_checks(selected))
+        Ok(unsafe { DataFrame::new_no_checks(selected) })
     }
 
     fn select_check_duplicates(&self, cols: &[SmartString]) -> PolarsResult<()> {
@@ -1647,7 +1648,7 @@ impl DataFrame {
                         .iter()
                         .map(|s| s.filter(mask))
                         .collect::<PolarsResult<_>>()?;
-                    Ok(DataFrame::new_no_checks(cols))
+                    Ok(unsafe { DataFrame::new_no_checks(cols) })
                 })
                 .collect()
         });
@@ -1676,13 +1677,13 @@ impl DataFrame {
             return self.clone().filter_vertical(mask);
         }
         let new_col = self.try_apply_columns_par(&|s| s.filter(mask))?;
-        Ok(DataFrame::new_no_checks(new_col))
+        Ok(unsafe { DataFrame::new_no_checks(new_col) })
     }
 
     /// Same as `filter` but does not parallelize.
     pub fn _filter_seq(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         let new_col = self.try_apply_columns(&|s| s.filter(mask))?;
-        Ok(DataFrame::new_no_checks(new_col))
+        Ok(unsafe { DataFrame::new_no_checks(new_col) })
     }
 
     /// Take [`DataFrame`] rows by index values.
@@ -1699,7 +1700,7 @@ impl DataFrame {
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let new_col = POOL.install(|| self.try_apply_columns_par(&|s| s.take(indices)))?;
 
-        Ok(DataFrame::new_no_checks(new_col))
+        Ok(unsafe { DataFrame::new_no_checks(new_col) })
     }
 
     /// # Safety
@@ -1714,7 +1715,7 @@ impl DataFrame {
         } else {
             self.columns.iter().map(|s| s.take_unchecked(idx)).collect()
         };
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     pub(crate) unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
@@ -1730,7 +1731,7 @@ impl DataFrame {
                 .map(|s| s.take_slice_unchecked(idx))
                 .collect()
         };
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     /// Rename a column in the [`DataFrame`].
@@ -2259,12 +2260,12 @@ impl DataFrame {
             .iter()
             .map(|s| s.slice(offset, length))
             .collect::<Vec<_>>();
-        DataFrame::new_no_checks(col)
+        unsafe { DataFrame::new_no_checks(col) }
     }
 
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
-        DataFrame::new_no_checks(col)
+        unsafe { DataFrame::new_no_checks(col) }
     }
 
     #[must_use]
@@ -2272,7 +2273,8 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        DataFrame::new_no_checks(self._apply_columns_par(&|s| s.slice(offset, length)))
+        let columns = self._apply_columns_par(&|s| s.slice(offset, length));
+        unsafe { DataFrame::new_no_checks(columns) }
     }
 
     #[must_use]
@@ -2280,11 +2282,12 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        DataFrame::new_no_checks(self._apply_columns(&|s| {
+        let columns = self._apply_columns(&|s| {
             let mut out = s.slice(offset, length);
             out.shrink_to_fit();
             out
-        }))
+        });
+        unsafe { DataFrame::new_no_checks(columns) }
     }
 
     /// Get the head of the [`DataFrame`].
@@ -2327,7 +2330,7 @@ impl DataFrame {
             .iter()
             .map(|s| s.head(length))
             .collect::<Vec<_>>();
-        DataFrame::new_no_checks(col)
+        unsafe { DataFrame::new_no_checks(col) }
     }
 
     /// Get the tail of the [`DataFrame`].
@@ -2367,7 +2370,7 @@ impl DataFrame {
             .iter()
             .map(|s| s.tail(length))
             .collect::<Vec<_>>();
-        DataFrame::new_no_checks(col)
+        unsafe { DataFrame::new_no_checks(col) }
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches.
@@ -2407,7 +2410,7 @@ impl DataFrame {
     #[must_use]
     pub fn reverse(&self) -> Self {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
-        DataFrame::new_no_checks(col)
+        unsafe { DataFrame::new_no_checks(col) }
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -2418,7 +2421,7 @@ impl DataFrame {
     pub fn shift(&self, periods: i64) -> Self {
         let col = self._apply_columns_par(&|s| s.shift(periods));
 
-        DataFrame::new_no_checks(col)
+        unsafe { DataFrame::new_no_checks(col) }
     }
 
     /// Replace None values with one of the following strategies:
@@ -2432,7 +2435,7 @@ impl DataFrame {
     pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         let col = self.try_apply_columns_par(&|s| s.fill_null(strategy))?;
 
-        Ok(DataFrame::new_no_checks(col))
+        Ok(unsafe { DataFrame::new_no_checks(col) })
     }
 
     /// Aggregate the column horizontally to their min values.
@@ -2556,7 +2559,7 @@ impl DataFrame {
                     })
                     .cloned()
                     .collect();
-                let numeric_df = DataFrame::new_no_checks(columns);
+                let numeric_df = unsafe { DataFrame::new_no_checks(columns) };
 
                 let sum = || numeric_df.sum_horizontal(null_strategy);
 
@@ -2738,7 +2741,7 @@ impl DataFrame {
                 return df.filter(&mask);
             },
         };
-        Ok(DataFrame::new_no_checks(columns))
+        Ok(unsafe { DataFrame::new_no_checks(columns) })
     }
 
     /// Get a mask of all the unique rows in the [`DataFrame`].
@@ -2799,7 +2802,7 @@ impl DataFrame {
             .iter()
             .map(|s| Series::new(s.name(), &[s.null_count() as IdxSize]))
             .collect();
-        Self::new_no_checks(cols)
+        unsafe { Self::new_no_checks(cols) }
     }
 
     /// Hash and combine the row values
@@ -3028,7 +3031,7 @@ impl Iterator for PhysRecordBatchIter<'_> {
 
 impl Default for DataFrame {
     fn default() -> Self {
-        DataFrame::new_no_checks(vec![])
+        unsafe { DataFrame::new_no_checks(vec![]) }
     }
 }
 

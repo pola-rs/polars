@@ -251,8 +251,8 @@ pub fn private_left_join_multiple_keys(
     chunk_mapping_right: Option<&[ChunkId]>,
     join_nulls: bool,
 ) -> LeftJoinIds {
-    let mut a = DataFrame::new_no_checks(_to_physical_and_bit_repr(a.get_columns()));
-    let mut b = DataFrame::new_no_checks(_to_physical_and_bit_repr(b.get_columns()));
+    let mut a = unsafe { DataFrame::new_no_checks(_to_physical_and_bit_repr(a.get_columns())) };
+    let mut b = unsafe { DataFrame::new_no_checks(_to_physical_and_bit_repr(b.get_columns())) };
     _left_join_multiple_keys(
         &mut a,
         &mut b,

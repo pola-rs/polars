@@ -79,7 +79,7 @@ impl DataFrame {
                 }));
             },
         };
-        Ok(DataFrame::new_no_checks(cols_t))
+        Ok(unsafe { DataFrame::new_no_checks(cols_t) })
     }
 
     /// Transpose a DataFrame. This is a very expensive operation.

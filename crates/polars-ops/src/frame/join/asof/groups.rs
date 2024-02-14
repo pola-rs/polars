@@ -560,7 +560,7 @@ pub trait AsofJoinBy: IntoDf {
             .filter(|s| !drop_these.contains(&s.name()))
             .cloned()
             .collect();
-        let proj_other_df = DataFrame::new_no_checks(cols);
+        let proj_other_df = unsafe { DataFrame::new_no_checks(cols) };
 
         let left = self_df.clone();
         let right_join_tuples = &*right_join_tuples;

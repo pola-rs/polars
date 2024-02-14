@@ -21,7 +21,7 @@ macro_rules! impl_arithmetic {
         let cols = POOL.install(|| {$self.columns.par_iter().map(|s| {
             Ok(&s.cast(&st)? $operand &rhs)
         }).collect::<PolarsResult<_>>()})?;
-        Ok(DataFrame::new_no_checks(cols))
+        Ok(unsafe { DataFrame::new_no_checks(cols) })
     }}
 }
 

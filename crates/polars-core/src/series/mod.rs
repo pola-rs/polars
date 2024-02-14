@@ -221,7 +221,7 @@ impl Series {
     }
 
     pub fn into_frame(self) -> DataFrame {
-        DataFrame::new_no_checks(vec![self])
+        unsafe { DataFrame::new_no_checks(vec![self]) }
     }
 
     /// Rename series.
