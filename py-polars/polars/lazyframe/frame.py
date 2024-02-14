@@ -5398,35 +5398,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The inverse of :func:`DataFrame.pivot`.
 
-        `melt` transforms a wide-format `DataFrame`, where each element represents an
-        observation, into a long-format `DataFrame`, where each row represents an
-        observation.
-
-        To perform a melt, specify one or more columns as identifier variables
-        (`id_vars`) and other columns as value variables (`value_vars`), either by name
-        or via selectors. Typically, the columns in `id_vars` and `value_vars` are
-        mutually exclusive; specifying overlapping columns will not give an error, but
-        is rarely useful. If `value_vars` is `None`, all remaining columns not in
-        `id_vars` will be treated as `value_vars`.
-
-        Each element in each of the `value_vars` columns of the input `DataFrame`
-        (including `null` elements) will become its own row in the output `DataFrame`.
-        The row for that element will contain `len(id_vars) + 2` columns:
-
-            * One column for each of the `id_vars`, containing the values of the
-              `id_vars` columns that were on same row as that element in the input
-              `DataFrame`. You can think of these as the element's row names.
-            * One column called `'variable'` containing the name of the column in which
-              that element appeared, i.e. the element's column name. You can change the
-              name of this column to something other than `'variable'` by specifying
-              `variable_name`.
-            * One column called `'value'` containing the element itself. You can change
-              the name of this column to something other than `'value'` by specifying
-              `value_name`.
-
-        Unlike its inverse, :func:`DataFrame.pivot`, `melt` works in both eager and lazy
-        mode because all of the column names in the output `DataFrame` are known in
-        advance, and do not depend on the data.
+        `melt` transforms a "wide-format" `DataFrame`, where each element represents an
+        observation, into a "long-format" one, where each row represents an observation.
 
         Parameters
         ----------
@@ -5447,8 +5420,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        DataFrame.pivot : the inverse of `melt`, used for pivoting from long to wide
-                          format.
+        DataFrame.pivot : the inverse of `melt`; pivots from long to wide format.
+                          Not available in lazy mode.
 
         Examples
         --------

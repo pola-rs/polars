@@ -7242,51 +7242,9 @@ class DataFrame:
         """
         Pivot this `DataFrame` from long to wide format. The inverse of :func:`melt`.
 
-        `pivot` transforms a long-format `DataFrame`, where each row represents an
-        observation, into a wide-format `DataFrame`, where each element represents an
+        `pivot` transforms a "long-format" `DataFrame`, where each row represents an
+        observation, into a "wide-format" one, where each element represents an
         observation.
-
-        To perform a pivot, specify one or more columns for each of `values`, `index`,
-        and `columns`, either by name or via selectors. Typically, the columns in
-        `values`, `index`, and `columns` are mutually exclusive; specifying overlapping
-        columns will not give an error, but is rarely useful.
-
-        In the simplest case where `values`, `index` and `columns` are each a single
-        column in the input `DataFrame`:
-
-            * Each unique value of the `index` column will become the name of a row in
-              the output `DataFrame`. The first column of the output `DataFrame` will
-              contain these row names.
-            * Each unique value of the `columns` column will become the name of a column
-              in the output `DataFrame`.
-            * Each value of the `values` column will become a value in the output
-              `DataFrame`. For instance, if the nth row of the input `DataFrame` is
-              `("values_n", "index_n", "columns_n")`, then the value `"values_n"` will
-              be placed at row `"index_n"` (i.e. the row where the `index` column has
-              the value `index_n`) and column `"columns_n"`.
-
-        Thus, if there are `N` unique values in the `columns` column, there will be
-        `N + 1` columns in the output `DataFrame`: one for the row names, the remaining
-        `N` for the values.
-
-        If there are `I` `index` columns instead of one, each unique *combination* of
-        values will become a row in the output `DataFrame`, and there will be `I`
-        columns of row names instead of one. If there are `C` `columns` columns and `V`
-        values columns instead of one, the pivot will be done independently for each of
-        the `C x V` combinations of these columns, and the results will be concatenated
-        horizontally to form the output `DataFrame`.
-
-        When there are multiple `values` columns, the names of the non-index columns
-        will be prefixed with `f'{value}_{column}_'`, where `value` and `column` are
-        column names in `values` and `columns`, to avoid having duplicate column names.
-        The `'_'` can be changed to a different string using the `separator` argument.
-
-        When multiple rows of the input `DataFrame` have the same `values` for all of
-        the columns in `index` and `columns`, `pivot` will raise an error unless these
-        multiple values are aggregated into a single value before pivoting. This can be
-        done prior to pivoting with a :func:`group_by`, but `pivot` also provides a
-        convenient way to do this aggregation internally, by specifying an
-        `aggregate_function`.
 
         `pivot` is only available in eager mode, since the schema of the output
         `DataFrame` depends on the number of unique values in `columns`. However, if you
@@ -7316,9 +7274,9 @@ class DataFrame:
 
             - `None`: no aggregation takes place; will raise an error if multiple values
               are in a group.
-            - One of the strings {`'first'`, `'sum'`, `'max'`, `'min'`, `'mean'`,
-              `'median'`, `'last'`, `'count'`}, to perform predefined types of
-              aggregation.
+            - One of the strings {`'first'`, `'last'`, `'sum'`, `'max'`,
+              `'min'`, `'mean'`, `'median'`, `'count'`}, to perform predefined
+              types of aggregation.
             - An expression that performs a custom aggregation, where
               :func:`polars.element()` represents the multiple `values` in each "group"
               with the same `index` and `columns`. For example, `aggregate_function='mean'`
@@ -7334,7 +7292,7 @@ class DataFrame:
             appeared in the `columns` of the input `DataFrame` (if `sort_columns=False`).
         separator
             A string used as the separator/delimiter in generated column names. Only
-            used when there are multiple `values` and/or `columns` columns.
+            used when there are multiple `values` columns.
 
         Returns
         -------
@@ -7343,7 +7301,7 @@ class DataFrame:
 
         See Also
         --------
-        melt : the inverse of `pivot`, used for "unpivoting" from wide to long format.
+        melt : the inverse of `pivot`; "unpivots" from wide to long format.
 
         Examples
         --------
@@ -7500,35 +7458,8 @@ class DataFrame:
         """
         Unpivot this `DataFrame` from wide to long format. The inverse of :func:`pivot`.
 
-        `melt` transforms a wide-format `DataFrame`, where each element represents an
-        observation, into a long-format `DataFrame`, where each row represents an
-        observation.
-
-        To perform a melt, specify one or more columns as identifier variables
-        (`id_vars`) and other columns as value variables (`value_vars`), either by name
-        or via selectors. Typically, the columns in `id_vars` and `value_vars` are
-        mutually exclusive; specifying overlapping columns will not give an error, but
-        is rarely useful. If `value_vars` is `None`, all remaining columns not in
-        `id_vars` will be treated as `value_vars`.
-
-        Each element in each of the `value_vars` columns of the input `DataFrame`
-        (including `null` elements) will become its own row in the output `DataFrame`.
-        The row for that element will contain `len(id_vars) + 2` columns:
-
-            * One column for each of the `id_vars`, containing the values of the
-              `id_vars` columns that were on same row as that element in the input
-              `DataFrame`. You can think of these as the element's row names.
-            * One column called `'variable'` containing the name of the column in which
-              that element appeared, i.e. the element's column name. You can change the
-              name of this column to something other than `'variable'` by specifying
-              `variable_name`.
-            * One column called `'value'` containing the element itself. You can change
-              the name of this column to something other than `'value'` by specifying
-              `value_name`.
-
-        Unlike its inverse, :func:`pivot`, `melt` works in both eager and lazy mode
-        because all of the column names in the output `DataFrame` are known in advance,
-        and do not depend on the data.
+        `melt` transforms a "wide-format" `DataFrame`, where each element represents an
+        observation, into a "long-format" one, where each row represents an observation.
 
         Parameters
         ----------
@@ -7545,7 +7476,7 @@ class DataFrame:
 
         See Also
         --------
-        pivot : the inverse of `melt`, used for pivoting from long to wide format.
+        pivot : the inverse of `melt`; pivots from long to wide format.
 
         Examples
         --------
