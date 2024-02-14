@@ -335,17 +335,36 @@ class Expr:
         return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
-    def deserialize(cls, value: str) -> Self:
+    def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
-        Read an expression from a JSON encoded string to construct an Expression.
+        Read an expression from a JSON file.
 
         Parameters
         ----------
-        value
-            JSON encoded string value
+        source
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
+
+        See Also
+        --------
+        serialize
+
+        Examples
+        --------
+        >>> import io
+        >>> expr = pl.col("foo").sum().over("bar")
+        >>> json = expr.serialize()
+        >>> pl.Expr.deserialize(io.StringIO(json))  # doctest: +ELLIPSIS
+        <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+
         expr = cls.__new__(cls)
-        expr._pyexpr = PyExpr.deserialize(value)
+        expr._pyexpr = PyExpr.deserialize(source)
         return expr
 
     @overload
@@ -357,7 +376,34 @@ class Expr:
         ...
 
     def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
-        """Write expression to json."""
+        """
+        Serialize this expression to a file or string in JSON format.
+
+        Parameters
+        ----------
+        file
+            File path to which the result should be written. If set to `None`
+            (default), the output is returned as a string instead.
+
+        See Also
+        --------
+        deserialize
+
+        Examples
+        --------
+        Serialize the expression into a JSON string.
+
+        >>> expr = pl.col("foo").sum().over("bar")
+        >>> json = expr.serialize()
+        >>> json
+        '{"Window":{"function":{"Agg":{"Sum":{"Column":"foo"}}},"partition_by":[{"Column":"bar"}],"options":{"Over":"GroupsToRows"}}}'
+
+        The expression can later be deserialized back into an `Expr` object.
+
+        >>> import io
+        >>> pl.Expr.deserialize(io.StringIO(json))  # doctest: +ELLIPSIS
+        <Expr ['col("foo").sum().over([col("ba…'] at ...>
+        """
         if isinstance(file, (str, Path)):
             file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
@@ -9899,7 +9945,7 @@ class Expr:
             "`Expr.from_json` is deprecated. It has been renamed to `Expr.deserialize`.",
             version="0.20.9",
         )
-        return cls.deserialize(value)
+        return cls.deserialize(StringIO(value))
 
     @property
     def bin(self) -> ExprBinaryNameSpace:
