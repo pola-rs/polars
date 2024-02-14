@@ -835,7 +835,7 @@ def _unpack_schema(
         else:
             dtype = _normalize_dtype(dtype)
         name = lookup.get(name, name) if lookup else name
-        column_dtypes[name] = dtype
+        column_dtypes[name] = dtype  # type: ignore[assignment]
 
     # apply schema overrides
     if schema_overrides:

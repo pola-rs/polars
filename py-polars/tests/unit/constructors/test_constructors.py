@@ -1526,7 +1526,7 @@ def test_df_schema_sequences() -> None:
         ["key", pl.Int64],
         ["value", pl.Float32],
     ]
-    df = pl.DataFrame(schema=schema)
+    df = pl.DataFrame(schema=schema)  # type: ignore[arg-type]
     assert df.schema == {"address": pl.String, "key": pl.Int64, "value": pl.Float32}
 
 
@@ -1537,4 +1537,4 @@ def test_df_schema_sequences_incorrect_length() -> None:
         ["value", pl.Float32],
     ]
     with pytest.raises(ValueError):
-        pl.DataFrame(schema=schema)
+        pl.DataFrame(schema=schema)  # type: ignore[arg-type]
