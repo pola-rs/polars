@@ -83,13 +83,13 @@ unsafe extern "C" fn release<T>(array: *mut ArrowArray) {
     //
     let private = Box::from_raw(array.private_data as *mut PrivateData<T>);
     for child_ptr in private.children_ptr.iter() {
-        let _ = Box::from_raw(*child_ptr);
         release::<T>(*child_ptr);
+        let _ = Box::from_raw(*child_ptr);
     }
 
     if let Some(ptr) = private.dictionary_ptr {
-        let _ = Box::from_raw(ptr);
         release::<T>(ptr);
+        let _ = Box::from_raw(ptr);
     }
 
     array.release = None;
