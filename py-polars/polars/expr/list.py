@@ -1355,6 +1355,11 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
+    def is_disjoint(self, other: IntoExpr) -> Expr:
+        """DOCS TODO."""
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "is_disjoint"))
+
     @deprecate_renamed_function("count_matches", version="0.19.3")
     def count_match(self, element: IntoExpr) -> Expr:
         """
