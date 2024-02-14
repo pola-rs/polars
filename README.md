@@ -156,7 +156,7 @@ Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for 
 Polars is very fast. In fact, it is one of the best performing solutions available.
 See the results in [DuckDB's db-benchmark](https://duckdblabs.github.io/db-benchmark/).
 
-In the [TPCH benchmarks](https://www.pola.rs/benchmarks.html) Polars is orders of magnitude faster than pandas, dask, modin and vaex
+In the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) Polars is orders of magnitude faster than pandas, dask, modin and vaex
 on full queries (including IO).
 
 ### Lightweight
@@ -169,9 +169,9 @@ Polars is also very lightweight. It comes with zero required dependencies, and t
 
 ### Handles larger-than-RAM data
 
-If you have data that does not fit into memory, Polars' [LazyFrame](https://docs.pola.rs/py-polars/html/reference/lazyframe/index.html)
-is able to process your query (or parts of your query) in a streaming fashion. This drastically reduces memory requirements, so you
-might be able to process your 250GB dataset on your laptop. Collect with `collect(streaming=True)` to run the query streaming.
+If you have data that does not fit into memory, Polars' query engine is able to process your query (or parts of your query) in a streaming fashion.
+This drastically reduces memory requirements, so you might be able to process your 250GB dataset on your laptop.
+Collect with `collect(streaming=True)` to run the query streaming.
 (This might be a little slower, but it is still very fast!)
 
 ## Setup
@@ -211,7 +211,7 @@ pip install 'polars[numpy,pandas,pyarrow]'
 | deltalake  | Support for reading and writing Delta Lake Tables                            |
 | pyiceberg  | Support for reading from Apache Iceberg tables                               |
 | plot       | Support for plot functions on DataFrames                                     |
-| timezone   | Timezone support, only needed if you are on Python < 3.9 or Windows          |
+| timezone   | Timezone support, only needed if you are on Python<3.9 or Windows            |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating Polars regularly to get the latest bugfixes / features might not be a bad idea.
 
@@ -224,7 +224,7 @@ point to the `main` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-Required Rust version is `>=1.71`.
+Requires Rust version `>=1.71`.
 
 ## Contributing
 
