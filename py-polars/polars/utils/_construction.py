@@ -767,7 +767,6 @@ def _unpack_schema(
     schema_overrides: SchemaDict | None = None,
     n_expected: int | None = None,
     lookup_names: Iterable[str] | None = None,
-    include_overrides_in_columns: bool = False,
 ) -> tuple[list[str], SchemaDict]:
     """
     Unpack column names and create dtype lookup.
@@ -821,9 +820,6 @@ def _unpack_schema(
     # apply schema overrides
     if schema_overrides:
         column_dtypes.update(schema_overrides)
-
-        if include_overrides_in_columns:
-            column_names.extend(col for col in column_dtypes if col not in column_names)
 
     return column_names, column_dtypes
 
