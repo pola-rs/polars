@@ -9994,9 +9994,9 @@ class Expr:
         >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
         >>> df.select(
         ...     pl.col("n"),
-        ...     pl.col("n").pow_n.next(p=2).alias("next_pow2"),
-        ...     pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
-        ...     pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
+        ...     pl.col("n").ns.pow_n.next(p=2).alias("next_pow2"),
+        ...     pl.col("n").ns.pow_n.previous(p=2).alias("prev_pow2"),
+        ...     pl.col("n").ns.pow_n.nearest(p=2).alias("nearest_pow2"),
         ... )
         """
         return NameSpaceLookup(self)
