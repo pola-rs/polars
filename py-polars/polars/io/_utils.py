@@ -165,7 +165,9 @@ def _prepare_file_arg(
             from fsspec.utils import infer_storage_options
 
             # check if it is a local file
-            if infer_storage_options(file)["protocol"] == "file":
+            storage_protocol = infer_storage_options(file)["protocol"]
+            storage_options["encoding"] = encoding
+            if storage_protocol == "file":
                 # (lossy) utf8
                 if has_utf8_utf8_lossy_encoding:
                     return managed_file(
@@ -178,7 +180,9 @@ def _prepare_file_arg(
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
-            storage_options["encoding"] = encoding
+            elif storage_protocol == "memory":
+                open_file = fsspec.open(file, **storage_options)
+                return managed_file(open_file.open())
             return fsspec.open(file, **storage_options)
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):

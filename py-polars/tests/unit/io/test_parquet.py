@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
+import fsspec
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -719,3 +720,11 @@ def test_parquet_rle_14333() -> None:
     pq.write_table(table, f, data_page_version="2.0")
     f.seek(0)
     assert pl.read_parquet(f)["a"].to_list() == vals
+
+
+def test_parquet_fsspec_memory() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    with fsspec.open("memory://testfile.parquet", "wb") as f:
+        df.write_parquet(f)
+    df2 = pl.read_parquet("memory://testfile.parquet")
+    assert_frame_equal(df, df2)

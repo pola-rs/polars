@@ -153,7 +153,9 @@ def read_parquet(
             )
 
     # Read binary types using `read_parquet`
-    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
+    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)) or (
+        isinstance(source, str) and source[0:9] == "memory://"
+    ):
         with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
             return pl.DataFrame._read_parquet(
                 source_prep,
@@ -209,7 +211,8 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
-
+    print(type(source))
+    print(dir(source))
     return _read_parquet_schema(source)
 
 
