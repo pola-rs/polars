@@ -16,7 +16,7 @@ column:
   the pivoted `DataFrame`. The first column of the pivoted `DataFrame` will
   contain these row names.
 - Each unique value of the `columns` column will become the name of a column
-  in the pivoted `DataFrame`. 
+  in the pivoted `DataFrame`.
 - Each value of the `values` column will become a value in the pivoted
   `DataFrame`. For instance, if the nth row of the input `DataFrame` is
   `("values_n", "index_n", "columns_n")`, then the value `"values_n"` will
@@ -24,24 +24,24 @@ column:
   the value `index_n`) and column `"columns_n"`.
 
 Thus, if there are `N` unique values in the `columns` column, there will be
-`N + 1` columns in the pivoted `DataFrame`: one for the row names, the 
+`N + 1` columns in the pivoted `DataFrame`: one for the row names, the
 remaining `N` for the values.
 
-If there are multiple `index` columns instead of one, each unique *combination*
+If there are multiple `index` columns instead of one, each unique _combination_
 of their values will become a row in the pivoted `DataFrame`, and there will be
-`len(index)` columns of row names instead of one. 
+`len(index)` columns of row names instead of one.
 
 If there are multiple `columns` columns instead of one, the result will be the
 same as if you had combined them into a single `struct` column beforehand. In
-other words, `df.pivot(..., columns=['a', 'b', 'c'])` is equivalent to 
-`df.with_columns(foo=pl.struct(['a', 'b', 'c']).pivot(..., columns='foo')`, 
-assuming `foo` is not already a column in `df`. 
+other words, `df.pivot(..., columns=['a', 'b', 'c'])` is equivalent to
+`df.with_columns(foo=pl.struct(['a', 'b', 'c']).pivot(..., columns='foo')`,
+assuming `foo` is not already a column in `df`.
 
 If there are multiple `values` columns instead of one, the pivot will be done
 independently for each of the columns in `values`, and the results will be
 concatenated horizontally. To avoid having duplicate column names, the names
 of the non-index columns will be prefixed with `f'{value}_{columns}_'`, where
-`value` is the column name in `values` from which the column's values are 
+`value` is the column name in `values` from which the column's values are
 taken. The `'_'` can be changed to a different string using the `separator`
 argument.
 
@@ -60,9 +60,9 @@ functions as strings:
 - `'min'`
 - `'mean'`
 - `'median'`
-- `'count'`
+- `'len'`
 
-or provide an expression that performs a custom aggregation, where 
+or provide an expression that performs a custom aggregation, where
 `pl.element()` represents the multiple `values` in each "group" with the same
 `index` and `columns`. For example, `aggregate_function='mean'` is short for
 `aggregate_function=pl.element().mean()`.
@@ -87,11 +87,11 @@ or provide an expression that performs a custom aggregation, where
 ## Lazy
 
 A Polars `LazyFrame` always need to know the schema of a computation statically
-(before collecting the query). Since the schema of a pivoted DataFrame depends 
-on the data, it is impossible to determine the schema without running the 
+(before collecting the query). Since the schema of a pivoted DataFrame depends
+on the data, it is impossible to determine the schema without running the
 query. As a result, `pivot` is not available in lazy mode. To use `collect()`
 in a `LazyFrame` pipe chain, you must include a `collect()` before pivoting and
-a `lazy()` after pivoting: 
+a `lazy()` after pivoting:
 
 {{code_block('user-guide/transformations/pivot','lazy',['pivot'])}}
 
