@@ -5,13 +5,13 @@ from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
-import fsspec
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
