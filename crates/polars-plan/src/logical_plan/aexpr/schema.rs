@@ -241,7 +241,7 @@ impl AExpr {
 
                         Ok(Field::new(input.name(), Struct(new_fields)))
                     },
-                    DataType::Unknown => Ok(input),
+                    Unknown => Ok(input),
                     _ => polars_bail!(ComputeError: "encountered non-struct field"),
                 }
             },
