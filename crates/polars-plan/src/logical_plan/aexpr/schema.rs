@@ -229,6 +229,7 @@ impl AExpr {
                 let input = arena.get(*input).to_field(schema, ctxt, arena)?;
 
                 match input.data_type() {
+                    #[cfg(feature = "dtype-struct")]
                     Struct(fields) => {
                         let dummy_df = DataFrame::from(&Schema::from_iter(fields.clone()));
 

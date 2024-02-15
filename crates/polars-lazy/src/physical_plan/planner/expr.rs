@@ -533,11 +533,16 @@ pub(crate) fn create_physical_expr(
             struct_exprs,
         } => {
             let input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(StructSelectExpr::new(
-                input,
-                struct_exprs,
-                node_to_expr(expression, expr_arena),
-            )))
+            #[cfg(feature = "dtype-struct")]
+            {
+                Ok(Arc::new(StructSelectExpr::new(
+                    input,
+                    struct_exprs,
+                    node_to_expr(expression, expr_arena),
+                )))
+            }
+            #[cfg(not(feature = "dtype-struct"))]
+            panic!("activate 'dtype-struct'")
         },
         Slice {
             input,
