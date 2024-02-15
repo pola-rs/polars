@@ -56,10 +56,8 @@ jobs:
           cargo test --all-features -p polars-arrow -p polars-core -p polars-io -p polars-lazy -p polars-ops -p polars-plan -p polars-row -p polars-sql -p polars-time -p polars-utils
           cargo test --all-features -p polars --test it
           maturin develop
-          pytest tests --cov=polars --cov-fail-under=1 --cov-report xml:coverage.xml
-          pytest tests -m slow --cov=polars --cov-fail-under=1 --cov-report xml:slow.xml
-          pytest tests -m hypothesis --cov=polars --cov-fail-under=1 --cov-report xml:hypothesis.xml
-          POLARS_FORCE_ASYNC=1 pytest -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml  
+          pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:coverage.xml
+          POLARS_FORCE_ASYNC=1 pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
           cargo llvm-cov report --lcov --output-path coverage.lcov
         env:
           RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
@@ -72,7 +70,7 @@ jobs:
       - uses: codecov/codecov-action@v4
         if: github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')
         with:
-          files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/hypothesis.xml,py-polars/slow.xml,py-polars/async.xml
+          files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/async.xml
           name: macos
           override_branch: ${{ steps.comment-branch.outputs.head_ref }}
           override_pr: ${{ github.event.issue.number }}
