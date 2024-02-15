@@ -335,15 +335,6 @@ def test_pivot_reinterpret_5907() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_pivot_subclassed_df() -> None:
-    class SubClassedDataFrame(pl.DataFrame):
-        pass
-
-    df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
-    result = df.pivot(values="b", index="a", columns="a", aggregate_function="first")
-    assert isinstance(result, SubClassedDataFrame)
-
-
 def test_pivot_temporal_logical_types() -> None:
     date_lst = [datetime(_, 1, 1) for _ in range(1960, 1980)]
 

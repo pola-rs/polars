@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import os
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Sequence
 
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_df
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, Series
     from polars.polars import PySeries
-elif os.getenv("BUILDING_SPHINX_DOCS"):
+elif BUILDING_SPHINX_DOCS:
     property = sphinx_accessor
 
 

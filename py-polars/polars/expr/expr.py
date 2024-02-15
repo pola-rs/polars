@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import math
 import operator
-import os
 import warnings
 from datetime import timedelta
 from functools import reduce
@@ -58,6 +57,7 @@ from polars.utils.deprecation import (
 )
 from polars.utils.unstable import issue_unstable_warning, unstable
 from polars.utils.various import (
+    BUILDING_SPHINX_DOCS,
     find_stacklevel,
     no_default,
     sphinx_accessor,
@@ -102,7 +102,7 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
-elif os.getenv("BUILDING_SPHINX_DOCS"):
+elif BUILDING_SPHINX_DOCS:
     property = sphinx_accessor
 
 
