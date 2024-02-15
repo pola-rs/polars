@@ -195,10 +195,10 @@ def test_serde_array_dtype() -> None:
 
 
 def test_expr_serialization_roundtrip() -> None:
-    e = pl.col("foo").sum().over("bar")
-    json = e.serialize()
+    expr = pl.col("foo").sum().over("bar")
+    json = expr.meta.serialize()
     round_tripped = pl.Expr.deserialize(io.StringIO(json))
-    assert round_tripped.meta == e
+    assert round_tripped.meta == expr
 
 
 def test_expr_deserialize_file_not_found() -> None:
@@ -214,20 +214,20 @@ def test_expr_deserialize_invalid_json() -> None:
 
 
 def test_expr_write_json_from_json_deprecated() -> None:
-    e = pl.col("foo").sum().over("bar")
+    expr = pl.col("foo").sum().over("bar")
 
     with pytest.deprecated_call():
-        json = e.meta.write_json()
+        json = expr.meta.write_json()
 
     with pytest.deprecated_call():
         round_tripped = pl.Expr.from_json(json)
 
-    assert round_tripped.meta == e
+    assert round_tripped.meta == expr
 
 
 def test_expression_json_13991() -> None:
-    e = pl.col("foo").cast(pl.Decimal)
-    json = e.serialize()
+    expr = pl.col("foo").cast(pl.Decimal)
+    json = expr.meta.serialize()
 
     round_tripped = pl.Expr.deserialize(io.StringIO(json))
-    assert round_tripped.meta == e
+    assert round_tripped.meta == expr

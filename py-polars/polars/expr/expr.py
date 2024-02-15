@@ -21,7 +21,6 @@ from typing import (
     Sequence,
     Set,
     TypeVar,
-    overload,
 )
 
 import polars._reexport as pl
@@ -348,14 +347,14 @@ class Expr:
 
         See Also
         --------
-        serialize
+        Expr.meta.serialize
 
         Examples
         --------
-        >>> import io
+        >>> from io import StringIO
         >>> expr = pl.col("foo").sum().over("bar")
-        >>> json = expr.serialize()
-        >>> pl.Expr.deserialize(io.StringIO(json))  # doctest: +ELLIPSIS
+        >>> json = expr.meta.serialize()
+        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
         <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
         if isinstance(source, StringIO):
@@ -366,60 +365,6 @@ class Expr:
         expr = cls.__new__(cls)
         expr._pyexpr = PyExpr.deserialize(source)
         return expr
-
-    @overload
-    def serialize(self, file: None = ...) -> str:
-        ...
-
-    @overload
-    def serialize(self, file: IOBase | str | Path) -> None:
-        ...
-
-    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
-        Serialize this expression to a file or string in JSON format.
-
-        Parameters
-        ----------
-        file
-            File path to which the result should be written. If set to `None`
-            (default), the output is returned as a string instead.
-
-        See Also
-        --------
-        deserialize
-
-        Examples
-        --------
-        Serialize the expression into a JSON string.
-
-        >>> expr = pl.col("foo").sum().over("bar")
-        >>> json = expr.serialize()
-        >>> json
-        '{"Window":{"function":{"Agg":{"Sum":{"Column":"foo"}}},"partition_by":[{"Column":"bar"}],"options":{"Over":"GroupsToRows"}}}'
-
-        The expression can later be deserialized back into an `Expr` object.
-
-        >>> import io
-        >>> pl.Expr.deserialize(io.StringIO(json))  # doctest: +ELLIPSIS
-        <Expr ['col("foo").sum().over([col("ba…'] at ...>
-        """
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
-            with BytesIO() as buf:
-                self._pyexpr.serialize(buf)
-                json_bytes = buf.getvalue()
-
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
-        else:
-            self._pyexpr.serialize(file)
-        return None
 
     def to_physical(self) -> Self:
         """
