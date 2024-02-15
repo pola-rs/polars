@@ -31,7 +31,6 @@ from typing import (
 )
 
 import polars._reexport as pl
-from polars import functions as F
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -115,6 +114,8 @@ from polars.utils.various import (
     warn_null_comparison,
 )
 
+from polars import functions as F
+
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -127,9 +128,6 @@ if TYPE_CHECKING:
 
     import deltalake
     from hvplot.plotting.core import hvPlotTabularPolars
-    from xlsxwriter import Workbook
-
-    from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
@@ -170,6 +168,9 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
+    from xlsxwriter import Workbook
+
+    from polars import DataType, Expr, LazyFrame, Series
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec, TypeAlias
@@ -2094,8 +2095,8 @@ class DataFrame:
 
             function for the conversion to numpy if necessary.
         writeable
-            In the case that a numpy-view is returned, set the writeable flag on the
-            resulting numpy array to allow in-place modifications.
+            In the case that a numpy view is returned, set the writeable flag on the
+            resulting array to allow in-place modifications.
 
         Notes
         -----
