@@ -83,3 +83,30 @@ def test_prefix_suffix_fields() -> None:
     assert suffix_df.schema == OrderedDict(
         [("x", pl.Struct({"a_f": pl.Int64, "b_f": pl.Int64}))]
     )
+
+
+def test_select() -> None:
+    df = pl.DataFrame(
+        {
+            "col": {
+                "a": [1, 2, 3],
+                "b": [10, 12, 14],
+            }
+        }
+    ).select(
+        pl.col("col").struct.select(
+            sum=pl.col("a") + pl.col("b"),
+            diff=pl.col("a") - pl.col("b"),
+        )
+    )
+
+    expected = pl.DataFrame(
+        {
+            "col": {
+                "sum": [11, 14, 17],
+                "diff": [-9, -10, -11],
+            }
+        }
+    )
+
+    assert_frame_equal(df, expected)
