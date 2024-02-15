@@ -131,3 +131,13 @@ def test_to_numpy_zero_copy_path() -> None:
     assert x.flags["F_CONTIGUOUS"]
     assert not x.flags["WRITEABLE"]
     assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"
+
+
+def test_to_numpy_zero_copy_path_writeable() -> None:
+    rows = 10
+    cols = 5
+    x = np.ones((rows, cols), order="F")
+    x[:, 1] = 2.0
+    df = pl.DataFrame(x)
+    x = df.to_numpy(writeable=True)
+    assert x.flags["WRITEABLE"]

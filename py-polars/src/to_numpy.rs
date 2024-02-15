@@ -133,7 +133,11 @@ impl PyDataFrame {
                 if all_contiguous {
                     let start_ptr = first.as_ptr();
                     let dims = [first.len(), columns.len()].into_dimension();
-                    let flags: c_int = if writeable {flags::NPY_ARRAY_OUT_FARRAY} else {flags::NPY_ARRAY_FARRAY_RO};
+                    let flags: c_int = if writeable {
+                        flags::NPY_ARRAY_OUT_FARRAY
+                    } else {
+                        flags::NPY_ARRAY_FARRAY_RO
+                    };
                     Some(create_borrowed_np_array::<T::Native, _>(
                         py,
                         dims,
