@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -308,9 +308,12 @@ impl PipeLine {
         sink: &mut Box<dyn Sink>,
     ) -> PolarsResult<SinkResult> {
         debug_assert!(!operators.is_empty());
+
+        // Stack based operator execution.
         let mut in_process = vec![];
         let operator_offset = 0usize;
         in_process.push((operator_offset, chunk));
+        let mut needs_flush = BTreeSet::new();
 
         while let Some((op_i, chunk)) = in_process.pop() {
             match operators.get_mut(op_i) {
@@ -321,16 +324,20 @@ impl PipeLine {
                 },
                 Some(op) => {
                     match op.execute(ec, &chunk)? {
-                        OperatorResult::Finished(chunk) => in_process.push((op_i + 1, chunk)),
+                        OperatorResult::Finished(chunk) => {
+                            if op.must_flush() {
+                                let _ = needs_flush.insert(op_i);
+                            }
+                            in_process.push((op_i + 1, chunk))
+                        },
                         OperatorResult::HaveMoreOutPut(output_chunk) => {
-                            // first on the stack the next operator call
+                            // Push the next operator call with the same chunk on the stack
                             in_process.push((op_i, chunk));
 
-                            // but first push the output in the next operator
-                            // is a join can produce many rows, we want the filter to
-                            // be executed in between.
-                            // or sink into a slice so that we get sink::finished
-                            // before we grow the stack with ever more coming chunks
+                            // But first push the output in the next operator
+                            // If a join can produce many rows, we want the filter to
+                            // be executed in between, or sink into a slice so that we get
+                            // sink::finished before we grow the stack with ever more coming chunks
                             in_process.push((op_i + 1, output_chunk));
                         },
                         OperatorResult::NeedsNewData => {
@@ -340,6 +347,78 @@ impl PipeLine {
                 },
             }
         }
+
+        // Stack based flushing + operator execution.
+        if !needs_flush.is_empty() {
+            drop(in_process);
+            let mut in_process = vec![];
+
+            for op_i in needs_flush.into_iter() {
+                // Push all operators that need flushing on the stack.
+                // The `None` indicates that we have no `chunk` input, so we `flush`.
+                // `Some(chunk)` is the pushing branch
+                in_process.push((op_i, None));
+
+                // Next we immediately pop and determine the order of execution below.
+                // This is to ensure that all operators below upper operators are completely
+                // flushed when the `flush` is called in higher operators. As operators can `flush`
+                // multiple times.
+                while let Some((op_i, chunk)) = in_process.pop() {
+                    match chunk {
+                        // The branch for flushing.
+                        None => {
+                            let op = operators.get_mut(op_i).unwrap();
+                            match op.flush()? {
+                                OperatorResult::Finished(chunk) => {
+                                    // Push the chunk in the next operator.
+                                    in_process.push((op_i + 1, Some(chunk)))
+                                },
+                                OperatorResult::HaveMoreOutPut(chunk) => {
+                                    // Ensure it is flushed again
+                                    in_process.push((op_i, None));
+                                    // Push the chunk in the next operator.
+                                    in_process.push((op_i + 1, Some(chunk)))
+                                },
+                                _ => unreachable!(),
+                            }
+                        },
+                        // The branch for pushing data in the operators.
+                        // This is the same as the default stack exectuor, except now it pushes
+                        // `Some(chunk)` instead of `chunk`.
+                        Some(chunk) => {
+                            match operators.get_mut(op_i) {
+                                None => {
+                                    if let SinkResult::Finished = sink.sink(ec, chunk)? {
+                                        return Ok(SinkResult::Finished);
+                                    }
+                                },
+                                Some(op) => {
+                                    match op.execute(ec, &chunk)? {
+                                        OperatorResult::Finished(chunk) => {
+                                            in_process.push((op_i + 1, Some(chunk)))
+                                        },
+                                        OperatorResult::HaveMoreOutPut(output_chunk) => {
+                                            // Push the next operator call with the same chunk on the stack
+                                            in_process.push((op_i, Some(chunk)));
+
+                                            // But first push the output in the next operator
+                                            // If a join can produce many rows, we want the filter to
+                                            // be executed in between, or sink into a slice so that we get
+                                            // sink::finished before we grow the stack with ever more coming chunks
+                                            in_process.push((op_i + 1, Some(output_chunk)));
+                                        },
+                                        OperatorResult::NeedsNewData => {
+                                            // Done, take another chunk from the stack
+                                        },
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
         Ok(SinkResult::CanHaveMoreInput)
     }
 
