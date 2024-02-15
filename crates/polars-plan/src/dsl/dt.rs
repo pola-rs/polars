@@ -205,6 +205,34 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
     }
 
+    /// Roll backward to the first day of the month.
+    #[cfg(feature = "date_offset")]
+    pub fn quarter_start(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::QuarterStart))
+    }
+
+    /// Roll forward to the last day of the month.
+    #[cfg(feature = "date_offset")]
+    pub fn quarter_end(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::QuarterEnd))
+    }
+
+    /// Roll backward to the first day of the month.
+    #[cfg(feature = "date_offset")]
+    pub fn year_start(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::YearStart))
+    }
+
+    /// Roll forward to the last day of the month.
+    #[cfg(feature = "date_offset")]
+    pub fn year_end(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::YearEnd))
+    }
+
     /// Get the base offset from UTC.
     #[cfg(feature = "timezones")]
     pub fn base_utc_offset(self) -> Expr {
