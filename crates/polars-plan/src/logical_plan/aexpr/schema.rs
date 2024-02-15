@@ -222,6 +222,7 @@ impl AExpr {
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
+            #[cfg(feature = "dtype-struct")]
             StructSelect {
                 input,
                 struct_exprs,
@@ -229,7 +230,6 @@ impl AExpr {
                 let input = arena.get(*input).to_field(schema, ctxt, arena)?;
 
                 match input.data_type() {
-                    #[cfg(feature = "dtype-struct")]
                     Struct(fields) => {
                         let dummy_df = DataFrame::from(&Schema::from_iter(fields.clone()));
 
@@ -244,6 +244,10 @@ impl AExpr {
                     DataType::Unknown => Ok(input),
                     _ => polars_bail!(ComputeError: "encountered non-struct field"),
                 }
+            },
+            #[cfg(not(feature = "dtype-struct"))]
+            StructSelect { .. } => {
+                panic!("activate feature 'dtype-struct'")
             },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => {
