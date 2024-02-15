@@ -53,7 +53,7 @@ impl UpperExp for AExpr {
                 return write!(f, "anonymous_function: {}", options.fmt_str)
             },
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
-            AExpr::StructSelect { .. } => "inner_struct_function",
+            AExpr::StructSelect { .. } => "struct_select",
             AExpr::Window { .. } => "window",
             AExpr::Wildcard => "*",
             AExpr::Slice { .. } => "slice",
