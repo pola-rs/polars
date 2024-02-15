@@ -191,6 +191,7 @@ class ExprStructNameSpace:
 
         Examples
         --------
+        >>> import polars.selectors as cs
         >>> df = pl.DataFrame(
         ...     [
         ...         pl.Series("a", [1, 2, 3, 4]),
