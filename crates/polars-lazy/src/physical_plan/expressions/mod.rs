@@ -13,6 +13,7 @@ mod rolling;
 mod slice;
 mod sort;
 mod sortby;
+#[cfg(feature = "dtype-struct")]
 mod struct_select;
 mod take;
 mod ternary;
