@@ -41,16 +41,17 @@ impl PhysicalExpr for StructSelectExpr {
             .into_series())
     }
 
+    #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
         _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        todo!()
+        polars_bail!(ComputeError: "struct select expression not implemented in aggregation");
     }
 
-    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
-        todo!()
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.expr.to_field(input_schema, Context::Default)
     }
 }
