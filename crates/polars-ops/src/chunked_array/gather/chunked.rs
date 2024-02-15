@@ -67,7 +67,7 @@ impl TakeChunked for Series {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let phys = self.to_physical_repr();
         use DataType::*;
-        match phys.dtype() {
+        let out = match phys.dtype() {
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
                  let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
@@ -112,13 +112,14 @@ impl TakeChunked for Series {
             },
             Null => Series::new_null(self.name(), by.len()),
             _ => unreachable!(),
-        }
+        };
+        unsafe { out.cast_unchecked(self.dtype()).unwrap() }
     }
 
     unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
         let phys = self.to_physical_repr();
         use DataType::*;
-        match phys.dtype() {
+        let out = match phys.dtype() {
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
                  let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
@@ -163,7 +164,8 @@ impl TakeChunked for Series {
             },
             Null => Series::new_null(self.name(), by.len()),
             _ => unreachable!(),
-        }
+        };
+        unsafe { out.cast_unchecked(self.dtype()).unwrap() }
     }
 }
 
