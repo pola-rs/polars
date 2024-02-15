@@ -21,7 +21,7 @@ impl PyExpr {
         self.inner.clone().struct_().json_encode().into()
     }
 
-    fn struct_select_fields(&self, exprs: Vec<PyExpr>) -> Self {
+    fn struct_select(&self, exprs: Vec<PyExpr>) -> Self {
         let exprs = exprs.to_exprs();
         self.inner.clone().struct_().select_fields(exprs).into()
     }

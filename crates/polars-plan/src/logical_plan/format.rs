@@ -385,7 +385,7 @@ impl Debug for Expr {
                 input,
                 struct_exprs,
             } => {
-                write!(f, "{:?}.select_fields({:?})", input, struct_exprs)
+                write!(f, "{:?}.struct.select({:?})", input, struct_exprs)
             },
             AnonymousFunction { input, options, .. } => {
                 if input.len() >= 2 {

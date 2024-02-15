@@ -173,10 +173,10 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_json_encode())
 
-    def select_fields(
+    def select(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
     ) -> Expr:
         """TODO docstring."""
         # TODO: structify
         pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs, __structify=False)
-        return wrap_expr(self._pyexpr.struct_select_fields(pyexprs))
+        return wrap_expr(self._pyexpr.struct_select(pyexprs))

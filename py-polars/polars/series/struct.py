@@ -108,7 +108,7 @@ class StructNameSpace:
         ]
         """
 
-    def select_fields(
+    def select(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
     ) -> Series:
         """TODO docstring."""
