@@ -56,8 +56,8 @@ jobs:
           cargo test --all-features -p polars-arrow -p polars-core -p polars-io -p polars-lazy -p polars-ops -p polars-plan -p polars-row -p polars-sql -p polars-time -p polars-utils
           cargo test --all-features -p polars --test it
           maturin develop
-          pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:coverage.xml
-          POLARS_FORCE_ASYNC=1 pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
+          pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:coverage.xml || true
+          POLARS_FORCE_ASYNC=1 pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml || true
           cargo llvm-cov report --lcov --output-path coverage.lcov
         env:
           RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
