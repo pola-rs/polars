@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import math
-import os
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import (
@@ -101,6 +100,7 @@ from polars.utils.deprecation import (
 )
 from polars.utils.unstable import unstable
 from polars.utils.various import (
+    BUILDING_SPHINX_DOCS,
     _is_generator,
     no_default,
     parse_version,
@@ -148,7 +148,7 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
-elif os.getenv("BUILDING_SPHINX_DOCS"):
+elif BUILDING_SPHINX_DOCS:
     property = sphinx_accessor
 
 ArrayLike = Union[
