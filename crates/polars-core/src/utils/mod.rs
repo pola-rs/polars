@@ -561,6 +561,21 @@ pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     }
 }
 
+pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
+    let mut acc_df = iter.next()?;
+    acc_df.reserve_chunks(additional);
+
+    for df in iter {
+        acc_df.vstack_mut_unchecked(&df);
+    }
+    Some(acc_df)
+}
+
 /// This takes ownership of the DataFrame so that drop is called earlier.
 /// Does not check if schema is correct
 pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> DataFrame

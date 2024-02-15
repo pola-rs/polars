@@ -91,7 +91,9 @@ fn gc_thread(operation_name: &'static str) {
                         eprintln!("could not modified time on this platform")
                     }
                 } else {
-                    std::fs::remove_dir_all(path).unwrap()
+                    // This can be fallible as another Polars query could already have removed this.
+                    // So we ignore the result.
+                    let _ = std::fs::remove_dir_all(path);
                 }
             }
         }
