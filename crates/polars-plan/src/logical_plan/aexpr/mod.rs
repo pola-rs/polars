@@ -243,7 +243,7 @@ impl AExpr {
             | Ternary { .. }
             | Wildcard
             | Cast { .. }
-            | StructSelect { .. }  // TODO: THIS PROBABLY ISN'T TRUE
+            | StructSelect { .. }
             | Filter { .. } => false,
         }
     }
@@ -400,7 +400,6 @@ impl AExpr {
                 return self;
             },
             StructSelect { input, .. } => {
-                // TODO: I DONT KNOW WHAT THIS DOES
                 *input = inputs[0];
                 return self;
             },
