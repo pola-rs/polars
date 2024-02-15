@@ -225,7 +225,7 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
-    infer_schema_length : int, default N_INFER_DEFAULT
+    infer_schema_length : int or None
         Maximum number of rows to read for schema inference; only applies if the input
         data is a sequence or generator of rows; other input is read as-is.
         If set to `None`, a full table scan will be done (slow).
