@@ -98,7 +98,7 @@ pub struct ParquetWriter<W> {
     compression: CompressionOptions,
     /// Compute and write column statistics.
     statistics: bool,
-    /// if `None` will be 512^2 rows
+    /// if `None` will equal the number of rows in the data frame
     row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     data_page_size: Option<usize>,
@@ -191,8 +191,8 @@ where
         // ensures all chunks are aligned.
         df.align_chunks();
 
-        let n_splits = df.height() / self.row_group_size.unwrap_or(512 * 512);
-        if n_splits > 0 {
+        let n_splits = self.row_group_size.map(|s| df.height() / s).unwrap_or(1);
+        if n_splits > 1 {
             *df = accumulate_dataframes_vertical_unchecked(split_df(df, n_splits)?);
         }
         let mut batched = self.batched(&df.schema())?;

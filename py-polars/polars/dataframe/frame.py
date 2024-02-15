@@ -3390,8 +3390,8 @@ class DataFrame:
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
         statistics: bool = False,
-        row_group_size: int | None = None,
-        data_page_size: int | None = None,
+        row_group_size: int | None = 512 ** 2,
+        data_page_size: int = 1024 ** 2,
         use_pyarrow: bool = False,
         pyarrow_options: dict[str, Any] | None = None,
     ) -> None:
@@ -3418,7 +3418,8 @@ class DataFrame:
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups in number of rows. Defaults to 512^2 rows.
+            Size of the row groups in number of rows. If specified as ``None``, a single
+            row group is created.
         data_page_size
             Size of the data page in bytes. Defaults to 1024^2 bytes.
         use_pyarrow
@@ -3431,6 +3432,12 @@ class DataFrame:
             using `pyarrow.parquet.write_to_dataset`.
             The `partition_cols` parameter leads to write the dataset to a directory.
             Similar to Spark's partitioned datasets.
+
+        Attention
+        ---------
+        This method rechunks the data frame in-place: if ``use_pyarrow=False`` (default),
+        all columns in the data frame will have as many chunks as row groups are created.
+        If ``use_pyarrow=True``, all columns will have a single chunk.
 
         Examples
         --------
