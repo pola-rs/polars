@@ -222,7 +222,7 @@ impl AExpr {
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
-            InnerStructFunction {
+            StructSelect {
                 input,
                 struct_exprs,
             } => {

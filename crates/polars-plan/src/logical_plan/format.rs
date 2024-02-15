@@ -381,7 +381,7 @@ impl Debug for Expr {
                     write!(f, "{:?}.{function}()", input[0])
                 }
             },
-            InnerStructFunction {
+            StructSelect {
                 input,
                 struct_exprs,
             } => {

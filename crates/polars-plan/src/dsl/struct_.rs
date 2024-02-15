@@ -44,7 +44,7 @@ impl StructNameSpace {
 
     pub fn select_fields(self, exprs: Vec<Expr>) -> Expr {
         let input = Box::new(self.0);
-        Expr::InnerStructFunction {
+        Expr::StructSelect {
             input,
             struct_exprs: exprs,
         }

@@ -176,7 +176,7 @@ pub enum AExpr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    InnerStructFunction {
+    StructSelect {
         input: Node,
         struct_exprs: Vec<Expr>,
     },
@@ -243,7 +243,7 @@ impl AExpr {
             | Ternary { .. }
             | Wildcard
             | Cast { .. }
-            | InnerStructFunction { .. }  // TODO: THIS PROBABLY ISN'T TRUE
+            | StructSelect { .. }  // TODO: THIS PROBABLY ISN'T TRUE
             | Filter { .. } => false,
         }
     }
@@ -315,7 +315,7 @@ impl AExpr {
                     .copied()
                     .for_each(|node| container.push_node(node))
             },
-            InnerStructFunction { input, .. } => {
+            StructSelect { input, .. } => {
                 container.push(*input);
             },
             Explode(e) => container.push_node(*e),
@@ -399,7 +399,7 @@ impl AExpr {
                 input.extend(inputs.iter().rev().copied());
                 return self;
             },
-            InnerStructFunction { input, .. } => {
+            StructSelect { input, .. } => {
                 // TODO: I DONT KNOW WHAT THIS DOES
                 *input = inputs[0];
                 return self;

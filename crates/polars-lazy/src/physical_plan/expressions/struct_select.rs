@@ -6,13 +6,13 @@ use polars_core::prelude::*;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
-pub struct InnerStructExpr {
+pub struct StructSelectExpr {
     input: Arc<dyn PhysicalExpr>,
     struct_exprs: Vec<Expr>,
     expr: Expr,
 }
 
-impl InnerStructExpr {
+impl StructSelectExpr {
     pub(crate) fn new(input: Arc<dyn PhysicalExpr>, struct_exprs: Vec<Expr>, expr: Expr) -> Self {
         Self {
             input,
@@ -22,7 +22,7 @@ impl InnerStructExpr {
     }
 }
 
-impl PhysicalExpr for InnerStructExpr {
+impl PhysicalExpr for StructSelectExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }

@@ -112,7 +112,7 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    InnerStructFunction {
+    StructSelect {
         input: Box<Expr>,
         struct_exprs: Vec<Expr>,
     },

@@ -528,12 +528,12 @@ pub(crate) fn create_physical_expr(
                 schema.cloned(),
             )))
         },
-        InnerStructFunction {
+        StructSelect {
             input,
             struct_exprs,
         } => {
             let input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(InnerStructExpr::new(
+            Ok(Arc::new(StructSelectExpr::new(
                 input,
                 struct_exprs,
                 node_to_expr(expression, expr_arena),
