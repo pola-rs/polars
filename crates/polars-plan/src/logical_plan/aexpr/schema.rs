@@ -228,18 +228,20 @@ impl AExpr {
             } => {
                 let input = arena.get(*input).to_field(schema, ctxt, arena)?;
 
-                if let Struct(fields) = input.data_type().clone() {
-                    let dummy_df = DataFrame::from(&Schema::from_iter(fields));
+                match input.data_type() {
+                    Struct(fields) => {
+                        let dummy_df = DataFrame::from(&Schema::from_iter(fields.clone()));
 
-                    let lp = LogicalPlanBuilder::from_existing_df(dummy_df)
-                        .project(struct_exprs.to_vec(), Default::default())
-                        .build();
+                        let lp = LogicalPlanBuilder::from_existing_df(dummy_df)
+                            .project(struct_exprs.to_vec(), Default::default())
+                            .build();
 
-                    let new_fields = lp.schema()?.iter_fields().collect();
+                        let new_fields = lp.schema()?.iter_fields().collect();
 
-                    Ok(Field::new(input.name(), Struct(new_fields)))
-                } else {
-                    polars_bail!(ComputeError: "encountered non-struct field")
+                        Ok(Field::new(input.name(), Struct(new_fields)))
+                    },
+                    DataType::Unknown => Ok(input),
+                    _ => polars_bail!(ComputeError: "encountered non-struct field"),
                 }
             },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
