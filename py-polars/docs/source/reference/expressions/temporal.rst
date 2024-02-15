@@ -34,6 +34,10 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.month
     Expr.dt.month_end
     Expr.dt.month_start
+    Expr.dt.quarter_end
+    Expr.dt.quarter_start
+    Expr.dt.year_end
+    Expr.dt.year_start
     Expr.dt.nanosecond
     Expr.dt.nanoseconds
     Expr.dt.offset_by

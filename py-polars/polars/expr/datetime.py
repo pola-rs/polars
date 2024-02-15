@@ -2171,6 +2171,202 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_month_end())
 
+    def quarter_start(self) -> Expr:
+        """
+        Roll backward to the first day of the quarter.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.QuarterBegin().rollback(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2000, 12, 15, 2),
+        ...             "1mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(pl.col("dates").dt.quarter_start())
+        shape: (12, 1)
+        ┌─────────────────────┐
+        │ dates               │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-01-01 02:00:00 │
+        │ 2000-01-01 02:00:00 │
+        │ 2000-01-01 02:00:00 │
+        │ 2000-04-01 02:00:00 │
+        │ 2000-04-01 02:00:00 │
+        │ …                   │
+        │ 2000-07-01 02:00:00 │
+        │ 2000-07-01 02:00:00 │
+        │ 2000-10-01 02:00:00 │
+        │ 2000-10-01 02:00:00 │
+        │ 2000-10-01 02:00:00 │
+        └─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_quarter_start())
+
+    def quarter_end(self) -> Expr:
+        """
+        Roll forward to the last day of the quarter.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.QuarterEnd().rollforward(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 1, 2),
+        ...             datetime(2000, 12, 1, 2),
+        ...             "1mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(pl.col("dates").dt.quarter_end())
+        shape: (12, 1)
+        ┌─────────────────────┐
+        │ dates               │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-03-31 02:00:00 │
+        │ 2000-03-31 02:00:00 │
+        │ 2000-03-31 02:00:00 │
+        │ 2000-04-30 02:00:00 │
+        │ 2000-05-31 02:00:00 │
+        │ …                   │
+        │ 2000-08-31 02:00:00 │
+        │ 2000-09-30 02:00:00 │
+        │ 2000-10-31 02:00:00 │
+        │ 2000-11-30 02:00:00 │
+        │ 2000-12-31 02:00:00 │
+        └─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_quarter_end())
+
+    def year_start(self) -> Expr:
+        """
+        Roll backward to the first day of the month.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.MonthBegin().rollback(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2000, 12, 15, 2),
+        ...             "1mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(pl.col("dates").dt.month_start())
+        shape: (12, 1)
+        ┌─────────────────────┐
+        │ dates               │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-01-01 02:00:00 │
+        │ 2000-02-01 02:00:00 │
+        │ 2000-03-01 02:00:00 │
+        │ 2000-04-01 02:00:00 │
+        │ 2000-05-01 02:00:00 │
+        │ …                   │
+        │ 2000-08-01 02:00:00 │
+        │ 2000-09-01 02:00:00 │
+        │ 2000-10-01 02:00:00 │
+        │ 2000-11-01 02:00:00 │
+        │ 2000-12-01 02:00:00 │
+        └─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_year_start())
+
+    def year_end(self) -> Expr:
+        """
+        Roll forward to the last day of the month.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.MonthEnd().rollforward(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 1, 2),
+        ...             datetime(2000, 12, 1, 2),
+        ...             "1mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(pl.col("dates").dt.year_end())
+        shape: (12, 1)
+        ┌─────────────────────┐
+        │ dates               │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-01-31 02:00:00 │
+        │ 2000-02-29 02:00:00 │
+        │ 2000-03-31 02:00:00 │
+        │ 2000-04-30 02:00:00 │
+        │ 2000-05-31 02:00:00 │
+        │ …                   │
+        │ 2000-08-31 02:00:00 │
+        │ 2000-09-30 02:00:00 │
+        │ 2000-10-31 02:00:00 │
+        │ 2000-11-30 02:00:00 │
+        │ 2000-12-31 02:00:00 │
+        └─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_year_end())
+
     def base_utc_offset(self) -> Expr:
         """
         Base offset from UTC.
