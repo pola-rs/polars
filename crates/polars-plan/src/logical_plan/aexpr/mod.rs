@@ -316,7 +316,7 @@ impl AExpr {
                     .for_each(|node| container.push_node(node))
             },
             StructSelect { input, .. } => {
-                container.push(*input);
+                container.push_node(*input);
             },
             Explode(e) => container.push_node(*e),
             Window {

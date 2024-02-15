@@ -66,7 +66,7 @@ macro_rules! push_expr {
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
             Function { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
-            InnerStructFunction { input, .. } => {
+            StructSelect { input, .. } => {
                 $push(input);
             },
             Explode(e) => $push(e),

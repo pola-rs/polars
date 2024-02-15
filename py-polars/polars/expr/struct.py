@@ -176,7 +176,52 @@ class ExprStructNameSpace:
     def select(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
     ) -> Expr:
-        """TODO docstring."""
-        # TODO: structify
+        """
+        Evaluate expressions over the fields of this struct.
+
+        Parameters
+        ----------
+        *exprs
+            Column(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names,
+            other non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional columns to select, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     [
+        ...         pl.Series("a", [1, 2, 3, 4]),
+        ...         pl.Series("b", [5, 6, 7, 8]),
+        ...         pl.Series("c", [True, True, False, True]),
+        ...         pl.Series("d", ["aa", "bb", "cc", "dd"]),
+        ...     ]
+        ... ).select(col=pl.struct(pl.all()))
+        >>> (
+        ...     df.lazy()
+        ...     .select(
+        ...         # Select subset of fields / reorder fields
+        ...         subset=pl.col("col").struct.select("c", "d"),
+        ...         # Sum the numeric columns
+        ...         hsum=pl.col("col")
+        ...         .struct.select(res=pl.sum_horizontal(cs.numeric()))
+        ...         .struct.field("res"),
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (4, 2)
+        ┌──────────────┬──────┐
+        │ subset       ┆ hsum │
+        │ ---          ┆ ---  │
+        │ struct[2]    ┆ i64  │
+        ╞══════════════╪══════╡
+        │ {true,"aa"}  ┆ 6    │
+        │ {true,"bb"}  ┆ 8    │
+        │ {false,"cc"} ┆ 10   │
+        │ {true,"dd"}  ┆ 12   │
+        └──────────────┴──────┘
+        """
         pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs, __structify=False)
         return wrap_expr(self._pyexpr.struct_select(pyexprs))
