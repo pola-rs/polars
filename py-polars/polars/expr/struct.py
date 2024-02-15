@@ -222,6 +222,35 @@ class ExprStructNameSpace:
         │ {false,"cc"} ┆ 10   │
         │ {true,"dd"}  ┆ 12   │
         └──────────────┴──────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "input": ["5_10", "15_20", "2_5"],
+        ...     }
+        ... )
+        >>> (
+        ...     df.select(
+        ...         result=pl.col("input")
+        ...         .str.split_exact("_", 1)
+        ...         .struct.rename_fields(["low", "high"])
+        ...         .struct.select(
+        ...             ranges=pl.int_ranges(
+        ...                 pl.col("low").cast(pl.Int64), pl.col("high").cast(pl.Int64)
+        ...             )
+        ...         )
+        ...         .struct.field("ranges")
+        ...     )
+        ... )
+        shape: (3, 1)
+        ┌────────────────┐
+        │ result         │
+        │ ---            │
+        │ list[i64]      │
+        ╞════════════════╡
+        │ [5, 6, … 9]    │
+        │ [15, 16, … 19] │
+        │ [2, 3, 4]      │
+        └────────────────┘
         """
         pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs, __structify=False)
         return wrap_expr(self._pyexpr.struct_select(pyexprs))
