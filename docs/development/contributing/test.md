@@ -30,7 +30,8 @@ Slow tests are marked as such using a [custom pytest marker](https://docs.pytest
 If you wish to run slow tests, run `pytest -m slow`.
 Or run `pytest -m ""` to run _all_ tests, regardless of marker.
 
-Tests can be run in parallel using [`pytest-xdist`](https://pytest-xdist.readthedocs.io/en/latest/). Run `pytest -n auto` to parallelize your test run.
+Tests can be run in parallel by running `pytest -n auto`.
+The parallelization is handled by [`pytest-xdist`](https://pytest-xdist.readthedocs.io/en/latest/).
 
 ### Writing unit tests
 

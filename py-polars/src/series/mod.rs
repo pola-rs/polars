@@ -1,6 +1,7 @@
 mod aggregation;
 mod arithmetic;
 mod buffers;
+mod c_interface;
 mod comparison;
 mod construction;
 mod export;
@@ -49,7 +50,7 @@ pub(crate) trait ToSeries {
 
 impl ToSeries for Vec<PySeries> {
     fn to_series(self) -> Vec<Series> {
-        // Safety
+        // SAFETY:
         // repr is transparent
         unsafe { std::mem::transmute(self) }
     }
@@ -61,7 +62,7 @@ pub(crate) trait ToPySeries {
 
 impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
-        // Safety
+        // SAFETY:
         // repr is transparent
         unsafe { std::mem::transmute(self) }
     }
@@ -388,7 +389,8 @@ impl PySeries {
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
-                let iter = self.series.iter().map(|av| match (skip_nulls, av) {
+                let s = self.series.rechunk();
+                let iter = s.iter().map(|av| match (skip_nulls, av) {
                     (true, AnyValue::Null) => AnyValue::Null,
                     (_, av) => {
                         let input = Wrap(av);

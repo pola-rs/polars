@@ -271,7 +271,7 @@ impl IntoGroupsProxy for BinaryChunked {
                         let ca = self.slice(offset as i64, len);
                         let byte_hashes = fill_bytes_hashes(&ca, null_h, hb.clone());
 
-                        // Safety:
+                        // SAFETY:
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
@@ -327,7 +327,7 @@ impl IntoGroupsProxy for BinaryOffsetChunked {
                         let ca = self.slice(offset as i64, len);
                         let byte_hashes = fill_bytes_offset_hashes(&ca, null_h, hb.clone());
 
-                        // Safety:
+                        // SAFETY:
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
@@ -371,7 +371,7 @@ impl IntoGroupsProxy for ListChunked {
                             None => null_h,
                         };
 
-                        // Safety:
+                        // SAFETY:
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(BytesHash::new(

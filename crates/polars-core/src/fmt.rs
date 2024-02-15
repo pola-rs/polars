@@ -163,7 +163,7 @@ fn format_object_array(
     array_type: &str,
 ) -> fmt::Result {
     match object.dtype() {
-        DataType::Object(inner_type, None) => {
+        DataType::Object(inner_type, _) => {
             let limit = std::cmp::min(LIMIT, object.len());
             write!(
                 f,
@@ -333,7 +333,7 @@ impl Debug for Series {
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, None) => format_object_array(f, self, self.name(), "Series"),
+            DataType::Object(_, _) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => {
                 format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")

@@ -39,7 +39,7 @@ impl CategoricalChunkedBuilder {
         let len = self.local_mapping.len() as u32;
 
         // Custom hashing / equality functions for comparing the &str to the idx
-        // Safety: index in hashmap are within bounds of categories
+        // SAFETY: index in hashmap are within bounds of categories
         let r = unsafe {
             self.local_mapping.raw_table_mut().find_or_find_insert_slot(
                 h,
@@ -53,12 +53,12 @@ impl CategoricalChunkedBuilder {
 
         let idx = match r {
             Ok(v) => {
-                // Safety: Bucket is initialized
+                // SAFETY: Bucket is initialized
                 unsafe { v.as_ref().0 .0 }
             },
             Err(e) => {
                 self.categories.push(Some(s));
-                // Safety: No mutations in hashmap since find_or_find_insert_slot call
+                // SAFETY: No mutations in hashmap since find_or_find_insert_slot call
                 unsafe {
                     self.local_mapping
                         .raw_table_mut()
@@ -132,7 +132,7 @@ impl CategoricalChunkedBuilder {
         let mut local_to_global: Vec<u32> = Vec::with_capacity(categories.len());
         let (id, local_to_global) = crate::STRING_CACHE.apply(|cache| {
             for (s, h) in categories.values_iter().zip(hashes) {
-                // Safety: we allocated enough
+                // SAFETY: we allocated enough
                 unsafe { local_to_global.push_unchecked(cache.insert_from_hash(h, s)) }
             }
             local_to_global
@@ -160,7 +160,7 @@ impl CategoricalChunkedBuilder {
         let indices = std::mem::take(&mut self.cat_builder).into();
         let indices = UInt32Chunked::with_chunk(&self.name, indices);
 
-        // Safety: indices are in bounds of new rev_map
+        // SAFETY: indices are in bounds of new rev_map
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 indices,
@@ -185,7 +185,7 @@ impl CategoricalChunkedBuilder {
     }
 
     pub fn finish(self) -> CategoricalChunked {
-        // Safety: keys and values are in bounds
+        // SAFETY: keys and values are in bounds
         unsafe {
             CategoricalChunked::from_keys_and_values(
                 &self.name,
@@ -275,7 +275,7 @@ impl CategoricalChunked {
             // locally we don't need a hashmap because we all categories are 1 integer apart
             // so the index is local, and the values is global
             for s in values.values_iter() {
-                // Safety: we allocated enough
+                // SAFETY: we allocated enough
                 unsafe { local_to_global.push_unchecked(cache.insert(s)) }
             }
             local_to_global

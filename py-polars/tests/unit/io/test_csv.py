@@ -243,6 +243,49 @@ def test_csv_missing_utf8_is_empty_string() -> None:
     ]
 
 
+def test_csv_int_types() -> None:
+    f = io.StringIO(
+        "u8,i8,u16,i16,u32,i32,u64,i64\n"
+        "0,0,0,0,0,0,0,0\n"
+        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808\n"
+        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807\n"
+        "01,01,01,01,01,01,01,01\n"
+        "01,-01,01,-01,01,-01,01,-01\n"
+    )
+    df = pl.read_csv(
+        f,
+        schema={
+            "u8": pl.UInt8,
+            "i8": pl.Int8,
+            "u16": pl.UInt16,
+            "i16": pl.Int16,
+            "u32": pl.UInt32,
+            "i32": pl.Int32,
+            "u64": pl.UInt64,
+            "i64": pl.Int64,
+        },
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "u8": pl.Series([0, 0, 255, 1, 1], dtype=pl.UInt8),
+                "i8": pl.Series([0, -128, 127, 1, -1], dtype=pl.Int8),
+                "u16": pl.Series([0, 0, 65535, 1, 1], dtype=pl.UInt16),
+                "i16": pl.Series([0, -32768, 32767, 1, -1], dtype=pl.Int16),
+                "u32": pl.Series([0, 0, 4294967295, 1, 1], dtype=pl.UInt32),
+                "i32": pl.Series([0, -2147483648, 2147483647, 1, -1], dtype=pl.Int32),
+                "u64": pl.Series([0, 0, 18446744073709551615, 1, 1], dtype=pl.UInt64),
+                "i64": pl.Series(
+                    [0, -9223372036854775808, 9223372036854775807, 1, -1],
+                    dtype=pl.Int64,
+                ),
+            }
+        ),
+    )
+
+
 def test_csv_float_parsing() -> None:
     lines_with_floats = [
         "123.86,+123.86,-123.86\n",
@@ -1883,3 +1926,32 @@ def test_partial_read_compressed_file(tmp_path: Path) -> None:
         file_path, skip_rows=40, has_header=False, skip_rows_after_header=20, n_rows=30
     )
     assert df.shape == (30, 3)
+
+
+def test_read_csv_invalid_dtypes() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,foo
+        2,bar
+        3,baz
+        """
+    )
+    f = io.StringIO(csv)
+    with pytest.raises(TypeError, match="`dtypes` should be of type list or dict"):
+        pl.read_csv(f, dtypes={pl.Int64, pl.String})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("columns", [["b"], "b"])
+def test_read_csv_single_column(columns: list[str] | str) -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b,c
+        1,2,3
+        4,5,6
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, columns=columns)
+    expected = pl.DataFrame({"b": [2, 5]})
+    assert_frame_equal(df, expected)

@@ -1,10 +1,13 @@
+#[cfg(feature = "is_between")]
+use polars_ops::series::ClosedInterval;
+
 use super::*;
 
 pub(super) fn optimize_functions(
     input: &[Node],
     function: &FunctionExpr,
-    _options: &FunctionOptions,
-    expr_arena: &Arena<AExpr>,
+    options: &FunctionOptions,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
         // sort().reverse() -> sort(reverse)
@@ -54,7 +57,7 @@ pub(super) fn optimize_functions(
                 Some(AExpr::Function {
                     input: new_inputs,
                     function: function.clone(),
-                    options: *_options,
+                    options: *options,
                 })
             } else {
                 None
@@ -62,15 +65,55 @@ pub(super) fn optimize_functions(
         },
         FunctionExpr::Boolean(BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal) => {
             if input.len() == 1 {
-                Some(expr_arena.get(input[0]).clone())
+                Some(AExpr::Cast {
+                    expr: input[0],
+                    data_type: DataType::Boolean,
+                    strict: false,
+                })
             } else {
                 None
             }
         },
         FunctionExpr::Boolean(BooleanFunction::Not) => {
-            let y = expr_arena.get(input[0]);
+            let y = expr_arena.get(input[0]).clone();
 
             match y {
+                // not(a and b) => not(a) or not(b)
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::And | Operator::LogicalAnd,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left: expr_arena.add(AExpr::Function {
+                        input: vec![left],
+                        function: FunctionExpr::Boolean(BooleanFunction::Not),
+                        options: *options,
+                    }),
+                    op: Operator::Or,
+                    right: expr_arena.add(AExpr::Function {
+                        input: vec![right],
+                        function: FunctionExpr::Boolean(BooleanFunction::Not),
+                        options: *options,
+                    }),
+                }),
+                // not(a or b) => not(a) and not(b)
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::Or | Operator::LogicalOr,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left: expr_arena.add(AExpr::Function {
+                        input: vec![left],
+                        function: FunctionExpr::Boolean(BooleanFunction::Not),
+                        options: *options,
+                    }),
+                    op: Operator::And,
+                    right: expr_arena.add(AExpr::Function {
+                        input: vec![right],
+                        function: FunctionExpr::Boolean(BooleanFunction::Not),
+                        options: *options,
+                    }),
+                }),
                 // not(not x) => x
                 AExpr::Function {
                     input,
@@ -80,6 +123,123 @@ pub(super) fn optimize_functions(
                 // not(lit x) => !x
                 AExpr::Literal(LiteralValue::Boolean(b)) => {
                     Some(AExpr::Literal(LiteralValue::Boolean(!b)))
+                },
+                // not(x.is_null) => x.is_not_null
+                AExpr::Function {
+                    input,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    options,
+                } => Some(AExpr::Function {
+                    input: input.clone(),
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    options,
+                }),
+                // not(x.is_not_null) => x.is_null
+                AExpr::Function {
+                    input,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    options,
+                } => Some(AExpr::Function {
+                    input: input.clone(),
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    options,
+                }),
+                // not(a == b) => a != b
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::Eq,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::NotEq,
+                    right,
+                }),
+                // not(a != b) => a == b
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::NotEq,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::Eq,
+                    right,
+                }),
+                // not(a < b) => a >= b
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::Lt,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::GtEq,
+                    right,
+                }),
+                // not(a <= b) => a > b
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::LtEq,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::Gt,
+                    right,
+                }),
+                // not(a > b) => a <= b
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::Gt,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::LtEq,
+                    right,
+                }),
+                // not(a >= b) => a < b
+                AExpr::BinaryExpr {
+                    left,
+                    op: Operator::GtEq,
+                    right,
+                } => Some(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::Lt,
+                    right,
+                }),
+                #[cfg(feature = "is_between")]
+                // not(col('x').is_between(a,b)) => col('x') < a || col('x') > b
+                AExpr::Function {
+                    input,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+                    ..
+                } => {
+                    if !matches!(expr_arena.get(input[0]), AExpr::Column(_)) {
+                        None
+                    } else {
+                        let left_cmp_op = match closed {
+                            ClosedInterval::Both | ClosedInterval::Left => Operator::Lt,
+                            ClosedInterval::None | ClosedInterval::Right => Operator::LtEq,
+                        };
+                        let right_cmp_op = match closed {
+                            ClosedInterval::Both | ClosedInterval::Right => Operator::Gt,
+                            ClosedInterval::None | ClosedInterval::Left => Operator::GtEq,
+                        };
+                        // input[0] is between input[1] and input[2]
+                        Some(AExpr::BinaryExpr {
+                            // input[0] (<,<=) input[1]
+                            left: expr_arena.add(AExpr::BinaryExpr {
+                                left: input[0],
+                                op: left_cmp_op,
+                                right: input[1],
+                            }),
+                            // OR
+                            op: Operator::Or,
+                            // input[0] (>,>=) input[2]
+                            right: expr_arena.add(AExpr::BinaryExpr {
+                                left: input[0],
+                                op: right_cmp_op,
+                                right: input[2],
+                            }),
+                        })
+                    }
                 },
                 _ => None,
             }

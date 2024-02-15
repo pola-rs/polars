@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -202,15 +205,17 @@ def random_integers() -> pl.Series:
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q1(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.to_frame().lazy()
     result = (
-        s.to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -228,16 +233,17 @@ def test_streaming_group_by_ooc_q1(
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q2(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.cast(str).to_frame().lazy()
     result = (
-        s.cast(str)
-        .to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -253,17 +259,22 @@ def test_streaming_group_by_ooc_q2(
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q3(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = pl.LazyFrame({"a": random_integers, "b": random_integers})
     result = (
-        pl.DataFrame({"a": s, "b": s})
-        .lazy()
-        .group_by(["a", "b"])
+        lf.group_by("a", "b")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)

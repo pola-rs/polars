@@ -53,7 +53,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import dataframe_api_compat, subprocess
+from polars.dependencies import subprocess
 from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
@@ -693,19 +693,6 @@ class LazyFrame:
         """
         return OrderedDict(self._ldf.schema())
 
-    def __dataframe_consortium_standard__(
-        self, *, api_version: str | None = None
-    ) -> Any:
-        """
-        Provide entry point to the Consortium DataFrame Standard API.
-
-        This is developed and maintained outside of polars.
-        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
-        """
-        return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
-            self, api_version=api_version
-        )
-
     @property
     def width(self) -> int:
         """
@@ -1152,6 +1139,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
+        tree_format: bool = False,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -1181,6 +1169,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+        tree_format
+            Format the output as a tree
 
         Examples
         --------
@@ -1207,7 +1197,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 streaming,
                 _eager=False,
             )
+            if tree_format:
+                return ldf.describe_optimized_plan_tree()
             return ldf.describe_optimized_plan()
+
+        if tree_format:
+            return self._ldf.describe_plan_tree()
         return self._ldf.describe_plan()
 
     def show_graph(
@@ -5448,7 +5443,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         columns
             Column names, expressions, or a selector defining them. The underlying
-            columns being exploded must be of List or String datatype.
+            columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 

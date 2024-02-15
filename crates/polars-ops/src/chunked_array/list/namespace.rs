@@ -257,6 +257,14 @@ pub trait ListNameSpaceImpl: AsList {
         self.same_type(out)
     }
 
+    fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
+        let ca = self.as_list();
+        ca.try_apply_amortized_generic(|s| {
+            let opt_v = s.map(|s| s.as_ref().n_unique()).transpose()?;
+            Ok(opt_v.map(|idx| idx as IdxSize))
+        })
+    }
+
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let out = ca.try_apply_amortized(|s| s.as_ref().unique())?;
@@ -274,7 +282,6 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
         })
-        .with_name(ca.name())
     }
 
     fn lst_arg_max(&self) -> IdxCa {
@@ -282,7 +289,6 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
         })
-        .with_name(ca.name())
     }
 
     #[cfg(feature = "diff")]
@@ -343,12 +349,75 @@ pub trait ListNameSpaceImpl: AsList {
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
-        // Safety: every element in list has dtype equal to its inner type
+        // SAFETY: every element in list has dtype equal to its inner type
         unsafe {
             Series::try_from((ca.name(), chunks))
                 .unwrap()
                 .cast_unchecked(&ca.inner_dtype())
         }
+    }
+
+    #[cfg(feature = "list_gather")]
+    fn lst_gather_every(&self, n: &IdxCa, offset: &IdxCa) -> PolarsResult<Series> {
+        let list_ca = self.as_list();
+        let out = match (n.len(), offset.len()) {
+            (1, 1) => match (n.get(0), offset.get(0)) {
+                (Some(n), Some(offset)) => list_ca
+                    .apply_amortized(|s| s.as_ref().gather_every(n as usize, offset as usize)),
+                _ => ListChunked::full_null_with_dtype(
+                    list_ca.name(),
+                    list_ca.len(),
+                    &list_ca.inner_dtype(),
+                ),
+            },
+            (1, len_offset) if len_offset == list_ca.len() => {
+                if let Some(n) = n.get(0) {
+                    list_ca.zip_and_apply_amortized(offset, |opt_s, opt_offset| {
+                        match (opt_s, opt_offset) {
+                            (Some(s), Some(offset)) => {
+                                Some(s.as_ref().gather_every(n as usize, offset as usize))
+                            },
+                            _ => None,
+                        }
+                    })
+                } else {
+                    ListChunked::full_null_with_dtype(
+                        list_ca.name(),
+                        list_ca.len(),
+                        &list_ca.inner_dtype(),
+                    )
+                }
+            },
+            (len_n, 1) if len_n == list_ca.len() => {
+                if let Some(offset) = offset.get(0) {
+                    list_ca.zip_and_apply_amortized(n, |opt_s, opt_n| match (opt_s, opt_n) {
+                        (Some(s), Some(n)) => {
+                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                        },
+                        _ => None,
+                    })
+                } else {
+                    ListChunked::full_null_with_dtype(
+                        list_ca.name(),
+                        list_ca.len(),
+                        &list_ca.inner_dtype(),
+                    )
+                }
+            },
+            (len_n, len_offset) if len_n == len_offset && len_n == list_ca.len() => list_ca
+                .binary_zip_and_apply_amortized(n, offset, |opt_s, opt_n, opt_offset| {
+                    match (opt_s, opt_n, opt_offset) {
+                        (Some(s), Some(n), Some(offset)) => {
+                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                        },
+                        _ => None,
+                    }
+                }),
+            _ => {
+                polars_bail!(ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of list.")
+            },
+        };
+        Ok(out.into_series())
     }
 
     #[cfg(feature = "list_gather")]

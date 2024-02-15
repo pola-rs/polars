@@ -595,17 +595,18 @@ impl PyExpr {
         self.inner.clone().rolling(options).into()
     }
 
-    fn _and(&self, expr: Self) -> Self {
+    fn and_(&self, expr: Self) -> Self {
         self.inner.clone().and(expr.inner).into()
     }
 
-    fn _xor(&self, expr: Self) -> Self {
+    fn or_(&self, expr: Self) -> Self {
+        self.inner.clone().or(expr.inner).into()
+    }
+
+    fn xor_(&self, expr: Self) -> Self {
         self.inner.clone().xor(expr.inner).into()
     }
 
-    fn _or(&self, expr: Self) -> Self {
-        self.inner.clone().or(expr.inner).into()
-    }
     #[cfg(feature = "is_in")]
     fn is_in(&self, expr: Self) -> Self {
         self.inner.clone().is_in(expr.inner).into()
@@ -684,7 +685,7 @@ impl PyExpr {
         self.inner.clone().exclude(columns).into()
     }
     fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        // Safety:
+        // SAFETY:
         // Wrap is transparent.
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()

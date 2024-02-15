@@ -147,6 +147,10 @@ impl DataType {
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
             }
+            #[cfg(not(feature = "dtype-struct"))]
+            ArrowDataType::Struct(_) => {
+                panic!("activate the 'dtype-struct' feature to handle struct data types")
+            }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {

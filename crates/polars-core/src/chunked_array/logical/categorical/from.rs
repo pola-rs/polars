@@ -35,7 +35,7 @@ impl CategoricalChunked {
             RevMapping::Local(arr, _) => {
                 let values = convert_values(arr, pl_flavor);
 
-                // Safety:
+                // SAFETY:
                 // the keys are in bounds
                 unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
             },
@@ -47,7 +47,7 @@ impl CategoricalChunked {
 
                 let values = convert_values(values, pl_flavor);
 
-                // Safety:
+                // SAFETY:
                 // the keys are in bounds
                 unsafe { DictionaryArray::try_new_unchecked(dtype, keys, values).unwrap() }
             },
@@ -68,7 +68,7 @@ impl CategoricalChunked {
             RevMapping::Local(arr, _) => {
                 let values = convert_values(arr, pl_flavor);
 
-                // Safety:
+                // SAFETY:
                 // the keys are in bounds
                 unsafe {
                     DictionaryArray::try_new_unchecked(
@@ -92,7 +92,7 @@ impl CategoricalChunked {
 
                 let values = convert_values(values, pl_flavor);
 
-                // Safety:
+                // SAFETY:
                 // the keys are in bounds
                 unsafe { DictionaryArray::try_new_unchecked(dtype, keys, values).unwrap() }
             },

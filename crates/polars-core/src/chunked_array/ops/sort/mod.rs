@@ -275,7 +275,7 @@ fn ordering_other_columns<'a>(
     idx_b: usize,
 ) -> Ordering {
     for (cmp, descending) in compare_inner.iter().zip(descending) {
-        // Safety:
+        // SAFETY:
         // indices are in bounds
         let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b) };
         match (ordering, descending) {

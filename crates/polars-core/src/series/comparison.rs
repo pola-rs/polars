@@ -67,6 +67,16 @@ macro_rules! impl_compare {
                 .struct_()
                 .unwrap()
                 .$method(rhs.struct_().unwrap().deref()),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, s1) => {
+                let DataType::Decimal(_, s2) = rhs.dtype() else {
+                    unreachable!()
+                };
+                let scale = s1.max(s2).unwrap();
+                let lhs = lhs.decimal().unwrap().to_scale(scale).unwrap();
+                let rhs = rhs.decimal().unwrap().to_scale(scale).unwrap();
+                lhs.0.$method(&rhs.0)
+            },
 
             _ => unimplemented!(),
         };

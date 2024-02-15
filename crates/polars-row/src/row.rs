@@ -33,10 +33,10 @@ fn checks(offsets: &[usize]) {
 unsafe fn rows_to_array(buf: Vec<u8>, offsets: Vec<usize>) -> BinaryArray<i64> {
     checks(&offsets);
 
-    // Safety: we checked overflow
+    // SAFETY: we checked overflow
     let offsets = std::mem::transmute::<Vec<usize>, Vec<i64>>(offsets);
 
-    // Safety: monotonically increasing
+    // SAFETY: monotonically increasing
     let offsets = Offsets::new_unchecked(offsets);
 
     BinaryArray::new(ArrowDataType::LargeBinary, offsets.into(), buf.into(), None)

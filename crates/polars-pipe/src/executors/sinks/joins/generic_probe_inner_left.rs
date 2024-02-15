@@ -173,7 +173,7 @@ impl GenericJoinProbe {
         }
         polars_row::convert_columns_amortized_no_order(&self.join_columns, &mut self.current_rows);
 
-        // safety: we keep rows-encode alive
+        // SAFETY: we keep rows-encode alive
         let array = unsafe { self.current_rows.borrow_array() };
         Ok(if self.join_nulls {
             array
@@ -199,7 +199,7 @@ impl GenericJoinProbe {
                 out
             },
             Some(names) => unsafe {
-                // safety:
+                // SAFETY:
                 // if we have duplicate names, we overwrite
                 // them in the next snippet
                 left_df

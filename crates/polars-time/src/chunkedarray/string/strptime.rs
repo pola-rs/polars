@@ -120,7 +120,7 @@ impl StrpTimeState {
             debug_assert!(offset < val.len());
             let b = *val.get_unchecked(offset);
             if *fmt_b == ESCAPE {
-                // Safety: we must ensure we provide valid patterns
+                // SAFETY: we must ensure we provide valid patterns
                 let next = fmt_iter.next();
                 debug_assert!(next.is_some());
                 match next.unwrap_unchecked() {
@@ -209,7 +209,7 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
 
     while let Some(&val) = iter.next() {
         match val {
-            b'%' => match iter.next().expect("invalid patter") {
+            b'%' => match iter.next().expect("invalid pattern") {
                 b'Y' => cnt += 4,
                 b'y' => cnt += 2,
                 b'd' => cnt += 2,

@@ -79,11 +79,19 @@ def test_map_deprecated() -> None:
         pl.LazyFrame({"a": [1, 2]}).map(lambda x: x)
 
 
-def test_ufunc_recognition() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [1.1, 2.2, 3.3, 4.4]})
-    assert_frame_equal(df.select(np.exp(pl.col("b"))), df.select(pl.col("b").exp()))
-
-
-def test_grouped_ufunc() -> None:
-    df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [0.1, 0.1, -0.1, -0.1]})
-    df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
+def test_ufunc_args() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [2, 4, 6]})
+    result = df.select(
+        z=np.add(  # type: ignore[call-overload]
+            pl.col("a"), pl.col("b")
+        )
+    )
+    expected = pl.DataFrame({"z": [3, 6, 9]})
+    assert_frame_equal(result, expected)
+    result = df.select(
+        z=np.add(  # type: ignore[call-overload]
+            2, pl.col("a")
+        )
+    )
+    expected = pl.DataFrame({"z": [3, 4, 5]})
+    assert_frame_equal(result, expected)

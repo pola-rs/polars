@@ -14,7 +14,7 @@ where
     let groups = ca.group_tuples(parallel, false).unwrap();
     let idx = mode_indices(groups);
 
-    // Safety:
+    // SAFETY:
     // group indices are in bounds
     Ok(unsafe { ca.take_unchecked(idx.as_slice()) })
 }

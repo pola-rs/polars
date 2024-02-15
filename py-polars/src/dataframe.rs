@@ -3,7 +3,6 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 
 use either::Either;
-use numpy::IntoPyArray;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
 use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
@@ -16,9 +15,7 @@ use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
-use polars_core::prelude::IndexOrder;
 use polars_core::utils::arrow::compute::cast::CastOptions;
-use polars_core::utils::try_get_supertype;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
@@ -783,7 +780,7 @@ impl PyDataFrame {
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
                             },
-                            // safety: we are in bounds.
+                            // SAFETY: we are in bounds.
                             _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
                         }),
                     )
@@ -791,32 +788,6 @@ impl PyDataFrame {
             )
             .into_py(py)
         })
-    }
-
-    pub fn to_numpy(&self, py: Python, order: Wrap<IndexOrder>) -> Option<PyObject> {
-        let mut st = None;
-        for s in self.df.iter() {
-            let dt_i = s.dtype();
-            match st {
-                None => st = Some(dt_i.clone()),
-                Some(ref mut st) => {
-                    *st = try_get_supertype(st, dt_i).ok()?;
-                },
-            }
-        }
-        let st = st?;
-
-        #[rustfmt::skip]
-        let pyarray = match st {
-            DataType::UInt32 => self.df.to_ndarray::<UInt32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::UInt64 => self.df.to_ndarray::<UInt64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int32 => self.df.to_ndarray::<Int32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int64 => self.df.to_ndarray::<Int64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Float32 => self.df.to_ndarray::<Float32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Float64 => self.df.to_ndarray::<Float64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            _ => return None,
-        };
-        Some(pyarray)
     }
 
     #[cfg(feature = "parquet")]

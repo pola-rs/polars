@@ -258,4 +258,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     fn str_concat(&self, delimiter: &str) -> StringChunked {
         self.0.str_concat(delimiter)
     }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
 }

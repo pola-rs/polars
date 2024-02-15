@@ -388,7 +388,7 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
 def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    df.write_delta(tmp_path, mode="append")
+    df.write_delta(tmp_path)
 
     merger = df.write_delta(
         tmp_path,
@@ -407,6 +407,7 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
 
     merger.when_matched_delete(predicate="t.a > 2").execute()
 
-    table = pl.read_delta(str(tmp_path))
+    result = pl.read_delta(str(tmp_path))
 
-    assert_frame_equal(df.filter(pl.col("a") <= 2), table)
+    expected = df.filter(pl.col("a") <= 2)
+    assert_frame_equal(result, expected, check_row_order=False)

@@ -147,6 +147,7 @@ from polars.functions import (
     max,
     max_horizontal,
     mean,
+    mean_horizontal,
     median,
     min,
     min_horizontal,
@@ -348,6 +349,7 @@ __all__ = [
     "cum_sum_horizontal",
     "cumsum_horizontal",
     "max_horizontal",
+    "mean_horizontal",
     "min_horizontal",
     "sum_horizontal",
     # polars.functions.lazy

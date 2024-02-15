@@ -151,9 +151,6 @@ where
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
     offsets.push(0i64);
 
-    if broadcast_rhs {
-        set2.extend(b.into_iter().map(copied_wrapper_opt));
-    }
     let offsets_slice = if offsets_a.len() > offsets_b.len() {
         offsets_a
     } else {
@@ -163,6 +160,14 @@ where
     let second_a = offsets_a[1];
     let first_b = offsets_b[0];
     let second_b = offsets_b[1];
+    if broadcast_rhs {
+        set2.extend(
+            b.into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize)
+                .map(copied_wrapper_opt),
+        );
+    }
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
@@ -180,7 +185,11 @@ where
                 .skip(start_a)
                 .take(end_a - start_a)
                 .map(copied_wrapper_opt);
-            let b_iter = b.into_iter().map(copied_wrapper_opt);
+            let b_iter = b
+                .into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize)
+                .map(copied_wrapper_opt);
             set_operation(
                 &mut set,
                 &mut set2,
@@ -191,7 +200,11 @@ where
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a.into_iter().map(copied_wrapper_opt);
+            let a_iter = a
+                .into_iter()
+                .skip(first_a as usize)
+                .take(second_a as usize - first_a as usize)
+                .map(copied_wrapper_opt);
 
             let b_iter = b
                 .into_iter()
@@ -403,6 +416,13 @@ pub fn list_set_operation(
     // We will OOB in the kernel otherwise.
     a.prune_empty_chunks();
     b.prune_empty_chunks();
+
+    // Make categoricals compatible
+    if let (DataType::Categorical(_, _), DataType::Categorical(_, _)) =
+        (&a.inner_dtype(), &b.inner_dtype())
+    {
+        (a, b) = make_list_categoricals_compatible(a, b)?;
+    }
 
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {

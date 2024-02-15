@@ -210,7 +210,7 @@ def test_infinities(
 @given(
     df=dataframes(
         cols=[
-            column("colx", dtype=pl.List(pl.UInt8)),
+            column("colx", dtype=pl.Array(pl.UInt8, width=3)),
             column("coly", dtype=pl.List(pl.Datetime("ms"))),
             column(
                 name="colz",
@@ -223,15 +223,16 @@ def test_infinities(
         ]
     ),
 )
-def test_list_strategy(df: pl.DataFrame) -> None:
+def test_sequence_strategies(df: pl.DataFrame) -> None:
     assert df.schema == {
-        "colx": pl.List(pl.UInt8),
+        "colx": pl.Array(pl.UInt8, width=3),
         "coly": pl.List(pl.Datetime("ms")),
         "colz": pl.List(pl.List(pl.String)),
     }
     uint8_max = (2**8) - 1
 
     for colx, coly, colz in df.iter_rows():
+        assert len(colx) == 3
         assert all(i <= uint8_max for i in colx)
         assert all(isinstance(d, datetime) for d in coly)
         for inner_list in colz:

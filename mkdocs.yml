@@ -1,14 +1,14 @@
 # https://www.mkdocs.org/user-guide/configuration/
 
 # Project information
-site_name: Polars User Guide
+site_name: Polars user guide
 site_url: https://docs.pola.rs/
 repo_url: https://github.com/pola-rs/polars
 repo_name: pola-rs/polars
 
 # Documentation layout
 nav:
-  - User Guide:
+  - User guide:
     - index.md
     - user-guide/getting-started.md
     - user-guide/installation.md
@@ -30,7 +30,7 @@ nav:
       - user-guide/expressions/casting.md
       - user-guide/expressions/strings.md
       - user-guide/expressions/aggregation.md
-      - user-guide/expressions/null.md
+      - user-guide/expressions/missing-data.md
       - user-guide/expressions/window.md
       - user-guide/expressions/folds.md
       - user-guide/expressions/lists.md

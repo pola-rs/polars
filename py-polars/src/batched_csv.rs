@@ -142,7 +142,7 @@ impl PyBatchedCsv {
         }
         .map_err(PyPolarsErr::from)?;
 
-        // safety: same memory layout
+        // SAFETY: same memory layout
         let batches = unsafe {
             std::mem::transmute::<Option<Vec<DataFrame>>, Option<Vec<PyDataFrame>>>(batches)
         };

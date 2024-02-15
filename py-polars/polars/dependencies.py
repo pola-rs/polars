@@ -8,7 +8,6 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 
-_DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _GEVENT_AVAILABLE = True
@@ -150,7 +149,6 @@ if TYPE_CHECKING:
     import pickle
     import subprocess
 
-    import dataframe_api_compat
     import deltalake
     import fsspec
     import gevent
@@ -175,9 +173,6 @@ else:
     subprocess, _ = _lazy_import("subprocess")
 
     # heavy/optional third party libs
-    dataframe_api_compat, _DATAFRAME_API_COMPAT_AVAILABLE = _lazy_import(
-        "dataframe_api_compat"
-    )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     hvplot, _HVPLOT_AVAILABLE = _lazy_import("hvplot")
@@ -281,7 +276,6 @@ __all__ = [
     "pickle",
     "subprocess",
     # lazy-load third party libs
-    "dataframe_api_compat",
     "deltalake",
     "fsspec",
     "gevent",

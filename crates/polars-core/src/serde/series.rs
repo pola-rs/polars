@@ -234,12 +234,12 @@ impl<'de> Deserialize<'de> for Series {
                             if let Some(s) = value {
                                 // we only have one chunk per series as we serialize it in this way.
                                 let arr = &s.chunks()[0];
-                                // safety, we are within bounds
+                                // SAFETY, we are within bounds
                                 unsafe {
                                     builder.push_unchecked(arr.as_ref(), 0);
                                 }
                             } else {
-                                // safety, we are within bounds
+                                // SAFETY, we are within bounds
                                 unsafe {
                                     builder.push_null();
                                 }

@@ -49,4 +49,6 @@ The following methods are available under the `Series.list` attribute.
     Series.list.to_array
     Series.list.to_struct
     Series.list.unique
+    Series.list.n_unique
     Series.list.var
+    Series.list.gather_every

@@ -114,12 +114,12 @@ impl WindowExpr {
             take_idx = original_idx;
         }
         cache_gb(gb, state, cache_key);
-        // Safety:
+        // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
         let idx = IdxCa::from_vec("", take_idx);
 
-        // Safety:
+        // SAFETY:
         // groups should always be in bounds.
         unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
@@ -682,7 +682,7 @@ where
 {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
-    // safety:
+    // SAFETY:
     // we will write from different threads but we will never alias.
     let sync_ptr_values = unsafe { SyncPtr::new(ptr) };
 
@@ -724,7 +724,7 @@ where
             },
         }
 
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         Some(ChunkedArray::new_vec(ca.name(), values).into_series())
     } else {
@@ -796,7 +796,7 @@ where
                 })
             },
         }
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);

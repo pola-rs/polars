@@ -183,7 +183,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
         // remove elements that should leave the window
         let mut recompute_extremum = false;
         for idx in self.last_start..start {
-            // safety
+            // SAFETY:
             // we are in bounds
             let valid = self.validity.get_bit_unchecked(idx);
             if valid {

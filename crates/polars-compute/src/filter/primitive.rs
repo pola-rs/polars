@@ -112,7 +112,7 @@ where
                     std::ptr::copy(chunk.as_ptr(), dst, size);
                     dst = dst.add(size);
 
-                    // safety: invariant offset + length <= slice.len()
+                    // SAFETY: invariant offset + length <= slice.len()
                     new_validity.extend_from_slice_unchecked(
                         validity_chunk.to_ne_bytes().as_ref(),
                         0,

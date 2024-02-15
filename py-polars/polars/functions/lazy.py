@@ -346,6 +346,10 @@ def mean(*columns: str) -> Expr:
     *columns
         One or more column names.
 
+    See Also
+    --------
+    mean_horizontal
+
     Examples
     --------
     >>> df = pl.DataFrame(

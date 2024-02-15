@@ -54,4 +54,12 @@ impl PyExpr {
 
         self.inner.clone().name().map_fields(name_mapper).into()
     }
+
+    fn name_prefix_fields(&self, prefix: &str) -> Self {
+        self.inner.clone().name().prefix_fields(prefix).into()
+    }
+
+    fn name_suffix_fields(&self, suffix: &str) -> Self {
+        self.inner.clone().name().suffix_fields(suffix).into()
+    }
 }

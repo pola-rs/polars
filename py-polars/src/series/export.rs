@@ -1,84 +1,18 @@
+use num_traits::{Float, NumCast};
 use numpy::PyArray1;
 use polars_core::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
+use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
 use crate::prelude::{ObjectValue, *};
 use crate::{arrow_interop, raise_err, PySeries};
 
 #[pymethods]
 impl PySeries {
-    #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&mut self) -> PyResult<PyObject> {
-        self.rechunk(true);
-        Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
-
-            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, pyarrow)
-        })
-    }
-
-    /// For numeric types, this should only be called for Series with null types.
-    /// Non-nullable types are handled with `view()`.
-    /// This will cast to floats so that `None = np.nan`.
-    fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
-        let s = &self.series;
-        match s.dtype() {
-            dt if dt.is_numeric() => {
-                if s.bit_repr_is_large() {
-                    let s = s.cast(&DataType::Float64).unwrap();
-                    let ca = s.f64().unwrap();
-                    let np_arr =
-                        PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f64::NAN)));
-                    Ok(np_arr.into_py(py))
-                } else {
-                    let s = s.cast(&DataType::Float32).unwrap();
-                    let ca = s.f32().unwrap();
-                    let np_arr =
-                        PyArray1::from_iter(py, ca.iter().map(|opt_v| opt_v.unwrap_or(f32::NAN)));
-                    Ok(np_arr.into_py(py))
-                }
-            },
-            DataType::String => {
-                let ca = s.str().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
-                Ok(np_arr.into_py(py))
-            },
-            DataType::Binary => {
-                let ca = s.binary().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
-                Ok(np_arr.into_py(py))
-            },
-            DataType::Boolean => {
-                let ca = s.bool().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
-                Ok(np_arr.into_py(py))
-            },
-            #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
-                let ca = s
-                    .as_any()
-                    .downcast_ref::<ObjectChunked<ObjectValue>>()
-                    .unwrap();
-                let np_arr =
-                    PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
-                Ok(np_arr.into_py(py))
-            },
-            DataType::Null => {
-                let n = s.len();
-                let np_arr = PyArray1::from_iter(py, std::iter::repeat(f32::NAN).take(n));
-                Ok(np_arr.into_py(py))
-            },
-            dt => {
-                raise_err!(
-                    format!("'to_numpy' not supported for dtype: {dt:?}"),
-                    ComputeError
-                );
-            },
-        }
-    }
-
+    /// Convert this Series to a Python list.
+    /// This operation copies data.
     pub fn to_list(&self) -> PyObject {
         Python::with_gil(|py| {
             let series = &self.series;
@@ -213,4 +147,126 @@ impl PySeries {
             pylist.to_object(py)
         })
     }
+
+    /// Return the underlying Arrow array.
+    #[allow(clippy::wrong_self_convention)]
+    fn to_arrow(&mut self) -> PyResult<PyObject> {
+        self.rechunk(true);
+        Python::with_gil(|py| {
+            let pyarrow = py.import("pyarrow")?;
+
+            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, pyarrow)
+        })
+    }
+
+    /// Convert this Series to a NumPy ndarray.
+    ///
+    /// This method will copy data - numeric types without null values should
+    /// be handled on the Python side in a zero-copy manner.
+    ///
+    /// This method will cast integers to floats so that `null = np.nan`.
+    fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
+        use DataType::*;
+        let s = &self.series;
+        let out = match s.dtype() {
+            Int8 => numeric_series_to_numpy::<Int8Type, f32>(py, s),
+            Int16 => numeric_series_to_numpy::<Int16Type, f32>(py, s),
+            Int32 => numeric_series_to_numpy::<Int32Type, f64>(py, s),
+            Int64 => numeric_series_to_numpy::<Int64Type, f64>(py, s),
+            UInt8 => numeric_series_to_numpy::<UInt8Type, f32>(py, s),
+            UInt16 => numeric_series_to_numpy::<UInt16Type, f32>(py, s),
+            UInt32 => numeric_series_to_numpy::<UInt32Type, f64>(py, s),
+            UInt64 => numeric_series_to_numpy::<UInt64Type, f64>(py, s),
+            Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),
+            Float64 => numeric_series_to_numpy::<Float64Type, f64>(py, s),
+            Boolean => {
+                let ca = s.bool().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                np_arr.into_py(py)
+            },
+            Date => date_series_to_numpy(py, s),
+            Datetime(_, _) | Duration(_) => temporal_series_to_numpy(py, s),
+            Time => {
+                let ca = s.time().unwrap();
+                let iter = time_to_pyobject_iter(py, ca);
+                let np_arr = PyArray1::from_iter(py, iter.map(|v| v.into_py(py)));
+                np_arr.into_py(py)
+            },
+            String => {
+                let ca = s.str().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                np_arr.into_py(py)
+            },
+            Binary => {
+                let ca = s.binary().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                np_arr.into_py(py)
+            },
+            Categorical(_, _) | Enum(_, _) => {
+                let ca = s.categorical().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.iter_str().map(|s| s.into_py(py)));
+                np_arr.into_py(py)
+            },
+            Decimal(_, _) => {
+                let ca = s.decimal().unwrap();
+                let iter = decimal_to_pyobject_iter(py, ca);
+                let np_arr = PyArray1::from_iter(py, iter.map(|v| v.into_py(py)));
+                np_arr.into_py(py)
+            },
+            #[cfg(feature = "object")]
+            Object(_, _) => {
+                let ca = s
+                    .as_any()
+                    .downcast_ref::<ObjectChunked<ObjectValue>>()
+                    .unwrap();
+                let np_arr =
+                    PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
+                np_arr.into_py(py)
+            },
+            Null => {
+                let n = s.len();
+                let np_arr = PyArray1::from_iter(py, std::iter::repeat(f32::NAN).take(n));
+                np_arr.into_py(py)
+            },
+            dt => {
+                raise_err!(
+                    format!("`to_numpy` not supported for dtype {dt:?}"),
+                    ComputeError
+                );
+            },
+        };
+        Ok(out)
+    }
+}
+/// Convert numeric types to f32 or f64 with NaN representing a null value
+fn numeric_series_to_numpy<T, U>(py: Python, s: &Series) -> PyObject
+where
+    T: PolarsNumericType,
+    U: Float + numpy::Element,
+{
+    let ca: &ChunkedArray<T> = s.as_ref().as_ref();
+    let mapper = |opt_v: Option<T::Native>| match opt_v {
+        Some(v) => NumCast::from(v).unwrap(),
+        None => U::nan(),
+    };
+    let np_arr = PyArray1::from_iter(py, ca.iter().map(mapper));
+    np_arr.into_py(py)
+}
+/// Convert dates directly to i64 with i64::MIN representing a null value
+fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    let s_phys = s.to_physical_repr();
+    let ca = s_phys.i32().unwrap();
+    let mapper = |opt_v: Option<i32>| match opt_v {
+        Some(v) => v as i64,
+        None => i64::MIN,
+    };
+    let np_arr = PyArray1::from_iter(py, ca.iter().map(mapper));
+    np_arr.into_py(py)
+}
+/// Convert datetimes and durations with i64::MIN representing a null value
+fn temporal_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    let s_phys = s.to_physical_repr();
+    let ca = s_phys.i64().unwrap();
+    let np_arr = PyArray1::from_iter(py, ca.iter().map(|v| v.unwrap_or(i64::MIN)));
+    np_arr.into_py(py)
 }

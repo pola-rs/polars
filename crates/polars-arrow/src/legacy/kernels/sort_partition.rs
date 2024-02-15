@@ -90,7 +90,7 @@ pub fn partition_to_groups_amortized<T>(
                 let val_ptr = val as *const T;
                 let first_ptr = first as *const T;
 
-                // Safety
+                // SAFETY:
                 // all pointers suffice the invariants
                 let len = unsafe { val_ptr.offset_from(first_ptr) } as IdxSize;
                 out.push([first_idx, len]);

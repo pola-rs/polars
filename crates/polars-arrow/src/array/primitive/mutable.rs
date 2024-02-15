@@ -312,7 +312,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// Panics iff index is larger than `self.len()`.
     pub fn set(&mut self, index: usize, value: Option<T>) {
         assert!(index < self.len());
-        // Safety:
+        // SAFETY:
         // we just checked bounds
         unsafe { self.set_unchecked(index, value) }
     }

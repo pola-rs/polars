@@ -120,7 +120,7 @@ where
         }
     });
 
-    // Safety: length is correct
+    // SAFETY: length is correct
     unsafe { iter.trust_my_length(total_len).collect_trusted() }
 }
 

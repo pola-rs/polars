@@ -69,20 +69,20 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
         let values_size =
             allocate_rows_buf(&flattened_columns, &mut rows.values, &mut rows.offsets);
         for (arr, field) in flattened_columns.iter().zip(flattened_fields.iter()) {
-            // Safety:
+            // SAFETY:
             // we allocated rows with enough bytes.
             unsafe { encode_array(&**arr, field, rows) }
         }
-        // safety: values are initialized
+        // SAFETY: values are initialized
         unsafe { rows.values.set_len(values_size) }
     } else {
         let values_size = allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
         for (arr, field) in columns.iter().zip(fields) {
-            // Safety:
+            // SAFETY:
             // we allocated rows with enough bytes.
             unsafe { encode_array(&**arr, field, rows) }
         }
-        // safety: values are initialized
+        // SAFETY: values are initialized
         unsafe { rows.values.set_len(values_size) }
     }
 }

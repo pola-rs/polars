@@ -24,6 +24,8 @@ pub enum ListFunction {
     Get,
     #[cfg(feature = "list_gather")]
     Gather(bool),
+    #[cfg(feature = "list_gather")]
+    GatherEvery,
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
@@ -44,6 +46,7 @@ pub enum ListFunction {
     Sort(SortOptions),
     Reverse,
     Unique(bool),
+    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
     #[cfg(feature = "list_any_all")]
@@ -71,6 +74,8 @@ impl ListFunction {
             Get => mapper.map_to_list_and_array_inner_dtype(),
             #[cfg(feature = "list_gather")]
             Gather(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "list_gather")]
+            GatherEvery => mapper.with_same_dtype(),
             #[cfg(feature = "list_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
@@ -97,6 +102,7 @@ impl ListFunction {
             Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
+            NUnique => mapper.with_dtype(IDX_DTYPE),
         }
     }
 }
@@ -133,6 +139,8 @@ impl Display for ListFunction {
             Get => "get",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
+            #[cfg(feature = "list_gather")]
+            GatherEvery => "gather_every",
             #[cfg(feature = "list_count")]
             CountMatches => "count_matches",
             Sum => "sum",
@@ -156,6 +164,7 @@ impl Display for ListFunction {
                     "unique"
                 }
             },
+            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
             #[cfg(feature = "list_any_all")]
@@ -197,6 +206,8 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Get => wrap!(get),
             #[cfg(feature = "list_gather")]
             Gather(null_ob_oob) => map_as_slice!(gather, null_ob_oob),
+            #[cfg(feature = "list_gather")]
+            GatherEvery => map_as_slice!(gather_every),
             #[cfg(feature = "list_count")]
             CountMatches => map_as_slice!(count_matches),
             Sum => map!(sum),
@@ -223,6 +234,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => map!(to_array, width),
+            NUnique => map!(n_unique),
         }
     }
 }
@@ -467,6 +479,15 @@ pub(super) fn gather(args: &[Series], null_on_oob: bool) -> PolarsResult<Series>
     }
 }
 
+#[cfg(feature = "list_gather")]
+pub(super) fn gather_every(args: &[Series]) -> PolarsResult<Series> {
+    let ca = &args[0];
+    let n = &args[1].strict_cast(&IDX_DTYPE)?;
+    let offset = &args[2].strict_cast(&IDX_DTYPE)?;
+
+    ca.list()?.lst_gather_every(n.idx()?, offset.idx()?)
+}
+
 #[cfg(feature = "list_count")]
 pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
@@ -589,4 +610,8 @@ pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
 pub(super) fn to_array(s: &Series, width: usize) -> PolarsResult<Series> {
     let array_dtype = map_list_dtype_to_array_dtype(s.dtype(), width)?;
     s.cast(&array_dtype)
+}
+
+pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_n_unique()?.into_series())
 }

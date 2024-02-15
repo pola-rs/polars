@@ -134,9 +134,9 @@ fn update_scan_schema(
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
-        for name in aexpr_to_leaf_names(*node, expr_arena) {
+        for name in aexpr_to_leaf_names_iter(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
-                polars_err!(ComputeError: "column '{}' not available in schema {:?}", name, schema)
+                polars_err!(ComputeError: "column '{}' not available in 'DataFrame' with {:?}", name, schema)
             })?;
             new_cols.push(item);
         }

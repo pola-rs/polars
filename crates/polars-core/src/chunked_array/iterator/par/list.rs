@@ -16,7 +16,7 @@ impl ListChunked {
     pub fn par_iter(&self) -> impl ParallelIterator<Item = Option<Series>> + '_ {
         self.chunks.par_iter().flat_map(move |arr| {
             let dtype = self.inner_dtype();
-            // Safety:
+            // SAFETY:
             // guarded by the type system
             let arr = &**arr;
             let arr = unsafe { &*(arr as *const dyn Array as *const ListArray<i64>) };

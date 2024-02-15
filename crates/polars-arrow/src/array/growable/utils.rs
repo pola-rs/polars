@@ -38,7 +38,7 @@ pub(super) fn extend_validity(
             Some(validity) => {
                 debug_assert!(start + len <= validity.len());
                 let (slice, offset, _) = validity.as_slice();
-                // safety: invariant offset + length <= slice.len()
+                // SAFETY: invariant offset + length <= slice.len()
                 unsafe {
                     mutable_validity.extend_from_slice_unchecked(slice, start + offset, len);
                 }

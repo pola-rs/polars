@@ -648,19 +648,19 @@ def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> No
     assert result.to_dict(as_series=False) == expected
 
 
+# https://github.com/pola-rs/polars/issues/7181
 def test_group_by_multiple_column_reference() -> None:
-    # Issue #7181
     df = pl.DataFrame(
         {
             "gr": ["a", "b", "a", "b", "a", "b"],
             "val": [1, 20, 100, 2000, 10000, 200000],
         }
     )
-    res = df.group_by("gr").agg(
+    result = df.group_by("gr").agg(
         pl.col("val") + pl.col("val").shift().fill_null(0),
     )
 
-    assert res.sort("gr").to_dict(as_series=False) == {
+    assert result.sort("gr").to_dict(as_series=False) == {
         "gr": ["a", "b"],
         "val": [[1, 101, 10100], [20, 2020, 202000]],
     }

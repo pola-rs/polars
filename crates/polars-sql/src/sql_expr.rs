@@ -873,6 +873,8 @@ fn process_join_on(
                 polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
             },
         }
+    } else if let SQLExpr::Nested(expr) = expression {
+        process_join_on(expr, left_name, right_name)
     } else {
         polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
     }

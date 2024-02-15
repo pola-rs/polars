@@ -38,6 +38,8 @@ use smartstring::alias::String as SmartString;
 use url::Url;
 
 #[cfg(feature = "aws")]
+use crate::pl_async::with_concurrency_budget;
+#[cfg(feature = "aws")]
 use crate::utils::resolve_homedir;
 
 #[cfg(feature = "aws")]
@@ -284,13 +286,16 @@ impl CloudOptions {
                         builder = builder.with_config(AmazonS3ConfigKey::Region, "us-east-1");
                     } else {
                         polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
-                        let result = reqwest::Client::builder()
-                            .build()
-                            .unwrap()
-                            .head(format!("https://{bucket}.s3.amazonaws.com"))
-                            .send()
-                            .await
-                            .map_err(to_compute_err)?;
+                        let result = with_concurrency_budget(1, || async {
+                            reqwest::Client::builder()
+                                .build()
+                                .unwrap()
+                                .head(format!("https://{bucket}.s3.amazonaws.com"))
+                                .send()
+                                .await
+                                .map_err(to_compute_err)
+                        })
+                        .await?;
                         if let Some(region) = result.headers().get("x-amz-bucket-region") {
                             let region =
                                 std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;

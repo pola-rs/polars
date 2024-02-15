@@ -69,3 +69,17 @@ def test_map_fields() -> None:
     assert df.schema == OrderedDict([("x", pl.Struct({"a": pl.Int64, "b": pl.Int64}))])
     df = df.select(pl.col("x").name.map_fields(lambda x: x.upper()))
     assert df.schema == OrderedDict([("x", pl.Struct({"A": pl.Int64, "B": pl.Int64}))])
+
+
+def test_prefix_suffix_fields() -> None:
+    df = pl.DataFrame({"x": {"a": 1, "b": 2}})
+
+    prefix_df = df.select(pl.col("x").name.prefix_fields("p_"))
+    assert prefix_df.schema == OrderedDict(
+        [("x", pl.Struct({"p_a": pl.Int64, "p_b": pl.Int64}))]
+    )
+
+    suffix_df = df.select(pl.col("x").name.suffix_fields("_f"))
+    assert suffix_df.schema == OrderedDict(
+        [("x", pl.Struct({"a_f": pl.Int64, "b_f": pl.Int64}))]
+    )

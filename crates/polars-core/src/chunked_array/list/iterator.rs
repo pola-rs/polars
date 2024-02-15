@@ -46,7 +46,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // structs arrays are bound to the series not to the arrayref
                 // so we must get a hold to the new array
                 if matches!(self.inner_dtype, DataType::Struct(_)) {
-                    // Safety
+                    // SAFETY:
                     // dtype is known
                     unsafe {
                         let mut s = Series::from_chunks_and_dtype_unchecked(
@@ -74,7 +74,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // make sure that the length is correct
                 self.series_container._get_inner_mut().compute_len();
 
-                // Safety
+                // SAFETY:
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid
                 let refer = &mut *self.series_container;
@@ -144,7 +144,7 @@ impl ListChunked {
             _ => inner_dtype.clone(),
         };
 
-        // Safety:
+        // SAFETY:
         // inner type passed as physical type
         let series_container = unsafe {
             let mut s = Series::from_chunks_and_dtype_unchecked(
@@ -180,6 +180,17 @@ impl ListChunked {
         unsafe { self.amortized_iter().map(f).collect_ca(self.name()) }
     }
 
+    pub fn try_apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> PolarsResult<ChunkedArray<V>>
+    where
+        V: PolarsDataType,
+        F: FnMut(Option<UnstableSeries<'a>>) -> PolarsResult<Option<K>> + Copy,
+        V::Array: ArrayFromIter<Option<K>>,
+    {
+        // TODO! make an amortized iter that does not flatten
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe { self.amortized_iter().map(f).try_collect_ca(self.name()) }
+    }
+
     pub fn for_each_amortized<'a, F>(&'a self, f: F)
     where
         F: FnMut(Option<UnstableSeries<'a>>),
@@ -207,6 +218,54 @@ impl ListChunked {
                 .zip(ca)
                 .map(|(opt_s, opt_v)| {
                     let out = f(opt_s, opt_v);
+                    match out {
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
+                            Some(out)
+                        },
+                        None => {
+                            fast_explode = false;
+                            out
+                        },
+                    }
+                })
+                .collect_trusted()
+        };
+
+        out.rename(self.name());
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        out
+    }
+
+    #[must_use]
+    pub fn binary_zip_and_apply_amortized<'a, T, U, F>(
+        &'a self,
+        ca1: &'a ChunkedArray<T>,
+        ca2: &'a ChunkedArray<U>,
+        mut f: F,
+    ) -> Self
+    where
+        T: PolarsDataType,
+        U: PolarsDataType,
+        F: FnMut(
+            Option<UnstableSeries<'a>>,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+        ) -> Option<Series>,
+    {
+        if self.is_empty() {
+            return self.clone();
+        }
+        let mut fast_explode = self.null_count() == 0;
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut out: ListChunked = unsafe {
+            self.amortized_iter()
+                .zip(ca1.iter())
+                .zip(ca2.iter())
+                .map(|((opt_s, opt_u), opt_v)| {
+                    let out = f(opt_s, opt_u, opt_v);
                     match out {
                         Some(out) => {
                             fast_explode &= !out.is_empty();

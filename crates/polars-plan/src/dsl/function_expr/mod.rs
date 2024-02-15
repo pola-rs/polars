@@ -303,9 +303,10 @@ pub enum FunctionExpr {
     ForwardFill {
         limit: FillNullLimit,
     },
-    SumHorizontal,
     MaxHorizontal,
     MinHorizontal,
+    SumHorizontal,
+    MeanHorizontal,
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -379,8 +380,8 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            SumHorizontal | MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse
-            | ArgUnique | Shift | ShiftAndFill => {},
+            MaxHorizontal | MinHorizontal | SumHorizontal | MeanHorizontal | DropNans
+            | DropNulls | Reverse | ArgUnique | Shift | ShiftAndFill => {},
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -692,9 +693,10 @@ impl Display for FunctionExpr {
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             BackwardFill { .. } => "backward_fill",
             ForwardFill { .. } => "forward_fill",
-            SumHorizontal => "sum_horizontal",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
+            SumHorizontal => "sum_horizontal",
+            MeanHorizontal => "mean_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma")]
@@ -1049,9 +1051,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
-            SumHorizontal => wrap!(dispatch::sum_horizontal),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
+            SumHorizontal => wrap!(dispatch::sum_horizontal),
+            MeanHorizontal => wrap!(dispatch::mean_horizontal),
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
             #[cfg(feature = "ewma")]

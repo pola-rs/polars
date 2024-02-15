@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::borrow::Cow;
 
 use ahash::RandomState;
@@ -326,6 +327,9 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
+            }
+            fn as_any(&self) -> &dyn Any {
+                &self.0
             }
         }
     };

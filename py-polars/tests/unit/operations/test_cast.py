@@ -579,6 +579,10 @@ def test_strict_cast_string_and_binary(
 
 
 @pytest.mark.parametrize(
+    "dtype_in",
+    [(pl.Categorical), (pl.Enum(["1"]))],
+)
+@pytest.mark.parametrize(
     "dtype_out",
     [
         (pl.UInt8),
@@ -593,11 +597,15 @@ def test_strict_cast_string_and_binary(
         (pl.Datetime),
         (pl.Time),
         (pl.Duration),
-        (pl.Enum(["1"])),
+        (pl.String),
+        (pl.Categorical),
+        (pl.Enum(["1", "2"])),
     ],
 )
-def test_cast_categorical_name_retention(dtype_out: PolarsDataType) -> None:
-    assert pl.Series("a", ["1"], dtype=pl.Categorical).cast(dtype_out).name == "a"
+def test_cast_categorical_name_retention(
+    dtype_in: PolarsDataType, dtype_out: PolarsDataType
+) -> None:
+    assert pl.Series("a", ["1"], dtype=dtype_in).cast(dtype_out).name == "a"
 
 
 def test_cast_date_to_time() -> None:

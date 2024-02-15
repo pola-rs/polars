@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import io
 import itertools
+import operator
 from dataclasses import dataclass
 from decimal import Decimal as D
-from typing import Any, NamedTuple
+from typing import Any, Callable, NamedTuple
 
-import numpy as np
 import pytest
-from numpy.testing import assert_array_equal
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.fixture(scope="module")
@@ -140,6 +139,14 @@ def test_decimal_cast() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
+def test_decimal_cast_no_scale() -> None:
+    s = pl.Series().cast(pl.Decimal)
+    assert s.dtype == pl.Decimal(precision=None, scale=0)
+
+    s = pl.Series([D("10.0")]).cast(pl.Decimal)
+    assert s.dtype == pl.Decimal(precision=None, scale=1)
+
+
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
@@ -188,6 +195,34 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
     ]
 
 
+def test_decimal_eq_number() -> None:
+    a = pl.Series([D("1.5"), D("22.25"), D("10.0")], dtype=pl.Decimal)
+    assert_series_equal(a == 1, pl.Series([False, False, False]))
+    assert_series_equal(a == 1.5, pl.Series([True, False, False]))
+    assert_series_equal(a == D("1.5"), pl.Series([True, False, False]))
+    assert_series_equal(a == pl.Series([D("1.5")]), pl.Series([True, False, False]))
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True, True, True])),
+        (operator.lt, pl.Series([None, False, False, False, True, True])),
+        (operator.ge, pl.Series([None, True, True, True, False, False])),
+        (operator.gt, pl.Series([None, False, False, False, False, False])),
+    ],
+)
+def test_decimal_compare(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series(
+        [None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")], dtype=pl.Decimal
+    )
+    s2 = pl.Series([None, D("1.200"), D("2.13"), D("4.99"), D("4.99"), D("2.13")])
+
+    assert_series_equal(op(s, s2), expected)
+
+
 def test_decimal_arithmetic() -> None:
     df = pl.DataFrame(
         {
@@ -195,18 +230,21 @@ def test_decimal_arithmetic() -> None:
             "b": [D("20.1"), D("10.19"), D("39.21")],
         }
     )
+    dt = pl.Decimal(20, 10)
 
     out = df.select(
         out1=pl.col("a") * pl.col("b"),
         out2=pl.col("a") + pl.col("b"),
         out3=pl.col("a") / pl.col("b"),
         out4=pl.col("a") - pl.col("b"),
+        out5=pl.col("a").cast(dt) / pl.col("b").cast(dt),
     )
     assert out.dtypes == [
         pl.Decimal(precision=None, scale=4),
         pl.Decimal(precision=None, scale=2),
         pl.Decimal(precision=None, scale=6),
         pl.Decimal(precision=None, scale=2),
+        pl.Decimal(precision=None, scale=14),
     ]
 
     assert out.to_dict(as_series=False) == {
@@ -214,6 +252,7 @@ def test_decimal_arithmetic() -> None:
         "out2": [D("20.20"), D("20.29"), D("139.22")],
         "out3": [D("0.004975"), D("0.991167"), D("2.550624")],
         "out4": [D("-20.00"), D("-0.09"), D("60.80")],
+        "out5": [D("0.00497512437810"), D("0.99116781157998"), D("2.55062484060188")],
     }
 
 
@@ -300,18 +339,10 @@ def test_decimal_write_parquet_12375() -> None:
     df.write_parquet(f)
 
 
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-def test_decimal_numpy_export(use_pyarrow: bool) -> None:
-    decimal_data = [D("1.234"), D("2.345"), D("-3.456")]
-
-    s = pl.Series("n", decimal_data)
-    df = s.to_frame()
-
-    assert_array_equal(
-        np.array(decimal_data),
-        s.to_numpy(use_pyarrow=use_pyarrow),
-    )
-    assert_array_equal(
-        np.array(decimal_data).reshape((-1, 1)),
-        df.to_numpy(use_pyarrow=use_pyarrow),
-    )
+def test_decimal_list_get_13847() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+        df = pl.DataFrame({"a": [[D("1.1"), D("1.2")], [D("2.1")]]})
+        out = df.select(pl.col("a").list.get(0))
+        expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
+        assert_frame_equal(out, expected)

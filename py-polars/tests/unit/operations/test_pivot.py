@@ -22,7 +22,7 @@ def test_pivot() -> None:
             "bar": ["k", "l", "m", "n", "o"],
         }
     )
-    result = df.pivot(values="N", index="foo", columns="bar", aggregate_function=None)
+    result = df.pivot(index="foo", columns="bar", values="N", aggregate_function=None)
 
     expected = pl.DataFrame(
         [
@@ -47,7 +47,11 @@ def test_pivot_list() -> None:
         }
     )
     out = df.pivot(
-        "b", index="a", columns="a", aggregate_function="first", sort_columns=True
+        index="a",
+        columns="a",
+        values="b",
+        aggregate_function="first",
+        sort_columns=True,
     )
     assert_frame_equal(out, expected)
 
@@ -241,6 +245,20 @@ def test_pivot_struct_13120() -> None:
     assert result == expected
 
 
+def test_pivot_index_struct_14101() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 1],
+            "b": [{"a": 1}, {"a": 1}, {"a": 2}],
+            "c": ["x", "y", "y"],
+            "d": [1, 1, 3],
+        }
+    )
+    result = df.pivot(index="b", values="a", columns="c")
+    expected = pl.DataFrame({"b": [{"a": 1}, {"a": 2}], "x": [1, None], "y": [2, 1]})
+    assert_frame_equal(result, expected)
+
+
 def test_pivot_name_already_exists() -> None:
     # This should be extremely rare...but still, good to check it
     df = pl.DataFrame(
@@ -375,12 +393,36 @@ def test_pivot_negative_duration() -> None:
     }
 
 
-def test_aggregate_function_deprecation_warning() -> None:
+def test_aggregate_function_default() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
     with pytest.raises(
         pl.ComputeError, match="found multiple elements in the same group"
     ):
-        df.pivot("a", "b", "c")
+        df.pivot(values="a", index="b", columns="c")
+
+
+def test_pivot_positional_args_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+    with pytest.deprecated_call():
+        df.pivot("N", "foo", "bar", aggregate_function=None)
+
+
+def test_pivot_aggregate_function_count_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+    with pytest.deprecated_call():
+        df.pivot(index="foo", columns="bar", values="N", aggregate_function="count")  # type: ignore[arg-type]
 
 
 def test_pivot_struct() -> None:
@@ -417,3 +459,25 @@ def test_pivot_struct() -> None:
             {"num1": 4, "num2": 4},
         ],
     }
+
+
+def test_duplicate_column_names_which_should_raise_14305() -> None:
+    df = pl.DataFrame({"a": [1, 3, 2], "c": ["a", "a", "a"], "d": [7, 8, 9]})
+    with pytest.raises(pl.DuplicateError, match="has more than one occurrences"):
+        df.pivot(index="a", columns="c", values="d")
+
+
+def test_multi_index_containing_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 1],
+            "b": [{"a": 1}, {"a": 1}, {"a": 2}],
+            "c": ["x", "y", "y"],
+            "d": [1, 1, 3],
+        }
+    )
+    result = df.pivot(index=("b", "d"), values="a", columns="c")
+    expected = pl.DataFrame(
+        {"b": [{"a": 1}, {"a": 2}], "d": [1, 3], "x": [1, None], "y": [2, 1]}
+    )
+    assert_frame_equal(result, expected)

@@ -275,11 +275,13 @@ dtype-array = [
 ]
 dtype-i8 = [
   "polars-core/dtype-i8",
+  "polars-io/dtype-i8",
   "polars-lazy?/dtype-i8",
   "polars-ops/dtype-i8",
 ]
 dtype-i16 = [
   "polars-core/dtype-i16",
+  "polars-io/dtype-i16",
   "polars-lazy?/dtype-i16",
   "polars-ops/dtype-i16",
 ]
@@ -292,11 +294,13 @@ dtype-decimal = [
 ]
 dtype-u8 = [
   "polars-core/dtype-u8",
+  "polars-io/dtype-u8",
   "polars-lazy?/dtype-u8",
   "polars-ops/dtype-u8",
 ]
 dtype-u16 = [
   "polars-core/dtype-u16",
+  "polars-io/dtype-u16",
   "polars-lazy?/dtype-u16",
   "polars-ops/dtype-u16",
 ]

@@ -362,7 +362,7 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
             // cache misses
             original_h == idx_hash.hash && {
                 let key_idx = idx_hash.idx;
-                // Safety:
+                // SAFETY:
                 // indices in a group_by operation are always in bounds.
                 unsafe { compare_keys(keys_cmp, key_idx as usize, idx as usize) }
             }

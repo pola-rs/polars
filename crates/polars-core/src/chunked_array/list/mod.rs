@@ -42,7 +42,7 @@ impl ListChunked {
     pub fn get_inner(&self) -> Series {
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
-        // SAFETY
+        // SAFETY:
         // Inner dtype is passed correctly
         unsafe {
             Series::from_chunks_and_dtype_unchecked(
@@ -62,7 +62,7 @@ impl ListChunked {
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
 
-        // SAFETY
+        // SAFETY:
         // Inner dtype is passed correctly
         let elements = unsafe {
             Series::from_chunks_and_dtype_unchecked(
@@ -89,7 +89,7 @@ impl ListChunked {
             arr.validity().cloned(),
         );
 
-        // safety: arr's inner dtype is derived from out dtype.
+        // SAFETY: arr's inner dtype is derived from out dtype.
         Ok(unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
                 ca.name(),

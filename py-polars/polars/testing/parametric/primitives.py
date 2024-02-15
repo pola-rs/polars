@@ -14,6 +14,7 @@ from hypothesis.strategies._internal.utils import defines_strategy
 from polars.dataframe import DataFrame
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
+    Array,
     Categorical,
     DataType,
     DataTypeClass,
@@ -29,6 +30,7 @@ from polars.testing.parametric.strategies import (
     _flexhash,
     all_strategies,
     between,
+    create_array_strategy,
     create_list_strategy,
     scalar_strategies,
 )
@@ -40,7 +42,6 @@ if TYPE_CHECKING:
 
     from polars import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
-
 
 _time_units = list(DTYPE_TEMPORAL_UNITS)
 
@@ -122,11 +123,19 @@ class column:
         if self.dtype is None and self.strategy is None:
             self.dtype = random.choice(strategy_dtypes)
 
-        elif self.dtype == List:
+        elif self.dtype in (Array, List):
             if self.strategy is not None:
                 self.dtype = getattr(self.strategy, "_dtype", self.dtype)
             else:
-                self.strategy = create_list_strategy(getattr(self.dtype, "inner", None))
+                if self.dtype == Array:
+                    self.strategy = create_array_strategy(
+                        getattr(self.dtype, "inner", None),
+                        getattr(self.dtype, "width", None),
+                    )
+                else:
+                    self.strategy = create_list_strategy(
+                        getattr(self.dtype, "inner", None)
+                    )
                 self.dtype = self.strategy._dtype  # type: ignore[attr-defined]
 
         # elif self.dtype == Struct:
@@ -162,7 +171,7 @@ class column:
 
                 if sample_value_type is not None:
                     value_dtype = py_type_to_dtype(sample_value_type)
-                    if value_dtype is not List:
+                    if value_dtype is not Array and value_dtype is not List:
                         self.dtype = value_dtype
 
 
@@ -380,7 +389,7 @@ def series(
             else:
                 dtype_strategy = strategy
 
-            if series_dtype.is_float() and not allow_infinities:
+            if not allow_infinities and series_dtype.is_float():
                 dtype_strategy = dtype_strategy.filter(
                     lambda x: not isinstance(x, float) or isfinite(x)
                 )
@@ -676,7 +685,7 @@ def dataframes(
 
             # note: randomly change between column-wise and row-wise frame init
             orient = "col"
-            if draw(booleans()) and not any(c.dtype == List for c in coldefs):
+            if draw(booleans()) and not any(c.dtype in (Array, List) for c in coldefs):
                 data = list(zip(*data.values()))  # type: ignore[assignment]
                 orient = "row"
 
@@ -707,7 +716,7 @@ def dataframes(
                     # failed frame init: reproduce with...
                     pl.DataFrame(
                         data={frame_data},
-                        schema={repr(schema).replace("', ","', pl.")},
+                        schema={repr(schema).replace("', ", "', pl.")},
                         orient={orient!r},
                     )
                     """.replace("datetime.", "")

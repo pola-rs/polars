@@ -94,20 +94,19 @@ clippy-default:  ## Run clippy with default features
 
 .PHONY: fmt
 fmt:  ## Run autoformatting and linting
-	$(VENV_BIN)/ruff check .
-	$(VENV_BIN)/ruff format .
+	$(VENV_BIN)/ruff check
+	$(VENV_BIN)/ruff format
 	cargo fmt --all
 	dprint fmt
-	$(VENV_BIN)/typos .
+	$(VENV_BIN)/typos
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
+	@rm -rf .ruff_cache/
 	@rm -rf .venv/
-	@rm -rf target/
-	@rm -f Cargo.lock
 	@cargo clean
 	@$(MAKE) -s -C py-polars/ $@
 

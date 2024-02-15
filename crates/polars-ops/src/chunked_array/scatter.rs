@@ -100,7 +100,7 @@ where
         let mut ca = self.rechunk();
         drop(self);
 
-        // safety:
+        // SAFETY:
         // we will not modify the length
         // and we unset the sorted flag.
         ca.set_sorted_flag(IsSorted::Not);
@@ -113,13 +113,13 @@ where
 
                 // reborrow because the bck does not allow it
                 let current_values = unsafe { &mut *std::slice::from_raw_parts_mut(ptr, len) };
-                // Safety:
+                // SAFETY:
                 // we checked bounds
                 unsafe { scatter_impl(current_values, values, arr, idx, len) };
             },
             None => {
                 let mut new_values = arr.values().as_slice().to_vec();
-                // Safety:
+                // SAFETY:
                 // we checked bounds
                 unsafe { scatter_impl(&mut new_values, values, arr, idx, len) };
                 arr.set_values(new_values.into());

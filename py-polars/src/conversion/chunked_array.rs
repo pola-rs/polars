@@ -141,14 +141,19 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
 
 impl ToPyObject for Wrap<&TimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
-        let iter = self
-            .0
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
+        let iter = time_to_pyobject_iter(py, self.0);
         PyList::new(py, iter).into_py(py)
     }
+}
+
+pub(crate) fn time_to_pyobject_iter<'a>(
+    py: Python<'a>,
+    ca: &'a TimeChunked,
+) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
+    let utils = UTILS.as_ref(py);
+    let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
+    ca.0.into_iter()
+        .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()))
 }
 
 impl ToPyObject for Wrap<&DateChunked> {
@@ -165,29 +170,36 @@ impl ToPyObject for Wrap<&DateChunked> {
 
 impl ToPyObject for Wrap<&DecimalChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
-        let py_scale = (-(self.0.scale() as i32)).to_object(py);
-        // if we don't know precision, the only safe bet is to set it to 39
-        let py_precision = self.0.precision().unwrap_or(39).to_object(py);
-        let iter = self.0.into_iter().map(|opt_v| {
-            opt_v.map(|v| {
-                // TODO! use AnyValue so that we have a single impl.
-                const N: usize = 3;
-                let mut buf = [0_u128; N];
-                let n_digits = decimal_to_digits(v.abs(), &mut buf);
-                let buf = unsafe {
-                    std::slice::from_raw_parts(
-                        buf.as_slice().as_ptr() as *const u8,
-                        N * std::mem::size_of::<u128>(),
-                    )
-                };
-                let digits = PyTuple::new(py, buf.iter().take(n_digits));
-                convert
-                    .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
-                    .unwrap()
-            })
-        });
+        let iter = decimal_to_pyobject_iter(py, self.0);
         PyList::new(py, iter).into_py(py)
     }
+}
+
+pub(crate) fn decimal_to_pyobject_iter<'a>(
+    py: Python<'a>,
+    ca: &'a DecimalChunked,
+) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
+    let utils = UTILS.as_ref(py);
+    let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
+    let py_scale = (-(ca.scale() as i32)).to_object(py);
+    // if we don't know precision, the only safe bet is to set it to 39
+    let py_precision = ca.precision().unwrap_or(39).to_object(py);
+    ca.into_iter().map(move |opt_v| {
+        opt_v.map(|v| {
+            // TODO! use AnyValue so that we have a single impl.
+            const N: usize = 3;
+            let mut buf = [0_u128; N];
+            let n_digits = decimal_to_digits(v.abs(), &mut buf);
+            let buf = unsafe {
+                std::slice::from_raw_parts(
+                    buf.as_slice().as_ptr() as *const u8,
+                    N * std::mem::size_of::<u128>(),
+                )
+            };
+            let digits = PyTuple::new(py, buf.iter().take(n_digits));
+            convert
+                .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
+                .unwrap()
+        })
+    })
 }

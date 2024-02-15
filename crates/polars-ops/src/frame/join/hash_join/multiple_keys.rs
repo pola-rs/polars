@@ -148,7 +148,7 @@ fn probe_inner<F>(
 
             let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                 let idx_b = idx_hash.idx;
-                // Safety:
+                // SAFETY:
                 // indices in a join operation are always in bounds.
                 unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls) }
             });
@@ -314,7 +314,7 @@ pub fn _left_join_multiple_keys(
 
                         let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                             let idx_b = idx_hash.idx;
-                            // Safety:
+                            // SAFETY:
                             // indices in a join operation are always in bounds.
                             unsafe {
                                 compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
@@ -443,7 +443,7 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
 
                         let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                             let idx_b = idx_hash.idx;
-                            // Safety:
+                            // SAFETY:
                             // indices in a join operation are always in bounds.
                             unsafe {
                                 compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
@@ -533,7 +533,7 @@ fn probe_outer<F, G, H>(
                     .raw_entry_mut()
                     .from_hash(h, |idx_hash| {
                         let idx_b = idx_hash.idx;
-                        // Safety:
+                        // SAFETY:
                         // indices in a join operation are always in bounds.
                         unsafe {
                             compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)

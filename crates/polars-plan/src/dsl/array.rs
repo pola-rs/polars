@@ -177,4 +177,14 @@ impl ArrayNameSpace {
             )
             .with_fmt("arr.to_struct")
     }
+
+    /// Shift every sub-array.
+    pub fn shift(self, n: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::Shift),
+            &[n],
+            false,
+            false,
+        )
+    }
 }

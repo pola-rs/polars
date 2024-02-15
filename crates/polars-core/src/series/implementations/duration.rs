@@ -422,13 +422,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_duration(TimeUnit::Milliseconds))
     }
     fn median_as_series(&self) -> PolarsResult<Series> {
-        Ok(self
-            .0
-            .median_as_series()
-            .cast(&self.dtype().to_physical())
-            .unwrap()
-            .cast(self.dtype())
-            .unwrap())
+        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
     }
     fn quantile_as_series(
         &self,
@@ -444,5 +438,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }

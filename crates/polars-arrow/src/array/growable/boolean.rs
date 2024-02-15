@@ -57,7 +57,7 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
         let values = array.values();
 
         let (slice, offset, _) = values.as_slice();
-        // safety: invariant offset + length <= slice.len()
+        // SAFETY: invariant offset + length <= slice.len()
         unsafe {
             self.values
                 .extend_from_slice_unchecked(slice, start + offset, len);

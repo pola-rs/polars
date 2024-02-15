@@ -113,7 +113,7 @@ impl Series {
                     .as_any()
                     .downcast_ref::<FixedSizeBinaryArray>()
                     .unwrap();
-                // Safety:
+                // SAFETY:
                 // this is highly unsafe. it will dereference a raw ptr on the heap
                 // make sure the ptr is allocated and from this pid
                 // (the pid is checked before dereference)
@@ -343,7 +343,7 @@ impl Series {
 
                 if let Some(metadata) = md {
                     if metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
-                        // Safety
+                        // SAFETY:
                         // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                         return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                             UInt32Chunked::with_chunk(name, keys.clone()),
@@ -354,7 +354,7 @@ impl Series {
                         .into_series());
                     }
                 }
-                // Safety
+                // SAFETY:
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                 Ok(
                     CategoricalChunked::from_keys_and_values(
@@ -373,7 +373,7 @@ impl Series {
                     .as_any()
                     .downcast_ref::<FixedSizeBinaryArray>()
                     .unwrap();
-                // Safety:
+                // SAFETY:
                 // this is highly unsafe. it will dereference a raw ptr on the heap
                 // make sure the ptr is allocated and from this pid
                 // (the pid is checked before dereference)
@@ -706,7 +706,7 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
         let (name, chunks) = name_arr;
 
         let data_type = check_types(&chunks)?;
-        // Safety:
+        // SAFETY:
         // dtype is checked
         unsafe { Series::_try_from_arrow_unchecked(name, chunks, &data_type) }
     }
@@ -729,7 +729,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
 
         let data_type = check_types(&chunks)?;
 
-        // Safety:
+        // SAFETY:
         // dtype is checked
         unsafe {
             Series::_try_from_arrow_unchecked_with_md(
