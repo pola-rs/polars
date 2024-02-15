@@ -41,4 +41,12 @@ impl StructNameSpace {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::JsonEncode))
     }
+
+    pub fn select_fields(self, exprs: Vec<Expr>) -> Expr {
+        let input = Box::new(self.0);
+        Expr::StructSelect {
+            input,
+            struct_exprs: exprs,
+        }
+    }
 }

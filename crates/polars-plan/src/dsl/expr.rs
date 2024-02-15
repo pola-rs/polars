@@ -112,6 +112,10 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
+    StructSelect {
+        input: Box<Expr>,
+        struct_exprs: Vec<Expr>,
+    },
     Explode(Box<Expr>),
     Filter {
         input: Box<Expr>,

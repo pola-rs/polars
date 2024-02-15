@@ -222,6 +222,33 @@ impl AExpr {
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
+            #[cfg(feature = "dtype-struct")]
+            StructSelect {
+                input,
+                struct_exprs,
+            } => {
+                let input = arena.get(*input).to_field(schema, ctxt, arena)?;
+
+                match input.data_type() {
+                    Struct(fields) => {
+                        let dummy_df = DataFrame::from(&Schema::from_iter(fields.clone()));
+
+                        let lp = LogicalPlanBuilder::from_existing_df(dummy_df)
+                            .project(struct_exprs.to_vec(), Default::default())
+                            .build();
+
+                        let new_fields = lp.schema()?.iter_fields().collect();
+
+                        Ok(Field::new(input.name(), Struct(new_fields)))
+                    },
+                    Unknown => Ok(input),
+                    _ => polars_bail!(ComputeError: "encountered non-struct field"),
+                }
+            },
+            #[cfg(not(feature = "dtype-struct"))]
+            StructSelect { .. } => {
+                panic!("activate feature 'dtype-struct'")
+            },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => {
                 polars_bail!(ComputeError: "wildcard column selection not supported at this point")

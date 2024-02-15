@@ -132,6 +132,13 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             function,
             options,
         },
+        Expr::StructSelect {
+            input,
+            struct_exprs,
+        } => AExpr::StructSelect {
+            input: to_aexpr(*input, arena),
+            struct_exprs,
+        },
         Expr::Window {
             function,
             partition_by,
@@ -575,6 +582,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             input: nodes_to_exprs(&input, expr_arena),
             function,
             options,
+        },
+        AExpr::StructSelect {
+            input,
+            struct_exprs,
+        } => Expr::StructSelect {
+            input: Box::new(node_to_expr(input, expr_arena)),
+            struct_exprs,
         },
         AExpr::Window {
             function,

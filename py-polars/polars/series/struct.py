@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_df
@@ -11,6 +11,8 @@ from polars.utils.various import sphinx_accessor
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, Series
     from polars.polars import PySeries
+    from polars.type_aliases import IntoExpr
+
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -104,4 +106,21 @@ class StructNameSpace:
             "{"a":[1,2],"b"…
             "{"a":[9,1,3],"…
         ]
+        """
+
+    def select(
+        self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+    ) -> Series:
+        """
+        Evaluate expressions over the fields of this struct.
+
+        Parameters
+        ----------
+        *exprs
+            Column(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names,
+            other non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional columns to select, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
         """

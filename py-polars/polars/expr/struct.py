@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
 
+from polars.utils._parse_expr_input import (
+    parse_as_list_of_expressions,
+)
 from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
+    from polars.type_aliases import IntoExpr
 
 
 class ExprStructNameSpace:
@@ -168,3 +172,86 @@ class ExprStructNameSpace:
         └──────────────────┴────────────────────────┘
         """
         return wrap_expr(self._pyexpr.struct_json_encode())
+
+    def select(
+        self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+    ) -> Expr:
+        """
+        Evaluate expressions over the fields of this struct.
+
+        Parameters
+        ----------
+        *exprs
+            Column(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names,
+            other non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional columns to select, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
+
+        Examples
+        --------
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame(
+        ...     [
+        ...         pl.Series("a", [1, 2, 3, 4]),
+        ...         pl.Series("b", [5, 6, 7, 8]),
+        ...         pl.Series("c", [True, True, False, True]),
+        ...         pl.Series("d", ["aa", "bb", "cc", "dd"]),
+        ...     ]
+        ... ).select(col=pl.struct(pl.all()))
+        >>> (
+        ...     df.lazy()
+        ...     .select(
+        ...         # Select subset of fields / reorder fields
+        ...         subset=pl.col("col").struct.select("c", "d"),
+        ...         # Sum the numeric columns
+        ...         hsum=pl.col("col")
+        ...         .struct.select(res=pl.sum_horizontal(cs.numeric()))
+        ...         .struct.field("res"),
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (4, 2)
+        ┌──────────────┬──────┐
+        │ subset       ┆ hsum │
+        │ ---          ┆ ---  │
+        │ struct[2]    ┆ i64  │
+        ╞══════════════╪══════╡
+        │ {true,"aa"}  ┆ 6    │
+        │ {true,"bb"}  ┆ 8    │
+        │ {false,"cc"} ┆ 10   │
+        │ {true,"dd"}  ┆ 12   │
+        └──────────────┴──────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "input": ["5_10", "15_20", "2_5"],
+        ...     }
+        ... )
+        >>> (
+        ...     df.select(
+        ...         result=pl.col("input")
+        ...         .str.split_exact("_", 1)
+        ...         .struct.rename_fields(["low", "high"])
+        ...         .struct.select(
+        ...             ranges=pl.int_ranges(
+        ...                 pl.col("low").cast(pl.Int64), pl.col("high").cast(pl.Int64)
+        ...             )
+        ...         )
+        ...         .struct.field("ranges")
+        ...     )
+        ... )
+        shape: (3, 1)
+        ┌────────────────┐
+        │ result         │
+        │ ---            │
+        │ list[i64]      │
+        ╞════════════════╡
+        │ [5, 6, … 9]    │
+        │ [15, 16, … 19] │
+        │ [2, 3, 4]      │
+        └────────────────┘
+        """
+        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs, __structify=False)
+        return wrap_expr(self._pyexpr.struct_select(pyexprs))

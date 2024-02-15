@@ -13,6 +13,8 @@ mod rolling;
 mod slice;
 mod sort;
 mod sortby;
+#[cfg(feature = "dtype-struct")]
+mod struct_select;
 mod take;
 mod ternary;
 mod window;
@@ -39,6 +41,8 @@ pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use struct_select::*;
 pub(crate) use take::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;

@@ -176,6 +176,10 @@ pub enum AExpr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
+    StructSelect {
+        input: Node,
+        struct_exprs: Vec<Expr>,
+    },
     Window {
         function: Node,
         partition_by: Vec<Node>,
@@ -239,6 +243,7 @@ impl AExpr {
             | Ternary { .. }
             | Wildcard
             | Cast { .. }
+            | StructSelect { .. }
             | Filter { .. } => false,
         }
     }
@@ -309,6 +314,9 @@ impl AExpr {
                     .rev()
                     .copied()
                     .for_each(|node| container.push_node(node))
+            },
+            StructSelect { input, .. } => {
+                container.push_node(*input);
             },
             Explode(e) => container.push_node(*e),
             Window {
@@ -389,6 +397,10 @@ impl AExpr {
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 input.clear();
                 input.extend(inputs.iter().rev().copied());
+                return self;
+            },
+            StructSelect { input, .. } => {
+                *input = inputs[0];
                 return self;
             },
             Slice {

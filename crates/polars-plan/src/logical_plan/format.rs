@@ -381,6 +381,12 @@ impl Debug for Expr {
                     write!(f, "{:?}.{function}()", input[0])
                 }
             },
+            StructSelect {
+                input,
+                struct_exprs,
+            } => {
+                write!(f, "{:?}.struct.select({:?})", input, struct_exprs)
+            },
             AnonymousFunction { input, options, .. } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
