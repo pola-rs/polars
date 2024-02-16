@@ -528,7 +528,9 @@ impl PipeLine {
                         };
 
                         for probe_side in q.iter_mut() {
-                            let _ = probe_side.replace_operator(op.as_ref(), node);
+                            if probe_side.replace_operator(op.as_ref(), node) {
+                                break;
+                            }
                         }
                     } else {
                         reduced_sink.combine(sink.as_mut());
@@ -609,9 +611,10 @@ impl PipeLine {
                     if let Some(sink_node) = sink_nodes.pop() {
                         // we traverse all pipeline
                         pipeline.replace_operator(op.as_ref(), sink_node);
-                        // if there are unions, there can be more
                         for pl in self.other_branches.borrow_mut().iter_mut() {
-                            pl.replace_operator(op.as_ref(), sink_node);
+                            if pl.replace_operator(op.as_ref(), sink_node) {
+                                break;
+                            }
                         }
                     }
                     sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
