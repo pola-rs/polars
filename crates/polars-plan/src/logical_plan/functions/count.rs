@@ -1,40 +1,48 @@
+#[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::count_rows as count_rows_csv;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::{ParquetAsyncReader, ParquetReader};
+#[cfg(feature = "parquet")]
 use polars_io::pl_async::get_runtime;
+#[cfg(feature = "parquet")]
 use polars_io::{is_cloud_url, SerReader};
 
 use super::*;
 
+#[allow(unused_variables)]
 pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<DataFrame> {
-    let n_rows = match scan_type {
+    match scan_type {
+        #[cfg(feature = "csv")]
         FileScan::Csv { options } => {
             // SAFETY
             // should be exactly one path when reading csv
             let path = unsafe { paths.get_unchecked(0) };
-            count_rows_csv(
+            let n_rows = count_rows_csv(
                 path,
                 options.quote_char,
                 options.comment_prefix.as_ref(),
                 options.eol_char,
                 options.has_header,
-            )?
+            )?;
+            Ok(DataFrame::new(vec![Series::from_vec("len", vec![n_rows as u32])]).unwrap())
         },
+        #[cfg(feature = "parquet")]
         FileScan::Parquet { cloud_options, .. } => {
-            count_rows_parquet(paths, cloud_options.as_ref())?
+            let n_rows = count_rows_parquet(paths, cloud_options.as_ref())?;
+            Ok(DataFrame::new(vec![Series::from_vec("len", vec![n_rows as u32])]).unwrap())
         },
+        #[cfg(feature = "ipc")]
         FileScan::Ipc { .. } => {
-            unreachable!()
+            todo!()
         },
         FileScan::Anonymous { .. } => {
-            unreachable!()
+            todo!()
         },
-    };
-    Ok(DataFrame::new(vec![Series::from_vec("len", vec![n_rows as u32])]).unwrap())
+    }
 }
-
+#[cfg(feature = "parquet")]
 pub(super) fn count_rows_parquet(
     paths: &Arc<[PathBuf]>,
     cloud_options: Option<&CloudOptions>,
@@ -42,7 +50,7 @@ pub(super) fn count_rows_parquet(
     paths
         .iter()
         .map(|path: &PathBuf| {
-            if is_cloud_url(&path) {
+            if is_cloud_url(path) {
                 #[cfg(not(feature = "cloud"))]
                 panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."

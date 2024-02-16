@@ -20,7 +20,7 @@ pub fn count_rows(
     eol_char: u8,
     has_header: bool,
 ) -> PolarsResult<usize> {
-    let mut reader = polars_utils::open_file(&path)?;
+    let mut reader = polars_utils::open_file(path)?;
     let reader_bytes = get_reader_bytes(&mut reader)?;
 
     let row_iterator = SplitLines::new(&reader_bytes, quote_char.unwrap_or(b'"'), eol_char);

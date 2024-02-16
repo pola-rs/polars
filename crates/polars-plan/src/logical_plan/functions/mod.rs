@@ -1,4 +1,3 @@
-#[cfg(feature = "parquet")]
 mod count;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;

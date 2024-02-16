@@ -25,13 +25,14 @@ impl OptimizationRule for CountStar {
             projection: None,
             selection: None,
         };
+        #[allow(unused_variables)]
         let placeholder_node = lp_arena.add(placeholder);
 
         // Do not allow nested structures. Logical plan should be Project -> Scan
         let ALogicalPlan::Projection { input, .. } = lp_arena.get(node) else {
             return None;
         };
-
+        #[allow(unused_variables)]
         let ALogicalPlan::Scan {
             paths, scan_type, ..
         } = lp_arena.get(*input)
@@ -39,7 +40,7 @@ impl OptimizationRule for CountStar {
             return None;
         };
 
-        #[cfg(feature = "parquet")]
+        #[cfg(all(feature = "parquet", feature = "csv"))]
         if matches!(scan_type, FileScan::Parquet { .. } | FileScan::Csv { .. }) {
             let alp = ALogicalPlan::MapFunction {
                 input: placeholder_node,
@@ -49,9 +50,8 @@ impl OptimizationRule for CountStar {
                 },
             };
             lp_arena.replace(node, alp.clone());
-            Some(alp)
-        } else {
-            None
+            return Some(alp);
         }
+        None
     }
 }
