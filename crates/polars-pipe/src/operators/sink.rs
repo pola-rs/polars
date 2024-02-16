@@ -1,6 +1,8 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 
+use polars_utils::arena::Node;
+
 use super::*;
 
 #[derive(Debug)]
@@ -41,5 +43,10 @@ pub trait Sink: Send + Sync {
 
     fn is_join_build(&self) -> bool {
         false
+    }
+
+    // Only implemented for Join sinks
+    fn node(&self) -> Node {
+        unimplemented!()
     }
 }

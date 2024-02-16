@@ -504,7 +504,21 @@ impl PipeLine {
                         pipeline.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
                     // This branch is hit when we have a Union of joins.
                     // The build side must be converted into an operator and replaced in the next pipeline.
-                    if sink.is_join_build() {
+
+                    // Check either:
+                    // 1. There can be a union source that sinks into a single join:
+                    //      scan_parquet(*) -> join B
+                    // 2. There can be a union of joins
+                    //      C - JOIN A, B
+                    //      concat (A, B, C)
+                    //
+                    // So to ensure that we don't finalize we check
+                    // - They are not both join builds
+                    // - If they are both join builds, check they are note the same build, otherwise
+                    //   we must call the `combine` branch.
+                    if sink.is_join_build()
+                        && (!reduced_sink.is_join_build() || (sink.node() != reduced_sink.node()))
+                    {
                         let FinalizedSink::Operator(op) = sink.finalize(ec)? else {
                             unreachable!()
                         };
@@ -514,9 +528,7 @@ impl PipeLine {
                         };
 
                         for probe_side in q.iter_mut() {
-                            if probe_side.replace_operator(op.as_ref(), node) {
-                                break;
-                            }
+                            let _ = probe_side.replace_operator(op.as_ref(), node);
                         }
                     } else {
                         reduced_sink.combine(sink.as_mut());
