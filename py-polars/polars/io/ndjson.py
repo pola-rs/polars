@@ -59,6 +59,7 @@ def read_ndjson(
 def scan_ndjson(
     source: str | Path | list[str] | list[Path],
     *,
+    schema: SchemaDefinition | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
     n_rows: int | None = None,
@@ -66,7 +67,6 @@ def scan_ndjson(
     rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    schema: SchemaDefinition | None = None,
     ignore_errors: bool = False,
 ) -> LazyFrame:
     """
@@ -79,9 +79,19 @@ def scan_ndjson(
     ----------
     source
         Path to a file.
-    infer_schema_length : int or None
-        Infer the schema from the first `infer_schema_length` rows.
-        If set to `None`, a full table scan will be done (slow).
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
+    infer_schema_length
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
     batch_size
         Number of rows to read in each batch.
     n_rows
@@ -95,16 +105,6 @@ def scan_ndjson(
         DataFrame
     row_index_offset
         Offset to start the row index column (only use if the name is set)
-    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The DataFrame schema may be declared in several ways:
-
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-        * As a list of column names; in this case types are automatically inferred.
-        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-        If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
     """

@@ -171,9 +171,10 @@ class LazyFrame:
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length : int or None
-        Maximum number of rows to read for schema inference; only applies if the input
-        data is a sequence or generator of rows; other input is read as-is.
-        If set to `None`, a full table scan will be done (slow).
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
+        This parameter only applies if the input data is a sequence or generator of
+        rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.

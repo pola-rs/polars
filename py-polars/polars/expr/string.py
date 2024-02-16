@@ -1272,8 +1272,8 @@ class ExprStringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
 
         See Also
         --------
@@ -2432,8 +2432,8 @@ class ExprStringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
         """
         return self.json_decode(dtype, infer_schema_length)
 
