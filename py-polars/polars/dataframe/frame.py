@@ -2094,8 +2094,9 @@ class DataFrame:
 
             function for the conversion to numpy if necessary.
         writable
-            In the case that a numpy view is returned, make a copy of the resulting
-            array to allow in-place modifications.
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy, as the underlying Arrow data is
+            immutable.
 
         Notes
         -----

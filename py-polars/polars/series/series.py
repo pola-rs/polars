@@ -4301,10 +4301,9 @@ class Series:
             the underlying data. Data copy occurs, for example, when the Series contains
             nulls or non-numeric types.
         writable
-            For NumPy arrays created with zero copy (view on the Arrow data),
-            the resulting array is not writable (Arrow data is immutable).
-            By setting this to True, a copy of the array is made to ensure
-            it is writable.
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy, as the underlying Arrow data is
+            immutable.
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
