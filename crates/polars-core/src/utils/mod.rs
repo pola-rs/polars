@@ -133,7 +133,11 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
-pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
+pub fn split_df_as_ref(
+    df: &DataFrame,
+    n: usize,
+    extend_sub_chunks: bool,
+) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
     let chunk_size = std::cmp::max(total_len / n, 1);
 
@@ -155,7 +159,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
             chunk_size
         };
         let df = df.slice((i * chunk_size) as i64, len);
-        if df.n_chunks() > 1 {
+        if extend_sub_chunks && df.n_chunks() > 1 {
             // we add every chunk as separate dataframe. This make sure that every partition
             // deals with it.
             out.extend(flatten_df_iter(&df))
@@ -175,7 +179,7 @@ pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     }
     // make sure that chunks are aligned.
     df.align_chunks();
-    split_df_as_ref(df, n)
+    split_df_as_ref(df, n, true)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
