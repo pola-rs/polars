@@ -56,6 +56,6 @@ impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
     }
 
     fn _finish(&mut self) -> PolarsResult<()> {
-        Ok(())
+        self.finish()
     }
 }

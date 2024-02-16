@@ -112,6 +112,14 @@ def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
         assert_frame_equal(target_data, source_data)
 
 
+@pytest.mark.write_disk()
+def test_sink_csv_14494(tmp_path: Path) -> None:
+    pl.LazyFrame({"c": [1, 2, 3]}, schema={"c": pl.Int64}).filter(
+        pl.col("c") > 10
+    ).sink_csv(tmp_path / "sink.csv")
+    assert pl.read_csv(tmp_path / "sink.csv").columns == ["c"]
+
+
 def test_sink_csv_with_options() -> None:
     """
     Test with all possible options.

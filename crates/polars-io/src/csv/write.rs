@@ -165,13 +165,14 @@ where
         self
     }
 
-    pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+    pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let expects_bom = self.bom;
         let expects_header = self.header;
         Ok(BatchedWriter {
             writer: self,
             has_written_bom: !expects_bom,
             has_written_header: !expects_header,
+            schema: schema.clone(),
         })
     }
 }
@@ -180,6 +181,7 @@ pub struct BatchedWriter<W: Write> {
     writer: CsvWriter<W>,
     has_written_bom: bool,
     has_written_header: bool,
+    schema: Schema,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -206,6 +208,22 @@ impl<W: Write> BatchedWriter<W> {
             &self.writer.options,
             self.writer.n_threads,
         )?;
+        Ok(())
+    }
+
+    /// Writes the header of the csv file if not done already. Returns the total size of the file.
+    pub fn finish(&mut self) -> PolarsResult<()> {
+        if !self.has_written_bom {
+            self.has_written_bom = true;
+            write_impl::write_bom(&mut self.writer.buffer)?;
+        }
+
+        if !self.has_written_header {
+            self.has_written_header = true;
+            let names = self.schema.get_names();
+            write_impl::write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+        };
+
         Ok(())
     }
 }
