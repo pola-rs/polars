@@ -689,9 +689,12 @@ class RewrittenInstructions:
         """
         n_required_ops, argvals = len(opnames), argvals or []
         idx_offset = idx + n_required_ops
-        if is_attr and (trailing_inst := self._instructions[idx_offset:1]):
-            if trailing_inst[0].opname == "CALL":
-                return []
+        if (
+            is_attr
+            and (trailing_inst := self._instructions[idx_offset : idx_offset + 1])
+            and trailing_inst[0].opname in OpNames.CALL  # not pure attr if called
+        ):
+            return []
 
         instructions = self._instructions[idx:idx_offset]
         if len(instructions) == n_required_ops and all(
