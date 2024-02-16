@@ -1371,7 +1371,11 @@ impl PyDataFrame {
     }
 
     #[pyo3(signature = (keep_names_as, column_names))]
-    pub fn transpose(&self, keep_names_as: Option<&str>, column_names: &PyAny) -> PyResult<Self> {
+    pub fn transpose(
+        &mut self,
+        keep_names_as: Option<&str>,
+        column_names: &PyAny,
+    ) -> PyResult<Self> {
         let new_col_names = if let Ok(name) = column_names.extract::<Vec<String>>() {
             Some(Either::Right(name))
         } else if let Ok(name) = column_names.extract::<String>() {
