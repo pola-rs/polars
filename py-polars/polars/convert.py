@@ -107,8 +107,8 @@ def from_dicts(
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
     infer_schema_length
-        How many dictionaries/rows to scan to determine the data types
-        if set to `None` then ALL dicts are scanned; this will be slow.
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
 
     Returns
     -------
@@ -211,8 +211,8 @@ def from_records(
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length
-        How many dictionaries/rows to scan to determine the data types
-        if set to `None` all rows are scanned. This will be slow.
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
 
     Returns
     -------

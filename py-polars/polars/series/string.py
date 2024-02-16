@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 from polars.utils.deprecation import (
     deprecate_renamed_function,
@@ -674,7 +675,9 @@ class StringNameSpace:
         """
 
     def json_decode(
-        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+        self,
+        dtype: PolarsDataType | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Series:
         """
         Parse string values as JSON.
@@ -687,8 +690,8 @@ class StringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
 
         See Also
         --------
@@ -1846,7 +1849,9 @@ class StringNameSpace:
 
     @deprecate_renamed_function("json_decode", version="0.19.15")
     def json_extract(
-        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+        self,
+        dtype: PolarsDataType | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Series:
         """
         Parse string values as JSON.
@@ -1860,8 +1865,8 @@ class StringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
         """
         return self.json_decode(dtype, infer_schema_length)
 
