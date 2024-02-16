@@ -535,7 +535,7 @@ class LazyFrame:
         cls,
         source: str | Path | list[str] | list[Path],
         *,
-        infer_schema_length: int | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
