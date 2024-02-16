@@ -1821,8 +1821,7 @@ class DataFrame:
         if max_cols < 0:
             max_cols = self.width
 
-        default_rows = 20 if _from_series else 10
-        max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=default_rows))
+        max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=10))
         if max_rows < 0:
             max_rows = self.height
 

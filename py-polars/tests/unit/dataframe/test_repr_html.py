@@ -67,5 +67,5 @@ def test_series_repr_html_max_rows_default() -> None:
 
     html = s._repr_html_()
 
-    expected_rows = 20
+    expected_rows = 10
     assert html.count("<td>") - 2 == expected_rows
