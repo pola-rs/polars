@@ -84,10 +84,13 @@ impl DataFrame {
 
     /// Transpose a DataFrame. This is a very expensive operation.
     pub fn transpose(
-        &self,
+        &mut self,
         keep_names_as: Option<&str>,
         new_col_names: Option<Either<String, Vec<String>>>,
     ) -> PolarsResult<DataFrame> {
+        // We must iterate columns as [`AnyValue`], so we must be contiguous.
+        self.as_single_chunk_par();
+
         let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
         let names_out = match new_col_names {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
@@ -260,7 +263,7 @@ mod test {
 
     #[test]
     fn test_transpose() -> PolarsResult<()> {
-        let df = df![
+        let mut df = df![
             "a" => [1, 2, 3],
             "b" => [10, 20, 30],
         ]?;
@@ -274,7 +277,7 @@ mod test {
         ]?;
         assert!(out.equals_missing(&expected));
 
-        let df = df![
+        let mut df = df![
             "a" => [Some(1), None, Some(3)],
             "b" => [Some(10), Some(20), None],
         ]?;
@@ -287,7 +290,7 @@ mod test {
         ]?;
         assert!(out.equals_missing(&expected));
 
-        let df = df![
+        let mut df = df![
             "a" => ["a", "b", "c"],
             "b" => [Some(10), Some(20), None],
         ]?;

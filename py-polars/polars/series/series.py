@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import math
-import os
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import (
@@ -101,6 +100,7 @@ from polars.utils.deprecation import (
 )
 from polars.utils.unstable import unstable
 from polars.utils.various import (
+    BUILDING_SPHINX_DOCS,
     _is_generator,
     no_default,
     parse_version,
@@ -148,7 +148,7 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
-elif os.getenv("BUILDING_SPHINX_DOCS"):
+elif BUILDING_SPHINX_DOCS:
     property = sphinx_accessor
 
 ArrayLike = Union[
@@ -2062,7 +2062,7 @@ class Series:
         """
         return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
-    def std(self, ddof: int = 1) -> float | None:
+    def std(self, ddof: int = 1) -> float | timedelta | None:
         """
         Get the standard deviation of this Series.
 
@@ -2079,11 +2079,9 @@ class Series:
         >>> s.std()
         1.0
         """
-        if not self.dtype.is_numeric():
-            return None
         return self._s.std(ddof)
 
-    def var(self, ddof: int = 1) -> float | None:
+    def var(self, ddof: int = 1) -> float | timedelta | None:
         """
         Get variance of this Series.
 
@@ -2100,8 +2098,6 @@ class Series:
         >>> s.var()
         1.0
         """
-        if not self.dtype.is_numeric():
-            return None
         return self._s.var(ddof)
 
     def median(self) -> PythonLiteral | None:

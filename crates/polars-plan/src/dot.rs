@@ -48,7 +48,7 @@ impl Expr {
                 let current_node = format!(
                     r#"BINARY
                     left _;
-                    op {op:?},
+                    op {op:?};
                     right: _ [{branch},{id}]"#,
                 );
 
@@ -166,7 +166,7 @@ impl LogicalPlan {
                 let fmt = if *count == usize::MAX {
                     Cow::Borrowed("CACHE")
                 } else {
-                    Cow::Owned(format!("CACHE: {}times", *count))
+                    Cow::Owned(format!("CACHE: {} times", *count))
                 };
                 let current_node = DotNode {
                     branch: *cache_id,
@@ -313,7 +313,7 @@ impl LogicalPlan {
                 }
 
                 let pred = fmt_predicate(selection.as_ref());
-                let fmt = format!("TABLE\nπ {n_columns}/{total_columns};\nσ {pred};");
+                let fmt = format!("TABLE\nπ {n_columns}/{total_columns};\nσ {pred}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -357,7 +357,7 @@ impl LogicalPlan {
             } => {
                 let fmt = format!(
                     r#"JOIN {}
-                    left {:?};
+                    left: {:?};
                     right: {:?}"#,
                     options.args.how, left_on, right_on
                 );

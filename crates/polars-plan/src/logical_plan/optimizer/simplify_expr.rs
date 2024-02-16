@@ -238,6 +238,16 @@ impl OptimizationRule for SimplifyBooleanRule {
                 let ae = expr_arena.get(input);
                 eval_negate(ae)
             },
+            // Flatten Aliases.
+            AExpr::Alias(inner, name) => {
+                let input = expr_arena.get(*inner);
+
+                if let AExpr::Alias(input, _) = input {
+                    Some(AExpr::Alias(*input, name.clone()))
+                } else {
+                    None
+                }
+            },
             _ => None,
         };
         Ok(out)

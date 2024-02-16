@@ -200,3 +200,9 @@ def test_transpose_name_from_column_13777() -> None:
     csv_file = io.BytesIO(b"id,kc\nhi,3")
     df = pl.read_csv(csv_file).transpose(column_names="id")
     assert_series_equal(df.to_series(0), pl.Series("hi", [3]))
+
+
+def test_transpose_multiple_chunks() -> None:
+    df = pl.DataFrame({"a": ["1"]})
+    expected = pl.DataFrame({"column_0": ["1"], "column_1": ["1"]})
+    assert_frame_equal(df.vstack(df).transpose(), expected)

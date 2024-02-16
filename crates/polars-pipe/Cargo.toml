@@ -19,6 +19,7 @@ polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 tokio = { workspace = true, optional = true }
+uuid = { workspace = true }
 
 crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }

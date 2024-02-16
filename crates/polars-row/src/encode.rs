@@ -170,7 +170,9 @@ pub fn allocate_rows_buf(
     let has_variable = columns.iter().any(|arr| {
         matches!(
             arr.data_type(),
-            ArrowDataType::BinaryView | ArrowDataType::Dictionary(_, _, _)
+            ArrowDataType::BinaryView
+                | ArrowDataType::Dictionary(_, _, _)
+                | ArrowDataType::LargeBinary
         )
     });
 
@@ -183,7 +185,9 @@ pub fn allocate_rows_buf(
             .map(|arr| {
                 if matches!(
                     arr.data_type(),
-                    ArrowDataType::BinaryView | ArrowDataType::Dictionary(_, _, _)
+                    ArrowDataType::BinaryView
+                        | ArrowDataType::Dictionary(_, _, _)
+                        | ArrowDataType::LargeBinary
                 ) {
                     0
                 } else {
@@ -204,6 +208,23 @@ pub fn allocate_rows_buf(
             match array.data_type() {
                 ArrowDataType::BinaryView => {
                     let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+                    if processed_count == 0 {
+                        for opt_val in array.into_iter() {
+                            unsafe {
+                                lengths.push_unchecked(
+                                    row_size_fixed + crate::variable::encoded_len(opt_val),
+                                );
+                            }
+                        }
+                    } else {
+                        for (opt_val, row_length) in array.into_iter().zip(lengths.iter_mut()) {
+                            *row_length += crate::variable::encoded_len(opt_val)
+                        }
+                    }
+                    processed_count += 1;
+                },
+                ArrowDataType::LargeBinary => {
+                    let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
                     if processed_count == 0 {
                         for opt_val in array.into_iter() {
                             unsafe {

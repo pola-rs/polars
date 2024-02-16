@@ -37,13 +37,10 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
 }
 
 fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
-    let uuid = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let id = uuid::Uuid::new_v4();
 
     let mut dir = std::path::PathBuf::from(get_base_temp_dir());
-    dir.push(&format!("polars/{operation_name}/{uuid}"));
+    dir.push(&format!("polars/{operation_name}/{id}"));
 
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|err| {
@@ -94,7 +91,9 @@ fn gc_thread(operation_name: &'static str) {
                         eprintln!("could not modified time on this platform")
                     }
                 } else {
-                    std::fs::remove_dir_all(path).unwrap()
+                    // This can be fallible as another Polars query could already have removed this.
+                    // So we ignore the result.
+                    let _ = std::fs::remove_dir_all(path);
                 }
             }
         }
