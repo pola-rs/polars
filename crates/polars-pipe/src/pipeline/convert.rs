@@ -248,8 +248,10 @@ where
 
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
-                JoinType::Cross => Box::new(CrossJoin::new(options.args.suffix().into(), swapped))
-                    as Box<dyn SinkTrait>,
+                JoinType::Cross => {
+                    Box::new(CrossJoin::new(options.args.suffix().into(), swapped, node))
+                        as Box<dyn SinkTrait>
+                },
                 join_type @ JoinType::Inner | join_type @ JoinType::Left => {
                     let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
                     let join_columns_left = Arc::new(exprs_to_physical(
@@ -279,6 +281,7 @@ where
                         join_columns_left,
                         join_columns_right,
                         options.args.join_nulls,
+                        node,
                     )) as Box<dyn SinkTrait>
                 },
                 _ => unimplemented!(),

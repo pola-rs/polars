@@ -502,8 +502,38 @@ impl PipeLine {
                     let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
                     let (count, mut sink) =
                         pipeline.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
-                    reduced_sink.combine(sink.as_mut());
-                    shared_sink_count = count;
+                    // This branch is hit when we have a Union of joins.
+                    // The build side must be converted into an operator and replaced in the next pipeline.
+
+                    // Check either:
+                    // 1. There can be a union source that sinks into a single join:
+                    //      scan_parquet(*) -> join B
+                    // 2. There can be a union of joins
+                    //      C - JOIN A, B
+                    //      concat (A, B, C)
+                    //
+                    // So to ensure that we don't finalize we check
+                    // - They are not both join builds
+                    // - If they are both join builds, check they are note the same build, otherwise
+                    //   we must call the `combine` branch.
+                    if sink.is_join_build()
+                        && (!reduced_sink.is_join_build() || (sink.node() != reduced_sink.node()))
+                    {
+                        let FinalizedSink::Operator(op) = sink.finalize(ec)? else {
+                            unreachable!()
+                        };
+                        let mut q = pipeline_q.borrow_mut();
+                        let Some(node) = pipeline.sink_nodes.pop() else {
+                            unreachable!()
+                        };
+
+                        for probe_side in q.iter_mut() {
+                            let _ = probe_side.replace_operator(op.as_ref(), node);
+                        }
+                    } else {
+                        reduced_sink.combine(sink.as_mut());
+                        shared_sink_count = count;
+                    }
                 }
             }
 
