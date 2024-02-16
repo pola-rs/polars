@@ -152,6 +152,7 @@ _PYTHON_METHODS_MAP = {
     "upper": "str.to_uppercase",
     # temporal
     "isoweekday": "dt.weekday",
+    "date": "dt.date",
     "time": "dt.time",
 }
 
