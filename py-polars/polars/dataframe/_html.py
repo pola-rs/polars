@@ -63,10 +63,11 @@ class HTMLFormatter:
         self.col_idx: Iterable[int]
 
         if max_rows < df.height:
+            half, rest = divmod(max_rows, 2)
             self.row_idx = [
-                *list(range(max_rows // 2)),
+                *list(range(half + rest)),
                 -1,
-                *list(range(df.height - max_rows // 2, df.height)),
+                *list(range(df.height - half, df.height)),
             ]
         else:
             self.row_idx = range(df.height)
