@@ -3390,8 +3390,8 @@ class DataFrame:
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
         statistics: bool = False,
-        row_group_size: int | None = 512 ** 2,
-        data_page_size: int = 1024 ** 2,
+        row_group_size: int | None = 512**2,
+        data_page_size: int = 1024**2,
         use_pyarrow: bool = False,
         pyarrow_options: dict[str, Any] | None = None,
     ) -> None:
