@@ -134,16 +134,15 @@ pub fn optimize(
     if projection_pushdown {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
-        let alp = projection_pushdown_opt.optimize(lp_top, alp, lp_arena, expr_arena)?;
+        let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
 
         if members.has_joins_or_unions && members.has_cache {
             cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
         }
 
-        let count_star_nodes = projection_pushdown_opt.get_count_star_nodes();
-        if !count_star_nodes.is_empty() {
-            let mut count_star_opt = CountStar::new(count_star_nodes);
+        if projection_pushdown_opt.is_count_star {
+            let mut count_star_opt = CountStar::new();
             count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top);
         }
     }

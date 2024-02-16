@@ -149,11 +149,15 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
-pub struct ProjectionPushDown {}
+pub struct ProjectionPushDown {
+    pub is_count_star: bool,
+}
 
 impl ProjectionPushDown {
     pub(super) fn new() -> Self {
-        Self {}
+        Self {
+            is_count_star: false,
+        }
     }
 
     /// Projection will be done at this node, but we continue optimization

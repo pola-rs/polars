@@ -1,19 +1,29 @@
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::parser::SplitLines;
+use polars_io::csv::count_rows as count_rows_csv;
+#[cfg(feature = "parquet")]
 use polars_io::parquet::{ParquetAsyncReader, ParquetReader};
 use polars_io::pl_async::get_runtime;
-#[cfg(feature = "csv")]
-use polars_io::utils::get_reader_bytes;
 use polars_io::{is_cloud_url, SerReader};
 
 use super::*;
 
 pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<DataFrame> {
-    match scan_type {
-        FileScan::Csv { options } => count_rows_csv(paths, options),
+    let n_rows = match scan_type {
+        FileScan::Csv { options } => {
+            // SAFETY
+            // should be exactly one path when reading csv
+            let path = unsafe { paths.get_unchecked(0) };
+            count_rows_csv(
+                path,
+                options.quote_char,
+                options.comment_prefix.as_ref(),
+                options.eol_char,
+                options.has_header,
+            )?
+        },
         FileScan::Parquet { cloud_options, .. } => {
-            count_rows_parquet(paths, cloud_options.as_ref())
+            count_rows_parquet(paths, cloud_options.as_ref())?
         },
         FileScan::Ipc { .. } => {
             unreachable!()
@@ -21,31 +31,14 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
         FileScan::Anonymous { .. } => {
             unreachable!()
         },
-    }
-}
-
-pub(super) fn count_rows_csv(
-    paths: &Arc<[PathBuf]>,
-    options: &CsvParserOptions,
-) -> PolarsResult<DataFrame> {
-    let path = unsafe { paths.get_unchecked(0) };
-
-    let mut reader = polars_utils::open_file(&path)?;
-    let reader_bytes = get_reader_bytes(&mut reader)?;
-
-    let row_iterator = SplitLines::new(
-        &reader_bytes,
-        options.quote_char.unwrap_or(b'"'),
-        options.eol_char,
-    );
-    let n_rows = row_iterator.count() - (options.has_header as usize);
+    };
     Ok(DataFrame::new(vec![Series::from_vec("len", vec![n_rows as u32])]).unwrap())
 }
 
 pub(super) fn count_rows_parquet(
     paths: &Arc<[PathBuf]>,
     cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<usize> {
     paths
         .iter()
         .map(|path: &PathBuf| {
@@ -71,5 +64,4 @@ pub(super) fn count_rows_parquet(
             }
         })
         .sum::<PolarsResult<usize>>()
-        .map(|n_rows| DataFrame::new(vec![Series::from_vec("len", vec![n_rows as u32])]).unwrap())
 }

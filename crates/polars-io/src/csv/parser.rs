@@ -1,11 +1,38 @@
+use std::path::PathBuf;
+
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
+use polars_utils::index::Bounded;
 
 use super::buffer::*;
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::splitfields::SplitFields;
 use crate::csv::CommentPrefix;
+use crate::utils::get_reader_bytes;
+
+/// Read the number of rows without parsing columns
+/// useful for count(*) queries
+pub fn count_rows(
+    path: &PathBuf,
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+) -> PolarsResult<usize> {
+    let mut reader = polars_utils::open_file(&path)?;
+    let reader_bytes = get_reader_bytes(&mut reader)?;
+
+    let row_iterator = SplitLines::new(&reader_bytes, quote_char.unwrap_or(b'"'), eol_char);
+    if comment_prefix.is_some() {
+        Ok(row_iterator
+            .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
+            .count()
+            - (has_header as usize))
+    } else {
+        Ok(row_iterator.filter(|line| !line.is_empty()).count() - (has_header as usize))
+    }
+}
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
@@ -234,14 +261,14 @@ pub(crate) fn get_line_stats(
 ///
 /// This will fail when strings fields are have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
-pub struct SplitLines<'a> {
+pub(crate) struct SplitLines<'a> {
     v: &'a [u8],
     quote_char: u8,
     end_line_char: u8,
 }
 
 impl<'a> SplitLines<'a> {
-    pub fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
+    pub(crate) fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
         Self {
             v: slice,
             quote_char,
