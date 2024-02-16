@@ -184,7 +184,9 @@ fn deserialize(
         PhysicalType::Binary
         | PhysicalType::LargeBinary
         | PhysicalType::Utf8
-        | PhysicalType::LargeUtf8 => {
+        | PhysicalType::LargeUtf8
+        | PhysicalType::Utf8View
+        | PhysicalType::BinaryView => {
             let index = indexes
                 .pop_front()
                 .unwrap()

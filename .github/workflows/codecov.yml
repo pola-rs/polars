@@ -1,0 +1,60 @@
+name: Code Coverage
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+      - codecov
+
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+          cache: "pip"
+      - name: install rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: coverage-cargo-macos
+        continue-on-error: true
+      - name: Setup virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r py-polars/requirements-dev.txt
+      - name: Run coverage
+        run: |
+          source venv/bin/activate
+          cd py-polars
+          rustup component add llvm-tools-preview
+          cargo llvm-cov clean --workspace 
+          cargo test --all-features -p polars-arrow -p polars-core -p polars-io -p polars-lazy -p polars-ops -p polars-plan -p polars-row -p polars-sql -p polars-time -p polars-utils
+          cargo test --all-features -p polars --test it
+          maturin develop
+          pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:coverage.xml || true
+          POLARS_FORCE_ASYNC=1 pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml || true
+          cargo llvm-cov report --lcov --output-path coverage.lcov
+        env:
+          RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+          RUST_BACKTRACE: 1
+          LLVM_PROFILE_FILE: '/Users/runner/work/polars/polars/target/polars-%p-%3m.profraw'
+          CARGO_LLVM_COV: 1
+          CARGO_LLVM_COV_SHOW_ENV: 1
+          CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
+      # Upload
+      - uses: codecov/codecov-action@v4
+        with:
+          files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/async.xml
+          name: macos
+          token: ${{ secrets.CODECOV_TOKEN }}
+

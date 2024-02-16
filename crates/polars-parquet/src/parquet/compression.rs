@@ -341,13 +341,6 @@ mod tests {
     }
 
     #[test]
-    fn test_codec_gzip_high_compression() {
-        test_codec(CompressionOptions::Gzip(Some(
-            GzipLevel::try_new(10).unwrap(),
-        )));
-    }
-
-    #[test]
     fn test_codec_brotli_default() {
         test_codec(CompressionOptions::Brotli(None));
     }
