@@ -139,5 +139,5 @@ def test_to_numpy_zero_copy_path_writeable() -> None:
     x = np.ones((rows, cols), order="F")
     x[:, 1] = 2.0
     df = pl.DataFrame(x)
-    x = df.to_numpy(writeable=True)
+    x = df.to_numpy(writable=True)
     assert x.flags["WRITEABLE"]

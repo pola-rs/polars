@@ -81,7 +81,7 @@ impl PySeries {
 #[pymethods]
 #[allow(clippy::wrong_self_convention)]
 impl PyDataFrame {
-    pub fn to_numpy_view(&self, py: Python, writeable: bool) -> Option<PyObject> {
+    pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
         if self.df.is_empty() {
             return None;
         }
@@ -105,7 +105,6 @@ impl PyDataFrame {
             py: Python,
             columns: &[Series],
             owner: PyObject,
-            writeable: bool,
         ) -> Option<PyObject>
         where
             T::Native: Element,
@@ -133,15 +132,10 @@ impl PyDataFrame {
                 if all_contiguous {
                     let start_ptr = first.as_ptr();
                     let dims = [first.len(), columns.len()].into_dimension();
-                    let flags: c_int = if writeable {
-                        flags::NPY_ARRAY_OUT_FARRAY
-                    } else {
-                        flags::NPY_ARRAY_FARRAY_RO
-                    };
                     Some(create_borrowed_np_array::<T::Native, _>(
                         py,
                         dims,
-                        flags,
+                        flags::NPY_ARRAY_FARRAY_RO,
                         start_ptr as _,
                         owner,
                     ))
@@ -151,7 +145,7 @@ impl PyDataFrame {
             }
         }
         with_match_physical_numeric_polars_type!(first, |$T| {
-            get_ptr::<$T>(py, self.df.get_columns(), owner, writeable)
+            get_ptr::<$T>(py, self.df.get_columns(), owner)
         })
     }
 
