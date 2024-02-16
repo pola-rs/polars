@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
+mod arrow;
 mod read;
 mod roundtrip;
 mod write;
+
 use std::io::Cursor;
 use std::path::PathBuf;
 

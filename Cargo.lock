@@ -2499,6 +2499,7 @@ version = "0.37.0"
 dependencies = [
  "ahash",
  "either",
+ "ethnum",
  "futures",
  "getrandom",
  "polars-arrow",

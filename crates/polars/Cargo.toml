@@ -27,6 +27,7 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 either = { workspace = true }
 futures = { workspace = true }
+ethnum = "1"
 # used to run formal property testing
 proptest = { version = "1", default_features = false, features = ["std"] }
 rand = { workspace = true }
