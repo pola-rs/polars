@@ -1,3 +1,7 @@
+coverage:
+  status:
+    project: off
+    patch: off
 ignore:
   - crates/polars-arrow/src/io/flight/*.rs
   - crates/polars-arrow/src/io/ipc/append/*.rs
