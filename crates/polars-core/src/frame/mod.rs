@@ -2488,21 +2488,22 @@ impl DataFrame {
     /// Sum all values horizontally across columns.
     pub fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         let apply_null_strategy =
-            |s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
+            |s: Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
                 if let NullStrategy::Ignore = null_strategy {
                     // if has nulls
-                    if s.has_validity() {
+                    if s.null_count() > 0 {
                         return s.fill_null(FillNullStrategy::Zero);
                     }
                 }
-                Ok(s.clone())
+                Ok(s)
             };
 
         let sum_fn =
-            |acc: &Series, s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
+            |acc: Series, s: Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
                 let acc: Series = apply_null_strategy(acc, null_strategy)?;
                 let s = apply_null_strategy(s, null_strategy)?;
-                Ok(&acc + &s)
+                // This will do owned arithmetic and can be mutable
+                Ok(acc + s)
             };
 
         let non_null_cols = self
@@ -2520,21 +2521,29 @@ impl DataFrame {
                     Ok(Some(self.columns[0].clone()))
                 }
             },
-            1 => Ok(Some(apply_null_strategy(non_null_cols[0], null_strategy)?)),
-            2 => sum_fn(non_null_cols[0], non_null_cols[1], null_strategy).map(Some),
+            1 => Ok(Some(apply_null_strategy(
+                non_null_cols[0].clone(),
+                null_strategy,
+            )?)),
+            2 => sum_fn(
+                non_null_cols[0].clone(),
+                non_null_cols[1].clone(),
+                null_strategy,
+            )
+            .map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
-                POOL.install(|| {
+                let out = POOL.install(|| {
                     non_null_cols
                         .into_par_iter()
-                        .map(|s| Ok(Cow::Borrowed(s)))
-                        .try_reduce_with(|l, r| sum_fn(&l, &r, null_strategy).map(Cow::Owned))
-                        // we can unwrap the option, because we are certain there is a column
-                        // we started this operation on 3 columns
+                        .cloned()
+                        .map(Ok)
+                        .try_reduce_with(|l, r| sum_fn(l, r, null_strategy))
+                        // We can unwrap because we started with at least 3 columns, so we always get a Some
                         .unwrap()
-                        .map(|cow| Some(cow.into_owned()))
-                })
+                });
+                out.map(Some)
             },
         }
     }
