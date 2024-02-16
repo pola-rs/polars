@@ -25,11 +25,11 @@ polars-utils = { workspace = true }
 
 [dev-dependencies]
 ahash = { workspace = true }
-either = { workspace = true }
-futures = { workspace = true }
-ethnum = "1"
 apache-avro = { version = "0.16", features = ["snappy"] }
-avro-schema = { workspace = true , features = ["async"]}
+avro-schema = { workspace = true, features = ["async"] }
+either = { workspace = true }
+ethnum = "1"
+futures = { workspace = true }
 # used to run formal property testing
 proptest = { version = "1", default_features = false, features = ["std"] }
 rand = { workspace = true }

@@ -1419,7 +1419,7 @@ fn assert_roundtrip(
     Ok(())
 }
 
-/// Tests that when arrow-specific types (Duration and LargeUtf8) are written to parquet, we can rountrip its
+/// Tests that when arrow-specific types (Duration and LargeUtf8) are written to parquet, we can roundtrip its
 /// logical types.
 #[test]
 fn arrow_type() -> PolarsResult<()> {

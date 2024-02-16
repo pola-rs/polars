@@ -125,7 +125,8 @@ fn read_with_indexes(
                 first_field_column
                     .iter()
                     .zip(selection)
-                    .filter_map(|(i, is_selected)| is_selected.then(|| *i))
+                    .filter(|(_i, is_selected)| *is_selected)
+                    .map(|(i, _is_selected)| *i)
                     .collect()
             })
         })
