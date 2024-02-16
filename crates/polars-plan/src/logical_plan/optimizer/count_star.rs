@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::*;
 
 pub(super) struct CountStar;
@@ -17,21 +19,11 @@ impl OptimizationRule for CountStar {
     ) -> Option<ALogicalPlan> {
         // Replace select count(*) from datasource with fast pass map function
 
-        // create a placeholder node as the map function needs a leaf node
-        let placeholder = ALogicalPlan::DataFrameScan {
-            df: Arc::new(Default::default()),
-            schema: Arc::new(Default::default()),
-            output_schema: None,
-            projection: None,
-            selection: None,
-        };
-        #[allow(unused_variables)]
-        let placeholder_node = lp_arena.add(placeholder);
-
         // Do not allow nested structures. Logical plan should be Project -> Scan
         let ALogicalPlan::Projection { input, .. } = lp_arena.get(node) else {
             return None;
         };
+
         #[allow(unused_variables)]
         let ALogicalPlan::Scan {
             paths, scan_type, ..
@@ -40,18 +32,35 @@ impl OptimizationRule for CountStar {
             return None;
         };
 
-        #[cfg(all(feature = "parquet", feature = "csv"))]
-        if matches!(scan_type, FileScan::Parquet { .. } | FileScan::Csv { .. }) {
+        fn _add_map_function(
+            lp_arena: &mut Arena<ALogicalPlan>,
+            paths: Arc<[PathBuf]>,
+            scan_type: FileScan,
+        ) -> Option<ALogicalPlan> {
+            // create a placeholder node as the map function needs a leaf node
+            let placeholder = ALogicalPlan::DataFrameScan {
+                df: Arc::new(Default::default()),
+                schema: Arc::new(Default::default()),
+                output_schema: None,
+                projection: None,
+                selection: None,
+            };
+            let node = lp_arena.add(placeholder);
+
             let alp = ALogicalPlan::MapFunction {
-                input: placeholder_node,
-                function: FunctionNode::Count {
-                    paths: paths.clone(),
-                    scan_type: scan_type.clone(),
-                },
+                input: node,
+                function: FunctionNode::Count { paths, scan_type },
             };
             lp_arena.replace(node, alp.clone());
-            return Some(alp);
+            Some(alp)
         }
-        None
+
+        match scan_type {
+            #[cfg(feature = "parquet")]
+            sc @ FileScan::Parquet { .. } => _add_map_function(lp_arena, paths.clone(), sc.clone()),
+            #[cfg(feature = "csv")]
+            sc @ FileScan::Csv { .. } => _add_map_function(lp_arena, paths.clone(), sc.clone()),
+            _ => None,
+        }
     }
 }
