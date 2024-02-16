@@ -524,8 +524,8 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                // Note: see "https://github.com/pola-rs/polars/pull/13699" for
-                // the rationale behind choosing 10 as the default value ;)
+                // Note: see https://github.com/pola-rs/polars/pull/13699 for
+                // the rationale behind choosing 10 as the default value
                 .map_or(10, |n: i64| if n < 0 { height } else { n as usize });
 
             let (n_first, n_last) = if self.width() > max_n_cols {
@@ -588,11 +588,15 @@ impl Display for DataFrame {
             let mut max_elem_lengths: Vec<usize> = vec![0; n_tbl_cols];
 
             if max_n_rows > 0 {
-                if height > max_n_rows + 1 {
-                    // Truncate the table if we have more rows than the configured maximum
-                    // number of rows plus the single row which would contain "…".
+                if height > max_n_rows {
+                    // Truncate the table if we have more rows than the
+                    // configured maximum number of rows
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
-                    for i in 0..std::cmp::max(max_n_rows / 2, 1) {
+
+                    let half = max_n_rows / 2;
+                    let rest = max_n_rows % 2;
+
+                    for i in 0..(half + rest) {
                         let row = self
                             .columns
                             .iter()
@@ -606,23 +610,16 @@ impl Display for DataFrame {
                     }
                     let dots = rows[0].iter().map(|_| "…".to_string()).collect();
                     rows.push(dots);
-                    if max_n_rows > 1 {
-                        for i in (height - (max_n_rows + 1) / 2)..height {
-                            let row = self
-                                .columns
-                                .iter()
-                                .map(|s| s.str_value(i).unwrap())
-                                .collect();
+                    for i in (height - half)..height {
+                        let row = self
+                            .columns
+                            .iter()
+                            .map(|s| s.str_value(i).unwrap())
+                            .collect();
 
-                            let row_strings = prepare_row(
-                                row,
-                                n_first,
-                                n_last,
-                                str_truncate,
-                                &mut max_elem_lengths,
-                            );
-                            rows.push(row_strings);
-                        }
+                        let row_strings =
+                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
+                        rows.push(row_strings);
                     }
                     table.add_rows(rows);
                 } else {
