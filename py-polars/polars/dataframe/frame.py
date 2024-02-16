@@ -3418,8 +3418,8 @@ class DataFrame:
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups in number of rows. If specified as ``None``, a single
-            row group is created.
+            Size of the row groups in number of rows. If specified as ``None``, a
+            single row group is created.
         data_page_size
             Size of the data page in bytes. Defaults to 1024^2 bytes.
         use_pyarrow
@@ -3435,9 +3435,10 @@ class DataFrame:
 
         Attention
         ---------
-        This method rechunks the data frame in-place: if ``use_pyarrow=False`` (default),
-        all columns in the data frame will have as many chunks as row groups are created.
-        If ``use_pyarrow=True``, all columns will have a single chunk.
+        This method rechunks the data frame in-place: if ``use_pyarrow=False``
+        (default), all columns in the data frame will have as many chunks as row
+        groups are created. If ``use_pyarrow=True``, all columns will have a single
+        chunk.
 
         Examples
         --------
