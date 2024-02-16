@@ -12,7 +12,11 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import (
+    ComputeError,
+    PolarsInefficientMapWarning,
+    TimeZoneAwareConstructorWarning,
+)
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
@@ -947,45 +951,50 @@ def test_temporal_dtypes_map_elements(
     )
     const_dtm = datetime(2010, 9, 12)
 
-    assert_frame_equal(
-        df.with_columns(
-            [
-                # don't actually do any of this; native expressions are MUCH faster ;)
-                pl.col("timestamp")
-                .map_elements(lambda x: const_dtm, skip_nulls=skip_nulls)
-                .alias("const_dtm"),
-                pl.col("timestamp")
-                .map_elements(lambda x: x and x.date(), skip_nulls=skip_nulls)
-                .alias("date"),
-                pl.col("timestamp")
-                .map_elements(lambda x: x and x.time(), skip_nulls=skip_nulls)
-                .alias("time"),
-            ]
-        ),
-        pl.DataFrame(
-            [
-                (
-                    datetime(2010, 9, 12, 10, 19, 54),
-                    datetime(2010, 9, 12, 0, 0),
-                    date(2010, 9, 12),
-                    time(10, 19, 54),
-                ),
-                (None, expected_value, None, None),
-                (
-                    datetime(2009, 2, 13, 23, 31, 30),
-                    datetime(2010, 9, 12, 0, 0),
-                    date(2009, 2, 13),
-                    time(23, 31, 30),
-                ),
-            ],
-            schema={
-                "timestamp": pl.Datetime("ms"),
-                "const_dtm": pl.Datetime("us"),
-                "date": pl.Date,
-                "time": pl.Time,
-            },
-        ),
-    )
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match=r"(?s)Replace this expression.*lambda x:",
+    ):
+        assert_frame_equal(
+            df.with_columns(
+                [
+                    # don't actually do this; native expressions are MUCH faster ;)
+                    pl.col("timestamp")
+                    .map_elements(lambda x: const_dtm, skip_nulls=skip_nulls)
+                    .alias("const_dtm"),
+                    # note: the below now trigger a PolarsInefficientMapWarning
+                    pl.col("timestamp")
+                    .map_elements(lambda x: x and x.date(), skip_nulls=skip_nulls)
+                    .alias("date"),
+                    pl.col("timestamp")
+                    .map_elements(lambda x: x and x.time(), skip_nulls=skip_nulls)
+                    .alias("time"),
+                ]
+            ),
+            pl.DataFrame(
+                [
+                    (
+                        datetime(2010, 9, 12, 10, 19, 54),
+                        datetime(2010, 9, 12, 0, 0),
+                        date(2010, 9, 12),
+                        time(10, 19, 54),
+                    ),
+                    (None, expected_value, None, None),
+                    (
+                        datetime(2009, 2, 13, 23, 31, 30),
+                        datetime(2010, 9, 12, 0, 0),
+                        date(2009, 2, 13),
+                        time(23, 31, 30),
+                    ),
+                ],
+                schema={
+                    "timestamp": pl.Datetime("ms"),
+                    "const_dtm": pl.Datetime("us"),
+                    "date": pl.Date,
+                    "time": pl.Time,
+                },
+            ),
+        )
 
 
 def test_timelike_init() -> None:

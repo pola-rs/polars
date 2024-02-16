@@ -206,6 +206,7 @@ _MODULE_FUNCTIONS = [
     for kind in _MODULE_FUNCTIONS
     for unary in [[set(OpNames.UNARY)], []]
 ]
+_RE_IMPLICIT_BOOL = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
 
 
 def _get_all_caller_variables() -> dict[str, Any]:
@@ -256,6 +257,12 @@ class BytecodeParser:
         self._rewritten_instructions = RewrittenInstructions(
             instructions=original_instructions,
         )
+
+    def _omit_implicit_bool(self, expr: str) -> str:
+        """Drop extraneous/implied bool (eg: `pl.col("d") & pl.col("d").dt.date()`)."""
+        while _RE_IMPLICIT_BOOL.search(expr):
+            expr = _RE_IMPLICIT_BOOL.sub(repl=r'pl.col("\1").\2', string=expr)
+        return expr
 
     @staticmethod
     def _get_param_name(function: Callable[[Any], Any]) -> str | None:
@@ -420,11 +427,13 @@ class BytecodeParser:
         # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
         if "pl.col(" not in polars_expr:
             return None
-        elif self._map_target == "series":
-            target_name = self._get_target_name(col, polars_expr)
-            return polars_expr.replace(f'pl.col("{col}")', target_name)
         else:
-            return polars_expr
+            polars_expr = self._omit_implicit_bool(polars_expr)
+            if self._map_target == "series":
+                target_name = self._get_target_name(col, polars_expr)
+                return polars_expr.replace(f'pl.col("{col}")', target_name)
+            else:
+                return polars_expr
 
     def warn(
         self,
