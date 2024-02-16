@@ -1487,7 +1487,7 @@ class Series:
 
     def _repr_html_(self) -> str:
         """Format output data in HTML for display in Jupyter Notebooks."""
-        return self.to_frame()._repr_html_(from_series=True)
+        return self.to_frame()._repr_html_(_from_series=True)
 
     @deprecate_renamed_parameter("row", "index", version="0.19.3")
     def item(self, index: int | None = None) -> Any:

@@ -58,7 +58,7 @@ class HTMLFormatter:
         self.elements: list[str] = []
         self.max_cols = max_cols
         self.max_rows = max_rows
-        self.series = from_series
+        self.from_series = from_series
         self.row_idx: Iterable[int]
         self.col_idx: Iterable[int]
 
@@ -132,7 +132,7 @@ class HTMLFormatter:
         ):
             # format frame/series shape with '_' thousand-separators
             s = self.df.shape
-            shape = f"({s[0]:_},)" if self.series else f"({s[0]:_}, {s[1]:_})"
+            shape = f"({s[0]:_},)" if self.from_series else f"({s[0]:_}, {s[1]:_})"
 
             self.elements.append(f"<small>shape: {shape}</small>")
 
