@@ -52,8 +52,7 @@ def test_html_tables() -> None:
 
 
 def test_df_repr_html_max_rows_default() -> None:
-    n = 50
-    df = pl.DataFrame({"a": range(n)})
+    df = pl.DataFrame({"a": range(50)})
 
     html = df._repr_html_()
 
@@ -61,9 +60,18 @@ def test_df_repr_html_max_rows_default() -> None:
     assert html.count("<td>") - 2 == expected_rows
 
 
+def test_df_repr_html_max_rows_odd() -> None:
+    df = pl.DataFrame({"a": range(50)})
+
+    with pl.Config(tbl_rows=9):
+        html = df._repr_html_()
+
+    expected_rows = 9
+    assert html.count("<td>") - 2 == expected_rows
+
+
 def test_series_repr_html_max_rows_default() -> None:
-    n = 50
-    s = pl.Series("a", range(n))
+    s = pl.Series("a", range(50))
 
     html = s._repr_html_()
 
