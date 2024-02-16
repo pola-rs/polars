@@ -166,6 +166,10 @@ impl GenericBuild {
 }
 
 impl Sink for GenericBuild {
+    fn is_join_build(&self) -> bool {
+        true
+    }
+
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         // we do some juggling here so that we don't
         // end up with empty chunks

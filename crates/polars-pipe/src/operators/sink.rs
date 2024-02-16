@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt::{Debug, Formatter};
 
 use super::*;
 
@@ -14,6 +15,17 @@ pub enum FinalizedSink {
     Source(Box<dyn Source>),
 }
 
+impl Debug for FinalizedSink {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            FinalizedSink::Finished(_) => "finished",
+            FinalizedSink::Operator(_) => "operator",
+            FinalizedSink::Source(_) => "source",
+        };
+        write!(f, "{s}")
+    }
+}
+
 pub trait Sink: Send + Sync {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult>;
 
@@ -26,4 +38,8 @@ pub trait Sink: Send + Sync {
     fn as_any(&mut self) -> &mut dyn Any;
 
     fn fmt(&self) -> &str;
+
+    fn is_join_build(&self) -> bool {
+        false
+    }
 }

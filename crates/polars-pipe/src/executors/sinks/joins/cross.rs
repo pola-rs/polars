@@ -32,6 +32,10 @@ impl CrossJoin {
 }
 
 impl Sink for CrossJoin {
+    fn is_join_build(&self) -> bool {
+        true
+    }
+
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         self.chunks.push(chunk);
         Ok(SinkResult::CanHaveMoreInput)

@@ -502,8 +502,26 @@ impl PipeLine {
                     let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
                     let (count, mut sink) =
                         pipeline.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
-                    reduced_sink.combine(sink.as_mut());
-                    shared_sink_count = count;
+                    // This branch is hit when we have a Union of joins.
+                    // The build side must be converted into an operator and replaced in the next pipeline.
+                    if sink.is_join_build() {
+                        let FinalizedSink::Operator(op) = sink.finalize(ec)? else {
+                            unreachable!()
+                        };
+                        let mut q = pipeline_q.borrow_mut();
+                        let Some(node) = pipeline.sink_nodes.pop() else {
+                            unreachable!()
+                        };
+
+                        for probe_side in q.iter_mut() {
+                            if probe_side.replace_operator(op.as_ref(), node) {
+                                break;
+                            }
+                        }
+                    } else {
+                        reduced_sink.combine(sink.as_mut());
+                        shared_sink_count = count;
+                    }
                 }
             }
 
