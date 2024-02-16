@@ -2067,6 +2067,7 @@ class DataFrame:
         *,
         order: IndexOrder = "fortran",
         use_pyarrow: bool = True,
+        writable: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -2092,6 +2093,10 @@ class DataFrame:
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
 
             function for the conversion to numpy if necessary.
+        writable
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy, as the underlying Arrow data is
+            immutable.
 
         Notes
         -----
@@ -2148,6 +2153,8 @@ class DataFrame:
         if order == "fortran":
             array = self._df.to_numpy_view()
             if array is not None:
+                if writable and not array.flags.writeable:
+                    array = array.copy()
                 return array
 
         out = self._df.to_numpy(order)
