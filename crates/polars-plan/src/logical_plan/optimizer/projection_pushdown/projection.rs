@@ -56,7 +56,6 @@ fn check_double_projection(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
-    node: Node,
     input: Node,
     exprs: Vec<Node>,
     mut acc_projections: Vec<Node>,
@@ -85,7 +84,6 @@ pub(super) fn process_projection(
         }
         add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
         local_projection.push(exprs[0]);
-        proj_pd.count_star.push(node);
     } else {
         // A projection can consist of a chain of expressions followed by an alias.
         // We want to do the chain locally because it can have complicated side effects.
