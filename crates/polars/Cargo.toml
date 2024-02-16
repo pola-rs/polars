@@ -28,9 +28,14 @@ ahash = { workspace = true }
 either = { workspace = true }
 futures = { workspace = true }
 ethnum = "1"
+apache-avro = { version = "0.16", features = ["snappy"] }
+avro-schema = { workspace = true , features = ["async"]}
 # used to run formal property testing
 proptest = { version = "1", default_features = false, features = ["std"] }
 rand = { workspace = true }
+# used to test async readers
+tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
+tokio-util = { workspace = true, features = ["compat"] }
 
 [build-dependencies]
 version_check = { workspace = true }

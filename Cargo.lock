@@ -2498,6 +2498,8 @@ name = "polars"
 version = "0.37.0"
 dependencies = [
  "ahash",
+ "apache-avro",
+ "avro-schema",
  "either",
  "ethnum",
  "futures",
@@ -2515,6 +2517,8 @@ dependencies = [
  "polars-utils",
  "proptest",
  "rand",
+ "tokio",
+ "tokio-util",
  "version_check",
 ]
 
