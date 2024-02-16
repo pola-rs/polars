@@ -1,8 +1,7 @@
-name: Code Coverage Bot
+name: Code Coverage
 
 on:
-  issue_comment:
-    types: [created, edited, deleted]
+  pull_request: {}
   push:
     branches:
       - main
@@ -12,22 +11,8 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: macos-latest
-    if: (github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')) || github.event_name == 'push'
     steps:
-      # Event is run on the main branch, in case of an issue_comment checkout the correct PR
-      - name: Get PR branch
-        uses: xt0rted/pull-request-comment-branch@v1
-        if: github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')
-        id: comment-branch
-
-      - name: Checkout PR branch
-        uses: actions/checkout@v3
-        if: github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')
-        with:
-          ref: ${{ steps.comment-branch.outputs.head_ref }}
-
-      - name: Checkout main branch
-        if: ${{ github.event_name == 'push' }}
+      - name: Checkout
         uses: actions/checkout@v4
 
       - uses: actions/setup-python@v2
@@ -66,21 +51,10 @@ jobs:
           CARGO_LLVM_COV: 1
           CARGO_LLVM_COV_SHOW_ENV: 1
           CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
-      # Add comment on PR
+      # Upload
       - uses: codecov/codecov-action@v4
-        if: github.event.issue.pull_request && contains(github.event.comment.body, '/codecov')
         with:
           files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/async.xml
-          name: macos
-          override_branch: ${{ steps.comment-branch.outputs.head_ref }}
-          override_pr: ${{ github.event.issue.number }}
-          override_commit: ${{ steps.comment-branch.outputs.head_sha }}
-          token: ${{ secrets.CODECOV_TOKEN }}
-      # Upload coverage from main
-      - uses: codecov/codecov-action@v4
-        if: ${{ github.event_name == 'push' }}
-        with:
-          files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/hypothesis.xml,py-polars/slow.xml,py-polars/async.xml
           name: macos
           token: ${{ secrets.CODECOV_TOKEN }}
 
