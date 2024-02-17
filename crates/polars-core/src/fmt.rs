@@ -130,19 +130,18 @@ macro_rules! format_array {
             };
             Ok(())
         };
-        if (limit == 0 && $a.len() > 0) || ($a.len() > limit + 1) {
-            if limit > 0 {
-                for i in 0..std::cmp::max((limit / 2), 1) {
-                    let v = $a.get_any_value(i).unwrap();
-                    write_fn(v, $f)?;
-                }
+        if $a.len() > limit {
+            let half = limit / 2;
+            let rest = limit % 2;
+
+            for i in 0..(half + rest) {
+                let v = $a.get_any_value(i).unwrap();
+                write_fn(v, $f)?;
             }
             write!($f, "\t…\n")?;
-            if limit > 1 {
-                for i in ($a.len() - (limit + 1) / 2)..$a.len() {
-                    let v = $a.get_any_value(i).unwrap();
-                    write_fn(v, $f)?;
-                }
+            for i in ($a.len() - half)..$a.len() {
+                let v = $a.get_any_value(i).unwrap();
+                write_fn(v, $f)?;
             }
         } else {
             for i in 0..$a.len() {

@@ -205,8 +205,8 @@ def test_set_tbl_rows() -> None:
         "Series: 'ser' [i64]\n"
         "[\n"
         "\t1\n"
+        "\t2\n"
         "\t…\n"
-        "\t4\n"
         "\t5\n"
         "]"
     )
@@ -231,7 +231,7 @@ def test_set_tbl_rows() -> None:
         "[\n"
         "\t1\n"
         "\t2\n"
-        "\t3\n"
+        "\t…\n"
         "\t4\n"
         "\t5\n"
         "]"
