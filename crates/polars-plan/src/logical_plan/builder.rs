@@ -131,7 +131,7 @@ impl LogicalPlanBuilder {
             scan_type: FileScan::Anonymous {
                 function,
                 options: Arc::new(AnonymousScanOptions {
-                    fmt_str: name,
+                    fmt_str: name.to_string(),
                     skip_rows,
                 }),
             },

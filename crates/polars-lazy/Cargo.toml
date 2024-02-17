@@ -28,6 +28,7 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 smartstring = { workspace = true }
 tokio = { workspace = true, optional = true }
+serde = { version = "1.0.196", features = ["derive"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

@@ -324,7 +324,7 @@ pub struct PythonOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AnonymousScanOptions {
     pub skip_rows: Option<usize>,
-    pub fmt_str: &'static str,
+    pub fmt_str: String,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

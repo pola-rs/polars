@@ -17,9 +17,9 @@ pub enum FileScan {
     },
     #[cfg(feature = "ipc")]
     Ipc { options: IpcScanOptions },
-    #[cfg_attr(feature = "serde", serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
+        #[cfg_attr(feature = "serde", serde(with = "serde_traitobject"))]
         function: Arc<dyn AnonymousScan>,
     },
 }

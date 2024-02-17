@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
+use serde_traitobject::{Serialize, Deserialize};
 
 use polars_core::prelude::*;
 
@@ -14,7 +15,7 @@ pub struct AnonymousScanArgs {
     pub predicate: Option<Expr>,
 }
 
-pub trait AnonymousScan: Send + Sync {
+pub trait AnonymousScan: Send + Sync + Serialize + Deserialize {
     fn as_any(&self) -> &dyn Any;
     /// Creates a DataFrame from the supplied function & scan options.
     fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame>;
@@ -46,7 +47,7 @@ pub trait AnonymousScan: Send + Sync {
 
 impl<F> AnonymousScan for F
 where
-    F: Fn(AnonymousScanArgs) -> PolarsResult<DataFrame> + Send + Sync,
+    F: Fn(AnonymousScanArgs) -> PolarsResult<DataFrame> + Send + Sync + Serialize + Deserialize,
 {
     fn as_any(&self) -> &dyn Any {
         unimplemented!()
