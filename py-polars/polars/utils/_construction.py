@@ -240,7 +240,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> P
                 for a in it:
                     pys.append(PySeries.from_arrow(name, a))
         elif array.num_chunks == 0:
-            pys = PySeries.from_arrow(name, pa.array([], array.type))
+            pys = PySeries.from_arrow(name, pa.nulls(0, type=array.type))
         else:
             pys = PySeries.from_arrow(name, array.chunks[0])
 
