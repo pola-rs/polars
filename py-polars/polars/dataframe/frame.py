@@ -2048,8 +2048,9 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
-        use_pyarrow: bool = True,
+        allow_copy: bool = True,
         writable: bool = False,
+        use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -2070,20 +2071,18 @@ class DataFrame:
             one-dimensional array. Note that this option only takes effect if
             `structured` is set to `False` and the DataFrame dtypes allow for a
             global dtype for all columns.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to `False`,
+            causes conversions that are not zero-copy to fail.
+        writable
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy, as the underlying Arrow data is
+            immutable.
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
 
             function for the conversion to numpy if necessary.
-        writable
-            Ensure the resulting array is writable. This will force a copy of the data
-            if the array was created without copy, as the underlying Arrow data is
-            immutable.
-
-        Notes
-        -----
-        If you're attempting to convert String or Decimal to an array, you'll need to
-        install `pyarrow`.
 
         Examples
         --------
@@ -2117,7 +2116,15 @@ class DataFrame:
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """
+
+        def raise_on_copy(msg: str) -> None:
+            if not allow_copy and not self.is_empty():
+                msg = f"copy not allowed: {msg}"
+                raise RuntimeError(msg)
+
         if structured:
+            raise_on_copy("cannot create structured array without copying data")
+
             arrays = []
             struct_dtype = []
             for s in self.iter_columns():
@@ -2136,8 +2143,13 @@ class DataFrame:
             array = self._df.to_numpy_view()
             if array is not None:
                 if writable and not array.flags.writeable:
+                    raise_on_copy("cannot create writable array without copying data")
                     array = array.copy()
                 return array
+
+        raise_on_copy(
+            "only numeric data without nulls in Fortran-like order can be converted without copy"
+        )
 
         out = self._df.to_numpy(order)
         if out is None:

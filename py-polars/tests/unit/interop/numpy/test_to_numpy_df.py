@@ -141,3 +141,23 @@ def test_to_numpy_zero_copy_path_writeable() -> None:
     df = pl.DataFrame(x)
     x = df.to_numpy(writable=True)
     assert x.flags["WRITEABLE"]
+
+
+def test_df_to_numpy_structured_not_zero_copy() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    msg = "cannot create structured array without copying data"
+    with pytest.raises(RuntimeError, match=msg):
+        df.to_numpy(structured=True, allow_copy=False)
+
+
+def test_df_to_numpy_writable_not_zero_copy() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    msg = "cannot create writable array without copying data"
+    with pytest.raises(RuntimeError, match=msg):
+        df.to_numpy(allow_copy=False, writable=True)
+
+
+def test_df_to_numpy_not_zero_copy() -> None:
+    df = pl.DataFrame({"a": [1, 2, None]})
+    with pytest.raises(RuntimeError):
+        df.to_numpy(allow_copy=False)
