@@ -33,13 +33,10 @@ def test_lazyframe_serde() -> None:
 
 
 def test_serde_time_unit() -> None:
-    assert pickle.loads(
-        pickle.dumps(
-            pl.Series(
-                [datetime(2022, 1, 1) + timedelta(days=1) for _ in range(3)]
-            ).cast(pl.Datetime("ns"))
-        )
-    ).dtype == pl.Datetime("ns")
+    values = [datetime(2022, 1, 1) + timedelta(days=1) for _ in range(3)]
+    s = pl.Series(values).cast(pl.Datetime("ns"))
+    result = pickle.loads(pickle.dumps(s))
+    assert result.dtype == pl.Datetime("ns")
 
 
 def test_serde_duration() -> None:
