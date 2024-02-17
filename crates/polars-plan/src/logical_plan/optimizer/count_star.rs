@@ -26,16 +26,20 @@ impl OptimizationRule for CountStar {
 
         #[allow(unused_variables)]
         let ALogicalPlan::Scan {
-            paths, scan_type, ..
+            paths,
+            scan_type,
+            predicate: None,
+            ..
         } = lp_arena.get(*input)
         else {
             return None;
         };
 
-        fn _replace_count_with_mapfunction(
+        fn _replace_count_with_specialized_function(
             lp_arena: &mut Arena<ALogicalPlan>,
             paths: Arc<[PathBuf]>,
             scan_type: FileScan,
+            node: Node,
         ) -> Option<ALogicalPlan> {
             // create a placeholder node as the map function needs a leaf node
             let placeholder = ALogicalPlan::DataFrameScan {
@@ -45,10 +49,10 @@ impl OptimizationRule for CountStar {
                 projection: None,
                 selection: None,
             };
-            let node = lp_arena.add(placeholder);
+            let placeholder_node = lp_arena.add(placeholder);
 
             let alp = ALogicalPlan::MapFunction {
-                input: node,
+                input: placeholder_node,
                 function: FunctionNode::Count { paths, scan_type },
             };
             lp_arena.replace(node, alp.clone());
@@ -58,11 +62,15 @@ impl OptimizationRule for CountStar {
         match scan_type {
             #[cfg(feature = "parquet")]
             sc @ FileScan::Parquet { .. } => {
-                _replace_count_with_mapfunction(lp_arena, paths.clone(), sc.clone())
+                _replace_count_with_specialized_function(lp_arena, paths.clone(), sc.clone(), node)
             },
             #[cfg(feature = "csv")]
             sc @ FileScan::Csv { .. } => {
-                _replace_count_with_mapfunction(lp_arena, paths.clone(), sc.clone())
+                _replace_count_with_specialized_function(lp_arena, paths.clone(), sc.clone(), node)
+            },
+            #[cfg(feature = "ipc")]
+            sc @ FileScan::Ipc { .. } => {
+                _replace_count_with_specialized_function(lp_arena, paths.clone(), sc.clone(), node)
             },
             _ => None,
         }

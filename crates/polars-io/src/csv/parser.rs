@@ -30,7 +30,7 @@ pub fn count_rows(
             .count()
             - (has_header as usize))
     } else {
-        Ok(row_iterator.filter(|line| !line.is_empty()).count() - (has_header as usize))
+        Ok(row_iterator.count() - (has_header as usize))
     }
 }
 

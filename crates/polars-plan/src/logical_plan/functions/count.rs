@@ -1,4 +1,6 @@
 #[cfg(feature = "parquet")]
+use arrow::io::ipc::read::get_row_count as count_rows_ipc;
+#[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::count_rows as count_rows_csv;
@@ -34,8 +36,15 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
             Ok(DataFrame::new(vec![Series::new("len", [n_rows as IdxSize])]).unwrap())
         },
         #[cfg(feature = "ipc")]
-        FileScan::Ipc { .. } => {
-            todo!()
+        FileScan::Ipc { options } => {
+            let n_rows: PolarsResult<i64> = paths
+                .iter()
+                .map(|path| {
+                    let mut reader = polars_utils::open_file(path)?;
+                    count_rows_ipc(&mut reader)
+                })
+                .sum();
+            Ok(DataFrame::new(vec![Series::new("len", [n_rows? as IdxSize])]).unwrap())
         },
         FileScan::Anonymous { .. } => {
             todo!()
