@@ -1,60 +1,104 @@
-name: Code Coverage
+name: Code coverage
 
 on:
-  pull_request: {}
+  pull_request:
+    paths:
+      - '**.rs'
+      - '**.py'
   push:
     branches:
       - main
-      - codecov
+    paths:
+      - '**.rs'
+      - '**.py'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: py-polars
+    shell: bash
 
 jobs:
   coverage:
     name: Code Coverage
     runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    env:
+      RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+      RUST_BACKTRACE: 1
+      LLVM_PROFILE_FILE: '/Users/runner/work/polars/polars/target/polars-%p-%3m.profraw'
+      CARGO_LLVM_COV: 1
+      CARGO_LLVM_COV_SHOW_ENV: 1
+      CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
 
-      - uses: actions/setup-python@v2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
-          cache: "pip"
-      - name: install rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+          python-version: '3.10'
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Set up Rust
+        run: rustup component add llvm-tools-preview
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
       - uses: Swatinem/rust-cache@v2
         with:
-          key: coverage-cargo-macos
-        continue-on-error: true
-      - name: Setup virtual environment
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Prepare coverage
+        run: cargo llvm-cov clean --workspace
+
+      - name: Run tests
+        run: >
+          cargo test --all-features
+          -p polars-arrow
+          -p polars-core
+          -p polars-io
+          -p polars-lazy
+          -p polars-ops
+          -p polars-plan
+          -p polars-row
+          -p polars-sql
+          -p polars-time
+          -p polars-utils
+
+      - name: Run Rust integration tests
+        run: cargo test --all-features -p polars --test it
+
+      - name: Install Polars
         run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install -r py-polars/requirements-dev.txt
-      - name: Run coverage
-        run: |
-          source venv/bin/activate
-          cd py-polars
-          rustup component add llvm-tools-preview
-          cargo llvm-cov clean --workspace 
-          cargo test --all-features -p polars-arrow -p polars-core -p polars-io -p polars-lazy -p polars-ops -p polars-plan -p polars-row -p polars-sql -p polars-time -p polars-utils
-          cargo test --all-features -p polars --test it
+          source activate
           maturin develop
-          pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:coverage.xml || true
-          POLARS_FORCE_ASYNC=1 pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml || true
-          cargo llvm-cov report --lcov --output-path coverage.lcov
+
+      - name: Run Python tests
+        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:coverage.xml
+        continue-on-error: true
+
+      - name: Run Python tests - async reader
         env:
-          RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
-          RUST_BACKTRACE: 1
-          LLVM_PROFILE_FILE: '/Users/runner/work/polars/polars/target/polars-%p-%3m.profraw'
-          CARGO_LLVM_COV: 1
-          CARGO_LLVM_COV_SHOW_ENV: 1
-          CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
-      # Upload
-      - uses: codecov/codecov-action@v4
+          POLARS_FORCE_ASYNC: 1
+        run: pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
+        continue-on-error: true
+
+      - name: Report coverage
+        run: cargo llvm-cov report --lcov --output-path coverage.lcov
+
+      - name: Upload coverage information
+        uses: codecov/codecov-action@v4
         with:
           files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/async.xml
           name: macos
           token: ${{ secrets.CODECOV_TOKEN }}
-
