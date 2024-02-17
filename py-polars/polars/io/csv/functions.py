@@ -101,6 +101,7 @@ def read_csv(
         - `List[str]`: All values equal to any string in this list will be null.
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
+          
     missing_utf8_is_empty_string
         By default a missing value is considered to be null; if you would prefer missing
         utf8 values to be treated as the empty string you can set this param True.
@@ -509,6 +510,7 @@ def read_csv_batched(
         - `List[str]`: All values equal to any string in this list will be null.
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
+          
     missing_utf8_is_empty_string
         By default a missing value is considered to be null; if you would prefer missing
         utf8 values to be treated as the empty string you can set this param True.
@@ -802,6 +804,7 @@ def scan_csv(
         - `List[str]`: All values equal to any string in this list will be null.
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
+          
     missing_utf8_is_empty_string
         By default a missing value is considered to be null; if you would prefer missing
         utf8 values to be treated as the empty string you can set this param True.
