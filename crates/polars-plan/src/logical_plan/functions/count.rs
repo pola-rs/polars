@@ -26,12 +26,12 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
                 options.eol_char,
                 options.has_header,
             )?;
-            Ok(DataFrame::new(vec![Series::from_vec("len", vec![n_rows as u32])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new("len", [n_rows as IdxSize])]).unwrap())
         },
         #[cfg(feature = "parquet")]
         FileScan::Parquet { cloud_options, .. } => {
             let n_rows = count_rows_parquet(paths, cloud_options.as_ref())?;
-            Ok(DataFrame::new(vec![Series::from_vec("len", vec![n_rows as u32])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new("len", [n_rows as IdxSize])]).unwrap())
         },
         #[cfg(feature = "ipc")]
         FileScan::Ipc { .. } => {

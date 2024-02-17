@@ -32,7 +32,7 @@ impl OptimizationRule for CountStar {
             return None;
         };
 
-        fn _add_map_function(
+        fn _replace_count_with_mapfunction(
             lp_arena: &mut Arena<ALogicalPlan>,
             paths: Arc<[PathBuf]>,
             scan_type: FileScan,
@@ -57,9 +57,13 @@ impl OptimizationRule for CountStar {
 
         match scan_type {
             #[cfg(feature = "parquet")]
-            sc @ FileScan::Parquet { .. } => _add_map_function(lp_arena, paths.clone(), sc.clone()),
+            sc @ FileScan::Parquet { .. } => {
+                _replace_count_with_mapfunction(lp_arena, paths.clone(), sc.clone())
+            },
             #[cfg(feature = "csv")]
-            sc @ FileScan::Csv { .. } => _add_map_function(lp_arena, paths.clone(), sc.clone()),
+            sc @ FileScan::Csv { .. } => {
+                _replace_count_with_mapfunction(lp_arena, paths.clone(), sc.clone())
+            },
             _ => None,
         }
     }

@@ -200,7 +200,7 @@ impl FunctionNode {
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Count { .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
-                schema.insert_at_index(0, SmartString::from("len"), DataType::UInt32)?;
+                schema.insert_at_index(0, SmartString::from("len"), IDX_DTYPE)?;
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
