@@ -47,7 +47,7 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
             Ok(DataFrame::new(vec![Series::new("len", [n_rows? as IdxSize])]).unwrap())
         },
         FileScan::Anonymous { .. } => {
-            todo!()
+            unreachable!();
         },
     }
 }
