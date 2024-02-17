@@ -237,6 +237,7 @@ def _custom_reconstruct(
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
     """Group of data types."""
 
+    __slots__ = ("_match_base_type",)
     _match_base_type: bool
 
     def __new__(
@@ -379,7 +380,6 @@ class Decimal(NumericType):
     """
 
     __slots__ = ("precision", "scale")
-
     precision: int | None
     scale: int
 
@@ -558,6 +558,7 @@ class Categorical(DataType):
             or string value (lexical).
     """
 
+    __slots__ = ("ordering",)
     ordering: CategoricalOrdering | None
 
     def __init__(
@@ -592,6 +593,7 @@ class Enum(DataType):
         It may be changed at any point without it being considered a breaking change.
     """
 
+    __slots__ = ("categories",)
     categories: Series
 
     def __init__(self, categories: Series | Iterable[str]):
