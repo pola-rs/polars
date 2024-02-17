@@ -113,6 +113,14 @@ def test_empty_set_symteric_difference() -> None:
     assert_series_equal(full.rename("empty"), empty.list.set_symmetric_difference(full))
 
 
+def test_empty_is_disjoint() -> None:
+    s1 = pl.Series("s1", [[1, 2], [], [None]], pl.List(pl.UInt32))
+    s2 = pl.Series("s2", [[], [1, 2], []], pl.List(pl.UInt32))
+    expected = pl.Series("s1", [True, True, True])
+
+    assert_series_equal(expected, s1.list.is_disjoint(s2))
+
+
 @pytest.mark.parametrize("name", ["sort", "unique", "head", "tail", "shift", "reverse"])
 def test_empty_list_namespace_output_9585(name: str) -> None:
     dtype = pl.List(pl.String)

@@ -1052,3 +1052,88 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+    def is_disjoint(self, other: Series) -> Expr:
+        """
+        Return true if list has no elements in common with `other`.
+
+        Lists are disjoint if and only if their intersection is empty.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3], [None, 3], [None, 3], [6, 7], [None], [None, 1]],
+        ...         "b": [[3, 4, 5], [3], [3, 4, None], [8, 9], [1], [None, 3]],
+        ...     }
+        ... )
+        >>> df.with_columns(disjoint=pl.col("b").list.is_disjoint("a"))
+        shape: (6, 3)
+        ┌───────────┬──────────────┬──────────┐
+        │ a         ┆ b            ┆ disjoint │
+        │ ---       ┆ ---          ┆ ---      │
+        │ list[i64] ┆ list[i64]    ┆ bool     │
+        ╞═══════════╪══════════════╪══════════╡
+        │ [1, 2, 3] ┆ [3, 4, 5]    ┆ false    │
+        │ [null, 3] ┆ [3]          ┆ false    │
+        │ [null, 3] ┆ [3, 4, null] ┆ false    │
+        │ [5, 6, 7] ┆ [8, 9]       ┆ true     │
+        │ [null]    ┆ [1]          ┆ true     │
+        │ [null, 1] ┆ [null, 3]    ┆ false    │
+        └───────────┴──────────────┴──────────┘
+        """
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | Expr
+    ) -> Expr:
+        """
+        Count how often the value produced by `element` occurs.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+        """
+
+    @deprecate_renamed_function("len", version="0.19.8")
+    def lengths(self) -> Series:
+        """
+        Return the number of elements in each list.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len`.
+        """
+
+    @deprecate_renamed_function("gather", version="0.19.14")
+    @deprecate_renamed_parameter("index", "indices", version="0.19.14")
+    def take(
+        self,
+        indices: Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
+    ) -> Series:
+        """
+        Take sublists by multiple indices.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`gather`.
+
+        Parameters
+        ----------
+        indices
+            Indices to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
+        """
