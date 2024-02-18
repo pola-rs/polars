@@ -4279,9 +4279,10 @@ class Series:
     def to_numpy(
         self,
         *,
-        zero_copy_only: bool = False,
+        allow_copy: bool = True,
         writable: bool = False,
         use_pyarrow: bool = True,
+        zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -4292,14 +4293,13 @@ class Series:
         - Floating point `nan` values can be zero-copied
         - Booleans cannot be zero-copied
 
-        To ensure that no data is copied, set `zero_copy_only=True`.
+        To ensure that no data is copied, set `allow_copy=False`.
 
         Parameters
         ----------
-        zero_copy_only
-            Raise an exception if the conversion to a NumPy would require copying
-            the underlying data. Data copy occurs, for example, when the Series contains
-            nulls or non-numeric types.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to `False`,
+            causes conversions that are not zero-copy to fail.
         writable
             Ensure the resulting array is writable. This will force a copy of the data
             if the array was created without copy, as the underlying Arrow data is
@@ -4308,6 +4308,14 @@ class Series:
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
             for the conversion to NumPy.
+        zero_copy_only
+            Raise an exception if the conversion to a NumPy would require copying
+            the underlying data. Data copy occurs, for example, when the Series contains
+            nulls or non-numeric types.
+
+            .. deprecated: 0.20.10
+                Use the `allow_copy` parameter instead, which is the inverse of this
+                one.
 
         Examples
         --------
@@ -4318,9 +4326,16 @@ class Series:
         >>> type(arr)
         <class 'numpy.ndarray'>
         """
+        if zero_copy_only is not None:
+            issue_deprecation_warning(
+                "The `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
+                " Use the `allow_copy` parameter instead, which is the inverse of `zero_copy_only`.",
+                version="0.20.10",
+            )
+            allow_copy = not zero_copy_only
 
-        def raise_no_zero_copy() -> None:
-            if zero_copy_only and not self.is_empty():
+        def raise_on_copy() -> None:
+            if not allow_copy and not self.is_empty():
                 msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 
@@ -4336,14 +4351,14 @@ class Series:
                 raise TypeError(msg)
 
         if self.n_chunks() > 1:
-            raise_no_zero_copy()
+            raise_on_copy()
             self = self.rechunk()
 
         dtype = self.dtype
 
         if dtype == Array:
             np_array = self.explode().to_numpy(
-                zero_copy_only=zero_copy_only,
+                allow_copy=allow_copy,
                 writable=writable,
                 use_pyarrow=use_pyarrow,
             )
@@ -4356,35 +4371,35 @@ class Series:
             and dtype not in (Object, Datetime, Duration, Date)
         ):
             return self.to_arrow().to_numpy(
-                zero_copy_only=zero_copy_only, writable=writable
+                zero_copy_only=not allow_copy, writable=writable
             )
 
         if self.null_count() == 0:
             if dtype.is_integer() or dtype.is_float():
                 np_array = self._view(ignore_nulls=True)
             elif dtype == Boolean:
-                raise_no_zero_copy()
+                raise_on_copy()
                 np_array = self.cast(UInt8)._view(ignore_nulls=True).view(bool)
             elif dtype in (Datetime, Duration):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = self._view(ignore_nulls=True).view(np_dtype)
             elif dtype == Date:
-                raise_no_zero_copy()
+                raise_on_copy()
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = self.to_physical()._view(ignore_nulls=True).astype(np_dtype)
             else:
-                raise_no_zero_copy()
+                raise_on_copy()
                 np_array = self._s.to_numpy()
 
         else:
-            raise_no_zero_copy()
+            raise_on_copy()
             np_array = self._s.to_numpy()
             if dtype in (Datetime, Duration, Date):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = np_array.view(np_dtype)
 
         if writable and not np_array.flags.writeable:
-            raise_no_zero_copy()
+            raise_on_copy()
             np_array = np_array.copy()
 
         return np_array
@@ -7520,7 +7535,7 @@ class Series:
         return self.cum_prod(reverse=reverse)
 
     @deprecate_function(
-        "Use `Series.to_numpy(zero_copy_only=True) instead.", version="0.19.14"
+        "Use `Series.to_numpy(allow_copy=False) instead.", version="0.19.14"
     )
     def view(self, *, ignore_nulls: bool = False) -> SeriesView:
         """
