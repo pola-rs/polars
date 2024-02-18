@@ -157,6 +157,8 @@ class BinaryNameSpace:
 
         Examples
         --------
+        Encode to hex values from binary.
+
         >>> s = pl.Series("colors", [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
         >>> s.bin.encode("hex")
         shape: (3,)
@@ -166,6 +168,10 @@ class BinaryNameSpace:
             "ffff00"
             "0000ff"
         ]
+
+        Encode to base64 values from binary.
+
+        >>> s = pl.Series("colors", [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
         >>> s.bin.encode("base64")
         shape: (3,)
         Series: 'colors' [str]
