@@ -111,7 +111,10 @@ pub(super) fn array_iter_to_series(
 /// Materializes hive partitions.
 /// We have a special num_rows arg, as df can be empty when a projection contains
 /// only hive partition columns.
-/// Safety: num_rows equals the height of the df when the df height is non-zero.
+///
+/// # Safety
+///
+/// num_rows equals the height of the df when the df height is non-zero.
 pub(crate) fn materialize_hive_partitions(
     df: &mut DataFrame,
     hive_partition_columns: Option<&[Series]>,

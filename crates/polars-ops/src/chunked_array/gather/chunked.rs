@@ -9,6 +9,7 @@ use crate::frame::IntoDf;
 
 pub trait DfTake: IntoDf {
     /// Take elements by a slice of [`ChunkId`]s.
+    ///
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
@@ -20,6 +21,7 @@ pub trait DfTake: IntoDf {
         unsafe { DataFrame::new_no_checks(cols) }
     }
     /// Take elements by a slice of optional [`ChunkId`]s.
+    ///
     /// # Safety
     /// Does not do any bound checks.
     unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> DataFrame {

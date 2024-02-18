@@ -37,11 +37,13 @@ mod utils;
 pub trait Growable<'a> {
     /// Extends this [`Growable`] with elements from the bounded [`Array`] at index `index` from
     /// a slice starting at `start` and length `len`.
+    ///
     /// # Safety
     /// Doesn't do any bound checks
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize);
 
     /// Extends this [`Growable`] with null elements, disregarding the bound arrays
+    ///
     /// # Safety
     /// Doesn't do any bound checks
     fn extend_validity(&mut self, additional: usize);

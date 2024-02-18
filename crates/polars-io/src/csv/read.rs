@@ -73,7 +73,8 @@ impl NullValuesCompiled {
         }
     }
 
-    /// Safety
+    /// # Safety
+    ///
     /// The caller must ensure that `index` is in bounds
     pub(super) unsafe fn is_null(&self, field: &[u8], index: usize) -> bool {
         use NullValuesCompiled::*;

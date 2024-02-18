@@ -548,6 +548,7 @@ impl DataFrame {
 
     #[inline]
     /// Get mutable access to the underlying columns.
+    ///
     /// # Safety
     /// The caller must ensure the length of all [`Series`] remains equal.
     pub unsafe fn get_columns_mut(&mut self) -> &mut Vec<Series> {

@@ -140,6 +140,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
 
     #[inline]
     /// Ignores the buffers and doesn't update the view. This is only correct in a filter.
+    ///
     /// # Safety
     /// doesn't check bounds
     pub unsafe fn extend_unchecked_no_buffers(&mut self, index: usize, start: usize, len: usize) {
