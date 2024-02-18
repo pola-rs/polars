@@ -74,35 +74,33 @@ pub fn concat_df_horizontal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
 }
 
 #[cfg(feature = "diagonal_concat")]
-/**
-Concat [`DataFrame`]s diagonally.
-Concat diagonally thereby combining different schemas.
-# Example
-```
-# use polars_core::prelude::*;
-# use polars_core::functions::concat_df_diagonal;
-
-let df_d1 = df!(
-    "a"=> &[1],
-    "b"=> &[3],
-)?;
-let df_d2 = df!(
-    "a"=> &[2],
-    "d"=> &[4],
-)?;
-let df_diagonal_concat = concat_df_diagonal(&[df_d1, df_d2])?;
-
-assert!(df_diagonal_concat.equals_missing(
-    &df!(
-        "a" => &[Some(1), Some(2)],
-        "b" => &[Some(3), None],
-        "d" => &[None, Some(4)]
-    )?
-));
-
-# Ok::<(), PolarsError>(())
-```
-**/
+/// Concat [`DataFrame`]s diagonally.
+/// Concat diagonally thereby combining different schemas.
+/// # Example
+/// ```
+/// # use polars_core::prelude::*;
+/// # use polars_core::functions::concat_df_diagonal;
+///
+/// let df_d1 = df!(
+///     "a"=> &[1],
+///     "b"=> &[3],
+/// )?;
+/// let df_d2 = df!(
+///     "a"=> &[2],
+///     "d"=> &[4],
+/// )?;
+/// let df_diagonal_concat = concat_df_diagonal(&[df_d1, df_d2])?;
+///
+/// assert!(df_diagonal_concat.equals_missing(
+///     &df!(
+///         "a" => &[Some(1), Some(2)],
+///         "b" => &[Some(3), None],
+///         "d" => &[None, Some(4)]
+///     )?
+/// ));
+///
+/// # Ok::<(), PolarsError>(())
+/// ```
 pub fn concat_df_diagonal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     // TODO! replace with lazy only?
     let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
