@@ -1,3 +1,4 @@
+use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -196,7 +197,8 @@ where
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
             ChunkedArray::with_chunk(self.name(), arr)
         };
-        out.set_sorted_flag(sorted);
+        let sorted_flag = _update_gather_sorted_flag(self.is_sorted_flag(), sorted);
+        out.set_sorted_flag(sorted_flag);
         out
     }
 
