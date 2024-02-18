@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+from tempfile import NamedTemporaryFile
+
 import pytest
 
 import polars as pl
@@ -20,6 +22,25 @@ def test_count_csv(io_files_path: Path, path: str, n_rows: int) -> None:
     expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
 
     # Check if we are using our fast count star
+    assert "FAST COUNT(*)" in lf.explain()
+    assert_frame_equal(lf.collect(), expected)
+
+
+@pytest.mark.write_disk()
+def test_commented_csv() -> None:
+    csv_a = NamedTemporaryFile()
+    csv_a.write(
+        b"""
+A,B
+Gr1,A
+Gr1,B
+# comment line
+    """.strip()
+    )
+    csv_a.seek(0)
+
+    expected = pl.DataFrame(pl.Series("len", [2], dtype=pl.UInt32))
+    lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
     assert "FAST COUNT(*)" in lf.explain()
     assert_frame_equal(lf.collect(), expected)
 
