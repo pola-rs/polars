@@ -1159,3 +1159,118 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     assert_eq!(col_2.get(0)?, AnyValue::String("  4.1"));
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "dtype-array")]
+fn test_parse_array_explicit_schema() -> PolarsResult<()> {
+    let schema = Arc::new(Schema::from_iter([
+        Field::new("xyz", DataType::Array(Box::new(DataType::Float32), 3)),
+        Field::new("f", DataType::Float32),
+    ]));
+    let file = Cursor::new(
+        r#"
+x,y,z,f
+0.1,0.5,0.9,0.1
+0.2,,1.0,0.2
+0.3,0.7,1.1,0.3
+0.4,0.8,1.2,0.4
+"#,
+    );
+
+    let df = CsvReader::new(file)
+        .with_schema(Some(schema.clone()))
+        .finish()?;
+
+    assert_eq!(df.shape(), (4, 2));
+    assert_eq!(df.schema(), *schema);
+
+    let row = match df.column("xyz")?.get(1)? {
+        AnyValue::Array(series, _) => series,
+        _ => panic!("Wrong column dtype"),
+    };
+    let row: Vec<_> = row.iter().collect();
+    assert_eq!(
+        row,
+        vec![
+            AnyValue::Float32(0.2),
+            AnyValue::Null,
+            AnyValue::Float32(1.0)
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dtype-array")]
+fn test_parse_array_inferred_schema() -> PolarsResult<()> {
+    // currently this is unsupported
+    // so check that this errors
+    let file = r#"
+x,y,z,f
+0.1,0.5,0.9,0.1
+0.2,,1.0,0.2
+0.3,0.7,1.1,0.3
+0.4,0.8,1.2,0.4
+"#;
+
+    let out = CsvReader::new(Cursor::new(file))
+        .with_dtypes_slice(Some(&[
+            DataType::Array(Box::new(DataType::Float32), 3),
+            DataType::Float32,
+        ]))
+        .finish();
+
+    if let Err(e) = out {
+        assert_eq!(e.to_string(), "unsupported data type array[f32, 3] while reading CSV; Array dtypes are only supported with explicit schema.");
+    } else {
+        panic!("Did not error")
+    }
+
+    let out = CsvReader::new(Cursor::new(file))
+        .with_dtypes(Some(
+            Schema::from_iter([
+                Field::new("xyz", DataType::Array(Box::new(DataType::Float32), 3)),
+                Field::new("f", DataType::Float32),
+            ])
+            .into(),
+        ))
+        .finish();
+
+    if let Err(e) = out {
+        assert_eq!(e.to_string(), "unsupported data type array[f32, 3] while reading CSV; Array dtypes are only supported with explicit schema.");
+    } else {
+        panic!("Did not error")
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_csv_null_values() -> PolarsResult<()> {
+    // duplicate of python test_csv_multiple_null_values
+    let file = Cursor::new(
+        r#"
+a,b
+1,2022-01-01
+2,__NA__
+,""
+4,NA
+"#,
+    );
+
+    let df = CsvReader::new(file)
+        .with_null_values(Some(NullValues::AllColumns(
+            ["__NA__", "NA"].into_iter().map(String::from).collect(),
+        )))
+        .finish()?;
+
+    let expected = DataFrame::new(vec![
+        Series::new("a", &[Some(1), Some(2), None, Some(4)]),
+        Series::new("b", &[Some("2022-01-01"), None, Some(""), None]),
+    ])?;
+    println!("{}", df);
+
+    assert!(df.equals_missing(&expected));
+    Ok(())
+}

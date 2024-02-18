@@ -333,6 +333,170 @@ pub(crate) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &
     }
 }
 
+struct LineParser<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+    start: usize,
+    quote_char: Option<u8>,
+    eol_char: u8,
+    null_values: Option<&'a NullValuesCompiled>,
+    missing_is_null: bool,
+    ignore_errors: bool,
+    schema: &'a Schema,
+
+    pub processed_len: usize, // read_sol
+    pub col_idx: usize, // 'logical' column index. One per column after combining array columns.
+    pub field_idx: usize, // physical field index in CSV file. Doesn't necessarily correspond to column index!
+    buf_idx: usize, // index of buffer we're currently parsing into. Private because we use it to index (unchecked) into null_values.
+    iter: SplitFields<'a>,
+}
+
+impl<'a> LineParser<'a> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        bytes: &'a [u8],
+        offset: usize,
+        start: usize,
+        separator: u8,
+        quote_char: Option<u8>,
+        eol_char: u8,
+        missing_is_null: bool,
+        ignore_errors: bool,
+        null_values: Option<&'a NullValuesCompiled>,
+        schema: &'a Schema,
+    ) -> Self {
+        let iter = SplitFields::new(bytes, separator, quote_char, eol_char);
+        Self {
+            bytes,
+            offset,
+            start,
+            null_values,
+            missing_is_null,
+            ignore_errors,
+            schema,
+            quote_char,
+            eol_char,
+
+            processed_len: 0,
+            col_idx: 0,
+            field_idx: 0,
+            buf_idx: 0,
+            iter,
+        }
+    }
+
+    fn next_field(&mut self) -> Option<(&'a [u8], bool)> {
+        if let Some((field, needs_escaping)) = self.iter.next() {
+            // +1 is the split character that is consumed by the iterator.
+            self.processed_len += field.len() + 1;
+            Some((field, needs_escaping))
+        } else {
+            None
+        }
+    }
+
+    pub fn skip_col(&mut self) {
+        self.next_field();
+        self.field_idx += 1;
+        self.col_idx += 1;
+    }
+
+    pub fn parse_col_to_buf(&mut self, buf: &mut Buffer) -> PolarsResult<()> {
+        buf.process_fields(&mut |buf| self.parse_field_to_buf(buf))
+            .map(|()| {
+                self.col_idx += 1;
+                self.buf_idx += 1;
+            })
+    }
+
+    pub fn parse_field_to_buf(&mut self, buf: &mut Buffer) -> PolarsResult<()> {
+        let (mut field, needs_escaping) = match self.next_field() {
+            // missing field
+            None => {
+                buf.add_null(!self.missing_is_null);
+                return Ok(());
+            },
+            Some(v) => v,
+        };
+        let field_len = field.len();
+
+        // the iterator is finished when it encounters a `\n`
+        // this could be preceded by a '\r'
+        if field_len > 0 && field[field_len - 1] == b'\r' {
+            field = &field[..field_len - 1];
+        }
+
+        let mut add_null = false;
+
+        if let Some(null_values) = self.null_values {
+            let escaped_field = if needs_escaping && !field.is_empty() {
+                &field[1..field.len() - 1]
+            } else {
+                field
+            };
+
+            // SAFETY:
+            // process fields is in bounds
+            add_null = unsafe { null_values.is_null(escaped_field, self.buf_idx) }
+        }
+
+        if add_null {
+            buf.add_null(!self.missing_is_null && field.is_empty())
+        } else {
+            buf.add(
+                field,
+                self.ignore_errors,
+                needs_escaping,
+                self.missing_is_null,
+            )
+            .map_err(|e| {
+                let bytes_offset = self.offset + field.as_ptr() as usize - self.start;
+                let unparsable = String::from_utf8_lossy(field);
+                let column_name = self.schema.get_at_index(self.col_idx).unwrap().0;
+                polars_err!(
+                    ComputeError:
+                    "could not parse `{}` as dtype `{}` at column '{}' (column number {})\n\n\
+                    The current offset in the file is {} bytes.\n\
+                    \n\
+                    You might want to try:\n\
+                    - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+                    - specifying correct dtype with the `dtypes` argument\n\
+                    - setting `ignore_errors` to `True`,\n\
+                    - adding `{}` to the `null_values` list.\n\n\
+                    Original error: ```{}```",
+                    &unparsable,
+                    buf.dtype(),
+                    column_name,
+                    self.field_idx + 1,
+                    bytes_offset,
+                    &unparsable,
+                    e
+                )
+            })?;
+        }
+
+        self.field_idx += 1;
+        Ok(())
+    }
+
+    fn cleanup(self, truncate_ragged_lines: bool) -> PolarsResult<&'a [u8]> {
+        if self.bytes.get(self.processed_len - 1) == Some(&self.eol_char) {
+            Ok(&self.bytes[self.processed_len..])
+        } else {
+            if !truncate_ragged_lines && self.processed_len < self.bytes.len() {
+                polars_bail!(ComputeError: r#"found more fields than defined in 'Schema'
+
+Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
+            }
+            Ok(skip_this_line(
+                &self.bytes[self.processed_len - 1..],
+                self.quote_char,
+                self.eol_char,
+            ))
+        }
+    }
+}
+
 /// Parse CSV.
 ///
 /// # Arguments
@@ -343,8 +507,8 @@ pub(crate) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn parse_lines(
-    mut bytes: &[u8],
+pub(super) fn parse_lines<'a>(
+    mut bytes: &'a [u8],
     offset: usize,
     separator: u8,
     comment_prefix: Option<&CommentPrefix>,
@@ -353,13 +517,13 @@ pub(super) fn parse_lines(
     missing_is_null: bool,
     ignore_errors: bool,
     mut truncate_ragged_lines: bool,
-    null_values: Option<&NullValuesCompiled>,
-    projection: &[usize],
+    null_values: Option<&'a NullValuesCompiled>,
+    projection: &'a [usize],
     buffers: &mut [Buffer],
     n_lines: usize,
     // length of original schema
     schema_len: usize,
-    schema: &Schema,
+    schema: &'a Schema,
 ) -> PolarsResult<usize> {
     assert!(
         !projection.is_empty(),
@@ -386,133 +550,38 @@ pub(super) fn parse_lines(
 
         if bytes.is_empty() {
             return Ok(original_bytes_len);
-        } else if is_comment_line(bytes, comment_prefix) {
+        }
+        if is_comment_line(bytes, comment_prefix) {
             // deal with comments
             let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
             bytes = bytes_rem;
             continue;
         }
 
-        // Every line we only need to parse the columns that are projected.
-        // Therefore we check if the idx of the field is in our projected columns.
-        // If it is not, we skip the field.
-        let mut projection_iter = projection.iter().copied();
-        let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
-        let mut processed_fields = 0;
+        let mut parser = LineParser::new(
+            bytes,
+            offset,
+            start,
+            separator,
+            quote_char,
+            eol_char,
+            missing_is_null,
+            ignore_errors,
+            null_values,
+            schema,
+        );
 
-        let mut iter = SplitFields::new(bytes, separator, quote_char, eol_char);
-        let mut idx = 0u32;
-        let mut read_sol = 0;
-        loop {
-            match iter.next() {
-                // end of line
-                None => {
-                    bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
-                    break;
-                },
-                Some((mut field, needs_escaping)) => {
-                    let field_len = field.len();
-
-                    // +1 is the split character that is consumed by the iterator.
-                    read_sol += field_len + 1;
-
-                    if idx == next_projected as u32 {
-                        // the iterator is finished when it encounters a `\n`
-                        // this could be preceded by a '\r'
-                        if field_len > 0 && field[field_len - 1] == b'\r' {
-                            field = &field[..field_len - 1];
-                        }
-
-                        debug_assert!(processed_fields < buffers.len());
-                        let buf = unsafe {
-                            // SAFETY: processed fields index can never exceed the projection indices.
-                            buffers.get_unchecked_mut(processed_fields)
-                        };
-                        let mut add_null = false;
-
-                        // if we have null values argument, check if this field equal null value
-                        if let Some(null_values) = null_values {
-                            let field = if needs_escaping && !field.is_empty() {
-                                &field[1..field.len() - 1]
-                            } else {
-                                field
-                            };
-
-                            // SAFETY:
-                            // process fields is in bounds
-                            add_null = unsafe { null_values.is_null(field, processed_fields) }
-                        }
-                        if add_null {
-                            buf.add_null(!missing_is_null && field.is_empty())
-                        } else {
-                            buf.add(field, ignore_errors, needs_escaping, missing_is_null)
-                                .map_err(|e| {
-                                    let bytes_offset = offset + field.as_ptr() as usize - start;
-                                    let unparsable = String::from_utf8_lossy(field);
-                                    let column_name = schema.get_at_index(idx as usize).unwrap().0;
-                                    polars_err!(
-                                        ComputeError:
-                                        "could not parse `{}` as dtype `{}` at column '{}' (column number {})\n\n\
-                                        The current offset in the file is {} bytes.\n\
-                                        \n\
-                                        You might want to try:\n\
-                                        - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
-                                        - specifying correct dtype with the `dtypes` argument\n\
-                                        - setting `ignore_errors` to `True`,\n\
-                                        - adding `{}` to the `null_values` list.\n\n\
-                                        Original error: ```{}```",
-                                        &unparsable,
-                                        buf.dtype(),
-                                        column_name,
-                                        idx + 1,
-                                        bytes_offset,
-                                        &unparsable,
-                                        e
-                                    )
-                                })?;
-                        }
-                        processed_fields += 1;
-
-                        // if we have all projected columns we are done with this line
-                        match projection_iter.next() {
-                            Some(p) => next_projected = p,
-                            None => {
-                                if bytes.get(read_sol - 1) == Some(&eol_char) {
-                                    bytes = &bytes[read_sol..];
-                                } else {
-                                    if !truncate_ragged_lines && read_sol < bytes.len() {
-                                        polars_bail!(ComputeError: r#"found more fields than defined in 'Schema'
-
-Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
-                                    }
-                                    let bytes_rem = skip_this_line(
-                                        &bytes[read_sol - 1..],
-                                        quote_char,
-                                        eol_char,
-                                    );
-                                    bytes = bytes_rem;
-                                }
-                                break;
-                            },
-                        }
-                    }
-                    idx += 1;
-                },
+        for (next_projected, buf) in projection.iter().copied().zip(buffers.iter_mut()) {
+            // skip columns until we get to one that is projected
+            while parser.col_idx != next_projected {
+                parser.skip_col();
             }
+
+            parser.parse_col_to_buf(buf)?;
         }
 
-        // there can be lines that miss fields (also the comma values)
-        // this means the splitter won't process them.
-        // We traverse them to read them as null values.
-        while processed_fields < projection.len() {
-            debug_assert!(processed_fields < buffers.len());
-            let buf = unsafe {
-                // SAFETY: processed fields index can never exceed the projection indices.
-                buffers.get_unchecked_mut(processed_fields)
-            };
-            buf.add_null(!missing_is_null);
-            processed_fields += 1;
-        }
+        bytes = parser.cleanup(truncate_ragged_lines)?;
+
         line_count += 1;
     }
 }

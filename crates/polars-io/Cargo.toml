@@ -80,6 +80,7 @@ dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
+dtype-array = ["polars-core/dtype-array"]
 object = []
 dtype-datetime = [
   "polars-core/dtype-datetime",

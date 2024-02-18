@@ -286,6 +286,7 @@ dtype-array = [
   "polars-core/dtype-array",
   "polars-lazy?/dtype-array",
   "polars-ops/dtype-array",
+  "polars-io/dtype-array",
 ]
 dtype-i8 = [
   "polars-core/dtype-i8",
