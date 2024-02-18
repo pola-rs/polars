@@ -10,36 +10,6 @@ impl CountStar {
     }
 }
 
-impl CountStar {
-    fn is_simple_count_star_plan(
-        node: Node,
-        lp_arena: &mut Arena<ALogicalPlan>,
-    ) -> Option<(Arc<[PathBuf]>, FileScan)> {
-        // Top node should be a projection
-        let ALogicalPlan::Projection { input, .. } = lp_arena.get(node) else {
-            return None;
-        };
-
-        // Leaf node should be a scan without predicates
-        let scan @ ALogicalPlan::Scan {
-            paths,
-            scan_type,
-            predicate: None,
-            ..
-        } = lp_arena.get(*input)
-        else {
-            return None;
-        };
-
-        // Do not support anonymous scans
-        if matches!(scan_type, FileScan::Anonymous { .. }) {
-            return None;
-        }
-
-        Some((paths.clone(), scan_type.clone()))
-    }
-}
-
 impl OptimizationRule for CountStar {
     // Replace select count(*) from datasource with specialized map function
     fn optimize_plan(
@@ -65,5 +35,36 @@ impl OptimizationRule for CountStar {
             lp_arena.replace(node, alp.clone());
             alp
         })
+    }
+}
+
+impl CountStar {
+    // Only optimize Projection -> Scan simple queries, no nested structures for now
+    fn is_simple_count_star_plan(
+        node: Node,
+        lp_arena: &mut Arena<ALogicalPlan>,
+    ) -> Option<(Arc<[PathBuf]>, FileScan)> {
+        // Top node should be a projection
+        let ALogicalPlan::Projection { input, .. } = lp_arena.get(node) else {
+            return None;
+        };
+
+        // Leaf node should be a scan without predicates
+        let ALogicalPlan::Scan {
+            paths,
+            scan_type,
+            predicate: None,
+            ..
+        } = lp_arena.get(*input)
+        else {
+            return None;
+        };
+
+        // Do not support anonymous scans
+        if matches!(scan_type, FileScan::Anonymous { .. }) {
+            return None;
+        }
+
+        Some((paths.clone(), scan_type.clone()))
     }
 }
