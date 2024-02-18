@@ -4324,17 +4324,6 @@ class Series:
                 msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 
-        def temporal_dtype_to_numpy(dtype: PolarsDataType) -> Any:
-            if dtype == Date:
-                return np.dtype("datetime64[D]")
-            elif dtype == Duration:
-                return np.dtype(f"timedelta64[{dtype.time_unit}]")  # type: ignore[union-attr]
-            elif dtype == Datetime:
-                return np.dtype(f"datetime64[{dtype.time_unit}]")  # type: ignore[union-attr]
-            else:
-                msg = f"invalid temporal type: {dtype}"
-                raise TypeError(msg)
-
         if self.n_chunks() > 1:
             raise_no_zero_copy()
             self = self.rechunk()
@@ -4365,13 +4354,12 @@ class Series:
             elif dtype == Boolean:
                 raise_no_zero_copy()
                 np_array = self.cast(UInt8)._view(ignore_nulls=True).view(bool)
-            elif dtype in (Datetime, Duration):
-                np_dtype = temporal_dtype_to_numpy(dtype)
+            elif dtype == Datetime:
+                np_dtype = np.dtype(f"datetime64[{dtype.time_unit}]")  # type: ignore[attr-defined]
                 np_array = self._view(ignore_nulls=True).view(np_dtype)
-            elif dtype == Date:
-                raise_no_zero_copy()
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = self.to_physical()._view(ignore_nulls=True).astype(np_dtype)
+            elif dtype == Duration:
+                np_dtype = np.dtype(f"timedelta64[{dtype.time_unit}]")  # type: ignore[attr-defined]
+                np_array = self._view(ignore_nulls=True).view(np_dtype)
             else:
                 raise_no_zero_copy()
                 np_array = self._s.to_numpy()
@@ -4379,9 +4367,6 @@ class Series:
         else:
             raise_no_zero_copy()
             np_array = self._s.to_numpy()
-            if dtype in (Datetime, Duration, Date):
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = np_array.view(np_dtype)
 
         if writable and not np_array.flags.writeable:
             raise_no_zero_copy()

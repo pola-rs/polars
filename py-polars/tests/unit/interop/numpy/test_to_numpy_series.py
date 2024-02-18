@@ -130,6 +130,7 @@ def test_series_to_numpy_date() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.dtype("datetime64[D]")
+    assert result.flags.writeable is True
     assert_zero_copy_only_raises(s)
 
 
