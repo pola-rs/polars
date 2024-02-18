@@ -8,7 +8,7 @@ use polars_io::csv::count_rows as count_rows_csv;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
-#[cfg(feature = "parquet")]
+#[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::get_runtime;
 #[cfg(feature = "parquet")]
 use polars_io::{is_cloud_url, SerReader};
