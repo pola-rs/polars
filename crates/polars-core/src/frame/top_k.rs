@@ -38,7 +38,6 @@ impl PartialOrd for CompareRow<'_> {
 }
 
 impl DataFrame {
-
     /// get a DataFrame with the top k rows.
     ///
     /// # Example
