@@ -4,8 +4,10 @@ use arrow::io::ipc::read::get_row_count as count_rows_ipc;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::count_rows as count_rows_csv;
+#[cfg(all(feature = "parquet", feature = "cloud"))]
+use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::{ParquetAsyncReader, ParquetReader};
+use polars_io::parquet::ParquetReader;
 #[cfg(feature = "parquet")]
 use polars_io::pl_async::get_runtime;
 #[cfg(feature = "parquet")]
