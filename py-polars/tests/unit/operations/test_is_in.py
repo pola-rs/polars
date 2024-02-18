@@ -312,3 +312,16 @@ def test_is_in_with_wildcard_13809() -> None:
     out = pl.DataFrame({"A": ["B"]}).select(pl.all().is_in(["C"]))
     expected = pl.DataFrame({"A": [False]})
     assert_frame_equal(out, expected)
+
+
+@StringCache()
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
+    # init the global cache
+    s = pl.Series(["c", "c", "b"], dtype=dtype)
+
+    # test local
+    assert_series_equal(
+        pl.Series(["a", "d", "e", "b"]).is_in(s),
+        pl.Series([False, False, False, True]),
+    )

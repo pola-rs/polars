@@ -232,6 +232,10 @@ fn is_in_string(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanCh
         DataType::String => {
             is_in_binary(&ca_in.as_binary(), &other.cast(&DataType::Binary).unwrap())
         },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(_, _) | DataType::Categorical(_, _) => {
+            is_in_string_categorical(ca_in, other.categorical().unwrap())
+        },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
 }
@@ -554,6 +558,16 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
             Ok(ca)
         },
     }
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn is_in_string_categorical(
+    ca_in: &StringChunked,
+    other: &CategoricalChunked,
+) -> PolarsResult<BooleanChunked> {
+    // We need only check against the unique categories used by this array.
+    let other: StringChunked = other.unique().unwrap().iter_str().collect_trusted();
+    is_in_binary(&ca_in.as_binary(), &other.cast(&DataType::Binary).unwrap())
 }
 
 #[cfg(feature = "dtype-categorical")]
