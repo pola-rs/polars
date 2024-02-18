@@ -18,7 +18,8 @@ impl OptimizationRule for CountStar {
         _expr_arena: &mut Arena<AExpr>,
         node: Node,
     ) -> Option<ALogicalPlan> {
-        CountStar::is_simple_count_star_plan(node, lp_arena).map(|(paths, scan_type)| {
+        let mut paths = Vec::new();
+        visit_logical_plan_for_scan_paths(&mut paths, node, lp_arena).map(|scan_type| {
             let placeholder = ALogicalPlan::DataFrameScan {
                 df: Arc::new(Default::default()),
                 schema: Arc::new(Default::default()),
@@ -28,9 +29,14 @@ impl OptimizationRule for CountStar {
             };
             let placeholder_node = lp_arena.add(placeholder);
 
+            let sliced_paths: Arc<[PathBuf]> = paths.into();
+
             let alp = ALogicalPlan::MapFunction {
                 input: placeholder_node,
-                function: FunctionNode::Count { paths, scan_type },
+                function: FunctionNode::Count {
+                    paths: sliced_paths,
+                    scan_type,
+                },
             };
             lp_arena.replace(node, alp.clone());
             alp
@@ -38,33 +44,42 @@ impl OptimizationRule for CountStar {
     }
 }
 
-impl CountStar {
-    // Only optimize Projection -> Scan simple queries, no nested structures for now
-    fn is_simple_count_star_plan(
-        node: Node,
-        lp_arena: &mut Arena<ALogicalPlan>,
-    ) -> Option<(Arc<[PathBuf]>, FileScan)> {
-        // Top node should be a projection
-        let ALogicalPlan::Projection { input, .. } = lp_arena.get(node) else {
-            return None;
-        };
-
-        // Leaf node should be a scan without predicates
-        let ALogicalPlan::Scan {
-            paths,
-            scan_type,
-            predicate: None,
-            ..
-        } = lp_arena.get(*input)
-        else {
-            return None;
-        };
-
-        // Do not support anonymous scans
-        if matches!(scan_type, FileScan::Anonymous { .. }) {
-            return None;
-        }
-
-        Some((paths.clone(), scan_type.clone()))
+// Visit the logical plan and return the file paths / scan type
+// Return None if query is not a simple COUNT(*) FROM SOURCE
+fn visit_logical_plan_for_scan_paths(
+    all_paths: &mut Vec<PathBuf>,
+    node: Node,
+    lp_arena: &Arena<ALogicalPlan>,
+) -> Option<FileScan> {
+    match lp_arena.get(node) {
+        ALogicalPlan::Union { inputs, .. } => {
+            // Preallocate right amount in case of globbing
+            if all_paths.is_empty() {
+                let _ = std::mem::replace(all_paths, Vec::with_capacity(inputs.len()));
+            }
+            let mut scan_type = None;
+            for input in inputs {
+                // We are assuming all scan_types to be the same type
+                match visit_logical_plan_for_scan_paths(all_paths, *input, lp_arena) {
+                    Some(leaf_scan_type) => {
+                        if scan_type.is_none() {
+                            scan_type = Some(leaf_scan_type)
+                        }
+                    },
+                    None => return None,
+                }
+            }
+            scan_type
+        },
+        ALogicalPlan::Scan {
+            scan_type, paths, ..
+        } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
+            all_paths.extend(paths.iter().cloned());
+            Some(scan_type.clone())
+        },
+        ALogicalPlan::Projection { input, .. } => {
+            visit_logical_plan_for_scan_paths(all_paths, *input, lp_arena)
+        },
+        _ => None,
     }
 }

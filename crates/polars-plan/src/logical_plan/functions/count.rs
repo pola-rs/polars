@@ -18,17 +18,19 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
     match scan_type {
         #[cfg(feature = "csv")]
         FileScan::Csv { options } => {
-            // SAFETY
-            // should be exactly one path when reading csv
-            let path = unsafe { paths.get_unchecked(0) };
-            let n_rows = count_rows_csv(
-                path,
-                options.quote_char,
-                options.comment_prefix.as_ref(),
-                options.eol_char,
-                options.has_header,
-            )?;
-            Ok(DataFrame::new(vec![Series::new("len", [n_rows as IdxSize])]).unwrap())
+            let n_rows: PolarsResult<usize> = paths
+                .iter()
+                .map(|path| {
+                    count_rows_csv(
+                        path,
+                        options.quote_char,
+                        options.comment_prefix.as_ref(),
+                        options.eol_char,
+                        options.has_header,
+                    )
+                })
+                .sum();
+            Ok(DataFrame::new(vec![Series::new("len", [n_rows? as IdxSize])]).unwrap())
         },
         #[cfg(feature = "parquet")]
         FileScan::Parquet { cloud_options, .. } => {
