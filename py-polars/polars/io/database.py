@@ -279,12 +279,15 @@ class ConnectionExecutor:
         from polars import DataFrame
 
         if hasattr(self.result, "fetchall"):
-            description = (
-                self.result.cursor.description
-                if self.driver_name == "sqlalchemy"
-                else self.result.description
-            )
-            column_names = [desc[0] for desc in description]
+            if self.driver_name == "sqlalchemy":
+                column_names = (
+                    list(self.result._metadata.keys)
+                    if hasattr(self.result, "_metadata")
+                    else [desc[0] for desc in self.result.cursor.description]
+                )
+            else:
+                column_names = [desc[0] for desc in self.result.description]
+
             frames = (
                 DataFrame(
                     data=rows,
@@ -318,18 +321,33 @@ class ConnectionExecutor:
         options = options or {}
         cursor_execute = self.cursor.execute
 
-        if self.driver_name == "sqlalchemy" and isinstance(query, str):
-            params = options.get("parameters")
-            if isinstance(params, Sequence) and hasattr(self.cursor, "exec_driver_sql"):
-                cursor_execute = self.cursor.exec_driver_sql
-                if isinstance(params, list) and not all(
-                    isinstance(p, (dict, tuple)) for p in params
-                ):
-                    options["parameters"] = tuple(params)
-            else:
-                from sqlalchemy.sql import text
+        if self.driver_name == "sqlalchemy":
+            from sqlalchemy.orm import Session
 
-                query = text(query)  # type: ignore[assignment]
+            param_key = "parameters"
+            if (
+                isinstance(self.cursor, Session)
+                and "parameters" in options
+                and "params" not in options
+            ):
+                options = options.copy()
+                options["params"] = options.pop("parameters")
+                param_key = "params"
+
+            if isinstance(query, str):
+                params = options.get(param_key)
+                if isinstance(params, Sequence) and hasattr(
+                    self.cursor, "exec_driver_sql"
+                ):
+                    cursor_execute = self.cursor.exec_driver_sql
+                    if isinstance(params, list) and not all(
+                        isinstance(p, (dict, tuple)) for p in params
+                    ):
+                        options[param_key] = tuple(params)
+                else:
+                    from sqlalchemy.sql import text
+
+                    query = text(query)  # type: ignore[assignment]
 
         # note: some cursor execute methods (eg: sqlite3) only take positional
         # params, hence the slightly convoluted resolution of the 'options' dict
