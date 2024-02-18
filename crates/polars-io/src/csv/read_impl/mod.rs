@@ -73,7 +73,7 @@ pub(crate) fn cast_columns(
                 }
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        *df = DataFrame::new_no_checks(cols)
+        *df = unsafe { DataFrame::new_no_checks(cols) }
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
@@ -533,12 +533,11 @@ impl<'a> CoreReader<'a> {
                                 &self.schema,
                             )?;
 
-                            let mut local_df = DataFrame::new_no_checks(
-                                buffers
-                                    .into_iter()
-                                    .map(|buf| buf.into_series())
-                                    .collect::<PolarsResult<_>>()?,
-                            );
+                            let columns = buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series())
+                                .collect::<PolarsResult<_>>()?;
+                            let mut local_df = unsafe { DataFrame::new_no_checks(columns) };
                             let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_index {
                                 local_df.with_row_index_mut(&rc.name, Some(rc.offset));
@@ -637,12 +636,11 @@ impl<'a> CoreReader<'a> {
                                 self.schema.as_ref(),
                             )?;
 
-                            DataFrame::new_no_checks(
-                                buffers
-                                    .into_iter()
-                                    .map(|buf| buf.into_series())
-                                    .collect::<PolarsResult<_>>()?,
-                            )
+                            let columns = buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series())
+                                .collect::<PolarsResult<_>>()?;
+                            unsafe { DataFrame::new_no_checks(columns) }
                         };
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
@@ -732,10 +730,9 @@ fn read_chunk(
         )?;
     }
 
-    Ok(DataFrame::new_no_checks(
-        buffers
-            .into_iter()
-            .map(|buf| buf.into_series())
-            .collect::<PolarsResult<_>>()?,
-    ))
+    let columns = buffers
+        .into_iter()
+        .map(|buf| buf.into_series())
+        .collect::<PolarsResult<_>>()?;
+    Ok(unsafe { DataFrame::new_no_checks(columns) })
 }

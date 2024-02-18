@@ -61,7 +61,7 @@ fn run_per_sublist(
             .par_iter()
             .map(|opt_s| {
                 opt_s.and_then(|s| {
-                    let df = DataFrame::new_no_checks(vec![s]);
+                    let df = s.into_frame();
                     let out = phys_expr.evaluate(&df, &state);
                     match out {
                         Ok(s) => Some(s),
@@ -76,7 +76,7 @@ fn run_per_sublist(
         err = m_err.into_inner().unwrap();
         ca
     } else {
-        let mut df_container = DataFrame::new_no_checks(vec![]);
+        let mut df_container = DataFrame::empty();
 
         lst.into_iter()
             .map(|s| {
@@ -124,7 +124,7 @@ fn run_on_group_by_engine(
     // Invariant in List means values physicals can be cast to inner dtype
     let values = unsafe { values.cast_unchecked(&inner_dtype).unwrap() };
 
-    let df_context = DataFrame::new_no_checks(vec![values]);
+    let df_context = values.into_frame();
     let phys_expr = prepare_expression_for_context("", expr, &inner_dtype, Context::Aggregation)?;
 
     let state = ExecutionState::new();

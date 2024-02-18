@@ -702,5 +702,5 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
         })
         .collect::<Vec<_>>();
 
-    DataFrame::new_no_checks(cols)
+    unsafe { DataFrame::new_no_checks(cols) }
 }

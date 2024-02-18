@@ -83,7 +83,7 @@ impl SpillPayload {
         cols.push(chunk_idx);
         cols.push(keys);
         cols.extend(self.aggs);
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     fn spilled_to_columns(

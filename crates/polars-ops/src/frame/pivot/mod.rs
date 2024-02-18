@@ -274,7 +274,7 @@ fn pivot_impl_single_column(
                             let name = expr.root_name()?;
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
-                            let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                            let tmp_df = value_col.into_frame();
                             let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
                             aggregated.rename(value_col_name);
                             aggregated
@@ -341,5 +341,7 @@ fn pivot_impl_single_column(
         Ok(())
     });
     out?;
-    DataFrame::new_no_length_checks(final_cols)
+
+    // SAFETY: length has already been checked.
+    unsafe { DataFrame::new_no_length_checks(final_cols) }
 }

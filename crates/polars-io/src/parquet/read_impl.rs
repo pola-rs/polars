@@ -245,7 +245,7 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         *remaining_rows -= projection_height;
 
-        let mut df = DataFrame::new_no_checks(columns);
+        let mut df = unsafe { DataFrame::new_no_checks(columns) };
         if let Some(rc) = &row_index {
             df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
@@ -332,7 +332,7 @@ fn rg_to_dfs_par_over_rg(
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut df = DataFrame::new_no_checks(columns);
+                let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));

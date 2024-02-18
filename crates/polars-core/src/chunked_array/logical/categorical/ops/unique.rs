@@ -66,7 +66,7 @@ impl CategoricalChunked {
         let mut counts = groups.group_count();
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_series()];
-        let df = DataFrame::new_no_checks(cols);
+        let df = unsafe { DataFrame::new_no_checks(cols) };
         df.sort(["counts"], true, false)
     }
 }
