@@ -6,36 +6,34 @@ use crate::prelude::*;
 #[cfg(feature = "diagonal_concat")]
 use crate::utils::concat_df;
 
-/**
-Concat [`DataFrame`]s horizontally.
-Concat horizontally and extend with null values if lengths don't match
-
-# Example
-```
-# use polars_core::prelude::*;
-# use polars_core::functions::concat_df_horizontal;
-let df_h1 = df!(
-    "l1"=> &[1, 2],
-    "l2"=> &[3, 4],
-)?;
-let df_h2 = df!(
-    "r1"=> &[5, 6],
-    "r2"=> &[7, 8],
-    "r3"=> &[9, 10],
-)?;
-let df_horizontal_concat = concat_df_horizontal(&[df_h1, df_h2])?;
-
-let df_h3 = df!(
-    "l1"=> &[1, 2],
-    "l2"=> &[3, 4],
-    "r1"=> &[5, 6],
-    "r2"=> &[7, 8],
-    "r3"=> &[9, 10],
-)?;
-assert_eq!(df_horizontal_concat, df_h3);
-# Ok::<(), PolarsError>(())
-```
-**/
+/// Concat [`DataFrame`]s horizontally.
+/// Concat horizontally and extend with null values if lengths don't match
+///
+/// # Example
+/// ```
+/// # use polars_core::prelude::*;
+/// # use polars_core::functions::concat_df_horizontal;
+/// let df_h1 = df!(
+///     "l1"=> &[1, 2],
+///     "l2"=> &[3, 4],
+/// )?;
+/// let df_h2 = df!(
+///     "r1"=> &[5, 6],
+///     "r2"=> &[7, 8],
+///     "r3"=> &[9, 10],
+/// )?;
+/// let df_horizontal_concat = concat_df_horizontal(&[df_h1, df_h2])?;
+///
+/// let df_h3 = df!(
+///     "l1"=> &[1, 2],
+///     "l2"=> &[3, 4],
+///     "r1"=> &[5, 6],
+///     "r2"=> &[7, 8],
+///     "r3"=> &[9, 10],
+/// )?;
+/// assert_eq!(df_horizontal_concat, df_h3);
+/// # Ok::<(), PolarsError>(())
+/// ```
 pub fn concat_df_horizontal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let max_len = dfs
         .iter()
