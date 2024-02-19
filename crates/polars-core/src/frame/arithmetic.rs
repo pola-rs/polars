@@ -113,7 +113,7 @@ impl DataFrame {
     ) -> PolarsResult<DataFrame> {
         let max_len = std::cmp::max(self.height(), other.height());
         let max_width = std::cmp::max(self.width(), other.width());
-        let mut cols = self
+        let cols = self
             .get_columns()
             .par_iter()
             .zip(other.get_columns().par_iter())
@@ -133,8 +133,8 @@ impl DataFrame {
                 };
 
                 f(&l, &r)
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+            });
+        let mut cols = POOL.install(|| cols.collect::<PolarsResult<Vec<_>>>())?;
 
         let col_len = cols.len();
         if col_len < max_width {
