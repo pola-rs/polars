@@ -1430,7 +1430,7 @@ class Series:
                     args.append(arg)
                 elif isinstance(arg, Series):
                     validity_mask &= arg.is_not_null()
-                    args.append(arg._s.to_numpy_view())
+                    args.append(arg.to_physical()._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
