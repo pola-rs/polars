@@ -9218,9 +9218,15 @@ class DataFrame:
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
+    @deprecate_function(
+        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    )
     def approx_n_unique(self) -> DataFrame:
         """
         Approximate count of unique values.
+
+        .. deprecated: 0.20.11
+            Use `select(pl.all().approx_n_unique())` instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -9232,7 +9238,7 @@ class DataFrame:
         ...         "b": [1, 2, 1, 1],
         ...     }
         ... )
-        >>> df.approx_n_unique()
+        >>> df.approx_n_unique()  # doctest: +SKIP
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
