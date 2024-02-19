@@ -3952,7 +3952,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *outer_coalesce*
                  Same as 'outer', but coalesces the key columns
             * *cross*
-                 Returns the cartisian product of rows from both tables
+                 Returns the Cartesian product of rows from both tables
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*

@@ -120,7 +120,7 @@ pub trait CrossJoin: IntoDf {
         Ok(l_df)
     }
 
-    /// Creates the cartesian product from both frames, preserves the order of the left keys.
+    /// Creates the Cartesian product from both frames, preserves the order of the left keys.
     fn cross_join(
         &self,
         other: &DataFrame,
