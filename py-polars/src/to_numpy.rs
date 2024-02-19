@@ -49,10 +49,16 @@ where
 }
 
 #[pymethods]
-#[allow(clippy::wrong_self_convention)]
 impl PySeries {
+    /// Create a view of the data as a NumPy ndarray.
+    ///
+    /// WARNING: The resulting view will show the underlying value for nulls,
+    /// which may be any value. The caller is responsible for handling nulls
+    /// appropriately.
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        if self.series.null_count() != 0 || self.series.chunks().len() > 1 {
+        // NumPy arrays are always contiguous
+        if self.series.n_chunks() > 1 {
             return None;
         }
 
@@ -63,7 +69,7 @@ impl PySeries {
                 let owner = self.clone().into_py(py);
                 with_match_physical_numeric_polars_type!(self.series.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
-                    let slice = ca.cont_slice().unwrap();
+                    let slice = ca.data_views().next().unwrap();
                     let view = unsafe {
                         create_borrowed_np_array::<<$T as PolarsNumericType>::Native, _>(
                             py,
