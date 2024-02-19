@@ -1113,7 +1113,7 @@ impl LazyFrame {
         )
     }
 
-    /// Creates the cartesian product from both frames, preserving the order of the left keys.
+    /// Creates the Cartesian product from both frames, preserving the order of the left keys.
     #[cfg(feature = "cross_join")]
     pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
         self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))

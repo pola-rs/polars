@@ -2450,7 +2450,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         pretty
             Pretty serialize json.
@@ -2506,7 +2506,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
 
         Examples
@@ -2602,7 +2602,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
@@ -2713,7 +2713,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the data will be written.
+            File path or writable file-like object to which the data will be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
         name
@@ -3281,7 +3281,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path or writeable file-like object to which the IPC data will be
+            Path or writable file-like object to which the IPC data will be
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
@@ -3353,7 +3353,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path or writeable file-like object to which the IPC record batch data will
+            Path or writable file-like object to which the IPC record batch data will
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
@@ -3402,7 +3402,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
@@ -6272,7 +6272,7 @@ class DataFrame:
             * *outer_coalesce*
                  Same as 'outer', but coalesces the key columns
             * *cross*
-                 Returns the cartisian product of rows from both tables
+                 Returns the Cartesian product of rows from both tables
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*
