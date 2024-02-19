@@ -62,15 +62,18 @@ impl PySeries {
                 // Object to the series keep the memory alive.
                 let owner = self.clone().into_py(py);
                 with_match_physical_numeric_polars_type!(self.series.dtype(), |$T| {
-                            let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
-                            let slice = ca.cont_slice().unwrap();
-                            unsafe { Some(create_borrowed_np_array::<<$T as PolarsNumericType>::Native, _>(
-                                py,
-                                dims,
-                                flags::NPY_ARRAY_FARRAY_RO,
-                                slice.as_ptr() as _,
-                                owner,
-                            )) }
+                    let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
+                    let slice = ca.cont_slice().unwrap();
+                    let view = unsafe {
+                        create_borrowed_np_array::<<$T as PolarsNumericType>::Native, _>(
+                            py,
+                            dims,
+                            flags::NPY_ARRAY_FARRAY_RO,
+                            slice.as_ptr() as _,
+                            owner,
+                        )
+                    };
+                    Some(view)
                 })
             },
             _ => None,
