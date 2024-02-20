@@ -143,12 +143,6 @@ impl<T: TotalHash> Hash for TotalOrdWrap<T> {
     }
 }
 
-impl<T: DirtyHash> DirtyHash for TotalOrdWrap<T> {
-    fn dirty_hash(&self) -> u64 {
-        self.0.dirty_hash()
-    }
-}
-
 impl<T: Clone> Clone for TotalOrdWrap<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -156,6 +150,37 @@ impl<T: Clone> Clone for TotalOrdWrap<T> {
 }
 
 impl<T: Copy> Copy for TotalOrdWrap<T> {}
+
+// Require TotalOrdWrap to use DirtyHash on floats for code safety.
+impl DirtyHash for TotalOrdWrap<f32> {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f32(self.0).to_bits().dirty_hash()
+    }
+}
+
+impl DirtyHash for TotalOrdWrap<f64> {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f64(self.0).to_bits().dirty_hash()
+    }
+}
+
+impl DirtyHash for TotalOrdWrap<&f32> {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f32(*self.0).to_bits().dirty_hash()
+    }
+}
+
+impl DirtyHash for TotalOrdWrap<&f64> {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f64(*self.0).to_bits().dirty_hash()
+    }
+}
+
+impl<T: DirtyHash> DirtyHash for TotalOrdWrap<T> {
+    fn dirty_hash(&self) -> u64 {
+        self.0.dirty_hash()
+    }
+}
 
 macro_rules! impl_trivial_total {
     ($T: ty) => {
@@ -300,18 +325,6 @@ impl TotalHash for f64 {
         H: Hasher,
     {
         canonical_f64(*self).to_bits().hash(state)
-    }
-}
-
-impl DirtyHash for f32 {
-    fn dirty_hash(&self) -> u64 {
-        canonical_f32(*self).to_bits().dirty_hash()
-    }
-}
-
-impl DirtyHash for f64 {
-    fn dirty_hash(&self) -> u64 {
-        canonical_f64(*self).to_bits().dirty_hash()
     }
 }
 
