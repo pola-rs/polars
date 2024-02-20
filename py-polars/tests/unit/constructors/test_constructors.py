@@ -9,14 +9,15 @@ from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 import pytest
+from pydantic import BaseModel, Field, TypeAdapter
+
+import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
-from pydantic import BaseModel, Field, TypeAdapter
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
@@ -829,7 +830,7 @@ def test_init_py_dtype_misc_float() -> None:
 
     df = pl.DataFrame(
         {"x": [100.0], "y": [200], "z": [None]},
-        schema={"x": float, "y": float, "z": float},  # type: ignore[dict-item]
+        schema={"x": float, "y": float, "z": float},
     )
     assert df.schema == {"x": pl.Float64, "y": pl.Float64, "z": pl.Float64}
     assert df.rows() == [(100.0, 200.0, None)]
