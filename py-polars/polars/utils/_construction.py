@@ -658,7 +658,7 @@ def _pandas_series_to_arrow(
         if isinstance(first_non_none, str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_null)
         elif first_non_none is None:
-            return pa.nulls(length or len(values), pa.large_utf8())
+            return pa.nulls(length if length is not None else len(values))
         return pa.array(values, from_pandas=nan_to_null)
     elif dtype:
         return pa.array(values, from_pandas=nan_to_null)

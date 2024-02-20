@@ -702,8 +702,8 @@ def from_pandas(
 
     >>> import pandas as pd
     >>> pd_series = pd.Series([1, 2, 3], name="pd")
-    >>> df = pl.from_pandas(pd_series)
-    >>> df
+    >>> s = pl.from_pandas(pd_series)
+    >>> s
     shape: (3,)
     Series: 'pd' [i64]
     [

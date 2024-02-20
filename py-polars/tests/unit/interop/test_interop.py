@@ -244,15 +244,14 @@ def test_arrow_list_chunked_array() -> None:
 
 
 def test_from_pandas_null() -> None:
-    # null column is an object dtype, so pl.Utf8 is most close
     df = pd.DataFrame([{"a": None}, {"a": None}])
     out = pl.DataFrame(df)
-    assert out.dtypes == [pl.String]
+    assert out.dtypes == [pl.Null]
     assert out["a"][0] is None
 
     df = pd.DataFrame([{"a": None, "b": 1}, {"a": None, "b": 2}])
     out = pl.DataFrame(df)
-    assert out.dtypes == [pl.String, pl.Int64]
+    assert out.dtypes == [pl.Null, pl.Int64]
 
 
 def test_from_pandas_nested_list() -> None:

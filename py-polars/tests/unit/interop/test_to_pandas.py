@@ -118,7 +118,7 @@ def test_from_empty_pandas_with_dtypes() -> None:
     df = pd.DataFrame(columns=["a", "b"])
     df["a"] = df["a"].astype(str)
     df["b"] = df["b"].astype(float)
-    assert pl.from_pandas(df).dtypes == [pl.String, pl.Float64]
+    assert pl.from_pandas(df).dtypes == [pl.Null, pl.Float64]
 
     df = pl.DataFrame(
         data=[],
@@ -136,7 +136,7 @@ def test_from_empty_pandas_with_dtypes() -> None:
         pl.Datetime,
         pl.Float32,
         pl.Duration,
-        pl.String,
+        pl.Null,
     ]
 
 
