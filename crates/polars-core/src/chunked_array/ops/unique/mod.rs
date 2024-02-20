@@ -62,7 +62,7 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
     T: IntoTotalOrd,
-    <T as IntoTotalOrd>::Item: Hash + Eq,
+    <T as IntoTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
@@ -87,7 +87,7 @@ impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: TotalHash + IntoTotalOrd,
-    <T::Native as IntoTotalOrd>::Item: Hash + Eq + Ord,
+    <T::Native as IntoTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
     ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
@@ -99,25 +99,23 @@ where
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
                     let mut arr = MutablePrimitiveArray::with_capacity(self.len());
-                    let mut iter = self.into_iter();
-                    let mut last = None;
 
-                    if let Some(val) = iter.next() {
-                        last = val;
-                        arr.push(val)
-                    };
+                    if !self.is_empty() {
+                        let mut iter = self.iter().map(|x| x.into_total_ord());
+                        let mut last = iter.next().unwrap();
 
-                    #[allow(clippy::unnecessary_filter_map)]
-                    let to_extend = iter.filter_map(|opt_val| {
-                        if opt_val != last {
-                            last = opt_val;
-                            Some(opt_val)
-                        } else {
-                            None
-                        }
-                    });
+                        let to_extend = iter.filter_map(|opt_val| {
+                            if opt_val != last {
+                                last = opt_val;
+                                Some(Option::<T::Native>::from_total_ord(opt_val))
+                            } else {
+                                None
+                            }
+                        });
 
-                    arr.extend(to_extend);
+                        arr.extend(to_extend);
+                    }
+
                     let arr: PrimitiveArray<T::Native> = arr.into();
                     Ok(ChunkedArray::with_chunk(self.name(), arr))
                 } else {

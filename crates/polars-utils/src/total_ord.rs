@@ -424,18 +424,26 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
 }
 
 pub trait IntoTotalOrd: Send + Sync {
-    type Item;
+    type TotalOrdItem;
+    type SourceItem;
 
-    fn into_total_ord(&self) -> Self::Item;
+    fn into_total_ord(&self) -> Self::TotalOrdItem;
+
+    fn from_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem;
 }
 
 macro_rules! impl_into_total_ord_identity {
     ($T: ty) => {
         impl IntoTotalOrd for $T {
-            type Item = $T;
+            type TotalOrdItem = $T;
+            type SourceItem = $T;
 
-            fn into_total_ord(&self) -> Self::Item {
+            fn into_total_ord(&self) -> Self::TotalOrdItem {
                 self.clone()
+            }
+
+            fn from_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
             }
         }
     };
@@ -460,10 +468,15 @@ impl_into_total_ord_identity!(String);
 macro_rules! impl_into_total_ord_lifetimed_identity {
     ($T: ty) => {
         impl<'a> IntoTotalOrd for &'a $T {
-            type Item = &'a $T;
+            type TotalOrdItem = &'a $T;
+            type SourceItem = &'a $T;
 
-            fn into_total_ord(&self) -> Self::Item {
+            fn into_total_ord(&self) -> Self::TotalOrdItem {
                 *self
+            }
+
+            fn from_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
             }
         }
     };
@@ -475,10 +488,15 @@ impl_into_total_ord_lifetimed_identity!([u8]);
 macro_rules! impl_into_total_ord_wrapped {
     ($T: ty) => {
         impl IntoTotalOrd for $T {
-            type Item = TotalOrdWrap<$T>;
+            type TotalOrdItem = TotalOrdWrap<$T>;
+            type SourceItem = $T;
 
-            fn into_total_ord(&self) -> Self::Item {
+            fn into_total_ord(&self) -> Self::TotalOrdItem {
                 TotalOrdWrap(self.clone())
+            }
+
+            fn from_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item.0
             }
         }
     };
@@ -488,9 +506,14 @@ impl_into_total_ord_wrapped!(f32);
 impl_into_total_ord_wrapped!(f64);
 
 impl<T: Send + Sync + Copy> IntoTotalOrd for Option<T> {
-    type Item = TotalOrdWrap<Option<T>>;
+    type TotalOrdItem = TotalOrdWrap<Option<T>>;
+    type SourceItem = Option<T>;
 
-    fn into_total_ord(&self) -> Self::Item {
+    fn into_total_ord(&self) -> Self::TotalOrdItem {
         TotalOrdWrap(*self)
+    }
+
+    fn from_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item.0
     }
 }
