@@ -126,7 +126,7 @@ We will create a new `DataFrame` for the Group by functionality. This new `DataF
 print(df2)
 ```
 
-{{code_block('user-guide/bgetting-startedasics/expressions','group_by',['group_by'])}}
+{{code_block('user-guide/getting-started/expressions','group_by',['group_by'])}}
 
 ```python exec="on" result="text" session="getting-started/expressions"
 print(
