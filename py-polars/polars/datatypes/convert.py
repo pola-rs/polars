@@ -246,12 +246,12 @@ class _DataTypeMappings:
             Int8: ctypes.c_int8,
             Int16: ctypes.c_int16,
             Int32: ctypes.c_int32,
-            Date: ctypes.c_int32,
             Int64: ctypes.c_int64,
             Float32: ctypes.c_float,
             Float64: ctypes.c_double,
             Datetime: ctypes.c_int64,
             Duration: ctypes.c_int64,
+            Date: ctypes.c_int32,
             Time: ctypes.c_int64,
         }
 

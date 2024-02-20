@@ -1430,7 +1430,7 @@ class Series:
                     args.append(arg)
                 elif isinstance(arg, Series):
                     validity_mask &= arg.is_not_null()
-                    args.append(arg._view(ignore_nulls=True))
+                    args.append(arg.to_physical()._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
@@ -4376,17 +4376,20 @@ class Series:
 
         if self.null_count() == 0:
             if dtype.is_integer() or dtype.is_float():
-                np_array = self._view(ignore_nulls=True)
+                np_array = self._s.to_numpy_view()
             elif dtype == Boolean:
                 raise_on_copy()
-                np_array = self.cast(UInt8)._view(ignore_nulls=True).view(bool)
+                s_u8 = self.cast(UInt8)
+                np_array = s_u8._s.to_numpy_view().view(bool)
             elif dtype in (Datetime, Duration):
                 np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = self._view(ignore_nulls=True).view(np_dtype)
+                s_i64 = self.to_physical()
+                np_array = s_i64._s.to_numpy_view().view(np_dtype)
             elif dtype == Date:
                 raise_on_copy()
                 np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = self.to_physical()._view(ignore_nulls=True).astype(np_dtype)
+                s_i32 = self.to_physical()
+                np_array = s_i32._s.to_numpy_view().astype(np_dtype)
             else:
                 raise_on_copy()
                 np_array = self._s.to_numpy()
@@ -4403,39 +4406,6 @@ class Series:
             np_array = np_array.copy()
 
         return np_array
-
-    def _view(self, *, ignore_nulls: bool = False) -> SeriesView:
-        """
-        Get a view into this Series data with a numpy array.
-
-        This operation doesn't clone data, but does not include missing values.
-
-        Returns
-        -------
-        SeriesView
-
-        Parameters
-        ----------
-        ignore_nulls
-            If True then nulls are converted to 0.
-            If False then an Exception is raised if nulls are present.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, None])
-        >>> s._view(ignore_nulls=True)
-        SeriesView([1, 0])
-        """
-        if not ignore_nulls:
-            assert not self.null_count()
-
-        from polars.series._numpy import SeriesView, _ptr_to_numpy
-
-        ptr_type = dtype_to_ctype(self.dtype)
-        ptr = self._s.as_single_ptr()
-        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
-        array.setflags(write=False)
-        return SeriesView(array, self)
 
     def to_arrow(self) -> pa.Array:
         """
@@ -7553,7 +7523,16 @@ class Series:
             If True then nulls are converted to 0.
             If False then an Exception is raised if nulls are present.
         """
-        return self._view(ignore_nulls=ignore_nulls)
+        if not ignore_nulls:
+            assert not self.null_count()
+
+        from polars.series._numpy import SeriesView, _ptr_to_numpy
+
+        ptr_type = dtype_to_ctype(self.dtype)
+        ptr = self._s.as_single_ptr()
+        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
+        array.setflags(write=False)
+        return SeriesView(array, self)
 
     @deprecate_function(
         "It has been renamed to `replace`."
