@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;
-use polars_utils::total_ord::{IntoTotalOrd, TotalHash};
+use polars_utils::total_ord::{IntoTotalOrd, TotalEq, TotalHash};
 
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;

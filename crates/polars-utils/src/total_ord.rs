@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use bytemuck::TransparentWrapper;
 
 use crate::hashing::{BytesHash, DirtyHash};
+use crate::nulls::IsNull;
 
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
@@ -150,6 +151,19 @@ impl<T: Clone> Clone for TotalOrdWrap<T> {
 }
 
 impl<T: Copy> Copy for TotalOrdWrap<T> {}
+
+impl<T: IsNull> IsNull for TotalOrdWrap<T> {
+    const HAS_NULLS: bool = T::HAS_NULLS;
+    type Inner = T::Inner;
+
+    fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
+
+    fn unwrap_inner(self) -> Self::Inner {
+        self.0.unwrap_inner()
+    }
+}
 
 // Require TotalOrdWrap to use DirtyHash on floats for code safety.
 impl DirtyHash for f32 {
