@@ -149,7 +149,7 @@
 //! Understanding polars expressions is most important when starting with the polars library. Read more
 //! about them in the [user guide](https://docs.pola.rs/user-guide/concepts/expressions).
 //! Though the examples given there are in python. The expressions API is almost identical and the
-//! the read should certainly be valuable to rust users as well.
+//! read should certainly be valuable to rust users as well.
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
