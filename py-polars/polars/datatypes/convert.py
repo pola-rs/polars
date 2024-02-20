@@ -298,6 +298,8 @@ class _DataTypeMappings:
             ("u", 8): UInt64,
             ("f", 4): Float32,
             ("f", 8): Float64,
+            ("m", 8): Duration,
+            ("M", 8): Datetime,
         }
 
     @property
@@ -405,6 +407,11 @@ def py_type_to_dtype(
         if len(possible_types) == 1:
             data_type = possible_types[0]
 
+    elif isinstance(data_type, np.dtype) or getattr(
+        data_type, "__module__", ""
+    ).startswith("numpy"):
+        return numpy_type_to_dtype(data_type)
+
     elif allow_strings and isinstance(data_type, str):
         data_type = DataTypeMappings.REPR_TO_DTYPE.get(
             re.sub(r"^(?:dataclasses\.)?InitVar\[(.+)\]$", r"\1", data_type),
@@ -464,11 +471,23 @@ def supported_numpy_char_code(dtype_char: str) -> bool:
     ) in DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE
 
 
+def numpy_type_to_dtype(dtype: np.dtype) -> PolarsDataType:  # type: ignore[type-arg]
+    """Convert a numpy dtype to a Polars dtype."""
+    char_code = np.dtype(dtype).char
+    pl_dtype = numpy_char_code_to_dtype(char_code)
+    if pl_dtype in (Datetime, Duration):
+        if (unit := dtype.str[-3:-1]) in ("ms", "us", "ns"):
+            pl_dtype = Datetime(unit) if dtype.kind == "M" else Duration(unit)  # type: ignore[arg-type]
+    return pl_dtype
+
+
 def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
     """Convert a numpy character dtype to a Polars dtype."""
     dtype = np.dtype(dtype_char)
     if dtype.kind == "U":
         return String
+    elif dtype.kind == "S":
+        return Binary
     try:
         return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
             (dtype.kind, dtype.itemsize)

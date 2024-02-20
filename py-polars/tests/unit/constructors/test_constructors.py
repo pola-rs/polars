@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict, namedtuple
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
@@ -795,6 +795,53 @@ def test_init_series() -> None:
 
     s5 = pl.Series("", df, dtype=pl.Int8)
     assert_series_equal(s5, pl.Series("", [1, 2, 3], dtype=pl.Int8))
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (int, pl.Int64),
+        (bytes, pl.Binary),
+        (float, pl.Float64),
+        (str, pl.String),
+        (date, pl.Date),
+        (time, pl.Time),
+        (datetime, pl.Datetime("us")),
+        (timedelta, pl.Duration("us")),
+        (Decimal, pl.Decimal(precision=None, scale=0)),
+        (np.bytes_, pl.Binary),
+        (np.str_, pl.String),
+        (np.int32, pl.Int32),
+        (np.uint64, pl.UInt64),
+        (np.float32, pl.Float32),
+        (np.dtype("float64"), pl.Float64),
+        (np.dtype("datetime64[ms]"), pl.Datetime("ms")),
+        (np.dtype("timedelta64[ns]"), pl.Duration("ns")),
+    ],
+)
+def test_init_py_dtype(dtype: Any, expected_dtype: PolarsDataType) -> None:
+    for s in (
+        pl.Series("s", [None], dtype=dtype),
+        pl.Series("s", [], dtype=dtype),
+    ):
+        assert s.dtype == expected_dtype
+
+    for df in (
+        pl.DataFrame({"col": [None]}, schema={"col": dtype}),
+        pl.DataFrame({"col": []}, schema={"col": dtype}),
+    ):
+        assert df.schema == {"col": expected_dtype}
+
+
+def test_init_py_dtype_misc_float() -> None:
+    assert pl.Series([100], dtype=float).dtype == pl.Float64  # type: ignore[arg-type]
+
+    df = pl.DataFrame(
+        {"x": [100], "y": [200], "z": [None]},
+        schema={"x": float, "y": np.float32, "z": float},  # type: ignore[dict-item]
+    )
+    assert df.schema == {"x": pl.Float64, "y": pl.Float32, "z": pl.Float64}
+    assert df.rows() == [(100.0, 200.0, None)]
 
 
 def test_init_seq_of_seq() -> None:
