@@ -93,35 +93,31 @@ where
             let n_parts = parts.len();
 
             let first_ptr = &values[0] as *const T::Native as usize;
-            let groups = POOL
-                .install(|| {
-                    parts.par_iter().enumerate().map(|(i, part)| {
-                        // we go via usize as *const is not send
-                        let first_ptr = first_ptr as *const T::Native;
+            let groups = parts.par_iter().enumerate().map(|(i, part)| {
+                // we go via usize as *const is not send
+                let first_ptr = first_ptr as *const T::Native;
 
-                        let part_first_ptr = &part[0] as *const T::Native;
-                        let mut offset =
-                            unsafe { part_first_ptr.offset_from(first_ptr) } as IdxSize;
+                let part_first_ptr = &part[0] as *const T::Native;
+                let mut offset = unsafe { part_first_ptr.offset_from(first_ptr) } as IdxSize;
 
-                        // nulls first: only add the nulls at the first partition
-                        if nulls_first && i == 0 {
-                            partition_to_groups(part, null_count as IdxSize, true, offset)
-                        }
-                        // nulls last: only compute at the last partition
-                        else if !nulls_first && i == n_parts - 1 {
-                            partition_to_groups(part, null_count as IdxSize, false, offset)
-                        }
-                        // other partitions
-                        else {
-                            if nulls_first {
-                                offset += null_count as IdxSize;
-                            };
+                // nulls first: only add the nulls at the first partition
+                if nulls_first && i == 0 {
+                    partition_to_groups(part, null_count as IdxSize, true, offset)
+                }
+                // nulls last: only compute at the last partition
+                else if !nulls_first && i == n_parts - 1 {
+                    partition_to_groups(part, null_count as IdxSize, false, offset)
+                }
+                // other partitions
+                else {
+                    if nulls_first {
+                        offset += null_count as IdxSize;
+                    };
 
-                            partition_to_groups(part, 0, false, offset)
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
+                    partition_to_groups(part, 0, false, offset)
+                }
+            });
+            let groups = POOL.install(|| groups.collect::<Vec<_>>());
             flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
