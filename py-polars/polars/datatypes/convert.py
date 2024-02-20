@@ -407,11 +407,6 @@ def py_type_to_dtype(
         if len(possible_types) == 1:
             data_type = possible_types[0]
 
-    elif isinstance(data_type, np.dtype) or getattr(
-        data_type, "__module__", ""
-    ).startswith("numpy"):
-        return numpy_type_to_dtype(data_type)
-
     elif allow_strings and isinstance(data_type, str):
         data_type = DataTypeMappings.REPR_TO_DTYPE.get(
             re.sub(r"^(?:dataclasses\.)?InitVar\[(.+)\]$", r"\1", data_type),

@@ -9,15 +9,14 @@ from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import pytest
-from pydantic import BaseModel, Field, TypeAdapter
-
-import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
+from pydantic import BaseModel, Field, TypeAdapter
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
@@ -809,14 +808,6 @@ def test_init_series() -> None:
         (datetime, pl.Datetime("us")),
         (timedelta, pl.Duration("us")),
         (Decimal, pl.Decimal(precision=None, scale=0)),
-        (np.bytes_, pl.Binary),
-        (np.str_, pl.String),
-        (np.int32, pl.Int32),
-        (np.uint64, pl.UInt64),
-        (np.float32, pl.Float32),
-        (np.dtype("float64"), pl.Float64),
-        (np.dtype("datetime64[ms]"), pl.Datetime("ms")),
-        (np.dtype("timedelta64[ns]"), pl.Duration("ns")),
     ],
 )
 def test_init_py_dtype(dtype: Any, expected_dtype: PolarsDataType) -> None:
@@ -837,10 +828,10 @@ def test_init_py_dtype_misc_float() -> None:
     assert pl.Series([100], dtype=float).dtype == pl.Float64  # type: ignore[arg-type]
 
     df = pl.DataFrame(
-        {"x": [100], "y": [200], "z": [None]},
-        schema={"x": float, "y": np.float32, "z": float},  # type: ignore[dict-item]
+        {"x": [100.0], "y": [200], "z": [None]},
+        schema={"x": float, "y": float, "z": float},  # type: ignore[dict-item]
     )
-    assert df.schema == {"x": pl.Float64, "y": pl.Float32, "z": pl.Float64}
+    assert df.schema == {"x": pl.Float64, "y": pl.Float64, "z": pl.Float64}
     assert df.rows() == [(100.0, 200.0, None)]
 
 
