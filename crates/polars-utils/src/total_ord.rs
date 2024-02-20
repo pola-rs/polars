@@ -459,6 +459,8 @@ pub trait IntoTotalOrd {
     type SourceItem;
 
     fn into_total_ord(&self) -> Self::TotalOrdItem;
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem;
 }
 
 macro_rules! impl_into_total_ord_identity {
@@ -469,6 +471,10 @@ macro_rules! impl_into_total_ord_identity {
 
             fn into_total_ord(&self) -> Self::TotalOrdItem {
                 self.clone()
+            }
+
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
             }
         }
     };
@@ -499,6 +505,10 @@ macro_rules! impl_into_total_ord_lifetimed_identity {
             fn into_total_ord(&self) -> Self::TotalOrdItem {
                 *self
             }
+
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
+            }
         }
     };
 }
@@ -515,6 +525,10 @@ macro_rules! impl_into_total_ord_wrapped {
             fn into_total_ord(&self) -> Self::TotalOrdItem {
                 TotalOrdWrap(self.clone())
             }
+
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item.0
+            }
         }
     };
 }
@@ -529,6 +543,10 @@ impl<T: Send + Sync + Copy> IntoTotalOrd for Option<T> {
     fn into_total_ord(&self) -> Self::TotalOrdItem {
         TotalOrdWrap(*self)
     }
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item.0
+    }
 }
 
 impl<'a> IntoTotalOrd for BytesHash<'a> {
@@ -538,6 +556,10 @@ impl<'a> IntoTotalOrd for BytesHash<'a> {
     fn into_total_ord(&self) -> Self::TotalOrdItem {
         self.clone()
     }
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item
+    }
 }
 
 impl<T: IntoTotalOrd + Send + Sync> IntoTotalOrd for &T {
@@ -546,5 +568,9 @@ impl<T: IntoTotalOrd + Send + Sync> IntoTotalOrd for &T {
 
     fn into_total_ord(&self) -> Self::TotalOrdItem {
         (*self).into_total_ord()
+    }
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        T::peel_total_ord(ord_item)
     }
 }

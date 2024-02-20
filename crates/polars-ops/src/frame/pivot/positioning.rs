@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use ahash::RandomState;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 use polars_utils::sync::SyncPtr;
@@ -324,7 +323,11 @@ where
         0 => {
             let mut s = row_to_idx
                 .into_iter()
-                .map(|(k, _)| k)
+                .map(|(k, _)| {
+                    let out = Option::<T::Physical<'a>>::peel_total_ord(k);
+                    let out: Option<T::Physical<'a>> = unsafe { std::mem::transmute_copy(&out) };
+                    out
+                })
                 .collect::<ChunkedArray<T>>()
                 .into_series();
             s.rename(&index[0]);
