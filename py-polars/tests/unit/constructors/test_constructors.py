@@ -14,12 +14,19 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+from polars.datatypes import (
+    PolarsDataType,
+    numpy_char_code_to_dtype,
+    numpy_type_to_dtype,
+)
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars.datatypes import PolarsDataType
 
 if sys.version_info >= (3, 9):
@@ -1577,3 +1584,28 @@ def test_df_schema_sequences_incorrect_length() -> None:
     ]
     with pytest.raises(ValueError):
         pl.DataFrame(schema=schema)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("input", "infer_func", "expected_dtype"),
+    [
+        ("f8", numpy_char_code_to_dtype, pl.Float64),
+        ("f4", numpy_char_code_to_dtype, pl.Float32),
+        ("i4", numpy_char_code_to_dtype, pl.Int32),
+        ("u1", numpy_char_code_to_dtype, pl.UInt8),
+        ("?", numpy_char_code_to_dtype, pl.Boolean),
+        ("m8", numpy_char_code_to_dtype, pl.Duration("us")),
+        ("M8", numpy_char_code_to_dtype, pl.Datetime("us")),
+        (np.dtype("timedelta64[ns]"), numpy_type_to_dtype, pl.Duration("ns")),
+        (np.dtype("datetime64[ms]"), numpy_type_to_dtype, pl.Datetime("ms")),
+        (np.dtype("int16"), numpy_type_to_dtype, pl.Int16),
+        (np.dtype("float64"), numpy_type_to_dtype, pl.Float64),
+    ],
+)
+def test_numpy_inference(
+    input: Any,
+    infer_func: Callable[[Any], PolarsDataType],
+    expected_dtype: PolarsDataType,
+) -> None:
+    result = infer_func(input)
+    assert result == expected_dtype
