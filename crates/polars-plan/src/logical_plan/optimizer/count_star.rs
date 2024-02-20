@@ -59,7 +59,7 @@ fn visit_logical_plan_for_scan_paths(
             }
             let mut scan_type = None;
             for input in inputs {
-                // We are assuming all scan_types to be the same type
+                // We are assuming all scan_types to be the same type.
                 match visit_logical_plan_for_scan_paths(all_paths, *input, lp_arena) {
                     Some(leaf_scan_type) => {
                         if scan_type.is_none() {
