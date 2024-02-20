@@ -436,6 +436,7 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
     }
 }
 
+/// This elides creating a [`TotalOrdWrap`] for types that don't need it.
 pub trait IntoTotalOrd: Send + Sync {
     type TotalOrdItem;
     type SourceItem;
