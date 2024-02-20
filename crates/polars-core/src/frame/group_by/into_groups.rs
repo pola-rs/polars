@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 #[cfg(feature = "group_by_list")]
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
@@ -27,11 +29,10 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
     T: PolarsNumericType,
-    T::Native: TotalHash
-        + TotalEq
-        + std::borrow::Borrow<<T::Native as IntoTotalOrd>::TotalOrdItem>
-        + IntoTotalOrd,
+    T::Native:
+        TotalHash + TotalEq + IntoTotalOrd + Borrow<<T::Native as IntoTotalOrd>::TotalOrdItem>,
     <T::Native as IntoTotalOrd>::TotalOrdItem: Hash + Eq + Copy + Send + DirtyHash,
+    Option<T::Native>: DirtyHash + Borrow<<Option<T::Native> as IntoTotalOrd>::TotalOrdItem>,
 {
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size();
