@@ -86,7 +86,7 @@ macro_rules! arg_unique_ca {
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + IntoTotalOrd,
+    T::Native: TotalHash + TotalEq + IntoTotalOrd,
     <T::Native as IntoTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
     ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
