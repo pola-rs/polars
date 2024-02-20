@@ -7,6 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
+use crate::bitmap::iterator::FastU32BitmapIter;
 use crate::buffer::Bytes;
 use crate::trusted_len::TrustedLen;
 
@@ -139,6 +140,11 @@ impl Bitmap {
     pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
         BitChunks::new(&self.bytes, self.offset, self.length)
     }
+    
+    /// Returns a fast iterator that gives 32 bits at a time.
+    pub fn iter_u32(&self) -> FastU32BitmapIter<'_> {
+        FastU32BitmapIter::new(self)
+    }
 
     /// Returns the byte slice of this [`Bitmap`].
     ///
@@ -156,6 +162,22 @@ impl Bitmap {
             self.offset % 8,
             self.length,
         )
+    }
+    
+    /// Returns the number of set bits on this [`Bitmap`].
+    ///
+    /// See `unset_bits` for details.
+    #[inline]
+    pub fn set_bits(&self) -> usize {
+        self.length - self.unset_bits()
+    }
+
+    /// Returns the number of set bits on this [`Bitmap`] if it is known.
+    ///
+    /// See `lazy_unset_bits` for details.
+    #[inline]
+    pub fn lazy_set_bits(&self) -> Option<usize> {
+        Some(self.length - self.lazy_unset_bits()?)
     }
 
     /// Returns the number of unset bits on this [`Bitmap`].
@@ -176,6 +198,29 @@ impl Bitmap {
         } else {
             cache as usize
         }
+    }
+
+    /// Returns the number of unset bits on this [`Bitmap`] if it is known.
+    ///
+    /// Guaranteed to be `<= self.len()`.
+    pub fn lazy_unset_bits(&self) -> Option<usize> {
+        let cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
+        if cache >> 63 != 0 {
+            None
+        } else {
+            Some(cache as usize)
+        }
+    }
+    
+    /// Updates the count of the number of set bits on this [`Bitmap`].
+    ///
+    /// # Safety
+    /// 
+    /// The number of set bits must be correct.
+    pub unsafe fn update_bit_count(&mut self, bits_set: usize) {
+        assert!(bits_set <= self.length);
+        let zeros = self.length - bits_set;
+        self.unset_bit_count_cache.store(zeros as u64, Ordering::Relaxed);
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
@@ -360,7 +405,7 @@ impl Bitmap {
     /// Alias for `Bitmap::try_new().unwrap()`
     /// This function is `O(1)`
     /// # Panic
-    /// This function panics iff `length <= bytes.len() * 8`
+    /// This function panics iff `length > bytes.len() * 8`
     #[inline]
     pub fn from_u8_vec(vec: Vec<u8>, length: usize) -> Self {
         Bitmap::try_new(vec, length).unwrap()

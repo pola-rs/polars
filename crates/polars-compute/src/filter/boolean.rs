@@ -1,50 +1,95 @@
 use super::*;
 
+fn pext32_polyfill(v: u32, m: u32) -> u32 {
+    todo!()
+}
 
 fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
     assert_eq!(values.len(), mask.len());
     
-    let (values_slice, values_offset, len) = values.as_slice();
-    let (mask_slice, mask_offset, _) = mask.as_slice();
-    let out_len = mask.len() - mask.unset_bits();
-    let out_storage_len = out_len.next_multiple_of(64);
-    
-    let mut out: Vec<u64> = Vec::with_capacity(out_storage_len / 8);
-    
-    let mut values_ptr = values_slice.as_ptr();
-    let mut mask_ptr = mask_slice.as_ptr();
-    let mut out_ptr = out.as_mut_ptr();
-
-    let mut len_remaining = out_len;
-    let loop_mask = (1 << 56) - 1;
-    
-    let mut out_offset = 0;
-    while len_remaining >= 64 {
-        let (vw, mw);
-        unsafe {
-            vw = (values_ptr as *const u64).read_unaligned() >> values_offset;
-            mw = (mask_ptr as *const u64).read_unaligned() >> mask_offset;
-            values_ptr = values_ptr.add(7);
-            mask_ptr = mask_ptr.add(7);
-            len_remaining -= 56;
-        
-            let out_val: u64 = todo!();
-
-            out.as_mut_ptr().add(out_offset / 8).write_unaligned(out_val);
-            out_offset += (mw & loop_mask).count_ones() as usize;
+    // Fast path: values is all-0s or all-1s.
+    if let Some(num_values_bits) = values.lazy_set_bits() {
+        if num_values_bits == 0 || num_values_bits == values.len() {
+            return Bitmap::new_with_value(num_values_bits == values.len(), mask.set_bits());
         }
-        
-        
-
-
-
     }
 
+    // Overallocate by 1 u64 so we can always do a full u64 write.
+    let words = mask.set_bits().div_ceil(64) + 1;
+    let mut out_vec: Vec<u8> = Vec::with_capacity(words * 8);
+    let mut out_ptr = out_vec.as_mut_ptr();
+    let mut word_offset = 0usize;
+    let mut word = 0u64;
 
-    todo!()
+    if polars_utils::cpuid::has_fast_bmi2() {
+        #[cfg(target_feature = "bmi2")]
+        for (v, m) in values.iter_u32().zip(mask.iter_u32()) {
+            // Fast-path, all-0 mask.
+            // PEXT is so fast that this is the only fast-path that is worth it.
+            if m == 0 {
+                continue;
+            }
+
+            let mask_popcnt = m.count_ones();
+            let bits = unsafe { core::arch::x86_64::_pext_u32(v, m) };
+
+            word |= (bits as u64) << word_offset;
+            word_offset += mask_popcnt as usize;
+            unsafe {
+                out_ptr.cast::<u64>().write_unaligned(word.to_le());
+                
+                let written = word_offset / 8;
+                out_ptr = out_ptr.add(written);
+                word_offset = word_offset % 8;
+                word >>= written;
+            }
+        }
+    } else {
+        for (v, m) in values.iter_u32().zip(mask.iter_u32()) {
+            // Fast-path, all-0 mask.
+            if m == 0 {
+                continue;
+            }
+
+            // Fast path, all-1 mask.
+            if m == u32::MAX {
+                unsafe {
+                    word |= (v as u64) << word_offset;
+                    out_ptr.cast::<u64>().write_unaligned(word.to_le());
+                    out_ptr = out_ptr.add(4);
+                    word >>= 32;
+                }
+                continue;
+            }
+
+            let mask_popcnt = m.count_ones();
+            
+            // Fast path, value is all-0s or all-1s.
+            let bits = if v == 0 || v == u32::MAX {
+                v & ((1 << mask_popcnt) - 1)
+            } else {
+                // Slow path.
+                pext32_polyfill(v, m)
+            };
+
+            word |= (bits as u64) << word_offset;
+            word_offset += mask_popcnt as usize;
+            unsafe {
+                out_ptr.cast::<u64>().write_unaligned(word.to_le());
+                
+                let written = word_offset / 8;
+                out_ptr = out_ptr.add(written);
+                word_offset = word_offset % 8;
+                word >>= written;
+            }
+        }
+    }
+
+    unsafe {
+        out_vec.set_len(words * 8);
+    }
+    Bitmap::from_u8_vec(out_vec, mask.set_bits())
 }
-
-
 
 /*
 
@@ -98,18 +143,6 @@ pub fn pext_loop(mut v: u64, mut m: u64, lut: &[u8]) -> u64 {
 
 
 */
-
-
-
-
-
-
-
-
-
-
-
-
 
 pub(super) fn filter_bitmap_and_validity(
     values: &Bitmap,
@@ -269,6 +302,3 @@ fn nonnull_filter(values: &Bitmap, mask: &Bitmap) -> MutableBitmap {
         unsafe { nonnull_filter_impl(values, mask_chunks, filter_count) }
     }
 }
-
-
-
