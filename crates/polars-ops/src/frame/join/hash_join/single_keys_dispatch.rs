@@ -1,5 +1,4 @@
 use arrow::array::PrimitiveArray;
-use num_traits::NumCast;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
@@ -107,6 +106,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 hash_join_tuples_inner(lhs, rhs, swapped, validate, join_nulls)?,
                 !swapped,
             ))
+        } else if lhs.dtype().is_float() {
+            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                group_join_inner::<$T>(lhs, rhs, validate, join_nulls)
+            })
         } else if s_self.bit_repr_is_large() {
             let lhs = s_self.bit_repr_large();
             let rhs = other.bit_repr_large();
@@ -138,6 +143,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             let lhs = lhs.iter().collect::<Vec<_>>();
             let rhs = rhs.iter().collect::<Vec<_>>();
             hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
+        } else if lhs.dtype().is_float() {
+            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                hash_join_outer(lhs, rhs, validate, join_nulls)
+            })
         } else if s_self.bit_repr_is_large() {
             let lhs = s_self.bit_repr_large();
             let rhs = other.bit_repr_large();
@@ -319,8 +330,9 @@ fn hash_join_outer<T>(
     join_nulls: bool,
 ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
-    T: PolarsIntegerType + Sync,
-    T::Native: Eq + Hash + NumCast,
+    T: PolarsNumericType + Sync,
+    T::Native: TotalHash + TotalEq + IntoTotalOrd,
+    <T::Native as IntoTotalOrd>::TotalOrdItem: Eq + Hash + Copy + Sync + Send + IsNull,
 {
     let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
 

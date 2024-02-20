@@ -1,8 +1,10 @@
 use std::hash::Hash;
 
+use ahash::RandomState;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 use polars_utils::sync::SyncPtr;
+use polars_utils::total_ord::{IntoTotalOrd, TotalEq, TotalHash};
 
 use super::*;
 
@@ -175,23 +177,23 @@ where
 fn compute_col_idx_numeric<T>(column_agg_physical: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
-    T::Native: Hash + Eq,
+    T::Native: TotalHash + TotalEq + IntoTotalOrd,
+    <T::Native as IntoTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
     let mut idx = 0 as IdxSize;
     let mut out = Vec::with_capacity(column_agg_physical.len());
 
-    for arr in column_agg_physical.downcast_iter() {
-        for opt_v in arr.into_iter() {
-            let idx = *col_to_idx.entry(opt_v).or_insert_with(|| {
-                let old_idx = idx;
-                idx += 1;
-                old_idx
-            });
-            // SAFETY:
-            // we pre-allocated
-            unsafe { out.push_unchecked(idx) };
-        }
+    for opt_v in column_agg_physical.iter() {
+        let opt_v = opt_v.into_total_ord();
+        let idx = *col_to_idx.entry(opt_v).or_insert_with(|| {
+            let old_idx = idx;
+            idx += 1;
+            old_idx
+        });
+        // SAFETY:
+        // we pre-allocated
+        unsafe { out.push_unchecked(idx) };
     }
     out
 }
@@ -232,13 +234,21 @@ pub(super) fn compute_col_idx(
 
     use DataType::*;
     let col_locations = match column_agg_physical.dtype() {
-        Int32 | UInt32 | Float32 => {
+        Int32 | UInt32 => {
             let ca = column_agg_physical.bit_repr_small();
             compute_col_idx_numeric(&ca)
         },
-        Int64 | UInt64 | Float64 => {
+        Int64 | UInt64 => {
             let ca = column_agg_physical.bit_repr_large();
             compute_col_idx_numeric(&ca)
+        },
+        Float64 => {
+            let ca: &ChunkedArray<Float64Type> = column_agg_physical.as_ref().as_ref().as_ref();
+            compute_col_idx_numeric(ca)
+        },
+        Float32 => {
+            let ca: &ChunkedArray<Float32Type> = column_agg_physical.as_ref().as_ref().as_ref();
+            compute_col_idx_numeric(ca)
         },
         Struct(_) => {
             let ca = column_agg_physical.struct_().unwrap();
@@ -286,7 +296,8 @@ fn compute_row_index<'a, T>(
 ) -> (Vec<IdxSize>, usize, Option<Vec<Series>>)
 where
     T: PolarsDataType,
-    T::Physical<'a>: Hash + Eq + Copy,
+    Option<T::Physical<'a>>: TotalHash + TotalEq + Copy + IntoTotalOrd,
+    <Option<T::Physical<'a>> as IntoTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
     ChunkedArray<T>: FromIterator<Option<T::Physical<'a>>>,
     ChunkedArray<T>: IntoSeries,
 {
@@ -295,19 +306,18 @@ where
     let mut idx = 0 as IdxSize;
 
     let mut row_locations = Vec::with_capacity(index_agg_physical.len());
-    for arr in index_agg_physical.downcast_iter() {
-        for opt_v in arr.iter() {
-            let idx = *row_to_idx.entry(opt_v).or_insert_with(|| {
-                let old_idx = idx;
-                idx += 1;
-                old_idx
-            });
+    for opt_v in index_agg_physical.iter() {
+        let opt_v = opt_v.into_total_ord();
+        let idx = *row_to_idx.entry(opt_v).or_insert_with(|| {
+            let old_idx = idx;
+            idx += 1;
+            old_idx
+        });
 
-            // SAFETY:
-            // we pre-allocated
-            unsafe {
-                row_locations.push_unchecked(idx);
-            }
+        // SAFETY:
+        // we pre-allocated
+        unsafe {
+            row_locations.push_unchecked(idx);
         }
     }
     let row_index = match count {
@@ -386,13 +396,21 @@ pub(super) fn compute_row_idx(
 
         use DataType::*;
         match index_agg_physical.dtype() {
-            Int32 | UInt32 | Float32 => {
+            Int32 | UInt32 => {
                 let ca = index_agg_physical.bit_repr_small();
                 compute_row_index(index, &ca, count, index_s.dtype())
             },
-            Int64 | UInt64 | Float64 => {
+            Int64 | UInt64 => {
                 let ca = index_agg_physical.bit_repr_large();
                 compute_row_index(index, &ca, count, index_s.dtype())
+            },
+            Float64 => {
+                let ca: &ChunkedArray<Float64Type> = index_agg_physical.as_ref().as_ref().as_ref();
+                compute_row_index(index, ca, count, index_s.dtype())
+            },
+            Float32 => {
+                let ca: &ChunkedArray<Float32Type> = index_agg_physical.as_ref().as_ref().as_ref();
+                compute_row_index(index, ca, count, index_s.dtype())
             },
             Boolean => {
                 let ca = index_agg_physical.bool().unwrap();

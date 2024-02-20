@@ -3,6 +3,7 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
+use polars_utils::total_ord::{IntoTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 
 use super::*;
@@ -14,7 +15,8 @@ pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
 where
     I: IntoIterator<Item = T> + Send,
     I::IntoIter: TrustedLen,
-    T: Send + Hash + Eq,
+    T: TotalHash + TotalEq + Send + IntoTotalOrd,
+    <T as IntoTotalOrd>::TotalOrdItem: Send + Hash + Eq,
 {
     let build_hasher = build_hasher.unwrap_or_default();
     let hashes = POOL.install(|| {
@@ -23,7 +25,7 @@ where
             .map(|iter| {
                 // create hashes and keys
                 iter.into_iter()
-                    .map(|val| (build_hasher.hash_one(&val), val))
+                    .map(|val| (build_hasher.hash_one(&val.into_total_ord()), val))
                     .collect_trusted::<Vec<_>>()
             })
             .collect()
@@ -33,10 +35,11 @@ where
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
-) -> Vec<PlHashMap<T, (bool, IdxVec)>>
+) -> Vec<PlHashMap<<T as IntoTotalOrd>::TotalOrdItem, (bool, IdxVec)>>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
-    T: Send + Hash + Eq + Sync + Copy,
+    T: TotalHash + TotalEq + Copy + Sync + Send + IntoTotalOrd,
+    <T as IntoTotalOrd>::TotalOrdItem: Hash + Eq + Copy + Sync + Send,
 {
     let n_partitions = _set_partition_size();
     let (hashes_and_keys, build_hasher) = create_hash_and_keys_threaded_vectorized(iters, None);
@@ -50,7 +53,7 @@ where
             .map(|partition_no| {
                 let build_hasher = build_hasher.clone();
                 let hashes_and_keys = &hashes_and_keys;
-                let mut hash_tbl: PlHashMap<T, (bool, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
                     PlHashMap::with_hasher(build_hasher);
 
                 let mut offset = 0;
@@ -60,6 +63,7 @@ where
                         .iter()
                         .enumerate()
                         .for_each(|(idx, (h, k))| {
+                            let k = k.into_total_ord();
                             let idx = idx as IdxSize;
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
@@ -68,11 +72,11 @@ where
                                 let entry = hash_tbl
                                     .raw_entry_mut()
                                     // uses the key to check equality to find and entry
-                                    .from_key_hashed_nocheck(*h, k);
+                                    .from_key_hashed_nocheck(*h, &k);
 
                                 match entry {
                                     RawEntryMut::Vacant(entry) => {
-                                        entry.insert_hashed_nocheck(*h, *k, (false, unitvec![idx]));
+                                        entry.insert_hashed_nocheck(*h, k, (false, unitvec![idx]));
                                     },
                                     RawEntryMut::Occupied(mut entry) => {
                                         let (_k, v) = entry.get_key_value_mut();
@@ -94,7 +98,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
-    hash_tbls: &mut [PlHashMap<T, (bool, IdxVec)>],
+    hash_tbls: &mut [PlHashMap<<T as IntoTotalOrd>::TotalOrdItem, (bool, IdxVec)>],
     results: &mut (
         MutablePrimitiveArray<IdxSize>,
         MutablePrimitiveArray<IdxSize>,
@@ -108,7 +112,8 @@ fn probe_outer<T, F, G, H>(
     swap_fn_drain: H,
     join_nulls: bool,
 ) where
-    T: Send + Hash + Eq + Sync + Copy + IsNull,
+    T: TotalHash + TotalEq + Copy + Sync + Send + IsNull + IntoTotalOrd,
+    <T as IntoTotalOrd>::TotalOrdItem: Hash + Eq + Copy + Sync + Send + IsNull,
     // idx_a, idx_b -> ...
     F: Fn(IdxSize, IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
     // idx_a -> ...
@@ -120,6 +125,7 @@ fn probe_outer<T, F, G, H>(
     let mut idx_a = 0;
     for probe_hashes in probe_hashes {
         for (h, key) in probe_hashes {
+            let key = key.into_total_ord();
             let h = *h;
             // probe table that contains the hashed value
             let current_probe_table =
@@ -127,7 +133,7 @@ fn probe_outer<T, F, G, H>(
 
             let entry = current_probe_table
                 .raw_entry_mut()
-                .from_key_hashed_nocheck(h, key);
+                .from_key_hashed_nocheck(h, &key);
 
             match entry {
                 // match and remove
@@ -182,7 +188,8 @@ where
     J: IntoIterator<Item = T>,
     <J as IntoIterator>::IntoIter: TrustedLen + Send,
     <I as IntoIterator>::IntoIter: TrustedLen + Send,
-    T: Hash + Eq + Copy + Sync + Send + IsNull,
+    T: TotalHash + TotalEq + Copy + Sync + Send + IsNull + IntoTotalOrd,
+    <T as IntoTotalOrd>::TotalOrdItem: Hash + Eq + Copy + Sync + Send + IsNull,
 {
     let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
