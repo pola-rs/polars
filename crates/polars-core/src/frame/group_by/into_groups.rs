@@ -150,11 +150,72 @@ where
         }
 
         let out = match self.dtype() {
-            dtype if dtype.is_numeric() => {
-                with_match_physical_numeric_polars_type!(dtype, |$U| {
-                    let ca: &ChunkedArray<$U> = unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<$U>) };
-                    num_groups_proxy(ca, multithreaded, sorted)
-                })
+            DataType::UInt64 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt64Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
+            DataType::UInt32 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
+            DataType::Int64 => {
+                let ca = self.bit_repr_large();
+                num_groups_proxy(&ca, multithreaded, sorted)
+            },
+            DataType::Int32 => {
+                let ca = self.bit_repr_small();
+                num_groups_proxy(&ca, multithreaded, sorted)
+            },
+            DataType::Float64 => {
+                // convince the compiler that we are this type.
+                let ca: &Float32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float32Type>)
+                };
+                num_groups_proxy(&ca, multithreaded, sorted)
+            },
+            DataType::Float32 => {
+                // convince the compiler that we are this type.
+                let ca: &Float32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float32Type>)
+                };
+                num_groups_proxy(&ca, multithreaded, sorted)
+            },
+            #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
+            DataType::Int8 => {
+                // convince the compiler that we are this type.
+                let ca: &Int8Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int8Type>) };
+                let s = ca.reinterpret_unsigned();
+                return s.group_tuples(multithreaded, sorted);
+            },
+            #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
+            DataType::UInt8 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt8Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt8Type>) };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
+            #[cfg(all(feature = "performant", feature = "dtype-i16", feature = "dtype-u16"))]
+            DataType::Int16 => {
+                // convince the compiler that we are this type.
+                let ca: &Int16Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int16Type>) };
+                let s = ca.reinterpret_unsigned();
+                return s.group_tuples(multithreaded, sorted);
+            },
+            #[cfg(all(feature = "performant", feature = "dtype-i16", feature = "dtype-u16"))]
+            DataType::UInt16 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt16Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt16Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
             },
             _ => {
                 let ca = unsafe { self.cast_unchecked(&DataType::UInt32).unwrap() };
