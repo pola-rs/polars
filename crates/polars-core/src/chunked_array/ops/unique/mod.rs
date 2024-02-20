@@ -143,13 +143,15 @@ where
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
                     let mut count = 0;
-                    let mut iter = self.into_iter();
-                    let mut last = None;
 
-                    if let Some(val) = iter.next() {
-                        last = val;
-                        count += 1;
-                    };
+                    if self.is_empty() {
+                        return Ok(count);
+                    }
+
+                    let mut iter = self.iter().map(|x| x.into_total_ord());
+                    let mut last = iter.next().unwrap();
+
+                    count += 1;
 
                     iter.for_each(|opt_val| {
                         if opt_val != last {
