@@ -11,7 +11,7 @@ impl CountStar {
 }
 
 impl OptimizationRule for CountStar {
-    // Replace select count(*) from datasource with specialized map function
+    // Replace select count(*) from datasource with specialized map function.
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<ALogicalPlan>,
