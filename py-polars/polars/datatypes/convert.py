@@ -466,16 +466,6 @@ def supported_numpy_char_code(dtype_char: str) -> bool:
     ) in DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE
 
 
-def numpy_type_to_dtype(dtype: np.dtype) -> PolarsDataType:  # type: ignore[type-arg]
-    """Convert a numpy dtype to a Polars dtype."""
-    char_code = np.dtype(dtype).char
-    pl_dtype = numpy_char_code_to_dtype(char_code)
-    if pl_dtype in (Datetime, Duration):
-        if (unit := dtype.str[-3:-1]) in ("ms", "us", "ns"):
-            pl_dtype = Datetime(unit) if dtype.kind == "M" else Duration(unit)  # type: ignore[arg-type]
-    return pl_dtype
-
-
 def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
     """Convert a numpy character dtype to a Polars dtype."""
     dtype = np.dtype(dtype_char)
