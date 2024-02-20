@@ -566,8 +566,22 @@ fn is_in_string_categorical(
     other: &CategoricalChunked,
 ) -> PolarsResult<BooleanChunked> {
     // We need only check against the unique categories used by this array.
-    let other: StringChunked = other.unique().unwrap().iter_str().collect_trusted();
-    is_in_binary(&ca_in.as_binary(), &other.cast(&DataType::Binary).unwrap())
+    let set: PlHashSet<&str>;
+    Ok(if other._can_fast_unique() {
+        // Build hash set directly from categories
+        let cats = other.get_rev_map().get_categories();
+        set = cats.values_iter().collect();
+        ca_in
+            .apply_values_generic(|val| set.contains(&val))
+            .with_name(ca_in.name())
+    } else {
+        // Build hash set from unique values
+        let cats = other.unique().unwrap();
+        set = cats.iter_str().flatten().collect();
+        ca_in
+            .apply_values_generic(|val| set.contains(&val))
+            .with_name(ca_in.name())
+    })
 }
 
 #[cfg(feature = "dtype-categorical")]

@@ -198,7 +198,7 @@ impl CategoricalChunked {
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached, _) => {
-                if self.can_fast_unique() {
+                if self._can_fast_unique() {
                     if verbose() {
                         eprintln!("grouping categoricals, run perfect hash function");
                     }
