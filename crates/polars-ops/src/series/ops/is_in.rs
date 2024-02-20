@@ -566,21 +566,19 @@ fn is_in_string_categorical(
     other: &CategoricalChunked,
 ) -> PolarsResult<BooleanChunked> {
     // We need only check against the unique categories used by this array.
-    Ok(if other._can_fast_unique() {
+    let set = if other._can_fast_unique() {
         // Build hash set directly from categories
         let cats = other.get_rev_map().get_categories();
-        let set: PlHashSet<&str> = cats.values_iter().collect();
-        ca_in
-            .apply_values_generic(|val| set.contains(&val))
-            .with_name(ca_in.name())
+        PlHashSet::from_iter(cats.values_iter().map(|s| s.to_owned()))
     } else {
         // Build hash set from unique values
         let cats = other.unique().unwrap();
-        let set: PlHashSet<&str> = cats.iter_str().flatten().collect();
-        ca_in
-            .apply_values_generic(|val| set.contains(&val))
-            .with_name(ca_in.name())
-    })
+        PlHashSet::from_iter(cats.iter_str().flatten().map(|s| s.to_owned()))
+    };
+    Ok(ca_in
+        .apply_values_generic(|val| set.contains(val))
+        .with_name(ca_in.name())
+    )
 }
 
 #[cfg(feature = "dtype-categorical")]
