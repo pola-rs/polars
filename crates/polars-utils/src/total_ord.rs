@@ -536,16 +536,18 @@ macro_rules! impl_into_total_ord_wrapped {
 impl_into_total_ord_wrapped!(f32);
 impl_into_total_ord_wrapped!(f64);
 
-impl<T: Send + Sync + Copy> IntoTotalOrd for Option<T> {
-    type TotalOrdItem = TotalOrdWrap<Option<T>>;
+impl<T: Send + Sync + Copy + IntoTotalOrd> IntoTotalOrd for Option<T> {
+    type TotalOrdItem = TotalOrdWrap<Option<<T as IntoTotalOrd>::TotalOrdItem>>;
     type SourceItem = Option<T>;
 
     fn into_total_ord(&self) -> Self::TotalOrdItem {
-        TotalOrdWrap(*self)
+        TotalOrdWrap((*self).map(|x| x.into_total_ord()))
     }
 
     fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
-        ord_item.0
+        let out = ord_item.0.map(|x| T::peel_total_ord(x));
+
+        unsafe { std::mem::transmute_copy(&out) }
     }
 }
 
