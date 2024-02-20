@@ -1,5 +1,6 @@
+use std::hash::Hash;
+
 use arrow::bitmap::MutableBitmap;
-use polars_utils::total_ord::{TotalHash, TotalOrdWrap};
 
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
@@ -59,12 +60,12 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
-    T: TotalEq + TotalHash,
+    T: Hash + Eq,
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
-        if set.insert(TotalOrdWrap(val)) {
+        if set.insert(val) {
             unique.push(idx as IdxSize)
         }
     });
@@ -82,8 +83,8 @@ macro_rules! arg_unique_ca {
 
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
-    T: PolarsNumericType,
-    T::Native: TotalHash,
+    T: PolarsIntegerType,
+    T::Native: Hash + Eq + Ord,
     ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
@@ -95,19 +96,19 @@ where
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
                     let mut arr = MutablePrimitiveArray::with_capacity(self.len());
-                    let mut iter = self.iter().map(TotalOrdWrap);
-                    let mut last = TotalOrdWrap(None);
+                    let mut iter = self.into_iter();
+                    let mut last = None;
 
                     if let Some(val) = iter.next() {
                         last = val;
-                        arr.push(val.0)
+                        arr.push(val)
                     };
 
+                    #[allow(clippy::unnecessary_filter_map)]
                     let to_extend = iter.filter_map(|opt_val| {
                         if opt_val != last {
-                            // if TotalOrdWrap(opt_val) != TotalOrdWrap(last) {
                             last = opt_val;
-                            Some(opt_val.0)
+                            Some(opt_val)
                         } else {
                             None
                         }
@@ -141,8 +142,8 @@ where
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
                     let mut count = 0;
-                    let mut iter = self.iter().map(TotalOrdWrap);
-                    let mut last = TotalOrdWrap(None);
+                    let mut iter = self.into_iter();
+                    let mut last = None;
 
                     if let Some(val) = iter.next() {
                         last = val;
@@ -250,6 +251,30 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
+    }
+}
+
+impl ChunkUnique<Float32Type> for Float32Chunked {
+    fn unique(&self) -> PolarsResult<ChunkedArray<Float32Type>> {
+        let ca = self.bit_repr_small();
+        let ca = ca.unique()?;
+        Ok(ca._reinterpret_float())
+    }
+
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        self.bit_repr_small().arg_unique()
+    }
+}
+
+impl ChunkUnique<Float64Type> for Float64Chunked {
+    fn unique(&self) -> PolarsResult<ChunkedArray<Float64Type>> {
+        let ca = self.bit_repr_large();
+        let ca = ca.unique()?;
+        Ok(ca._reinterpret_float())
+    }
+
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        self.bit_repr_large().arg_unique()
     }
 }
 

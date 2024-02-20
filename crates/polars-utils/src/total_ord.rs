@@ -1,7 +1,11 @@
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 
 use bytemuck::TransparentWrapper;
+
+use crate::hashing::DirtyHash;
 
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
@@ -138,6 +142,12 @@ impl<T: TotalEq> Eq for TotalOrdWrap<T> {}
 impl<T: TotalHash> Hash for TotalOrdWrap<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.tot_hash(state);
+    }
+}
+
+impl<T: DirtyHash> DirtyHash for TotalOrdWrap<T> {
+    fn dirty_hash(&self) -> u64 {
+        self.0.dirty_hash()
     }
 }
 
@@ -295,6 +305,18 @@ impl TotalHash for f64 {
     }
 }
 
+impl DirtyHash for f32 {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f32(*self).to_bits().dirty_hash()
+    }
+}
+
+impl DirtyHash for f64 {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f64(*self).to_bits().dirty_hash()
+    }
+}
+
 // Blanket implementations.
 impl<T: TotalEq> TotalEq for Option<T> {
     #[inline(always)]
@@ -401,4 +423,57 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
             .tot_cmp(&other.0)
             .then_with(|| self.1.tot_cmp(&other.1))
     }
+}
+
+pub trait IntoTotalOrd: Send + Sync {
+    type Item;
+
+    fn into_total_ord(&self) -> Self::Item;
+}
+
+macro_rules! impl_into_total_ord_identity {
+    ($T: ty) => {
+        impl IntoTotalOrd for $T {
+            type Item = $T;
+
+            fn into_total_ord(&self) -> Self::Item {
+                self.clone()
+            }
+        }
+    };
+}
+
+impl_into_total_ord_identity!(bool);
+impl_into_total_ord_identity!(u8);
+impl_into_total_ord_identity!(u16);
+impl_into_total_ord_identity!(u32);
+impl_into_total_ord_identity!(u64);
+impl_into_total_ord_identity!(u128);
+impl_into_total_ord_identity!(usize);
+impl_into_total_ord_identity!(i8);
+impl_into_total_ord_identity!(i16);
+impl_into_total_ord_identity!(i32);
+impl_into_total_ord_identity!(i64);
+impl_into_total_ord_identity!(i128);
+impl_into_total_ord_identity!(isize);
+impl_into_total_ord_identity!(char);
+impl_into_total_ord_identity!(String);
+
+trait Test {
+    fn test() -> u32;
+}
+
+trait Test2 {
+    fn test_2() -> i32;
+}
+
+trait IntoEquiv<T> {
+    fn into_equiv(&self) -> ();
+}
+
+fn try_equiv<T>(x: T)
+where
+    T: TotalHash + TotalEq + IntoEquiv<T>,
+{
+    let y = x.into_equiv();
 }

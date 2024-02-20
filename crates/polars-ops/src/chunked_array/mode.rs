@@ -1,7 +1,7 @@
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::IntoGroupsProxy;
 use polars_core::prelude::*;
-use polars_core::{with_match_physical_numeric_polars_type, POOL};
+use polars_core::{with_match_physical_integer_polars_type, POOL};
 
 fn mode_primitive<T: PolarsDataType>(ca: &ChunkedArray<T>) -> PolarsResult<ChunkedArray<T>>
 where
@@ -17,6 +17,18 @@ where
     // SAFETY:
     // group indices are in bounds
     Ok(unsafe { ca.take_unchecked(idx.as_slice()) })
+}
+
+fn mode_f32(ca: &Float32Chunked) -> PolarsResult<Float32Chunked> {
+    let s = ca.apply_as_ints(|v| mode(v).unwrap());
+    let ca = s.f32().unwrap().clone();
+    Ok(ca)
+}
+
+fn mode_64(ca: &Float64Chunked) -> PolarsResult<Float64Chunked> {
+    let s = ca.apply_as_ints(|v| mode(v).unwrap());
+    let ca = s.f64().unwrap().clone();
+    Ok(ca)
 }
 
 fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
@@ -55,9 +67,11 @@ pub fn mode(s: &Series) -> PolarsResult<Series> {
     let out = match s_phys.dtype() {
         DataType::Binary => mode_primitive(s_phys.binary().unwrap())?.into_series(),
         DataType::Boolean => mode_primitive(s_phys.bool().unwrap())?.into_series(),
+        DataType::Float32 => mode_f32(s_phys.f32().unwrap())?.into_series(),
+        DataType::Float64 => mode_64(s_phys.f64().unwrap())?.into_series(),
         DataType::String => mode_primitive(&s_phys.str().unwrap().as_binary())?.into_series(),
-        dt if dt.is_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |$T| {
+        dt if dt.is_integer() => {
+            with_match_physical_integer_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s_phys.as_ref().as_ref().as_ref();
                 mode_primitive(ca)?.into_series()
             })
