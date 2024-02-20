@@ -101,13 +101,14 @@ where
                     let mut arr = MutablePrimitiveArray::with_capacity(self.len());
 
                     if !self.is_empty() {
-                        let mut iter = self.iter().map(|x| x.into_total_ord());
-                        let mut last = iter.next().unwrap();
+                        let mut iter = self.iter();
+                        let mut last = iter.next().unwrap().into_total_ord();
 
                         let to_extend = iter.filter_map(|opt_val| {
-                            if opt_val != last {
-                                last = opt_val;
-                                Some(Option::<T::Native>::from_total_ord(opt_val))
+                            let opt_val_tot_ord = opt_val.into_total_ord();
+                            if opt_val_tot_ord != last {
+                                last = opt_val_tot_ord;
+                                Some(opt_val)
                             } else {
                                 None
                             }
@@ -148,12 +149,13 @@ where
                         return Ok(count);
                     }
 
-                    let mut iter = self.iter().map(|x| x.into_total_ord());
-                    let mut last = iter.next().unwrap();
+                    let mut iter = self.iter();
+                    let mut last = iter.next().unwrap().into_total_ord();
 
                     count += 1;
 
                     iter.for_each(|opt_val| {
+                        let opt_val = opt_val.into_total_ord();
                         if opt_val != last {
                             last = opt_val;
                             count += 1;

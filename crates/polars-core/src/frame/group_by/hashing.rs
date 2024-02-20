@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::hash::{BuildHasher, Hash};
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
@@ -153,7 +152,8 @@ where
     let mut hash_tbl: PlHashMap<<T as IntoTotalOrd>::TotalOrdItem, (IdxSize, IdxVec)> =
         PlHashMap::with_capacity(init_size);
     let mut cnt = 0;
-    a.map(|k| k.into_total_ord()).for_each(|k| {
+    a.for_each(|k| {
+        let k = k.into_total_ord();
         let idx = cnt;
         cnt += 1;
         let entry = hash_tbl.entry(k);
@@ -192,7 +192,7 @@ pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
     sorted: bool,
 ) -> GroupsProxy
 where
-    T: TotalHash + TotalEq + IntoTotalOrd + Borrow<<T as IntoTotalOrd>::TotalOrdItem>,
+    T: TotalHash + TotalEq + IntoTotalOrd,
     <T as IntoTotalOrd>::TotalOrdItem: Send + Hash + Eq + Sync + Copy + DirtyHash,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
@@ -205,7 +205,7 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
@@ -216,22 +216,19 @@ where
 
                     let mut cnt = 0;
                     keys.iter().for_each(|k| {
+                        let k = k.into_total_ord();
                         let idx = cnt + offset;
                         cnt += 1;
 
-                        let k_tot_ord = k.into_total_ord();
-
-                        if thread_no == hash_to_partition(k_tot_ord.dirty_hash(), n_partitions) {
-                            let hash = hasher.hash_one(k_tot_ord);
-                            let entry = hash_tbl
-                                .raw_entry_mut()
-                                .from_key_hashed_nocheck(hash, &k_tot_ord);
+                        if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
+                            let hash = hasher.hash_one(k);
+                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
                                     let tuples = unitvec![idx];
-                                    entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
-                                        hasher.hash_one(k.into_total_ord())
+                                    entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
+                                        hasher.hash_one(k)
                                     });
                                 },
                                 RawEntryMut::Occupied(mut entry) => {
@@ -261,7 +258,7 @@ pub(crate) fn group_by_threaded_iter<T, I>(
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
     I::IntoIter: ExactSizeIterator,
-    T: TotalHash + TotalEq + IntoTotalOrd + Borrow<<T as IntoTotalOrd>::TotalOrdItem>,
+    T: TotalHash + TotalEq + DirtyHash + IntoTotalOrd,
     <T as IntoTotalOrd>::TotalOrdItem: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     let init_size = get_init_size();
@@ -273,7 +270,7 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
@@ -284,22 +281,19 @@ where
 
                     let mut cnt = 0;
                     keys.for_each(|k| {
+                        let k = k.into_total_ord();
                         let idx = cnt + offset;
                         cnt += 1;
 
-                        let k_tot_ord = k.into_total_ord();
-
-                        if thread_no == hash_to_partition(k_tot_ord.dirty_hash(), n_partitions) {
-                            let hash = hasher.hash_one(k_tot_ord);
-                            let entry = hash_tbl
-                                .raw_entry_mut()
-                                .from_key_hashed_nocheck(hash, &k_tot_ord);
+                        if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
+                            let hash = hasher.hash_one(k);
+                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
                                     let tuples = unitvec![idx];
                                     entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
-                                        hasher.hash_one(k.into_total_ord())
+                                        hasher.hash_one(k)
                                     });
                                 },
                                 RawEntryMut::Occupied(mut entry) => {

@@ -133,7 +133,9 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 #[cfg(test)]
 mod test {
     use std::fmt::{Display, Formatter};
+    use std::hash::{Hash, Hasher};
 
+    use polars_utils::total_ord::TotalHash;
     use polars_utils::unitvec;
 
     use super::*;
@@ -148,6 +150,15 @@ mod test {
     impl TotalEq for Foo {
         fn tot_eq(&self, other: &Self) -> bool {
             self == other
+        }
+    }
+
+    impl TotalHash for Foo {
+        fn tot_hash<H>(&self, state: &mut H)
+        where
+            H: Hasher,
+        {
+            self.hash(state);
         }
     }
 
