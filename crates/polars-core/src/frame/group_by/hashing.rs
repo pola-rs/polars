@@ -6,6 +6,7 @@ use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
+use polars_utils::total_ord::{TotalHash, TotalOrdWrap};
 use polars_utils::unitvec;
 use rayon::prelude::*;
 
@@ -188,7 +189,7 @@ pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
     sorted: bool,
 ) -> GroupsProxy
 where
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: Send + TotalHash + TotalEq + Sync + Copy + DirtyHash,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
     let init_size = get_init_size();
@@ -210,13 +211,13 @@ where
                     let hasher = hash_tbl.hasher().clone();
 
                     let mut cnt = 0;
-                    keys.iter().for_each(|k| {
+                    keys.iter().map(TotalOrdWrap).for_each(|k| {
                         let idx = cnt + offset;
                         cnt += 1;
 
                         if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             let hash = hasher.hash_one(k);
-                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
+                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {

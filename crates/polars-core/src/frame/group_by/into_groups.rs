@@ -2,6 +2,7 @@
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use arrow::legacy::prelude::*;
+use polars_utils::total_ord::TotalHash;
 
 use super::*;
 use crate::config::verbose;
@@ -25,8 +26,8 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + DirtyHash,
+    T: PolarsNumericType,
+    T::Native: TotalHash + Send + DirtyHash,
     Option<T::Native>: DirtyHash,
 {
     if multithreaded && group_multithreaded(ca) {
@@ -163,14 +164,32 @@ where
                 };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            DataType::Int64 | DataType::Float64 => {
-                let ca = self.bit_repr_large();
-                num_groups_proxy(&ca, multithreaded, sorted)
+            DataType::Int64 => {
+                // convince the compiler that we are this type.
+                let ca: &Int64Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int64Type>) };
+                num_groups_proxy(ca, multithreaded, sorted)
             },
-            DataType::Int32 | DataType::Float32 => {
-                let ca = self.bit_repr_small();
-                num_groups_proxy(&ca, multithreaded, sorted)
+            DataType::Int32 => {
+                // convince the compiler that we are this type.
+                let ca: &Int32Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int32Type>) };
+                num_groups_proxy(ca, multithreaded, sorted)
             },
+            // DataType::Float64 => {
+            //     // convince the compiler that we are this type.
+            //     let ca: &Float64Chunked = unsafe {
+            //         &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float64Type>)
+            //     };
+            //     num_groups_proxy(ca, multithreaded, sorted)
+            // },
+            // DataType::Float32 => {
+            //     // convince the compiler that we are this type.
+            //     let ca: &Float32Chunked = unsafe {
+            //         &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float32Type>)
+            //     };
+            //     num_groups_proxy(ca, multithreaded, sorted)
+            // },
             #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
             DataType::Int8 => {
                 // convince the compiler that we are this type.
