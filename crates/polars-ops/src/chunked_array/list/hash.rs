@@ -32,7 +32,7 @@ where
         for opt_v in arr.iter() {
             match opt_v {
                 Some(v) => {
-                    let r = random_state.hash_one(v.into_total_ord());
+                    let r = random_state.hash_one(v.to_total_ord());
                     hash_agg = _boost_hash_combine(hash_agg, r);
                 },
                 None => {

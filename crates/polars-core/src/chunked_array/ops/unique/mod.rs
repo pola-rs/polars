@@ -67,7 +67,7 @@ where
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
-        if set.insert(val.into_total_ord()) {
+        if set.insert(val.to_total_ord()) {
             unique.push(idx as IdxSize)
         }
     });
@@ -102,10 +102,10 @@ where
 
                     if !self.is_empty() {
                         let mut iter = self.iter();
-                        let mut last = iter.next().unwrap().into_total_ord();
+                        let mut last = iter.next().unwrap().to_total_ord();
 
                         let to_extend = iter.filter_map(|opt_val| {
-                            let opt_val_tot_ord = opt_val.into_total_ord();
+                            let opt_val_tot_ord = opt_val.to_total_ord();
                             if opt_val_tot_ord != last {
                                 last = opt_val_tot_ord;
                                 Some(opt_val)
@@ -150,12 +150,12 @@ where
                     }
 
                     let mut iter = self.iter();
-                    let mut last = iter.next().unwrap().into_total_ord();
+                    let mut last = iter.next().unwrap().to_total_ord();
 
                     count += 1;
 
                     iter.for_each(|opt_val| {
-                        let opt_val = opt_val.into_total_ord();
+                        let opt_val = opt_val.to_total_ord();
                         if opt_val != last {
                             last = opt_val;
                             count += 1;

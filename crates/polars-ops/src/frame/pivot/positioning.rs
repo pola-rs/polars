@@ -184,7 +184,7 @@ where
     let mut out = Vec::with_capacity(column_agg_physical.len());
 
     for opt_v in column_agg_physical.iter() {
-        let opt_v = opt_v.into_total_ord();
+        let opt_v = opt_v.to_total_ord();
         let idx = *col_to_idx.entry(opt_v).or_insert_with(|| {
             let old_idx = idx;
             idx += 1;
@@ -306,7 +306,7 @@ where
 
     let mut row_locations = Vec::with_capacity(index_agg_physical.len());
     for opt_v in index_agg_physical.iter() {
-        let opt_v = opt_v.into_total_ord();
+        let opt_v = opt_v.to_total_ord();
         let idx = *row_to_idx.entry(opt_v).or_insert_with(|| {
             let old_idx = idx;
             idx += 1;

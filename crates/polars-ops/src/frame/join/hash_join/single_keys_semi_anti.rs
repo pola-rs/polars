@@ -21,7 +21,7 @@ where
         let mut hash_tbl: PlHashSet<T::TotalOrdItem> = PlHashSet::with_capacity(_HASHMAP_INIT_SIZE);
         for keys in &keys {
             keys.into_iter().for_each(|k| {
-                let k = k.into_total_ord();
+                let k = k.to_total_ord();
                 if partition_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                     hash_tbl.insert(k);
                 }
@@ -67,7 +67,7 @@ where
             let mut results = Vec::with_capacity(probe_iter.size_hint().1.unwrap());
 
             probe_iter.enumerate().for_each(|(idx_a, k)| {
-                let k = k.into_total_ord();
+                let k = k.to_total_ord();
                 let idx_a = (idx_a + offset) as IdxSize;
                 // probe table that contains the hashed value
                 let current_probe_table =

@@ -165,7 +165,6 @@ impl<T: IsNull> IsNull for TotalOrdWrap<T> {
     }
 }
 
-// Require TotalOrdWrap to use DirtyHash on floats for code safety.
 impl DirtyHash for f32 {
     fn dirty_hash(&self) -> u64 {
         canonical_f32(*self).to_bits().dirty_hash()
@@ -458,7 +457,7 @@ pub trait IntoTotalOrd {
     type TotalOrdItem: Send + Sync;
     type SourceItem;
 
-    fn into_total_ord(&self) -> Self::TotalOrdItem;
+    fn to_total_ord(&self) -> Self::TotalOrdItem;
 
     fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem;
 }
@@ -469,7 +468,7 @@ macro_rules! impl_into_total_ord_identity {
             type TotalOrdItem = $T;
             type SourceItem = $T;
 
-            fn into_total_ord(&self) -> Self::TotalOrdItem {
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
                 self.clone()
             }
 
@@ -502,7 +501,7 @@ macro_rules! impl_into_total_ord_lifetimed_identity {
             type TotalOrdItem = &'a $T;
             type SourceItem = &'a $T;
 
-            fn into_total_ord(&self) -> Self::TotalOrdItem {
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
                 *self
             }
 
@@ -522,7 +521,7 @@ macro_rules! impl_into_total_ord_wrapped {
             type TotalOrdItem = TotalOrdWrap<$T>;
             type SourceItem = $T;
 
-            fn into_total_ord(&self) -> Self::TotalOrdItem {
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
                 TotalOrdWrap(self.clone())
             }
 
@@ -540,7 +539,7 @@ impl<T: Send + Sync + Copy> IntoTotalOrd for Option<T> {
     type TotalOrdItem = TotalOrdWrap<Option<T>>;
     type SourceItem = Option<T>;
 
-    fn into_total_ord(&self) -> Self::TotalOrdItem {
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
         TotalOrdWrap(*self)
     }
 
@@ -553,8 +552,8 @@ impl<'a> IntoTotalOrd for BytesHash<'a> {
     type TotalOrdItem = BytesHash<'a>;
     type SourceItem = BytesHash<'a>;
 
-    fn into_total_ord(&self) -> Self::TotalOrdItem {
-        self.clone()
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        *self
     }
 
     fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
@@ -566,8 +565,8 @@ impl<T: IntoTotalOrd + Send + Sync> IntoTotalOrd for &T {
     type TotalOrdItem = T::TotalOrdItem;
     type SourceItem = T::SourceItem;
 
-    fn into_total_ord(&self) -> Self::TotalOrdItem {
-        (*self).into_total_ord()
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        (*self).to_total_ord()
     }
 
     fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {

@@ -16,7 +16,7 @@ where
     let mut unique = PlHashSet::new();
     let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
         arr.into_iter()
-            .map(|opt_v| unique.insert(opt_v.into_total_ord()))
+            .map(|opt_v| unique.insert(opt_v.to_total_ord()))
             .collect_trusted()
     });
 

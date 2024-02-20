@@ -111,7 +111,7 @@ where
                     results.push(None);
                     continue;
                 };
-                let by_left_k = by_left_k.into_total_ord();
+                let by_left_k = by_left_k.to_total_ord();
                 let idx_left = (rel_idx_left + offset) as IdxSize;
                 let Some(left_val) = left_val_arr.get(idx_left as usize) else {
                     results.push(None);

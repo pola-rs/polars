@@ -14,7 +14,7 @@ where
     <Option<T::Physical<'a>> as IntoTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut hllp = HyperLogLog::new();
-    ca.iter().for_each(|item| hllp.add(&item.into_total_ord()));
+    ca.iter().for_each(|item| hllp.add(&item.to_total_ord()));
     let c = hllp.count() as IdxSize;
 
     Ok(Series::new(ca.name(), &[c]))

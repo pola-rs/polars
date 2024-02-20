@@ -25,7 +25,7 @@ where
             .map(|iter| {
                 // create hashes and keys
                 iter.into_iter()
-                    .map(|val| (build_hasher.hash_one(&val.into_total_ord()), val))
+                    .map(|val| (build_hasher.hash_one(&val.to_total_ord()), val))
                     .collect_trusted::<Vec<_>>()
             })
             .collect()
@@ -63,7 +63,7 @@ where
                         .iter()
                         .enumerate()
                         .for_each(|(idx, (h, k))| {
-                            let k = k.into_total_ord();
+                            let k = k.to_total_ord();
                             let idx = idx as IdxSize;
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
@@ -125,7 +125,7 @@ fn probe_outer<T, F, G, H>(
     let mut idx_a = 0;
     for probe_hashes in probe_hashes {
         for (h, key) in probe_hashes {
-            let key = key.into_total_ord();
+            let key = key.to_total_ord();
             let h = *h;
             // probe table that contains the hashed value
             let current_probe_table =

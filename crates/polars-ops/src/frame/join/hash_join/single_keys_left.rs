@@ -149,7 +149,7 @@ where
                 let mut result_idx_right = Vec::with_capacity(probe.size_hint().1.unwrap());
 
                 probe.enumerate().for_each(|(idx_a, k)| {
-                    let k = k.into_total_ord();
+                    let k = k.to_total_ord();
                     let idx_a = (idx_a + offset) as IdxSize;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe {

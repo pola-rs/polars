@@ -91,7 +91,7 @@ where
                 .as_slice()
                 .iter()
                 .copied()
-                .map(|v| random_state.hash_one(v.into_total_ord())),
+                .map(|v| random_state.hash_one(v.to_total_ord())),
         );
     });
     insert_null_hash(&ca.chunks, random_state, buf)
@@ -114,7 +114,7 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    *h = folded_multiply(random_state.hash_one(v.into_total_ord()) ^ *h, MULTIPLE);
+                    *h = folded_multiply(random_state.hash_one(v.to_total_ord()) ^ *h, MULTIPLE);
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -124,7 +124,7 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        let lh = random_state.hash_one(l.into_total_ord());
+                        let lh = random_state.hash_one(l.to_total_ord());
                         let to_hash = [null_h, lh][valid as usize];
 
                         // inlined from ahash. This ensures we combine with the previous state

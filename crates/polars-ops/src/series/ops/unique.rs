@@ -14,7 +14,7 @@ where
 {
     let mut map = PlIndexMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
     for item in items {
-        let item = item.into_total_ord();
+        let item = item.to_total_ord();
         map.entry(item)
             .and_modify(|cnt| {
                 *cnt += 1;

@@ -133,7 +133,7 @@ where
     let mut new_ca: BooleanChunked = arr
         .into_iter()
         .rev()
-        .map(|opt_v| unique.insert(opt_v.into_total_ord()))
+        .map(|opt_v| unique.insert(opt_v.to_total_ord()))
         .collect_reversed::<NoNull<BooleanChunked>>()
         .into_inner();
     new_ca.rename(ca.name());

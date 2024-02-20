@@ -22,7 +22,7 @@ pub(super) fn probe_inner<T, F, I>(
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
     probe.into_iter().enumerate_idx().for_each(|(idx_a, k)| {
-        let k = k.into_total_ord();
+        let k = k.to_total_ord();
         let idx_a = idx_a + local_offset;
         // probe table that contains the hashed value
         let current_probe_table =

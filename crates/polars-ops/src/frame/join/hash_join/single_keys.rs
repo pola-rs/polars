@@ -37,7 +37,7 @@ where
         let mut offset = 0;
         for it in keys {
             for k in it {
-                let k = k.into_total_ord();
+                let k = k.to_total_ord();
                 if !k.is_null() || join_nulls {
                     hm.entry(k).or_default().push(offset);
                 }
@@ -55,7 +55,7 @@ where
             .map(|key_portion| {
                 let mut partition_sizes = vec![0; n_partitions];
                 for key in key_portion.clone() {
-                    let key = key.into_total_ord();
+                    let key = key.to_total_ord();
                     let p = hash_to_partition(key.dirty_hash(), n_partitions);
                     unsafe {
                         *partition_sizes.get_unchecked_mut(p) += 1;
@@ -103,7 +103,7 @@ where
                 let mut partition_offsets =
                     per_thread_partition_offsets[t * n_partitions..(t + 1) * n_partitions].to_vec();
                 for (i, key) in key_portion.into_iter().enumerate() {
-                    let key = key.into_total_ord();
+                    let key = key.to_total_ord();
                     unsafe {
                         let p = hash_to_partition(key.dirty_hash(), n_partitions);
                         let off = partition_offsets.get_unchecked_mut(p);

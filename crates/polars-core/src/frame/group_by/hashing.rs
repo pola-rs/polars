@@ -153,7 +153,7 @@ where
         PlHashMap::with_capacity(init_size);
     let mut cnt = 0;
     a.for_each(|k| {
-        let k = k.into_total_ord();
+        let k = k.to_total_ord();
         let idx = cnt;
         cnt += 1;
         let entry = hash_tbl.entry(k);
@@ -216,7 +216,7 @@ where
 
                     let mut cnt = 0;
                     keys.iter().for_each(|k| {
-                        let k = k.into_total_ord();
+                        let k = k.to_total_ord();
                         let idx = cnt + offset;
                         cnt += 1;
 
@@ -281,7 +281,7 @@ where
 
                     let mut cnt = 0;
                     keys.for_each(|k| {
-                        let k = k.into_total_ord();
+                        let k = k.to_total_ord();
                         let idx = cnt + offset;
                         cnt += 1;
 
