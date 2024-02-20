@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;
+use polars_utils::total_ord::{IntoTotalOrd, TotalHash};
 
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
@@ -60,12 +61,13 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
-    T: Hash + Eq,
+    T: IntoTotalOrd,
+    <T as IntoTotalOrd>::Item: Hash + Eq,
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
-        if set.insert(val) {
+        if set.insert(val.into_total_ord()) {
             unique.push(idx as IdxSize)
         }
     });
@@ -83,8 +85,9 @@ macro_rules! arg_unique_ca {
 
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Ord,
+    T: PolarsNumericType,
+    T::Native: TotalHash + IntoTotalOrd,
+    <T::Native as IntoTotalOrd>::Item: Hash + Eq + Ord,
     ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
@@ -251,30 +254,6 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
-    }
-}
-
-impl ChunkUnique<Float32Type> for Float32Chunked {
-    fn unique(&self) -> PolarsResult<ChunkedArray<Float32Type>> {
-        let ca = self.bit_repr_small();
-        let ca = ca.unique()?;
-        Ok(ca._reinterpret_float())
-    }
-
-    fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        self.bit_repr_small().arg_unique()
-    }
-}
-
-impl ChunkUnique<Float64Type> for Float64Chunked {
-    fn unique(&self) -> PolarsResult<ChunkedArray<Float64Type>> {
-        let ca = self.bit_repr_large();
-        let ca = ca.unique()?;
-        Ok(ca._reinterpret_float())
-    }
-
-    fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        self.bit_repr_large().arg_unique()
     }
 }
 

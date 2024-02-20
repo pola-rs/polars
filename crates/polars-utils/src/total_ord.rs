@@ -1,7 +1,5 @@
-use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 
 use bytemuck::TransparentWrapper;
 
@@ -459,21 +457,40 @@ impl_into_total_ord_identity!(isize);
 impl_into_total_ord_identity!(char);
 impl_into_total_ord_identity!(String);
 
-trait Test {
-    fn test() -> u32;
+macro_rules! impl_into_total_ord_lifetimed_identity {
+    ($T: ty) => {
+        impl<'a> IntoTotalOrd for &'a $T {
+            type Item = &'a $T;
+
+            fn into_total_ord(&self) -> Self::Item {
+                *self
+            }
+        }
+    };
 }
 
-trait Test2 {
-    fn test_2() -> i32;
+impl_into_total_ord_lifetimed_identity!(str);
+impl_into_total_ord_lifetimed_identity!([u8]);
+
+macro_rules! impl_into_total_ord_wrapped {
+    ($T: ty) => {
+        impl IntoTotalOrd for $T {
+            type Item = TotalOrdWrap<$T>;
+
+            fn into_total_ord(&self) -> Self::Item {
+                TotalOrdWrap(self.clone())
+            }
+        }
+    };
 }
 
-trait IntoEquiv<T> {
-    fn into_equiv(&self) -> ();
-}
+impl_into_total_ord_wrapped!(f32);
+impl_into_total_ord_wrapped!(f64);
 
-fn try_equiv<T>(x: T)
-where
-    T: TotalHash + TotalEq + IntoEquiv<T>,
-{
-    let y = x.into_equiv();
+impl<T: Send + Sync + Copy> IntoTotalOrd for Option<T> {
+    type Item = TotalOrdWrap<Option<T>>;
+
+    fn into_total_ord(&self) -> Self::Item {
+        TotalOrdWrap(*self)
+    }
 }
