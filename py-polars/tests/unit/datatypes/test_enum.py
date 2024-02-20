@@ -364,7 +364,7 @@ def test_enum_categories_unique() -> None:
 
 
 def test_enum_categories_series_input() -> None:
-    categories = pl.Series("a", ["x", "y", "z"])
+    categories = pl.Series("a", ["a", "b", "c"])
     dtype = pl.Enum(categories)
     assert_series_equal(dtype.categories, categories.alias("category"))
 
