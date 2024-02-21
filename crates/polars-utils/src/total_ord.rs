@@ -3,6 +3,9 @@ use std::hash::{Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
 
+use crate::hashing::{BytesHash, DirtyHash};
+use crate::nulls::IsNull;
+
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
 pub fn canonical_f32(x: f32) -> f32 {
@@ -148,6 +151,37 @@ impl<T: Clone> Clone for TotalOrdWrap<T> {
 }
 
 impl<T: Copy> Copy for TotalOrdWrap<T> {}
+
+impl<T: IsNull> IsNull for TotalOrdWrap<T> {
+    const HAS_NULLS: bool = T::HAS_NULLS;
+    type Inner = T::Inner;
+
+    fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
+
+    fn unwrap_inner(self) -> Self::Inner {
+        self.0.unwrap_inner()
+    }
+}
+
+impl DirtyHash for f32 {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f32(*self).to_bits().dirty_hash()
+    }
+}
+
+impl DirtyHash for f64 {
+    fn dirty_hash(&self) -> u64 {
+        canonical_f64(*self).to_bits().dirty_hash()
+    }
+}
+
+impl<T: DirtyHash> DirtyHash for TotalOrdWrap<T> {
+    fn dirty_hash(&self) -> u64 {
+        self.0.dirty_hash()
+    }
+}
 
 macro_rules! impl_trivial_total {
     ($T: ty) => {
@@ -400,5 +434,142 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
         self.0
             .tot_cmp(&other.0)
             .then_with(|| self.1.tot_cmp(&other.1))
+    }
+}
+
+impl<'a> TotalHash for BytesHash<'a> {
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.hash(state)
+    }
+}
+
+impl<'a> TotalEq for BytesHash<'a> {
+    fn tot_eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+/// This elides creating a [`TotalOrdWrap`] for types that don't need it.
+pub trait ToTotalOrd {
+    type TotalOrdItem: Send + Sync;
+    type SourceItem;
+
+    fn to_total_ord(&self) -> Self::TotalOrdItem;
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem;
+}
+
+macro_rules! impl_to_total_ord_identity {
+    ($T: ty) => {
+        impl ToTotalOrd for $T {
+            type TotalOrdItem = $T;
+            type SourceItem = $T;
+
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                self.clone()
+            }
+
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
+            }
+        }
+    };
+}
+
+impl_to_total_ord_identity!(bool);
+impl_to_total_ord_identity!(u8);
+impl_to_total_ord_identity!(u16);
+impl_to_total_ord_identity!(u32);
+impl_to_total_ord_identity!(u64);
+impl_to_total_ord_identity!(u128);
+impl_to_total_ord_identity!(usize);
+impl_to_total_ord_identity!(i8);
+impl_to_total_ord_identity!(i16);
+impl_to_total_ord_identity!(i32);
+impl_to_total_ord_identity!(i64);
+impl_to_total_ord_identity!(i128);
+impl_to_total_ord_identity!(isize);
+impl_to_total_ord_identity!(char);
+impl_to_total_ord_identity!(String);
+
+macro_rules! impl_to_total_ord_lifetimed_identity {
+    ($T: ty) => {
+        impl<'a> ToTotalOrd for &'a $T {
+            type TotalOrdItem = &'a $T;
+            type SourceItem = &'a $T;
+
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                *self
+            }
+
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
+            }
+        }
+    };
+}
+
+impl_to_total_ord_lifetimed_identity!(str);
+impl_to_total_ord_lifetimed_identity!([u8]);
+
+macro_rules! impl_to_total_ord_wrapped {
+    ($T: ty) => {
+        impl ToTotalOrd for $T {
+            type TotalOrdItem = TotalOrdWrap<$T>;
+            type SourceItem = $T;
+
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                TotalOrdWrap(self.clone())
+            }
+
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item.0
+            }
+        }
+    };
+}
+
+impl_to_total_ord_wrapped!(f32);
+impl_to_total_ord_wrapped!(f64);
+
+impl<T: Send + Sync + Copy> ToTotalOrd for Option<T> {
+    type TotalOrdItem = TotalOrdWrap<Option<T>>;
+    type SourceItem = Option<T>;
+
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        TotalOrdWrap(*self)
+    }
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item.0
+    }
+}
+
+impl<'a> ToTotalOrd for BytesHash<'a> {
+    type TotalOrdItem = BytesHash<'a>;
+    type SourceItem = BytesHash<'a>;
+
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        *self
+    }
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item
+    }
+}
+
+impl<T: ToTotalOrd + Send + Sync> ToTotalOrd for &T {
+    type TotalOrdItem = T::TotalOrdItem;
+    type SourceItem = T::SourceItem;
+
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        (*self).to_total_ord()
+    }
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        T::peel_total_ord(ord_item)
     }
 }

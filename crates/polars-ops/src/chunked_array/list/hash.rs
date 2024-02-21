@@ -4,14 +4,16 @@ use polars_core::export::_boost_hash_combine;
 use polars_core::export::ahash::{self};
 use polars_core::export::rayon::prelude::*;
 use polars_core::utils::NoNull;
-use polars_core::POOL;
+use polars_core::{with_match_physical_float_polars_type, POOL};
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 
 fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &ahash::RandomState) -> u64
 where
-    T: PolarsIntegerType,
-    T::Native: Hash,
+    T: PolarsNumericType,
+    T::Native: TotalHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash,
 {
     // Note that we don't use the no null branch! This can break in unexpected ways.
     // for instance with threading we split an array in n_threads, this may lead to
@@ -30,7 +32,7 @@ where
         for opt_v in arr.iter() {
             match opt_v {
                 Some(v) => {
-                    let r = random_state.hash_one(v);
+                    let r = random_state.hash_one(v.to_total_ord());
                     hash_agg = _boost_hash_combine(hash_agg, r);
                 },
                 None => {
@@ -60,7 +62,12 @@ pub(crate) fn hash(ca: &mut ListChunked, build_hasher: ahash::RandomState) -> UI
             .map(|opt_s: Option<Series>| match opt_s {
                 None => null_hash,
                 Some(s) => {
-                    if s.bit_repr_is_large() {
+                    if s.dtype().is_float() {
+                        with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                            hash_agg(ca, &build_hasher)
+                        })
+                    } else if s.bit_repr_is_large() {
                         let ca = s.bit_repr_large();
                         hash_agg(&ca, &build_hasher)
                     } else {

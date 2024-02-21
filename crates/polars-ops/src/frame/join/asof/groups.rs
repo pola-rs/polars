@@ -4,10 +4,11 @@ use ahash::RandomState;
 use num_traits::Zero;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::utils::{split_ca, split_df};
-use polars_core::POOL;
+use polars_core::{with_match_physical_float_polars_type, POOL};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::nulls::IsNull;
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
@@ -71,7 +72,8 @@ fn asof_join_by_numeric<T, S, A, F>(
 where
     T: PolarsDataType,
     S: PolarsNumericType,
-    S::Native: Hash + Eq + DirtyHash + IsNull,
+    S::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <S::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash + IsNull + Copy,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
@@ -109,6 +111,7 @@ where
                     results.push(None);
                     continue;
                 };
+                let by_left_k = by_left_k.to_total_ord();
                 let idx_left = (rel_idx_left + offset) as IdxSize;
                 let Some(left_val) = left_val_arr.get(idx_left as usize) else {
                     results.push(None);
@@ -118,7 +121,7 @@ where
                 let group_probe_table = unsafe {
                     hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
                 };
-                let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
+                let Some(right_grp_idxs) = group_probe_table.get(&by_left_k) else {
                     results.push(None);
                     continue;
                 };
@@ -326,7 +329,15 @@ where
                 asof_join_by_binary::<T, A, F>(left_by, right_by, left_asof, right_asof, filter)
             },
             _ => {
-                if left_by_s.bit_repr_is_large() {
+                if left_by_s.dtype().is_float() {
+                    with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
+                        let left_by: &ChunkedArray<$T> = left_by_s.as_ref().as_ref().as_ref();
+                        let right_by: &ChunkedArray<$T> = right_by_s.as_ref().as_ref().as_ref();
+                        asof_join_by_numeric::<T, $T, A, F>(
+                            left_by, right_by, left_asof, right_asof, filter,
+                        )?
+                    })
+                } else if left_by_s.bit_repr_is_large() {
                     let left_by = left_by_s.bit_repr_large();
                     let right_by = right_by_s.bit_repr_large();
                     asof_join_by_numeric::<T, UInt64Type, A, F>(

@@ -1,11 +1,15 @@
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
 
 /// Only keeps track of membership in right table
-pub(super) fn create_probe_table_semi_anti<T, I>(keys: Vec<I>) -> Vec<PlHashSet<T>>
+pub(super) fn create_probe_table_semi_anti<T, I>(
+    keys: Vec<I>,
+) -> Vec<PlHashSet<<T as ToTotalOrd>::TotalOrdItem>>
 where
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
     I: IntoIterator<Item = T> + Copy + Send + Sync,
 {
     let n_partitions = _set_partition_size();
@@ -14,9 +18,10 @@ where
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     let par_iter = (0..n_partitions).into_par_iter().map(|partition_no| {
-        let mut hash_tbl: PlHashSet<T> = PlHashSet::with_capacity(_HASHMAP_INIT_SIZE);
+        let mut hash_tbl: PlHashSet<T::TotalOrdItem> = PlHashSet::with_capacity(_HASHMAP_INIT_SIZE);
         for keys in &keys {
             keys.into_iter().for_each(|k| {
+                let k = k.to_total_ord();
                 if partition_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                     hash_tbl.insert(k);
                 }
@@ -35,7 +40,8 @@ fn semi_anti_impl<T, I>(
 ) -> impl ParallelIterator<Item = (IdxSize, bool)>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
 {
     // first we hash one relation
     let hash_sets = create_probe_table_semi_anti(build);
@@ -61,6 +67,7 @@ where
             let mut results = Vec::with_capacity(probe_iter.size_hint().1.unwrap());
 
             probe_iter.enumerate().for_each(|(idx_a, k)| {
+                let k = k.to_total_ord();
                 let idx_a = (idx_a + offset) as IdxSize;
                 // probe table that contains the hashed value
                 let current_probe_table =
@@ -83,7 +90,8 @@ where
 pub(super) fn hash_join_tuples_left_anti<T, I>(probe: Vec<I>, build: Vec<I>) -> Vec<IdxSize>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
 {
     let par_iter = semi_anti_impl(probe, build)
         .filter(|tpls| !tpls.1)
@@ -94,7 +102,8 @@ where
 pub(super) fn hash_join_tuples_left_semi<T, I>(probe: Vec<I>, build: Vec<I>) -> Vec<IdxSize>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
 {
     let par_iter = semi_anti_impl(probe, build)
         .filter(|tpls| tpls.1)

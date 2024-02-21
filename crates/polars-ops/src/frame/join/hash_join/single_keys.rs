@@ -2,6 +2,7 @@ use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 
 use super::*;
@@ -12,9 +13,13 @@ use super::*;
 // Use a small element per thread threshold for debugging/testing purposes.
 const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 };
 
-pub(crate) fn build_tables<T, I>(keys: Vec<I>, join_nulls: bool) -> Vec<PlHashMap<T, IdxVec>>
+pub(crate) fn build_tables<T, I>(
+    keys: Vec<I>,
+    join_nulls: bool,
+) -> Vec<PlHashMap<<T as ToTotalOrd>::TotalOrdItem, IdxVec>>
 where
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
+    T: TotalHash + TotalEq + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Copy + Hash + Eq + DirtyHash + IsNull,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
 {
     // FIXME: change interface to split the input here, instead of taking
@@ -28,10 +33,11 @@ where
 
     // Don't bother parallelizing anything for small inputs.
     if num_keys_est < 2 * MIN_ELEMS_PER_THREAD {
-        let mut hm: PlHashMap<T, IdxVec> = PlHashMap::new();
+        let mut hm: PlHashMap<T::TotalOrdItem, IdxVec> = PlHashMap::new();
         let mut offset = 0;
         for it in keys {
             for k in it {
+                let k = k.to_total_ord();
                 if !k.is_null() || join_nulls {
                     hm.entry(k).or_default().push(offset);
                 }
@@ -49,6 +55,7 @@ where
             .map(|key_portion| {
                 let mut partition_sizes = vec![0; n_partitions];
                 for key in key_portion.clone() {
+                    let key = key.to_total_ord();
                     let p = hash_to_partition(key.dirty_hash(), n_partitions);
                     unsafe {
                         *partition_sizes.get_unchecked_mut(p) += 1;
@@ -85,7 +92,7 @@ where
         }
 
         // Scatter values into partitions.
-        let mut scatter_keys: Vec<T> = Vec::with_capacity(num_keys);
+        let mut scatter_keys: Vec<T::TotalOrdItem> = Vec::with_capacity(num_keys);
         let mut scatter_idxs: Vec<IdxSize> = Vec::with_capacity(num_keys);
         let scatter_keys_ptr = unsafe { SyncPtr::new(scatter_keys.as_mut_ptr()) };
         let scatter_idxs_ptr = unsafe { SyncPtr::new(scatter_idxs.as_mut_ptr()) };
@@ -96,6 +103,7 @@ where
                 let mut partition_offsets =
                     per_thread_partition_offsets[t * n_partitions..(t + 1) * n_partitions].to_vec();
                 for (i, key) in key_portion.into_iter().enumerate() {
+                    let key = key.to_total_ord();
                     unsafe {
                         let p = hash_to_partition(key.dirty_hash(), n_partitions);
                         let off = partition_offsets.get_unchecked_mut(p);
@@ -124,7 +132,8 @@ where
                 let partition_range = partition_offsets[p]..partition_offsets[p + 1];
                 let full_size = partition_range.len();
                 let mut conservative_size = _HASHMAP_INIT_SIZE.max(full_size / 64);
-                let mut hm: PlHashMap<T, IdxVec> = PlHashMap::with_capacity(conservative_size);
+                let mut hm: PlHashMap<T::TotalOrdItem, IdxVec> =
+                    PlHashMap::with_capacity(conservative_size);
 
                 unsafe {
                     for i in partition_range {
@@ -160,8 +169,6 @@ where
 pub(super) fn probe_to_offsets<T, I>(probe: &[I]) -> Vec<usize>
 where
     I: IntoIterator<Item = T> + Clone,
-    // <I as IntoIterator>::IntoIter: TrustedLen,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     probe
         .iter()

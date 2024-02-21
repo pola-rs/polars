@@ -20,7 +20,7 @@ use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
-use polars_utils::total_ord::TotalEq;
+use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -495,6 +495,15 @@ impl PartialEq for ObjectValue {
 impl TotalEq for ObjectValue {
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl TotalHash for ObjectValue {
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.hash(state);
     }
 }
 

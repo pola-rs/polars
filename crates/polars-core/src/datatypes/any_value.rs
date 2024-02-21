@@ -10,6 +10,7 @@ use polars_utils::format_smartstring;
 use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
+use polars_utils::total_ord::ToTotalOrd;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
@@ -893,8 +894,8 @@ impl AnyValue<'_> {
             (Int16(l), Int16(r)) => *l == *r,
             (Int32(l), Int32(r)) => *l == *r,
             (Int64(l), Int64(r)) => *l == *r,
-            (Float32(l), Float32(r)) => *l == *r,
-            (Float64(l), Float64(r)) => *l == *r,
+            (Float32(l), Float32(r)) => l.to_total_ord() == r.to_total_ord(),
+            (Float64(l), Float64(r)) => l.to_total_ord() == r.to_total_ord(),
             (String(l), String(r)) => l == r,
             (String(l), StringOwned(r)) => l == r,
             (StringOwned(l), String(r)) => l == r,
@@ -978,8 +979,8 @@ impl PartialOrd for AnyValue<'_> {
             (Int16(l), Int16(r)) => l.partial_cmp(r),
             (Int32(l), Int32(r)) => l.partial_cmp(r),
             (Int64(l), Int64(r)) => l.partial_cmp(r),
-            (Float32(l), Float32(r)) => l.partial_cmp(r),
-            (Float64(l), Float64(r)) => l.partial_cmp(r),
+            (Float32(l), Float32(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
+            (Float64(l), Float64(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
             (String(l), String(r)) => l.partial_cmp(*r),
             (Binary(l), Binary(r)) => l.partial_cmp(*r),
             _ => None,
