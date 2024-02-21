@@ -24,6 +24,19 @@ macro_rules! from_iterator {
                 ca.into_series()
             }
         }
+
+        impl<'a> FromIterator<Option<&'a $native>> for Series {
+            fn from_iter<I: IntoIterator<Item = Option<&'a $native>>>(iter: I) -> Self {
+                let ca: ChunkedArray<$variant> = iter
+                    .into_iter()
+                    .map(|item| match item {
+                        Some(value) => Some(*value),
+                        None => None,
+                    })
+                    .collect();
+                ca.into_series()
+            }
+        }
     };
 }
 
