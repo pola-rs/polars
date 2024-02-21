@@ -2,8 +2,6 @@
 # We're not pinning package dependencies, because our tests need to pass with the
 # latest version of the packages.
 
---prefer-binary
-
 # -----
 # BUILD
 # -----

@@ -1,5 +1,3 @@
---prefer-binary
-
 numpy
 pandas
 pyarrow
