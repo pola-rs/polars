@@ -74,7 +74,7 @@ def test_unique(s: pl.Series, expect: pl.Series) -> None:
     out = s.unique()
     assert_series_equal(expect, out)
 
-    out = s.n_unique()
+    out = s.n_unique()  # type: ignore[assignment]
     assert expect.len() == out
 
     out = s.gather(s.arg_unique()).sort()
@@ -138,6 +138,7 @@ def test_group_by() -> None:
     )
 
     expect = pl.Series("index", [[0, 1], [2, 3], [4], [5]], dtype=pl.List(pl.UInt32))
+    expect_no_null = expect.head(3)
 
     for group_keys in (("x",), ("x", "a")):
         for maintain_order in (True, False):
@@ -147,7 +148,7 @@ def test_group_by() -> None:
                     out = out.drop_nulls()
 
                 out = (
-                    out.group_by(group_keys, maintain_order=maintain_order)
+                    out.group_by(group_keys, maintain_order=maintain_order)  # type: ignore[assignment]
                     .agg("index")
                     .sort(pl.col("index").list.get(0))
                     .select("index")
@@ -155,9 +156,9 @@ def test_group_by() -> None:
                 )
 
                 if drop_nulls:
-                    assert_series_equal(expect.head(3), out)
+                    assert_series_equal(expect_no_null, out)  # type: ignore[arg-type]
                 else:
-                    assert_series_equal(expect, out)
+                    assert_series_equal(expect, out)  # type: ignore[arg-type]
 
 
 def test_joins() -> None:
@@ -195,20 +196,20 @@ def test_joins() -> None:
     ):
         how = "left"
         expect = pl.Series("rhs", [True, True, True, True, None, None])
-        out = df.join(rhs, on=join_on, how=how).sort("index").select("rhs").to_series()
+        out = df.join(rhs, on=join_on, how=how).sort("index").select("rhs").to_series()  # type: ignore[arg-type]
         assert_series_equal(expect, out)
 
         how = "inner"
         expect = pl.Series("index", [0, 1, 2, 3], dtype=pl.UInt32)
         out = (
-            df.join(rhs, on=join_on, how=how).sort("index").select("index").to_series()
+            df.join(rhs, on=join_on, how=how).sort("index").select("index").to_series()  # type: ignore[arg-type]
         )
         assert_series_equal(expect, out)
 
         how = "outer"
         expect = pl.Series("rhs", [True, True, True, True, None, None, True])
         out = (
-            df.join(rhs, on=join_on, how=how)
+            df.join(rhs, on=join_on, how=how)  # type: ignore[arg-type]
             .sort("index", nulls_last=True)
             .select("rhs")
             .to_series()
@@ -218,7 +219,7 @@ def test_joins() -> None:
         how = "semi"
         expect = pl.Series("x", [-0.0, 0.0, float("-nan"), float("nan")])
         out = (
-            df.join(rhs, on=join_on, how=how)
+            df.join(rhs, on=join_on, how=how)  # type: ignore[arg-type]
             .sort("index", nulls_last=True)
             .select("x")
             .to_series()
@@ -228,7 +229,7 @@ def test_joins() -> None:
         how = "anti"
         expect = pl.Series("x", [1.0, None])
         out = (
-            df.join(rhs, on=join_on, how=how)
+            df.join(rhs, on=join_on, how=how)  # type: ignore[arg-type]
             .sort("index", nulls_last=True)
             .select("x")
             .to_series()
@@ -237,7 +238,7 @@ def test_joins() -> None:
 
     # test asof
     # note that nans never join because nans are always greater than the other
-    # side of the comparison (in this case the tolerance)
+    # side of the comparison (i.e. NaN > tolerance)
     expect = pl.Series("rhs", [True, True, None, None, None, None])
     out = (
         df.sort("x")

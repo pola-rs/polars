@@ -535,6 +535,11 @@ macro_rules! impl_to_total_ord_wrapped {
 impl_to_total_ord_wrapped!(f32);
 impl_to_total_ord_wrapped!(f64);
 
+/// This is safe without needing to map the option value to TotalOrdWrap, since
+/// for example:
+/// TotalOrdWrap<Option<T>> implements Eq + Hash, iff:
+/// Option<T> implements TotalEq + TotalHash, iff:
+/// T implements TotalEq + TotalHash
 impl<T: Send + Sync + Copy> ToTotalOrd for Option<T> {
     type TotalOrdItem = TotalOrdWrap<Option<T>>;
     type SourceItem = Option<T>;
