@@ -298,6 +298,8 @@ class _DataTypeMappings:
             ("u", 8): UInt64,
             ("f", 4): Float32,
             ("f", 8): Float64,
+            ("m", 8): Duration,
+            ("M", 8): Datetime,
         }
 
     @property
@@ -469,6 +471,8 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
     dtype = np.dtype(dtype_char)
     if dtype.kind == "U":
         return String
+    elif dtype.kind == "S":
+        return Binary
     try:
         return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
             (dtype.kind, dtype.itemsize)

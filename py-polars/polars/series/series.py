@@ -268,17 +268,18 @@ class Series:
                 version="0.20.6",
             )
 
-        # If 'Unknown' treat as None to attempt inference
+        # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
-        # Raise early error on invalid dtype
-        elif (
-            dtype is not None
-            and not is_polars_dtype(dtype)
-            and py_type_to_dtype(dtype, raise_unmatched=False) is None
-        ):
-            msg = f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
-            raise ValueError(msg)
+        elif dtype is not None and not is_polars_dtype(dtype):
+            # Raise early error on invalid dtype
+            if not is_polars_dtype(
+                pl_dtype := py_type_to_dtype(dtype, raise_unmatched=False)
+            ):
+                msg = f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
+                raise ValueError(msg)
+            else:
+                dtype = pl_dtype
 
         # Handle case where values are passed as the first argument
         original_name: str | None = None
