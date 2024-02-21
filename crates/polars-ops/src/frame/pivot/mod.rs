@@ -77,6 +77,45 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     }
 }
 
+/// Determine `values` columns.
+///
+/// When the optional `values` parameter is `None`, we use all remaining columns in the `DataFrame`
+/// after `index` and `columns` have been excluded. When `values` is `Some`, we return a vector of
+/// strings.
+fn _get_values_columns<I, S>(
+    df: &DataFrame,
+    index: &[String],
+    columns: &[String],
+    values: Option<I>,
+) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    match values {
+        Some(v) => v
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>(),
+        None => {
+            let column_names = df.get_column_names_owned();
+            let mut column_set = PlHashSet::<String>::with_capacity(column_names.len());
+
+            // Column names are always unique.
+            column_names.into_iter().for_each(|s| {
+                column_set.insert_unique_unchecked(s.to_string());
+            });
+
+            // Remove `index` and `column` columns.
+            index.iter().chain(columns.iter()).for_each(|s| {
+                column_set.remove(s);
+            });
+
+            column_set.drain().collect()
+        },
+    }
+}
+
 /// Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
 ///
 /// # Note
@@ -107,19 +146,7 @@ where
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let values = match values {
-        Some(v) => v
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect::<Vec<_>>(),
-        None => pivot_df
-            // No value columns provided, use remaining columns
-            .get_column_names()
-            .into_iter()
-            .map(|s| s.to_string())
-            .filter(|s| !(index.contains(s) | columns.contains(s)))
-            .collect(),
-    };
+    let values = _get_values_columns(pivot_df, &index, &columns, values);
     pivot_impl(
         pivot_df,
         &index,
@@ -162,19 +189,7 @@ where
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let values = match values {
-        Some(v) => v
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect::<Vec<_>>(),
-        None => pivot_df
-            // No value columns provided, use remaining columns
-            .get_column_names()
-            .into_iter()
-            .map(|s| s.to_string())
-            .filter(|s| !(index.contains(s) | columns.contains(s)))
-            .collect(),
-    };
+    let values = _get_values_columns(pivot_df, &index, &columns, values);
     pivot_impl(
         pivot_df,
         &index,
