@@ -64,6 +64,13 @@ impl FromIterator<String> for Series {
     }
 }
 
+impl FromIterator<Option<String>> for Series {
+    fn from_iter<I: IntoIterator<Item = Option<String>>>(iter: I) -> Self {
+        let ca: StringChunked = iter.into_iter().collect();
+        ca.into_series()
+    }
+}
+
 pub type SeriesPhysIter<'a> = Box<dyn ExactSizeIterator<Item = AnyValue<'a>> + 'a>;
 
 impl Series {
