@@ -7246,11 +7246,20 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self"],
+        message=(
+            "The order of the parameters of `pivot` will change in the next breaking release."
+            " The order will become `index, columns, values` with `values` as an optional parameter."
+            " Use keyword arguments to silence this warning."
+        ),
+        version="0.20.8",
+    )
     def pivot(
         self,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
@@ -7265,15 +7274,15 @@ class DataFrame:
 
         Parameters
         ----------
+        values
+            Column values to aggregate. Can be multiple columns if the *columns*
+            arguments contains multiple columns as well. If None, all remaining columns
+            will be used.
         index
             One or multiple keys to group by.
         columns
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
-        values
-            Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well. If None, all remaining columns
-            will be used.
         aggregate_function
             Choose from:
 

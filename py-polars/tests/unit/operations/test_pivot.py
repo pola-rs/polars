@@ -44,7 +44,7 @@ def test_pivot_no_values() -> None:
             "N2": [1, 2, 2, 4, 2],
         }
     )
-    result = df.pivot(index="foo", columns="bar", aggregate_function=None)
+    result = df.pivot(index="foo", columns="bar", values=None, aggregate_function=None)
     expected = pl.DataFrame(
         {
             "foo": ["A", "B", "C"],
@@ -60,7 +60,10 @@ def test_pivot_no_values() -> None:
             "N2_bar_o": [None, None, 2],
         }
     )
-    assert_frame_equal(result, expected)
+
+    # the order of the output columns is volatile
+    assert set(result.columns) == set(expected.columns)
+    assert_frame_equal(result, expected.select(result.columns))
 
 
 def test_pivot_list() -> None:
@@ -75,9 +78,9 @@ def test_pivot_list() -> None:
         }
     )
     out = df.pivot(
-        values="b",
         index="a",
         columns="a",
+        values="b",
         aggregate_function="first",
         sort_columns=True,
     )
