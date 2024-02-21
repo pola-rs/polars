@@ -50,6 +50,13 @@ impl<'a> FromIterator<&'a str> for Series {
     }
 }
 
+impl<'a> FromIterator<Option<&'a str>> for Series {
+    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
+        let ca: StringChunked = iter.into_iter().collect();
+        ca.into_series()
+    }
+}
+
 impl FromIterator<String> for Series {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
         let ca: StringChunked = iter.into_iter().collect();
