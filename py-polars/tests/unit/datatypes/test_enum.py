@@ -402,3 +402,26 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
         pl.ComputeError, match="conversion from `u64` to `u32` failed in column"
     ):
         series.cast(enum_dtype)
+
+def test_enum_creating_col_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": ["a", "b", "c"],
+            "col2": ["d", "e", "f"],
+            "col3": ["g", "h", "i"],
+        },
+        schema={
+            "col1": pl.Enum(["a", "b", "c"]),
+            "col2": pl.Categorical(),
+            "col3": pl.Enum(["g", "h", "i"]),
+        },
+    )
+
+    out = df.select(pl.col(pl.Enum))
+    assert out.columns == ["col1", "col3"]
+    assert "col2" not in out.columns
+
+    expected_col1 = pl.Series("col1", ["a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    expected_col3 = pl.Series("col3", ["g", "h", "i"], dtype=pl.Enum(["g", "h", "i"]))
+    assert_series_equal(out.get_column("col1"), expected_col1)
+    assert_series_equal(out.get_column("col3"), expected_col3)
