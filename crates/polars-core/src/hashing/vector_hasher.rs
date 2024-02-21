@@ -1,7 +1,7 @@
 use arrow::bitmap::utils::get_bit_unchecked;
 #[cfg(feature = "group_by_list")]
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
-use polars_utils::total_ord::{ToTotalOrd, TotalHash};
+use polars_utils::total_ord::{TotalHash, TotalOrdWrap};
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
@@ -71,8 +71,7 @@ fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Ve
 fn numeric_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Hash,
+    T::Native: TotalHash,
 {
     // Note that we don't use the no null branch! This can break in unexpected ways.
     // for instance with threading we split an array in n_threads, this may lead to
@@ -91,7 +90,7 @@ where
                 .as_slice()
                 .iter()
                 .copied()
-                .map(|v| random_state.hash_one(v.to_total_ord())),
+                .map(|v| random_state.hash_one(TotalOrdWrap(v))),
         );
     });
     insert_null_hash(&ca.chunks, random_state, buf)
@@ -100,8 +99,7 @@ where
 fn numeric_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Hash,
+    T::Native: TotalHash,
 {
     let null_h = get_null_hash_value(&random_state);
 
@@ -114,7 +112,7 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    *h = folded_multiply(random_state.hash_one(v.to_total_ord()) ^ *h, MULTIPLE);
+                    *h = folded_multiply(random_state.hash_one(TotalOrdWrap(v)) ^ *h, MULTIPLE);
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -124,7 +122,7 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        let lh = random_state.hash_one(l.to_total_ord());
+                        let lh = random_state.hash_one(TotalOrdWrap(l));
                         let to_hash = [null_h, lh][valid as usize];
 
                         // inlined from ahash. This ensures we combine with the previous state

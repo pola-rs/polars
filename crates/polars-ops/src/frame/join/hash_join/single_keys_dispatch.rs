@@ -2,7 +2,7 @@ use arrow::array::PrimitiveArray;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+use polars_utils::total_ord::{TotalEq, TotalHash};
 
 use super::*;
 use crate::series::SeriesSealed;
@@ -186,10 +186,7 @@ fn group_join_inner<T>(
 where
     T: PolarsDataType,
     for<'a> &'a T::Array: IntoIterator<Item = Option<&'a T::Physical<'a>>>,
-    for<'a> T::Physical<'a>:
-        Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + IsNull + ToTotalOrd,
-    for<'a> <T::Physical<'a> as ToTotalOrd>::TotalOrdItem:
-        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+    for<'a> T::Physical<'a>: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + IsNull,
 {
     let n_threads = POOL.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
@@ -272,10 +269,8 @@ fn num_group_join_left<T>(
 ) -> PolarsResult<LeftJoinIds>
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + TotalEq + DirtyHash + IsNull + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Copy + Hash + Eq + DirtyHash + IsNull,
-    Option<T::Native>: DirtyHash + ToTotalOrd,
-    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: DirtyHash,
+    T::Native: TotalHash + TotalEq + DirtyHash + IsNull,
+    Option<T::Native>: DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();
@@ -331,8 +326,7 @@ fn hash_join_outer<T>(
 ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + TotalEq + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + IsNull,
+    T::Native: TotalHash + TotalEq,
 {
     let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
 
@@ -427,10 +421,8 @@ fn num_group_join_anti_semi<T>(
 ) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
-    Option<T::Native>: DirtyHash + ToTotalOrd,
-    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: DirtyHash,
+    T::Native: TotalHash + TotalEq + DirtyHash,
+    Option<T::Native>: DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();

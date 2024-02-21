@@ -1,22 +1,19 @@
-use std::hash::Hash;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::bit_util::*;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + TotalEq + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+    T::Native: TotalHash + TotalEq,
 {
     let mut unique = PlHashSet::new();
     let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
         arr.into_iter()
-            .map(|opt_v| unique.insert(opt_v.to_total_ord()))
+            .map(|opt_v| unique.insert(TotalOrdWrap(opt_v)))
             .collect_trusted()
     });
 

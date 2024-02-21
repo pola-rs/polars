@@ -1,8 +1,6 @@
-use std::hash::Hash;
-
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 #[cfg(feature = "approx_unique")]
 use crate::series::ops::approx_algo::HyperLogLog;
@@ -10,11 +8,10 @@ use crate::series::ops::approx_algo::HyperLogLog;
 fn approx_n_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsDataType,
-    Option<T::Physical<'a>>: TotalHash + TotalEq + ToTotalOrd,
-    <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+    Option<T::Physical<'a>>: TotalHash + TotalEq,
 {
     let mut hllp = HyperLogLog::new();
-    ca.iter().for_each(|item| hllp.add(&item.to_total_ord()));
+    ca.iter().for_each(|item| hllp.add(&TotalOrdWrap(item)));
     let c = hllp.count() as IdxSize;
 
     Ok(Series::new(ca.name(), &[c]))

@@ -12,7 +12,6 @@ mod merge_sorted;
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
 
 use ahash::RandomState;
 pub use args::*;

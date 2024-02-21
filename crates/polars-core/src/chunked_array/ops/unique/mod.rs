@@ -1,7 +1,5 @@
-use std::hash::Hash;
-
 use arrow::bitmap::MutableBitmap;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
@@ -61,13 +59,12 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
-    T: ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+    T: TotalHash + TotalEq,
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
-        if set.insert(val.to_total_ord()) {
+        if set.insert(TotalOrdWrap(val)) {
             unique.push(idx as IdxSize)
         }
     });
@@ -86,8 +83,7 @@ macro_rules! arg_unique_ca {
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + TotalEq + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
+    T::Native: TotalHash + TotalEq,
     ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
@@ -104,10 +100,10 @@ where
                         let mut iter = self.iter();
                         let last = iter.next().unwrap();
                         arr.push(last);
-                        let mut last = last.to_total_ord();
+                        let mut last = TotalOrdWrap(last);
 
                         let to_extend = iter.filter(|opt_val| {
-                            let opt_val_tot_ord = opt_val.to_total_ord();
+                            let opt_val_tot_ord = TotalOrdWrap(*opt_val);
                             let out = opt_val_tot_ord != last;
                             last = opt_val_tot_ord;
                             out
@@ -149,12 +145,12 @@ where
                     }
 
                     let mut iter = self.iter();
-                    let mut last = iter.next().unwrap().to_total_ord();
+                    let mut last = TotalOrdWrap(iter.next().unwrap());
 
                     count += 1;
 
                     iter.for_each(|opt_val| {
-                        let opt_val = opt_val.to_total_ord();
+                        let opt_val = TotalOrdWrap(opt_val);
                         if opt_val != last {
                             last = opt_val;
                             count += 1;

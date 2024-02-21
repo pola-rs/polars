@@ -1,5 +1,3 @@
-use std::hash::Hash;
-
 use ahash::RandomState;
 use num_traits::Zero;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
@@ -8,7 +6,7 @@ use polars_core::{with_match_physical_float_polars_type, POOL};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::nulls::IsNull;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
@@ -72,8 +70,7 @@ fn asof_join_by_numeric<T, S, A, F>(
 where
     T: PolarsDataType,
     S: PolarsNumericType,
-    S::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <S::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash + IsNull + Copy,
+    S::Native: TotalHash + TotalEq + DirtyHash + IsNull + Copy,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
@@ -111,7 +108,7 @@ where
                     results.push(None);
                     continue;
                 };
-                let by_left_k = by_left_k.to_total_ord();
+                let by_left_k = TotalOrdWrap(*by_left_k);
                 let idx_left = (rel_idx_left + offset) as IdxSize;
                 let Some(left_val) = left_val_arr.get(idx_left as usize) else {
                     results.push(None);
@@ -188,7 +185,8 @@ where
                     let group_probe_table = unsafe {
                         hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
                     };
-                    let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
+                    let Some(right_grp_idxs) = group_probe_table.get(&TotalOrdWrap(*by_left_k))
+                    else {
                         results.push(None);
                         continue;
                     };
