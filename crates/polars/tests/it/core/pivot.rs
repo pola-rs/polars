@@ -7,16 +7,17 @@ use polars_ops::pivot::{pivot, pivot_stable, PivotAgg};
 fn test_pivot_date_() -> PolarsResult<()> {
     let mut df = df![
         "index" => [8, 2, 3, 6, 3, 6, 2, 2],
-        "columns" => [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000],
-        "values" => [1, 1, 1, 1, 1, 1, 1, 1],
+        "values1" => [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000],
+        "values2" => [1, 1, 1, 1, 1, 1, 1, 1],
     ]?;
-    df.try_apply("columns", |s| s.cast(&DataType::Date))?;
+    df.try_apply("values1", |s| s.cast(&DataType::Date))?;
 
+    // Test with date as the `columns` input
     let out = pivot(
         &df,
         ["index"],
-        ["columns"],
-        Some(["values"]),
+        ["values1"],
+        Some(["values2"]),
         true,
         Some(PivotAgg::Count),
         None,
@@ -29,11 +30,12 @@ fn test_pivot_date_() -> PolarsResult<()> {
     ]?;
     assert!(out.equals_missing(&expected));
 
+    // Test with date as the `values` input.
     let mut out = pivot_stable(
         &df,
         ["index"],
-        ["values"],
-        Some(["columns"]), // swapped on purpose
+        ["values2"],
+        Some(["values1"]),
         true,
         Some(PivotAgg::First),
         None,
