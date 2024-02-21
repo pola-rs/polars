@@ -9,7 +9,7 @@ use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
-use polars_io::pl_async::get_runtime;
+use polars_io::pl_async::{get_runtime, with_concurrency_budget};
 #[cfg(feature = "parquet")]
 use polars_io::{is_cloud_url, SerReader};
 
@@ -25,6 +25,7 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
                 .map(|path| {
                     count_rows_csv(
                         path,
+                        options.separator,
                         options.quote_char,
                         options.comment_prefix.as_ref(),
                         options.eol_char,
@@ -72,11 +73,11 @@ pub(super) fn count_rows_parquet(
                 #[cfg(feature = "cloud")]
                 {
                     let uri = path.to_string_lossy();
-                    get_runtime().block_on(async {
+                    get_runtime().block_on(with_concurrency_budget(1, || async {
                         let mut reader =
                             ParquetAsyncReader::from_uri(&uri, cloud_options, None, None).await?;
                         reader.num_rows().await
-                    })
+                    }))
                 }
             } else {
                 let file = polars_utils::open_file(path)?;

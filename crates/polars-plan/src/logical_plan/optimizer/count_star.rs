@@ -20,6 +20,7 @@ impl OptimizationRule for CountStar {
     ) -> Option<ALogicalPlan> {
         let mut paths = Vec::new();
         visit_logical_plan_for_scan_paths(&mut paths, node, lp_arena).map(|scan_type| {
+            // MapFunction needs a leaf node, hence we create a dummy placeholder node
             let placeholder = ALogicalPlan::DataFrameScan {
                 df: Arc::new(Default::default()),
                 schema: Arc::new(Default::default()),
@@ -59,12 +60,19 @@ fn visit_logical_plan_for_scan_paths(
             }
             let mut scan_type = None;
             for input in inputs {
-                // We are assuming all scan_types to be the same type.
                 match visit_logical_plan_for_scan_paths(all_paths, *input, lp_arena) {
                     Some(leaf_scan_type) => {
-                        if scan_type.is_none() {
-                            scan_type = Some(leaf_scan_type)
-                        }
+                        match &scan_type {
+                            None => scan_type = Some(leaf_scan_type),
+                            Some(scan_type) => {
+                                // All scans must be of the same type (e.g. csv / parquet)
+                                if std::mem::discriminant(scan_type)
+                                    != std::mem::discriminant(&leaf_scan_type)
+                                {
+                                    return None;
+                                }
+                            },
+                        };
                     },
                     None => return None,
                 }

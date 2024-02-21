@@ -24,7 +24,7 @@ use crate::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
     n_chunks: usize,
-    expected_fields: usize,
+    expected_fields: Option<usize>,
     separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -42,7 +42,7 @@ pub(crate) fn get_file_chunks(
 
         let end_pos = match next_line_position(
             &bytes[search_pos..],
-            Some(expected_fields),
+            expected_fields,
             separator,
             quote_char,
             eol_char,
@@ -683,7 +683,11 @@ mod test {
         let s = std::fs::read_to_string(path).unwrap();
         let bytes = s.as_bytes();
         // can be within -1 / +1 bounds.
-        assert!((get_file_chunks(bytes, 10, 4, b',', None, b'\n').len() as i32 - 10).abs() <= 1);
-        assert!((get_file_chunks(bytes, 8, 4, b',', None, b'\n').len() as i32 - 8).abs() <= 1);
+        assert!(
+            (get_file_chunks(bytes, 10, Some(4), b',', None, b'\n').len() as i32 - 10).abs() <= 1
+        );
+        assert!(
+            (get_file_chunks(bytes, 8, Some(4), b',', None, b'\n').len() as i32 - 8).abs() <= 1
+        );
     }
 }
