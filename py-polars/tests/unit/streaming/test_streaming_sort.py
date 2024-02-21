@@ -92,6 +92,9 @@ def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
         assert_series_equal(out, s.sort(descending=descending))
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -111,6 +114,9 @@ def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
     assert "df -> sort" in err
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -168,6 +174,9 @@ def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
     }
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(
