@@ -577,8 +577,7 @@ fn is_in_string_categorical(
     };
     Ok(ca_in
         .apply_values_generic(|val| set.contains(val))
-        .with_name(ca_in.name())
-    )
+        .with_name(ca_in.name()))
 }
 
 #[cfg(feature = "dtype-categorical")]
