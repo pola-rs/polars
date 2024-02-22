@@ -320,7 +320,7 @@ impl_float_eq_ord!(f32);
 impl_float_eq_ord!(f64);
 
 impl TotalHash for f32 {
-    #[inline(always)]
+    #[inline]
     fn tot_hash<H>(&self, state: &mut H)
     where
         H: Hasher,
@@ -330,7 +330,7 @@ impl TotalHash for f32 {
 }
 
 impl TotalHash for f64 {
-    #[inline(always)]
+    #[inline]
     fn tot_hash<H>(&self, state: &mut H)
     where
         H: Hasher,
