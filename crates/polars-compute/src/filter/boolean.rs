@@ -14,6 +14,14 @@ fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
         }
     }
 
+    // Fast path: mask is all-0s or all-1s.
+    let mask_bits_set = mask.set_bits();
+    if mask_bits_set == 0 {
+        return Bitmap::new();
+    } else if mask_bits_set == mask.len() {
+        return values.clone();
+    }
+
     // Overallocate by 1 u64 so we can always do a full u64 write.
     let words = mask.set_bits().div_ceil(64) + 1;
     let mut out_vec: Vec<u8> = Vec::with_capacity(words * 8);
@@ -23,7 +31,7 @@ fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
 
     if polars_utils::cpuid::has_fast_bmi2() {
         #[cfg(target_feature = "bmi2")]
-        for (v, m) in values.iter_u32().zip(mask.iter_u32()) {
+        for (v, m) in values.fast_iter_u32().zip(mask.fast_iter_u32()) {
             // Fast-path, all-0 mask.
             // PEXT is so fast that this is the only fast-path that is worth it.
             if m == 0 {
@@ -45,7 +53,7 @@ fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
             }
         }
     } else {
-        for (v, m) in values.iter_u32().zip(mask.iter_u32()) {
+        for (v, m) in values.fast_iter_u32().zip(mask.fast_iter_u32()) {
             // Fast-path, all-0 mask.
             if m == 0 {
                 continue;

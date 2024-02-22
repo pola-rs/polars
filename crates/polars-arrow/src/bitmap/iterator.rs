@@ -1,9 +1,29 @@
 use super::bitmask::BitMask;
 use super::Bitmap;
 use crate::trusted_len::TrustedLen;
-use num_traits::Num;
 
 use polars_utils::slice::load_padded_le_u64;
+
+/// Calculates how many iterations are remaining, assuming:
+///  - We have length elements left.
+///  - We need max(consume, min_length_for_iter) elements to start a new iteration.
+///  - On each iteration we consume the given amount of elements.
+fn calc_iters_remaining(length: usize, min_length_for_iter: usize, consume: usize) -> usize {
+    let min_length_for_iter = min_length_for_iter.max(consume);
+    if length < min_length_for_iter {
+        return 0;
+    }
+
+    let obvious_part = length - min_length_for_iter;
+    let obvious_iters = obvious_part / consume; 
+    // let obvious_part_remaining = obvious_part % consume;
+    // let total_remaining = min_length_for_iter + obvious_part_remaining;
+    // assert!(total_remaining >= min_length_for_iter);          // We have at least 1 more iter.
+    // assert!(obvious_part_remaining < consume);                // Basic modulo property.
+    // assert!(total_remaining < min_length_for_iter + consume); // Add min_length_for_iter to both sides.
+    // assert!(total_remaining - consume < min_length_for_iter); // Not enough remaining after 1 iter.
+    1 + obvious_iters                                            // Thus always exactly 1 more iter.
+}
 
 pub struct TrueIdxIter<'a> {
     mask: BitMask<'a>,
@@ -76,19 +96,45 @@ unsafe impl<'a> TrustedLen for TrueIdxIter<'a> {}
 
 pub struct FastU32BitmapIter<'a> {
     bytes: &'a [u8],
-    shift: usize,
-    remainder_bits: usize,
+    shift: u32,
+    bits_left: usize,
 }
 
 impl<'a> FastU32BitmapIter<'a> {
-    pub fn new(bm: &'a Bitmap) -> Self {
-        let (bytes, shift, len) = bm.as_slice();
-        
-        let fast_iter_count = bytes.len().saturating_sub(4) / 4;
-        let remainder_bits = len - 32 * fast_iter_count;
-        assert!(remainder_bits < 64);
-        
-        Self { bytes, shift, remainder_bits }
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
+        assert!(bytes.len() >= offset + 8 * len);
+        let shift = (offset % 8) as u32;
+        let bytes = &bytes[offset / 8..];
+        Self { bytes, shift, bits_left: len }
+    }
+    
+    // The iteration logic that would normally follow the fast-path.
+    fn next_remainder(&mut self) -> Option<u32> {
+        if self.bits_left > 0 {
+            let word = load_padded_le_u64(self.bytes);
+            let mask;
+            if self.bits_left >= 32 {
+                mask = u32::MAX;
+                self.bits_left -= 32;
+                self.bytes = unsafe { self.bytes.get_unchecked(4..) };
+            } else {
+                mask = (1 << self.bits_left) - 1;
+                self.bits_left = 0;
+            }
+
+            return Some((word >> self.shift) as u32 & mask);
+        }
+
+        None
+    }
+    
+    /// Returns the remainder bits and how many there are,
+    /// assuming the iterator was fully consumed.
+    pub fn remainder(mut self) -> (u64, usize) {
+        let bits_left = self.bits_left;
+        let lo = self.next_remainder().unwrap_or(0);
+        let hi = self.next_remainder().unwrap_or(0);
+        (((hi as u64) << 32) | (lo as u64), bits_left)
     }
 }
 
@@ -98,19 +144,16 @@ impl<'a> Iterator for FastU32BitmapIter<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // Fast path, can load a whole u64.
-        // FIXME: not correct when bytes.len() >= 8 but remainder < 64
-        if let Some(next_chunk) = self.bytes.get(0..8) {
-            let ret = u64::from_le_bytes(next_chunk.try_into().unwrap());
-            self.bytes = &self.bytes[4..];
-            return Some((ret >> self.shift) as u32);
-        }
-        
-        // Slow path, remainder.
-        if self.remainder_bits > 0 {
-            let word = load_padded_le_u64(self.bytes);
-            let ret = (word >> self.shift) & ((1 << self.remainder_bits) - 1);
-            self.remainder_bits = self.remainder_bits.saturating_sub(32);
-            return Some(ret as u32);
+        if self.bits_left >= 64 {
+            let chunk;
+            unsafe {
+                // SAFETY: bits_left ensures this is in-bounds.
+                chunk = self.bytes.get_unchecked(0..8);
+                self.bytes = self.bytes.get_unchecked(4..);
+            }
+            self.bits_left -= 32;
+            let word = u64::from_le_bytes(chunk.try_into().unwrap());
+            return Some((word >> self.shift) as u32);
         }
         
         None
@@ -118,81 +161,56 @@ impl<'a> Iterator for FastU32BitmapIter<'a> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let fast_iters = self.bytes.len().saturating_sub(4) / 4;
-        let remaining_iters = self.remainder_bits.div_ceil(32);
-        let len = fast_iters + remaining_iters;
-        (len, Some(len))
+        let hint = calc_iters_remaining(self.bits_left, 64, 32);
+        (hint, Some(hint))
     }
 }
 
 unsafe impl<'a> TrustedLen for FastU32BitmapIter<'a> {}
 
 
-pub struct FastU64BitmapIter<'a> {
-    bytes: &'a [u8],
-    shift: usize,
-    len: usize,
-}
-
-impl<'a> FastU64BitmapIter<'a> {
-    pub fn new(bm: &'a Bitmap) -> Self {
-        let (bytes, shift, len) = bm.as_slice();
-        Self { bytes, shift, len }
-    }
-}
-
-impl<'a> Iterator for FastU64BitmapIter<'a> {
-    type Item = u64;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.len >= 65 {
-            if let Some(next_chunk) = self.bytes.get(0..8) {
-                let b = unsafe { *self.bytes.get_unchecked(8) };
-                let ret = u64::from_le_bytes(next_chunk.try_into().unwrap());
-                self.bytes = &self.bytes[8..];
-                self.len -= 64;
-                let merged = ((b as u128) << 64) | (ret as u128) >> self.shift % 64;
-                return Some(merged as u64);
-            } else {
-                unsafe { std::hint::unreachable_unchecked() }
-            }
-        }
-        
-        None
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let hint = self.len.div_ceil(64);
-        (hint, Some(hint))
-    }
-}
-
-unsafe impl<'a> TrustedLen for FastU64BitmapIter<'a> {}
-
 pub struct FastU56BitmapIter<'a> {
     bytes: &'a [u8],
-    shift: usize,
-    remainder_bits: usize,
+    shift: u32,
+    bits_left: usize,
 }
 
 impl<'a> FastU56BitmapIter<'a> {
-    pub fn new(bm: &'a Bitmap) -> Self {
-        let (bytes, shift, len) = bm.as_slice();
-        
-        // Precondition for fast iter: n * 7 + 8 <= b, where n is the number of
-        // previous fast iterations and b = bytes.len(). Thus number of fast iters =
-        //     smallest n such that n * 7 + 8 > b
-        //     smallest n such that n * 7 + 8 >= 1 + b
-        //     smallest n such that n * 7 >= b - 7
-        //     smallest n such that n >= (b - 7) / 7
-        //     n = ceil((b - 7) / 7) = floor((b - 7 + 6) / 7) = floor((b - 1) / 7)
-        let fast_iter_count = bytes.len().saturating_sub(1) / 7;
-        let remainder_bits = len - 56 * fast_iter_count;
-        assert!(remainder_bits < 64);
-        
-        Self { bytes, shift, remainder_bits }
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
+        assert!(bytes.len() >= offset + 8 * len);
+        let shift = (offset % 8) as u32;
+        let bytes = &bytes[offset / 8..];
+        Self { bytes, shift, bits_left: len }
+    }
+
+    // The iteration logic that would normally follow the fast-path.
+    fn next_remainder(&mut self) -> Option<u64> {
+        if self.bits_left > 0 {
+            let word = load_padded_le_u64(self.bytes);
+            let mask;
+            if self.bits_left >= 56 {
+                mask = (1 << 56) - 1;
+                self.bits_left -= 56;
+                self.bytes = unsafe { self.bytes.get_unchecked(7..) };
+            } else {
+                mask = (1 << self.bits_left) - 1;
+                self.bits_left = 0;
+            };
+
+            return Some((word >> self.shift) & mask);
+        }
+
+        None
+    }
+    
+    /// Returns the remainder bits and how many there are,
+    /// assuming the iterator was fully consumed. Output is safe but
+    /// not specified if the iterator wasn't fully consumed.
+    pub fn remainder(mut self) -> (u64, usize) {
+        let bits_left = self.bits_left;
+        let lo = self.next_remainder().unwrap_or(0);
+        let hi = self.next_remainder().unwrap_or(0);
+        ((hi << 56) | lo, bits_left)
     }
 }
 
@@ -202,18 +220,18 @@ impl<'a> Iterator for FastU56BitmapIter<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // Fast path, can load a whole u64.
-        if let Some(next_chunk) = self.bytes.get(0..8) {
-            let ret = u64::from_le_bytes(next_chunk.try_into().unwrap());
-            self.bytes = &self.bytes[7..];
-            return Some(ret >> self.shift);
-        }
-        
-        // Slow path, remainder.
-        if self.remainder_bits > 0 {
-            let word = load_padded_le_u64(self.bytes);
-            let ret = (word >> self.shift) & ((1 << self.remainder_bits) - 1);
-            self.remainder_bits = self.remainder_bits.saturating_sub(56);
-            return Some(ret);
+        if self.bits_left >= 64 {
+            let chunk;
+            unsafe {
+                // SAFETY: bits_left ensures this is in-bounds.
+                chunk = self.bytes.get_unchecked(0..8);
+                self.bytes = self.bytes.get_unchecked(7..);
+                self.bits_left -= 56;
+            }
+
+            let word = u64::from_le_bytes(chunk.try_into().unwrap());
+            let mask = (1 << 56) - 1;
+            return Some((word >> self.shift) & mask);
         }
         
         None
@@ -221,14 +239,107 @@ impl<'a> Iterator for FastU56BitmapIter<'a> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let fast_iters = self.bytes.len().saturating_sub(4) / 4;
-        let remaining_iters = self.remainder_bits.div_ceil(32);
-        let len = fast_iters + remaining_iters;
-        (len, Some(len))
+        let hint = calc_iters_remaining(self.bits_left, 64, 56);
+        (hint, Some(hint))
     }
 }
 
+
 unsafe impl<'a> TrustedLen for FastU56BitmapIter<'a> {}
+
+
+pub struct FastU64BitmapIter<'a> {
+    bytes: &'a [u8],
+    shift: u32,
+    bits_left: usize,
+    next_word: u64,
+}
+
+impl<'a> FastU64BitmapIter<'a> {
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
+        assert!(bytes.len() >= offset + 8 * len);
+        let shift = (offset % 8) as u32;
+        let bytes = &bytes[offset / 8..];
+        let next_word = load_padded_le_u64(bytes);
+        let bytes = bytes.get(8..).unwrap_or(&[]);
+        Self { bytes, shift, bits_left: len, next_word }
+    }
+    
+    #[inline]
+    fn combine(&self, lo: u64, hi: u64) -> u64 {
+        // Compiles to 128-bit SHRD instruction on x86-64.
+        // Yes, the % 64 is important for the compiler to generate optimal code.
+        let wide = ((hi as u128) << 64) | lo as u128;
+        (wide >> (self.shift % 64)) as u64
+    }
+    
+    // The iteration logic that would normally follow the fast-path.
+    fn next_remainder(&mut self) -> Option<u64> {
+        if self.bits_left > 0 {
+            let lo = self.next_word;
+            let hi = load_padded_le_u64(self.bytes);
+            let mask;
+            if self.bits_left >= 64 {
+                mask = u64::MAX;
+                self.bits_left -= 64;
+                self.bytes = unsafe { self.bytes.get_unchecked(8..) };
+            } else {
+                mask = (1 << self.bits_left) - 1;
+                self.bits_left = 0;
+            };
+            self.next_word = hi;
+
+            return Some(self.combine(lo, hi) & mask);
+        }
+        
+        None
+    }
+
+    /// Returns the remainder bits and how many there are,
+    /// assuming the iterator was fully consumed. Output is safe but
+    /// not specified if the iterator wasn't fully consumed.
+    pub fn remainder(mut self) -> ([u64; 2], usize) {
+        let bits_left = self.bits_left;
+        let lo = self.next_remainder().unwrap_or(0);
+        let hi = self.next_remainder().unwrap_or(0);
+        ([lo, hi], bits_left)
+    }
+}
+
+impl<'a> Iterator for FastU64BitmapIter<'a> {
+    type Item = u64;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // Fast path: can load two u64s in a row.
+        // (Note that we already loaded one in the form of self.next_word).
+        if self.bits_left >= 128 {
+            let chunk;
+            unsafe {
+                // SAFETY: bits_left ensures this is in-bounds.
+                chunk = self.bytes.get_unchecked(0..8);
+                self.bytes = self.bytes.get_unchecked(8..);
+            }
+            let lo = self.next_word;
+            let hi = u64::from_le_bytes(chunk.try_into().unwrap());
+            self.next_word = hi;
+            self.bits_left -= 64;
+
+            return Some(self.combine(lo, hi));
+        }
+        
+        None
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let hint = calc_iters_remaining(self.bits_left, 128, 64);
+        (hint, Some(hint))
+    }
+}
+
+unsafe impl<'a> TrustedLen for FastU64BitmapIter<'a> {}
+
 
 /// This crates' equivalent of [`std::vec::IntoIter`] for [`Bitmap`].
 #[derive(Debug, Clone)]

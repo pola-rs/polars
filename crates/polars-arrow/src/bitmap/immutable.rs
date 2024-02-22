@@ -7,7 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
-use crate::bitmap::iterator::FastU32BitmapIter;
+use crate::bitmap::iterator::{FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter};
 use crate::buffer::Bytes;
 use crate::trusted_len::TrustedLen;
 
@@ -142,8 +142,21 @@ impl Bitmap {
     }
     
     /// Returns a fast iterator that gives 32 bits at a time.
-    pub fn iter_u32(&self) -> FastU32BitmapIter<'_> {
-        FastU32BitmapIter::new(self)
+    /// Has a remainder that must be handled separately.
+    pub fn fast_iter_u32(&self) -> FastU32BitmapIter<'_> {
+        FastU32BitmapIter::new(&self.bytes, self.offset, self.length)
+    }
+
+    /// Returns a fast iterator that gives 56 bits at a time.
+    /// Has a remainder that must be handled separately.
+    pub fn fast_iter_u56(&self) -> FastU56BitmapIter<'_> {
+        FastU56BitmapIter::new(&self.bytes, self.offset, self.length)
+    }
+
+    /// Returns a fast iterator that gives 64 bits at a time.
+    /// Has a remainder that must be handled separately.
+    pub fn fast_iter_u64(&self) -> FastU64BitmapIter<'_> {
+        FastU64BitmapIter::new(&self.bytes, self.offset, self.length)
     }
 
     /// Returns the byte slice of this [`Bitmap`].
