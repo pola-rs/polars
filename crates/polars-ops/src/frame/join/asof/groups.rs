@@ -1,13 +1,12 @@
-use std::hash::Hash;
-
 use ahash::RandomState;
 use num_traits::Zero;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::utils::{split_ca, split_df};
-use polars_core::POOL;
+use polars_core::{with_match_physical_float_polars_type, POOL};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::nulls::IsNull;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
@@ -71,7 +70,7 @@ fn asof_join_by_numeric<T, S, A, F>(
 where
     T: PolarsDataType,
     S: PolarsNumericType,
-    S::Native: Hash + Eq + DirtyHash + IsNull,
+    S::Native: TotalHash + TotalEq + DirtyHash + IsNull + Copy,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
@@ -95,49 +94,47 @@ where
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
-    Ok(POOL
-        .install(|| {
-            split_by_left
-                .into_par_iter()
-                .zip(offsets)
-                .flat_map(|(by_left, offset)| {
-                    let mut results = Vec::with_capacity(by_left.len());
-                    let mut group_states: PlHashMap<IdxSize, A> =
-                        PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
+    let out = split_by_left
+        .into_par_iter()
+        .zip(offsets)
+        .flat_map(|(by_left, offset)| {
+            let mut results = Vec::with_capacity(by_left.len());
+            let mut group_states: PlHashMap<IdxSize, A> =
+                PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
-                    let by_left_chunk = by_left.downcast_iter().next().unwrap();
-                    for (rel_idx_left, opt_by_left_k) in by_left_chunk.iter().enumerate() {
-                        let Some(by_left_k) = opt_by_left_k else {
-                            results.push(None);
-                            continue;
-                        };
-                        let idx_left = (rel_idx_left + offset) as IdxSize;
-                        let Some(left_val) = left_val_arr.get(idx_left as usize) else {
-                            results.push(None);
-                            continue;
-                        };
+            let by_left_chunk = by_left.downcast_iter().next().unwrap();
+            for (rel_idx_left, opt_by_left_k) in by_left_chunk.iter().enumerate() {
+                let Some(by_left_k) = opt_by_left_k else {
+                    results.push(None);
+                    continue;
+                };
+                let by_left_k = TotalOrdWrap(*by_left_k);
+                let idx_left = (rel_idx_left + offset) as IdxSize;
+                let Some(left_val) = left_val_arr.get(idx_left as usize) else {
+                    results.push(None);
+                    continue;
+                };
 
-                        let group_probe_table = unsafe {
-                            hash_tbls
-                                .get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
-                        };
-                        let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
-                            results.push(None);
-                            continue;
-                        };
+                let group_probe_table = unsafe {
+                    hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
+                };
+                let Some(right_grp_idxs) = group_probe_table.get(&by_left_k) else {
+                    results.push(None);
+                    continue;
+                };
 
-                        results.push(asof_in_group::<T, A, &F>(
-                            left_val,
-                            right_val_arr,
-                            right_grp_idxs.as_slice(),
-                            &mut group_states,
-                            &filter,
-                        ));
-                    }
-                    results
-                })
-        })
-        .collect())
+                results.push(asof_in_group::<T, A, &F>(
+                    left_val,
+                    right_val_arr,
+                    right_grp_idxs.as_slice(),
+                    &mut group_states,
+                    &filter,
+                ));
+            }
+            results
+        });
+
+    Ok(POOL.install(|| out.collect()))
 }
 
 fn asof_join_by_binary<T, A, F>(
@@ -188,7 +185,8 @@ where
                     let group_probe_table = unsafe {
                         hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
                     };
-                    let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
+                    let Some(right_grp_idxs) = group_probe_table.get(&TotalOrdWrap(*by_left_k))
+                    else {
                         results.push(None);
                         continue;
                     };
@@ -329,7 +327,15 @@ where
                 asof_join_by_binary::<T, A, F>(left_by, right_by, left_asof, right_asof, filter)
             },
             _ => {
-                if left_by_s.bit_repr_is_large() {
+                if left_by_s.dtype().is_float() {
+                    with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
+                        let left_by: &ChunkedArray<$T> = left_by_s.as_ref().as_ref().as_ref();
+                        let right_by: &ChunkedArray<$T> = right_by_s.as_ref().as_ref().as_ref();
+                        asof_join_by_numeric::<T, $T, A, F>(
+                            left_by, right_by, left_asof, right_asof, filter,
+                        )?
+                    })
+                } else if left_by_s.bit_repr_is_large() {
                     let left_by = left_by_s.bit_repr_large();
                     let right_by = right_by_s.bit_repr_large();
                     asof_join_by_numeric::<T, UInt64Type, A, F>(
@@ -560,7 +566,7 @@ pub trait AsofJoinBy: IntoDf {
             .filter(|s| !drop_these.contains(&s.name()))
             .cloned()
             .collect();
-        let proj_other_df = DataFrame::new_no_checks(cols);
+        let proj_other_df = unsafe { DataFrame::new_no_checks(cols) };
 
         let left = self_df.clone();
         let right_join_tuples = &*right_join_tuples;

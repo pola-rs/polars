@@ -75,6 +75,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Create a [`MutableUtf8Array`] out of low-end APIs.
+    ///
     /// # Safety
     /// The caller must ensure that every value between offsets is a valid utf8.
     /// # Panics
@@ -145,14 +146,13 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Returns the value of the element at index `i`, ignoring the array's validity.
-    /// # Safety
-    /// This function is safe iff `i < self.len`.
     #[inline]
     pub fn value(&self, i: usize) -> &str {
         self.values.value(i)
     }
 
     /// Returns the value of the element at index `i`, ignoring the array's validity.
+    ///
     /// # Safety
     /// This function is safe iff `i < self.len`.
     #[inline]
@@ -329,6 +329,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     /// Extends the [`MutableUtf8Array`] from an iterator of values of trusted len.
     /// This differs from `extended_trusted_len_unchecked` which accepts iterator of optional
     /// values.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -357,6 +358,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Extends [`MutableUtf8Array`] from an iterator of trusted len.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -376,6 +378,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Creates a [`MutableUtf8Array`] from an iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -404,6 +407,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Creates a [`MutableUtf8Array`] from an iterator of trusted length of `&str`.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -440,6 +444,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Creates a [`MutableUtf8Array`] from an falible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

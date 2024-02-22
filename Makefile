@@ -19,11 +19,11 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 
 .PHONY: requirements
 requirements: .venv  ## Install/refresh Python project requirements
-	$(VENV_BIN)/python -m pip install --upgrade pip
-	$(VENV_BIN)/pip install --upgrade -r py-polars/requirements-dev.txt
-	$(VENV_BIN)/pip install --upgrade -r py-polars/requirements-lint.txt
-	$(VENV_BIN)/pip install --upgrade -r py-polars/docs/requirements-docs.txt
-	$(VENV_BIN)/pip install --upgrade -r docs/requirements.txt
+	$(VENV_BIN)/python -m pip install --upgrade uv
+	$(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-dev.txt
+	$(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-lint.txt
+	$(VENV_BIN)/uv pip install --upgrade -r py-polars/docs/requirements-docs.txt
+	$(VENV_BIN)/uv pip install --upgrade -r docs/requirements.txt
 
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development

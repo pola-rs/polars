@@ -200,6 +200,7 @@ impl MutableFixedSizeBinaryArray {
     }
 
     /// Returns the element at index `i` as `&[u8]`
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]

@@ -4,20 +4,20 @@ use super::*;
 
 pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
     df.iter_chunks_physical().flat_map(|chunk| {
-        let df = DataFrame::new_no_checks(
-            df.iter()
-                .zip(chunk.into_arrays())
-                .map(|(s, arr)| {
-                    // SAFETY:
-                    // datatypes are correct
-                    let mut out = unsafe {
-                        Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
-                    };
-                    out.set_sorted_flag(s.is_sorted_flag());
-                    out
-                })
-                .collect(),
-        );
+        let columns = df
+            .iter()
+            .zip(chunk.into_arrays())
+            .map(|(s, arr)| {
+                // SAFETY:
+                // datatypes are correct
+                let mut out = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
+                };
+                out.set_sorted_flag(s.is_sorted_flag());
+                out
+            })
+            .collect();
+        let df = unsafe { DataFrame::new_no_checks(columns) };
         if df.height() == 0 {
             None
         } else {

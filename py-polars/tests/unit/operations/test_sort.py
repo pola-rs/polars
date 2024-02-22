@@ -789,3 +789,10 @@ def test_sort_with_null_12272() -> None:
 )
 def test_sort_series_nulls_last(input: list[Any], expected: list[Any]) -> None:
     assert pl.Series(input).sort(nulls_last=True).to_list() == expected
+
+
+def test_sorted_flag_14552() -> None:
+    a = pl.DataFrame({"a": [2, 1, 3]})
+
+    a = pl.concat([a, a], rechunk=False)
+    assert not a.join(a, on="a", how="left")["a"].flags["SORTED_ASC"]

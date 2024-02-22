@@ -123,7 +123,7 @@ The opt-in features are:
     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
     And activates `pivot` and `transpose` operations
     - `join_asof` - Join ASOF, to join on nearest keys instead of exact equality match.
-    - `cross_join` - Create the cartesian product of two DataFrames.
+    - `cross_join` - Create the Cartesian product of two DataFrames.
     - `semi_anti_join` - SEMI and ANTI joins.
     - `group_by_list` - Allow group by operation on keys of type List.
     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked

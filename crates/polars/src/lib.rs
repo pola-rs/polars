@@ -148,8 +148,6 @@
 //!
 //! Understanding polars expressions is most important when starting with the polars library. Read more
 //! about them in the [user guide](https://docs.pola.rs/user-guide/concepts/expressions).
-//! Though the examples given there are in python. The expressions API is almost identical and the
-//! the read should certainly be valuable to rust users as well.
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
@@ -225,7 +223,7 @@
 //!     - `rows` - Create [`DataFrame`] from rows and extract rows from [`DataFrame`]s.
 //!                And activates `pivot` and `transpose` operations
 //!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
-//!     - `cross_join` - Create the cartesian product of two [`DataFrame`]s.
+//!     - `cross_join` - Create the Cartesian product of two [`DataFrame`]s.
 //!     - `semi_anti_join` - SEMI and ANTI joins.
 //!     - `group_by_list` - Allow group_by operation on keys of type List.
 //!     - `row_hash` - Utility to hash [`DataFrame`] rows to [`UInt64Chunked`]

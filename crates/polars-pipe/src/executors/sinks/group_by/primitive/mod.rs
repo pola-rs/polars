@@ -209,7 +209,7 @@ where
                         cols.push(key_builder.finish().into_series());
                         cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(DataFrame::new_no_checks(cols))
+                        Some(unsafe { DataFrame::new_no_checks(cols) })
                     })
                     .collect::<Vec<_>>();
             Ok(dfs)

@@ -2048,8 +2048,9 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
-        use_pyarrow: bool = True,
+        allow_copy: bool = True,
         writable: bool = False,
+        use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -2070,20 +2071,18 @@ class DataFrame:
             one-dimensional array. Note that this option only takes effect if
             `structured` is set to `False` and the DataFrame dtypes allow for a
             global dtype for all columns.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to `False`,
+            causes conversions that are not zero-copy to fail.
+        writable
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy, as the underlying Arrow data is
+            immutable.
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
 
             function for the conversion to numpy if necessary.
-        writable
-            Ensure the resulting array is writable. This will force a copy of the data
-            if the array was created without copy, as the underlying Arrow data is
-            immutable.
-
-        Notes
-        -----
-        If you're attempting to convert String or Decimal to an array, you'll need to
-        install `pyarrow`.
 
         Examples
         --------
@@ -2117,7 +2116,15 @@ class DataFrame:
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """
+
+        def raise_on_copy(msg: str) -> None:
+            if not allow_copy and not self.is_empty():
+                msg = f"copy not allowed: {msg}"
+                raise RuntimeError(msg)
+
         if structured:
+            raise_on_copy("cannot create structured array without copying data")
+
             arrays = []
             struct_dtype = []
             for s in self.iter_columns():
@@ -2136,8 +2143,13 @@ class DataFrame:
             array = self._df.to_numpy_view()
             if array is not None:
                 if writable and not array.flags.writeable:
+                    raise_on_copy("cannot create writable array without copying data")
                     array = array.copy()
                 return array
+
+        raise_on_copy(
+            "only numeric data without nulls in Fortran-like order can be converted without copy"
+        )
 
         out = self._df.to_numpy(order)
         if out is None:
@@ -2438,7 +2450,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         pretty
             Pretty serialize json.
@@ -2494,7 +2506,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
 
         Examples
@@ -2590,7 +2602,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
@@ -2701,7 +2713,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the data will be written.
+            File path or writable file-like object to which the data will be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
         name
@@ -3269,7 +3281,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path or writeable file-like object to which the IPC data will be
+            Path or writable file-like object to which the IPC data will be
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
@@ -3341,7 +3353,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path or writeable file-like object to which the IPC record batch data will
+            Path or writable file-like object to which the IPC record batch data will
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
@@ -3390,7 +3402,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
@@ -6260,7 +6272,7 @@ class DataFrame:
             * *outer_coalesce*
                  Same as 'outer', but coalesces the key columns
             * *cross*
-                 Returns the cartisian product of rows from both tables
+                 Returns the Cartesian product of rows from both tables
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*
@@ -9206,9 +9218,15 @@ class DataFrame:
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
+    @deprecate_function(
+        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    )
     def approx_n_unique(self) -> DataFrame:
         """
         Approximate count of unique values.
+
+        .. deprecated: 0.20.11
+            Use `select(pl.all().approx_n_unique())` instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -9220,7 +9238,7 @@ class DataFrame:
         ...         "b": [1, 2, 1, 1],
         ...     }
         ... )
-        >>> df.approx_n_unique()
+        >>> df.approx_n_unique()  # doctest: +SKIP
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │

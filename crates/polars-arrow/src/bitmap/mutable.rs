@@ -221,6 +221,7 @@ impl MutableBitmap {
     }
 
     /// Pushes a new bit to the [`MutableBitmap`]
+    ///
     /// # Safety
     /// The caller must ensure that the [`MutableBitmap`] has sufficient capacity.
     #[inline]
@@ -318,6 +319,7 @@ impl MutableBitmap {
     }
 
     /// Sets the position `index` to `value`
+    ///
     /// # Safety
     /// Caller must ensure that `index < self.len()`
     #[inline]
@@ -529,6 +531,7 @@ impl MutableBitmap {
     }
 
     /// Extends `self` from an iterator of trusted len.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator has a trusted len.
     #[inline]
@@ -577,6 +580,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]
@@ -610,6 +614,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an falible iterator of booleans.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator is `TrustedLen`.
     pub unsafe fn try_from_trusted_len_iter_unchecked<E, I>(
@@ -697,6 +702,7 @@ impl MutableBitmap {
     /// # Implementation
     /// When both [`MutableBitmap`]'s length and `offset` are both multiples of 8,
     /// this function performs a memcopy. Else, it first aligns bit by bit and then performs a memcopy.
+    ///
     /// # Safety
     /// Caller must ensure `offset + length <= slice.len() * 8`
     #[inline]

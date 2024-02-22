@@ -103,7 +103,7 @@ pub(crate) fn binary_lambda(
         let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
             let pyexpr = expr.extract::<PyExpr>(py).unwrap();
             let expr = pyexpr.inner;
-            let df = DataFrame::new_no_checks(vec![]);
+            let df = DataFrame::empty();
             let out = df
                 .lazy()
                 .select([expr])

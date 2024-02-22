@@ -90,7 +90,7 @@ fn replace_by_multiple(
         ComputeError: "`new` input for `replace` must have the same length as `old` or have length 1"
     );
 
-    let df = DataFrame::new_no_checks(vec![s.clone()]);
+    let df = s.clone().into_frame();
     let replacer = create_replacer(old, new)?;
 
     let joined = df.join(
@@ -133,6 +133,6 @@ fn create_replacer(mut old: Series, mut new: Series) -> PolarsResult<DataFrame> 
     } else {
         vec![old, new]
     };
-    let out = DataFrame::new_no_checks(cols);
+    let out = unsafe { DataFrame::new_no_checks(cols) };
     Ok(out)
 }

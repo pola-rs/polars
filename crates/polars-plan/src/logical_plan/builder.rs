@@ -434,7 +434,7 @@ impl LogicalPlanBuilder {
 
         if columns.is_empty() {
             self.map(
-                |_| Ok(DataFrame::new_no_checks(vec![])),
+                |_| Ok(DataFrame::empty()),
                 AllowedOptimizations::default(),
                 Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",
@@ -459,7 +459,7 @@ impl LogicalPlanBuilder {
 
         if exprs.is_empty() {
             self.map(
-                |_| Ok(DataFrame::new_no_checks(vec![])),
+                |_| Ok(DataFrame::empty()),
                 AllowedOptimizations::default(),
                 Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",

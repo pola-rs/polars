@@ -79,7 +79,7 @@ impl DataFrame {
                 }));
             },
         };
-        Ok(DataFrame::new_no_checks(cols_t))
+        Ok(unsafe { DataFrame::new_no_checks(cols_t) })
     }
 
     /// Transpose a DataFrame. This is a very expensive operation.
@@ -224,37 +224,36 @@ where
         })
     });
 
-    cols_t.par_extend(POOL.install(|| {
-        values_buf
-            .into_par_iter()
-            .zip(validity_buf)
-            .zip(names_out)
-            .map(|((mut values, validity), name)| {
-                // SAFETY:
-                // all values are written we can now set len
-                unsafe {
-                    values.set_len(new_height);
-                }
+    let par_iter = values_buf
+        .into_par_iter()
+        .zip(validity_buf)
+        .zip(names_out)
+        .map(|((mut values, validity), name)| {
+            // SAFETY:
+            // all values are written we can now set len
+            unsafe {
+                values.set_len(new_height);
+            }
 
-                let validity = if has_nulls {
-                    let validity = Bitmap::from_trusted_len_iter(validity.iter().copied());
-                    if validity.unset_bits() > 0 {
-                        Some(validity)
-                    } else {
-                        None
-                    }
+            let validity = if has_nulls {
+                let validity = Bitmap::from_trusted_len_iter(validity.iter().copied());
+                if validity.unset_bits() > 0 {
+                    Some(validity)
                 } else {
                     None
-                };
+                }
+            } else {
+                None
+            };
 
-                let arr = PrimitiveArray::<T::Native>::new(
-                    T::get_dtype().to_arrow(true),
-                    values.into(),
-                    validity,
-                );
-                ChunkedArray::with_chunk(name.as_str(), arr).into_series()
-            })
-    }));
+            let arr = PrimitiveArray::<T::Native>::new(
+                T::get_dtype().to_arrow(true),
+                values.into(),
+                validity,
+            );
+            ChunkedArray::with_chunk(name.as_str(), arr).into_series()
+        });
+    POOL.install(|| cols_t.par_extend(par_iter));
 }
 
 #[cfg(test)]

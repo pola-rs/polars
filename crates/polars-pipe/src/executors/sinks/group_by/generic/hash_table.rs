@@ -275,7 +275,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         );
         cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 }
 

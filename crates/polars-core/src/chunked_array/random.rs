@@ -194,7 +194,7 @@ impl DataFrame {
             Some(n) => self.sample_n_literal(n as usize, with_replacement, shuffle, seed),
             None => {
                 let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
-                Ok(DataFrame::new_no_checks(new_cols))
+                Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }
     }
@@ -239,7 +239,7 @@ impl DataFrame {
             },
             None => {
                 let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
-                Ok(DataFrame::new_no_checks(new_cols))
+                Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }
     }

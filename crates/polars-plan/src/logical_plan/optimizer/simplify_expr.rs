@@ -1,4 +1,5 @@
 use polars_utils::arena::Arena;
+use polars_utils::total_ord::TotalOrdWrap;
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::dsl::function_expr::StringFunction;
@@ -58,10 +59,10 @@ macro_rules! eval_binary_bool_type {
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
         match (lit_left, lit_right) {
             (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
+                Some(AExpr::Literal(LiteralValue::Boolean(TotalOrdWrap(*x) $operand TotalOrdWrap(*y))))
             }
             (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
+                Some(AExpr::Literal(LiteralValue::Boolean(TotalOrdWrap(*x) $operand TotalOrdWrap(*y))))
             }
             #[cfg(feature = "dtype-i8")]
             (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {

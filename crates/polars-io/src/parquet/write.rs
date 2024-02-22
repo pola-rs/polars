@@ -1,10 +1,11 @@
+use std::borrow::Cow;
 use std::io::Write;
 
 use arrow::array::{Array, ArrayRef};
 use arrow::chunk::Chunk;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_core::prelude::*;
-use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
+use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
@@ -192,11 +193,26 @@ where
         df.align_chunks();
 
         let n_splits = df.height() / self.row_group_size.unwrap_or(512 * 512);
-        if n_splits > 0 {
-            *df = accumulate_dataframes_vertical_unchecked(split_df(df, n_splits)?);
-        }
+        let chunked_df = if n_splits > 0 {
+            Cow::Owned(accumulate_dataframes_vertical_unchecked(
+                split_df_as_ref(df, n_splits, false)?
+                    .into_iter()
+                    .map(|mut df| {
+                        // If the chunks are small enough, writing many small chunks
+                        // leads to slow writing performance, so in that case we
+                        // merge them.
+                        let n_chunks = df.n_chunks();
+                        if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
+                            df.as_single_chunk_par();
+                        }
+                        df
+                    }),
+            ))
+        } else {
+            Cow::Borrowed(df)
+        };
         let mut batched = self.batched(&df.schema())?;
-        batched.write_batch(df)?;
+        batched.write_batch(&chunked_df)?;
         batched.finish()
     }
 }

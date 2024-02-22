@@ -25,6 +25,8 @@ from typing import (
     Union,
 )
 
+from polars.utils.various import re_escape
+
 if TYPE_CHECKING:
     from dis import Instruction
 
@@ -147,12 +149,17 @@ _PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "String"}
 _PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
 _PYTHON_METHODS_MAP = {
     # string
+    "endswith": "str.ends_with",
     "lower": "str.to_lowercase",
+    "lstrip": "str.strip_chars_start",
+    "rstrip": "str.strip_chars_end",
+    "startswith": "str.starts_with",
+    "strip": "str.strip_chars",
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
     # temporal
-    "isoweekday": "dt.weekday",
     "date": "dt.date",
+    "isoweekday": "dt.weekday",
     "time": "dt.time",
 }
 
@@ -576,7 +583,7 @@ class InstructionTranslator:
                     # But, if e1 << e2 was valid, then e2 must have been positive.
                     # Hence, the output of 2**e2 can be safely cast to Int64, which
                     # may be necessary if chaining operations which assume Int64 output.
-                    return f"({e1}*2**{e2}).cast(pl.Int64)"
+                    return f"({e1} * 2**{e2}).cast(pl.Int64)"
                 elif op == ">>":
                     # Motivation for the cast is the same as in the '<<' case above.
                     return f"({e1} / 2**{e2}).cast(pl.Int64)"
@@ -685,7 +692,7 @@ class RewrittenInstructions:
         argvals
             Associated argvals that must also match (in same position as opnames).
         is_attr
-            Indicate if the match is expected to represent attribute access.
+            Indicate if the match represents pure attribute access (cannot be called).
         """
         n_required_ops, argvals = len(opnames), argvals or []
         idx_offset = idx + n_required_ops
@@ -744,10 +751,10 @@ class RewrittenInstructions:
         ):
             inst = matching_instructions[1]
             expr_name = _PYTHON_ATTRS_MAP[inst.argval]
-            synthetic_call = inst._replace(
+            px = inst._replace(
                 opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
             )
-            updated_instructions.extend([matching_instructions[0], synthetic_call])
+            updated_instructions.extend([matching_instructions[0], px])
 
         return len(matching_instructions)
 
@@ -765,7 +772,7 @@ class RewrittenInstructions:
                 dtype = _PYTHON_CASTS_MAP[argval]
                 argval = f"cast(pl.{dtype})"
 
-            synthetic_call = inst1._replace(
+            px = inst1._replace(
                 opname="POLARS_EXPRESSION",
                 argval=argval,
                 argrepr=argval,
@@ -773,7 +780,7 @@ class RewrittenInstructions:
             )
             # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
             operand = inst2._replace(offset=inst1.offset)
-            updated_instructions.extend((operand, synthetic_call))
+            updated_instructions.extend((operand, px))
 
         return len(matching_instructions)
 
@@ -818,22 +825,24 @@ class RewrittenInstructions:
                         return 0
                 else:
                     expr_name = inst2.argval
-                synthetic_call = inst1._replace(
+
+                px = inst1._replace(
                     opname="POLARS_EXPRESSION",
                     argval=expr_name,
                     argrepr=expr_name,
                     offset=inst3.offset,
                 )
+
                 # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
                 operand = inst3._replace(offset=inst1.offset)
                 updated_instructions.extend(
                     (
                         operand,
                         matching_instructions[3 + attribute_count],
-                        synthetic_call,
+                        px,
                     )
                     if function_kind["argument_1_unary_opname"]
-                    else (operand, synthetic_call)
+                    else (operand, px)
                 )
                 return len(matching_instructions)
 
@@ -843,20 +852,40 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        if matching_instructions := self._matches(
-            idx,
-            opnames=[
-                OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"},
-                OpNames.CALL,
-            ],
-            argvals=[_PYTHON_METHODS_MAP],
+        LOAD_METHOD = OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"}
+        if matching_instructions := (
+            # method call with one basic arg, eg: "s.endswith('!')"
+            self._matches(
+                idx,
+                opnames=[LOAD_METHOD, {"LOAD_CONST"}, OpNames.CALL],
+                argvals=[_PYTHON_METHODS_MAP],
+            )
+            or
+            # method call with no arg, eg: "s.lower()"
+            self._matches(
+                idx,
+                opnames=[LOAD_METHOD, OpNames.CALL],
+                argvals=[_PYTHON_METHODS_MAP],
+            )
         ):
             inst = matching_instructions[0]
-            expr_name = _PYTHON_METHODS_MAP[inst.argval]
-            synthetic_call = inst._replace(
-                opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
-            )
-            updated_instructions.append(synthetic_call)
+            expr = _PYTHON_METHODS_MAP[inst.argval]
+
+            if matching_instructions[1].opname == "LOAD_CONST":
+                param_value = matching_instructions[1].argval
+                if isinstance(param_value, tuple) and expr in (
+                    "str.starts_with",
+                    "str.ends_with",
+                ):
+                    starts, ends = ("^", "") if "starts" in expr else ("", "$")
+                    rx = "|".join(re_escape(v) for v in param_value)
+                    q = '"' if "'" in param_value else "'"
+                    expr = f"str.contains(r{q}{starts}({rx}){ends}{q})"
+                else:
+                    expr += f"({param_value!r})"
+
+            px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
+            updated_instructions.append(px)
 
         return len(matching_instructions)
 

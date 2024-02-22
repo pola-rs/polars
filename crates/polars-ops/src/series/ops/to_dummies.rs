@@ -48,7 +48,7 @@ impl ToDummies for Series {
             })
             .collect();
 
-        Ok(DataFrame::new_no_checks(sort_columns(columns)))
+        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
     }
 }
 

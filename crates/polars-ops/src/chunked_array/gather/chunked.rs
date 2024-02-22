@@ -1,3 +1,4 @@
+use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -8,6 +9,7 @@ use crate::frame::IntoDf;
 
 pub trait DfTake: IntoDf {
     /// Take elements by a slice of [`ChunkId`]s.
+    ///
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
@@ -16,9 +18,10 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
     /// Take elements by a slice of optional [`ChunkId`]s.
+    ///
     /// # Safety
     /// Does not do any bound checks.
     unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> DataFrame {
@@ -26,7 +29,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     /// # Safety
@@ -36,7 +39,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     /// # Safety
@@ -46,7 +49,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx));
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 }
 
@@ -196,7 +199,8 @@ where
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
             ChunkedArray::with_chunk(self.name(), arr)
         };
-        out.set_sorted_flag(sorted);
+        let sorted_flag = _update_gather_sorted_flag(self.is_sorted_flag(), sorted);
+        out.set_sorted_flag(sorted_flag);
         out
     }
 

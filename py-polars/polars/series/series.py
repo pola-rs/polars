@@ -268,17 +268,18 @@ class Series:
                 version="0.20.6",
             )
 
-        # If 'Unknown' treat as None to attempt inference
+        # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
-        # Raise early error on invalid dtype
-        elif (
-            dtype is not None
-            and not is_polars_dtype(dtype)
-            and py_type_to_dtype(dtype, raise_unmatched=False) is None
-        ):
-            msg = f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
-            raise ValueError(msg)
+        elif dtype is not None and not is_polars_dtype(dtype):
+            # Raise early error on invalid dtype
+            if not is_polars_dtype(
+                pl_dtype := py_type_to_dtype(dtype, raise_unmatched=False)
+            ):
+                msg = f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
+                raise ValueError(msg)
+            else:
+                dtype = pl_dtype
 
         # Handle case where values are passed as the first argument
         original_name: str | None = None
@@ -1430,7 +1431,7 @@ class Series:
                     args.append(arg)
                 elif isinstance(arg, Series):
                     validity_mask &= arg.is_not_null()
-                    args.append(arg._view(ignore_nulls=True))
+                    args.append(arg.to_physical()._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
@@ -4279,9 +4280,10 @@ class Series:
     def to_numpy(
         self,
         *,
-        zero_copy_only: bool = False,
+        allow_copy: bool = True,
         writable: bool = False,
         use_pyarrow: bool = True,
+        zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -4292,14 +4294,13 @@ class Series:
         - Floating point `nan` values can be zero-copied
         - Booleans cannot be zero-copied
 
-        To ensure that no data is copied, set `zero_copy_only=True`.
+        To ensure that no data is copied, set `allow_copy=False`.
 
         Parameters
         ----------
-        zero_copy_only
-            Raise an exception if the conversion to a NumPy would require copying
-            the underlying data. Data copy occurs, for example, when the Series contains
-            nulls or non-numeric types.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to `False`,
+            causes conversions that are not zero-copy to fail.
         writable
             Ensure the resulting array is writable. This will force a copy of the data
             if the array was created without copy, as the underlying Arrow data is
@@ -4308,6 +4309,14 @@ class Series:
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
             for the conversion to NumPy.
+        zero_copy_only
+            Raise an exception if the conversion to a NumPy would require copying
+            the underlying data. Data copy occurs, for example, when the Series contains
+            nulls or non-numeric types.
+
+            .. deprecated: 0.20.10
+                Use the `allow_copy` parameter instead, which is the inverse of this
+                one.
 
         Examples
         --------
@@ -4318,9 +4327,16 @@ class Series:
         >>> type(arr)
         <class 'numpy.ndarray'>
         """
+        if zero_copy_only is not None:
+            issue_deprecation_warning(
+                "The `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
+                " Use the `allow_copy` parameter instead, which is the inverse of `zero_copy_only`.",
+                version="0.20.10",
+            )
+            allow_copy = not zero_copy_only
 
-        def raise_no_zero_copy() -> None:
-            if zero_copy_only and not self.is_empty():
+        def raise_on_copy() -> None:
+            if not allow_copy and not self.is_empty():
                 msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 
@@ -4336,14 +4352,14 @@ class Series:
                 raise TypeError(msg)
 
         if self.n_chunks() > 1:
-            raise_no_zero_copy()
+            raise_on_copy()
             self = self.rechunk()
 
         dtype = self.dtype
 
         if dtype == Array:
             np_array = self.explode().to_numpy(
-                zero_copy_only=zero_copy_only,
+                allow_copy=allow_copy,
                 writable=writable,
                 use_pyarrow=use_pyarrow,
             )
@@ -4356,71 +4372,41 @@ class Series:
             and dtype not in (Object, Datetime, Duration, Date)
         ):
             return self.to_arrow().to_numpy(
-                zero_copy_only=zero_copy_only, writable=writable
+                zero_copy_only=not allow_copy, writable=writable
             )
 
         if self.null_count() == 0:
             if dtype.is_integer() or dtype.is_float():
-                np_array = self._view(ignore_nulls=True)
+                np_array = self._s.to_numpy_view()
             elif dtype == Boolean:
-                raise_no_zero_copy()
-                np_array = self.cast(UInt8)._view(ignore_nulls=True).view(bool)
+                raise_on_copy()
+                s_u8 = self.cast(UInt8)
+                np_array = s_u8._s.to_numpy_view().view(bool)
             elif dtype in (Datetime, Duration):
                 np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = self._view(ignore_nulls=True).view(np_dtype)
+                s_i64 = self.to_physical()
+                np_array = s_i64._s.to_numpy_view().view(np_dtype)
             elif dtype == Date:
-                raise_no_zero_copy()
+                raise_on_copy()
                 np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = self.to_physical()._view(ignore_nulls=True).astype(np_dtype)
+                s_i32 = self.to_physical()
+                np_array = s_i32._s.to_numpy_view().astype(np_dtype)
             else:
-                raise_no_zero_copy()
+                raise_on_copy()
                 np_array = self._s.to_numpy()
 
         else:
-            raise_no_zero_copy()
+            raise_on_copy()
             np_array = self._s.to_numpy()
             if dtype in (Datetime, Duration, Date):
                 np_dtype = temporal_dtype_to_numpy(dtype)
                 np_array = np_array.view(np_dtype)
 
         if writable and not np_array.flags.writeable:
-            raise_no_zero_copy()
+            raise_on_copy()
             np_array = np_array.copy()
 
         return np_array
-
-    def _view(self, *, ignore_nulls: bool = False) -> SeriesView:
-        """
-        Get a view into this Series data with a numpy array.
-
-        This operation doesn't clone data, but does not include missing values.
-
-        Returns
-        -------
-        SeriesView
-
-        Parameters
-        ----------
-        ignore_nulls
-            If True then nulls are converted to 0.
-            If False then an Exception is raised if nulls are present.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, None])
-        >>> s._view(ignore_nulls=True)
-        SeriesView([1, 0])
-        """
-        if not ignore_nulls:
-            assert not self.null_count()
-
-        from polars.series._numpy import SeriesView, _ptr_to_numpy
-
-        ptr_type = dtype_to_ctype(self.dtype)
-        ptr = self._s.as_single_ptr()
-        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
-        array.setflags(write=False)
-        return SeriesView(array, self)
 
     def to_arrow(self) -> pa.Array:
         """
@@ -7520,7 +7506,7 @@ class Series:
         return self.cum_prod(reverse=reverse)
 
     @deprecate_function(
-        "Use `Series.to_numpy(zero_copy_only=True) instead.", version="0.19.14"
+        "Use `Series.to_numpy(allow_copy=False) instead.", version="0.19.14"
     )
     def view(self, *, ignore_nulls: bool = False) -> SeriesView:
         """
@@ -7538,7 +7524,16 @@ class Series:
             If True then nulls are converted to 0.
             If False then an Exception is raised if nulls are present.
         """
-        return self._view(ignore_nulls=ignore_nulls)
+        if not ignore_nulls:
+            assert not self.null_count()
+
+        from polars.series._numpy import SeriesView, _ptr_to_numpy
+
+        ptr_type = dtype_to_ctype(self.dtype)
+        ptr = self._s.as_single_ptr()
+        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
+        array.setflags(write=False)
+        return SeriesView(array, self)
 
     @deprecate_function(
         "It has been renamed to `replace`."

@@ -121,19 +121,19 @@ def test_df_to_numpy_decimal(use_pyarrow: bool) -> None:
     assert_array_equal(result, expected)
 
 
-def test_to_numpy_zero_copy_path() -> None:
+def test_df_to_numpy_zero_copy_path() -> None:
     rows = 10
     cols = 5
     x = np.ones((rows, cols), order="F")
     x[:, 1] = 2.0
     df = pl.DataFrame(x)
-    x = df.to_numpy()
+    x = df.to_numpy(allow_copy=False)
     assert x.flags["F_CONTIGUOUS"]
     assert not x.flags["WRITEABLE"]
     assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"
 
 
-def test_to_numpy_zero_copy_path_writeable() -> None:
+def test_to_numpy_zero_copy_path_writable() -> None:
     rows = 10
     cols = 5
     x = np.ones((rows, cols), order="F")
@@ -141,3 +141,23 @@ def test_to_numpy_zero_copy_path_writeable() -> None:
     df = pl.DataFrame(x)
     x = df.to_numpy(writable=True)
     assert x.flags["WRITEABLE"]
+
+
+def test_df_to_numpy_structured_not_zero_copy() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    msg = "cannot create structured array without copying data"
+    with pytest.raises(RuntimeError, match=msg):
+        df.to_numpy(structured=True, allow_copy=False)
+
+
+def test_df_to_numpy_writable_not_zero_copy() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    msg = "cannot create writable array without copying data"
+    with pytest.raises(RuntimeError, match=msg):
+        df.to_numpy(allow_copy=False, writable=True)
+
+
+def test_df_to_numpy_not_zero_copy() -> None:
+    df = pl.DataFrame({"a": [1, 2, None]})
+    with pytest.raises(RuntimeError):
+        df.to_numpy(allow_copy=False)

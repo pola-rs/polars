@@ -562,3 +562,11 @@ def parse_percentiles(
         at_or_above_50_percentiles = [0.5, *at_or_above_50_percentiles]
 
     return [*sub_50_percentiles, *at_or_above_50_percentiles]
+
+
+def re_escape(s: str) -> str:
+    """Escape a string for use in a Polars (Rust) regex."""
+    # note: almost the same as the standard python 're.escape' function, but
+    # escapes _only_ those metachars with meaning to the rust regex crate
+    re_rust_metachars = r"\\?()|\[\]{}^$#&~.+*-"
+    return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)

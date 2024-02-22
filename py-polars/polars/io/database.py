@@ -279,21 +279,30 @@ class ConnectionExecutor:
         from polars import DataFrame
 
         if hasattr(self.result, "fetchall"):
-            description = (
-                self.result.cursor.description
-                if self.driver_name == "sqlalchemy"
-                else self.result.description
-            )
-            column_names = [desc[0] for desc in description]
+            if self.driver_name == "sqlalchemy":
+                if hasattr(self.result, "cursor"):
+                    cursor_desc = {d[0]: d[1] for d in self.result.cursor.description}
+                elif hasattr(self.result, "_metadata"):
+                    cursor_desc = {k: None for k in self.result._metadata.keys}
+                else:
+                    msg = f"Unable to determine metadata from query result; {self.result!r}"
+                    raise ValueError(msg)
+            else:
+                cursor_desc = {d[0]: d[1] for d in self.result.description}
+
+            # TODO: refine types based on the cursor description's type_code,
+            #  if/where available? (for now, we just read the column names)
+            result_columns = list(cursor_desc)
+
             frames = (
                 DataFrame(
                     data=rows,
-                    schema=column_names,
+                    schema=result_columns,
                     schema_overrides=schema_overrides,
                     orient="row",
                 )
                 for rows in (
-                    self._fetchmany_rows(self.result, batch_size)
+                    list(self._fetchmany_rows(self.result, batch_size))
                     if iter_batches
                     else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
                 )
@@ -318,18 +327,33 @@ class ConnectionExecutor:
         options = options or {}
         cursor_execute = self.cursor.execute
 
-        if self.driver_name == "sqlalchemy" and isinstance(query, str):
-            params = options.get("parameters")
-            if isinstance(params, Sequence) and hasattr(self.cursor, "exec_driver_sql"):
-                cursor_execute = self.cursor.exec_driver_sql
-                if isinstance(params, list) and not all(
-                    isinstance(p, (dict, tuple)) for p in params
-                ):
-                    options["parameters"] = tuple(params)
-            else:
-                from sqlalchemy.sql import text
+        if self.driver_name == "sqlalchemy":
+            from sqlalchemy.orm import Session
 
-                query = text(query)  # type: ignore[assignment]
+            param_key = "parameters"
+            if (
+                isinstance(self.cursor, Session)
+                and "parameters" in options
+                and "params" not in options
+            ):
+                options = options.copy()
+                options["params"] = options.pop("parameters")
+                param_key = "params"
+
+            if isinstance(query, str):
+                params = options.get(param_key)
+                if isinstance(params, Sequence) and hasattr(
+                    self.cursor, "exec_driver_sql"
+                ):
+                    cursor_execute = self.cursor.exec_driver_sql
+                    if isinstance(params, list) and not all(
+                        isinstance(p, (dict, tuple)) for p in params
+                    ):
+                        options[param_key] = tuple(params)
+                else:
+                    from sqlalchemy.sql import text
+
+                    query = text(query)  # type: ignore[assignment]
 
         # note: some cursor execute methods (eg: sqlite3) only take positional
         # params, hence the slightly convoluted resolution of the 'options' dict
@@ -440,9 +464,10 @@ def read_database(  # noqa: D417
         be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
-        executed against. Can also pass a valid ODBC connection string, starting with
-        "Driver=", in which case the `arrow-odbc` package will be used to establish
-        the connection and return Arrow-native data to Polars.
+        executed against. Can also pass a valid ODBC connection string, identified as
+        such if it contains the string "Driver=", in which case the `arrow-odbc`
+        package will be used to establish the connection and return Arrow-native data
+        to Polars.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
         data returned by the query; this can be useful for processing large resultsets
@@ -542,7 +567,7 @@ def read_database(  # noqa: D417
     """  # noqa: W505
     if isinstance(connection, str):
         # check for odbc connection string
-        if re.sub(r"\s", "", connection[:20]).lower().startswith("driver="):
+        if re.search(r"\bdriver\s*=\s*{[^}]+?}", connection, re.IGNORECASE):
             try:
                 import arrow_odbc  # noqa: F401
             except ModuleNotFoundError:

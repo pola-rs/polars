@@ -567,8 +567,8 @@ impl PhysicalExpr for WindowExpr {
                                     .unwrap()
                                     .1
                             } else {
-                                let df_right = DataFrame::new_no_checks(keys);
-                                let df_left = DataFrame::new_no_checks(group_by_columns);
+                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
+                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
                                 private_left_join_multiple_keys(
                                     &df_left, &df_right, None, None, true,
                                 )

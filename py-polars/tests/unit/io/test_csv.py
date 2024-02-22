@@ -1820,7 +1820,7 @@ def test_provide_schema() -> None:
     }
 
 
-def test_custom_writeable_object() -> None:
+def test_custom_writable_object() -> None:
     df = pl.DataFrame({"a": [10, 20, 30], "b": ["x", "y", "z"]})
 
     class CustomBuffer:

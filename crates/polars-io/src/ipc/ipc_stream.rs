@@ -214,7 +214,7 @@ fn fix_column_order(
             iter.collect()
         };
 
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     } else {
         df
     }

@@ -84,7 +84,7 @@ jobs:
           maturin develop
 
       - name: Run Python tests
-        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:coverage.xml
+        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:main.xml
         continue-on-error: true
 
       - name: Run Python tests - async reader
@@ -99,6 +99,6 @@ jobs:
       - name: Upload coverage information
         uses: codecov/codecov-action@v4
         with:
-          files: py-polars/coverage.lcov,py-polars/coverage.xml,py-polars/async.xml
+          files: py-polars/coverage.lcov,py-polars/main.xml,py-polars/async.xml
           name: macos
           token: ${{ secrets.CODECOV_TOKEN }}

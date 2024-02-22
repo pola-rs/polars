@@ -1,16 +1,17 @@
-use std::hash::Hash;
-
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 fn unique_counts_helper<I, J>(items: I) -> IdxCa
 where
     I: Iterator<Item = J>,
-    J: Hash + Eq,
+    J: TotalHash + TotalEq,
 {
     let mut map = PlIndexMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
     for item in items {
+        let item = TotalOrdWrap(item);
         map.entry(item)
             .and_modify(|cnt| {
                 *cnt += 1;
@@ -24,13 +25,12 @@ where
 /// Returns a count of the unique values in the order of appearance.
 pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     if s.dtype().to_physical().is_numeric() {
-        if s.bit_repr_is_large() {
-            let ca = s.bit_repr_large();
+        let s_physical = s.to_physical_repr();
+
+        with_match_physical_numeric_polars_type!(s_physical.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s_physical.as_ref().as_ref().as_ref();
             Ok(unique_counts_helper(ca.iter()).into_series())
-        } else {
-            let ca = s.bit_repr_small();
-            Ok(unique_counts_helper(ca.iter()).into_series())
-        }
+        })
     } else {
         match s.dtype() {
             DataType::String => {
