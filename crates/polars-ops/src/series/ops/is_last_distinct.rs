@@ -1,11 +1,10 @@
-use std::hash::Hash;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
@@ -31,16 +30,8 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_last_distinct(&s);
         },
-        Float32 => {
-            let ca = s.bit_repr_small();
-            is_last_distinct_numeric(&ca)
-        },
-        Float64 => {
-            let ca = s.bit_repr_large();
-            is_last_distinct_numeric(&ca)
-        },
         dt if dt.is_numeric() => {
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_last_distinct_numeric(ca)
             })
@@ -131,7 +122,7 @@ fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
 fn is_last_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
-    T::Native: Hash + Eq,
+    T::Native: TotalHash + TotalEq,
 {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
@@ -139,7 +130,7 @@ where
     let mut new_ca: BooleanChunked = arr
         .into_iter()
         .rev()
-        .map(|opt_v| unique.insert(opt_v))
+        .map(|opt_v| unique.insert(TotalOrdWrap(opt_v)))
         .collect_reversed::<NoNull<BooleanChunked>>()
         .into_inner();
     new_ca.rename(ca.name());

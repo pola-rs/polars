@@ -1,20 +1,19 @@
-use std::hash::Hash;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::bit_util::*;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
-    T::Native: Hash + Eq,
+    T::Native: TotalHash + TotalEq,
 {
     let mut unique = PlHashSet::new();
     let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
         arr.into_iter()
-            .map(|opt_v| unique.insert(opt_v))
+            .map(|opt_v| unique.insert(TotalOrdWrap(opt_v)))
             .collect_trusted()
     });
 
@@ -126,16 +125,8 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
-        Float32 => {
-            let ca = s.bit_repr_small();
-            is_first_distinct_numeric(&ca)
-        },
-        Float64 => {
-            let ca = s.bit_repr_large();
-            is_first_distinct_numeric(&ca)
-        },
         dt if dt.is_numeric() => {
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_distinct_numeric(ca)
             })

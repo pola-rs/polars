@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
 
 use ahash::RandomState;
 use arrow::legacy::prelude::QuantileInterpolOptions;
@@ -38,7 +37,10 @@ fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
             _ => {
                 if s.dtype().to_physical().is_numeric() {
                     let s = s.to_physical_repr();
-                    if s.bit_repr_is_large() {
+
+                    if s.dtype().is_float() {
+                        s.into_owned().into_series()
+                    } else if s.bit_repr_is_large() {
                         s.bit_repr_large().into_series()
                     } else {
                         s.bit_repr_small().into_series()
