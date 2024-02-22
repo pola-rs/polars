@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::Write;
 
 use arrow::array::{Array, ArrayRef};
@@ -192,8 +193,8 @@ where
         df.align_chunks();
 
         let n_splits = df.height() / self.row_group_size.unwrap_or(512 * 512);
-        if n_splits > 0 {
-            *df = accumulate_dataframes_vertical_unchecked(
+        let chunked_df = if n_splits > 0 {
+            Cow::Owned(accumulate_dataframes_vertical_unchecked(
                 split_df_as_ref(df, n_splits, false)?
                     .into_iter()
                     .map(|mut df| {
@@ -206,10 +207,12 @@ where
                         }
                         df
                     }),
-            );
-        }
+            ))
+        } else {
+            Cow::Borrowed(df)
+        };
         let mut batched = self.batched(&df.schema())?;
-        batched.write_batch(df)?;
+        batched.write_batch(&chunked_df)?;
         batched.finish()
     }
 }
