@@ -77,11 +77,10 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     }
 }
 
-/// Determine `values` columns.
+/// Determine `values` columns, which is optional in `pivot` calls.
 ///
-/// When the optional `values` parameter is `None`, we use all remaining columns in the `DataFrame`
-/// after `index` and `columns` have been excluded. When `values` is `Some`, we return a vector of
-/// strings.
+/// If not specified (i.e. is `None`, we use all remaining columns in the `DataFrame`)after `index`
+/// and `columns` have been excluded.
 fn _get_values_columns<I, S>(
     df: &DataFrame,
     index: &[String],
@@ -98,20 +97,19 @@ where
             .map(|s| s.as_ref().to_string())
             .collect::<Vec<_>>(),
         None => {
-            let column_names = df.get_column_names_owned();
-            let mut column_set = PlHashSet::<String>::with_capacity(column_names.len());
+            let mut column_set = PlHashSet::<String>::with_capacity(index.len() + columns.len());
 
-            // Column names are always unique.
-            column_names.into_iter().for_each(|s| {
-                column_set.insert_unique_unchecked(s.to_string());
-            });
-
-            // Remove `index` and `column` columns.
+            // Hash columns we don't want to include
             index.iter().chain(columns.iter()).for_each(|s| {
-                column_set.remove(s);
+                column_set.insert_unique_unchecked(s.to_owned());
             });
 
-            column_set.drain().collect()
+            // filter out
+            df.get_column_names_owned()
+                .into_iter()
+                .map(|s| s.to_string())
+                .filter(|s| !column_set.contains(s))
+                .collect()
         },
     }
 }

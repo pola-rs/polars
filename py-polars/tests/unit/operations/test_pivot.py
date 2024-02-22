@@ -61,9 +61,7 @@ def test_pivot_no_values() -> None:
         }
     )
 
-    # the order of the output columns is volatile
-    assert set(result.columns) == set(expected.columns)
-    assert_frame_equal(result, expected.select(result.columns))
+    assert_frame_equal(result, expected)
 
 
 def test_pivot_list() -> None:
