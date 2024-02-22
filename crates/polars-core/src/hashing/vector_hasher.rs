@@ -440,8 +440,12 @@ where
         buf.clear();
         buf.reserve(self.len());
 
-        self.downcast_iter()
-            .for_each(|arr| buf.extend(arr.into_iter().map(|opt_v| random_state.hash_one(opt_v))));
+        self.downcast_iter().for_each(|arr| {
+            buf.extend(
+                arr.into_iter()
+                    .map(|opt_v| random_state.hash_one(TotalOrdWrap(opt_v))),
+            )
+        });
 
         Ok(())
     }
@@ -449,7 +453,7 @@ where
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
         self.apply_to_slice(
             |opt_v, h| {
-                let hashed = random_state.hash_one(opt_v);
+                let hashed = random_state.hash_one(TotalOrdWrap(opt_v));
                 _boost_hash_combine(hashed, *h)
             },
             hashes,
