@@ -565,19 +565,17 @@ fn is_in_string_categorical(
     ca_in: &StringChunked,
     other: &CategoricalChunked,
 ) -> PolarsResult<BooleanChunked> {
-    // We need only check against the unique categories used by this array.
-    let set = if other._can_fast_unique() {
-        // Build hash set directly from categories
-        let cats = other.get_rev_map().get_categories();
-        PlHashSet::from_iter(cats.values_iter().map(|s| s.to_owned()))
+    // In case of fast unique, we can directly use the categories. Otherwise we need to
+    // first get the unique physicals
+    let categories = StringChunked::with_chunk("", other.get_rev_map().get_categories().clone());
+    let other = if other._can_fast_unique() {
+        categories
     } else {
-        // Build hash set from unique values
-        let cats = other.unique().unwrap();
-        PlHashSet::from_iter(cats.iter_str().flatten().map(|s| s.to_owned()))
+        let s = other.physical().unique()?.cast(&IDX_DTYPE)?;
+        // SAFETY: Invariant of categorical means indices are in bound
+        unsafe { categories.take_unchecked(s.idx()?) }
     };
-    Ok(ca_in
-        .apply_values_generic(|val| set.contains(val))
-        .with_name(ca_in.name()))
+    is_in_helper_ca(&ca_in.as_binary(), &other.as_binary())
 }
 
 #[cfg(feature = "dtype-categorical")]
