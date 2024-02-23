@@ -30,12 +30,12 @@ where
     }
 }
 
-impl<T> MaterializeValues<Option<TotalOrdWrap<T>>> for MutablePrimitiveArray<T>
+impl<T> MaterializeValues<TotalOrdWrap<Option<T>>> for MutablePrimitiveArray<T>
 where
     T: NativeType,
 {
-    fn extend_buf<I: Iterator<Item = Option<TotalOrdWrap<T>>>>(&mut self, values: I) -> usize {
-        self.extend(values);
+    fn extend_buf<I: Iterator<Item = TotalOrdWrap<Option<T>>>>(&mut self, values: I) -> usize {
+        self.extend(values.map(|x| x.0));
         self.len()
     }
 }
@@ -102,8 +102,8 @@ where
     }
 }
 
-fn copied_wrapper_opt<T: Copy>(v: Option<&T>) -> Option<TotalOrdWrap<T>> {
-    v.copied().map(TotalOrdWrap)
+fn copied_wrapper_opt<T: Copy>(v: Option<&T>) -> TotalOrdWrap<Option<T>> {
+    TotalOrdWrap(v.copied())
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -137,12 +137,14 @@ fn primitive<T>(
 ) -> PolarsResult<ListArray<i64>>
 where
     T: NativeType + TotalHash + Copy + TotalEq,
+    // Option::<T>::to_total_ord creates a TotalOrdWrap no matter what so we
+    // just use TotalOrdWrap directly.
 {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
 
     let mut set = Default::default();
-    let mut set2: PlIndexSet<Option<TotalOrdWrap<T>>> = Default::default();
+    let mut set2: PlIndexSet<TotalOrdWrap<Option<T>>> = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
