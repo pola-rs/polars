@@ -66,6 +66,12 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        (&self.0).into_total_eq_inner()
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        (&self.0).into_total_ord_inner()
+    }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {

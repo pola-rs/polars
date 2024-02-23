@@ -555,6 +555,10 @@ def test_sort_by_logical() -> None:
         "s1"
     ].to_list() == [date(2020, 5, 10), date(2020, 5, 13), date(2020, 5, 6)]
 
+    assert test.select([pl.col("start").sort_by(["end", "num"]).alias("s2")])[
+        "s2"
+    ].to_list() == [date(2020, 5, 6), date(2020, 5, 13), date(2020, 5, 10)]
+
     assert test.select([pl.col("num").sort_by(["start", "end"]).alias("n1")])[
         "n1"
     ].to_list() == [D(0), D(2), D(1)]
