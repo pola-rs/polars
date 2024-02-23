@@ -19,7 +19,6 @@ use super::*;
 use crate::array::PrimitiveArray;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::error::{polars_bail, PolarsResult};
-use crate::legacy::utils::CustomIterTools;
 use crate::types::NativeType;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {

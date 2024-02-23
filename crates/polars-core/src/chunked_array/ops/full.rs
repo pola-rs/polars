@@ -1,5 +1,4 @@
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::array::default_arrays::FromData;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;

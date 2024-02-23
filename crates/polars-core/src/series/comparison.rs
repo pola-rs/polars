@@ -3,8 +3,6 @@
 #[cfg(feature = "dtype-struct")]
 use std::ops::Deref;
 
-use super::Series;
-use crate::apply_method_physical_numeric;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::series::nulls::replace_non_null;

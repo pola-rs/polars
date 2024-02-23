@@ -4,16 +4,10 @@ use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use chrono::format::{DelayedFormat, StrftimeItems};
-use chrono::NaiveDate;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
 
-use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
-#[cfg(feature = "timezones")]
-use crate::chunked_array::temporal::validate_time_zone;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
 

@@ -123,8 +123,6 @@ macro_rules! native_simd {
     };
 }
 
-pub(super) use native_simd;
-
 // Types do not have specific intrinsics and thus SIMD can't be specialized.
 // Therefore, we can declare their MD representation as `[$t; 8]` irrespectively
 // of how they are represented in the different channels.

@@ -1,13 +1,8 @@
 use std::any::Any;
-use std::borrow::Cow;
-use std::sync::Arc;
 
-use arrow::array::ArrayRef;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 use polars_utils::IdxSize;
 
-use crate::datatypes::IdxCa;
-use crate::error::PolarsResult;
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;

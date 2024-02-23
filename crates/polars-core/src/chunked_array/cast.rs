@@ -1,10 +1,7 @@
 //! Implementations of the ChunkCast Trait.
-use std::convert::TryFrom;
 
 use arrow::compute::cast::CastOptions;
 
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]

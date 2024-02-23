@@ -3,10 +3,6 @@ use std::hash::Hash;
 use arrow::bitmap::MutableBitmap;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-#[cfg(feature = "object")]
-use crate::datatypes::ObjectType;
-use crate::datatypes::PlHashSet;
-use crate::frame::group_by::GroupsProxy;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;

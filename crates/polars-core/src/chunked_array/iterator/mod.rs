@@ -3,7 +3,6 @@ use arrow::array::*;
 use crate::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use crate::series::iterator::SeriesIter;
-use crate::utils::CustomIterTools;
 
 pub mod par;
 

@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 
 use polars_error::{polars_bail, polars_err, PolarsResult};

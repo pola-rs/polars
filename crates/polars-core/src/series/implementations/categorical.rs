@@ -1,14 +1,6 @@
-use std::borrow::Cow;
-
-use ahash::RandomState;
-
-use super::{private, IntoSeries, SeriesTrait, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoTotalOrdInner, TotalOrdInner};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 
 unsafe impl IntoSeries for CategoricalChunked {
     fn into_series(self) -> Series {

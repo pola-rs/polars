@@ -1,6 +1,5 @@
 //! DataFrame module.
 use std::borrow::Cow;
-use std::iter::{FromIterator, Iterator};
 use std::{mem, ops};
 
 use ahash::AHashSet;
@@ -28,8 +27,6 @@ pub use chunks::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]

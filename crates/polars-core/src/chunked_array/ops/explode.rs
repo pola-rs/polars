@@ -1,9 +1,6 @@
-use std::convert::TryFrom;
-
 use arrow::array::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::array::list::AnonymousBuilder;
-use arrow::legacy::array::PolarsArray;
 use arrow::legacy::bit_util::unset_bit_raw;
 #[cfg(feature = "dtype-array")]
 use arrow::legacy::is_valid::IsValid;

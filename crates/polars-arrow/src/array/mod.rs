@@ -146,15 +146,6 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
 
 dyn_clone::clone_trait_object!(Array);
 
-/// A trait describing an array with a backing store that can be preallocated to
-/// a given size.
-pub(crate) trait Container {
-    /// Create this array with a given capacity.
-    fn with_capacity(capacity: usize) -> Self
-    where
-        Self: Sized;
-}
-
 /// A trait describing a mutable array; i.e. an array whose values can be changed.
 /// Mutable arrays cannot be cloned but can be mutated in place,
 /// thereby making them useful to perform numeric operations without allocations.

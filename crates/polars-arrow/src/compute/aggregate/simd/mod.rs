@@ -40,8 +40,6 @@ macro_rules! simd_add {
     };
 }
 
-pub(super) use simd_add;
-
 simd_add!(i128x8, i128, 8, add);
 
 #[cfg(not(feature = "simd"))]
