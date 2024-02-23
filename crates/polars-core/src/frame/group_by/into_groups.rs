@@ -2,7 +2,7 @@
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use arrow::legacy::prelude::*;
-use polars_utils::total_ord::TotalHash;
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::config::verbose;
@@ -27,7 +27,8 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
     T: PolarsNumericType,
-    T::Native: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash,
+    T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy + Send + DirtyHash,
 {
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size();

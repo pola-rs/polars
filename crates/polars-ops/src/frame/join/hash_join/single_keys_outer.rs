@@ -3,7 +3,7 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 
 use super::*;
@@ -15,7 +15,8 @@ pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
 where
     I: IntoIterator<Item = T> + Send,
     I::IntoIter: TrustedLen,
-    T: TotalHash + TotalEq + Send + Copy,
+    T: TotalHash + TotalEq + Send + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let build_hasher = build_hasher.unwrap_or_default();
     let hashes = POOL.install(|| {
@@ -24,7 +25,7 @@ where
             .map(|iter| {
                 // create hashes and keys
                 iter.into_iter()
-                    .map(|val| (build_hasher.hash_one(TotalOrdWrap(val)), val))
+                    .map(|val| (build_hasher.hash_one(&val.to_total_ord()), val))
                     .collect_trusted::<Vec<_>>()
             })
             .collect()
@@ -34,10 +35,11 @@ where
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
-) -> Vec<PlHashMap<TotalOrdWrap<T>, (bool, IdxVec)>>
+) -> Vec<PlHashMap<<T as ToTotalOrd>::TotalOrdItem, (bool, IdxVec)>>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
-    T: Send + Sync + Copy + TotalHash + TotalEq,
+    T: Send + Sync + TotalHash + TotalEq + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let n_partitions = _set_partition_size();
     let (hashes_and_keys, build_hasher) = create_hash_and_keys_threaded_vectorized(iters, None);
@@ -51,7 +53,7 @@ where
             .map(|partition_no| {
                 let build_hasher = build_hasher.clone();
                 let hashes_and_keys = &hashes_and_keys;
-                let mut hash_tbl: PlHashMap<TotalOrdWrap<T>, (bool, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
                     PlHashMap::with_hasher(build_hasher);
 
                 let mut offset = 0;
@@ -61,7 +63,7 @@ where
                         .iter()
                         .enumerate()
                         .for_each(|(idx, (h, k))| {
-                            let k = TotalOrdWrap(*k);
+                            let k = k.to_total_ord();
                             let idx = idx as IdxSize;
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
@@ -96,7 +98,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
-    hash_tbls: &mut [PlHashMap<TotalOrdWrap<T>, (bool, IdxVec)>],
+    hash_tbls: &mut [PlHashMap<<T as ToTotalOrd>::TotalOrdItem, (bool, IdxVec)>],
     results: &mut (
         MutablePrimitiveArray<IdxSize>,
         MutablePrimitiveArray<IdxSize>,
@@ -110,7 +112,8 @@ fn probe_outer<T, F, G, H>(
     swap_fn_drain: H,
     join_nulls: bool,
 ) where
-    T: TotalHash + TotalEq + Copy + IsNull,
+    T: TotalHash + TotalEq + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + IsNull,
     // idx_a, idx_b -> ...
     F: Fn(IdxSize, IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
     // idx_a -> ...
@@ -122,7 +125,7 @@ fn probe_outer<T, F, G, H>(
     let mut idx_a = 0;
     for probe_hashes in probe_hashes {
         for (h, key) in probe_hashes {
-            let key = TotalOrdWrap(*key);
+            let key = key.to_total_ord();
             let h = *h;
             // probe table that contains the hashed value
             let current_probe_table =
@@ -185,7 +188,8 @@ where
     J: IntoIterator<Item = T>,
     <J as IntoIterator>::IntoIter: TrustedLen + Send,
     <I as IntoIterator>::IntoIter: TrustedLen + Send,
-    T: Send + Sync + Copy + TotalHash + TotalEq + IsNull,
+    T: Send + Sync + TotalHash + TotalEq + IsNull + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + IsNull,
 {
     let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();

@@ -1,4 +1,4 @@
-use std::hash::BuildHasher;
+use std::hash::{BuildHasher, Hash};
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
@@ -6,7 +6,7 @@ use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
-use polars_utils::total_ord::{TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use polars_utils::unitvec;
 use rayon::prelude::*;
 
@@ -145,14 +145,15 @@ fn finish_group_order_vecs(
 
 pub(crate) fn group_by<T>(a: impl Iterator<Item = T>, sorted: bool) -> GroupsProxy
 where
-    T: TotalHash + TotalEq,
+    T: TotalHash + TotalEq + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let init_size = get_init_size();
-    let mut hash_tbl: PlHashMap<TotalOrdWrap<T>, (IdxSize, IdxVec)> =
+    let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
         PlHashMap::with_capacity(init_size);
     let mut cnt = 0;
     a.for_each(|k| {
-        let k = TotalOrdWrap(k);
+        let k = k.to_total_ord();
         let idx = cnt;
         cnt += 1;
         let entry = hash_tbl.entry(k);
@@ -191,7 +192,8 @@ pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
     sorted: bool,
 ) -> GroupsProxy
 where
-    T: TotalHash + TotalEq + DirtyHash + Copy,
+    T: TotalHash + TotalEq + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Hash + Eq + Sync + Copy + DirtyHash,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
     let init_size = get_init_size();
@@ -203,7 +205,7 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<TotalOrdWrap<T>, (IdxSize, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
@@ -214,7 +216,7 @@ where
 
                     let mut cnt = 0;
                     keys.iter().for_each(|k| {
-                        let k = TotalOrdWrap(*k);
+                        let k = k.to_total_ord();
                         let idx = cnt + offset;
                         cnt += 1;
 
@@ -256,7 +258,8 @@ pub(crate) fn group_by_threaded_iter<T, I>(
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
     I::IntoIter: ExactSizeIterator,
-    T: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash,
+    T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     let init_size = get_init_size();
 
@@ -267,7 +270,7 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<TotalOrdWrap<T>, (IdxSize, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
@@ -278,7 +281,7 @@ where
 
                     let mut cnt = 0;
                     keys.for_each(|k| {
-                        let k = TotalOrdWrap(k);
+                        let k = k.to_total_ord();
                         let idx = cnt + offset;
                         cnt += 1;
 

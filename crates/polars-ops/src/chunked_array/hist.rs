@@ -10,7 +10,7 @@ use polars_core::prelude::{
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
-use polars_utils::total_ord::TotalOrdWrap;
+use polars_utils::total_ord::ToTotalOrd;
 
 fn compute_hist<T>(
     ca: &ChunkedArray<T>,
@@ -26,7 +26,7 @@ where
     let (breaks, count) = if let Some(bins) = bins {
         let mut breaks = Vec::with_capacity(bins.len() + 1);
         breaks.extend_from_slice(bins);
-        breaks.sort_unstable_by_key(|k| TotalOrdWrap(*k));
+        breaks.sort_unstable_by_key(|k| k.to_total_ord());
         breaks.push(f64::INFINITY);
 
         let sorted = ca.sort(false);

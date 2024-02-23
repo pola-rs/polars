@@ -3,7 +3,7 @@ use std::hash::Hash;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 use polars_utils::sync::SyncPtr;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
 
@@ -176,14 +176,15 @@ where
 fn compute_col_idx_numeric<T>(column_agg_physical: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + TotalEq,
+    T::Native: TotalHash + TotalEq + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
     let mut idx = 0 as IdxSize;
     let mut out = Vec::with_capacity(column_agg_physical.len());
 
     for opt_v in column_agg_physical.iter() {
-        let opt_v = TotalOrdWrap(opt_v);
+        let opt_v = opt_v.to_total_ord();
         let idx = *col_to_idx.entry(opt_v).or_insert_with(|| {
             let old_idx = idx;
             idx += 1;
@@ -294,7 +295,8 @@ fn compute_row_index<'a, T>(
 ) -> (Vec<IdxSize>, usize, Option<Vec<Series>>)
 where
     T: PolarsDataType,
-    Option<T::Physical<'a>>: TotalHash + TotalEq + Copy,
+    Option<T::Physical<'a>>: TotalHash + TotalEq + Copy + ToTotalOrd,
+    <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
     ChunkedArray<T>: FromIterator<Option<T::Physical<'a>>>,
     ChunkedArray<T>: IntoSeries,
 {
@@ -304,7 +306,7 @@ where
 
     let mut row_locations = Vec::with_capacity(index_agg_physical.len());
     for opt_v in index_agg_physical.iter() {
-        let opt_v = TotalOrdWrap(opt_v);
+        let opt_v = opt_v.to_total_ord();
         let idx = *row_to_idx.entry(opt_v).or_insert_with(|| {
             let old_idx = idx;
             idx += 1;
@@ -321,7 +323,11 @@ where
         0 => {
             let mut s = row_to_idx
                 .into_iter()
-                .map(|(k, _)| k.0)
+                .map(|(k, _)| {
+                    let out = Option::<T::Physical<'a>>::peel_total_ord(k);
+                    let out: Option<T::Physical<'a>> = unsafe { std::mem::transmute_copy(&out) };
+                    out
+                })
                 .collect::<ChunkedArray<T>>()
                 .into_series();
             s.rename(&index[0]);
