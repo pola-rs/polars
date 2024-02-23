@@ -211,6 +211,17 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
+    fn sort_with(&self, options: SortOptions) -> Series {
+        self.0
+            .sort_with(options)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
+    }
+
     fn null_count(&self) -> usize {
         self.0.null_count()
     }
