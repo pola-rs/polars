@@ -11,7 +11,7 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -102,8 +102,10 @@ where
     }
 }
 
-fn copied_wrapper_opt<T: Copy>(v: Option<&T>) -> TotalOrdWrap<Option<T>> {
-    TotalOrdWrap(v.copied())
+fn copied_wrapper_opt<T: Copy + ToTotalOrd>(
+    v: Option<&T>,
+) -> <Option<T> as ToTotalOrd>::TotalOrdItem {
+    v.copied().to_total_ord()
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -136,15 +138,14 @@ fn primitive<T>(
     validity: Option<Bitmap>,
 ) -> PolarsResult<ListArray<i64>>
 where
-    T: NativeType + TotalHash + Copy + TotalEq,
-    // Option::<T>::to_total_ord creates a TotalOrdWrap no matter what so we
-    // just use TotalOrdWrap directly.
+    T: NativeType + TotalHash + TotalEq + Copy + ToTotalOrd,
+    <Option<T> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
 
     let mut set = Default::default();
-    let mut set2: PlIndexSet<TotalOrdWrap<Option<T>>> = Default::default();
+    let mut set2: PlIndexSet<<Option<T> as ToTotalOrd>::TotalOrdItem> = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
