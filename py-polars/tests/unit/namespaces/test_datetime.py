@@ -1038,10 +1038,10 @@ def test_mean(
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_mean_with_tu(
-    values: list[datetime], expected_mean: datetime, time_unit: str
+    values: list[datetime], expected_mean: datetime, time_unit: TimeUnit
 ) -> None:
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean  # type:ignore[arg-type]
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean  # type:ignore[arg-type]
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean
 
 
 @pytest.mark.parametrize(
@@ -1057,11 +1057,11 @@ def test_datetime_mean_with_tu(
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_median_with_tu(
-    values: list[datetime], expected_median: datetime, time_unit: str
+    values: list[datetime], expected_median: datetime, time_unit: TimeUnit
 ) -> None:
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median  # type:ignore[arg-type]
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
     assert (
-        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median  # type:ignore[arg-type]
+        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median
     )
 
 
@@ -1078,10 +1078,10 @@ def test_datetime_median_with_tu(
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_duration_mean_with_tu(
-    values: list[timedelta], expected_mean: timedelta, time_unit: str
+    values: list[timedelta], expected_mean: timedelta, time_unit: TimeUnit
 ) -> None:
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean  # type:ignore[arg-type]
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean  # type:ignore[arg-type]
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean
 
 
 @pytest.mark.parametrize(
@@ -1097,11 +1097,11 @@ def test_duration_mean_with_tu(
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_duration_median_with_tu(
-    values: list[timedelta], expected_median: timedelta, time_unit: str
+    values: list[timedelta], expected_median: timedelta, time_unit: TimeUnit
 ) -> None:
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median  # type:ignore[arg-type]
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
     assert (
-        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median  # type:ignore[arg-type]
+        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median
     )
 
 
