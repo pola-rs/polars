@@ -104,7 +104,7 @@ class BinaryNameSpace:
 
         Examples
         --------
-        Decode hex values to binary.
+        Decode hex values.
 
         >>> s = pl.Series("colors", [b"000000", b"ffff00", b"0000ff"])
         >>> s.bin.decode("hex")
@@ -116,7 +116,7 @@ class BinaryNameSpace:
             b"\x00\x00\xff"
         ]
 
-        Decode base64 values to binary.
+        Decode base64 values.
 
         >>> s = pl.Series("colors", [b"AAAA", b"//8A", b"AAD/"])
         >>> s.bin.decode("base64")
@@ -128,7 +128,7 @@ class BinaryNameSpace:
             b"\x00\x00\xff"
         ]
 
-        Mask results for invalid values with null values versus raising an error.
+        Set `strict=False` to set invalid values to null instead of raising an error.
 
         >>> s = pl.Series("colors", [b"000000", b"ffff00", b"invalid_value"])
         >>> s.bin.decode("hex", strict=False)
@@ -171,7 +171,6 @@ class BinaryNameSpace:
 
         Encode to base64 values from binary.
 
-        >>> s = pl.Series("colors", [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
         >>> s.bin.encode("base64")
         shape: (3,)
         Series: 'colors' [str]
