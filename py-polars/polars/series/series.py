@@ -6798,7 +6798,7 @@ class Series:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When `adjust=True` the EW function is calculated
+                - When `adjust=True` (the default) the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When `adjust=False` the EW function is calculated
                   recursively by
@@ -6812,7 +6812,7 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False` (default), weights are based on absolute
+                - When `ignore_nulls=False`, weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -6820,7 +6820,7 @@ class Series:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True`, weights are based
+                - When `ignore_nulls=True` (the default), weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -6880,7 +6880,7 @@ class Series:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When `adjust=True` the EW function is calculated
+                - When `adjust=True` (the default) the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When `adjust=False` the EW function is calculated
                   recursively by
@@ -6897,7 +6897,7 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False` (default), weights are based on absolute
+                - When `ignore_nulls=False`, weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -6905,7 +6905,7 @@ class Series:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True`, weights are based
+                - When `ignore_nulls=True` (the default), weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -6965,7 +6965,7 @@ class Series:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When `adjust=True` the EW function is calculated
+                - When `adjust=True` (the default) the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When `adjust=False` the EW function is calculated
                   recursively by
@@ -6982,7 +6982,7 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False` (default), weights are based on absolute
+                - When `ignore_nulls=False`, weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -6990,7 +6990,7 @@ class Series:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True`, weights are based
+                - When `ignore_nulls=True` (the default), weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
