@@ -323,11 +323,7 @@ where
         0 => {
             let mut s = row_to_idx
                 .into_iter()
-                .map(|(k, _)| {
-                    let out = Option::<T::Physical<'a>>::peel_total_ord(k);
-                    let out: Option<T::Physical<'a>> = unsafe { std::mem::transmute_copy(&out) };
-                    out
-                })
+                .map(|(k, _)| Option::<T::Physical<'a>>::peel_total_ord(k))
                 .collect::<ChunkedArray<T>>()
                 .into_series();
             s.rename(&index[0]);
