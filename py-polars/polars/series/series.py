@@ -6769,7 +6769,7 @@ class Series:
         *,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Series:
         r"""
         Exponentially-weighted moving average.
@@ -6851,7 +6851,7 @@ class Series:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Series:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -6936,7 +6936,7 @@ class Series:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Series:
         r"""
         Exponentially-weighted moving variance.

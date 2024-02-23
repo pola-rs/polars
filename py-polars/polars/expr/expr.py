@@ -8558,7 +8558,7 @@ class Expr:
         *,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Self:
         r"""
         Exponentially-weighted moving average.
@@ -8631,6 +8631,16 @@ class Expr:
         │ 2.428571 │
         └──────────┘
         """
+        if ignore_nulls is None:
+            issue_deprecation_warning(
+                "The default value for `ignore_nulls` for `ewm` methods"
+                " will change from True to False in the next breaking release."
+                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
+                " and silence this warning.",
+                version="0.20.11",
+            )
+            ignore_nulls = True
+
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
@@ -8647,7 +8657,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Self:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -8723,6 +8733,16 @@ class Expr:
         │ 0.963624 │
         └──────────┘
         """
+        if ignore_nulls is None:
+            issue_deprecation_warning(
+                "The default value for `ignore_nulls` for `ewm` methods"
+                " will change from True to False in the next breaking release."
+                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
+                " and silence this warning.",
+                version="0.20.11",
+            )
+            ignore_nulls = True
+
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
@@ -8739,7 +8759,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Self:
         r"""
         Exponentially-weighted moving variance.
@@ -8815,6 +8835,16 @@ class Expr:
         │ 0.928571 │
         └──────────┘
         """
+        if ignore_nulls is None:
+            issue_deprecation_warning(
+                "The default value for `ignore_nulls` for `ewm` methods"
+                " will change from True to False in the next breaking release."
+                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
+                " and silence this warning.",
+                version="0.20.11",
+            )
+            ignore_nulls = True
+
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
