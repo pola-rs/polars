@@ -597,7 +597,7 @@ def sequence_to_pyseries(
                 return PySeries.new_object(name, values, strict)
             if dtype:
                 srs = sequence_from_any_value_and_dtype_or_object(name, values, dtype)
-                if not dtype.is_(srs.dtype()):
+                if dtype != srs.dtype():
                     srs = srs.cast(dtype, strict=False)
                 return srs
             return sequence_from_any_value_or_object(name, values)
