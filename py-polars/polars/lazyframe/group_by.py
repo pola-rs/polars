@@ -347,16 +347,16 @@ class LazyGroupBy:
         ...         "b": [1, None, 2],
         ...     }
         ... )
-        >>> lf.group_by("a").count().collect()  # doctest: +SKIP
+        >>> lf.group_by("a").len().collect()  # doctest: +SKIP
         shape: (2, 2)
-        ┌────────┬───────┐
-        │ a      ┆ count │
-        │ ---    ┆ ---   │
-        │ str    ┆ u32   │
-        ╞════════╪═══════╡
-        │ apple  ┆ 2     │
-        │ orange ┆ 1     │
-        └────────┴───────┘
+        ┌────────┬─────┐
+        │ a      ┆ len │
+        │ ---    ┆ --- │
+        │ str    ┆ u32 │
+        ╞════════╪═════╡
+        │ apple  ┆ 2   │
+        │ orange ┆ 1   │
+        └────────┴─────┘
         """
         return self.agg(F.len())
 
