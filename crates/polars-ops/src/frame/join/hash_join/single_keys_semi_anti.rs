@@ -9,7 +9,7 @@ pub(super) fn create_probe_table_semi_anti<T, I>(
 ) -> Vec<PlHashSet<<T as ToTotalOrd>::TotalOrdItem>>
 where
     T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + DirtyHash,
     I: IntoIterator<Item = T> + Copy + Send + Sync,
 {
     let n_partitions = _set_partition_size();
@@ -41,7 +41,7 @@ fn semi_anti_impl<T, I>(
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + DirtyHash,
 {
     // first we hash one relation
     let hash_sets = create_probe_table_semi_anti(build);
@@ -91,7 +91,7 @@ pub(super) fn hash_join_tuples_left_anti<T, I>(probe: Vec<I>, build: Vec<I>) -> 
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + DirtyHash,
 {
     let par_iter = semi_anti_impl(probe, build)
         .filter(|tpls| !tpls.1)
@@ -103,7 +103,7 @@ pub(super) fn hash_join_tuples_left_semi<T, I>(probe: Vec<I>, build: Vec<I>) -> 
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + DirtyHash,
 {
     let par_iter = semi_anti_impl(probe, build)
         .filter(|tpls| tpls.1)

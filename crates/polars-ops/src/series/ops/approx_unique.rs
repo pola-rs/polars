@@ -10,7 +10,7 @@ use crate::series::ops::approx_algo::HyperLogLog;
 fn approx_n_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsDataType,
-    Option<T::Physical<'a>>: TotalHash + TotalEq + ToTotalOrd,
+    T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut hllp = HyperLogLog::new();

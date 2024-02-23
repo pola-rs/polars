@@ -295,7 +295,7 @@ fn compute_row_index<'a, T>(
 ) -> (Vec<IdxSize>, usize, Option<Vec<Series>>)
 where
     T: PolarsDataType,
-    Option<T::Physical<'a>>: TotalHash + TotalEq + Copy + ToTotalOrd,
+    T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
     ChunkedArray<T>: FromIterator<Option<T::Physical<'a>>>,
     ChunkedArray<T>: IntoSeries,

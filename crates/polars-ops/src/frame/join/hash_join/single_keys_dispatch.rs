@@ -273,9 +273,9 @@ fn num_group_join_left<T>(
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + DirtyHash + IsNull + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Copy + Hash + Eq + DirtyHash + IsNull,
-    Option<T::Native>: DirtyHash + ToTotalOrd,
-    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: DirtyHash,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+    T::Native: DirtyHash + Copy + ToTotalOrd,
+    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();
@@ -428,9 +428,8 @@ fn num_group_join_anti_semi<T>(
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
-    Option<T::Native>: DirtyHash + ToTotalOrd,
-    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: DirtyHash,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
+    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();

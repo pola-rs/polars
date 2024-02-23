@@ -10,7 +10,7 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked
 where
     T: PolarsDataType,
-    Option<T::Physical<'a>>: TotalHash + TotalEq + ToTotalOrd,
+    T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let len = ca.len();

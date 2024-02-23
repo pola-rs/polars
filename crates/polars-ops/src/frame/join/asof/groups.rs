@@ -73,7 +73,7 @@ where
     T: PolarsDataType,
     S: PolarsNumericType,
     S::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <S::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash + IsNull + Copy,
+    <S::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {

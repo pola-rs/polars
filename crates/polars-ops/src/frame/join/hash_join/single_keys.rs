@@ -19,7 +19,7 @@ pub(crate) fn build_tables<T, I>(
 ) -> Vec<PlHashMap<<T as ToTotalOrd>::TotalOrdItem, IdxVec>>
 where
     T: TotalHash + TotalEq + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Copy + Hash + Eq + DirtyHash + IsNull,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
 {
     // FIXME: change interface to split the input here, instead of taking

@@ -39,7 +39,7 @@ pub(crate) fn prepare_hashed_relation_threaded<T, I>(
 where
     I: Iterator<Item = T> + Send + TrustedLen,
     T: Send + Sync + TotalHash + TotalEq + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq,
 {
     let n_partitions = _set_partition_size();
     let (hashes_and_keys, build_hasher) = create_hash_and_keys_threaded_vectorized(iters, None);
@@ -189,7 +189,7 @@ where
     <J as IntoIterator>::IntoIter: TrustedLen + Send,
     <I as IntoIterator>::IntoIter: TrustedLen + Send,
     T: Send + Sync + TotalHash + TotalEq + IsNull + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + IsNull,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + IsNull,
 {
     let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();

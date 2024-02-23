@@ -28,7 +28,7 @@ fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) 
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy + Send + DirtyHash,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size();
