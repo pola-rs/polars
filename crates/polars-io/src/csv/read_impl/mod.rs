@@ -3,7 +3,6 @@ mod batched_read;
 
 use std::fmt;
 use std::ops::Deref;
-use std::sync::Arc;
 
 pub use batched_mmap::*;
 pub use batched_read::*;

@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::convert::TryFrom;
 use std::ops::{Deref, Range};
-use std::sync::Arc;
 
 use arrow::array::new_empty_array;
 use arrow::datatypes::ArrowSchemaRef;

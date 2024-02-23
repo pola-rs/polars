@@ -4,7 +4,6 @@ use std::io::Read;
 use std::mem::MaybeUninit;
 
 use polars_core::config::verbose;
-use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;

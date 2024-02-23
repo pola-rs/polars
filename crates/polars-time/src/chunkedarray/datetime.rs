@@ -1,4 +1,3 @@
-use arrow;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::cast::{cast, CastOptions};
 use arrow::compute::temporal;

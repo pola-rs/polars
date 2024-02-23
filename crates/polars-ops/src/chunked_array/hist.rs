@@ -1,14 +1,8 @@
 use std::fmt::Write;
 
-use arrow::legacy::index::IdxSize;
 use num_traits::ToPrimitive;
-use polars_core::datatypes::PolarsNumericType;
-use polars_core::prelude::{
-    ChunkCast, ChunkSort, ChunkedArray, DataType, StringChunkedBuilder, StructChunked, UInt32Type,
-    *,
-};
+use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
 use polars_utils::total_ord::ToTotalOrd;
 

@@ -1,11 +1,7 @@
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
-use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use polars_core::hashing::{
-    populate_multiple_key_hashmap, IdBuildHasher, IdxHash, _HASHMAP_INIT_SIZE,
-};
-use polars_core::utils::{_set_partition_size, split_df};
-use polars_core::POOL;
+use polars_core::hashing::{populate_multiple_key_hashmap, IdBuildHasher, IdxHash};
+use polars_core::utils::split_df;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::unitvec;

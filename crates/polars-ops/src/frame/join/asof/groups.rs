@@ -13,7 +13,6 @@ use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
 use super::*;
-use crate::frame::IntoDf;
 
 fn compute_len_offsets<I: IntoIterator<Item = usize>>(iter: I) -> Vec<usize> {
     let mut cumlen = 0;

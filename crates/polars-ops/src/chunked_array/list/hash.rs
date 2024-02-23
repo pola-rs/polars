@@ -1,7 +1,6 @@
 use std::hash::Hash;
 
 use polars_core::export::_boost_hash_combine;
-use polars_core::export::ahash::{self};
 use polars_core::export::rayon::prelude::*;
 use polars_core::utils::NoNull;
 use polars_core::{with_match_physical_float_polars_type, POOL};

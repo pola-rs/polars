@@ -24,7 +24,6 @@ use object_store::ObjectStore;
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
-use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
