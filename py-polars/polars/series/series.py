@@ -6830,7 +6830,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series([1, 2, 3])
-        >>> s.ewm_mean(com=1)
+        >>> s.ewm_mean(com=1, ignore_nulls=False)
         shape: (3,)
         Series: '' [f64]
         [
@@ -6915,7 +6915,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.ewm_std(com=1)
+        >>> s.ewm_std(com=1, ignore_nulls=False)
         shape: (3,)
         Series: 'a' [f64]
         [
@@ -7000,7 +7000,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.ewm_var(com=1)
+        >>> s.ewm_var(com=1, ignore_nulls=False)
         shape: (3,)
         Series: 'a' [f64]
         [

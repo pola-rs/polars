@@ -8619,7 +8619,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").ewm_mean(com=1))
+        >>> df.select(pl.col("a").ewm_mean(com=1, ignore_nulls=False))
         shape: (3, 1)
         ┌──────────┐
         │ a        │
@@ -8721,7 +8721,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").ewm_std(com=1))
+        >>> df.select(pl.col("a").ewm_std(com=1, ignore_nulls=False))
         shape: (3, 1)
         ┌──────────┐
         │ a        │
@@ -8823,7 +8823,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").ewm_var(com=1))
+        >>> df.select(pl.col("a").ewm_var(com=1, ignore_nulls=False))
         shape: (3, 1)
         ┌──────────┐
         │ a        │
