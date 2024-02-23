@@ -11,7 +11,7 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -30,12 +30,12 @@ where
     }
 }
 
-impl<T> MaterializeValues<Option<TotalOrdWrap<T>>> for MutablePrimitiveArray<T>
+impl<T> MaterializeValues<TotalOrdWrap<Option<T>>> for MutablePrimitiveArray<T>
 where
     T: NativeType,
 {
-    fn extend_buf<I: Iterator<Item = Option<TotalOrdWrap<T>>>>(&mut self, values: I) -> usize {
-        self.extend(values);
+    fn extend_buf<I: Iterator<Item = TotalOrdWrap<Option<T>>>>(&mut self, values: I) -> usize {
+        self.extend(values.map(|x| x.0));
         self.len()
     }
 }
@@ -102,8 +102,10 @@ where
     }
 }
 
-fn copied_wrapper_opt<T: Copy>(v: Option<&T>) -> Option<TotalOrdWrap<T>> {
-    v.copied().map(TotalOrdWrap)
+fn copied_wrapper_opt<T: Copy + ToTotalOrd>(
+    v: Option<&T>,
+) -> <Option<T> as ToTotalOrd>::TotalOrdItem {
+    v.copied().to_total_ord()
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -136,13 +138,14 @@ fn primitive<T>(
     validity: Option<Bitmap>,
 ) -> PolarsResult<ListArray<i64>>
 where
-    T: NativeType + TotalHash + Copy + TotalEq,
+    T: NativeType + TotalHash + TotalEq + Copy + ToTotalOrd,
+    <Option<T> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
 
     let mut set = Default::default();
-    let mut set2: PlIndexSet<Option<TotalOrdWrap<T>>> = Default::default();
+    let mut set2: PlIndexSet<<Option<T> as ToTotalOrd>::TotalOrdItem> = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),

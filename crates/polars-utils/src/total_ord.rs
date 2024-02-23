@@ -464,3 +464,142 @@ impl<'a> TotalEq for BytesHash<'a> {
         self == other
     }
 }
+
+/// This elides creating a [`TotalOrdWrap`] for types that don't need it.
+pub trait ToTotalOrd {
+    type TotalOrdItem;
+    type SourceItem;
+
+    fn to_total_ord(&self) -> Self::TotalOrdItem;
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem;
+}
+
+macro_rules! impl_to_total_ord_identity {
+    ($T: ty) => {
+        impl ToTotalOrd for $T {
+            type TotalOrdItem = $T;
+            type SourceItem = $T;
+
+            #[inline]
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                self.clone()
+            }
+
+            #[inline]
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
+            }
+        }
+    };
+}
+
+impl_to_total_ord_identity!(bool);
+impl_to_total_ord_identity!(u8);
+impl_to_total_ord_identity!(u16);
+impl_to_total_ord_identity!(u32);
+impl_to_total_ord_identity!(u64);
+impl_to_total_ord_identity!(u128);
+impl_to_total_ord_identity!(usize);
+impl_to_total_ord_identity!(i8);
+impl_to_total_ord_identity!(i16);
+impl_to_total_ord_identity!(i32);
+impl_to_total_ord_identity!(i64);
+impl_to_total_ord_identity!(i128);
+impl_to_total_ord_identity!(isize);
+impl_to_total_ord_identity!(char);
+impl_to_total_ord_identity!(String);
+
+macro_rules! impl_to_total_ord_lifetimed_ref_identity {
+    ($T: ty) => {
+        impl<'a> ToTotalOrd for &'a $T {
+            type TotalOrdItem = &'a $T;
+            type SourceItem = &'a $T;
+
+            #[inline]
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                *self
+            }
+
+            #[inline]
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
+            }
+        }
+    };
+}
+
+impl_to_total_ord_lifetimed_ref_identity!(str);
+impl_to_total_ord_lifetimed_ref_identity!([u8]);
+
+macro_rules! impl_to_total_ord_wrapped {
+    ($T: ty) => {
+        impl ToTotalOrd for $T {
+            type TotalOrdItem = TotalOrdWrap<$T>;
+            type SourceItem = $T;
+
+            #[inline]
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                TotalOrdWrap(self.clone())
+            }
+
+            #[inline]
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item.0
+            }
+        }
+    };
+}
+
+impl_to_total_ord_wrapped!(f32);
+impl_to_total_ord_wrapped!(f64);
+
+/// This is safe without needing to map the option value to TotalOrdWrap, since
+/// for example:
+/// `TotalOrdWrap<Option<T>>` implements `Eq + Hash`, iff:
+/// `Option<T>` implements `TotalEq + TotalHash`, iff:
+/// `T` implements `TotalEq + TotalHash`
+impl<T: Copy> ToTotalOrd for Option<T> {
+    type TotalOrdItem = TotalOrdWrap<Option<T>>;
+    type SourceItem = Option<T>;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        TotalOrdWrap(*self)
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item.0
+    }
+}
+
+impl<T: ToTotalOrd> ToTotalOrd for &T {
+    type TotalOrdItem = T::TotalOrdItem;
+    type SourceItem = T::SourceItem;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        (*self).to_total_ord()
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        T::peel_total_ord(ord_item)
+    }
+}
+
+impl<'a> ToTotalOrd for BytesHash<'a> {
+    type TotalOrdItem = BytesHash<'a>;
+    type SourceItem = BytesHash<'a>;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        *self
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item
+    }
+}

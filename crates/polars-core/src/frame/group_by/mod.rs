@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hash;
 
 use ahash::RandomState;
 use arrow::legacy::prelude::QuantileInterpolOptions;
