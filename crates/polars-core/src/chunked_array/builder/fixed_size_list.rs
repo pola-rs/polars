@@ -1,7 +1,3 @@
-use arrow::array::{
-    Array, MutableArray, MutableFixedSizeListArray, MutablePrimitiveArray, PrimitiveArray,
-    PushUnchecked,
-};
 use arrow::types::NativeType;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use smartstring::alias::String as SmartString;

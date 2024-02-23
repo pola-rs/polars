@@ -12,7 +12,6 @@ use arrow::legacy::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
-use arrow::legacy::kernels::rolling::{RollingQuantileParams, RollingVarParams};
 use arrow::legacy::kernels::take_agg::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::trusted_len::TrustedLenPush;

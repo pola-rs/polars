@@ -1,5 +1,3 @@
-#[cfg(feature = "object")]
-use arrow::array::Array;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 

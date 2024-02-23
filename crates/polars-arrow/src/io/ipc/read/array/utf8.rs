@@ -1,13 +1,11 @@
-use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::polars_err;
 
 use super::super::read_basic::*;
 use super::*;
 use crate::array::Utf8Array;
 use crate::buffer::Buffer;
-use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 #[allow(clippy::too_many_arguments)]

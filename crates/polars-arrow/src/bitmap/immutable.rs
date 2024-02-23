@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

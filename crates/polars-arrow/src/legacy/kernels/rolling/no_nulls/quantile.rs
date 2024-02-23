@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
 use polars_utils::slice::GetSaferUnchecked;

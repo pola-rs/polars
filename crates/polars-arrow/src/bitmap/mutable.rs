@@ -1,5 +1,4 @@
 use std::hint::unreachable_unchecked;
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};

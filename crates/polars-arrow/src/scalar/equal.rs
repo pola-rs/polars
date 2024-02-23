@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use super::*;
-use crate::datatypes::PhysicalType;
 use crate::{match_integer_type, with_match_primitive_type};
 
 impl PartialEq for dyn Scalar + '_ {

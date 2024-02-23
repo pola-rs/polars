@@ -12,17 +12,12 @@ use crate::row::{RowsEncoded, SortField};
 
 pub(crate) trait FromSlice {
     fn from_slice(slice: &[u8]) -> Self;
-    fn from_slice_inverted(slice: &[u8]) -> Self;
 }
 
 impl<const N: usize> FromSlice for [u8; N] {
     #[inline]
     fn from_slice(slice: &[u8]) -> Self {
         slice.try_into().unwrap()
-    }
-
-    fn from_slice_inverted(_slice: &[u8]) -> Self {
-        todo!()
     }
 }
 

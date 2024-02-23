@@ -1,13 +1,9 @@
-use arrow::array::Array;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::compute::take::take_unchecked;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{polars_bail, polars_ensure};
 use polars_utils::index::check_bounds;
 
 use crate::chunked_array::collect::prepare_collect_dtype;
-use crate::chunked_array::ops::{ChunkTake, ChunkTakeUnchecked};
-use crate::chunked_array::ChunkedArray;
-use crate::datatypes::{IdxCa, PolarsDataType, StaticArray};
 use crate::prelude::*;
 use crate::series::IsSorted;
 

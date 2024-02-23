@@ -3,7 +3,6 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
 use polars_utils::iter::EnumerateIdxTrait;
 
-use crate::datatypes::PlHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};

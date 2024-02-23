@@ -1,9 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::offset::OffsetsBuffer;
 
-#[cfg(feature = "object")]
-use crate::datatypes::ObjectType;
 use crate::prelude::*;
 
 pub(crate) mod aggregate;

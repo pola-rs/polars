@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;

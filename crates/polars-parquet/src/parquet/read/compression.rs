@@ -1,5 +1,4 @@
 use parquet_format_safe::DataPageHeaderV2;
-use streaming_decompression;
 
 use super::page::PageIterator;
 use crate::parquet::compression::{self, Compression};

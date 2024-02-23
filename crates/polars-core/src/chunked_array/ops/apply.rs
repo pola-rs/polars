@@ -1,14 +1,11 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
-use std::convert::TryFrom;
 
-use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use arrow::legacy::bitmap::unary_mut;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
 
 impl<T> ChunkedArray<T>
 where

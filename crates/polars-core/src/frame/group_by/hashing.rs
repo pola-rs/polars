@@ -10,15 +10,10 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use polars_utils::unitvec;
 use rayon::prelude::*;
 
-use super::GroupsProxy;
-use crate::datatypes::PlHashMap;
-use crate::frame::group_by::{GroupsIdx, IdxItem};
-use crate::hashing::{
-    _df_rows_to_hashes_threaded_vertical, series_to_hashes, IdBuildHasher, IdxHash, *,
-};
+use crate::hashing::*;
 use crate::prelude::compare_inner::TotalEqInner;
 use crate::prelude::*;
-use crate::utils::{flatten, split_df, CustomIterTools};
+use crate::utils::{flatten, split_df};
 use crate::POOL;
 
 fn get_init_size() -> usize {

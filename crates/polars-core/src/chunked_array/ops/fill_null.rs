@@ -1,6 +1,6 @@
 use arrow::legacy::kernels::set::set_at_nulls;
 use arrow::legacy::trusted_len::FromIteratorReversed;
-use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
+use arrow::legacy::utils::FromTrustedLenIterator;
 use num_traits::{Bounded, NumCast, One, Zero};
 
 use crate::prelude::*;

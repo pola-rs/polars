@@ -2,7 +2,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 use num_traits::NumCast;
 use polars_utils::hashing::{BytesHash, DirtyHash};
 use rayon::prelude::*;

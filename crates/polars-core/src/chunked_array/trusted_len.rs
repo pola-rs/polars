@@ -4,7 +4,7 @@ use arrow::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
 
 use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
-use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
+use crate::utils::{FromTrustedLenIterator, NoNull};
 
 impl<T> FromTrustedLenIterator<Option<T::Native>> for ChunkedArray<T>
 where

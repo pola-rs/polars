@@ -4,7 +4,6 @@ use polars_utils::iter::EnumerateIdxTrait;
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::utils::_split_offsets;
-use crate::POOL;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,

@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 use ahash::AHashMap;
-use arrow_format;
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::deserialize::{read, skip};

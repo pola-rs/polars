@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use super::*;
 use crate::hashing::series_to_hashes;
 use crate::prelude::*;
