@@ -65,7 +65,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        let df = DataFrame::new_no_checks(vec![]);
+        let df = DataFrame::empty();
         let gb = df
             .group_by_with_series(self.0.fields().to_vec(), multithreaded, sorted)
             .unwrap();
@@ -246,7 +246,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         }
         let main_thread = POOL.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
-        // safety:
+        // SAFETY:
         // groups are in bounds
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
     }

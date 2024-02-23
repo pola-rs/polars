@@ -11,14 +11,14 @@ where
     // this branch should be optimized away for integers
     if T::is_float() {
         match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
+            // SAFETY: we checked nans
             (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
             (true, true) => Ordering::Equal,
             (true, false) => Ordering::Less,
             (false, true) => Ordering::Greater,
         }
     } else {
-        // Safety:
+        // SAFETY:
         // all integers are Ord
         unsafe { a.partial_cmp(b).unwrap_unchecked() }
     }
@@ -33,14 +33,14 @@ where
     // this branch should be optimized away for integers
     if T::is_float() {
         match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
+            // SAFETY: we checked nans
             (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
             (true, true) => Ordering::Equal,
             (true, false) => Ordering::Greater,
             (false, true) => Ordering::Less,
         }
     } else {
-        // Safety:
+        // SAFETY:
         // all integers are Ord
         unsafe { a.partial_cmp(b).unwrap_unchecked() }
     }

@@ -107,7 +107,7 @@ mod inner_mod {
                     if size < options.min_periods {
                         builder.append_null();
                     } else {
-                        // safety:
+                        // SAFETY:
                         // we are in bounds
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
@@ -117,7 +117,7 @@ mod inner_mod {
                             continue;
                         }
 
-                        // Safety.
+                        // SAFETY.
                         // ptr is not dropped as we are in scope
                         // We are also the only owner of the contents of the Arc
                         // we do this to reduce heap allocs.
@@ -161,7 +161,7 @@ mod inner_mod {
                     if size < options.min_periods {
                         builder.append_null();
                     } else {
-                        // safety:
+                        // SAFETY:
                         // we are in bounds
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
@@ -171,7 +171,7 @@ mod inner_mod {
                             continue;
                         }
 
-                        // Safety.
+                        // SAFETY.
                         // ptr is not dropped as we are in scope
                         // We are also the only owner of the contents of the Arc
                         // we do this to reduce heap allocs.

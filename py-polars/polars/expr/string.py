@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
+from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
@@ -1256,7 +1257,9 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
     def json_decode(
-        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+        self,
+        dtype: PolarsDataType | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Expr:
         """
         Parse string values as JSON.
@@ -1269,8 +1272,8 @@ class ExprStringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
 
         See Also
         --------
@@ -2413,7 +2416,9 @@ class ExprStringNameSpace:
 
     @deprecate_renamed_function("json_decode", version="0.19.12")
     def json_extract(
-        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+        self,
+        dtype: PolarsDataType | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Expr:
         """
         Parse string values as JSON.
@@ -2427,8 +2432,8 @@ class ExprStringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
         """
         return self.json_decode(dtype, infer_schema_length)
 

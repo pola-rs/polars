@@ -34,14 +34,14 @@ pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &
         idx.par_chunks(chunk_size).for_each(|indices| {
             let ptr = ptr as *mut IdxSize;
             for (idx_val, idx_location) in indices {
-                // Safety:
+                // SAFETY:
                 // idx_location is in bounds by invariant of this function
                 // and we ensured we have at least `idx.len()` capacity
                 *ptr.add(*idx_location as usize) = *idx_val;
             }
         });
     });
-    // Safety:
+    // SAFETY:
     // all elements are written
     out.set_len(idx.len());
 }
@@ -65,14 +65,14 @@ pub unsafe fn perfect_sort(
         idx.par_chunks(chunk_size).for_each(|indices| {
             let ptr = ptr as *mut IdxSize;
             for (idx_val, idx_location) in indices {
-                // Safety:
+                // SAFETY:
                 // idx_location is in bounds by invariant of this function
                 // and we ensured we have at least `idx.len()` capacity
                 *ptr.add(*idx_location as usize) = *idx_val;
             }
         });
     });
-    // Safety:
+    // SAFETY:
     // all elements are written
     out.set_len(idx.len());
 }

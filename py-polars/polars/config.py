@@ -305,7 +305,7 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> json_file = pl.Config().save("~/polars/config.json")  # doctest: +SKIP
+        >>> pl.Config().save_to_file("~/polars/config.json")  # doctest: +SKIP
         """
         file = Path(normalize_filepath(file)).resolve()
         file.write_text(cls.save())

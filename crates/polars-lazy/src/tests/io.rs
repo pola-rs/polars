@@ -5,6 +5,7 @@ use polars_ops::prelude::ClosedInterval;
 use super::*;
 
 #[test]
+#[cfg(feature = "parquet")]
 fn test_parquet_exec() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     // filter
@@ -36,6 +37,7 @@ fn test_parquet_exec() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(all(feature = "parquet", feature = "is_between"))]
 fn test_parquet_statistics_no_skip() {
     let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();
@@ -109,6 +111,7 @@ fn test_parquet_statistics_no_skip() {
 }
 
 #[test]
+#[cfg(all(feature = "parquet", feature = "is_between"))]
 fn test_parquet_statistics() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();

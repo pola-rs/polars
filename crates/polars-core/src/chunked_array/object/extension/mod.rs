@@ -76,7 +76,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
             Some(t) => {
                 unsafe {
                     buf.extend_from_slice(any_as_u8_slice(&t));
-                    // Safety: we allocated upfront
+                    // SAFETY: we allocated upfront
                     validity.push_unchecked(true)
                 }
                 mem::forget(t);
@@ -85,7 +85,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
                 null_count += 1;
                 unsafe {
                     buf.extend_from_slice(any_as_u8_slice(&T::default()));
-                    // Safety: we allocated upfront
+                    // SAFETY: we allocated upfront
                     validity.push_unchecked(false)
                 }
             },
@@ -101,7 +101,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     // ptr to start of T, not to start of padding
     let ptr = buf.as_slice().as_ptr();
 
-    // Safety:
+    // SAFETY:
     // ptr and t are correct
     let drop_fn = unsafe { create_drop::<T>(ptr, n_t_vals) };
     let et = Box::new(ExtensionSentinel {
@@ -125,7 +125,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 
     let array = FixedSizeBinaryArray::new(extension_type, buf, validity);
 
-    // Safety:
+    // SAFETY:
     // we just heap allocated the ExtensionSentinel, so its alive.
     unsafe { PolarsExtension::new(array) }
 }
@@ -133,7 +133,9 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 #[cfg(test)]
 mod test {
     use std::fmt::{Display, Formatter};
+    use std::hash::{Hash, Hasher};
 
+    use polars_utils::total_ord::TotalHash;
     use polars_utils::unitvec;
 
     use super::*;
@@ -148,6 +150,15 @@ mod test {
     impl TotalEq for Foo {
         fn tot_eq(&self, other: &Self) -> bool {
             self == other
+        }
+    }
+
+    impl TotalHash for Foo {
+        fn tot_hash<H>(&self, state: &mut H)
+        where
+            H: Hasher,
+        {
+            self.hash(state);
         }
     }
 

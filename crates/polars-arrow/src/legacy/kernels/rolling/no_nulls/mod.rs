@@ -26,6 +26,7 @@ pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self;
 
     /// Update and recompute the window
+    ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
     unsafe fn update(&mut self, start: usize, end: usize) -> T;
@@ -51,7 +52,7 @@ where
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
-            // safety:
+            // SAFETY:
             // we are in bounds
             unsafe { agg_window.update(start, end) }
         })

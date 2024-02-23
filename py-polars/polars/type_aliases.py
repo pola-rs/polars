@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import sys
 
     from sqlalchemy import Engine
+    from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
@@ -250,4 +251,4 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine"]
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine", "Session"]

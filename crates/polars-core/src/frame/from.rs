@@ -15,7 +15,7 @@ impl TryFrom<StructArray> for DataFrame {
             .iter()
             .zip(arrs)
             .map(|(fld, arr)| {
-                // Safety
+                // SAFETY:
                 // reported data type is correct
                 unsafe {
                     Series::_try_from_arrow_unchecked_with_md(
@@ -37,7 +37,7 @@ impl From<&Schema> for DataFrame {
             .iter()
             .map(|(name, dtype)| Series::new_empty(name, dtype))
             .collect();
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 }
 
@@ -48,6 +48,6 @@ impl From<&ArrowSchema> for DataFrame {
             .iter()
             .map(|fld| Series::new_empty(fld.name.as_str(), &(fld.data_type().into())))
             .collect();
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 }

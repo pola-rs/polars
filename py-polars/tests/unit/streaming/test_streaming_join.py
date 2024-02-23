@@ -190,3 +190,18 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
     )
+
+
+def test_streaming_join_and_union() -> None:
+    a = pl.LazyFrame({"a": [1, 2]})
+
+    b = pl.LazyFrame({"a": [1, 2, 4, 8]})
+
+    c = a.join(b, on="a")
+    # The join node latest ensures that the dispatcher
+    # needs to replace placeholders in unions.
+    q = pl.concat([a, b, c])
+
+    out = q.collect(streaming=True)
+    assert_frame_equal(out, q.collect(streaming=False))
+    assert out.to_series().to_list() == [1, 2, 1, 2, 4, 8, 1, 2]

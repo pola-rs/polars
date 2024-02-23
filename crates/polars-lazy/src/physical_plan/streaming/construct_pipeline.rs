@@ -132,7 +132,7 @@ pub(super) fn construct(
     let mut final_sink = None;
 
     for branch in tree {
-        // the file sink is always to the top of the tree
+        // The file sink is always to the top of the tree
         // not every branch has a final sink. For instance rhs join branches
         if let Some(node) = branch.get_final_sink() {
             if matches!(lp_arena.get(node), ALogicalPlan::Sink { .. }) {

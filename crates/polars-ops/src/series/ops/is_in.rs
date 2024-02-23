@@ -232,6 +232,10 @@ fn is_in_string(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanCh
         DataType::String => {
             is_in_binary(&ca_in.as_binary(), &other.cast(&DataType::Binary).unwrap())
         },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(_, _) | DataType::Categorical(_, _) => {
+            is_in_string_categorical(ca_in, other.categorical().unwrap())
+        },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
 }
@@ -557,6 +561,24 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
 }
 
 #[cfg(feature = "dtype-categorical")]
+fn is_in_string_categorical(
+    ca_in: &StringChunked,
+    other: &CategoricalChunked,
+) -> PolarsResult<BooleanChunked> {
+    // In case of fast unique, we can directly use the categories. Otherwise we need to
+    // first get the unique physicals
+    let categories = StringChunked::with_chunk("", other.get_rev_map().get_categories().clone());
+    let other = if other._can_fast_unique() {
+        categories
+    } else {
+        let s = other.physical().unique()?.cast(&IDX_DTYPE)?;
+        // SAFETY: Invariant of categorical means indices are in bound
+        unsafe { categories.take_unchecked(s.idx()?) }
+    };
+    is_in_helper_ca(&ca_in.as_binary(), &other.as_binary())
+}
+
+#[cfg(feature = "dtype-categorical")]
 fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         DataType::Categorical(_, _) | DataType::Enum(_, _) => {
@@ -575,7 +597,7 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
             match &**rev_map {
                 RevMapping::Global(hash_map, categories, _) => {
                     for (global_idx, local_idx) in hash_map.iter() {
-                        // Safety: index is in bounds
+                        // SAFETY: index is in bounds
                         if others
                             .contains(unsafe { categories.value_unchecked(*local_idx as usize) })
                         {

@@ -321,6 +321,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     /// Returns the element at index `i`
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]

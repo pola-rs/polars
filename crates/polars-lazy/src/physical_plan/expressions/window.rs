@@ -114,12 +114,12 @@ impl WindowExpr {
             take_idx = original_idx;
         }
         cache_gb(gb, state, cache_key);
-        // Safety:
+        // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
         let idx = IdxCa::from_vec("", take_idx);
 
-        // Safety:
+        // SAFETY:
         // groups should always be in bounds.
         unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
@@ -567,8 +567,8 @@ impl PhysicalExpr for WindowExpr {
                                     .unwrap()
                                     .1
                             } else {
-                                let df_right = DataFrame::new_no_checks(keys);
-                                let df_left = DataFrame::new_no_checks(group_by_columns);
+                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
+                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
                                 private_left_join_multiple_keys(
                                     &df_left, &df_right, None, None, true,
                                 )
@@ -682,7 +682,7 @@ where
 {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
-    // safety:
+    // SAFETY:
     // we will write from different threads but we will never alias.
     let sync_ptr_values = unsafe { SyncPtr::new(ptr) };
 
@@ -724,7 +724,7 @@ where
             },
         }
 
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         Some(ChunkedArray::new_vec(ca.name(), values).into_series())
     } else {
@@ -796,7 +796,7 @@ where
                 })
             },
         }
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);

@@ -1,7 +1,8 @@
 use arrow::array::PrimitiveArray;
-use num_traits::NumCast;
+use polars_core::with_match_physical_float_polars_type;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
+use polars_utils::total_ord::{TotalEq, TotalHash};
 
 use super::*;
 use crate::series::SeriesSealed;
@@ -28,6 +29,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
             let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
             hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
+        } else if lhs.dtype().is_float() {
+            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                num_group_join_left(lhs, rhs, validate, join_nulls)
+            })
         } else if s_self.bit_repr_is_large() {
             let lhs = lhs.bit_repr_large();
             let rhs = rhs.bit_repr_large();
@@ -58,6 +65,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             } else {
                 hash_join_tuples_left_semi(lhs, rhs)
             }
+        } else if lhs.dtype().is_float() {
+            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                num_group_join_anti_semi(lhs, rhs, anti)
+            })
         } else if s_self.bit_repr_is_large() {
             let lhs = lhs.bit_repr_large();
             let rhs = rhs.bit_repr_large();
@@ -93,6 +106,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 hash_join_tuples_inner(lhs, rhs, swapped, validate, join_nulls)?,
                 !swapped,
             ))
+        } else if lhs.dtype().is_float() {
+            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                group_join_inner::<$T>(lhs, rhs, validate, join_nulls)
+            })
         } else if s_self.bit_repr_is_large() {
             let lhs = s_self.bit_repr_large();
             let rhs = other.bit_repr_large();
@@ -124,6 +143,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             let lhs = lhs.iter().collect::<Vec<_>>();
             let rhs = rhs.iter().collect::<Vec<_>>();
             hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
+        } else if lhs.dtype().is_float() {
+            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                hash_join_outer(lhs, rhs, validate, join_nulls)
+            })
         } else if s_self.bit_repr_is_large() {
             let lhs = s_self.bit_repr_large();
             let rhs = other.bit_repr_large();
@@ -161,7 +186,7 @@ fn group_join_inner<T>(
 where
     T: PolarsDataType,
     for<'a> &'a T::Array: IntoIterator<Item = Option<&'a T::Physical<'a>>>,
-    for<'a> T::Physical<'a>: Hash + Eq + Send + DirtyHash + Copy + Send + Sync + IsNull,
+    for<'a> T::Physical<'a>: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + IsNull,
 {
     let n_threads = POOL.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
@@ -243,8 +268,8 @@ fn num_group_join_left<T>(
     join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds>
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + DirtyHash + IsNull,
+    T: PolarsNumericType,
+    T::Native: TotalHash + TotalEq + DirtyHash + IsNull,
     Option<T::Native>: DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
@@ -300,8 +325,8 @@ fn hash_join_outer<T>(
     join_nulls: bool,
 ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
-    T: PolarsIntegerType + Sync,
-    T::Native: Eq + Hash + NumCast,
+    T: PolarsNumericType,
+    T::Native: TotalHash + TotalEq,
 {
     let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
 
@@ -395,8 +420,8 @@ fn num_group_join_anti_semi<T>(
     anti: bool,
 ) -> Vec<IdxSize>
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + DirtyHash,
+    T: PolarsNumericType,
+    T::Native: TotalHash + TotalEq + DirtyHash,
     Option<T::Native>: DirtyHash,
 {
     let n_threads = POOL.current_num_threads();

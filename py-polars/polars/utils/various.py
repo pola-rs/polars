@@ -399,6 +399,9 @@ class sphinx_accessor(property):  # noqa: D101
             return self  # type: ignore[return-value]
 
 
+BUILDING_SPHINX_DOCS = os.getenv("BUILDING_SPHINX_DOCS")
+
+
 class _NoDefault(Enum):
     # "borrowed" from
     # https://github.com/pandas-dev/pandas/blob/e7859983a814b1823cf26e3b491ae2fa3be47c53/pandas/_libs/lib.pyx#L2736-L2748
@@ -559,3 +562,11 @@ def parse_percentiles(
         at_or_above_50_percentiles = [0.5, *at_or_above_50_percentiles]
 
     return [*sub_50_percentiles, *at_or_above_50_percentiles]
+
+
+def re_escape(s: str) -> str:
+    """Escape a string for use in a Polars (Rust) regex."""
+    # note: almost the same as the standard python 're.escape' function, but
+    # escapes _only_ those metachars with meaning to the rust regex crate
+    re_rust_metachars = r"\\?()|\[\]{}^$#&~.+*-"
+    return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)

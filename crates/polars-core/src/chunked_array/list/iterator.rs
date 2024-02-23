@@ -46,7 +46,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // structs arrays are bound to the series not to the arrayref
                 // so we must get a hold to the new array
                 if matches!(self.inner_dtype, DataType::Struct(_)) {
-                    // Safety
+                    // SAFETY:
                     // dtype is known
                     unsafe {
                         let mut s = Series::from_chunks_and_dtype_unchecked(
@@ -74,7 +74,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // make sure that the length is correct
                 self.series_container._get_inner_mut().compute_len();
 
-                // Safety
+                // SAFETY:
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid
                 let refer = &mut *self.series_container;
@@ -144,7 +144,7 @@ impl ListChunked {
             _ => inner_dtype.clone(),
         };
 
-        // Safety:
+        // SAFETY:
         // inner type passed as physical type
         let series_container = unsafe {
             let mut s = Series::from_chunks_and_dtype_unchecked(

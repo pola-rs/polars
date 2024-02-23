@@ -65,29 +65,32 @@ impl DataFrame {
                 for s in columns {
                     polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: {}", dtype);
                     s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
-                        // safety: we checked the type and we borrow
+                        // SAFETY: we checked the type and we borrow
                         unsafe {
                             buf.add_unchecked_borrowed_physical(&av);
                         }
                     });
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
-                    // Safety: we are casting back to the supertype
+                    // SAFETY: we are casting back to the supertype
                     let mut s = unsafe { buf.into_series().cast_unchecked(dtype).unwrap() };
                     s.rename(name);
                     s
                 }));
             },
         };
-        Ok(DataFrame::new_no_checks(cols_t))
+        Ok(unsafe { DataFrame::new_no_checks(cols_t) })
     }
 
     /// Transpose a DataFrame. This is a very expensive operation.
     pub fn transpose(
-        &self,
+        &mut self,
         keep_names_as: Option<&str>,
         new_col_names: Option<Either<String, Vec<String>>>,
     ) -> PolarsResult<DataFrame> {
+        // We must iterate columns as [`AnyValue`], so we must be contiguous.
+        self.as_single_chunk_par();
+
         let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
         let names_out = match new_col_names {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
@@ -186,7 +189,7 @@ where
             let s = s.cast(&T::get_dtype()).unwrap();
             let ca = s.unpack::<T>().unwrap();
 
-            // Safety
+            // SAFETY:
             // we access in parallel, but every access is unique, so we don't break aliasing rules
             // we also ensured we allocated enough memory, so we never reallocate and thus
             // the pointers remain valid.
@@ -221,37 +224,36 @@ where
         })
     });
 
-    cols_t.par_extend(POOL.install(|| {
-        values_buf
-            .into_par_iter()
-            .zip(validity_buf)
-            .zip(names_out)
-            .map(|((mut values, validity), name)| {
-                // Safety:
-                // all values are written we can now set len
-                unsafe {
-                    values.set_len(new_height);
-                }
+    let par_iter = values_buf
+        .into_par_iter()
+        .zip(validity_buf)
+        .zip(names_out)
+        .map(|((mut values, validity), name)| {
+            // SAFETY:
+            // all values are written we can now set len
+            unsafe {
+                values.set_len(new_height);
+            }
 
-                let validity = if has_nulls {
-                    let validity = Bitmap::from_trusted_len_iter(validity.iter().copied());
-                    if validity.unset_bits() > 0 {
-                        Some(validity)
-                    } else {
-                        None
-                    }
+            let validity = if has_nulls {
+                let validity = Bitmap::from_trusted_len_iter(validity.iter().copied());
+                if validity.unset_bits() > 0 {
+                    Some(validity)
                 } else {
                     None
-                };
+                }
+            } else {
+                None
+            };
 
-                let arr = PrimitiveArray::<T::Native>::new(
-                    T::get_dtype().to_arrow(true),
-                    values.into(),
-                    validity,
-                );
-                ChunkedArray::with_chunk(name.as_str(), arr).into_series()
-            })
-    }));
+            let arr = PrimitiveArray::<T::Native>::new(
+                T::get_dtype().to_arrow(true),
+                values.into(),
+                validity,
+            );
+            ChunkedArray::with_chunk(name.as_str(), arr).into_series()
+        });
+    POOL.install(|| cols_t.par_extend(par_iter));
 }
 
 #[cfg(test)]
@@ -260,7 +262,7 @@ mod test {
 
     #[test]
     fn test_transpose() -> PolarsResult<()> {
-        let df = df![
+        let mut df = df![
             "a" => [1, 2, 3],
             "b" => [10, 20, 30],
         ]?;
@@ -274,7 +276,7 @@ mod test {
         ]?;
         assert!(out.equals_missing(&expected));
 
-        let df = df![
+        let mut df = df![
             "a" => [Some(1), None, Some(3)],
             "b" => [Some(10), Some(20), None],
         ]?;
@@ -287,7 +289,7 @@ mod test {
         ]?;
         assert!(out.equals_missing(&expected));
 
-        let df = df![
+        let mut df = df![
             "a" => ["a", "b", "c"],
             "b" => [Some(10), Some(20), None],
         ]?;

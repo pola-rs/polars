@@ -6,4 +6,6 @@ mod lazy;
 mod schema;
 mod time;
 
+mod arrow;
+
 pub static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";

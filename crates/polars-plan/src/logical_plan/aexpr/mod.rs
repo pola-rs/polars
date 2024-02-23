@@ -196,7 +196,7 @@ impl AExpr {
     #[cfg(feature = "cse")]
     pub(crate) fn is_equal(l: Node, r: Node, arena: &Arena<AExpr>) -> bool {
         let arena = arena as *const Arena<AExpr> as *mut Arena<AExpr>;
-        // safety: we can pass a *mut pointer
+        // SAFETY: we can pass a *mut pointer
         // the equality operation will not access mutable
         unsafe {
             let ae_node_l = AexprNode::from_raw(l, arena);

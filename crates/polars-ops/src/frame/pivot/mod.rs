@@ -30,7 +30,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
         (dt @ DataType::Categorical(Some(rev_map), ordering), _)
         | (dt @ DataType::Enum(Some(rev_map), ordering), _) => {
             let cats = s.u32().unwrap().clone();
-            // safety:
+            // SAFETY:
             // the rev-map comes from these categoricals
             unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -274,7 +274,7 @@ fn pivot_impl_single_column(
                             let name = expr.root_name()?;
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
-                            let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                            let tmp_df = value_col.into_frame();
                             let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
                             aggregated.rename(value_col_name);
                             aggregated
@@ -341,5 +341,7 @@ fn pivot_impl_single_column(
         Ok(())
     });
     out?;
-    DataFrame::new_no_length_checks(final_cols)
+
+    // SAFETY: length has already been checked.
+    unsafe { DataFrame::new_no_length_checks(final_cols) }
 }

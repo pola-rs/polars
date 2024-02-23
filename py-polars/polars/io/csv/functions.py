@@ -101,6 +101,7 @@ def read_csv(
         - `List[str]`: All values equal to any string in this list will be null.
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
+
     missing_utf8_is_empty_string
         By default a missing value is considered to be null; if you would prefer missing
         utf8 values to be treated as the empty string you can set this param True.
@@ -120,12 +121,9 @@ def read_csv(
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
     infer_schema_length
-        Maximum number of lines to read to infer schema.
-        If schema is inferred wrongly (e.g. as `pl.Int64` instead of `pl.Float64`),
-        try to increase the number of lines used to infer the schema or override
-        inferred dtype for those columns with `dtypes`.
-        If set to 0, all columns will be read as `pl.String`.
-        If set to `None`, a full table scan will be done (slow).
+        The maximum number of rows to scan for schema inference.
+        If set to `0`, all columns will be read as `pl.String`.
+        If set to `None`, the full data may be scanned *(this is slow)*.
     batch_size
         Number of lines to read into the buffer at once.
         Modify this to change performance.
@@ -185,10 +183,14 @@ def read_csv(
 
     Notes
     -----
-    This operation defaults to a `rechunk` operation at the end, meaning that
-    all data will be stored continuously in memory.
-    Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
-    an expensive operation.
+    If the schema is inferred incorrectly (e.g. as `pl.Int64` instead of `pl.Float64`),
+    try to increase the number of lines used to infer the schema with
+    `infer_schema_length` or override the inferred dtype for those columns with
+    `dtypes`.
+
+    This operation defaults to a `rechunk` operation at the end, meaning that all data
+    will be stored continuously in memory. Set `rechunk=False` if you are benchmarking
+    the csv-reader. A `rechunk` is an expensive operation.
 
     Examples
     --------
@@ -508,6 +510,7 @@ def read_csv_batched(
         - `List[str]`: All values equal to any string in this list will be null.
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
+
     missing_utf8_is_empty_string
         By default a missing value is considered to be null; if you would prefer missing
         utf8 values to be treated as the empty string you can set this param True.
@@ -523,9 +526,9 @@ def read_csv_batched(
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
     infer_schema_length
-        Maximum number of lines to read to infer schema.
-        If set to 0, all columns will be read as `pl.String`.
-        If set to `None`, a full table scan will be done (slow).
+        The maximum number of rows to scan for schema inference.
+        If set to `0`, all columns will be read as `pl.String`.
+        If set to `None`, the full data may be scanned *(this is slow)*.
     batch_size
         Number of lines to read into the buffer at once.
 
@@ -801,6 +804,7 @@ def scan_csv(
         - `List[str]`: All values equal to any string in this list will be null.
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
+
     missing_utf8_is_empty_string
         By default a missing value is considered to be null; if you would prefer missing
         utf8 values to be treated as the empty string you can set this param True.
@@ -814,9 +818,9 @@ def scan_csv(
         Apply a function over the column names just in time (when they are determined);
         this function will receive (and should return) a list of column names.
     infer_schema_length
-        Maximum number of lines to read to infer schema.
-        If set to 0, all columns will be read as `pl.String`.
-        If set to `None`, a full table scan will be done (slow).
+        The maximum number of rows to scan for schema inference.
+        If set to `0`, all columns will be read as `pl.String`.
+        If set to `None`, the full data may be scanned *(this is slow)*.
     n_rows
         Stop reading from CSV file after reading `n_rows`.
     encoding : {'utf8', 'utf8-lossy'}

@@ -235,7 +235,7 @@ pub trait JoinDispatch: IntoDf {
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let idx = s_left.hash_join_semi_anti(s_right, anti);
-        // Safety:
+        // SAFETY:
         // indices are in bounds
         Ok(unsafe { ca_self._finish_anti_semi_join(&idx, slice) })
     }

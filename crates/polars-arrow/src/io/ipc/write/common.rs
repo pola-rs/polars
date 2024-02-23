@@ -280,10 +280,32 @@ fn chunk_to_bytes_amortized(
     let mut offset = 0;
     let mut variadic_buffer_counts = vec![];
     for array in chunk.arrays() {
-        set_variadic_buffer_counts(&mut variadic_buffer_counts, array.as_ref());
+        // We don't want to write all buffers in sliced arrays.
+        let array = match array.data_type() {
+            ArrowDataType::BinaryView => {
+                let concrete_arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+                if concrete_arr.is_sliced() {
+                    Cow::Owned(concrete_arr.clone().maybe_gc().boxed())
+                } else {
+                    Cow::Borrowed(array)
+                }
+            },
+            ArrowDataType::Utf8View => {
+                let concrete_arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+                if concrete_arr.is_sliced() {
+                    Cow::Owned(concrete_arr.clone().maybe_gc().boxed())
+                } else {
+                    Cow::Borrowed(array)
+                }
+            },
+            _ => Cow::Borrowed(array),
+        };
+        let array = array.as_ref().as_ref();
+
+        set_variadic_buffer_counts(&mut variadic_buffer_counts, array);
 
         write(
-            array.as_ref(),
+            array,
             &mut buffers,
             &mut arrow_data,
             &mut nodes,

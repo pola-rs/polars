@@ -140,10 +140,10 @@ def _map_py_type_to_dtype(
 
 
 def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
-    """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
+    """Indicate whether the given input is a Polars dtype, or dtype specialization."""
     try:
         if dtype == Unknown:
-            # does not represent a realisable dtype, so ignore by default
+            # does not represent a realizable dtype, so ignore by default
             return include_unknown
         else:
             return isinstance(dtype, (DataType, DataTypeClass))
@@ -246,12 +246,12 @@ class _DataTypeMappings:
             Int8: ctypes.c_int8,
             Int16: ctypes.c_int16,
             Int32: ctypes.c_int32,
-            Date: ctypes.c_int32,
             Int64: ctypes.c_int64,
             Float32: ctypes.c_float,
             Float64: ctypes.c_double,
             Datetime: ctypes.c_int64,
             Duration: ctypes.c_int64,
+            Date: ctypes.c_int32,
             Time: ctypes.c_int64,
         }
 
@@ -298,6 +298,8 @@ class _DataTypeMappings:
             ("u", 8): UInt64,
             ("f", 4): Float32,
             ("f", 8): Float64,
+            ("m", 8): Duration,
+            ("M", 8): Datetime,
         }
 
     @property
@@ -469,6 +471,8 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
     dtype = np.dtype(dtype_char)
     if dtype.kind == "U":
         return String
+    elif dtype.kind == "S":
+        return Binary
     try:
         return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
             (dtype.kind, dtype.itemsize)

@@ -7,6 +7,7 @@ use std::vec;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_ops::prelude::CrossJoin as CrossJoinTrait;
+use polars_utils::arena::Node;
 use smartstring::alias::String as SmartString;
 
 use crate::operators::{
@@ -19,19 +20,28 @@ pub struct CrossJoin {
     chunks: Vec<DataChunk>,
     suffix: SmartString,
     swapped: bool,
+    node: Node,
 }
 
 impl CrossJoin {
-    pub(crate) fn new(suffix: SmartString, swapped: bool) -> Self {
+    pub(crate) fn new(suffix: SmartString, swapped: bool, node: Node) -> Self {
         CrossJoin {
             chunks: vec![],
             suffix,
             swapped,
+            node,
         }
     }
 }
 
 impl Sink for CrossJoin {
+    fn node(&self) -> Node {
+        self.node
+    }
+    fn is_join_build(&self) -> bool {
+        true
+    }
+
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         self.chunks.push(chunk);
         Ok(SinkResult::CanHaveMoreInput)

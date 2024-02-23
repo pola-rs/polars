@@ -8,6 +8,7 @@ use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
+use polars_utils::arena::Node;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::index::ChunkId;
@@ -77,6 +78,7 @@ pub struct GenericBuild {
     // the join order is swapped to ensure we hash the smaller table
     swapped: bool,
     join_nulls: bool,
+    node: Node,
 }
 
 impl GenericBuild {
@@ -87,6 +89,7 @@ impl GenericBuild {
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_nulls: bool,
+        node: Node,
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
@@ -104,6 +107,7 @@ impl GenericBuild {
             hash_tables,
             hashes: vec![],
             join_nulls,
+            node,
         }
     }
 }
@@ -166,6 +170,13 @@ impl GenericBuild {
 }
 
 impl Sink for GenericBuild {
+    fn node(&self) -> Node {
+        self.node
+    }
+    fn is_join_build(&self) -> bool {
+        true
+    }
+
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         // we do some juggling here so that we don't
         // end up with empty chunks
@@ -289,6 +300,7 @@ impl Sink for GenericBuild {
             self.join_columns_left.clone(),
             self.join_columns_right.clone(),
             self.join_nulls,
+            self.node,
         );
         new.hb = self.hb.clone();
         Box::new(new)

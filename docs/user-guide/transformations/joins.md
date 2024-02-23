@@ -65,7 +65,7 @@ The `outer` join produces a `DataFrame` that contains all the rows from both `Da
 
 ### Cross join
 
-A `cross` join is a cartesian product of the two `DataFrames`. This means that every row in the left `DataFrame` is joined with every row in the right `DataFrame`. The `cross` join is useful for creating a `DataFrame` with all possible combinations of the columns in two `DataFrames`. Let's take for example the following two `DataFrames`.
+A `cross` join is a Cartesian product of the two `DataFrames`. This means that every row in the left `DataFrame` is joined with every row in the right `DataFrame`. The `cross` join is useful for creating a `DataFrame` with all possible combinations of the columns in two `DataFrames`. Let's take for example the following two `DataFrames`.
 
 {{code_block('user-guide/transformations/joins','df3',['DataFrame'])}}
 

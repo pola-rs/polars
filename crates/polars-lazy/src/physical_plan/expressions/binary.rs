@@ -397,7 +397,7 @@ mod stats {
                 }
             }
 
-            let dummy = DataFrame::new_no_checks(vec![]);
+            let dummy = DataFrame::empty();
             let state = ExecutionState::new();
 
             let out = match (self.left.is_literal(), self.right.is_literal()) {

@@ -190,6 +190,7 @@ impl Bitmap {
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
+    ///
     /// # Safety
     /// The caller must ensure that `self.offset + offset + length <= self.len()`
     #[inline]
@@ -246,6 +247,7 @@ impl Bitmap {
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
+    ///
     /// # Safety
     /// The caller must ensure that `self.offset + offset + length <= self.len()`
     #[inline]
@@ -264,6 +266,7 @@ impl Bitmap {
     }
 
     /// Unsafely returns whether the bit at position `i` is set.
+    ///
     /// # Safety
     /// Unsound iff `i >= self.len()`.
     #[inline]
@@ -418,6 +421,7 @@ impl FromIterator<bool> for Bitmap {
 
 impl Bitmap {
     /// Creates a new [`Bitmap`] from an iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]
@@ -440,6 +444,7 @@ impl Bitmap {
     }
 
     /// Creates a new [`Bitmap`] from a fallible iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]
@@ -493,7 +498,7 @@ impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
         let null_count = value.unset_bits();
         let buffer = crate::buffer::to_buffer(value.bytes);
         let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
-        // Safety: null count is accurate
+        // SAFETY: null count is accurate
         unsafe { arrow_buffer::buffer::NullBuffer::new_unchecked(buffer, null_count) }
     }
 }

@@ -284,7 +284,17 @@ pub(super) fn check_expand_literals(
                 all_equal_len = false;
             }
             let name = s.name();
-            polars_ensure!(names.insert(name), duplicate = name);
+
+            if !names.insert(name) {
+                let msg = format!(
+                    "the name: '{}' is duplicate\n\n\
+                    It's possible that multiple expressions are returning the same default column \
+                    name. If this is the case, try renaming the columns with \
+                    `.alias(\"new_name\")` to avoid duplicate column names.",
+                    name
+                );
+                return Err(PolarsError::Duplicate(msg.into()));
+            }
         }
     }
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
@@ -306,7 +316,7 @@ pub(super) fn check_expand_literals(
             .collect::<PolarsResult<_>>()?
     }
 
-    let df = DataFrame::new_no_checks(selected_columns);
+    let df = unsafe { DataFrame::new_no_checks(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.

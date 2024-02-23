@@ -26,7 +26,7 @@ impl SeriesWrap<CategoricalChunked> {
                 self.0.get_ordering(),
             )
         };
-        if keep_fast_unique && self.0.can_fast_unique() {
+        if keep_fast_unique && self.0._can_fast_unique() {
             out.set_fast_unique(true)
         }
         out

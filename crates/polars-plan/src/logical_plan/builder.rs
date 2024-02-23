@@ -434,7 +434,7 @@ impl LogicalPlanBuilder {
 
         if columns.is_empty() {
             self.map(
-                |_| Ok(DataFrame::new_no_checks(vec![])),
+                |_| Ok(DataFrame::empty()),
                 AllowedOptimizations::default(),
                 Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",
@@ -459,7 +459,7 @@ impl LogicalPlanBuilder {
 
         if exprs.is_empty() {
             self.map(
-                |_| Ok(DataFrame::new_no_checks(vec![])),
+                |_| Ok(DataFrame::empty()),
                 AllowedOptimizations::default(),
                 Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",
@@ -544,7 +544,10 @@ impl LogicalPlanBuilder {
 
             if !output_names.insert(field.name().clone()) {
                 let msg = format!(
-                    "The name: '{}' passed to `LazyFrame.with_columns` is duplicate",
+                    "the name: '{}' passed to `LazyFrame.with_columns` is duplicate\n\n\
+                    It's possible that multiple expressions are returning the same default column name. \
+                    If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
+                    duplicate column names.",
                     field.name()
                 );
                 return raise_err!(polars_err!(ComputeError: msg), &self.0, into);

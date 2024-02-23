@@ -178,11 +178,11 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         let spill_size = self.spill_size;
         self.spill_size = usize::MAX;
         for (key_other, agg_idx_other) in other.inner_map.iter() {
-            // safety: idx is from the hashmap, so is in bounds
+            // SAFETY: idx is from the hashmap, so is in bounds
             let row = unsafe { other.get_keys_row(key_other) };
 
             if on_condition(key_other.hash) {
-                // safety: will not overflow as we set it to usize::MAX;
+                // SAFETY: will not overflow as we set it to usize::MAX;
                 let agg_idx_self = unsafe {
                     self.insert_key(key_other.hash, row)
                         .unwrap_unchecked_release()
@@ -251,7 +251,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     unsafe {
                         let running_agg = running_aggregations.get_unchecked_release_mut(i);
                         let av = running_agg.finalize();
-                        // safety: finalize creates owned AnyValues
+                        // SAFETY: finalize creates owned AnyValues
                         buffer.add_unchecked_owned_physical(&av);
                     }
                 }
@@ -275,7 +275,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         );
         cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 }
 

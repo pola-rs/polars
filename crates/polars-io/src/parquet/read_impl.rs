@@ -111,7 +111,10 @@ pub(super) fn array_iter_to_series(
 /// Materializes hive partitions.
 /// We have a special num_rows arg, as df can be empty when a projection contains
 /// only hive partition columns.
-/// Safety: num_rows equals the height of the df when the df height is non-zero.
+///
+/// # Safety
+///
+/// num_rows equals the height of the df when the df height is non-zero.
 pub(crate) fn materialize_hive_partitions(
     df: &mut DataFrame,
     hive_partition_columns: Option<&[Series]>,
@@ -245,7 +248,7 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         *remaining_rows -= projection_height;
 
-        let mut df = DataFrame::new_no_checks(columns);
+        let mut df = unsafe { DataFrame::new_no_checks(columns) };
         if let Some(rc) = &row_index {
             df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
@@ -332,7 +335,7 @@ fn rg_to_dfs_par_over_rg(
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut df = DataFrame::new_no_checks(columns);
+                let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
@@ -445,7 +448,7 @@ pub struct FetchRowGroupsFromMmapReader(ReaderBytes<'static>);
 
 impl FetchRowGroupsFromMmapReader {
     pub fn new(mut reader: Box<dyn MmapBytesReader>) -> PolarsResult<Self> {
-        // safety we will keep ownership on the struct and reference the bytes on the heap.
+        // SAFETY: we will keep ownership on the struct and reference the bytes on the heap.
         // this should not work with passed bytes so we check if it is a file
         assert!(reader.to_file().is_some());
         let reader_ptr = unsafe {

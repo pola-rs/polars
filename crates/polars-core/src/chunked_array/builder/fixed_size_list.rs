@@ -16,7 +16,8 @@ pub(crate) struct FixedSizeListNumericBuilder<T: NativeType> {
 }
 
 impl<T: NativeType> FixedSizeListNumericBuilder<T> {
-    /// SAFETY
+    /// # Safety
+    ///
     /// The caller must ensure that the physical numerical type match logical type.
     pub(crate) unsafe fn new(
         name: &str,

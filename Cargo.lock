@@ -2562,15 +2562,27 @@ name = "polars"
 version = "0.37.0"
 dependencies = [
  "ahash",
+ "apache-avro",
+ "avro-schema",
+ "either",
+ "ethnum",
+ "futures",
  "getrandom",
+ "polars-arrow",
  "polars-core",
+ "polars-error",
  "polars-io",
  "polars-lazy",
  "polars-ops",
+ "polars-parquet",
  "polars-plan",
  "polars-sql",
  "polars-time",
+ "polars-utils",
+ "proptest",
  "rand",
+ "tokio",
+ "tokio-util",
  "version_check",
 ]
 
@@ -2579,7 +2591,6 @@ name = "polars-arrow"
 version = "0.37.0"
 dependencies = [
  "ahash",
- "apache-avro",
  "arrow-array",
  "arrow-buffer",
  "arrow-data",
@@ -2897,6 +2908,7 @@ dependencies = [
  "rayon",
  "smartstring",
  "tokio",
+ "uuid",
  "version_check",
 ]
 
@@ -3054,7 +3066,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.20.7"
+version = "0.20.10"
 dependencies = [
  "ahash",
  "built",
@@ -4331,6 +4343,7 @@ version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f00cc9702ca12d3c81455259621e676d0f7251cec66a21e98fe2e9a37db93b2a"
 dependencies = [
+ "getrandom",
  "serde",
 ]
 

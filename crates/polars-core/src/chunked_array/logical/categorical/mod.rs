@@ -105,7 +105,7 @@ impl CategoricalChunked {
                 self.get_ordering(),
             )
         };
-        out.set_fast_unique(self.can_fast_unique());
+        out.set_fast_unique(self._can_fast_unique());
 
         out
     }
@@ -118,7 +118,7 @@ impl CategoricalChunked {
             RevMapping::Local(categories, _) => categories,
         };
 
-        // Safety: keys and values are in bounds
+        // SAFETY: keys and values are in bounds
         unsafe {
             Ok(CategoricalChunked::from_keys_and_values_global(
                 self.name(),
@@ -177,7 +177,7 @@ impl CategoricalChunked {
             .collect::<PolarsResult<_>>()?;
 
         Ok(
-            // Safety: we created the physical from the enum categories
+            // SAFETY: we created the physical from the enum categories
             unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     new_phys,
@@ -274,7 +274,9 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn can_fast_unique(&self) -> bool {
+    /// True if all categories are represented in this array. When this is the case, the unique
+    /// values of the array are the categories.
+    pub fn _can_fast_unique(&self) -> bool {
         self.bit_settings.contains(BitSettings::ORIGINAL)
             && self.physical.chunks.len() == 1
             && self.null_count() == 0
@@ -410,7 +412,7 @@ impl LogicalType for CategoricalChunked {
                 }
                 #[cfg(not(feature = "bigidx"))]
                 {
-                    // Safety: Invariant of categorical means indices are in bound
+                    // SAFETY: Invariant of categorical means indices are in bound
                     Ok(unsafe { casted_series.take_unchecked(&self.physical) })
                 }
             },
@@ -432,7 +434,7 @@ impl<'a> Iterator for CatIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|item| {
             item.map(|idx| {
-                // Safety:
+                // SAFETY:
                 // all categories are in bound
                 unsafe { self.rev.get_unchecked(idx) }
             })

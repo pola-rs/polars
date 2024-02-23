@@ -85,7 +85,7 @@ where
                             new_values.extend_from_slice(values.get_unchecked(start..last))
                         };
 
-                        // Safety:
+                        // SAFETY:
                         // we are in bounds
                         unsafe {
                             unset_nulls(
@@ -107,7 +107,7 @@ where
             }
 
             // final null check
-            // Safety:
+            // SAFETY:
             // we are in bounds
             unsafe {
                 unset_nulls(
@@ -252,9 +252,9 @@ impl ExplodeByOffsets for ListChunked {
                         unsafe {
                             // we create a pointer to evade the bck
                             let ptr = arr.as_ref() as *const dyn Array;
-                            // safety: we preallocated
+                            // SAFETY: we preallocated
                             owned.push_unchecked(arr);
-                            // safety: the pointer is still valid as `owned` will not reallocate
+                            // SAFETY: the pointer is still valid as `owned` will not reallocate
                             builder.push(&*ptr as &dyn Array);
                         }
                     },

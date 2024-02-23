@@ -214,7 +214,7 @@ where
                         for arr in self.downcast_iter() {
                             if arr.null_count() > 0 {
                                 for v in arr.into_iter().flatten() {
-                                    // safety
+                                    // SAFETY:
                                     // all these types can be coerced to f64
                                     unsafe {
                                         let val = v.to_f64().unwrap_unchecked();
@@ -223,7 +223,7 @@ where
                                 }
                             } else {
                                 for v in arr.values().as_slice() {
-                                    // safety
+                                    // SAFETY:
                                     // all these types can be coerced to f64
                                     unsafe {
                                         let val = v.to_f64().unwrap_unchecked();
@@ -522,11 +522,11 @@ impl CategoricalChunked {
         }
         if self.uses_lexical_ordering() {
             // Fast path where all categories are used
-            if self.can_fast_unique() {
+            if self._can_fast_unique() {
                 self.get_rev_map().get_categories().min_ignore_nan_kernel()
             } else {
                 let rev_map = self.get_rev_map();
-                // SAFETY
+                // SAFETY:
                 // Indices are in bounds
                 self.physical()
                     .iter()
@@ -536,7 +536,7 @@ impl CategoricalChunked {
                     .min()
             }
         } else {
-            // SAFETY
+            // SAFETY:
             // Indices are in bounds
             self.physical()
                 .min()
@@ -550,11 +550,11 @@ impl CategoricalChunked {
         }
         if self.uses_lexical_ordering() {
             // Fast path where all categories are used
-            if self.can_fast_unique() {
+            if self._can_fast_unique() {
                 self.get_rev_map().get_categories().max_ignore_nan_kernel()
             } else {
                 let rev_map = self.get_rev_map();
-                // SAFETY
+                // SAFETY:
                 // Indices are in bounds
                 self.physical()
                     .iter()
@@ -564,7 +564,7 @@ impl CategoricalChunked {
                     .max()
             }
         } else {
-            // SAFETY
+            // SAFETY:
             // Indices are in bounds
             self.physical()
                 .max()

@@ -170,9 +170,11 @@ class LazyFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
-    infer_schema_length : int, default None
-        Maximum number of rows to read for schema inference; only applies if the input
-        data is a sequence or generator of rows; other input is read as-is.
+    infer_schema_length : int or None
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
+        This parameter only applies if the input data is a sequence or generator of
+        rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
@@ -534,7 +536,7 @@ class LazyFrame:
         cls,
         source: str | Path | list[str] | list[Path],
         *,
-        infer_schema_length: int | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
@@ -3950,7 +3952,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *outer_coalesce*
                  Same as 'outer', but coalesces the key columns
             * *cross*
-                 Returns the cartisian product of rows from both tables
+                 Returns the Cartesian product of rows from both tables
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*
@@ -4811,9 +4813,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, 1)
 
+    @deprecate_function(
+        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    )
     def approx_n_unique(self) -> Self:
         """
         Approximate count of unique values.
+
+        .. deprecated: 0.20.11
+            Use `select(pl.all().approx_n_unique())` instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -4825,7 +4833,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [1, 2, 1, 1],
         ...     }
         ... )
-        >>> lf.approx_n_unique().collect()
+        >>> lf.approx_n_unique().collect()  # doctest: +SKIP
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │

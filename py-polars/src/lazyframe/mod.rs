@@ -99,7 +99,7 @@ impl PyLazyFrame {
             .read_to_string(&mut json)
             .unwrap();
 
-        // Safety
+        // SAFETY:
         // we skipped the serializing/deserializing of the static in lifetime in `DataType`
         // so we actually don't have a lifetime at all when serializing.
 

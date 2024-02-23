@@ -166,7 +166,7 @@ impl StringGroupbySink {
                     .zip(slices.par_iter())
                     .filter_map(|(agg_map, slice)| {
                         let ptr = aggregators as *mut AggregateFunction;
-                        // safety:
+                        // SAFETY:
                         // we will not alias.
                         let aggregators =
                             unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
@@ -213,7 +213,7 @@ impl StringGroupbySink {
                         cols.push(key_builder.finish().into_series());
                         cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(DataFrame::new_no_checks(cols))
+                        Some(unsafe { DataFrame::new_no_checks(cols) })
                     })
                     .collect::<Vec<_>>();
 
@@ -284,7 +284,7 @@ impl StringGroupbySink {
             match entry {
                 RawEntryMut::Vacant(_) => {
                     // set this row to true: e.g. processed ooc
-                    // safety: we correctly set the length with `reset_ooc_filter_rows`
+                    // SAFETY: we correctly set the length with `reset_ooc_filter_rows`
                     unsafe {
                         self.ooc_state.set_row_as_ooc(iteration_idx);
                     }
@@ -426,7 +426,7 @@ impl Sink for StringGroupbySink {
                             // the offset in the keys of self
                             let idx_self = k_self.idx as usize;
                             // slice to the keys of self
-                            // safety:
+                            // SAFETY:
                             // in bounds
                             let key_self = unsafe { self.keys.get_unchecked_release(idx_self) };
                             // compare the keys

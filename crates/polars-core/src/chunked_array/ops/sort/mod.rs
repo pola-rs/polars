@@ -275,7 +275,7 @@ fn ordering_other_columns<'a>(
     idx_b: usize,
 ) -> Ordering {
     for (cmp, descending) in compare_inner.iter().zip(descending) {
-        // Safety:
+        // SAFETY:
         // indices are in bounds
         let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b) };
         match (ordering, descending) {
@@ -619,6 +619,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
         #[cfg(feature = "dtype-categorical")]
         Categorical(_, _) | Enum(_, _) => s.rechunk(),
         Binary | Boolean => s.clone(),
+        BinaryOffset => s.clone(),
         String => s.cast(&Binary).unwrap(),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {

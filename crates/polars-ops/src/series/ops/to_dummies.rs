@@ -22,7 +22,7 @@ impl ToDummies for Series {
         let col_name = self.name();
         let groups = self.group_tuples(true, drop_first)?;
 
-        // safety: groups are in bounds
+        // SAFETY: groups are in bounds
         let columns = unsafe { self.agg_first(&groups) };
         let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
         let columns = columns
@@ -48,7 +48,7 @@ impl ToDummies for Series {
             })
             .collect();
 
-        Ok(DataFrame::new_no_checks(sort_columns(columns)))
+        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
     }
 }
 

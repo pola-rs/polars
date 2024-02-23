@@ -78,7 +78,7 @@ where
                         let end = cache_line_offsets[thread_no + 1];
                         let end = T::Native::from_usize(end).unwrap();
 
-                        // safety: we don't alias
+                        // SAFETY: we don't alias
                         let groups =
                             unsafe { std::slice::from_raw_parts_mut(groups_ptr.get(), len) };
                         let first = unsafe { std::slice::from_raw_parts_mut(first_ptr.get(), len) };
@@ -93,7 +93,7 @@ where
 
                                         unsafe {
                                             if buf.len() == 1 {
-                                                // safety: we just  pushed
+                                                // SAFETY: we just  pushed
                                                 let first_value = buf.get_unchecked(0);
                                                 *first.get_unchecked_release_mut(cat) = *first_value
                                             }
@@ -113,7 +113,7 @@ where
 
                                             unsafe {
                                                 if buf.len() == 1 {
-                                                    // safety: we just  pushed
+                                                    // SAFETY: we just  pushed
                                                     let first_value = buf.get_unchecked(0);
                                                     *first.get_unchecked_release_mut(cat) =
                                                         *first_value
@@ -198,7 +198,7 @@ impl CategoricalChunked {
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached, _) => {
-                if self.can_fast_unique() {
+                if self._can_fast_unique() {
                     if verbose() {
                         eprintln!("grouping categoricals, run perfect hash function");
                     }

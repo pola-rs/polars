@@ -108,7 +108,7 @@ impl SortSink {
             // expensive
             let df = accumulate_dataframes_vertical_unchecked(self.chunks.drain(..));
             if df.height() > 0 {
-                // safety: we just asserted height > 0
+                // SAFETY: we just asserted height > 0
                 let sample = unsafe {
                     let s = &df.get_columns()[self.sort_idx];
                     s.to_physical_repr().get_unchecked(0).into_static().unwrap()

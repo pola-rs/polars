@@ -20,7 +20,7 @@ use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
-use polars_utils::total_ord::TotalEq;
+use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -38,19 +38,19 @@ use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
-    // Safety:
+    // SAFETY:
     // Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
 }
 
 pub(crate) fn slice_extract_wrapped<T>(slice: &[Wrap<T>]) -> &[T] {
-    // Safety:
+    // SAFETY:
     // Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
 }
 
 pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    // Safety:
+    // SAFETY:
     // Wrap is transparent.
     unsafe { std::mem::transmute(buf) }
 }
@@ -129,7 +129,7 @@ fn struct_dict<'a>(
 // accept u128 array to ensure alignment is correct
 fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
-    // safety: transmute is safe as there are 48 bytes in 3 128bit ints
+    // SAFETY: transmute is safe as there are 48 bytes in 3 128bit ints
     // and the minimal alignment of u8 fits u16
     let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
     let mut buffer = itoa::Buffer::new();
@@ -495,6 +495,15 @@ impl PartialEq for ObjectValue {
 impl TotalEq for ObjectValue {
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl TotalHash for ObjectValue {
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.hash(state);
     }
 }
 

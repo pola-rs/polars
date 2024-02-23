@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict, namedtuple
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
@@ -14,12 +14,15 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars.datatypes import PolarsDataType
 
 if sys.version_info >= (3, 9):
@@ -797,6 +800,45 @@ def test_init_series() -> None:
     assert_series_equal(s5, pl.Series("", [1, 2, 3], dtype=pl.Int8))
 
 
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (int, pl.Int64),
+        (bytes, pl.Binary),
+        (float, pl.Float64),
+        (str, pl.String),
+        (date, pl.Date),
+        (time, pl.Time),
+        (datetime, pl.Datetime("us")),
+        (timedelta, pl.Duration("us")),
+        (Decimal, pl.Decimal(precision=None, scale=0)),
+    ],
+)
+def test_init_py_dtype(dtype: Any, expected_dtype: PolarsDataType) -> None:
+    for s in (
+        pl.Series("s", [None], dtype=dtype),
+        pl.Series("s", [], dtype=dtype),
+    ):
+        assert s.dtype == expected_dtype
+
+    for df in (
+        pl.DataFrame({"col": [None]}, schema={"col": dtype}),
+        pl.DataFrame({"col": []}, schema={"col": dtype}),
+    ):
+        assert df.schema == {"col": expected_dtype}
+
+
+def test_init_py_dtype_misc_float() -> None:
+    assert pl.Series([100], dtype=float).dtype == pl.Float64  # type: ignore[arg-type]
+
+    df = pl.DataFrame(
+        {"x": [100.0], "y": [200], "z": [None]},
+        schema={"x": float, "y": float, "z": float},
+    )
+    assert df.schema == {"x": pl.Float64, "y": pl.Float64, "z": pl.Float64}
+    assert df.rows() == [(100.0, 200.0, None)]
+
+
 def test_init_seq_of_seq() -> None:
     # List of lists
     df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
@@ -1518,3 +1560,44 @@ def test_df_init_dict_raise_on_expression_input() -> None:
     # Passing a list of expressions is allowed
     df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
     assert df.get_column("a").dtype == pl.Object
+
+
+def test_df_schema_sequences() -> None:
+    schema = [
+        ["address", pl.String],
+        ["key", pl.Int64],
+        ["value", pl.Float32],
+    ]
+    df = pl.DataFrame(schema=schema)  # type: ignore[arg-type]
+    assert df.schema == {"address": pl.String, "key": pl.Int64, "value": pl.Float32}
+
+
+def test_df_schema_sequences_incorrect_length() -> None:
+    schema = [
+        ["address", pl.String, pl.Int8],
+        ["key", pl.Int64],
+        ["value", pl.Float32],
+    ]
+    with pytest.raises(ValueError):
+        pl.DataFrame(schema=schema)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("input", "infer_func", "expected_dtype"),
+    [
+        ("f8", numpy_char_code_to_dtype, pl.Float64),
+        ("f4", numpy_char_code_to_dtype, pl.Float32),
+        ("i4", numpy_char_code_to_dtype, pl.Int32),
+        ("u1", numpy_char_code_to_dtype, pl.UInt8),
+        ("?", numpy_char_code_to_dtype, pl.Boolean),
+        ("m8", numpy_char_code_to_dtype, pl.Duration("us")),
+        ("M8", numpy_char_code_to_dtype, pl.Datetime("us")),
+    ],
+)
+def test_numpy_inference(
+    input: Any,
+    infer_func: Callable[[Any], PolarsDataType],
+    expected_dtype: PolarsDataType,
+) -> None:
+    result = infer_func(input)
+    assert result == expected_dtype

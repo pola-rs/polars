@@ -85,7 +85,7 @@ fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
         }
         values.set_len(offset);
         values.shrink_to_fit();
-        // Safety: offsets _are_ monotonically increasing
+        // SAFETY: offsets _are_ monotonically increasing
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
         (values, offsets)

@@ -25,6 +25,8 @@ from typing import (
     Union,
 )
 
+from polars.utils.various import re_escape
+
 if TYPE_CHECKING:
     from dis import Instruction
 
@@ -132,19 +134,40 @@ _NUMPY_FUNCTIONS = frozenset(
     )
 )
 
-# python functions that we can map to native expressions
+# python attrs/funcs that map to native expressions
+_PYTHON_ATTRS_MAP = {
+    "date": "dt.date()",
+    "day": "dt.day()",
+    "hour": "dt.hour()",
+    "microsecond": "dt.microsecond()",
+    "minute": "dt.minute()",
+    "month": "dt.month()",
+    "second": "dt.second()",
+    "year": "dt.year()",
+}
 _PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "String"}
 _PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
 _PYTHON_METHODS_MAP = {
+    # string
+    "endswith": "str.ends_with",
     "lower": "str.to_lowercase",
+    "lstrip": "str.strip_chars_start",
+    "rstrip": "str.strip_chars_end",
+    "startswith": "str.starts_with",
+    "strip": "str.strip_chars",
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
+    # temporal
+    "date": "dt.date",
+    "isoweekday": "dt.weekday",
+    "time": "dt.time",
 }
 
-_FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
-    # lambda x: module.func(CONSTANT)
+_MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [
+    # lambda x: numpy.func(x)
+    # lambda x: numpy.func(CONSTANT)
     {
-        "argument_1_opname": [{"LOAD_CONST"}],
+        "argument_1_opname": [{"LOAD_FAST", "LOAD_CONST"}],
         "argument_2_opname": [],
         "module_opname": [OpNames.LOAD_ATTR],
         "attribute_opname": [],
@@ -152,16 +175,7 @@ _FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
         "attribute_name": [],
         "function_name": [_NUMPY_FUNCTIONS],
     },
-    # lambda x: module.func(x)
-    {
-        "argument_1_opname": [{"LOAD_FAST"}],
-        "argument_2_opname": [],
-        "module_opname": [OpNames.LOAD_ATTR],
-        "attribute_opname": [],
-        "module_name": [_NUMPY_MODULE_ALIASES],
-        "attribute_name": [],
-        "function_name": [_NUMPY_FUNCTIONS],
-    },
+    # lambda x: json.loads(x)
     {
         "argument_1_opname": [{"LOAD_FAST"}],
         "argument_2_opname": [],
@@ -171,7 +185,7 @@ _FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
         "attribute_name": [],
         "function_name": [{"loads"}],
     },
-    # lambda x: module.func(x, CONSTANT)
+    # lambda x: datetime.strptime(x, CONSTANT)
     {
         "argument_1_opname": [{"LOAD_FAST"}],
         "argument_2_opname": [{"LOAD_CONST"}],
@@ -194,13 +208,12 @@ _FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
 ]
 # In addition to `lambda x: func(x)`, also support cases when a unary operation
 # has been applied to `x`, like `lambda x: func(-x)` or `lambda x: func(~x)`.
-_FUNCTION_KINDS = [
-    # Dict entry 1 has incompatible type "str": "object";
-    # expected "str": "list[AbstractSet[str]]"
+_MODULE_FUNCTIONS = [
     {**kind, "argument_1_unary_opname": unary}  # type: ignore[dict-item]
-    for kind in _FUNCTION_KINDS
+    for kind in _MODULE_FUNCTIONS
     for unary in [[set(OpNames.UNARY)], []]
 ]
+_RE_IMPLICIT_BOOL = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
 
 
 def _get_all_caller_variables() -> dict[str, Any]:
@@ -251,6 +264,12 @@ class BytecodeParser:
         self._rewritten_instructions = RewrittenInstructions(
             instructions=original_instructions,
         )
+
+    def _omit_implicit_bool(self, expr: str) -> str:
+        """Drop extraneous/implied bool (eg: `pl.col("d") & pl.col("d").dt.date()`)."""
+        while _RE_IMPLICIT_BOOL.search(expr):
+            expr = _RE_IMPLICIT_BOOL.sub(repl=r'pl.col("\1").\2', string=expr)
+        return expr
 
     @staticmethod
     def _get_param_name(function: Callable[[Any], Any]) -> str | None:
@@ -415,11 +434,13 @@ class BytecodeParser:
         # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
         if "pl.col(" not in polars_expr:
             return None
-        elif self._map_target == "series":
-            target_name = self._get_target_name(col, polars_expr)
-            return polars_expr.replace(f'pl.col("{col}")', target_name)
         else:
-            return polars_expr
+            polars_expr = self._omit_implicit_bool(polars_expr)
+            if self._map_target == "series":
+                target_name = self._get_target_name(col, polars_expr)
+                return polars_expr.replace(f'pl.col("{col}")', target_name)
+            else:
+                return polars_expr
 
     def warn(
         self,
@@ -562,7 +583,7 @@ class InstructionTranslator:
                     # But, if e1 << e2 was valid, then e2 must have been positive.
                     # Hence, the output of 2**e2 can be safely cast to Int64, which
                     # may be necessary if chaining operations which assume Int64 output.
-                    return f"({e1}*2**{e2}).cast(pl.Int64)"
+                    return f"({e1} * 2**{e2}).cast(pl.Int64)"
                 elif op == ">>":
                     # Motivation for the cast is the same as in the '<<' case above.
                     return f"({e1} / 2**{e2}).cast(pl.Int64)"
@@ -656,7 +677,8 @@ class RewrittenInstructions:
         idx: int,
         *,
         opnames: list[AbstractSet[str]],
-        argvals: list[AbstractSet[Any] | dict[Any, Any]] | None,
+        argvals: list[AbstractSet[Any] | dict[Any, Any] | None] | None,
+        is_attr: bool = False,
     ) -> list[Instruction]:
         """
         Check if a sequence of Instructions matches the specified ops/argvals.
@@ -669,9 +691,19 @@ class RewrittenInstructions:
             The full opname sequence that defines a match.
         argvals
             Associated argvals that must also match (in same position as opnames).
+        is_attr
+            Indicate if the match represents pure attribute access (cannot be called).
         """
         n_required_ops, argvals = len(opnames), argvals or []
-        instructions = self._instructions[idx : idx + n_required_ops]
+        idx_offset = idx + n_required_ops
+        if (
+            is_attr
+            and (trailing_inst := self._instructions[idx_offset : idx_offset + 1])
+            and trailing_inst[0].opname in OpNames.CALL  # not pure attr if called
+        ):
+            return []
+
+        instructions = self._instructions[idx:idx_offset]
         if len(instructions) == n_required_ops and all(
             inst.opname in match_opnames
             and (match_argval is None or inst.argval in match_argval)
@@ -702,11 +734,29 @@ class RewrittenInstructions:
                     self._rewrite_functions,
                     self._rewrite_methods,
                     self._rewrite_builtins,
+                    self._rewrite_attrs,
                 )
             ):
                 updated_instructions.append(inst)
             idx += increment or 1
         return updated_instructions
+
+    def _rewrite_attrs(self, idx: int, updated_instructions: list[Instruction]) -> int:
+        """Replace python attribute lookup with synthetic POLARS_EXPRESSION op."""
+        if matching_instructions := self._matches(
+            idx,
+            opnames=[{"LOAD_FAST"}, {"LOAD_ATTR"}],
+            argvals=[None, _PYTHON_ATTRS_MAP],
+            is_attr=True,
+        ):
+            inst = matching_instructions[1]
+            expr_name = _PYTHON_ATTRS_MAP[inst.argval]
+            px = inst._replace(
+                opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
+            )
+            updated_instructions.extend([matching_instructions[0], px])
+
+        return len(matching_instructions)
 
     def _rewrite_builtins(
         self, idx: int, updated_instructions: list[Instruction]
@@ -722,7 +772,7 @@ class RewrittenInstructions:
                 dtype = _PYTHON_CASTS_MAP[argval]
                 argval = f"cast(pl.{dtype})"
 
-            synthetic_call = inst1._replace(
+            px = inst1._replace(
                 opname="POLARS_EXPRESSION",
                 argval=argval,
                 argrepr=argval,
@@ -730,7 +780,7 @@ class RewrittenInstructions:
             )
             # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
             operand = inst2._replace(offset=inst1.offset)
-            updated_instructions.extend((operand, synthetic_call))
+            updated_instructions.extend((operand, px))
 
         return len(matching_instructions)
 
@@ -738,7 +788,7 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
-        for function_kind in _FUNCTION_KINDS:
+        for function_kind in _MODULE_FUNCTIONS:
             opnames: list[AbstractSet[str]] = [
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
                 *function_kind["module_opname"],
@@ -775,22 +825,24 @@ class RewrittenInstructions:
                         return 0
                 else:
                     expr_name = inst2.argval
-                synthetic_call = inst1._replace(
+
+                px = inst1._replace(
                     opname="POLARS_EXPRESSION",
                     argval=expr_name,
                     argrepr=expr_name,
                     offset=inst3.offset,
                 )
+
                 # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
                 operand = inst3._replace(offset=inst1.offset)
                 updated_instructions.extend(
                     (
                         operand,
                         matching_instructions[3 + attribute_count],
-                        synthetic_call,
+                        px,
                     )
                     if function_kind["argument_1_unary_opname"]
-                    else (operand, synthetic_call)
+                    else (operand, px)
                 )
                 return len(matching_instructions)
 
@@ -800,20 +852,40 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        if matching_instructions := self._matches(
-            idx,
-            opnames=[
-                OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"},
-                OpNames.CALL,
-            ],
-            argvals=[_PYTHON_METHODS_MAP],
+        LOAD_METHOD = OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"}
+        if matching_instructions := (
+            # method call with one basic arg, eg: "s.endswith('!')"
+            self._matches(
+                idx,
+                opnames=[LOAD_METHOD, {"LOAD_CONST"}, OpNames.CALL],
+                argvals=[_PYTHON_METHODS_MAP],
+            )
+            or
+            # method call with no arg, eg: "s.lower()"
+            self._matches(
+                idx,
+                opnames=[LOAD_METHOD, OpNames.CALL],
+                argvals=[_PYTHON_METHODS_MAP],
+            )
         ):
             inst = matching_instructions[0]
-            expr_name = _PYTHON_METHODS_MAP[inst.argval]
-            synthetic_call = inst._replace(
-                opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
-            )
-            updated_instructions.append(synthetic_call)
+            expr = _PYTHON_METHODS_MAP[inst.argval]
+
+            if matching_instructions[1].opname == "LOAD_CONST":
+                param_value = matching_instructions[1].argval
+                if isinstance(param_value, tuple) and expr in (
+                    "str.starts_with",
+                    "str.ends_with",
+                ):
+                    starts, ends = ("^", "") if "starts" in expr else ("", "$")
+                    rx = "|".join(re_escape(v) for v in param_value)
+                    q = '"' if "'" in param_value else "'"
+                    expr = f"str.contains(r{q}{starts}({rx}){ends}{q})"
+                else:
+                    expr += f"({param_value!r})"
+
+            px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
+            updated_instructions.append(px)
 
         return len(matching_instructions)
 
