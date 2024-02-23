@@ -1,7 +1,6 @@
 use std::ops::Add;
 
 use super::super::sum::Sum;
-use super::simd_add;
 use crate::types::simd::*;
 
 simd_add!(u8x64, u8, 64, wrapping_add);

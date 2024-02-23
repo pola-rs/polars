@@ -807,12 +807,14 @@ impl ArrayFromIter<Option<bool>> for BooleanArray {
 // as Rust considers that AsRef<dyn Array> for Option<&dyn Array> could be implemented.
 trait AsArray {
     fn as_array(&self) -> &dyn Array;
+    #[cfg(feature = "dtype-array")]
     fn into_boxed_array(self) -> Box<dyn Array>; // Prevents unnecessary re-boxing.
 }
 impl AsArray for Box<dyn Array> {
     fn as_array(&self) -> &dyn Array {
         self.as_ref()
     }
+    #[cfg(feature = "dtype-array")]
     fn into_boxed_array(self) -> Box<dyn Array> {
         self
     }
@@ -821,6 +823,7 @@ impl<'a> AsArray for &'a dyn Array {
     fn as_array(&self) -> &'a dyn Array {
         *self
     }
+    #[cfg(feature = "dtype-array")]
     fn into_boxed_array(self) -> Box<dyn Array> {
         self.to_boxed()
     }

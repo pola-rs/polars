@@ -3,10 +3,8 @@ use std::ops::Div;
 use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
-use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::LiteralValue::Null;
-use polars_plan::prelude::{col, lit, when};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 #[cfg(feature = "dtype-decimal")]

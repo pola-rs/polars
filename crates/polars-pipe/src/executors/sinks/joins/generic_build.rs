@@ -1,10 +1,8 @@
 use std::any::Any;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BinaryArray};
+use arrow::array::BinaryArray;
 use hashbrown::hash_map::RawEntryMut;
-use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};

@@ -3,9 +3,6 @@ use std::fmt::Debug;
 
 #[cfg(debug_assertions)]
 use polars_plan::prelude::*;
-#[cfg(debug_assertions)]
-use polars_utils::arena::Arena;
-use polars_utils::arena::Node;
 
 #[derive(Copy, Clone, Debug)]
 pub(super) enum PipelineNode {

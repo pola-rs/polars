@@ -1,6 +1,5 @@
 use std::collections::LinkedList;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::Mutex;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;

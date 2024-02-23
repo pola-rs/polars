@@ -1,10 +1,7 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 
-use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]

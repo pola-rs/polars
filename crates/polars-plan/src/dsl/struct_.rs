@@ -1,5 +1,4 @@
 use super::*;
-use crate::dsl::function_expr::StructFunction;
 
 /// Specialized expressions for Struct dtypes.
 pub struct StructNameSpace(pub(crate) Expr);

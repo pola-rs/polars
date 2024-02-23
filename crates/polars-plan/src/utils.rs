@@ -1,13 +1,10 @@
 use std::fmt::Formatter;
 use std::iter::FlatMap;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
-use crate::logical_plan::iterator::ArenaExprIter;
-use crate::logical_plan::Context;
 use crate::prelude::consts::{LEN, LITERAL_NAME};
 use crate::prelude::*;
 

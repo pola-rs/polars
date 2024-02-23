@@ -1,5 +1,3 @@
-use std::fmt::{Display, Formatter};
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

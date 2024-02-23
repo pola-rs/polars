@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::expr_to_leaf_column_names;
 
 impl Expr {
     /// Get a dot language representation of the Expression.

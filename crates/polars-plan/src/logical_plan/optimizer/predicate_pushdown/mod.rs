@@ -11,7 +11,6 @@ use utils::*;
 
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::optimizer;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;

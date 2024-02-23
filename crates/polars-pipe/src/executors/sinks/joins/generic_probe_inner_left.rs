@@ -1,9 +1,7 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, BinaryArray};
+use arrow::array::{Array, BinaryArray};
 use arrow::compute::utils::combine_validities_and;
-use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;

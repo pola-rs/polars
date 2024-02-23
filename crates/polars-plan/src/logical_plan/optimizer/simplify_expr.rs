@@ -2,9 +2,6 @@ use polars_utils::arena::Arena;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 
-#[cfg(all(feature = "strings", feature = "concat_str"))]
-use crate::dsl::function_expr::StringFunction;
-use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
 use crate::prelude::optimizer::simplify_functions::optimize_functions;
 
