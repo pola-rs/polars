@@ -53,24 +53,20 @@ pub fn count_rows(
         eol_char,
     );
 
-    POOL.install(|| {
-        file_chunks
-            .into_par_iter()
-            .map(|(start, stop)| {
-                let local_bytes = &reader_bytes[start..stop];
-                let row_iterator =
-                    SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
-                if comment_prefix.is_some() {
-                    Ok(row_iterator
-                        .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
-                        .count()
-                        - (has_header as usize))
-                } else {
-                    Ok(row_iterator.count() - (has_header as usize))
-                }
-            })
-            .sum()
-    })
+    let iter = file_chunks.into_par_iter().map(|(start, stop)| {
+        let local_bytes = &reader_bytes[start..stop];
+        let row_iterator = SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
+        if comment_prefix.is_some() {
+            Ok(row_iterator
+                .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
+                .count()
+                - (has_header as usize))
+        } else {
+            Ok(row_iterator.count() - (has_header as usize))
+        }
+    });
+
+    POOL.install(|| iter.sum())
 }
 
 /// Skip the utf-8 Byte Order Mark.

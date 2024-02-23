@@ -9,7 +9,7 @@ use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
-use polars_io::pl_async::{get_runtime, with_concurrency_budget};
+use polars_io::pl_async::{get_runtime, with_concurrency_budget, MAX_BUDGET_PER_REQUEST};
 #[cfg(feature = "parquet")]
 use polars_io::{is_cloud_url, SerReader};
 
@@ -61,29 +61,46 @@ pub(super) fn count_rows_parquet(
     paths: &Arc<[PathBuf]>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
-    paths
-        .iter()
-        .map(|path: &PathBuf| {
-            if is_cloud_url(path) {
-                #[cfg(not(feature = "cloud"))]
-                panic!(
-                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
-            );
+    if paths.is_empty() {
+        return Ok(0);
+    };
+    let is_cloud = is_cloud_url(paths.first().unwrap().as_path());
 
-                #[cfg(feature = "cloud")]
-                {
-                    let uri = path.to_string_lossy();
-                    get_runtime().block_on(with_concurrency_budget(1, || async {
-                        let mut reader =
-                            ParquetAsyncReader::from_uri(&uri, cloud_options, None, None).await?;
-                        reader.num_rows().await
-                    }))
-                }
-            } else {
+    if is_cloud {
+        #[cfg(not(feature = "cloud"))]
+        panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
+
+        #[cfg(feature = "cloud")]
+        {
+            get_runtime().block_on(with_concurrency_budget(
+                paths.len().clamp(1, MAX_BUDGET_PER_REQUEST) as u32,
+                || count_rows_cloud_parquet(paths, cloud_options),
+            ))
+        }
+    } else {
+        paths
+            .iter()
+            .map(|path| {
                 let file = polars_utils::open_file(path)?;
                 let mut reader = ParquetReader::new(file);
                 reader.num_rows()
-            }
-        })
-        .sum::<PolarsResult<usize>>()
+            })
+            .sum::<PolarsResult<usize>>()
+    }
+}
+
+#[cfg(all(feature = "parquet", feature = "async"))]
+async fn count_rows_cloud_parquet(
+    paths: &Arc<[PathBuf]>,
+    cloud_options: Option<&CloudOptions>,
+) -> PolarsResult<usize> {
+    let collection = paths.iter().map(|path| async {
+        let mut reader =
+            ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None, None)
+                .await?;
+        reader.num_rows().await
+    });
+    futures::future::try_join_all(collection)
+        .await
+        .map(|rows| rows.iter().sum())
 }
