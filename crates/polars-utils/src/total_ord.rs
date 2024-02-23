@@ -481,10 +481,12 @@ macro_rules! impl_to_total_ord_identity {
             type TotalOrdItem = $T;
             type SourceItem = $T;
 
+            #[inline]
             fn to_total_ord(&self) -> Self::TotalOrdItem {
                 self.clone()
             }
 
+            #[inline]
             fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
                 ord_item
             }
@@ -514,10 +516,12 @@ macro_rules! impl_to_total_ord_lifetimed_ref_identity {
             type TotalOrdItem = &'a $T;
             type SourceItem = &'a $T;
 
+            #[inline]
             fn to_total_ord(&self) -> Self::TotalOrdItem {
                 *self
             }
 
+            #[inline]
             fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
                 ord_item
             }
@@ -534,10 +538,12 @@ macro_rules! impl_to_total_ord_wrapped {
             type TotalOrdItem = TotalOrdWrap<$T>;
             type SourceItem = $T;
 
+            #[inline]
             fn to_total_ord(&self) -> Self::TotalOrdItem {
                 TotalOrdWrap(self.clone())
             }
 
+            #[inline]
             fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
                 ord_item.0
             }
@@ -557,10 +563,12 @@ impl<T: Copy> ToTotalOrd for Option<T> {
     type TotalOrdItem = TotalOrdWrap<Option<T>>;
     type SourceItem = Option<T>;
 
+    #[inline]
     fn to_total_ord(&self) -> Self::TotalOrdItem {
         TotalOrdWrap(*self)
     }
 
+    #[inline]
     fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
         ord_item.0
     }
@@ -570,10 +578,12 @@ impl<T: ToTotalOrd> ToTotalOrd for &T {
     type TotalOrdItem = T::TotalOrdItem;
     type SourceItem = T::SourceItem;
 
+    #[inline]
     fn to_total_ord(&self) -> Self::TotalOrdItem {
         (*self).to_total_ord()
     }
 
+    #[inline]
     fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
         T::peel_total_ord(ord_item)
     }
@@ -583,10 +593,12 @@ impl<'a> ToTotalOrd for BytesHash<'a> {
     type TotalOrdItem = BytesHash<'a>;
     type SourceItem = BytesHash<'a>;
 
+    #[inline]
     fn to_total_ord(&self) -> Self::TotalOrdItem {
         *self
     }
 
+    #[inline]
     fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
         ord_item
     }
