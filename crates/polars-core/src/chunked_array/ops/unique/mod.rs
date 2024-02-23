@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;

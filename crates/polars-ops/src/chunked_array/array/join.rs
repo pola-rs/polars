@@ -1,7 +1,5 @@
 use std::fmt::Write;
 
-use polars_core::prelude::ArrayChunked;
-
 use super::*;
 
 fn join_literal(

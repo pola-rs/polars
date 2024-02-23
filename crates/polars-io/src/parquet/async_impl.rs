@@ -1,14 +1,12 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
 use std::ops::Range;
-use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
 use polars_core::config::{get_rg_prefetch_size, verbose};
-use polars_core::datatypes::PlHashMap;
-use polars_core::error::{to_compute_err, PolarsResult};
+use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
 use polars_parquet::write::FileMetaData;

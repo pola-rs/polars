@@ -20,9 +20,6 @@ use polars_utils::index::ChunkId;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "asof_join")]
-use super::asof::AsOfOptions;
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {

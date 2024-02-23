@@ -1,20 +1,19 @@
 use std::borrow::Cow;
 use std::io::Write;
 
-use arrow::array::{Array, ArrayRef};
+use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::{ArrowDataType, PhysicalType};
+use arrow::datatypes::PhysicalType;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
-use polars_parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
+use polars_parquet::write::{self, *};
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use write::{
-    BrotliLevel as BrotliLevelParquet, CompressionOptions, GzipLevel as GzipLevelParquet,
-    ZstdLevel as ZstdLevelParquet,
+    BrotliLevel as BrotliLevelParquet, GzipLevel as GzipLevelParquet, ZstdLevel as ZstdLevelParquet,
 };
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]

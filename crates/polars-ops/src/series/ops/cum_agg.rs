@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::ops::{Add, AddAssign, Mul};
 
 use num_traits::{Bounded, One, Zero};

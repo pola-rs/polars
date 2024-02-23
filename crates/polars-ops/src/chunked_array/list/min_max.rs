@@ -1,6 +1,5 @@
-use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::legacy::array::PolarsArray;
 use arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
