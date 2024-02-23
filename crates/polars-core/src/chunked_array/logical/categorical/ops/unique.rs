@@ -4,7 +4,7 @@ use crate::frame::group_by::IntoGroupsProxy;
 impl CategoricalChunked {
     pub fn unique(&self) -> PolarsResult<Self> {
         let cat_map = self.get_rev_map();
-        if self.can_fast_unique() {
+        if self._can_fast_unique() {
             let ca = match &**cat_map {
                 RevMapping::Local(a, _) => {
                     UInt32Chunked::from_iter_values(self.physical().name(), 0..(a.len() as u32))
@@ -41,7 +41,7 @@ impl CategoricalChunked {
     }
 
     pub fn n_unique(&self) -> PolarsResult<usize> {
-        if self.can_fast_unique() {
+        if self._can_fast_unique() {
             Ok(self.get_rev_map().len())
         } else {
             self.physical().n_unique()

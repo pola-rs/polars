@@ -372,6 +372,10 @@ impl OptimizationRule for TypeCoercionRule {
                     (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {
                         return Ok(None)
                     },
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                        return Ok(None)
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
