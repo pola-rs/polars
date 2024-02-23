@@ -6,30 +6,15 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub use exitable::PyInProcessQuery;
-#[cfg(feature = "csv")]
-use polars::io::csv::SerializeOptions;
 use polars::io::RowIndex;
-#[cfg(feature = "csv")]
-use polars::lazy::frame::LazyCsvReader;
-#[cfg(feature = "json")]
-use polars::lazy::frame::LazyJsonLineReader;
-use polars::lazy::frame::{AllowedOptimizations, LazyFrame};
-use polars::lazy::prelude::col;
-#[cfg(feature = "csv")]
-use polars::prelude::CsvEncoding;
-use polars::prelude::{ClosedWindow, Field, JoinType, Schema};
 use polars::time::*;
-use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
-use polars_ops::prelude::AsOfOptions;
 use polars_rs::io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
-use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;

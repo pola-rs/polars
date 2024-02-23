@@ -7,7 +7,6 @@ use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
-use pyo3::{IntoPy, PyAny, PyObject, Python};
 
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
