@@ -5494,7 +5494,7 @@ class DataFrame:
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups based on a temporal or integer column.
 
         Different from a `group_by_dynamic` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
@@ -5552,8 +5552,8 @@ class DataFrame:
             then it must be sorted in ascending order within each group).
 
             In case of a rolling operation on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+            {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
+            cast to Int64, so if performance matters use an Int64 column.
         period
             length of the window - must be non-negative
         offset
