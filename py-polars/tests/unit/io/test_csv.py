@@ -1476,6 +1476,11 @@ def test_batched_csv_reader_no_batches(foods_file_path: Path) -> None:
     assert batches is None
 
 
+def test_read_csv_batched_invalid_source() -> None:
+    with pytest.raises(TypeError):
+        pl.read_csv_batched(source=5)  # type: ignore[arg-type]
+
+
 def test_csv_single_categorical_null() -> None:
     f = io.BytesIO()
     pl.DataFrame(
