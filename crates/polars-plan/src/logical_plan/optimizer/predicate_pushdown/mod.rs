@@ -406,12 +406,13 @@ impl<'a> PredicatePushDown<'a> {
             } => {
                 if let Some(ref subset) = options.subset {
                     // Predicates on the subset can pass.
-                    let mut names_set = PlHashSet::<Arc<str>>::with_capacity(subset.len());
+                    let subset = subset.clone();
+                    let mut names_set = PlHashSet::<&str>::with_capacity(subset.len());
                     for name in subset.iter() {
-                        names_set.insert(Arc::<str>::from(&**name));
+                        names_set.insert(name.as_str());
                     };
 
-                    let condition = |name: Arc<str>| !names_set.contains(&name);
+                    let condition = |name: Arc<str>| !names_set.contains(name.as_ref());
                     let local_predicates =
                         transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
 
