@@ -84,6 +84,7 @@ pub(super) fn process_projection(
         }
         add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
         local_projection.push(exprs[0]);
+        proj_pd.is_count_star = true;
     } else {
         // A projection can consist of a chain of expressions followed by an alias.
         // We want to do the chain locally because it can have complicated side effects.

@@ -1,11 +1,73 @@
+use std::path::PathBuf;
+
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
+use polars_core::POOL;
+use polars_utils::index::Bounded;
+use rayon::prelude::*;
 
 use super::buffer::*;
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::splitfields::SplitFields;
+use crate::csv::utils::get_file_chunks;
 use crate::csv::CommentPrefix;
+use crate::utils::get_reader_bytes;
+
+/// Read the number of rows without parsing columns
+/// useful for count(*) queries
+pub fn count_rows(
+    path: &PathBuf,
+    separator: u8,
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+) -> PolarsResult<usize> {
+    let mut reader = polars_utils::open_file(path)?;
+    let reader_bytes = get_reader_bytes(&mut reader)?;
+    const MIN_ROWS_PER_THREAD: usize = 1024;
+    let max_threads = POOL.current_num_threads();
+
+    // Determine if parallelism is beneficial and how many threads
+    let n_threads = get_line_stats(
+        &reader_bytes,
+        MIN_ROWS_PER_THREAD,
+        eol_char,
+        None,
+        separator,
+        quote_char,
+    )
+    .map(|(mean, std)| {
+        let n_rows = (reader_bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+        (n_rows / MIN_ROWS_PER_THREAD).clamp(1, max_threads)
+    })
+    .unwrap_or(1);
+
+    let file_chunks = get_file_chunks(
+        &reader_bytes,
+        n_threads,
+        None,
+        separator,
+        quote_char,
+        eol_char,
+    );
+
+    let iter = file_chunks.into_par_iter().map(|(start, stop)| {
+        let local_bytes = &reader_bytes[start..stop];
+        let row_iterator = SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
+        if comment_prefix.is_some() {
+            Ok(row_iterator
+                .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
+                .count()
+                - (has_header as usize))
+        } else {
+            Ok(row_iterator.count() - (has_header as usize))
+        }
+    });
+
+    POOL.install(|| iter.sum())
+}
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
@@ -183,7 +245,7 @@ pub(crate) fn get_line_stats(
     bytes: &[u8],
     n_lines: usize,
     eol_char: u8,
-    expected_fields: usize,
+    expected_fields: Option<usize>,
     separator: u8,
     quote_char: Option<u8>,
 ) -> Option<(f32, f32)> {
@@ -199,7 +261,7 @@ pub(crate) fn get_line_stats(
         bytes_trunc = &bytes[offset..];
         let pos = next_line_position(
             bytes_trunc,
-            Some(expected_fields),
+            expected_fields,
             separator,
             quote_char,
             eol_char,
