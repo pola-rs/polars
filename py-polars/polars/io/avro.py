@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, BinaryIO
+from typing import IO, TYPE_CHECKING
 
 import polars._reexport as pl
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def read_avro(
-    source: str | Path | BytesIO | BinaryIO,
+    source: str | Path | BytesIO | IO[bytes],
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,

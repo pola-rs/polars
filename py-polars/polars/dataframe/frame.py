@@ -13,7 +13,6 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
-    BinaryIO,
     Callable,
     ClassVar,
     Collection,
@@ -848,7 +847,7 @@ class DataFrame:
     @classmethod
     def _read_avro(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -2703,7 +2702,7 @@ class DataFrame:
 
     def write_avro(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: IO[bytes] | BytesIO | str | Path,
         compression: AvroCompression = "uncompressed",
         name: str = "",
     ) -> None:
@@ -3259,7 +3258,7 @@ class DataFrame:
     @overload
     def write_ipc(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: IO[bytes] | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
@@ -3268,7 +3267,7 @@ class DataFrame:
 
     def write_ipc(
         self,
-        file: BinaryIO | BytesIO | str | Path | None,
+        file: IO[bytes] | BytesIO | str | Path | None,
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
@@ -3335,14 +3334,14 @@ class DataFrame:
     @overload
     def write_ipc_stream(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: IO[bytes] | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
     ) -> None:
         ...
 
     def write_ipc_stream(
         self,
-        file: BinaryIO | BytesIO | str | Path | None,
+        file: IO[bytes] | BytesIO | str | Path | None,
         compression: IpcCompression = "uncompressed",
     ) -> BytesIO | None:
         """

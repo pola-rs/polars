@@ -861,7 +861,7 @@ def test_identify_workbook(
     if file_type == "xlsb":
         file_type = "xlsx"
 
-    # identify from BinaryIO
+    # identify from IO[bytes]
     with Path.open(spreadsheet_path, "rb") as f:
         assert _identify_workbook(f) == file_type
 
