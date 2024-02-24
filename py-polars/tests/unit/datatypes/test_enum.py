@@ -203,6 +203,14 @@ def test_series_init_uninstantiated_enum() -> None:
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
 
+def test_empty_series_init_uninstantiated_enum() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match="can not cast / initialize Enum without categories present",
+    ):
+        pl.Series([], dtype=pl.Enum)
+
+
 @pytest.mark.parametrize(
     ("op", "expected"),
     [
