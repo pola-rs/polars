@@ -133,7 +133,7 @@ where
         for name in root_names {
             if condition(name) {
                 remove_keys.push(key.clone());
-                continue;
+                break;
             }
         }
     }
