@@ -719,3 +719,14 @@ def test_parquet_rle_14333() -> None:
     pq.write_table(table, f, data_page_version="2.0")
     f.seek(0)
     assert pl.read_parquet(f)["a"].to_list() == vals
+
+
+def test_parquet_rle_null_binary_read_14638() -> None:
+    df = pl.DataFrame({"x": [None]}, schema={"x": pl.String})
+
+    f = io.BytesIO()
+    df.write_parquet(f, use_pyarrow=True)
+    f.seek(0)
+    assert "RLE_DICTIONARY" in pq.read_metadata(f).row_group(0).column(0).encodings
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))
