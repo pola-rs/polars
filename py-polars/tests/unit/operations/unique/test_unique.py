@@ -33,6 +33,18 @@ def test_unique_predicate_pd() -> None:
     expected = pl.DataFrame({"x": ["abc"], "y": ["xxx"], "z": [True]})
     assert_frame_equal(result, expected)
 
+    # Issue #14595: filter should not naively be pushed past unique()
+    for keep in ("first", "last", "any", "none"):
+        q = (
+            lf.unique("x", keep=keep)  # type: ignore[arg-type]
+            .filter(pl.col("x") == "abc")
+            .filter(pl.col("y") == "xxx")
+        )
+        plan = q.explain()
+        assert r'FILTER [(col("y")) == (String(xxx))]' in plan
+        # We can push filters if they only depend on the subset columns of unique()
+        assert r'SELECTION: "[(col(\"x\")) == (String(abc))]"' in plan
+
 
 def test_unique_on_list_df() -> None:
     assert pl.DataFrame(

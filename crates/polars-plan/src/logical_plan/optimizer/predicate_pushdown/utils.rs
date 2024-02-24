@@ -116,7 +116,8 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
 }
 
 /// Transfer a predicate from `acc_predicates` that will be pushed down
-/// to a local_predicates vec based on a condition.
+/// to a local_predicates vec based on a condition on the predicates' column
+/// names.
 pub(super) fn transfer_to_local_by_name<F>(
     expr_arena: &Arena<AExpr>,
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
