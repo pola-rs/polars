@@ -6,6 +6,30 @@ pub trait SignedDivMod: Sized {
     fn wrapping_div_mod(self, other: Self) -> (Self, Self);
 }
 
+macro_rules! impl_float_div_mod {
+    ($T:ty) => {
+        impl SignedDivMod for $T {
+            #[inline]
+            fn wrapping_div_mod(self, other: Self) -> (Self, Self) {
+                let div = (self / other).floor();
+                let mod_ = self - other * div;
+                (div, mod_)
+            }
+        }
+    };
+}
+
+macro_rules! impl_unsigned_div_mod {
+    ($T:ty) => {
+        impl SignedDivMod for $T {
+            #[inline]
+            fn wrapping_div_mod(self, other: Self) -> (Self, Self) {
+                (self / other, self % other)
+            }
+        }
+    };
+}
+
 macro_rules! impl_signed_div_mod {
     ($T:ty) => {
         impl SignedDivMod for $T {
@@ -37,12 +61,20 @@ macro_rules! impl_signed_div_mod {
     };
 }
 
+impl_unsigned_div_mod!(u8);
+impl_unsigned_div_mod!(u16);
+impl_unsigned_div_mod!(u32);
+impl_unsigned_div_mod!(u64);
+impl_unsigned_div_mod!(u128);
+impl_unsigned_div_mod!(usize);
 impl_signed_div_mod!(i8);
 impl_signed_div_mod!(i16);
 impl_signed_div_mod!(i32);
 impl_signed_div_mod!(i64);
 impl_signed_div_mod!(i128);
 impl_signed_div_mod!(isize);
+impl_float_div_mod!(f32);
+impl_float_div_mod!(f64);
 
 #[cfg(test)]
 mod test {
