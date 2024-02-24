@@ -650,8 +650,6 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
-    use arrow::legacy::prelude::QuantileInterpolOptions;
-
     use crate::prelude::*;
 
     #[test]

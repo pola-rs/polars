@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use polars_error::PolarsResult;
 use polars_parquet::arrow::read::*;
 
 use super::*;

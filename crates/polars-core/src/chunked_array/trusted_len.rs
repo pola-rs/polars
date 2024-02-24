@@ -193,7 +193,6 @@ impl<T: PolarsObject> FromTrustedLenIterator<Option<T>> for ObjectChunked<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::utils::CustomIterTools;
 
     #[test]
     fn test_reverse_collect() {

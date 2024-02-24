@@ -262,10 +262,9 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
 #[cfg(test)]
 mod tests {
     use arrow::array::*;
-    use arrow::bitmap::Bitmap;
     use arrow::datatypes::*;
 
-    use super::super::{FieldInfo, ParquetPhysicalType, ParquetPrimitiveType};
+    use super::super::{FieldInfo, ParquetPhysicalType};
     use super::*;
     use crate::parquet::schema::types::{
         GroupLogicalType, PrimitiveConvertedType, PrimitiveLogicalType,

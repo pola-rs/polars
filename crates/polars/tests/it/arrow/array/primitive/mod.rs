@@ -1,5 +1,3 @@
-use std::iter::FromIterator;
-
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;

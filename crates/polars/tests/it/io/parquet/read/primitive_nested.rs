@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::encoding::{bitpacked, uleb128, Encoding};
 use polars_parquet::parquet::error::Error;

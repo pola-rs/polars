@@ -450,8 +450,6 @@ impl<'a> ExactSizeIterator for CatIter<'a> {}
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     use super::*;
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 

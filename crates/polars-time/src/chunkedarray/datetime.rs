@@ -160,8 +160,6 @@ impl DatetimeMethods for DatetimeChunked {}
 
 #[cfg(test)]
 mod test {
-    use chrono::NaiveDateTime;
-
     use super::*;
 
     #[test]

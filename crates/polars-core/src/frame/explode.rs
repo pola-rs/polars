@@ -354,7 +354,6 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::explode::MeltArgs;
     use crate::prelude::*;
 
     #[test]

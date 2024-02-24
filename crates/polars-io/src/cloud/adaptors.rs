@@ -225,7 +225,6 @@ impl Drop for CloudWriter {
 #[cfg(feature = "csv")]
 #[cfg(test)]
 mod tests {
-    use object_store::ObjectStore;
     use polars_core::df;
     use polars_core::prelude::{DataFrame, NamedFrom};
 

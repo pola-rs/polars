@@ -385,7 +385,6 @@ impl CategoricalChunked {
 
 #[cfg(test)]
 mod test {
-    use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 

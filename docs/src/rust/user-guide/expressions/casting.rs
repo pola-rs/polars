@@ -1,5 +1,4 @@
 // --8<-- [start:setup]
-use polars::lazy::dsl::StrptimeOptions;
 use polars::prelude::*;
 // --8<-- [end:setup]
 
