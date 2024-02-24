@@ -150,18 +150,18 @@ impl Wrap<&DataFrame> {
                 TimeUnit::Milliseconds,
                 None,
             ),
-            Int32 => {
-                let time_type = Datetime(TimeUnit::Nanoseconds, None);
-                let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
+            UInt32 | UInt64 | Int32 => {
+                let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
+                let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
                 let (out, by, gt) = self.impl_group_by_rolling(
                     dt,
                     by,
                     options,
                     TimeUnit::Nanoseconds,
                     None,
-                    &time_type,
+                    &time_type_dt,
                 )?;
-                let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
+                let out = out.cast(&Int64).unwrap().cast(time_type).unwrap();
                 return Ok((out, by, gt));
             },
             Int64 => {

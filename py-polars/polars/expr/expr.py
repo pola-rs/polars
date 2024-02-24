@@ -3299,7 +3299,7 @@ class Expr:
         check_sorted: bool = True,
     ) -> Self:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups based on a temporal or integer column.
 
         If you have a time series `<t_0, t_1, ..., t_n>`, then by default the
         windows created will be
@@ -3351,8 +3351,8 @@ class Expr:
             Often of type Date/Datetime.
             This column must be sorted in ascending order.
             In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+            {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
+            cast to Int64, so if performance matters use an Int64 column.
         period
             length of the window - must be non-negative
         offset
