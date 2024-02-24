@@ -13,10 +13,10 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-# pytestmark = [
-#     pytest.mark.xdist_group("aws"),
-#     pytest.mark.slow(),
-# ]
+pytestmark = [
+    pytest.mark.xdist_group("aws"),
+    pytest.mark.slow(),
+]
 
 
 @pytest.fixture(scope="module")
