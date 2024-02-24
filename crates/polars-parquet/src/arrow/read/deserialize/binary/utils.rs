@@ -80,6 +80,11 @@ impl<'a, O: Offset> Pushable<&'a [u8]> for Binary<O> {
         assert_eq!(value.len(), 0);
         self.extend_constant(additional)
     }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_constant(additional)
+    }
 }
 
 #[derive(Debug)]
