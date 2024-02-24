@@ -2114,6 +2114,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_pagesize_limit: int | None = None,
         maintain_order: bool = True,
+        storage_options: dict[str, str] | None = None,
+        retries: int = 0,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -2133,7 +2135,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         path
-            File path to which the file should be written.
+            File path to which the file should be written (can be a cloud url).
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
@@ -2159,6 +2161,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will  be slightly faster.
+        storage_options
+            Options that inform use how to connect to the cloud provider.
+            If the cloud provider is not supported by us, the storage options
+            are passed to ``fsspec.open()``.
+            Currently supported providers are: {'aws', 'gcp', 'azure' }.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+
+            If ``storage_options`` are not provided we will try to infer them from the
+            environment variables.
+        retries
+            Number of retries if accessing a cloud instance fails.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2180,6 +2197,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
+
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> lf.sink_parquet("s3://bucket/out.parquet")  # doctest: +SKIP
+
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
@@ -2190,15 +2211,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        return lf.sink_parquet(
-            path=normalize_filepath(path),
-            compression=compression,
-            compression_level=compression_level,
-            statistics=statistics,
-            row_group_size=row_group_size,
-            data_pagesize_limit=data_pagesize_limit,
-            maintain_order=maintain_order,
-        )
+        arguments: dict[str, str | int | None | list[tuple[str, str]]] = {
+            "compression": compression,
+            "compression_level": compression_level,
+            "statistics": statistics,
+            "row_group_size": row_group_size,
+            "data_pagesize_limit": data_pagesize_limit,
+            "maintain_order": maintain_order,
+        }
+
+        if isinstance(path, str) and _is_supported_cloud(path):
+            method_to_call = lf.sink_parquet_cloud
+            arguments["cloud_url"] = path
+            arguments["cloud_options"] = (
+                list(storage_options.items()) if storage_options else None
+            )
+            arguments["retries"] = retries
+        else:
+            method_to_call = lf.sink_parquet
+            arguments["path"] = normalize_filepath(path)
+
+        return method_to_call(**arguments)
 
     @unstable()
     def sink_ipc(

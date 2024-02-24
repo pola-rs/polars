@@ -151,6 +151,7 @@ rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
+cloud_write = ["cloud", "polars/cloud_write"]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
@@ -204,6 +205,7 @@ io = [
   "avro",
   "csv",
   "cloud",
+  "cloud_write",
 ]
 
 optimizations = [

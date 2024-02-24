@@ -23,12 +23,13 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
 use polars_ops::prelude::AsOfOptions;
-use polars_rs::io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
+#[cfg(feature = "cloud")]
+use crate::conversion::parse_cloud_options;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
@@ -283,19 +284,8 @@ impl PyLazyFrame {
         };
 
         let first_path_url = first_path.to_string_lossy();
-        let mut cloud_options = cloud_options
-            .map(|kv| parse_cloud_options(&first_path_url, kv))
-            .transpose()?;
-        if retries > 0 {
-            cloud_options =
-                cloud_options
-                    .or_else(|| Some(CloudOptions::default()))
-                    .map(|mut options| {
-                        options.max_retries = retries;
-                        options
-                    });
-        }
         let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let cloud_options = parse_cloud_options(&first_path_url, cloud_options, retries)?;
         let args = ScanArgsParquet {
             n_rows,
             cache,
@@ -571,6 +561,44 @@ impl PyLazyFrame {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(all(feature = "streaming", feature = "parquet"))]
+    #[pyo3(signature = (cloud_url, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order, cloud_options, retries))]
+    fn sink_parquet_cloud(
+        &self,
+        py: Python,
+        cloud_url: String,
+        compression: &str,
+        compression_level: Option<i32>,
+        statistics: bool,
+        row_group_size: Option<usize>,
+        data_pagesize_limit: Option<usize>,
+        maintain_order: bool,
+        cloud_options: Option<Vec<(String, String)>>,
+        retries: usize,
+    ) -> PyResult<()> {
+        let compression = parse_parquet_compression(compression, compression_level)?;
+        let cloud_options = parse_cloud_options(&cloud_url, cloud_options, retries)?;
+
+        let options = ParquetWriteOptions {
+            compression,
+            statistics,
+            row_group_size,
+            data_pagesize_limit,
+            maintain_order,
+        };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_parquet_cloud(cloud_url, cloud_options, options)
+                .map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "ipc"))]
     #[pyo3(signature = (path, compression, maintain_order))]
     fn sink_ipc(
