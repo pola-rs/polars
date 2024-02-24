@@ -22,6 +22,9 @@ rayon = { workspace = true }
 smartstring = { workspace = true }
 sysinfo = { version = "0.30", default-features = false, optional = true }
 
+[dev-dependencies]
+rand = { workspace = true }
+
 [build-dependencies]
 version_check = { workspace = true }
 

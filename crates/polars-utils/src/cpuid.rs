@@ -63,10 +63,9 @@ fn detect_fast_clmul() -> bool {
     features.has_pclmulqdq()
 }
 
-#[cfg(target_feature = "bmi2")]
 #[inline]
 pub fn has_fast_bmi2() -> bool {
-    #[cfg(target_feature = "bmi2")]
+    #[cfg(target_arch = "x86_64")]
     {
         static CACHE: BoolCache = BoolCache::new();
         return CACHE.get_or_init(detect_fast_bmi2);

@@ -4,6 +4,7 @@ pub mod arena;
 pub mod atomic;
 pub mod cache;
 pub mod cell;
+pub mod clmul;
 pub mod contention_pool;
 pub mod cpuid;
 mod error;

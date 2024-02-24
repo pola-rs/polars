@@ -12,7 +12,8 @@ unsafe fn intel_clmul64(x: u64, y: u64) -> u64 {
     )) as u64
 }
 
-fn portable_clmul64(x: u64, mut y: u64) -> u64 {
+#[inline]
+pub fn portable_clmul64(x: u64, mut y: u64) -> u64 {
     let mut out = 0;
     while y > 0 {
         let lsb = y & y.wrapping_neg();
@@ -22,19 +23,19 @@ fn portable_clmul64(x: u64, mut y: u64) -> u64 {
     out
 }
 
-fn portable_prefix_xorsum(mut x: u64) -> u64 {
+#[inline]
+pub fn portable_prefix_xorsum(mut x: u64) -> u64 {
     x <<= 1;
-    x ^= x << 1;
-    x ^= x << 2;
-    x ^= x << 4;
-    x ^= x << 8;
-    x ^= x << 16;
-    x ^= x << 32;
+    for i in 0..6 {
+        x ^= x << (1 << i);
+    }
     x
 }
 
+/// # Safety
+/// has_fast_clmul() must be true
 #[inline]
-pub fn clmul64(x: u64, y: u64) -> u64 {
+pub unsafe fn fast_clmul64(x: u64, y: u64) -> u64 {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
     unsafe {
         use core::arch::aarch64::*;
@@ -42,17 +43,16 @@ pub fn clmul64(x: u64, y: u64) -> u64 {
     }
 
     #[cfg(target_arch = "x86_64")]
-    if cfg!(target_feature = "pclmulqdq") || has_fast_clmul() {
-        return unsafe { intel_clmul64(x, y) };
-    }
+    return unsafe { intel_clmul64(x, y) };
 
     #[allow(unreachable_code)]
-    portable_clmul64(x, y)
+    { unimplemented!() }
 }
 
-// Computes for each bit i the XOR of all less significant bits.
+/// # Safety
+/// has_fast_clmul() must be true
 #[inline]
-pub fn prefix_xorsum(x: u64) -> u64 {
+pub unsafe fn fast_prefix_xorsum(x: u64) -> u64 {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
     unsafe {
         use core::arch::aarch64::*;
@@ -60,12 +60,30 @@ pub fn prefix_xorsum(x: u64) -> u64 {
     }
 
     #[cfg(target_arch = "x86_64")]
-    if cfg!(target_feature = "pclmulqdq") || has_fast_clmul() {
-        return unsafe { intel_clmul64(x, u64::MAX ^ 1) };
-    }
+    return unsafe { intel_clmul64(x, u64::MAX ^ 1) };
     
     #[allow(unreachable_code)]
-    portable_prefix_xorsum(x)
+    { unimplemented!() }
+}
+
+// Computes the carryless multiplication of x and y.
+#[inline]
+pub fn clmul64(x: u64, y: u64) -> u64 {
+    if has_fast_clmul() {
+        unsafe { fast_clmul64(x, y) }
+    } else {
+        portable_clmul64(x, y)
+    }
+}
+
+// Computes for each bit i the XOR of all less significant bits.
+#[inline]
+pub fn prefix_xorsum(x: u64) -> u64 {
+    if has_fast_clmul() {
+        unsafe { fast_prefix_xorsum(x) }
+    } else {
+        portable_prefix_xorsum(x)
+    }
 }
 
 

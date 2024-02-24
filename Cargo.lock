@@ -2654,6 +2654,7 @@ dependencies = [
  "polars-arrow",
  "polars-error",
  "polars-utils",
+ "rand",
  "strength_reduce",
  "version_check",
 ]
@@ -2988,6 +2989,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "polars-error",
+ "rand",
  "raw-cpuid",
  "rayon",
  "smartstring",
