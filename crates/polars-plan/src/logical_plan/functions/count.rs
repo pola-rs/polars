@@ -9,7 +9,7 @@ use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
-use polars_io::pl_async::{get_runtime, with_concurrency_budget, MAX_BUDGET_PER_REQUEST};
+use polars_io::pl_async::{get_runtime, with_concurrency_budget};
 #[cfg(feature = "parquet")]
 use polars_io::{is_cloud_url, SerReader};
 
@@ -72,10 +72,7 @@ pub(super) fn count_rows_parquet(
 
         #[cfg(feature = "cloud")]
         {
-            get_runtime().block_on(with_concurrency_budget(
-                paths.len().clamp(1, MAX_BUDGET_PER_REQUEST) as u32,
-                || count_rows_cloud_parquet(paths, cloud_options),
-            ))
+            get_runtime().block_on(count_rows_cloud_parquet(paths, cloud_options))
         }
     } else {
         paths
@@ -94,11 +91,13 @@ async fn count_rows_cloud_parquet(
     paths: &Arc<[PathBuf]>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
-    let collection = paths.iter().map(|path| async {
-        let mut reader =
-            ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None, None)
-                .await?;
-        reader.num_rows().await
+    let collection = paths.iter().map(|path| {
+        with_concurrency_budget(1, || async {
+            let mut reader =
+                ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None, None)
+                    .await?;
+            reader.num_rows().await
+        })
     });
     futures::future::try_join_all(collection)
         .await

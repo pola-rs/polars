@@ -10,7 +10,7 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
-pub const MAX_BUDGET_PER_REQUEST: usize = 10;
+pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
 where
