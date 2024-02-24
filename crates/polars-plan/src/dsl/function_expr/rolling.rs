@@ -1,3 +1,5 @@
+use polars_time::chunkedarray::*;
+
 use super::*;
 
 #[derive(Clone, PartialEq, Debug)]

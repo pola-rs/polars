@@ -9,11 +9,6 @@ pub(crate) use polars_time::in_nanoseconds_window;
     feature = "dtype-time"
 ))]
 pub(crate) use polars_time::prelude::*;
-#[cfg(feature = "rolling_window")]
-pub(crate) use polars_time::{
-    chunkedarray::{RollingOptions, RollingOptionsImpl},
-    Duration,
-};
 pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::dsl::*;

@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
-#[cfg(debug_assertions)]
 use polars_plan::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
