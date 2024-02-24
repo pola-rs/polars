@@ -1,16 +1,16 @@
-pub trait SignedDivMod: Sized {
+pub trait FloorDivMod: Sized {
     // Returns the flooring division and associated modulo of lhs / rhs.
     // This is the same division / modulo combination as Python.
     //
     // Returns (0, 0) if other == 0.
-    fn wrapping_div_mod(self, other: Self) -> (Self, Self);
+    fn wrapping_floor_div_mod(self, other: Self) -> (Self, Self);
 }
 
 macro_rules! impl_float_div_mod {
     ($T:ty) => {
-        impl SignedDivMod for $T {
+        impl FloorDivMod for $T {
             #[inline]
-            fn wrapping_div_mod(self, other: Self) -> (Self, Self) {
+            fn wrapping_floor_div_mod(self, other: Self) -> (Self, Self) {
                 let div = (self / other).floor();
                 let mod_ = self - other * div;
                 (div, mod_)
@@ -21,9 +21,9 @@ macro_rules! impl_float_div_mod {
 
 macro_rules! impl_unsigned_div_mod {
     ($T:ty) => {
-        impl SignedDivMod for $T {
+        impl FloorDivMod for $T {
             #[inline]
-            fn wrapping_div_mod(self, other: Self) -> (Self, Self) {
+            fn wrapping_floor_div_mod(self, other: Self) -> (Self, Self) {
                 (self / other, self % other)
             }
         }
@@ -32,9 +32,9 @@ macro_rules! impl_unsigned_div_mod {
 
 macro_rules! impl_signed_div_mod {
     ($T:ty) => {
-        impl SignedDivMod for $T {
+        impl FloorDivMod for $T {
             #[inline]
-            fn wrapping_div_mod(self, other: Self) -> (Self, Self) {
+            fn wrapping_floor_div_mod(self, other: Self) -> (Self, Self) {
                 if other == 0 {
                     return (0, 0);
                 }
@@ -95,7 +95,7 @@ mod test {
                     (0, 0)
                 };
 
-                assert_eq!(lhs.wrapping_div_mod(rhs), ans);
+                assert_eq!(lhs.wrapping_floor_div_mod(rhs), ans);
             }
         }
     }

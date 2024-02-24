@@ -1,6 +1,6 @@
 use polars_utils::arena::Arena;
-use polars_utils::signed_divmod::SignedDivMod;
 use polars_utils::total_ord::ToTotalOrd;
+use polars_utils::floor_divmod::FloorDivMod;
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::dsl::function_expr::StringFunction;
@@ -487,17 +487,17 @@ impl OptimizationRule for SimplifyExprRule {
                                 },
                                 #[cfg(feature = "dtype-i8")]
                                 (LiteralValue::Int8(x), LiteralValue::Int8(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Int8(x.wrapping_div_mod(*y).0)),
+                                    AExpr::Literal(LiteralValue::Int8(x.wrapping_floor_div_mod(*y).0)),
                                 ),
                                 #[cfg(feature = "dtype-i16")]
                                 (LiteralValue::Int16(x), LiteralValue::Int16(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Int16(x.wrapping_div_mod(*y).0)),
+                                    AExpr::Literal(LiteralValue::Int16(x.wrapping_floor_div_mod(*y).0)),
                                 ),
                                 (LiteralValue::Int32(x), LiteralValue::Int32(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Int32(x.wrapping_div_mod(*y).0)),
+                                    AExpr::Literal(LiteralValue::Int32(x.wrapping_floor_div_mod(*y).0)),
                                 ),
                                 (LiteralValue::Int64(x), LiteralValue::Int64(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Int64(x.wrapping_div_mod(*y).0)),
+                                    AExpr::Literal(LiteralValue::Int64(x.wrapping_floor_div_mod(*y).0)),
                                 ),
                                 #[cfg(feature = "dtype-u8")]
                                 (LiteralValue::UInt8(x), LiteralValue::UInt8(y)) => Some(
@@ -564,7 +564,7 @@ impl OptimizationRule for SimplifyExprRule {
                             None
                         }
                     },
-                    Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l.wrapping_div_mod(*r).1),
+                    Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l.wrapping_floor_div_mod(*r).1),
                     Lt => eval_binary_cmp_same_type!(left_aexpr, <, right_aexpr),
                     Gt => eval_binary_cmp_same_type!(left_aexpr, >, right_aexpr),
                     Eq | EqValidity => eval_binary_cmp_same_type!(left_aexpr, ==, right_aexpr),
@@ -574,7 +574,7 @@ impl OptimizationRule for SimplifyExprRule {
                     And | LogicalAnd => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
                     Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
-                    FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l.wrapping_div_mod(*r).0),
+                    FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l.wrapping_floor_div_mod(*r).0),
                 };
                 if out.is_some() {
                     return Ok(out);
