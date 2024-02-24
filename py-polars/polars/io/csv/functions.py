@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence, TextIO
+from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT, String
@@ -12,8 +12,6 @@ from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import handle_projection_columns, normalize_filepath
 
 if TYPE_CHECKING:
-    from io import BytesIO
-
     from polars import DataFrame, LazyFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
@@ -24,7 +22,7 @@ if TYPE_CHECKING:
     old_name="comment_char", new_name="comment_prefix", version="0.19.14"
 )
 def read_csv(
-    source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[str] | IO[bytes] | bytes,
     *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,

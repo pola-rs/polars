@@ -5,7 +5,7 @@ from contextlib import nullcontext
 from datetime import time
 from io import BufferedReader, BytesIO, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, NoReturn, Sequence, overload
+from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -48,7 +48,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -63,7 +63,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -80,7 +80,7 @@ def read_excel(
 # Literal[0] overlaps with the return value for other integers
 @overload  # type: ignore[overload-overlap]
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -95,7 +95,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -110,7 +110,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -126,7 +126,7 @@ def read_excel(
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 @deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -270,7 +270,7 @@ def read_excel(
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -282,7 +282,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -294,7 +294,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -306,7 +306,7 @@ def read_ods(
 
 @overload  # type: ignore[overload-overlap]
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -318,7 +318,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -330,7 +330,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -341,7 +341,7 @@ def read_ods(
 
 
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -406,7 +406,7 @@ def read_ods(
     )
 
 
-def _identify_from_magic_bytes(data: bytes | BinaryIO | BytesIO) -> str | None:
+def _identify_from_magic_bytes(data: IO[bytes] | bytes) -> str | None:
     if isinstance(data, bytes):
         data = BytesIO(data)
 
@@ -425,7 +425,7 @@ def _identify_from_magic_bytes(data: bytes | BinaryIO | BytesIO) -> str | None:
         data.seek(initial_position)
 
 
-def _identify_workbook(wb: str | bytes | Path | BinaryIO | BytesIO) -> str | None:
+def _identify_workbook(wb: str | Path | IO[bytes] | bytes) -> str | None:
     """Use file extension (and magic bytes) to identify Workbook type."""
     if not isinstance(wb, (str, Path)):
         # raw binary data (bytesio, etc)
@@ -449,7 +449,7 @@ def _identify_workbook(wb: str | bytes | Path | BinaryIO | BytesIO) -> str | Non
 def _read_spreadsheet(
     sheet_id: int | Sequence[int] | None,
     sheet_name: str | list[str] | tuple[str] | None,
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     engine: ExcelSpreadsheetEngine | Literal["ods"] | None,
     engine_options: dict[str, Any] | None = None,
     read_options: dict[str, Any] | None = None,
@@ -557,7 +557,7 @@ def _get_sheet_names(
 
 def _initialise_spreadsheet_parser(
     engine: str | None,
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     engine_options: dict[str, Any],
 ) -> tuple[Callable[..., pl.DataFrame], Any, list[dict[str, Any]]]:
     """Instantiate the indicated spreadsheet parser and establish related properties."""
