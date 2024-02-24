@@ -35,7 +35,8 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).0);
+                let ret =
+                    prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).0);
                 ret.with_validity(valid)
             }
 
@@ -63,7 +64,8 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).1);
+                let ret =
+                    prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).1);
                 ret.with_validity(valid)
             }
 
