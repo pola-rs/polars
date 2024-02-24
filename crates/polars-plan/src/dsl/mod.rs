@@ -8,6 +8,8 @@ use std::any::Any;
 
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
+#[cfg(feature = "rolling_window")]
+pub(crate) use polars_time::prelude::*;
 mod arithmetic;
 mod arity;
 #[cfg(feature = "dtype-array")]
