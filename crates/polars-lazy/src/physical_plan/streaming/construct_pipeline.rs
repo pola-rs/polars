@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use polars_core::config::verbose;
 use polars_core::prelude::*;

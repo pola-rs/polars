@@ -1,4 +1,3 @@
-use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;

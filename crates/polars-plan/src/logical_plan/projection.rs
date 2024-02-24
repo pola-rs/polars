@@ -1,10 +1,7 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
-use arrow::legacy::index::IndexToUsize;
 use polars_core::utils::get_supertype;
 
 use super::*;
-use crate::prelude::function_expr::FunctionExpr;
-use crate::utils::expr_output_name;
 
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.

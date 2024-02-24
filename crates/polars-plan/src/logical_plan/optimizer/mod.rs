@@ -1,4 +1,3 @@
-use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -36,8 +35,6 @@ mod type_coercion;
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
 use fast_projection::FastProjectionAndCollapse;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
-use file_caching::{find_column_union_and_fingerprints, FileCacher};
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;

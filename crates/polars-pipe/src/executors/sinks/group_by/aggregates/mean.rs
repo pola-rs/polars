@@ -11,7 +11,6 @@ use polars_core::utils::arrow::compute::aggregate::sum_primitive;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
-use crate::operators::{ArrowDataType, IdxSize};
 
 pub struct MeanAgg<K: NumericNative> {
     sum: Option<K>,

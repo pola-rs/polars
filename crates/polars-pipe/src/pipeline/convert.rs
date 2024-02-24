@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;

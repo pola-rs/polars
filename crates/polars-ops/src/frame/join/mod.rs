@@ -33,7 +33,9 @@ pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
-use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets, slice_slice};
+#[allow(unused_imports)]
+use polars_core::utils::slice_slice;
+use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets};
 use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;

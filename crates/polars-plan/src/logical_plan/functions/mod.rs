@@ -6,11 +6,8 @@ mod rename;
 
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
-use std::sync::Arc;
 
 use polars_core::prelude::*;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::StringCacheHolder;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;

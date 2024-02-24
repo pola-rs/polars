@@ -2,7 +2,6 @@ use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crossbeam_channel::{bounded, Sender};

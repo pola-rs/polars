@@ -6,7 +6,6 @@ use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 use polars_io::utils::get_reader_bytes;
 use polars_io::RowIndex;
 
-use crate::frame::LazyFileListReader;
 use crate::prelude::*;
 
 #[derive(Clone)]

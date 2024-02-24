@@ -4,16 +4,12 @@ use std::ops::Deref;
 
 use either::Either;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
-use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "ipc")]
-use polars::io::ipc::IpcCompression;
 use polars::io::mmap::ReaderBytes;
 use polars::io::RowIndex;
 use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
-use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 #[cfg(feature = "pivot")]
