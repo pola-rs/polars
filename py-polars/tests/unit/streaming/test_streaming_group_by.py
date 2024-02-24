@@ -203,6 +203,9 @@ def random_integers() -> pl.Series:
     return pl.Series("a", np.random.randint(0, 10, 100), dtype=pl.Int64)
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q1(
     random_integers: pl.Series,
@@ -231,6 +234,9 @@ def test_streaming_group_by_ooc_q1(
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.skip(
+    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
+)
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q2(
     random_integers: pl.Series,
