@@ -715,7 +715,7 @@ where
     #[must_use]
     pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        ArithmeticChunked::wrapping_floor_div_scalar_lhs(lhs, self)
+        ArithmeticChunked::legacy_div_scalar_lhs(lhs, self)
     }
 
     /// Apply lhs % self
