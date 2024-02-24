@@ -304,6 +304,7 @@ impl Series {
         if !dtype.is_known() || (dtype.is_primitive() && dtype == self.dtype()) {
             return Ok(self.clone());
         }
+        #[cfg(feature = "dtype-categorical")]
         if let DataType::Enum(None, _) = dtype {
             polars_bail!(ComputeError: "can not cast / initialize Enum without categories present")
         }
