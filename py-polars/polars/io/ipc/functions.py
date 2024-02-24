@@ -14,15 +14,13 @@ with contextlib.suppress(ImportError):
     from polars.polars import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
-    from io import BytesIO
-
     from polars import DataFrame, DataType, LazyFrame
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_ipc(
-    source: str | IO[bytes] | BytesIO | Path | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -114,7 +112,7 @@ def read_ipc(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_ipc_stream(
-    source: str | IO[bytes] | BytesIO | Path | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,

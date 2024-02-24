@@ -32,7 +32,7 @@ def _is_local_file(file: str) -> bool:
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | Path | IO[bytes] | bytes,
+    file: str | Path | list[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
@@ -56,7 +56,7 @@ def _prepare_file_arg(
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | Path | IO[str] | IO[bytes] | bytes,
+    file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
@@ -67,7 +67,7 @@ def _prepare_file_arg(
 
 
 def _prepare_file_arg(
-    file: str | list[str] | Path | IO[str] | IO[bytes] | bytes,
+    file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = None,
     *,
     use_pyarrow: bool = False,

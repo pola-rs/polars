@@ -5,14 +5,13 @@ from typing import IO, TYPE_CHECKING
 import polars._reexport as pl
 
 if TYPE_CHECKING:
-    from io import BytesIO
     from pathlib import Path
 
     from polars import DataFrame
 
 
 def read_avro(
-    source: str | Path | BytesIO | IO[bytes],
+    source: str | Path | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,

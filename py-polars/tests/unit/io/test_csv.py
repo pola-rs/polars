@@ -1676,7 +1676,7 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
     # pytest hijacks sys.stdout and changes its type, which causes mypy failure
-    df.write_csv(sys.stdout)  # type: ignore[call-overload]
+    df.write_csv(sys.stdout)
     captured = capsys.readouterr()
     assert captured.out == (
         "numbers,strings,dates\n"
@@ -1685,7 +1685,7 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
         "3,stdout,2023-01-03\n"
     )
 
-    df.write_csv(sys.stderr)  # type: ignore[call-overload]
+    df.write_csv(sys.stderr)
     captured = capsys.readouterr()
     assert captured.err == (
         "numbers,strings,dates\n"

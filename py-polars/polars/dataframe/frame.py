@@ -2559,7 +2559,7 @@ class DataFrame:
     @overload
     def write_csv(
         self,
-        file: BytesIO | TextIOWrapper | str | Path,
+        file: str | Path | IO[str] | IO[bytes],
         *,
         include_bom: bool = ...,
         include_header: bool = ...,
@@ -2580,7 +2580,7 @@ class DataFrame:
     @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_csv(
         self,
-        file: BytesIO | TextIOWrapper | str | Path | None = None,
+        file: str | Path | IO[str] | IO[bytes] | None = None,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -2702,7 +2702,7 @@ class DataFrame:
 
     def write_avro(
         self,
-        file: IO[bytes] | BytesIO | str | Path,
+        file: str | Path | IO[bytes],
         compression: AvroCompression = "uncompressed",
         name: str = "",
     ) -> None:
@@ -2744,7 +2744,7 @@ class DataFrame:
     @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_excel(
         self,
-        workbook: Workbook | BytesIO | Path | str | None = None,
+        workbook: Workbook | IO[bytes] | Path | str | None = None,
         worksheet: str | None = None,
         *,
         position: tuple[int, int] | str = "A1",
@@ -3258,7 +3258,7 @@ class DataFrame:
     @overload
     def write_ipc(
         self,
-        file: IO[bytes] | BytesIO | str | Path,
+        file: str | Path | IO[bytes],
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
@@ -3267,7 +3267,7 @@ class DataFrame:
 
     def write_ipc(
         self,
-        file: IO[bytes] | BytesIO | str | Path | None,
+        file: str | Path | IO[bytes] | None,
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
@@ -3334,14 +3334,14 @@ class DataFrame:
     @overload
     def write_ipc_stream(
         self,
-        file: IO[bytes] | BytesIO | str | Path,
+        file: str | Path | IO[bytes],
         compression: IpcCompression = "uncompressed",
     ) -> None:
         ...
 
     def write_ipc_stream(
         self,
-        file: IO[bytes] | BytesIO | str | Path | None,
+        file: str | Path | IO[bytes] | None,
         compression: IpcCompression = "uncompressed",
     ) -> BytesIO | None:
         """
