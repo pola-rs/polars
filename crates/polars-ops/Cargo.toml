@@ -50,7 +50,7 @@ rand = { workspace = true, features = ["small_rng"] }
 version_check = { workspace = true }
 
 [features]
-simd = []
+simd = ["argminmax/nightly_simd"]
 nightly = ["polars-utils/nightly"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
