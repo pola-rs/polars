@@ -77,43 +77,6 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     }
 }
 
-/// Determine `values` columns, which is optional in `pivot` calls.
-///
-/// If not specified (i.e. is `None`, we use all remaining columns in the `DataFrame`)after `index`
-/// and `columns` have been excluded.
-fn _get_values_columns<I, S>(
-    df: &DataFrame,
-    index: &[String],
-    columns: &[String],
-    values: Option<I>,
-) -> Vec<String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    match values {
-        Some(v) => v
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect::<Vec<_>>(),
-        None => {
-            let mut column_set = PlHashSet::<String>::with_capacity(index.len() + columns.len());
-
-            // Hash columns we don't want to include
-            index.iter().chain(columns.iter()).for_each(|s| {
-                column_set.insert_unique_unchecked(s.to_owned());
-            });
-
-            // filter out
-            df.get_column_names_owned()
-                .into_iter()
-                .map(|s| s.to_string())
-                .filter(|s| !column_set.contains(s))
-                .collect()
-        },
-    }
-}
-
 /// Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
 ///
 /// # Note
@@ -144,7 +107,7 @@ where
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let values = _get_values_columns(pivot_df, &index, &columns, values);
+    let values = get_values_columns(pivot_df, &index, &columns, values);
     pivot_impl(
         pivot_df,
         &index,
@@ -187,7 +150,7 @@ where
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let values = _get_values_columns(pivot_df, &index, &columns, values);
+    let values = get_values_columns(pivot_df, &index, &columns, values);
     pivot_impl(
         pivot_df,
         &index,
@@ -198,6 +161,31 @@ where
         true,
         separator,
     )
+}
+
+/// Determine `values` columns, which is optional in `pivot` calls.
+///
+/// If not specified (i.e. is `None`), use all remaining columns in the
+/// `DataFrame` after `index` and `columns` have been excluded.
+fn get_values_columns<I, S>(
+    df: &DataFrame,
+    index: &[String],
+    columns: &[String],
+    values: Option<I>,
+) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    match values {
+        Some(v) => v.into_iter().map(|s| s.as_ref().to_string()).collect(),
+        None => df
+            .get_column_names()
+            .into_iter()
+            .map(|c| c.to_string())
+            .filter(|c| !(index.contains(c) | columns.contains(c)))
+            .collect(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
