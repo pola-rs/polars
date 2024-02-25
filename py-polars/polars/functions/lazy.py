@@ -146,7 +146,7 @@ def count(*columns: str) -> Expr:
     └─────┴─────┘
 
     Return the number of rows in a context. **This way of using the function is
-    deprecated. Please use :func:`len` instead.**
+    deprecated.** Please use :func:`len` instead.
 
     >>> df.select(pl.count())  # doctest: +SKIP
     shape: (1, 1)
