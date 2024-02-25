@@ -588,9 +588,12 @@ def from_arrow(
         3
     ]
     """  # noqa: W505
-    if isinstance(data, pa.Table):
+    if isinstance(data, (pa.Table, pa.RecordBatch)):
         return pl.DataFrame._from_arrow(
-            data=data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
+            data=data,
+            rechunk=rechunk,
+            schema=schema,
+            schema_overrides=schema_overrides,
         )
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
         name = getattr(data, "_name", "") or ""
@@ -606,8 +609,6 @@ def from_arrow(
             schema_overrides=schema_overrides,
         )
 
-    if isinstance(data, pa.RecordBatch):
-        data = [data]
     if isinstance(data, Iterable):
         return pl.DataFrame._from_arrow(
             data=pa.Table.from_batches(

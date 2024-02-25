@@ -536,7 +536,7 @@ class DataFrame:
     @classmethod
     def _from_arrow(
         cls,
-        data: pa.Table,
+        data: pa.Table | pa.RecordBatch,
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
@@ -550,8 +550,8 @@ class DataFrame:
 
         Parameters
         ----------
-        data : arrow table, array, or sequence of sequences
-            Data representing an Arrow Table or Array.
+        data : arrow Table, RecordBatch, or sequence of sequences
+            Data representing an Arrow Table or RecordBatch.
         schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
             The DataFrame schema may be declared in several ways:
 
