@@ -1218,11 +1218,12 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
+    #[pyo3(signature = (index, columns, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
-        values: Vec<String>,
         index: Vec<String>,
         columns: Vec<String>,
+        values: Option<Vec<String>>,
         maintain_order: bool,
         sort_columns: bool,
         aggregate_expr: Option<PyExpr>,
@@ -1232,9 +1233,9 @@ impl PyDataFrame {
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
         let df = fun(
             &self.df,
-            values,
             index,
             columns,
+            values,
             sort_columns,
             agg_expr,
             separator,

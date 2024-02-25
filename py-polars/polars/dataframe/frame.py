@@ -7276,7 +7276,8 @@ class DataFrame:
         ----------
         values
             Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well.
+            arguments contains multiple columns as well. If None, all remaining columns
+            will be used.
         index
             One or multiple keys to group by.
         columns
@@ -7392,9 +7393,10 @@ class DataFrame:
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
         """  # noqa: W505
-        values = _expand_selectors(self, values)
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
+        if values is not None:
+            values = _expand_selectors(self, values)
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
@@ -7430,9 +7432,9 @@ class DataFrame:
 
         return self._from_pydf(
             self._df.pivot_expr(
-                values,
                 index,
                 columns,
+                values,
                 maintain_order,
                 sort_columns,
                 aggregate_expr,
