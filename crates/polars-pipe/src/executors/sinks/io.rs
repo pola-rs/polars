@@ -60,11 +60,8 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
 fn clean_after_delay(time: Option<SystemTime>, secs: u64, path: &Path) {
     if let Some(time) = time {
         let modified_since = SystemTime::now().duration_since(time).unwrap().as_secs();
-        // the lockfile can still exist if a process was canceled
-        // so we also check the modified date
-        // we don't expect queries that run a month
         if modified_since > secs {
-            // This can be fallible if another thread removes his.
+            // This can be fallible if another thread removes this.
             // That is fine.
             let _ = std::fs::remove_dir_all(path);
         }
@@ -125,7 +122,7 @@ impl IOThread {
 
         // make sure we create lockfile before we GC
         let lockfile_path = get_lockfile_path(&dir);
-        let lockfile = Arc::new(LockFile::new(lockfile_path).unwrap());
+        let lockfile = Arc::new(LockFile::new(lockfile_path)?);
 
         // start a thread that will clean up old dumps.
         // TODO: if we will have more ooc in the future  we will have a dedicated GC thread
