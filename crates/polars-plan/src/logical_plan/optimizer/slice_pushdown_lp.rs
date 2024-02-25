@@ -324,7 +324,7 @@ impl SlicePushDown {
             (Projection {input, expr, schema, options}, Some(_)) => {
                 // The slice operation may only pass on simple projections. col("foo").alias("bar")
                 if expr.iter().all(|root|  {
-                    aexpr_is_elementwise(*root, expr_arena)
+                    aexpr_is_elementwise_and_has_column(*root, expr_arena)
                 }) {
                     let lp = Projection {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
@@ -339,7 +339,7 @@ impl SlicePushDown {
             (HStack {input, exprs, schema, options}, _) => {
                 // The slice operation may only pass on simple projections. col("foo").alias("bar")
                 if exprs.iter().all(|root|  {
-                    aexpr_is_elementwise(*root, expr_arena)
+                    aexpr_is_elementwise_and_has_column(*root, expr_arena)
                 }) {
                     let lp = HStack {input, exprs, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)

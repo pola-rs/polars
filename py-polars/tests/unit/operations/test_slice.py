@@ -168,3 +168,17 @@ def test_slice_pushdown_set_sorted() -> None:
     plan = ldf.explain()
     # check the set sorted is above slice
     assert plan.index("set_sorted") < plan.index("SLICE")
+
+
+def test_slice_pushdown_literal_projection_14349() -> None:
+    expect = pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [10, 11, 12, 13, 14]})
+    out = (
+        pl.select(a=pl.int_range(10))
+        .lazy()
+        .with_columns(b=pl.int_range(10, 20, eager=True))
+        .head(5)
+        .collect()
+    )
+    assert_frame_equal(expect, out)
+
+    assert pl.LazyFrame().select(x=1).head(0).collect().height == 0
