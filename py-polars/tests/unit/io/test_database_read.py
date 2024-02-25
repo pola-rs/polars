@@ -377,6 +377,8 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
 
 
 def test_read_database_parameterised(tmp_path: Path) -> None:
+    supports_adbc_sqlite = sys.version_info >= (3, 9) and sys.platform != "win32"
+
     # setup underlying test data
     tmp_path.mkdir(exist_ok=True)
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
@@ -393,6 +395,8 @@ def test_read_database_parameterised(tmp_path: Path) -> None:
         FROM test_data
         WHERE value < {n}
     """
+    expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
     for param, param_value in (
         (":n", {"n": 0}),
         ("?", (0,)),
@@ -403,12 +407,37 @@ def test_read_database_parameterised(tmp_path: Path) -> None:
                 continue  # alchemy session.execute() doesn't support positional params
 
             assert_frame_equal(
+                expected_frame,
                 pl.read_database(
                     query.format(n=param),
                     connection=conn,
                     execute_options={"parameters": param_value},
                 ),
-                pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+            )
+
+        # test URI read method (adbc only; no connectorx support for execute_options)
+        if supports_adbc_sqlite:
+            uri = alchemy_engine.url.render_as_string(hide_password=False)
+            assert_frame_equal(
+                expected_frame,
+                pl.read_database_uri(
+                    query.format(n=param),
+                    uri=uri,
+                    engine="adbc",
+                    execute_options={"parameters": param_value},
+                ),
+            )
+
+    if supports_adbc_sqlite:
+        with pytest.raises(
+            ValueError,
+            match="connectorx.*does not support.*execute_options",
+        ):
+            pl.read_database_uri(
+                query.format(n=":n"),
+                uri=uri,
+                engine="connectorx",
+                execute_options={"parameters": (":n", {"n": 0})},
             )
 
 

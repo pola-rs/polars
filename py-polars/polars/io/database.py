@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, o
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
+from polars.dependencies import pyarrow as pa
 from polars.exceptions import InvalidOperationError, UnsuitableSQLError
 
 if TYPE_CHECKING:
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
     from polars import DataFrame
-    from polars.dependencies import pyarrow as pa
     from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine, SchemaDict
 
     try:
@@ -522,12 +522,11 @@ def read_database(  # noqa: D417
       more details about using this driver (notable databases implementing Flight SQL
       include Dremio and InfluxDB).
 
-    * The `read_database_uri` function is likely to be noticeably faster than
-      `read_database` if you are using a SQLAlchemy or DBAPI2 connection, as
-      `connectorx` will optimise translation of the result set into Arrow format
-      in Rust, whereas these libraries will return row-wise data to Python *before*
-      we can load into Arrow. Note that you can easily determine the connection's
-      URI from a SQLAlchemy engine object by calling
+    * The `read_database_uri` function can be noticeably faster than `read_database`
+      if you are using a SQLAlchemy or DBAPI2 connection, as `connectorx` optimises
+      translation of the result set into Arrow format in Rust, whereas these libraries
+      will return row-wise data to Python *before* we can load into Arrow. Note that
+      you can determine the connection's URI from a SQLAlchemy engine object by calling
       `conn.engine.url.render_as_string(hide_password=False)`.
 
     * If polars has to create a cursor from your connection in order to execute the
@@ -638,6 +637,7 @@ def read_database_uri(
     protocol: str | None = None,
     engine: DbReadEngine | None = None,
     schema_overrides: SchemaDict | None = None,
+    execute_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Read the results of a SQL query into a DataFrame, given a URI.
@@ -684,6 +684,9 @@ def read_database_uri(
     schema_overrides
         A dictionary mapping column names to dtypes, used to override the schema
         given in the data returned by the query.
+    execute_options
+        These options will be passed to the underlying query execution method as
+        kwargs. Note that connectorx does not support this parameter.
 
     Notes
     -----
@@ -752,6 +755,9 @@ def read_database_uri(
         engine = "connectorx"
 
     if engine == "connectorx":
+        if execute_options:
+            msg = "the 'connectorx' engine does not support use of `execute_options`"
+            raise ValueError(msg)
         return _read_sql_connectorx(
             query,
             connection_uri=uri,
@@ -765,7 +771,12 @@ def read_database_uri(
         if not isinstance(query, str):
             msg = "only a single SQL query string is accepted for adbc"
             raise ValueError(msg)
-        return _read_sql_adbc(query, uri, schema_overrides)
+        return _read_sql_adbc(
+            query,
+            connection_uri=uri,
+            schema_overrides=schema_overrides,
+            execute_options=execute_options,
+        )
     else:
         msg = f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"
         raise ValueError(msg)
@@ -805,10 +816,21 @@ def _read_sql_connectorx(
 
 
 def _read_sql_adbc(
-    query: str, connection_uri: str, schema_overrides: SchemaDict | None
+    query: str,
+    connection_uri: str,
+    schema_overrides: SchemaDict | None,
+    execute_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
-        cursor.execute(query)
+        if (
+            execute_options
+            and (params := execute_options.get("parameters")) is not None
+        ):
+            if isinstance(params, dict):
+                params = pa.Table.from_pydict({k: [v] for k, v in params.items()})
+                execute_options["parameters"] = params
+
+        cursor.execute(query, **(execute_options or {}))
         tbl = cursor.fetch_arrow_table()
     return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
