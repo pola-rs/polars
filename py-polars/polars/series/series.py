@@ -6461,6 +6461,16 @@ class Series:
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
             If False, the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> s = pl.Series("grades", [66, 79, 54, 97, 96, 70, 69, 85, 93, 75])
+        >>> s.kurtosis()
+        -1.0522623626787952
+        >>> s.kurtosis(fisher=False)
+        1.9477376373212048
+        >>> s.kurtosis(fisher=False, bias=False)
+        2.104036180264273
         """
         return self._s.kurtosis(fisher, bias)
 
