@@ -98,7 +98,7 @@ fn single_aexpr_is_elementwise(ae: &AExpr) -> bool {
 /// because `c` projects to a height independent from the input height. We check
 /// this by observing that `c` does not have any columns in its input notes.
 ///
-/// TODO: Simply checking that a column node is present will does not handle e.g.:
+/// TODO: Simply checking that a column node is present does not handle e.g.:
 /// `select(c = Literal([1, 2, 3]).is_in(col(a)))`, for functions like `is_in`,
 /// `str.contains`, `str.contains_many` etc. - observe a column node is present
 /// but the output height is not dependent on it.
