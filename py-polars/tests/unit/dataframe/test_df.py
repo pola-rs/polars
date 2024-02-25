@@ -258,6 +258,15 @@ def test_from_arrow(monkeypatch: Any) -> None:
         assert df.schema == expected_schema
         assert df.rows() == expected_data
 
+    # record batches (inc. empty)
+    for b, n_expected in (
+        (record_batches[0], 1),
+        (record_batches[0][:0], 0),
+    ):
+        df = cast(pl.DataFrame, pl.from_arrow(b))
+        assert df.schema == expected_schema
+        assert df.rows() == expected_data[:n_expected]
+
     empty_tbl = tbl[:0]  # no rows
     df = cast(pl.DataFrame, pl.from_arrow(empty_tbl))
     assert df.schema == expected_schema
