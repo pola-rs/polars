@@ -92,7 +92,7 @@ class BinaryNameSpace:
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
         r"""
-        Decode a value using the provided encoding.
+        Decode values using the provided encoding.
 
         Parameters
         ----------
@@ -102,9 +102,14 @@ class BinaryNameSpace:
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
         Examples
         --------
-        Decode hex values.
+        Decode values using hexadecimal encoding.
 
         >>> s = pl.Series("colors", [b"000000", b"ffff00", b"0000ff"])
         >>> s.bin.decode("hex")
@@ -116,7 +121,7 @@ class BinaryNameSpace:
             b"\x00\x00\xff"
         ]
 
-        Decode base64 values.
+        Decode values using Base64 encoding.
 
         >>> s = pl.Series("colors", [b"AAAA", b"//8A", b"AAD/"])
         >>> s.bin.decode("base64")
@@ -143,7 +148,7 @@ class BinaryNameSpace:
 
     def encode(self, encoding: TransferEncoding) -> Series:
         r"""
-        Encode a value using the provided encoding.
+        Encode values using the provided encoding.
 
         Parameters
         ----------
@@ -153,11 +158,11 @@ class BinaryNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Boolean`.
+            Series of data type :class:`String`.
 
         Examples
         --------
-        Encode to hex values from binary.
+        Encode values using hexadecimal encoding.
 
         >>> s = pl.Series("colors", [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
         >>> s.bin.encode("hex")
@@ -169,7 +174,7 @@ class BinaryNameSpace:
             "0000ff"
         ]
 
-        Encode to base64 values from binary.
+        Encode values using Base64 encoding.
 
         >>> s.bin.encode("base64")
         shape: (3,)

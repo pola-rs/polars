@@ -162,8 +162,8 @@ class ExprBinaryNameSpace:
         return wrap_expr(self._pyexpr.bin_starts_with(prefix))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
-        """
-        Decode a value using the provided encoding.
+        r"""
+        Decode values using the provided encoding.
 
         Parameters
         ----------
@@ -172,6 +172,33 @@ class ExprBinaryNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.with_columns(
+        ...     pl.col("code").bin.encode("hex").alias("encoded"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬─────────────────┬─────────┐
+        │ name   ┆ code            ┆ encoded │
+        │ ---    ┆ ---             ┆ ---     │
+        │ str    ┆ binary          ┆ str     │
+        ╞════════╪═════════════════╪═════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ 000000  │
+        │ yellow ┆ b"\xff\xff\x00" ┆ ffff00  │
+        │ blue   ┆ b"\x00\x00\xff" ┆ 0000ff  │
+        └────────┴─────────────────┴─────────┘
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_decode(strict))
@@ -193,30 +220,29 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String` with values encoded using provided
-            encoding.
+            Expression of data type :class:`String`.
 
         Examples
         --------
         >>> colors = pl.DataFrame(
         ...     {
-        ...         "name": ["black", "yellow", "blue"],
+        ...         "color": ["black", "yellow", "blue"],
         ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
         ...     }
         ... )
         >>> colors.with_columns(
-        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.encode("hex").alias("encoded"),
         ... )
         shape: (3, 3)
-        ┌────────┬─────────────────┬──────────────────┐
-        │ name   ┆ code            ┆ code_encoded_hex │
-        │ ---    ┆ ---             ┆ ---              │
-        │ str    ┆ binary          ┆ str              │
-        ╞════════╪═════════════════╪══════════════════╡
-        │ black  ┆ b"\x00\x00\x00" ┆ 000000           │
-        │ yellow ┆ b"\xff\xff\x00" ┆ ffff00           │
-        │ blue   ┆ b"\x00\x00\xff" ┆ 0000ff           │
-        └────────┴─────────────────┴──────────────────┘
+        ┌────────┬─────────────────┬─────────┐
+        │ color  ┆ code            ┆ encoded │
+        │ ---    ┆ ---             ┆ ---     │
+        │ str    ┆ binary          ┆ str     │
+        ╞════════╪═════════════════╪═════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ 000000  │
+        │ yellow ┆ b"\xff\xff\x00" ┆ ffff00  │
+        │ blue   ┆ b"\x00\x00\xff" ┆ 0000ff  │
+        └────────┴─────────────────┴─────────┘
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_encode())
