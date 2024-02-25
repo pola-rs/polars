@@ -97,8 +97,8 @@ def count(*columns: str) -> Expr:
     This function is syntactic sugar for `col(columns).count()`.
 
     Calling this function without any arguments returns the number of rows in the
-    context. **This way of using the function is deprecated. Please use :func:`len`
-    instead.**
+    context. **This way of using the function is deprecated.** Please use :func:`len`
+    instead.
 
     Parameters
     ----------
