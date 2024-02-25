@@ -259,9 +259,6 @@ def test_streaming_group_by_ooc_q2(
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.skip(
-    reason="Fails randomly in the CI suite: https://github.com/pola-rs/polars/issues/13526"
-)
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q3(
     random_integers: pl.Series,
