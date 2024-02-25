@@ -26,12 +26,13 @@ jobs:
     name: Code Coverage
     runs-on: macos-latest
     env:
-      RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+      RUSTFLAGS: '-C instrument-coverage'
       RUST_BACKTRACE: 1
       LLVM_PROFILE_FILE: '/Users/runner/work/polars/polars/target/polars-%p-%3m.profraw'
       CARGO_LLVM_COV: 1
       CARGO_LLVM_COV_SHOW_ENV: 1
       CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
+      CARGO_PROFILE_TEST_BUILD_OVERRIDE_DEBUG: true
 
     steps:
       - uses: actions/checkout@v4
@@ -40,13 +41,16 @@ jobs:
         with:
           python-version: '3.10'
 
+      # HACK: zlib-ng fails to compile (possibly threading issue), for now use the slower rust backend
+      - name: Replace zlib-ng with slower backend
+        shell: bash
+        run: |
+          find .. -type f -name 'Cargo.toml' -exec sed -i '' 's/zlib-ng/rust_backend/g' {} +
+
       - name: Create virtual environment
         run: |
           python -m venv .venv
           echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
-
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -78,10 +82,11 @@ jobs:
       - name: Run Rust integration tests
         run: cargo test --all-features -p polars --test it
 
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
       - name: Install Polars
-        run: |
-          source activate
-          maturin develop
+        run: maturin develop
 
       - name: Run Python tests
         run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:main.xml
@@ -95,6 +100,15 @@ jobs:
 
       - name: Report coverage
         run: cargo llvm-cov report --lcov --output-path coverage.lcov
+
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: |
+            py-polars/coverage.lcov
+            py-polars/main.xml
+            py-polars/async.xml
 
       - name: Upload coverage information
         uses: codecov/codecov-action@v4
