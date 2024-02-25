@@ -588,9 +588,7 @@ def from_arrow(
         3
     ]
     """  # noqa: W505
-    if isinstance(data, pa.RecordBatch):
-        data = [data]
-    elif isinstance(data, pa.Table):
+    if isinstance(data, (pa.Table, pa.RecordBatch)):
         return pl.DataFrame._from_arrow(
             data=data,
             rechunk=rechunk,

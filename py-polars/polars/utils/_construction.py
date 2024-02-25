@@ -1568,19 +1568,21 @@ def numpy_to_pydf(
 
 
 def arrow_to_pydf(
-    data: pa.Table,
+    data: pa.Table | pa.RecordBatch,
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from an Arrow Table."""
+    """Construct a PyDataFrame from an Arrow Table or RecordBatch."""
     original_schema = schema
     column_names, schema_overrides = _unpack_schema(
         (schema or data.column_names), schema_overrides=schema_overrides
     )
     try:
         if column_names != data.column_names:
+            if isinstance(data, pa.RecordBatch):
+                data = pa.Table.from_batches([data])
             data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
         msg = "dimensions of columns arg must match data dimensions"
