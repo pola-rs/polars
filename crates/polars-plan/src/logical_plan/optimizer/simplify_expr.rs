@@ -1,4 +1,3 @@
-use polars_utils::arena::Arena;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 

@@ -3061,7 +3061,6 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::NullStrategy;
 
     fn create_frame() -> DataFrame {
         let s0 = Series::new("days", [0, 1, 2].as_ref());

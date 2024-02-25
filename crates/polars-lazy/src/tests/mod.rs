@@ -30,7 +30,6 @@ fn load_df() -> DataFrame {
 }
 
 use std::io::Cursor;
-use std::iter::FromIterator;
 
 use optimization_checks::*;
 use polars_core::chunked_array::builder::get_list_builder;
@@ -42,7 +41,7 @@ use polars_core::prelude::*;
 pub(crate) use polars_core::SINGLE_LOCK;
 use polars_io::prelude::*;
 use polars_plan::logical_plan::{
-    ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
+    OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
 };
 
 #[cfg(feature = "cov")]

@@ -407,7 +407,6 @@ pub(crate) fn to_data_type(
 
 #[cfg(test)]
 mod tests {
-    use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
     use polars_error::*;
 
     use super::*;

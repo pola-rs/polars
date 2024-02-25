@@ -1,6 +1,7 @@
 use polars::export::chrono::NaiveDate;
 use polars::prelude::*;
-use polars::time::{date_range, ClosedWindow, Duration};
+#[allow(unused_imports)]
+use polars::time::date_range;
 
 #[test]
 fn test_time_units_9413() {

@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-use std::default::Default;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 

@@ -908,8 +908,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     use crate::prelude::*;
     use crate::series::*;
 
