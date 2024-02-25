@@ -3578,6 +3578,18 @@ class Series:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+
+        Examples
+        --------
+        >>> s = pl.Series("set", [1, 2, 3, 4, 4, 5, 6, 7])
+        >>> s.search_sorted(4)
+        4
+        >>> s.search_sorted(4, 'any')
+        4
+        >>> s.search_sorted(4, 'left')
+        3
+        >>> s.search_sorted(4, 'right')
+        5
         """
         if isinstance(element, (int, float)):
             return F.select(F.lit(self).search_sorted(element, side)).item()
