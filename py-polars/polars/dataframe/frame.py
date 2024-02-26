@@ -347,6 +347,8 @@ class DataFrame:
     False
     """
 
+    __slots__ = ("_df",)
+    _df: PyDataFrame
     _accessors: ClassVar[set[str]] = {"plot"}
 
     def __init__(
