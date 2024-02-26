@@ -548,16 +548,25 @@ impl BatchedParquetReader {
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
+        mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
         let projection = projection.unwrap_or_else(|| (0usize..schema.len()).collect::<Vec<_>>());
 
-        let parallel =
-            if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
-                ParallelStrategy::RowGroups
-            } else {
-                ParallelStrategy::Columns
-            };
+        parallel = match parallel {
+            ParallelStrategy::Auto => {
+                if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
+                    ParallelStrategy::RowGroups
+                } else {
+                    ParallelStrategy::Columns
+                }
+            },
+            _ => parallel,
+        };
+
+        if let (ParallelStrategy::Columns, true) = (parallel, projection.len() == 1) {
+            parallel = ParallelStrategy::None;
+        }
 
         Ok(BatchedParquetReader {
             row_group_fetcher,
