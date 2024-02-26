@@ -79,9 +79,7 @@ jobs:
         run: cargo test --all-features -p polars --test it
 
       - name: Install Polars
-        run: |
-          source activate
-          maturin develop
+        run: maturin develop
 
       - name: Run Python tests
         run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:main.xml
