@@ -25,7 +25,7 @@ use num_traits::{Num, NumCast};
 
 use crate::config::*;
 use crate::prelude::*;
-const LIMIT: usize = 25;
+const LIMIT: usize = 10;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
