@@ -19,11 +19,12 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 
 .PHONY: requirements
 requirements: .venv  ## Install/refresh Python project requirements
-	$(VENV_BIN)/python -m pip install --upgrade uv
-	$(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-dev.txt
-	$(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-lint.txt
-	$(VENV_BIN)/uv pip install --upgrade -r py-polars/docs/requirements-docs.txt
-	$(VENV_BIN)/uv pip install --upgrade -r docs/requirements.txt
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/python -m pip install --upgrade uv \
+	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-dev.txt \
+	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-lint.txt \
+	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/docs/requirements-docs.txt \
+	&& $(VENV_BIN)/uv pip install --upgrade -r docs/requirements.txt
 
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development
@@ -34,7 +35,7 @@ build: .venv  ## Compile and install Python Polars for development
 .PHONY: build-debug-opt
 build-debug-opt: .venv  ## Compile and install Python Polars with minimal optimizations turned on
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate \
-	 && maturin develop -m py-polars/Cargo.toml --profile opt-dev \
+	&& maturin develop -m py-polars/Cargo.toml --profile opt-dev \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-debug-opt-subset
