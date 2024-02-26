@@ -459,7 +459,7 @@ class Datetime(TemporalType):
     time_zone: str | None = None
 
     def __init__(
-        self, time_unit: TimeUnit | None = "us", time_zone: str | timezone | None = None
+        self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
         """
         Calendar date and time type.
@@ -474,18 +474,29 @@ class Datetime(TemporalType):
             When using to match dtypes, can use "*" to check for Datetime columns
             that have any timezone.
         """
+        if time_unit is None:
+            from polars.utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "Passing `time_unit=None` to the Datetime constructor is deprecated."
+                " Either avoid passing a time unit to use the default value ('us'),"
+                " or pass a valid time unit instead ('ms', 'us', 'ns').",
+                version="0.20.11",
+            )
+            time_unit = "us"
+
+        if time_unit not in ("ms", "us", "ns"):
+            msg = (
+                "invalid `time_unit`"
+                f"\n\nExpected one of {{'ns','us','ms'}}, got {time_unit!r}."
+            )
+            raise ValueError(msg)
+
         if isinstance(time_zone, timezone):
             time_zone = str(time_zone)
 
-        self.time_unit = time_unit or "us"
+        self.time_unit = time_unit
         self.time_zone = time_zone
-
-        if self.time_unit not in ("ms", "us", "ns"):
-            msg = (
-                "invalid `time_unit`"
-                f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
-            )
-            raise ValueError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
@@ -522,13 +533,14 @@ class Duration(TemporalType):
         time_unit : {'us', 'ns', 'ms'}
             Unit of time.
         """
-        self.time_unit = time_unit
-        if self.time_unit not in ("ms", "us", "ns"):
+        if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
-                f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
+                f"\n\nExpected one of {{'ns','us','ms'}}, got {time_unit!r}."
             )
             raise ValueError(msg)
+
+        self.time_unit = time_unit
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
