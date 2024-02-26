@@ -424,7 +424,7 @@ impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
         // SAFETY: views are correct
-        unsafe { validate_utf8_only(&self.views, &self.buffers) }
+        unsafe { validate_utf8_only(&self.views, &self.buffers, &self.buffers) }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].

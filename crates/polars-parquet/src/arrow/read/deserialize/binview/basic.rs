@@ -57,6 +57,8 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
         additional: usize,
     ) -> PolarsResult<()> {
         let (values, validity) = decoded;
+        let views_offset = values.views().len();
+        let buffer_offset = values.completed_buffers().len();
         let mut validate_utf8 = self.check_utf8.take();
 
         match state {
@@ -190,7 +192,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
         }
 
         if validate_utf8 {
-            values.validate_utf8()
+            values.validate_utf8(buffer_offset, views_offset)
         } else {
             Ok(())
         }
