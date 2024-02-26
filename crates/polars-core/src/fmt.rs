@@ -25,6 +25,9 @@ use num_traits::{Num, NumCast};
 
 use crate::config::*;
 use crate::prelude::*;
+
+// Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
+// behind choosing 10 as the default value for default number of rows displayed
 const LIMIT: usize = 10;
 
 #[derive(Copy, Clone)]
@@ -523,9 +526,7 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                // Note: see https://github.com/pola-rs/polars/pull/13699 for
-                // the rationale behind choosing 10 as the default value
-                .map_or(10, |n: i64| if n < 0 { height } else { n as usize });
+                .map_or(LIMIT, |n: i64| if n < 0 { height } else { n as usize });
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
