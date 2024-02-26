@@ -82,9 +82,7 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: |
-          source activate
-          maturin develop
+        run: maturin develop
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
