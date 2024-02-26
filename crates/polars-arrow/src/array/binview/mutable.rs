@@ -99,6 +99,11 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         &self.views
     }
 
+    #[inline]
+    pub fn completed_buffers(&self) -> &[Buffer<u8>] {
+        &self.completed_buffers
+    }
+
     pub fn validity(&mut self) -> Option<&mut MutableBitmap> {
         self.validity.as_mut()
     }
@@ -364,10 +369,19 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 }
 
 impl MutableBinaryViewArray<[u8]> {
-    pub fn validate_utf8(&mut self) -> PolarsResult<()> {
-        self.finish_in_progress();
+    pub fn validate_utf8(&mut self, buffer_offset: usize, views_offset: usize) -> PolarsResult<()> {
+        if !self.in_progress_buffer.is_ascii() {
+            // Add to buffer so that the further utf8 check will be done on it.
+            self.finish_in_progress();
+        }
         // views are correct
-        unsafe { validate_utf8_only(&self.views, &self.completed_buffers) }
+        unsafe {
+            validate_utf8_only(
+                &self.views[views_offset..],
+                &self.completed_buffers[buffer_offset..],
+                &self.completed_buffers,
+            )
+        }
     }
 }
 
