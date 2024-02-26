@@ -50,7 +50,7 @@ Use cases for `map_batches` in the `group_by` context are slim. They are only us
 --8<-- "python/user-guide/expressions/user-defined-functions.py:dataframe"
 ```
 
-In the snippet above we group by the `"keys"` column. That means we have the following groups:
+We would like to group by the `"keys"` column. That means we will have the following groups:
 
 ```c
 "a" -> [10, 7]
