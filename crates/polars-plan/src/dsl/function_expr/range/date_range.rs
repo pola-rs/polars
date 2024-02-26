@@ -124,7 +124,7 @@ impl<'a> FieldsMapper<'a> {
                 let schema_dtype = map_date_to_date_range_dtype(interval, time_unit, time_zone);
                 Ok(schema_dtype)
             },
-            _ => polars_bail!(ComputeError: "expected Date or Datetime, got {}", data_dtype),
+            _ => polars_bail!(ComputeError: "expected date or datetime, got {}", data_dtype),
         }
     }
 }

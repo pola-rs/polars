@@ -180,7 +180,7 @@ impl Wrap<&DataFrame> {
             },
             dt => polars_bail!(
                 ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                "expected any of the following dtypes: {{ date, datetime, Int32, Int64 }}, got {}",
                 dt
             ),
         };
@@ -253,7 +253,7 @@ impl Wrap<&DataFrame> {
             },
             dt => polars_bail!(
                 ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                "expected any of the following dtypes: {{ date, datetime, Int32, Int64 }}, got {}",
                 dt
             ),
         };

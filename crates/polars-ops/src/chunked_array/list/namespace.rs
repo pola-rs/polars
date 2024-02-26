@@ -91,7 +91,7 @@ pub trait ListNameSpaceImpl: AsList {
                 },
                 _ => self.join_many(separator, ignore_nulls),
             },
-            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "String"),
+            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "str"),
         }
     }
 

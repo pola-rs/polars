@@ -36,7 +36,7 @@ def test_any_kleene(data: list[bool | None], expected: bool | None) -> None:
 
 
 def test_any_wrong_dtype() -> None:
-    with pytest.raises(pl.SchemaError, match="expected `Boolean`"):
+    with pytest.raises(pl.SchemaError, match="expected `bool`, got `i64`"):
         pl.Series([0, 1, 0]).any()
 
 
@@ -71,5 +71,5 @@ def test_all_kleene(data: list[bool | None], expected: bool | None) -> None:
 
 
 def test_all_wrong_dtype() -> None:
-    with pytest.raises(pl.SchemaError, match="expected `Boolean`"):
+    with pytest.raises(pl.SchemaError, match="expected `bool`, got `i64`"):
         pl.Series([0, 1, 0]).all()

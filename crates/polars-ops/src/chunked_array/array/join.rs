@@ -92,6 +92,6 @@ pub fn array_join(
             },
             _ => join_many(ca, separator, ignore_nulls),
         },
-        dt => polars_bail!(op = "`array.join`", got = dt, expected = "String"),
+        dt => polars_bail!(op = "`array.join`", got = dt, expected = "str"),
     }
 }

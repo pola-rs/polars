@@ -441,7 +441,7 @@ impl<'a> FieldsMapper<'a> {
             if let DataType::Datetime(tu, _) = dt {
                 Ok(DataType::Datetime(*tu, tz.cloned()))
             } else {
-                polars_bail!(op = "replace-time-zone", got = dt, expected = "Datetime");
+                polars_bail!(op = "replace-time-zone", got = dt, expected = "datetime");
             }
         })
     }

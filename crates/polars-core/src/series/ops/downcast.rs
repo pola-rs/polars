@@ -25,12 +25,12 @@ macro_rules! unpack_chunked {
 impl Series {
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Int8]`
     pub fn i8(&self) -> PolarsResult<&Int8Chunked> {
-        unpack_chunked!(self, DataType::Int8 => Int8Chunked, "Int8")
+        unpack_chunked!(self, DataType::Int8 => Int8Chunked, "i8")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Int16]`
     pub fn i16(&self) -> PolarsResult<&Int16Chunked> {
-        unpack_chunked!(self, DataType::Int16 => Int16Chunked, "Int16")
+        unpack_chunked!(self, DataType::Int16 => Int16Chunked, "i16")
     }
 
     /// Unpack to [`ChunkedArray`]
@@ -49,109 +49,109 @@ impl Series {
     /// ```
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Int32]`
     pub fn i32(&self) -> PolarsResult<&Int32Chunked> {
-        unpack_chunked!(self, DataType::Int32 => Int32Chunked, "Int32")
+        unpack_chunked!(self, DataType::Int32 => Int32Chunked, "i32")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Int64]`
     pub fn i64(&self) -> PolarsResult<&Int64Chunked> {
-        unpack_chunked!(self, DataType::Int64 => Int64Chunked, "Int64")
+        unpack_chunked!(self, DataType::Int64 => Int64Chunked, "i64")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Float32]`
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
-        unpack_chunked!(self, DataType::Float32 => Float32Chunked, "Float32")
+        unpack_chunked!(self, DataType::Float32 => Float32Chunked, "f32")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Float64]`
     pub fn f64(&self) -> PolarsResult<&Float64Chunked> {
-        unpack_chunked!(self, DataType::Float64 => Float64Chunked, "Float64")
+        unpack_chunked!(self, DataType::Float64 => Float64Chunked, "f64")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::UInt8]`
     pub fn u8(&self) -> PolarsResult<&UInt8Chunked> {
-        unpack_chunked!(self, DataType::UInt8 => UInt8Chunked, "UInt8")
+        unpack_chunked!(self, DataType::UInt8 => UInt8Chunked, "u8")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::UInt16]`
     pub fn u16(&self) -> PolarsResult<&UInt16Chunked> {
-        unpack_chunked!(self, DataType::UInt16 => UInt16Chunked, "UInt16")
+        unpack_chunked!(self, DataType::UInt16 => UInt16Chunked, "u16")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::UInt32]`
     pub fn u32(&self) -> PolarsResult<&UInt32Chunked> {
-        unpack_chunked!(self, DataType::UInt32 => UInt32Chunked, "UInt32")
+        unpack_chunked!(self, DataType::UInt32 => UInt32Chunked, "u32")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::UInt64]`
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
-        unpack_chunked!(self, DataType::UInt64 => UInt64Chunked, "UInt64")
+        unpack_chunked!(self, DataType::UInt64 => UInt64Chunked, "u64")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Boolean]`
     pub fn bool(&self) -> PolarsResult<&BooleanChunked> {
-        unpack_chunked!(self, DataType::Boolean => BooleanChunked, "Boolean")
+        unpack_chunked!(self, DataType::Boolean => BooleanChunked, "bool")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::String]`
     pub fn str(&self) -> PolarsResult<&StringChunked> {
-        unpack_chunked!(self, DataType::String => StringChunked, "String")
+        unpack_chunked!(self, DataType::String => StringChunked, "str")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Binary]`
     pub fn binary(&self) -> PolarsResult<&BinaryChunked> {
-        unpack_chunked!(self, DataType::Binary => BinaryChunked, "Binary")
+        unpack_chunked!(self, DataType::Binary => BinaryChunked, "binary")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Binary]`
     pub fn binary_offset(&self) -> PolarsResult<&BinaryOffsetChunked> {
-        unpack_chunked!(self, DataType::BinaryOffset => BinaryOffsetChunked, "BinaryOffset")
+        unpack_chunked!(self, DataType::BinaryOffset => BinaryOffsetChunked, "binary[offset]")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Time]`
     #[cfg(feature = "dtype-time")]
     pub fn time(&self) -> PolarsResult<&TimeChunked> {
-        unpack_chunked!(self, DataType::Time => TimeChunked, "Time")
+        unpack_chunked!(self, DataType::Time => TimeChunked, "time")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Date]`
     #[cfg(feature = "dtype-date")]
     pub fn date(&self) -> PolarsResult<&DateChunked> {
-        unpack_chunked!(self, DataType::Date => DateChunked, "Date")
+        unpack_chunked!(self, DataType::Date => DateChunked, "date")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Datetime]`
     #[cfg(feature = "dtype-datetime")]
     pub fn datetime(&self) -> PolarsResult<&DatetimeChunked> {
-        unpack_chunked!(self, DataType::Datetime(_, _) => DatetimeChunked, "Datetime")
+        unpack_chunked!(self, DataType::Datetime(_, _) => DatetimeChunked, "datetime")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Duration]`
     #[cfg(feature = "dtype-duration")]
     pub fn duration(&self) -> PolarsResult<&DurationChunked> {
-        unpack_chunked!(self, DataType::Duration(_) => DurationChunked, "Duration")
+        unpack_chunked!(self, DataType::Duration(_) => DurationChunked, "duration")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Decimal]`
     #[cfg(feature = "dtype-decimal")]
     pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
-        unpack_chunked!(self, DataType::Decimal(_, _) => DecimalChunked, "Decimal")
+        unpack_chunked!(self, DataType::Decimal(_, _) => DecimalChunked, "decimal")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype list
     pub fn list(&self) -> PolarsResult<&ListChunked> {
-        unpack_chunked!(self, DataType::List(_) => ListChunked, "List")
+        unpack_chunked!(self, DataType::List(_) => ListChunked, "list")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Array]`
     #[cfg(feature = "dtype-array")]
     pub fn array(&self) -> PolarsResult<&ArrayChunked> {
-        unpack_chunked!(self, DataType::Array(_, _) => ArrayChunked, "FixedSizeList")
+        unpack_chunked!(self, DataType::Array(_, _) => ArrayChunked, "array")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Categorical]`
     #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        unpack_chunked!(self, DataType::Categorical(_, _) | DataType::Enum(_, _) => CategoricalChunked, "Enum | Categorical")
+        unpack_chunked!(self, DataType::Categorical(_, _) | DataType::Enum(_, _) => CategoricalChunked, "enum | categorical")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Struct]`
@@ -164,11 +164,11 @@ impl Series {
                 assert!(any.is::<StructChunked>());
             }
         }
-        unpack_chunked!(self, DataType::Struct(_) => StructChunked, "Struct")
+        unpack_chunked!(self, DataType::Struct(_) => StructChunked, "struct")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Null]`
     pub fn null(&self) -> PolarsResult<&NullChunked> {
-        unpack_chunked!(self, DataType::Null => NullChunked, "Null")
+        unpack_chunked!(self, DataType::Null => NullChunked, "null")
     }
 }

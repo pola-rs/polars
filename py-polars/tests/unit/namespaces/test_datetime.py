@@ -210,13 +210,13 @@ def test_offset_by_sortedness(
 
 
 def test_dt_datetime_date_time_invalid() -> None:
-    with pytest.raises(ComputeError, match="expected Datetime or Date"):
+    with pytest.raises(ComputeError, match="expected datetime or date"):
         pl.Series([time(23)]).dt.date()
-    with pytest.raises(ComputeError, match="expected Datetime or Date"):
+    with pytest.raises(ComputeError, match="expected datetime or date"):
         pl.Series([timedelta(1)]).dt.date()
-    with pytest.raises(ComputeError, match="expected Datetime or Time"):
+    with pytest.raises(ComputeError, match="expected datetime or time"):
         pl.Series([timedelta(1)]).dt.time()
-    with pytest.raises(ComputeError, match="expected Datetime or Time"):
+    with pytest.raises(ComputeError, match="expected datetime or time"):
         pl.Series([date(2020, 1, 1)]).dt.time()
 
 
@@ -637,7 +637,7 @@ def test_date_time_combine(tzinfo: ZoneInfo | None, time_zone: str | None) -> No
 
 
 def test_combine_unsupported_types() -> None:
-    with pytest.raises(ComputeError, match="expected Date or Datetime, got time"):
+    with pytest.raises(ComputeError, match="expected date or datetime, got time"):
         pl.Series([time(1, 2)]).dt.combine(time(3, 4))
 
 
