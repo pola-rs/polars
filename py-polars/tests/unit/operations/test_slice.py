@@ -171,14 +171,33 @@ def test_slice_pushdown_set_sorted() -> None:
 
 
 def test_slice_pushdown_literal_projection_14349() -> None:
+    lf = pl.select(a=pl.int_range(10)).lazy()
     expect = pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [10, 11, 12, 13, 14]})
-    out = (
-        pl.select(a=pl.int_range(10))
-        .lazy()
-        .with_columns(b=pl.int_range(10, 20, eager=True))
-        .head(5)
-        .collect()
-    )
+
+    out = lf.with_columns(b=pl.int_range(10, 20, eager=True)).head(5).collect()
+    assert_frame_equal(expect, out)
+
+    out = lf.select("a", b=pl.int_range(10, 20, eager=True)).head(5).collect()
     assert_frame_equal(expect, out)
 
     assert pl.LazyFrame().select(x=1).head(0).collect().height == 0
+    assert pl.LazyFrame().with_columns(x=1).head(0).collect().height == 0
+
+    q = lf.select(x=1).head(0)
+    assert q.collect().height == 0
+
+    # For select, slice pushdown should happen when at least 1 input column is selected
+    q = lf.select("a", x=1).head(0)
+    plan = q.explain()
+    assert pl.select(
+        pl.lit(plan).str.replace_all(r"\n", "").str.contains(r"SELECT.*SLICE")
+    ).item()
+    assert q.collect().height == 0
+
+    # For with_columns, slice pushdown should happen if the input has at least 1 column
+    q = lf.with_columns(x=1).head(0)
+    plan = q.explain()
+    assert pl.select(
+        pl.lit(plan).str.replace_all(r"\n", "").str.contains(r"WITH_COLUMNS.*SLICE")
+    ).item()
+    assert q.collect().height == 0

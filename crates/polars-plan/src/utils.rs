@@ -79,7 +79,7 @@ pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr
         .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
 }
 
-fn single_aexpr_is_elementwise(ae: &AExpr) -> bool {
+pub(crate) fn single_aexpr_is_elementwise(ae: &AExpr) -> bool {
     use AExpr::*;
     match ae {
         AnonymousFunction { options, .. } | Function { options, .. } => {
@@ -90,27 +90,6 @@ fn single_aexpr_is_elementwise(ae: &AExpr) -> bool {
         },
         _ => false,
     }
-}
-
-/// Ensures an expr has a column root. Used by slice pushdown, e.g.:
-///
-/// `select(c = Literal([1, 2, 3])).slice(0, 0)` must block slice pushdown,
-/// because `c` projects to a height independent from the input height. We check
-/// this by observing that `c` does not have any columns in its input notes.
-///
-/// TODO: Simply checking that a column node is present does not handle e.g.:
-/// `select(c = Literal([1, 2, 3]).is_in(col(a)))`, for functions like `is_in`,
-/// `str.contains`, `str.contains_many` etc. - observe a column node is present
-/// but the output height is not dependent on it.
-pub(crate) fn aexpr_is_elementwise_and_has_column(
-    current_node: Node,
-    arena: &Arena<AExpr>,
-) -> bool {
-    let mut has_column = false;
-    arena.iter(current_node).all(|(_node, ae)| {
-        has_column |= matches!(ae, AExpr::Column(_));
-        single_aexpr_is_elementwise(ae)
-    }) && has_column
 }
 
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
