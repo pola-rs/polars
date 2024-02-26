@@ -377,8 +377,15 @@ impl SlicePushDown {
                 }
             }
             (HStack {input, exprs, schema, options}, _) => {
-                // The input must also have columns for HStack, we check this using schema length.
-                if schema.len() > exprs.len() && can_pushdown_slice_past_projections(&exprs, expr_arena).0 {
+                let check = can_pushdown_slice_past_projections(&exprs, expr_arena);
+
+                if (
+                    // If the schema length is greater then an input column is being projected, so
+                    // the exprs in with_columns do not need to have an input column name.
+                    schema.len() > exprs.len() && check.0
+                )
+                || check.1 // e.g. select(c).with_columns(c = c + 1)
+                {
                     let lp = HStack {input, exprs, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }

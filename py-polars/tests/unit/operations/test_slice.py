@@ -189,15 +189,27 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     # For select, slice pushdown should happen when at least 1 input column is selected
     q = lf.select("a", x=1).head(0)
     plan = q.explain()
-    assert pl.select(
-        pl.lit(plan).str.replace_all(r"\n", "").str.contains(r"SELECT.*SLICE")
-    ).item()
+    assert plan.index("SELECT") < plan.index("SLICE")
     assert q.collect().height == 0
 
     # For with_columns, slice pushdown should happen if the input has at least 1 column
     q = lf.with_columns(x=1).head(0)
     plan = q.explain()
-    assert pl.select(
-        pl.lit(plan).str.replace_all(r"\n", "").str.contains(r"WITH_COLUMNS.*SLICE")
-    ).item()
+    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert q.collect().height == 0
+
+    q = lf.with_columns(pl.col("a") + 1).head(0)
+    plan = q.explain()
+    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert q.collect().height == 0
+
+    # This does not project any of the original columns
+    q = lf.with_columns(a=1, b=2).head(0)
+    plan = q.explain()
+    assert plan.index("SLICE") < plan.index("WITH_COLUMNS")
+    assert q.collect().height == 0
+
+    q = lf.with_columns(b=1, c=2).head(0)
+    plan = q.explain()
+    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
     assert q.collect().height == 0
