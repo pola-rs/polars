@@ -102,17 +102,17 @@ def negate_duration_string(duration: str) -> str:
         return f"-{duration}"
 
 
+def _date_to_pl_date(d: date) -> int:
+    """Convert a Python time object to an integer."""
+    return (d - EPOCH_DATE).days
+
+
 def _time_to_pl_time(t: time) -> int:
     """Convert a Python time object to an integer."""
     t = t.replace(tzinfo=timezone.utc)
     seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second
     microseconds = t.microsecond
     return seconds * NS_PER_SECOND + microseconds * 1_000
-
-
-def _date_to_pl_date(d: date) -> int:
-    """Convert a Python time object to an integer."""
-    return (d - EPOCH_DATE).days
 
 
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit) -> int:
@@ -156,6 +156,12 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit) -> int:
         raise ValueError(msg)
 
 
+@lru_cache(256)
+def _to_python_date(value: int | float) -> date:
+    """Convert an integer or float to a Python date object."""
+    return EPOCH_DATE + timedelta(days=value)
+
+
 def _to_python_time(value: int) -> time:
     """Convert an integer to a Python time object."""
     # Fast path for 00:00
@@ -168,25 +174,6 @@ def _to_python_time(value: int) -> time:
     return time(
         hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1_000
     )
-
-
-def _to_python_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
-    """Convert an integer or float to a Python timedelta object."""
-    if time_unit == "us":
-        return timedelta(microseconds=value)
-    elif time_unit == "ns":
-        return timedelta(microseconds=value // 1_000)
-    elif time_unit == "ms":
-        return timedelta(milliseconds=value)
-    else:
-        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        raise ValueError(msg)
-
-
-@lru_cache(256)
-def _to_python_date(value: int | float) -> date:
-    """Convert an integer or float to a Python date object."""
-    return EPOCH_DATE + timedelta(days=value)
 
 
 def _to_python_datetime(
@@ -245,6 +232,33 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     return dt_offset.tzinfo  # type: ignore[return-value]
 
 
+def _to_python_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
+    """Convert an integer or float to a Python timedelta object."""
+    if time_unit == "us":
+        return timedelta(microseconds=value)
+    elif time_unit == "ns":
+        return timedelta(microseconds=value // 1_000)
+    elif time_unit == "ms":
+        return timedelta(milliseconds=value)
+    else:
+        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+        raise ValueError(msg)
+
+
+def _to_python_decimal(
+    sign: int, digits: Sequence[int], prec: int, scale: int
+) -> Decimal:
+    return _create_decimal_with_prec(prec)((sign, digits, scale))
+
+
+@lru_cache(None)
+def _create_decimal_with_prec(
+    precision: int,
+) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
+    # pre-cache contexts so we don't have to spend time on recreating them every time
+    return Context(prec=precision).create_decimal
+
+
 def _datetime_for_any_value(dt: datetime) -> tuple[int, int]:
     """Used in PyO3 AnyValue conversion."""
     # returns (s, ms)
@@ -262,17 +276,3 @@ def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
         dt = _localize(dt, "UTC")
     # returns (s, ms)
     return (_timestamp_in_seconds(dt), dt.microsecond)
-
-
-def _to_python_decimal(
-    sign: int, digits: Sequence[int], prec: int, scale: int
-) -> Decimal:
-    return _create_decimal_with_prec(prec)((sign, digits, scale))
-
-
-@lru_cache(None)
-def _create_decimal_with_prec(
-    precision: int,
-) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
-    # pre-cache contexts so we don't have to spend time on recreating them every time
-    return Context(prec=precision).create_decimal
