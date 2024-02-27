@@ -377,6 +377,14 @@ class Decimal(NumericType):
         This functionality is considered **unstable**.
         It is a work-in-progress feature and may not always work as expected.
         It may be changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    precision
+        Maximum number of digits in each number.
+        If set to `None` (default), the precision is inferred.
+    scale
+        Number of digits to the right of the decimal point in each number.
     """
 
     __slots__ = ("precision", "scale")
@@ -441,19 +449,53 @@ class Binary(DataType):
 
 
 class Date(TemporalType):
-    """Calendar date type."""
+    """
+    Data type representing a calendar date.
+
+    Notes
+    -----
+    The underlying representation of this type is a 32-bit signed integer.
+    The integer indicates the number of days since the Unix epoch (1970-01-01).
+    The number can be negative to indicate dates before the epoch.
+    """
 
     __slots__ = ()
 
 
 class Time(TemporalType):
-    """Time of day type."""
+    """
+    Data type representing the time of day.
+
+    Notes
+    -----
+    The underlying representation of this type is a 64-bit signed integer.
+    The integer indicates the number of nanoseconds since midnight.
+    """
 
     __slots__ = ()
 
 
 class Datetime(TemporalType):
-    """Calendar date and time type."""
+    """
+    Data type representing a calendar date and time of day.
+
+    Parameters
+    ----------
+    time_unit : {'us', 'ns', 'ms'}
+        Unit of time. Defaults to `'us'` (microseconds).
+    time_zone
+        Time zone string, as defined in zoneinfo (to see valid strings run
+        `import zoneinfo; zoneinfo.available_timezones()` for a full list).
+        When using to match dtypes, can use "*" to check for Datetime columns
+        that have any timezone.
+
+    Notes
+    -----
+    The underlying representation of this type is a 64-bit signed integer.
+    The integer indicates the number of time units since the Unix epoch
+    (1970-01-01 00:00:00). The number can be negative to indicate datetimes before the
+    epoch.
+    """
 
     time_unit: TimeUnit | None = None
     time_zone: str | None = None
@@ -461,19 +503,6 @@ class Datetime(TemporalType):
     def __init__(
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
-        """
-        Calendar date and time type.
-
-        Parameters
-        ----------
-        time_unit : {'us', 'ns', 'ms'}
-            Unit of time / precision.
-        time_zone
-            Time zone string, as defined in zoneinfo (to see valid strings run
-            `import zoneinfo; zoneinfo.available_timezones()` for a full list).
-            When using to match dtypes, can use "*" to check for Datetime columns
-            that have any timezone.
-        """
         if time_unit is None:
             from polars.utils.deprecation import issue_deprecation_warning
 
@@ -520,19 +549,24 @@ class Datetime(TemporalType):
 
 
 class Duration(TemporalType):
-    """Time duration/delta type."""
+    """
+    Data type representing a time duration.
+
+    Parameters
+    ----------
+    time_unit : {'us', 'ns', 'ms'}
+        Unit of time. Defaults to `'us'` (microseconds).
+
+    Notes
+    -----
+    The underlying representation of this type is a 64-bit signed integer.
+    The integer indicates an amount of time units and can be negative to indicate
+    negative time offsets.
+    """
 
     time_unit: TimeUnit | None = None
 
     def __init__(self, time_unit: TimeUnit = "us"):
-        """
-        Time duration/delta type.
-
-        Parameters
-        ----------
-        time_unit : {'us', 'ns', 'ms'}
-            Unit of time.
-        """
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -565,9 +599,9 @@ class Categorical(DataType):
 
     Parameters
     ----------
-        ordering : {'lexical', 'physical'}
-            Ordering by order of appearance (physical, default)
-            or string value (lexical).
+    ordering : {'lexical', 'physical'}
+        Ordering by order of appearance (`'physical'`, default)
+        or string value (`'lexical'`).
     """
 
     __slots__ = ("ordering",)
@@ -603,20 +637,17 @@ class Enum(DataType):
         This functionality is considered **unstable**.
         It is a work-in-progress feature and may not always work as expected.
         It may be changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    categories
+        The categories in the dataset. Categories must be strings.
     """
 
     __slots__ = ("categories",)
     categories: Series
 
     def __init__(self, categories: Series | Iterable[str]):
-        """
-        A fixed set categorical encoding of a set of strings.
-
-        Parameters
-        ----------
-        categories
-            Valid categories in the dataset.
-        """
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars.utils.unstable import issue_unstable_warning
@@ -666,56 +697,55 @@ class Enum(DataType):
 
 
 class Object(DataType):
-    """Type for wrapping arbitrary Python objects."""
+    """Data type for wrapping arbitrary Python objects."""
 
     __slots__ = ()
 
 
 class Null(DataType):
-    """Type representing Null / None values."""
+    """Data type representing null values."""
 
     __slots__ = ()
 
 
 class Unknown(DataType):
-    """Type representing Datatype values that could not be determined statically."""
+    """Type representing DataType values that could not be determined statically."""
 
     __slots__ = ()
 
 
 class List(NestedType):
-    """Variable length list type."""
+    """
+    Variable length list type.
+
+    Parameters
+    ----------
+    inner
+        The `DataType` of the values within each list.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "integer_lists": [[1, 2], [3, 4]],
+    ...         "float_lists": [[1.0, 2.0], [3.0, 4.0]],
+    ...     }
+    ... )
+    >>> df
+    shape: (2, 2)
+    ┌───────────────┬─────────────┐
+    │ integer_lists ┆ float_lists │
+    │ ---           ┆ ---         │
+    │ list[i64]     ┆ list[f64]   │
+    ╞═══════════════╪═════════════╡
+    │ [1, 2]        ┆ [1.0, 2.0]  │
+    │ [3, 4]        ┆ [3.0, 4.0]  │
+    └───────────────┴─────────────┘
+    """
 
     inner: PolarsDataType | None = None
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
-        """
-        Variable length list type.
-
-        Parameters
-        ----------
-        inner
-            The `DataType` of the values within each list.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "integer_lists": [[1, 2], [3, 4]],
-        ...         "float_lists": [[1.0, 2.0], [3.0, 4.0]],
-        ...     }
-        ... )
-        >>> df
-        shape: (2, 2)
-        ┌───────────────┬─────────────┐
-        │ integer_lists ┆ float_lists │
-        │ ---           ┆ ---         │
-        │ list[i64]     ┆ list[f64]   │
-        ╞═══════════════╪═════════════╡
-        │ [1, 2]        ┆ [1.0, 2.0]  │
-        │ [3, 4]        ┆ [3.0, 4.0]  │
-        └───────────────┴─────────────┘
-        """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -745,33 +775,32 @@ class List(NestedType):
 
 
 class Array(NestedType):
-    """Fixed length list type."""
+    """
+    Fixed length list type.
+
+    Parameters
+    ----------
+    inner
+        The `DataType` of the values within each array.
+    width
+        The length of the arrays.
+
+    Examples
+    --------
+    >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+    >>> s
+    shape: (2,)
+    Series: 'a' [array[i64, 2]]
+    [
+            [1, 2]
+            [4, 3]
+    ]
+    """
 
     inner: PolarsDataType | None = None
     width: int
 
     def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
-        """
-        Fixed length list type.
-
-        Parameters
-        ----------
-        inner
-            The `DataType` of the values within each array.
-        width
-            The length of the arrays.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
-        >>> s
-        shape: (2,)
-        Series: 'a' [array[i64, 2]]
-        [
-                [1, 2]
-                [4, 3]
-        ]
-        """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
         self.width = width
 
@@ -804,23 +833,22 @@ class Array(NestedType):
 
 
 class Field:
-    """Definition of a single field within a `Struct` DataType."""
+    """
+    Definition of a single field within a `Struct` DataType.
+
+    Parameters
+    ----------
+    name
+        The name of the field within its parent `Struct`.
+    dtype
+        The `DataType` of the field's values.
+    """
 
     __slots__ = ("name", "dtype")
     name: str
     dtype: PolarsDataType
 
     def __init__(self, name: str, dtype: PolarsDataType):
-        """
-        Definition of a single field within a `Struct` DataType.
-
-        Parameters
-        ----------
-        name
-            The name of the field within its parent `Struct`
-        dtype
-            The `DataType` of the field's values
-        """
         self.name = name
         self.dtype = polars.datatypes.py_type_to_dtype(dtype)
 
@@ -836,50 +864,47 @@ class Field:
 
 
 class Struct(NestedType):
-    """Struct composite type."""
+    """
+    Struct composite type.
+
+    Parameters
+    ----------
+    fields
+        The fields that make up the struct. Can be either a sequence of Field
+        objects or a mapping of column names to data types.
+
+    Examples
+    --------
+    Initialize using a dictionary:
+
+    >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.String)})
+    >>> dtype
+    Struct({'a': Int8, 'b': List(String)})
+
+    Initialize using a list of Field objects:
+
+    >>> dtype = pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.String))])
+    >>> dtype
+    Struct({'a': Int8, 'b': List(String)})
+
+    When initializing a Series, Polars can infer a struct data type from the data.
+
+    >>> s = pl.Series([{"a": 1, "b": ["x", "y"]}, {"a": 2, "b": ["z"]}])
+    >>> s
+    shape: (2,)
+    Series: '' [struct[2]]
+    [
+            {1,["x", "y"]}
+            {2,["z"]}
+    ]
+    >>> s.dtype
+    Struct({'a': Int64, 'b': List(String)})
+    """
 
     __slots__ = ("fields",)
     fields: list[Field]
 
     def __init__(self, fields: Sequence[Field] | SchemaDict):
-        """
-        Struct composite type.
-
-        Parameters
-        ----------
-        fields
-            The fields that make up the struct. Can be either a sequence of Field
-            objects or a mapping of column names to data types.
-
-        Examples
-        --------
-        Initialize using a dictionary:
-
-        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.String)})
-        >>> dtype
-        Struct({'a': Int8, 'b': List(String)})
-
-        Initialize using a list of Field objects:
-
-        >>> dtype = pl.Struct(
-        ...     [pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.String))]
-        ... )
-        >>> dtype
-        Struct({'a': Int8, 'b': List(String)})
-
-        When initializing a Series, Polars can infer a struct data type from the data.
-
-        >>> s = pl.Series([{"a": 1, "b": ["x", "y"]}, {"a": 2, "b": ["z"]}])
-        >>> s
-        shape: (2,)
-        Series: '' [struct[2]]
-        [
-                {1,["x", "y"]}
-                {2,["z"]}
-        ]
-        >>> s.dtype
-        Struct({'a': Int64, 'b': List(String)})
-        """
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:
