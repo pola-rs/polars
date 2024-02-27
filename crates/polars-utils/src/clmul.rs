@@ -1,15 +1,23 @@
-#[allow(unused)]
-use crate::cpuid::has_fast_clmul;
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "pclmulqdq")]
-unsafe fn intel_clmul64(x: u64, y: u64) -> u64 {
+#[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
+fn intel_clmul64(x: u64, y: u64) -> u64 {
     use core::arch::x86_64::*;
-    _mm_cvtsi128_si64(_mm_clmulepi64_si128(
-        _mm_cvtsi64_si128(x as i64),
-        _mm_cvtsi64_si128(y as i64),
-        0,
-    )) as u64
+    unsafe {
+        // SAFETY: we have the target feature.
+        _mm_cvtsi128_si64(_mm_clmulepi64_si128(
+            _mm_cvtsi64_si128(x as i64),
+            _mm_cvtsi64_si128(y as i64),
+            0,
+        )) as u64
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
+fn arm_clmul64(x: u64, y: u64) -> u64 {
+    unsafe {
+        // SAFETY: we have the target feature.
+        use core::arch::aarch64::*;
+        return vmull_p64(x, y) as u64;
+    }
 }
 
 #[inline]
@@ -23,6 +31,19 @@ pub fn portable_clmul64(x: u64, mut y: u64) -> u64 {
     out
 }
 
+// Computes the carryless multiplication of x and y.
+#[inline]
+pub fn clmul64(x: u64, y: u64) -> u64 {
+    #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
+    return intel_clmul64(x, y);
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
+    return arm_clmul64(x, y);
+
+    #[allow(unreachable_code)]
+    portable_clmul64(x, y)
+}
+
 #[inline]
 pub fn portable_prefix_xorsum(mut x: u64) -> u64 {
     x <<= 1;
@@ -32,58 +53,17 @@ pub fn portable_prefix_xorsum(mut x: u64) -> u64 {
     x
 }
 
-/// # Safety
-/// has_fast_clmul() must be true
-#[inline]
-pub unsafe fn fast_clmul64(x: u64, y: u64) -> u64 {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
-    unsafe {
-        use core::arch::aarch64::*;
-        return vmull_p64(x, y) as u64;
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    return unsafe { intel_clmul64(x, y) };
-
-    #[allow(unreachable_code)]
-    { unimplemented!() }
-}
-
-/// # Safety
-/// has_fast_clmul() must be true
-#[inline]
-pub unsafe fn fast_prefix_xorsum(x: u64) -> u64 {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
-    unsafe {
-        use core::arch::aarch64::*;
-        return vmull_p64(x, u64::MAX ^ 1) as u64;
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    return unsafe { intel_clmul64(x, u64::MAX ^ 1) };
-    
-    #[allow(unreachable_code)]
-    { unimplemented!() }
-}
-
-// Computes the carryless multiplication of x and y.
-#[inline]
-pub fn clmul64(x: u64, y: u64) -> u64 {
-    if has_fast_clmul() {
-        unsafe { fast_clmul64(x, y) }
-    } else {
-        portable_clmul64(x, y)
-    }
-}
-
 // Computes for each bit i the XOR of all less significant bits.
 #[inline]
 pub fn prefix_xorsum(x: u64) -> u64 {
-    if has_fast_clmul() {
-        unsafe { fast_prefix_xorsum(x) }
-    } else {
-        portable_prefix_xorsum(x)
-    }
+    #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
+    return intel_clmul64(x, u64::MAX ^ 1);
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon", target_feature = "aes"))]
+    return arm_clmul64(x, u64::MAX ^ 1);
+
+    #[allow(unreachable_code)]
+    portable_prefix_xorsum(x)
 }
 
 
