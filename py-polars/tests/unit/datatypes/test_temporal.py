@@ -2661,3 +2661,9 @@ def test_rolling_duplicates() -> None:
     assert df.sort("ts").with_columns(pl.col("value").rolling_max("1d", by="ts"))[
         "value"
     ].to_list() == [1, 1]
+
+
+def test_datetime_time_unit_none_deprecated() -> None:
+    with pytest.deprecated_call():
+        dtype = pl.Datetime(time_unit=None)  # type: ignore[arg-type]
+    assert dtype.time_unit == "us"
