@@ -6,6 +6,7 @@ From a performance perspective, we recommend using other formats if possible, su
 ## Read
 
 Polars does not have a native Excel reader. Instead, it uses external libraries to parse Excel files into objects that Polars can parse. The available engines are:
+
 - xlsx2csv: this is the current default
 - openpyxl: typically slower than xls2csv, but can provide more flexibility for files that are difficult to parse
 - pyxlsb: for reading binary Excel files (xlsb)
