@@ -95,6 +95,7 @@ jobs:
     env:
       SED_INPLACE: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
       CPU_CHECK_MODULE: py-polars/polars/_cpu_check.py
+      CMAKE_BUILD_PARALLEL_LEVEL: 10 # fix resource temporarily unavailable on macOS for libz-ng-sys (https://github.com/pola-rs/polars/pull/14715)
 
     steps:
       - uses: actions/checkout@v4

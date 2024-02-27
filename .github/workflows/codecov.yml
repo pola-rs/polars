@@ -32,6 +32,7 @@ jobs:
       CARGO_LLVM_COV: 1
       CARGO_LLVM_COV_SHOW_ENV: 1
       CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
+      CMAKE_BUILD_PARALLEL_LEVEL: 10 # fix resource temporarily unavailable on macOS for libz-ng-sys (https://github.com/pola-rs/polars/pull/14715)
 
     steps:
       - uses: actions/checkout@v4
