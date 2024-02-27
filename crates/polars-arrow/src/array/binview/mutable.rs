@@ -313,10 +313,13 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         Self::from_iterator(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()))
     }
 
-    fn finish_in_progress(&mut self) {
+    fn finish_in_progress(&mut self) -> bool {
         if !self.in_progress_buffer.is_empty() {
             self.completed_buffers
                 .push(std::mem::take(&mut self.in_progress_buffer).into());
+            true
+        } else {
+            false
         }
     }
 
@@ -370,18 +373,21 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
 impl MutableBinaryViewArray<[u8]> {
     pub fn validate_utf8(&mut self, buffer_offset: usize, views_offset: usize) -> PolarsResult<()> {
-        if !self.in_progress_buffer.is_ascii() {
-            // Add to buffer so that the further utf8 check will be done on it.
-            self.finish_in_progress();
-        }
+        // Finish the in progress as it might be required for validation.
+        let pushed = self.finish_in_progress();
         // views are correct
         unsafe {
             validate_utf8_only(
                 &self.views[views_offset..],
                 &self.completed_buffers[buffer_offset..],
                 &self.completed_buffers,
-            )
+            )?
         }
+        // Restore in-progress buffer as we don't want to get too small buffers
+        if let (true, Some(last)) = (pushed, self.completed_buffers.pop()) {
+            self.in_progress_buffer = last.into_mut().right().unwrap();
+        }
+        Ok(())
     }
 }
 
