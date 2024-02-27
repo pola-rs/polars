@@ -175,7 +175,7 @@ def _to_python_timedelta(
 @lru_cache(256)
 def _to_python_date(value: int | float) -> date:
     """Convert an integer or float to a Python date object."""
-    return (EPOCH_UTC + timedelta(seconds=value * SECONDS_PER_DAY)).date()
+    return EPOCH_DATE + timedelta(days=value)
 
 
 def _to_python_datetime(
