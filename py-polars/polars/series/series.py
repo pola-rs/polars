@@ -4315,7 +4315,7 @@ class Series:
             the underlying data. Data copy occurs, for example, when the Series contains
             nulls or non-numeric types.
 
-            .. deprecated: 0.20.10
+            .. deprecated:: 0.20.10
                 Use the `allow_copy` parameter instead, which is the inverse of this
                 one.
 

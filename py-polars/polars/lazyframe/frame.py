@@ -4817,7 +4817,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Approximate count of unique values.
 
-        .. deprecated: 0.20.11
+        .. deprecated:: 0.20.11
             Use `select(pl.all().approx_n_unique())` instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
