@@ -488,7 +488,7 @@ def sequence_to_pyseries(
         )
         if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean, Enum):
             if pyseries.dtype() != dtype:
-                pyseries = pyseries.cast(dtype, strict=True)
+                pyseries = pyseries.cast(dtype, strict=strict)
         return pyseries
 
     elif dtype == Struct:
