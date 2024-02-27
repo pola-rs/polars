@@ -57,16 +57,16 @@ EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 @overload
-def parse_duration_input(td: None) -> None:
+def parse_as_duration_string(td: None) -> None:
     ...
 
 
 @overload
-def parse_duration_input(td: timedelta | str) -> str:
+def parse_as_duration_string(td: timedelta | str) -> str:
     ...
 
 
-def parse_duration_input(td: timedelta | str | None) -> str | None:
+def parse_as_duration_string(td: timedelta | str | None) -> str | None:
     """Parse duration input as a Polars duration string."""
     if td is None or isinstance(td, str):
         return td

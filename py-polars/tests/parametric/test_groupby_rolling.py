@@ -11,7 +11,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.primitives import column, dataframes
 from polars.testing.parametric.strategies import strategy_closed, strategy_time_unit
-from polars.utils.convert import parse_duration_input
+from polars.utils.convert import parse_as_duration_string
 
 if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval, TimeUnit
@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 @given(
     period=st.timedeltas(
         min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
-    ).map(parse_duration_input),
+    ).map(parse_as_duration_string),
     offset=st.timedeltas(
         min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
-    ).map(parse_duration_input),
+    ).map(parse_as_duration_string),
     closed=strategy_closed,
     data=st.data(),
     time_unit=strategy_time_unit,
@@ -85,7 +85,7 @@ def test_rolling(
 @given(
     window_size=st.timedeltas(
         min_value=timedelta(microseconds=0), max_value=timedelta(days=2)
-    ).map(parse_duration_input),
+    ).map(parse_as_duration_string),
     closed=strategy_closed,
     data=st.data(),
     time_unit=strategy_time_unit,

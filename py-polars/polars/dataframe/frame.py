@@ -89,7 +89,7 @@ from polars.utils._construction import (
 )
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
-from polars.utils.convert import parse_duration_input
+from polars.utils.convert import parse_as_duration_string
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
@@ -6061,8 +6061,8 @@ class DataFrame:
         if offset is None:
             offset = "0ns"
 
-        every = parse_duration_input(every)
-        offset = parse_duration_input(offset)
+        every = parse_as_duration_string(every)
+        offset = parse_as_duration_string(offset)
 
         return self._from_pydf(
             self._df.upsample(by, time_column, every, offset, maintain_order)

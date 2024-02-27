@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from polars import functions as F
-from polars.utils.convert import parse_duration_input
+from polars.utils.convert import parse_as_duration_string
 from polars.utils.deprecation import (
     deprecate_renamed_function,
     issue_deprecation_warning,
@@ -792,8 +792,8 @@ class RollingGroupBy:
         by: IntoExpr | Iterable[IntoExpr] | None,
         check_sorted: bool,
     ):
-        period = parse_duration_input(period)
-        offset = parse_duration_input(offset)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         self.df = df
         self.time_column = index_column
@@ -969,9 +969,9 @@ class DynamicGroupBy:
         start_by: StartBy,
         check_sorted: bool,
     ):
-        every = parse_duration_input(every)
-        period = parse_duration_input(period)
-        offset = parse_duration_input(offset)
+        every = parse_as_duration_string(every)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         self.df = df
         self.time_column = index_column
