@@ -216,6 +216,24 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
     return dt.astimezone(_tzinfo)
 
 
+# cache here as we have a single tz per column
+# and this function will be called on every conversion
+@lru_cache(16)
+def _parse_fixed_tz_offset(offset: str) -> tzinfo:
+    try:
+        # use fromisoformat to parse the offset
+        dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
+
+        # alternatively, we parse the offset ourselves extracting hours and
+        # minutes, then we can construct:
+        # tzinfo=timezone(timedelta(hours=..., minutes=...))
+    except ValueError:
+        msg = f"offset: {offset!r} not understood"
+        raise ValueError(msg) from None
+
+    return dt_offset.tzinfo  # type: ignore[return-value]
+
+
 def _datetime_for_any_value(dt: datetime) -> tuple[int, int]:
     """Used in PyO3 AnyValue conversion."""
     # returns (s, ms)
@@ -233,24 +251,6 @@ def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
         dt = _localize(dt, "UTC")
     # returns (s, ms)
     return (_timestamp_in_seconds(dt), dt.microsecond)
-
-
-# cache here as we have a single tz per column
-# and this function will be called on every conversion
-@lru_cache(16)
-def _parse_fixed_tz_offset(offset: str) -> tzinfo:
-    try:
-        # use fromisoformat to parse the offset
-        dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
-
-        # alternatively, we parse the offset ourselves extracting hours and
-        # minutes, then we can construct:
-        # tzinfo=timezone(timedelta(hours=..., minutes=...))
-    except ValueError:
-        msg = f"offset: {offset!r} not understood"
-        raise ValueError(msg) from None
-
-    return dt_offset.tzinfo  # type: ignore[return-value]
 
 
 def _to_python_decimal(
