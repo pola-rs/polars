@@ -5,12 +5,14 @@ on:
     paths:
       - '**.rs'
       - '**.py'
+      - .github/workflows/codecov.yml
   push:
     branches:
       - main
     paths:
       - '**.rs'
       - '**.py'
+      - .github/workflows/codecov.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
