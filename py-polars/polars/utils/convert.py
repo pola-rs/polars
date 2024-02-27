@@ -72,7 +72,7 @@ def _timedelta_to_pl_duration(td: timedelta | str) -> str:
 
 
 def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
-    """Convert python timedelta to a polars duration string."""
+    """Convert a Python timedelta object to a Polars duration string."""
     if td is None or isinstance(td, str):
         return td
 
@@ -96,12 +96,14 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
 
 
 def _negate_duration(duration: str) -> str:
+    """Negate a Polars duration string."""
     if duration.startswith("-"):
         return duration[1:]
     return f"-{duration}"
 
 
 def _time_to_pl_time(t: time) -> int:
+    """Convert a Python time object to an integer."""
     t = t.replace(tzinfo=timezone.utc)
     seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second
     microseconds = t.microsecond
@@ -109,11 +111,12 @@ def _time_to_pl_time(t: time) -> int:
 
 
 def _date_to_pl_date(d: date) -> int:
+    """Convert a Python time object to an integer."""
     return (d - EPOCH_DATE).days
 
 
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
-    """Convert a python datetime to a timestamp in given time unit."""
+    """Convert a Python datetime object to an integer."""
     if dt.tzinfo is None:
         # Make sure to use UTC rather than system time zone
         dt = dt.replace(tzinfo=timezone.utc)
@@ -130,7 +133,7 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
-    """Convert a Python timedelta object to a total number of subseconds."""
+    """Convert a Python timedelta object to an integer."""
     microseconds = td.microseconds
     seconds = td.days * SECONDS_PER_DAY + td.seconds
     if time_unit == "ns":
@@ -142,7 +145,7 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int
 
 
 def _to_python_time(value: int) -> time:
-    """Convert polars int64 (ns) timestamp to python time object."""
+    """Convert an integer to a Python time object."""
     if value == 0:
         return time(microsecond=0)
     else:
@@ -157,6 +160,7 @@ def _to_python_time(value: int) -> time:
 def _to_python_timedelta(
     value: int | float, time_unit: TimeUnit | None = "ns"
 ) -> timedelta:
+    """Convert an integer or float to a Python timedelta object."""
     if time_unit == "ns":
         return timedelta(microseconds=value // 1_000)
     elif time_unit == "us":
@@ -170,7 +174,7 @@ def _to_python_timedelta(
 
 @lru_cache(256)
 def _to_python_date(value: int | float) -> date:
-    """Convert polars int64 timestamp to Python date."""
+    """Convert an integer or float to a Python date object."""
     return (EPOCH_UTC + timedelta(seconds=value * SECONDS_PER_DAY)).date()
 
 
@@ -179,7 +183,7 @@ def _to_python_datetime(
     time_unit: TimeUnit | None = "ns",
     time_zone: str | None = None,
 ) -> datetime:
-    """Convert polars int64 timestamp to Python datetime."""
+    """Convert an integer or float to a Python datetime object."""
     if not time_zone:
         if time_unit == "us":
             return EPOCH + timedelta(microseconds=value)
