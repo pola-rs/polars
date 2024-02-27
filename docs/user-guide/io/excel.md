@@ -5,14 +5,20 @@ From a performance perspective, we recommend using other formats if possible, su
 
 ## Read
 
-Polars does not have a native Excel reader.
-Instead, it uses external libraries to parse Excel files into objects that Polars can parse.
-To read Excel files, we must install either the (default) xlsx2csv library or one of the alternatives as an additional dependency.
+Polars does not have a native Excel reader. Instead, it uses external libraries to parse Excel files into objects that Polars can parse. The available engines are:
+- xlsx2csv: this is the current default
+- openpyxl: typically slower than xls2csv, but can provide more flexibility for files that are difficult to parse
+- pyxlsb: for reading binary Excel files (xlsb)
+- calamine: this is typically the fastest but has fewer features than xls2csv
+
+Although calamine is not the default at this point, we recommend trying calamine first but using xlsx2csv or openpyxl if you encounter issues.
+
+To use one of these engines, we must install the appropriate python package as an additional dependency where `fastexcel` is the python package for the calamine engine.
 
 === ":fontawesome-brands-python: Python"
 
     ```shell
-    $ pip install xlsx2csv openpyxl pyxlsb
+    $ pip install xlsx2csv openpyxl pyxlsb fastexcel
     ```
 
 The default Excel reader is xlsx2csv.
