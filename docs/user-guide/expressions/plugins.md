@@ -266,11 +266,12 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 }
 ```
 
-That's all you need to know to get started. Take a look at this [repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how this all fits together.
+That's all you need to know to get started. Take a look at [this repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how this all fits together, and at [this tutorial](https://marcogorelli.github.io/polars-plugins-tutorial/)
+to gain a more thorough understanding.
 
 ## Community plugins
 
-Here is a curated (non-exhaustive) list of community implemented plugins.
+Here is a curated (non-exhaustive) list of community-implemented plugins.
 
 - [polars-xdt](https://github.com/pola-rs/polars-xdt) Polars plugin with extra datetime-related functionality
   which isn't quite in-scope for the main library
@@ -280,8 +281,9 @@ Here is a curated (non-exhaustive) list of community implemented plugins.
 - [polars-reverse-geocode](https://github.com/MarcoGorelli/polars-reverse-geocode) Offline reverse geocoder for finding the closest city
   to a given (latitude, longitude) pair
 
-## Other community material
+## Other material
 
+- [Ritchie Vink - Keynote on Polars Plugins](https://youtu.be/jKW-CBV7NUM)
 - [Polars plugins tutorial](https://marcogorelli.github.io/polars-plugins-tutorial/) Learn how to write a plugin by
   going through some very simple and minimal examples
 - [cookiecutter-polars-plugin](https://github.com/MarcoGorelli/cookiecutter-polars-plugins) Project template for Polars Plugins
