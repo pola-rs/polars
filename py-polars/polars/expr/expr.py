@@ -6,6 +6,8 @@ import operator
 import warnings
 from datetime import timedelta
 from functools import reduce
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -60,6 +62,7 @@ from polars.utils.various import (
     BUILDING_SPHINX_DOCS,
     find_stacklevel,
     no_default,
+    normalize_filepath,
     sphinx_accessor,
     warn_null_comparison,
 )
@@ -72,6 +75,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
     from polars.type_aliases import (
@@ -330,17 +334,36 @@ class Expr:
         return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
-    def from_json(cls, value: str) -> Self:
+    def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
-        Read an expression from a JSON encoded string to construct an Expression.
+        Read an expression from a JSON file.
 
         Parameters
         ----------
-        value
-            JSON encoded string value
+        source
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
+
+        See Also
+        --------
+        Expr.meta.serialize
+
+        Examples
+        --------
+        >>> from io import StringIO
+        >>> expr = pl.col("foo").sum().over("bar")
+        >>> json = expr.meta.serialize()
+        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
+        <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+
         expr = cls.__new__(cls)
-        expr._pyexpr = PyExpr.meta_read_json(value)
+        expr._pyexpr = PyExpr.deserialize(source)
         return expr
 
     def to_physical(self) -> Self:
@@ -9849,6 +9872,29 @@ class Expr:
             Set return dtype to override automatic return dtype determination.
         """
         return self.replace(mapping, default=default, return_dtype=return_dtype)
+
+    @classmethod
+    def from_json(cls, value: str) -> Self:
+        """
+        Read an expression from a JSON encoded string to construct an Expression.
+
+        .. deprecated:: 0.20.11
+            This method has been renamed to :meth:`deserialize`.
+            Note that the new method operates on file-like inputs rather than strings.
+            Enclose your input in `io.StringIO` to keep the same behavior.
+
+        Parameters
+        ----------
+        value
+            JSON encoded string value
+        """
+        issue_deprecation_warning(
+            "`Expr.from_json` is deprecated. It has been renamed to `Expr.deserialize`."
+            " Note that the new method operates on file-like inputs rather than strings."
+            " Enclose your input in `io.StringIO` to keep the same behavior.",
+            version="0.20.11",
+        )
+        return cls.deserialize(StringIO(value))
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

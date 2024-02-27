@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Literal, overload
 
 from polars.exceptions import ComputeError
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
+from polars.utils.deprecation import (
+    deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
+)
 from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
@@ -218,21 +221,48 @@ class ExprMetaNameSpace:
         return wrap_expr(self._pyexpr._meta_selector_and(other._pyexpr))
 
     @overload
-    def write_json(self, file: None = ...) -> str:
+    def serialize(self, file: None = ...) -> str:
         ...
 
     @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
+    def serialize(self, file: IOBase | str | Path) -> None:
         ...
 
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """Write expression to json."""
+    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
+        """
+        Serialize this expression to a file or string in JSON format.
+
+        Parameters
+        ----------
+        file
+            File path to which the result should be written. If set to `None`
+            (default), the output is returned as a string instead.
+
+        See Also
+        --------
+        Expr.deserialize
+
+        Examples
+        --------
+        Serialize the expression into a JSON string.
+
+        >>> expr = pl.col("foo").sum().over("bar")
+        >>> json = expr.meta.serialize()
+        >>> json
+        '{"Window":{"function":{"Agg":{"Sum":{"Column":"foo"}}},"partition_by":[{"Column":"bar"}],"options":{"Over":"GroupsToRows"}}}'
+
+        The expression can later be deserialized back into an `Expr` object.
+
+        >>> from io import StringIO
+        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
+        <Expr ['col("foo").sum().over([col("ba…'] at ...>
+        """
         if isinstance(file, (str, Path)):
             file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
-                self._pyexpr.meta_write_json(buf)
+                self._pyexpr.serialize(buf)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -241,8 +271,26 @@ class ExprMetaNameSpace:
             else:
                 return json_str
         else:
-            self._pyexpr.meta_write_json(file)
+            self._pyexpr.serialize(file)
         return None
+
+    @overload
+    def write_json(self, file: None = ...) -> str:
+        ...
+
+    @overload
+    def write_json(self, file: IOBase | str | Path) -> None:
+        ...
+
+    @deprecate_renamed_function("Expr.meta.serialize", version="0.20.11")
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+        """
+        Write expression to json.
+
+        .. deprecated:: 0.20.11
+            This method has been renamed to :meth:`serialize`.
+        """
+        return self.serialize(file)
 
     @overload
     def tree_format(self, *, return_as_string: Literal[False]) -> None:

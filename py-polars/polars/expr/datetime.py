@@ -244,7 +244,7 @@ class ExprDateTimeNameSpace:
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
 
-            .. deprecated: 0.19.3
+            .. deprecated:: 0.19.3
                 This is now auto-inferred, you can safely remove this argument.
 
         Returns
