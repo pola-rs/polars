@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     ],
 )
 def test_datetime_to_pl_timestamp(
-    dt: datetime, time_unit: TimeUnit | None, expected: int
+    dt: datetime, time_unit: TimeUnit, expected: int
 ) -> None:
     out = _datetime_to_pl_timestamp(dt, time_unit)
     assert out == expected
@@ -88,7 +88,7 @@ def test_date_to_pl_date(d: date, expected: int) -> None:
     ],
 )
 def test_timedelta_to_pl_timedelta(
-    td: timedelta, time_unit: TimeUnit | None, expected: int
+    td: timedelta, time_unit: TimeUnit, expected: int
 ) -> None:
     assert _timedelta_to_pl_timedelta(td, time_unit) == expected
 

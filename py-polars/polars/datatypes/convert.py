@@ -66,7 +66,7 @@ else:
 if TYPE_CHECKING:
     from typing import Literal
 
-    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
+    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
 
 PY_STR_TO_DTYPE: SchemaDict = {
@@ -490,6 +490,7 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
         _timedelta_to_pl_timedelta,
     )
 
+    time_unit: TimeUnit
     if isinstance(el, datetime):
         time_unit = getattr(dtype, "time_unit", "us")
         return _datetime_to_pl_timestamp(el, time_unit)
