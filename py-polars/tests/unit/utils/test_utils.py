@@ -57,10 +57,15 @@ def test_time_to_pl_time(t: time, expected: int) -> None:
     assert _time_to_pl_time(t) == expected
 
 
-def test_date_to_pl_date() -> None:
-    d = date(1999, 9, 9)
-    out = _date_to_pl_date(d)
-    assert out == 10843
+@pytest.mark.parametrize(
+    ("d", "expected"),
+    [
+        (date(1999, 9, 9), 10843),
+        (date(1969, 12, 31), -1),
+    ],
+)
+def test_date_to_pl_date(d: date, expected: int) -> None:
+    assert _date_to_pl_date(d) == expected
 
 
 def test_timedelta_to_pl_timedelta() -> None:
