@@ -48,7 +48,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
     parse_predicates_constraints_as_expression,
 )
-from polars.utils.convert import _negate_duration, parse_duration_input
+from polars.utils.convert import negate_duration_string, parse_duration_input
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
@@ -3420,7 +3420,7 @@ class Expr:
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
         if offset is None:
-            offset = _negate_duration(parse_duration_input(period))
+            offset = negate_duration_string(parse_duration_input(period))
 
         period = parse_duration_input(period)
         offset = parse_duration_input(offset)

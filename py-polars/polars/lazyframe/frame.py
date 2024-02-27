@@ -68,7 +68,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import _negate_duration, parse_duration_input
+from polars.utils.convert import negate_duration_string, parse_duration_input
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_parameter_as_positional,
@@ -3357,7 +3357,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = deprecate_saturating(offset)
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = _negate_duration(parse_duration_input(period))
+            offset = negate_duration_string(parse_duration_input(period))
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         period = parse_duration_input(period)
@@ -3703,7 +3703,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = _negate_duration(parse_duration_input(every))
+            offset = negate_duration_string(parse_duration_input(every))
 
         if period is None:
             period = every

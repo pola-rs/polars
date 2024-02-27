@@ -94,11 +94,12 @@ def _timedelta_to_duration_string(td: timedelta) -> str:
     return f"{d}{s}{us}"
 
 
-def _negate_duration(duration: str) -> str:
+def negate_duration_string(duration: str) -> str:
     """Negate a Polars duration string."""
     if duration.startswith("-"):
         return duration[1:]
-    return f"-{duration}"
+    else:
+        return f"-{duration}"
 
 
 def _time_to_pl_time(t: time) -> int:
