@@ -115,30 +115,32 @@ def _date_to_pl_date(d: date) -> int:
     return (d - EPOCH_DATE).days
 
 
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
+def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit) -> int:
     """Convert a Python datetime object to an integer."""
+    # Make sure to use UTC rather than system time zone
     if dt.tzinfo is None:
-        # Make sure to use UTC rather than system time zone
         dt = dt.replace(tzinfo=timezone.utc)
-    microseconds = dt.microsecond
+
     seconds = _timestamp_in_seconds(dt)
+    microseconds = dt.microsecond
     if time_unit == "ns":
         return seconds * NS_PER_SECOND + microseconds * 1_000
-    elif time_unit == "us" or time_unit is None:
+    elif time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
-    msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
-    raise ValueError(msg)
+    else:
+        msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+        raise ValueError(msg)
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit) -> int:
     """Convert a Python timedelta object to an integer."""
-    microseconds = td.microseconds
     seconds = td.days * SECONDS_PER_DAY + td.seconds
+    microseconds = td.microseconds
     if time_unit == "ns":
         return seconds * NS_PER_SECOND + microseconds * 1_000
-    elif time_unit == "us" or time_unit is None:
+    elif time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
@@ -157,7 +159,7 @@ def _to_python_time(value: int) -> time:
         )
 
 
-def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "us") -> timedelta:
+def _to_python_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
     """Convert an integer or float to a Python timedelta object."""
     if time_unit == "us":
         return timedelta(microseconds=value)
@@ -178,7 +180,7 @@ def _to_python_date(value: int | float) -> date:
 
 def _to_python_datetime(
     value: int | float,
-    time_unit: TimeUnit | None = "ns",
+    time_unit: TimeUnit,
     time_zone: str | None = None,
 ) -> datetime:
     """Convert an integer or float to a Python datetime object."""

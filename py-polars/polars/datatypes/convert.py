@@ -491,10 +491,10 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
     )
 
     if isinstance(el, datetime):
-        time_unit = getattr(dtype, "time_unit", None)
+        time_unit = getattr(dtype, "time_unit", "us")
         return _datetime_to_pl_timestamp(el, time_unit)
     elif isinstance(el, timedelta):
-        time_unit = getattr(dtype, "time_unit", None)
+        time_unit = getattr(dtype, "time_unit", "us")
         return _timedelta_to_pl_timedelta(el, time_unit)
 
     py_type = dtype_to_py_type(dtype)
