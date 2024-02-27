@@ -108,6 +108,12 @@ jobs:
         with:
           swap-size-gb: 10
 
+      # Workaround for issue compiling libz-ng-sys crate on macOS (resource temporarily unavailable)
+      # See: https://github.com/pola-rs/polars/pull/14715
+      - name: Set cmake build threads for MacOS
+        if: matrix.os == 'macos-latest'
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=10" >> $GITHUB_ENV
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

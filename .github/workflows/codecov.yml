@@ -5,12 +5,14 @@ on:
     paths:
       - '**.rs'
       - '**.py'
+      - .github/workflows/codecov.yml
   push:
     branches:
       - main
     paths:
       - '**.rs'
       - '**.py'
+      - .github/workflows/codecov.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,6 +34,9 @@ jobs:
       CARGO_LLVM_COV: 1
       CARGO_LLVM_COV_SHOW_ENV: 1
       CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
+      # Workaround for issue compiling libz-ng-sys crate on macOS (resource temporarily unavailable)
+      # See: https://github.com/pola-rs/polars/pull/14715
+      CMAKE_BUILD_PARALLEL_LEVEL: 10
 
     steps:
       - uses: actions/checkout@v4
