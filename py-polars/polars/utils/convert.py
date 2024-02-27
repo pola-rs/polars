@@ -75,21 +75,21 @@ def parse_duration_input(td: timedelta | str | None) -> str | None:
 
 def _timedelta_to_duration_string(td: timedelta) -> str:
     """Convert a Python timedelta object to a Polars duration string."""
+    # Positive duration
     if td.days >= 0:
         d = f"{td.days}d" if td.days != 0 else ""
         s = f"{td.seconds}s" if td.seconds != 0 else ""
         us = f"{td.microseconds}us" if td.microseconds != 0 else ""
+    # Negative, whole days
+    elif td.seconds == 0 and td.microseconds == 0:
+        return f"{td.days}d"
+    # Negative, other
     else:
-        if not td.seconds and not td.microseconds:
-            d = f"{td.days}d" if td.days != 0 else ""
-            s = ""
-            us = ""
-        else:
-            corrected_d = td.days + 1
-            d = f"{corrected_d}d" if corrected_d != 0 else "-"
-            corrected_seconds = SECONDS_PER_DAY - (td.seconds + (td.microseconds > 0))
-            s = f"{corrected_seconds}s" if corrected_seconds != 0 else ""
-            us = f"{10**6 - td.microseconds}us" if td.microseconds != 0 else ""
+        corrected_d = td.days + 1
+        corrected_seconds = SECONDS_PER_DAY - (td.seconds + (td.microseconds > 0))
+        d = f"{corrected_d}d" if corrected_d != 0 else "-"
+        s = f"{corrected_seconds}s" if corrected_seconds != 0 else ""
+        us = f"{10**6 - td.microseconds}us" if td.microseconds != 0 else ""
 
     return f"{d}{s}{us}"
 

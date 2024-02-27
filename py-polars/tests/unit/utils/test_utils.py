@@ -96,6 +96,7 @@ def test_timedelta_to_pl_timedelta(
 @pytest.mark.parametrize(
     ("td", "expected"),
     [
+        (timedelta(), ""),
         (timedelta(days=1), "1d"),
         (timedelta(days=-1), "-1d"),
         (timedelta(seconds=1), "1s"),
@@ -103,6 +104,7 @@ def test_timedelta_to_pl_timedelta(
         (timedelta(microseconds=1), "1us"),
         (timedelta(microseconds=-1), "-1us"),
         (timedelta(days=1, seconds=1), "1d1s"),
+        (timedelta(minutes=-1, seconds=1), "-59s"),
         (timedelta(days=-1, seconds=-1), "-1d1s"),
         (timedelta(days=1, microseconds=1), "1d1us"),
         (timedelta(days=-1, microseconds=-1), "-1d1us"),
