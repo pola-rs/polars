@@ -531,15 +531,21 @@ def sequence_to_pyseries(
             # We use the AnyValue builder to create the datetime array
             # We store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_any_values(name, values, strict)
+
             time_unit = getattr(dtype, "time_unit", None)
+            time_zone = getattr(dtype, "time_zone", None)
+
             if time_unit is None or values_dtype == Date:
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
-            time_zone = getattr(dtype, "time_zone", None)
 
             if (values_dtype == Date) & (dtype == Datetime):
-                return s.cast(Datetime(time_unit)).dt.replace_time_zone(time_zone)._s
+                return (
+                    s.cast(Datetime(time_unit or "us"))
+                    .dt.replace_time_zone(time_zone)
+                    ._s
+                )
 
             if (dtype == Datetime) and (
                 value.tzinfo is not None or time_zone is not None

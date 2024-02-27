@@ -449,7 +449,7 @@ def test_lit_dtypes() -> None:
             "dtm_aware_0": lit_series(d, pl.Datetime("us", "Asia/Kathmandu")),
             "dtm_aware_1": lit_series(d_tz, pl.Datetime("us")),
             "dtm_aware_2": lit_series(d_tz, None),
-            "dtm_aware_3": lit_series(d, pl.Datetime(None, "Asia/Kathmandu")),
+            "dtm_aware_3": lit_series(d, pl.Datetime(time_zone="Asia/Kathmandu")),
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),
