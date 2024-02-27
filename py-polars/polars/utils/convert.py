@@ -157,14 +157,12 @@ def _to_python_time(value: int) -> time:
         )
 
 
-def _to_python_timedelta(
-    value: int | float, time_unit: TimeUnit | None = "ns"
-) -> timedelta:
+def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "us") -> timedelta:
     """Convert an integer or float to a Python timedelta object."""
-    if time_unit == "ns":
-        return timedelta(microseconds=value // 1_000)
-    elif time_unit == "us":
+    if time_unit == "us":
         return timedelta(microseconds=value)
+    elif time_unit == "ns":
+        return timedelta(microseconds=value // 1_000)
     elif time_unit == "ms":
         return timedelta(milliseconds=value)
     else:
