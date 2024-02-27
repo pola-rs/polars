@@ -102,7 +102,7 @@ pub struct FastU32BitmapIter<'a> {
 
 impl<'a> FastU32BitmapIter<'a> {
     pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
-        assert!(bytes.len() >= offset + 8 * len);
+        assert!(bytes.len() * 8 >= offset + len);
         let shift = (offset % 8) as u32;
         let bytes = &bytes[offset / 8..];
         Self { bytes, shift, bits_left: len }
@@ -177,7 +177,7 @@ pub struct FastU56BitmapIter<'a> {
 
 impl<'a> FastU56BitmapIter<'a> {
     pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
-        assert!(bytes.len() >= offset + 8 * len);
+        assert!(bytes.len() * 8 >= offset + len);
         let shift = (offset % 8) as u32;
         let bytes = &bytes[offset / 8..];
         Self { bytes, shift, bits_left: len }
@@ -257,7 +257,7 @@ pub struct FastU64BitmapIter<'a> {
 
 impl<'a> FastU64BitmapIter<'a> {
     pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
-        assert!(bytes.len() >= offset + 8 * len);
+        assert!(bytes.len() * 8 >= offset + len);
         let shift = (offset % 8) as u32;
         let bytes = &bytes[offset / 8..];
         let next_word = load_padded_le_u64(bytes);

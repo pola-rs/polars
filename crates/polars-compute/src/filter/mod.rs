@@ -58,8 +58,8 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
                 filter_bitmap_and_validity(array.values(), array.validity(), mask.values());
             Ok(BooleanArray::new(
                 array.data_type().clone(),
-                values.freeze(),
-                validity.map(|v| v.freeze()),
+                values,
+                validity,
             )
             .boxed())
         },
