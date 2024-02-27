@@ -113,11 +113,11 @@ impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
         let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
-        let time_unit = Wrap(self.0.time_unit()).to_object(py);
+        let time_unit = self.0.time_unit().to_ascii();
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, &time_unit)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -126,12 +126,12 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
         let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
-        let time_unit = Wrap(self.0.time_unit()).to_object(py);
+        let time_unit = self.0.time_unit().to_ascii();
         let time_zone = self.0.time_zone().to_object(py);
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, &time_unit, &time_zone)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
