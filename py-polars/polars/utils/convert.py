@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
@@ -10,7 +10,7 @@ from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
-    from datetime import date, tzinfo
+    from datetime import tzinfo
     from decimal import Decimal
 
     from polars.type_aliases import TimeUnit
@@ -51,6 +51,7 @@ NS_PER_SECOND = 1_000_000_000
 US_PER_SECOND = 1_000_000
 MS_PER_SECOND = 1_000
 
+EPOCH_DATE = date(1970, 1, 1)
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -108,14 +109,13 @@ def _time_to_pl_time(t: time) -> int:
 
 
 def _date_to_pl_date(d: date) -> int:
-    dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
-    return int(dt.timestamp()) // SECONDS_PER_DAY
+    return (d - EPOCH_DATE).days
 
 
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in given time unit."""
     if dt.tzinfo is None:
-        # Make sure to use UTC rather than system time zone.
+        # Make sure to use UTC rather than system time zone
         dt = dt.replace(tzinfo=timezone.utc)
     microseconds = dt.microsecond
     seconds = _timestamp_in_seconds(dt)

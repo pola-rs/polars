@@ -32,13 +32,18 @@ if TYPE_CHECKING:
 @pytest.mark.parametrize(
     ("dt", "time_unit", "expected"),
     [
-        (datetime(2121, 1, 1), "ns", 4765132800000000000),
-        (datetime(2121, 1, 1), "us", 4765132800000000),
-        (datetime(2121, 1, 1), "ms", 4765132800000),
+        (datetime(2121, 1, 1), "ns", 4_765_132_800_000_000_000),
+        (datetime(2121, 1, 1), "us", 4_765_132_800_000_000),
+        (datetime(2121, 1, 1), "ms", 4_765_132_800_000),
+        (datetime(2121, 1, 1), None, 4_765_132_800_000_000),
+        (datetime.min, "ns", -62_135_596_800_000_000_000),
+        (datetime.max, "ns", 253_402_300_799_999_999_000),
+        (datetime.min, "ms", -62_135_596_800_000),
+        (datetime.max, "ms", 253_402_300_799_999),
     ],
 )
 def test_datetime_to_pl_timestamp(
-    dt: datetime, time_unit: TimeUnit, expected: int
+    dt: datetime, time_unit: TimeUnit | None, expected: int
 ) -> None:
     out = _datetime_to_pl_timestamp(dt, time_unit)
     assert out == expected
@@ -47,31 +52,47 @@ def test_datetime_to_pl_timestamp(
 @pytest.mark.parametrize(
     ("t", "expected"),
     [
-        (time(0, 0, 0), 0),
         (time(0, 0, 1), 1_000_000_000),
         (time(20, 52, 10), 75_130_000_000_000),
         (time(20, 52, 10, 200), 75_130_000_200_000),
+        (time.min, 0),
+        (time.max, 86_399_999_999_000),
     ],
 )
 def test_time_to_pl_time(t: time, expected: int) -> None:
     assert _time_to_pl_time(t) == expected
 
 
-def test_date_to_pl_date() -> None:
-    d = date(1999, 9, 9)
-    out = _date_to_pl_date(d)
-    assert out == 10843
+@pytest.mark.parametrize(
+    ("d", "expected"),
+    [
+        (date(1999, 9, 9), 10_843),
+        (date(1969, 12, 31), -1),
+        (date.min, -719_162),
+        (date.max, 2_932_896),
+    ],
+)
+def test_date_to_pl_date(d: date, expected: int) -> None:
+    assert _date_to_pl_date(d) == expected
 
 
-def test_timedelta_to_pl_timedelta() -> None:
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), "ns")
-    assert out == 86_400_000_000_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), "us")
-    assert out == 86_400_000_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), "ms")
-    assert out == 86_400_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), time_unit=None)
-    assert out == 86_400_000_000
+@pytest.mark.parametrize(
+    ("td", "time_unit", "expected"),
+    [
+        (timedelta(days=1), "ns", 86_400_000_000_000),
+        (timedelta(days=1), "us", 86_400_000_000),
+        (timedelta(days=1), "ms", 86_400_000),
+        (timedelta(days=1), None, 86_400_000_000),
+        (timedelta.min, "ns", -86_399_999_913_600_000_000_000),
+        (timedelta.max, "ns", 86_399_999_999_999_999_999_000),
+        (timedelta.min, "ms", -86_399_999_913_600_000),
+        (timedelta.max, "ms", 86_399_999_999_999_999),
+    ],
+)
+def test_timedelta_to_pl_timedelta(
+    td: timedelta, time_unit: TimeUnit | None, expected: int
+) -> None:
+    assert _timedelta_to_pl_timedelta(td, time_unit) == expected
 
 
 @pytest.mark.parametrize(
