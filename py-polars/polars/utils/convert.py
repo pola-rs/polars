@@ -56,11 +56,6 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
-def _timestamp_in_seconds(dt: datetime) -> int:
-    du = dt - EPOCH_UTC
-    return du.days * SECONDS_PER_DAY + du.seconds
-
-
 @overload
 def _timedelta_to_pl_duration(td: None) -> None:
     ...
@@ -123,10 +118,11 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit) -> int:
 
     seconds = _timestamp_in_seconds(dt)
     microseconds = dt.microsecond
-    if time_unit == "ns":
-        return seconds * NS_PER_SECOND + microseconds * 1_000
-    elif time_unit == "us":
+
+    if time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
+    elif time_unit == "ns":
+        return seconds * NS_PER_SECOND + microseconds * 1_000
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
     else:
@@ -134,29 +130,39 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit) -> int:
         raise ValueError(msg)
 
 
+def _timestamp_in_seconds(dt: datetime) -> int:
+    td = dt - EPOCH_UTC
+    return td.days * SECONDS_PER_DAY + td.seconds
+
+
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit) -> int:
     """Convert a Python timedelta object to an integer."""
     seconds = td.days * SECONDS_PER_DAY + td.seconds
     microseconds = td.microseconds
-    if time_unit == "ns":
-        return seconds * NS_PER_SECOND + microseconds * 1_000
-    elif time_unit == "us":
+
+    if time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
+    elif time_unit == "ns":
+        return seconds * NS_PER_SECOND + microseconds * 1_000
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
+    else:
+        msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+        raise ValueError(msg)
 
 
 def _to_python_time(value: int) -> time:
     """Convert an integer to a Python time object."""
+    # Fast path for 00:00
     if value == 0:
-        return time(microsecond=0)
-    else:
-        seconds, nanoseconds = divmod(value, NS_PER_SECOND)
-        minutes, seconds = divmod(seconds, 60)
-        hours, minutes = divmod(minutes, 60)
-        return time(
-            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1_000
-        )
+        return time()
+
+    seconds, nanoseconds = divmod(value, NS_PER_SECOND)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return time(
+        hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1_000
+    )
 
 
 def _to_python_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
