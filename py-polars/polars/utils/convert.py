@@ -184,26 +184,20 @@ def _to_python_datetime(
     time_zone: str | None = None,
 ) -> datetime:
     """Convert an integer or float to a Python datetime object."""
-    if not time_zone:
-        if time_unit == "us":
-            return EPOCH + timedelta(microseconds=value)
-        elif time_unit == "ns":
-            return EPOCH + timedelta(microseconds=value // 1_000)
-        elif time_unit == "ms":
-            return EPOCH + timedelta(milliseconds=value)
-        else:
-            msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-            raise ValueError(msg)
+    if time_unit == "us":
+        td = timedelta(microseconds=value)
+    elif time_unit == "ns":
+        td = timedelta(microseconds=value // 1_000)
+    elif time_unit == "ms":
+        td = timedelta(milliseconds=value)
+    else:
+        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+        raise ValueError(msg)
+
+    if time_zone is None:
+        return EPOCH + td
     elif _ZONEINFO_AVAILABLE:
-        if time_unit == "us":
-            dt = EPOCH_UTC + timedelta(microseconds=value)
-        elif time_unit == "ns":
-            dt = EPOCH_UTC + timedelta(microseconds=value // 1_000)
-        elif time_unit == "ms":
-            dt = EPOCH_UTC + timedelta(milliseconds=value)
-        else:
-            msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-            raise ValueError(msg)
+        dt = EPOCH_UTC + td
         return _localize(dt, time_zone)
     else:
         msg = "install polars[timezone] to handle datetimes with time zone information"
