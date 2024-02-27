@@ -89,7 +89,7 @@ from polars.utils._construction import (
 )
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
-from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.convert import parse_duration_input
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
@@ -6061,8 +6061,8 @@ class DataFrame:
         if offset is None:
             offset = "0ns"
 
-        every = _timedelta_to_pl_duration(every)
-        offset = _timedelta_to_pl_duration(offset)
+        every = parse_duration_input(every)
+        offset = parse_duration_input(offset)
 
         return self._from_pydf(
             self._df.upsample(by, time_column, every, offset, maintain_order)

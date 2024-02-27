@@ -57,20 +57,24 @@ EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 @overload
-def _timedelta_to_pl_duration(td: None) -> None:
+def parse_duration_input(td: None) -> None:
     ...
 
 
 @overload
-def _timedelta_to_pl_duration(td: timedelta | str) -> str:
+def parse_duration_input(td: timedelta | str) -> str:
     ...
 
 
-def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
-    """Convert a Python timedelta object to a Polars duration string."""
+def parse_duration_input(td: timedelta | str | None) -> str | None:
+    """Parse duration input as a Polars duration string."""
     if td is None or isinstance(td, str):
         return td
+    return _timedelta_to_duration_string(td)
 
+
+def _timedelta_to_duration_string(td: timedelta) -> str:
+    """Convert a Python timedelta object to a Polars duration string."""
     if td.days >= 0:
         d = td.days and f"{td.days}d" or ""
         s = td.seconds and f"{td.seconds}s" or ""

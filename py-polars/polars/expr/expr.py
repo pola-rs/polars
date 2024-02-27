@@ -48,7 +48,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
     parse_predicates_constraints_as_expression,
 )
-from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
+from polars.utils.convert import _negate_duration, parse_duration_input
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
@@ -3420,10 +3420,10 @@ class Expr:
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
         if offset is None:
-            offset = _negate_duration(_timedelta_to_pl_duration(period))
+            offset = _negate_duration(parse_duration_input(period))
 
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
+        period = parse_duration_input(period)
+        offset = parse_duration_input(offset)
 
         return self._from_pyexpr(
             self._pyexpr.rolling(index_column, period, offset, closed, check_sorted)
@@ -10086,7 +10086,7 @@ def _prepare_rolling_window_args(
             min_periods = window_size
         window_size = f"{window_size}i"
     elif isinstance(window_size, timedelta):
-        window_size = _timedelta_to_pl_duration(window_size)
+        window_size = parse_duration_input(window_size)
     if min_periods is None:
         min_periods = 1
     return window_size, min_periods

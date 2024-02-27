@@ -12,8 +12,8 @@ from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
-    _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
+    parse_duration_input,
 )
 from polars.utils.various import (
     _in_notebook,
@@ -106,11 +106,12 @@ def test_timedelta_to_pl_timedelta(
         (timedelta(days=-1, seconds=-1), "-1d1s"),
         (timedelta(days=1, microseconds=1), "1d1us"),
         (timedelta(days=-1, microseconds=-1), "-1d1us"),
+        (None, None),
+        ("1d2s", "1d2s"),
     ],
 )
-def test_timedelta_to_pl_duration(td: timedelta, expected: str) -> None:
-    out = _timedelta_to_pl_duration(td)
-    assert out == expected
+def test_parse_duration_input(td: timedelta | str | None, expected: str | None) -> None:
+    assert parse_duration_input(td) == expected
 
 
 def test_estimated_size() -> None:
