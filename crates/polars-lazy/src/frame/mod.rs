@@ -1400,7 +1400,11 @@ impl LazyFrame {
     /// - String columns will sum to None.
     pub fn sum(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || matches!(dt, DataType::Boolean | DataType::Duration(_)),
+            |dt| {
+                dt.is_numeric()
+                    || dt.is_decimal()
+                    || matches!(dt, DataType::Boolean | DataType::Duration(_))
+            },
             |name| col(name).sum(),
         )
     }
