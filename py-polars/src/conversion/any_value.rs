@@ -356,34 +356,16 @@ fn convert_date(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         Ok(Wrap(AnyValue::Date(v)))
     })
 }
+
 fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     Python::with_gil(|py| {
-        // windows
-        #[cfg(target_arch = "windows")]
-        let (seconds, microseconds) = {
-            let convert = UTILS
-                .getattr(py, intern!(py, "_datetime_for_any_value_windows"))
-                .unwrap();
-            let out = convert.call1(py, (ob,)).unwrap();
-            let out: (i64, i64) = out.extract(py).unwrap();
-            out
-        };
-        // unix
-        #[cfg(not(target_arch = "windows"))]
-        let (seconds, microseconds) = {
-            let convert = UTILS
-                .getattr(py, intern!(py, "_datetime_for_any_value"))
-                .unwrap();
-            let out = convert.call1(py, (ob,)).unwrap();
-            let out: (i64, i64) = out.extract(py).unwrap();
-            out
-        };
-
-        // s to us
-        let mut v = seconds * 1_000_000;
-        v += microseconds;
-
-        // choose "us" as that is python's default unit
+        let date = UTILS
+            .as_ref(py)
+            .getattr(intern!(py, "datetime_to_int"))
+            .unwrap()
+            .call1((ob, intern!(py, "us")))
+            .unwrap();
+        let v = date.extract::<i64>().unwrap();
         Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
     })
 }

@@ -98,7 +98,8 @@ def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
 
-    seconds = _timestamp_in_seconds(dt)
+    td = dt - EPOCH_UTC
+    seconds = td.days * SECONDS_PER_DAY + td.seconds
     microseconds = dt.microsecond
 
     if time_unit == "us":
@@ -109,11 +110,6 @@ def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
         return seconds * MS_PER_SECOND + microseconds // 1_000
     else:
         _raise_invalid_time_unit(time_unit)
-
-
-def _timestamp_in_seconds(dt: datetime) -> int:
-    td = dt - EPOCH_UTC
-    return td.days * SECONDS_PER_DAY + td.seconds
 
 
 def timedelta_to_int(td: timedelta, time_unit: TimeUnit) -> int:
@@ -241,25 +237,6 @@ def _create_decimal_with_prec(
 ) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
     # pre-cache contexts so we don't have to spend time on recreating them every time
     return Context(prec=precision).create_decimal
-
-
-def _datetime_for_any_value(dt: datetime) -> tuple[int, int]:
-    """Used in PyO3 AnyValue conversion."""
-    # returns (s, ms)
-    if dt.tzinfo is None:
-        return (
-            _timestamp_in_seconds(dt.replace(tzinfo=timezone.utc)),
-            dt.microsecond,
-        )
-    return (_timestamp_in_seconds(dt), dt.microsecond)
-
-
-def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
-    """Used in PyO3 AnyValue conversion."""
-    if dt.tzinfo is None:
-        dt = _localize_datetime(dt, "UTC")
-    # returns (s, ms)
-    return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
 def _raise_invalid_time_unit(time_unit: Any) -> NoReturn:
