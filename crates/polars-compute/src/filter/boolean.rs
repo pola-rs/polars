@@ -90,12 +90,12 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
             filter_boolean_kernel_sparse(values, mask, out_vec.as_mut_ptr());
         } else if polars_utils::cpuid::has_fast_bmi2() {
             #[cfg(target_arch = "x86_64")]
-            filter_boolean_kernel_pext(values, mask, out_vec.as_mut_ptr(), |v, m, _| {
+            filter_boolean_kernel_pext::<true, _>(values, mask, out_vec.as_mut_ptr(), |v, m, _| {
                 // SAFETY: has_fast_bmi2 ensures this is a legal instruction.
-                unsafe { core::arch::x86_64::_pext_u64(v, m) }
+                core::arch::x86_64::_pext_u64(v, m)
             });
         } else {
-            filter_boolean_kernel_pext(values, mask, out_vec.as_mut_ptr(), pext64_polyfill)
+            filter_boolean_kernel_pext::<false, _>(values, mask, out_vec.as_mut_ptr(), pext64_polyfill)
         }
 
         out_vec.set_len(num_bytes);
@@ -187,7 +187,7 @@ unsafe fn filter_boolean_kernel_sparse(values: &Bitmap, mask: &Bitmap, mut out_p
 
 /// # Safety
 /// See filter_boolean_kernel_sparse.
-unsafe fn filter_boolean_kernel_pext<F: Fn(u64, u64, u32) -> u64>(
+unsafe fn filter_boolean_kernel_pext<const HAS_NATIVE_PEXT: bool, F: Fn(u64, u64, u32) -> u64>(
     values: &Bitmap,
     mask: &Bitmap,
     mut out_ptr: *mut u8,
@@ -208,7 +208,8 @@ unsafe fn filter_boolean_kernel_pext<F: Fn(u64, u64, u32) -> u64>(
             }
 
             // Fast path, all-1 mask.
-            if m == U56_MAX {
+            // This is only worth it if we don't have a native pext.
+            if !HAS_NATIVE_PEXT && m == U56_MAX {
                 word |= v << bits_in_word;
                 unsafe {
                     out_ptr.cast::<u64>().write_unaligned(word.to_le());

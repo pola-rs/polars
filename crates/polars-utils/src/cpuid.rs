@@ -29,7 +29,7 @@ fn detect_fast_bmi2() -> bool {
 
 #[inline]
 pub fn has_fast_bmi2() -> bool {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(target_feature = "bmi2")]
     {
         static CACHE: OnceLock<bool> = OnceLock::new();
         return *CACHE.get_or_init(detect_fast_bmi2);
