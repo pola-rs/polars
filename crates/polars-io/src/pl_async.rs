@@ -65,20 +65,20 @@ impl GetSize for usize {
 }
 
 struct SemaphoreTuner {
-    last_download_speed: u64,
-    last_time_increased: bool,
+    download_speeds: Vec<u64>,
+    increments: Vec<u16>,
     permit_store: Vec<SemaphorePermit<'static>>,
     last_tune: std::time::Instant,
     downloaded: AtomicU64,
     download_time: AtomicU64,
-    incr_count: i32
+    incr_count: u16
 }
 
 impl SemaphoreTuner {
     fn new() -> Self {
         Self {
-            last_download_speed: 0,
-            last_time_increased: true,
+            download_speeds: vec![],
+            increments: vec![],
             permit_store: vec![],
             last_tune: std::time::Instant::now(),
             downloaded: AtomicU64::new(0),
@@ -86,7 +86,7 @@ impl SemaphoreTuner {
             incr_count: 0,
         }
     }
-    fn tuning_time(&self) -> bool {
+    fn should_tune(&self) -> bool {
         self.last_tune.elapsed().as_millis() > 500
     }
 
@@ -98,11 +98,12 @@ impl SemaphoreTuner {
     }
 
     fn increment(&mut self, semaphore: &Semaphore) {
+
+
         dbg!("increment");
         if self.incr_count >= 0 {
             self.last_time_increased = true;
             if self.permit_store.is_empty() {
-                dbg!("added");
                 semaphore.add_permits(5);
             } else {
                 // Drop will send them back to the semaphore.
@@ -113,7 +114,7 @@ impl SemaphoreTuner {
         self.incr_count += 1;
     }
 
-    fn decrement(&mut self, semaphore: &Semaphore) {
+    fn decrement(&mut self, semaphore: &'static Semaphore) {
         dbg!("deccrement");
         if self.incr_count > 0 {
             self.last_time_increased = false;
@@ -121,19 +122,13 @@ impl SemaphoreTuner {
             // Do not acquire here, that will deadlock
             // the `write` guard cannot be a future.
             if let Ok(permits) = semaphore.try_acquire_many(5) {
-                dbg!("stored");
-                // Extend lifetime. This is safe because we will keep the Semaphore alive for
-                // the lifetime of this program.
-                let permits = unsafe {
-                    std::mem::transmute::<SemaphorePermit, SemaphorePermit<'static>>(permits)
-                };
                 self.permit_store.push(permits);
             }
             self.incr_count -= 1;
         }
     }
 
-    fn tune(&mut self, semaphore: &Semaphore) {
+    fn tune(&mut self, semaphore: &'static Semaphore) {
         self.last_tune = std::time::Instant::now();
         let download_speed = self.downloaded.fetch_add(0, Ordering::Relaxed)
             / self.download_time.fetch_add(0, Ordering::Relaxed);
@@ -162,18 +157,23 @@ static INCR: AtomicU8 = AtomicU8::new(0);
 static PERMIT_STORE: std::sync::OnceLock<tokio::sync::RwLock<SemaphoreTuner>> =
     std::sync::OnceLock::new();
 
-pub async fn with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
+fn get_semaphore() -> &'static (Semaphore, u32) {
+     CONCURRENCY_BUDGET.get_or_init(|| {
+        let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
+            .map(|s| s.parse::<usize>().expect("integer"))
+            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
+        (Semaphore::new(permits), permits as u32)
+    })
+
+}
+
+pub async fn tune_with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
 where
     F: FnOnce() -> Fut,
     Fut: Future,
     Fut::Output: GetSize,
 {
-    let (semaphore, initial_budget) = CONCURRENCY_BUDGET.get_or_init(|| {
-        let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
-            .map(|s| s.parse::<usize>().expect("integer"))
-            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
-        (Semaphore::new(permits), permits as u32)
-    });
+    let (semaphore, initial_budget) = get_semaphore();
 
     // This would never finish otherwise.
     assert!(requested_budget <= *initial_budget);
@@ -198,7 +198,7 @@ where
     tuner.add_stats(res.size(), duration);
 
     // We only tune every n ms
-    if !tuner.tuning_time() {
+    if !tuner.should_tune() {
         return res;
     }
     // Drop the read tuner before trying to acquire a writer
@@ -215,6 +215,23 @@ where
     dbg!("done tuning");
     drop(tuner);
     res
+}
+
+pub async fn with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future,
+{
+    let (semaphore, initial_budget) = get_semaphore();
+
+    // This would never finish otherwise.
+    assert!(requested_budget <= *initial_budget);
+
+    // Keep permit around.
+    // On drop it is returned to the semaphore.
+    let _permit_acq = semaphore.acquire_many(requested_budget).await.unwrap();
+
+    callable().await
 }
 
 pub struct RuntimeManager {
