@@ -3590,6 +3590,30 @@ class Series:
         3
         >>> s.search_sorted(4, 'right')
         5
+        >>> s.search_sorted([1, 4, 5])
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                0
+                4
+                5
+        ]
+        >>> s.search_sorted([1, 4, 5], 'left')
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                0
+                3
+                5
+        ]
+        >>> s.search_sorted([1, 4, 5], 'right')
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                1
+                5
+                6
+        ]
         """
         if isinstance(element, (int, float)):
             return F.select(F.lit(self).search_sorted(element, side)).item()
