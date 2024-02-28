@@ -8,7 +8,7 @@ from polars import functions as F
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.convert import parse_as_duration_string
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
@@ -183,7 +183,7 @@ class ExprDateTimeNameSpace:
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
         if not isinstance(every, pl.Expr):
-            every = _timedelta_to_pl_duration(every)
+            every = parse_as_duration_string(every)
 
         if use_earliest is not None:
             issue_deprecation_warning(
@@ -203,7 +203,7 @@ class ExprDateTimeNameSpace:
         return wrap_expr(
             self._pyexpr.dt_truncate(
                 every,
-                _timedelta_to_pl_duration(offset),
+                parse_as_duration_string(offset),
             )
         )
 
@@ -340,8 +340,8 @@ class ExprDateTimeNameSpace:
 
         return wrap_expr(
             self._pyexpr.dt_round(
-                _timedelta_to_pl_duration(every),
-                _timedelta_to_pl_duration(offset),
+                parse_as_duration_string(every),
+                parse_as_duration_string(offset),
             )
         )
 

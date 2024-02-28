@@ -1,49 +1,26 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    NoReturn,
+    Sequence,
+    no_type_check,
+    overload,
+)
 
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
-    from collections.abc import Reversible
     from datetime import tzinfo
     from decimal import Decimal
 
     from polars.type_aliases import TimeUnit
 
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
-
-    P = ParamSpec("P")
-    T = TypeVar("T")
-
-    # the below shenanigans with ZoneInfo are all to handle a
-    # typing issue in py < 3.9 while preserving lazy-loading
-    if sys.version_info >= (3, 9):
-        from zoneinfo import ZoneInfo
-    elif _ZONEINFO_AVAILABLE:
-        from backports.zoneinfo._zoneinfo import ZoneInfo
-
-    def get_zoneinfo(key: str) -> ZoneInfo:  # noqa: D103
-        pass
-
-else:
-
-    @lru_cache(None)
-    def get_zoneinfo(key: str) -> ZoneInfo:  # noqa: D103
-        return zoneinfo.ZoneInfo(key)
-
-
-# note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 11):
-    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
-    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 SECONDS_PER_DAY = 86_400
 SECONDS_PER_HOUR = 3_600
@@ -56,166 +33,214 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
-def _timestamp_in_seconds(dt: datetime) -> int:
-    du = dt - EPOCH_UTC
-    return du.days * SECONDS_PER_DAY + du.seconds
-
-
 @overload
-def _timedelta_to_pl_duration(td: None) -> None:
+def parse_as_duration_string(td: None) -> None:
     ...
 
 
 @overload
-def _timedelta_to_pl_duration(td: timedelta | str) -> str:
+def parse_as_duration_string(td: timedelta | str) -> str:
     ...
 
 
-def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
-    """Convert python timedelta to a polars duration string."""
+def parse_as_duration_string(td: timedelta | str | None) -> str | None:
+    """Parse duration input as a Polars duration string."""
     if td is None or isinstance(td, str):
         return td
+    return _timedelta_to_duration_string(td)
 
+
+def _timedelta_to_duration_string(td: timedelta) -> str:
+    """Convert a Python timedelta object to a Polars duration string."""
+    # Positive duration
     if td.days >= 0:
-        d = td.days and f"{td.days}d" or ""
-        s = td.seconds and f"{td.seconds}s" or ""
-        us = td.microseconds and f"{td.microseconds}us" or ""
+        d = f"{td.days}d" if td.days != 0 else ""
+        s = f"{td.seconds}s" if td.seconds != 0 else ""
+        us = f"{td.microseconds}us" if td.microseconds != 0 else ""
+    # Negative, whole days
+    elif td.seconds == 0 and td.microseconds == 0:
+        return f"{td.days}d"
+    # Negative, other
     else:
-        if not td.seconds and not td.microseconds:
-            d = td.days and f"{td.days}d" or ""
-            s = ""
-            us = ""
-        else:
-            corrected_d = td.days + 1
-            d = corrected_d and f"{corrected_d}d" or "-"
-            corrected_seconds = SECONDS_PER_DAY - (td.seconds + (td.microseconds > 0))
-            s = corrected_seconds and f"{corrected_seconds}s" or ""
-            us = td.microseconds and f"{10**6 - td.microseconds}us" or ""
+        corrected_d = td.days + 1
+        corrected_seconds = SECONDS_PER_DAY - (td.seconds + (td.microseconds > 0))
+        d = f"{corrected_d}d" if corrected_d != 0 else "-"
+        s = f"{corrected_seconds}s" if corrected_seconds != 0 else ""
+        us = f"{10**6 - td.microseconds}us" if td.microseconds != 0 else ""
 
     return f"{d}{s}{us}"
 
 
-def _negate_duration(duration: str) -> str:
+def negate_duration_string(duration: str) -> str:
+    """Negate a Polars duration string."""
     if duration.startswith("-"):
         return duration[1:]
-    return f"-{duration}"
+    else:
+        return f"-{duration}"
 
 
-def _time_to_pl_time(t: time) -> int:
+def date_to_int(d: date) -> int:
+    """Convert a Python time object to an integer."""
+    return (d - EPOCH_DATE).days
+
+
+def time_to_int(t: time) -> int:
+    """Convert a Python time object to an integer."""
     t = t.replace(tzinfo=timezone.utc)
     seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second
     microseconds = t.microsecond
     return seconds * NS_PER_SECOND + microseconds * 1_000
 
 
-def _date_to_pl_date(d: date) -> int:
-    return (d - EPOCH_DATE).days
-
-
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
-    """Convert a python datetime to a timestamp in given time unit."""
+def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
+    """Convert a Python datetime object to an integer."""
+    # Make sure to use UTC rather than system time zone
     if dt.tzinfo is None:
-        # Make sure to use UTC rather than system time zone
         dt = dt.replace(tzinfo=timezone.utc)
-    microseconds = dt.microsecond
+
     seconds = _timestamp_in_seconds(dt)
-    if time_unit == "ns":
-        return seconds * NS_PER_SECOND + microseconds * 1_000
-    elif time_unit == "us" or time_unit is None:
+    microseconds = dt.microsecond
+
+    if time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
+    elif time_unit == "ns":
+        return seconds * NS_PER_SECOND + microseconds * 1_000
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
-    msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
-    raise ValueError(msg)
+    else:
+        _raise_invalid_time_unit(time_unit)
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
-    """Convert a Python timedelta object to a total number of subseconds."""
-    microseconds = td.microseconds
+def _timestamp_in_seconds(dt: datetime) -> int:
+    td = dt - EPOCH_UTC
+    return td.days * SECONDS_PER_DAY + td.seconds
+
+
+def timedelta_to_int(td: timedelta, time_unit: TimeUnit) -> int:
+    """Convert a Python timedelta object to an integer."""
     seconds = td.days * SECONDS_PER_DAY + td.seconds
-    if time_unit == "ns":
-        return seconds * NS_PER_SECOND + microseconds * 1_000
-    elif time_unit == "us" or time_unit is None:
+    microseconds = td.microseconds
+
+    if time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
+    elif time_unit == "ns":
+        return seconds * NS_PER_SECOND + microseconds * 1_000
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
-
-
-def _to_python_time(value: int) -> time:
-    """Convert polars int64 (ns) timestamp to python time object."""
-    if value == 0:
-        return time(microsecond=0)
     else:
-        seconds, nanoseconds = divmod(value, NS_PER_SECOND)
-        minutes, seconds = divmod(seconds, 60)
-        hours, minutes = divmod(minutes, 60)
-        return time(
-            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1_000
-        )
-
-
-def _to_python_timedelta(
-    value: int | float, time_unit: TimeUnit | None = "ns"
-) -> timedelta:
-    if time_unit == "ns":
-        return timedelta(microseconds=value // 1_000)
-    elif time_unit == "us":
-        return timedelta(microseconds=value)
-    elif time_unit == "ms":
-        return timedelta(milliseconds=value)
-    else:
-        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        raise ValueError(msg)
+        _raise_invalid_time_unit(time_unit)
 
 
 @lru_cache(256)
-def _to_python_date(value: int | float) -> date:
-    """Convert polars int64 timestamp to Python date."""
-    return (EPOCH_UTC + timedelta(seconds=value * SECONDS_PER_DAY)).date()
+def to_py_date(value: int | float) -> date:
+    """Convert an integer or float to a Python date object."""
+    return EPOCH_DATE + timedelta(days=value)
 
 
-def _to_python_datetime(
+def to_py_time(value: int) -> time:
+    """Convert an integer to a Python time object."""
+    # Fast path for 00:00
+    if value == 0:
+        return time()
+
+    seconds, nanoseconds = divmod(value, NS_PER_SECOND)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return time(
+        hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1_000
+    )
+
+
+def to_py_datetime(
     value: int | float,
-    time_unit: TimeUnit | None = "ns",
+    time_unit: TimeUnit,
     time_zone: str | None = None,
 ) -> datetime:
-    """Convert polars int64 timestamp to Python datetime."""
-    if not time_zone:
-        if time_unit == "us":
-            return EPOCH + timedelta(microseconds=value)
-        elif time_unit == "ns":
-            return EPOCH + timedelta(microseconds=value // 1_000)
-        elif time_unit == "ms":
-            return EPOCH + timedelta(milliseconds=value)
-        else:
-            msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-            raise ValueError(msg)
+    """Convert an integer or float to a Python datetime object."""
+    if time_unit == "us":
+        td = timedelta(microseconds=value)
+    elif time_unit == "ns":
+        td = timedelta(microseconds=value // 1_000)
+    elif time_unit == "ms":
+        td = timedelta(milliseconds=value)
+    else:
+        _raise_invalid_time_unit(time_unit)
+
+    if time_zone is None:
+        return EPOCH + td
     elif _ZONEINFO_AVAILABLE:
-        if time_unit == "us":
-            dt = EPOCH_UTC + timedelta(microseconds=value)
-        elif time_unit == "ns":
-            dt = EPOCH_UTC + timedelta(microseconds=value // 1_000)
-        elif time_unit == "ms":
-            dt = EPOCH_UTC + timedelta(milliseconds=value)
-        else:
-            msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-            raise ValueError(msg)
-        return _localize(dt, time_zone)
+        dt = EPOCH_UTC + td
+        return _localize_datetime(dt, time_zone)
     else:
         msg = "install polars[timezone] to handle datetimes with time zone information"
         raise ImportError(msg)
 
 
-def _localize(dt: datetime, time_zone: str) -> datetime:
+def _localize_datetime(dt: datetime, time_zone: str) -> datetime:
     # zone info installation should already be checked
-    _tzinfo: ZoneInfo | tzinfo
     try:
-        _tzinfo = get_zoneinfo(time_zone)
+        tz = string_to_zoneinfo(time_zone)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
-        _tzinfo = _parse_fixed_tz_offset(time_zone)
+        tz = _parse_fixed_tz_offset(time_zone)
 
-    return dt.astimezone(_tzinfo)
+    return dt.astimezone(tz)
+
+
+@no_type_check
+@lru_cache(None)
+def string_to_zoneinfo(key: str) -> Any:
+    """
+    Convert a time zone string to a Python ZoneInfo object.
+
+    This is a simple wrapper for the zoneinfo.ZoneInfo constructor.
+    The wrapper is useful because zoneinfo is not available on Python 3.8
+    and the backports module may not be installed.
+    """
+    return zoneinfo.ZoneInfo(key)
+
+
+# cache here as we have a single tz per column
+# and this function will be called on every conversion
+@lru_cache(16)
+def _parse_fixed_tz_offset(offset: str) -> tzinfo:
+    try:
+        # use fromisoformat to parse the offset
+        dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
+
+        # alternatively, we parse the offset ourselves extracting hours and
+        # minutes, then we can construct:
+        # tzinfo=timezone(timedelta(hours=..., minutes=...))
+    except ValueError:
+        msg = f"unexpected time zone offset: {offset!r}"
+        raise ValueError(msg) from None
+
+    return dt_offset.tzinfo  # type: ignore[return-value]
+
+
+def to_py_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
+    """Convert an integer or float to a Python timedelta object."""
+    if time_unit == "us":
+        return timedelta(microseconds=value)
+    elif time_unit == "ns":
+        return timedelta(microseconds=value // 1_000)
+    elif time_unit == "ms":
+        return timedelta(milliseconds=value)
+    else:
+        _raise_invalid_time_unit(time_unit)
+
+
+def to_py_decimal(sign: int, digits: Sequence[int], prec: int, scale: int) -> Decimal:
+    """Convert decimal components to a Python Decimal object."""
+    return _create_decimal_with_prec(prec)((sign, digits, scale))
+
+
+@lru_cache(None)
+def _create_decimal_with_prec(
+    precision: int,
+) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
+    # pre-cache contexts so we don't have to spend time on recreating them every time
+    return Context(prec=precision).create_decimal
 
 
 def _datetime_for_any_value(dt: datetime) -> tuple[int, int]:
@@ -232,38 +257,11 @@ def _datetime_for_any_value(dt: datetime) -> tuple[int, int]:
 def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
     """Used in PyO3 AnyValue conversion."""
     if dt.tzinfo is None:
-        dt = _localize(dt, "UTC")
+        dt = _localize_datetime(dt, "UTC")
     # returns (s, ms)
     return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
-# cache here as we have a single tz per column
-# and this function will be called on every conversion
-@lru_cache(16)
-def _parse_fixed_tz_offset(offset: str) -> tzinfo:
-    try:
-        # use fromisoformat to parse the offset
-        dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
-
-        # alternatively, we parse the offset ourselves extracting hours and
-        # minutes, then we can construct:
-        # tzinfo=timezone(timedelta(hours=..., minutes=...))
-    except ValueError:
-        msg = f"offset: {offset!r} not understood"
-        raise ValueError(msg) from None
-
-    return dt_offset.tzinfo  # type: ignore[return-value]
-
-
-def _to_python_decimal(
-    sign: int, digits: Sequence[int], prec: int, scale: int
-) -> Decimal:
-    return _create_decimal_with_prec(prec)((sign, digits, scale))
-
-
-@lru_cache(None)
-def _create_decimal_with_prec(
-    precision: int,
-) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
-    # pre-cache contexts so we don't have to spend time on recreating them every time
-    return Context(prec=precision).create_decimal
+def _raise_invalid_time_unit(time_unit: Any) -> NoReturn:
+    msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+    raise ValueError(msg)

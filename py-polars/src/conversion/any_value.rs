@@ -39,11 +39,11 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 s.into_py(py)
             },
             AnyValue::Date(v) => {
-                let convert = utils.getattr(intern!(py, "_to_python_date")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             },
             AnyValue::Datetime(v, time_unit, time_zone) => {
-                let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert
                     .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
@@ -51,12 +51,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .into_py(py)
             },
             AnyValue::Duration(v, time_unit) => {
-                let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert.call1((v, time_unit)).unwrap().into_py(py)
             },
             AnyValue::Time(v) => {
-                let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             },
             AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
@@ -75,7 +75,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
             AnyValue::Decimal(v, scale) => {
-                let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
                 const N: usize = 3;
                 let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
@@ -209,7 +209,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Python::with_gil(|py| {
                 let td = UTILS
                     .as_ref(py)
-                    .getattr(intern!(py, "_timedelta_to_pl_timedelta"))
+                    .getattr(intern!(py, "timedelta_to_int"))
                     .unwrap()
                     .call1((ob, intern!(py, "us")))
                     .unwrap();
@@ -222,7 +222,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Python::with_gil(|py| {
                 let time = UTILS
                     .as_ref(py)
-                    .getattr(intern!(py, "_time_to_pl_time"))
+                    .getattr(intern!(py, "time_to_int"))
                     .unwrap()
                     .call1((ob,))
                     .unwrap();
@@ -348,7 +348,7 @@ fn convert_date(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     Python::with_gil(|py| {
         let date = UTILS
             .as_ref(py)
-            .getattr(intern!(py, "_date_to_pl_date"))
+            .getattr(intern!(py, "date_to_int"))
             .unwrap()
             .call1((ob,))
             .unwrap();

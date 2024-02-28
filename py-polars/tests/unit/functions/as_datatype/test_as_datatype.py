@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_date_datetime() -> None:

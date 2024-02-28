@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -10,15 +9,12 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import Label, StartBy
+else:
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(

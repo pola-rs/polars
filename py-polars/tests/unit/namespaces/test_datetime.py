@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -8,19 +7,15 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import TemporalLiteral, TimeUnit
+else:
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.fixture()
@@ -782,9 +777,9 @@ def test_offset_by_broadcasting() -> None:
             None,
         ],
         "d3": [
-            datetime(2020, 10, 26, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 11, 4, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 26, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 11, 4, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo("Europe/London")),
             None,
         ],
         "d4": [
@@ -811,8 +806,8 @@ def test_offset_by_broadcasting() -> None:
         "d1": [datetime(2020, 11, 28), datetime(2021, 2, 5), None],
         "d2": [datetime(2021, 11, 25), datetime(2022, 2, 2), None],
         "d3": [
-            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2021, 1, 5, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2021, 1, 5, tzinfo=ZoneInfo("Europe/London")),
             None,
         ],
         "d4": [datetime(2021, 11, 26).date(), datetime(2022, 2, 3).date(), None],
