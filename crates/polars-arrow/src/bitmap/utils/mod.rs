@@ -14,66 +14,59 @@ pub use iterator::BitmapIter;
 pub use slice_iterator::SlicesIterator;
 pub use zip_validity::{ZipValidity, ZipValidityIter};
 
-const BIT_MASK: [u8; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
-const UNSET_BIT_MASK: [u8; 8] = [
-    255 - 1,
-    255 - 2,
-    255 - 4,
-    255 - 8,
-    255 - 16,
-    255 - 32,
-    255 - 64,
-    255 - 128,
-];
-
 /// Returns whether bit at position `i` in `byte` is set or not
 #[inline]
 pub fn is_set(byte: u8, i: usize) -> bool {
-    (byte & BIT_MASK[i]) != 0
+    debug_assert!(i < 8);
+    byte & (1 << i) != 0
 }
 
-/// Sets bit at position `i` in `byte`
+/// Sets bit at position `i` in `byte`.
 #[inline]
 pub fn set(byte: u8, i: usize, value: bool) -> u8 {
-    if value {
-        byte | BIT_MASK[i]
-    } else {
-        byte & UNSET_BIT_MASK[i]
-    }
+    debug_assert!(i < 8);
+
+    let mask = !(1 << i);
+    let insert = (value as u8) << i;
+    (byte & mask) | insert
 }
 
-/// Sets bit at position `i` in `data`
+/// Sets bit at position `i` in `bytes`.
 /// # Panics
-/// panics if `i >= data.len() / 8`
+/// This function panics iff `i >= bytes.len() * 8`.
 #[inline]
-pub fn set_bit(data: &mut [u8], i: usize, value: bool) {
-    data[i / 8] = set(data[i / 8], i % 8, value);
+pub fn set_bit(bytes: &mut [u8], i: usize, value: bool) {
+    bytes[i / 8] = set(bytes[i / 8], i % 8, value);
 }
 
-/// Sets bit at position `i` in `data` without doing bound checks
+/// Sets bit at position `i` in `bytes` without doing bound checks
 /// # Safety
-/// caller must ensure that `i < data.len() / 8`
+/// `i >= bytes.len() * 8` results in undefined behavior.
 #[inline]
-pub unsafe fn set_bit_unchecked(data: &mut [u8], i: usize, value: bool) {
-    let byte = data.get_unchecked_mut(i / 8);
+pub unsafe fn set_bit_unchecked(bytes: &mut [u8], i: usize, value: bool) {
+    let byte = bytes.get_unchecked_mut(i / 8);
     *byte = set(*byte, i % 8, value);
 }
 
-/// Returns whether bit at position `i` in `data` is set
+/// Returns whether bit at position `i` in `bytes` is set.
 /// # Panic
-/// This function panics iff `i / 8 >= bytes.len()`
+/// This function panics iff `i >= bytes.len() * 8`.
 #[inline]
 pub fn get_bit(bytes: &[u8], i: usize) -> bool {
-    is_set(bytes[i / 8], i % 8)
+    let byte = bytes[i / 8];
+    let bit = (byte >> (i % 8)) & 1;
+    bit != 0    
 }
 
-/// Returns whether bit at position `i` in `data` is set or not.
+/// Returns whether bit at position `i` in `bytes` is set or not.
 ///
 /// # Safety
-/// `i >= data.len() * 8` results in undefined behavior
+/// `i >= bytes.len() * 8` results in undefined behavior.
 #[inline]
-pub unsafe fn get_bit_unchecked(data: &[u8], i: usize) -> bool {
-    (*data.as_ptr().add(i >> 3) & BIT_MASK[i & 7]) != 0
+pub unsafe fn get_bit_unchecked(bytes: &[u8], i: usize) -> bool {
+    let byte = *bytes.get_unchecked(i / 8);
+    let bit = (byte >> (i % 8)) & 1;
+    bit != 0    
 }
 
 /// Returns the number of bytes required to hold `bits` bits.
