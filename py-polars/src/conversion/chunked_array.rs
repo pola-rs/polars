@@ -177,7 +177,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
     ca: &'a DecimalChunked,
 ) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
     let utils = UTILS.as_ref(py);
-    let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
+    let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
     let py_scale = (-(ca.scale() as i32)).to_object(py);
     // if we don't know precision, the only safe bet is to set it to 39
     let py_precision = ca.precision().unwrap_or(39).to_object(py);

@@ -241,9 +241,8 @@ def to_py_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
         _raise_invalid_time_unit(time_unit)
 
 
-def _to_python_decimal(
-    sign: int, digits: Sequence[int], prec: int, scale: int
-) -> Decimal:
+def to_py_decimal(sign: int, digits: Sequence[int], prec: int, scale: int) -> Decimal:
+    """Convert decimal components to a Python Decimal object."""
     return _create_decimal_with_prec(prec)((sign, digits, scale))
 
 

@@ -7,12 +7,12 @@ from polars.utils._scan import _execute_from_rust
 from polars.utils.convert import (
     _datetime_for_any_value,
     _datetime_for_any_value_windows,
-    _to_python_decimal,
     date_to_int,
     time_to_int,
     timedelta_to_int,
     to_py_date,
     to_py_datetime,
+    to_py_decimal,
     to_py_time,
     to_py_timedelta,
 )
@@ -32,7 +32,7 @@ __all__ = [
     "_polars_warn",
     "to_py_date",
     "to_py_datetime",
-    "_to_python_decimal",
+    "to_py_decimal",
     "to_py_time",
     "to_py_timedelta",
 ]

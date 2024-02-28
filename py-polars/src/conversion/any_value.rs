@@ -75,7 +75,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
             AnyValue::Decimal(v, scale) => {
-                let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
                 const N: usize = 3;
                 let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
