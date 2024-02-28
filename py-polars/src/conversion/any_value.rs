@@ -209,7 +209,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Python::with_gil(|py| {
                 let td = UTILS
                     .as_ref(py)
-                    .getattr(intern!(py, "_timedelta_to_pl_timedelta"))
+                    .getattr(intern!(py, "timedelta_to_int"))
                     .unwrap()
                     .call1((ob, intern!(py, "us")))
                     .unwrap();

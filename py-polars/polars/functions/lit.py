@@ -10,10 +10,10 @@ from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import (
-    _datetime_to_pl_timestamp,
-    _timedelta_to_pl_timedelta,
     date_to_int,
+    datetime_to_int,
     time_to_int,
+    timedelta_to_int,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -91,7 +91,7 @@ def lit(
             time_zone = tzinfo_str
 
         dt_utc = value.replace(tzinfo=timezone.utc)
-        dt_int = _datetime_to_pl_timestamp(dt_utc, time_unit)
+        dt_int = datetime_to_int(dt_utc, time_unit)
         expr = lit(dt_int).cast(Datetime(time_unit))
         if time_zone is not None:
             expr = expr.dt.replace_time_zone(
@@ -105,7 +105,7 @@ def lit(
         else:
             time_unit = "us"
 
-        td_int = _timedelta_to_pl_timedelta(value, time_unit)
+        td_int = timedelta_to_int(value, time_unit)
         return lit(td_int).cast(Duration(time_unit))
 
     elif isinstance(value, time):

@@ -4,7 +4,7 @@ import sys
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, overload
 
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
@@ -115,7 +115,7 @@ def time_to_int(t: time) -> int:
     return seconds * NS_PER_SECOND + microseconds * 1_000
 
 
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit) -> int:
+def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
     """Convert a Python datetime object to an integer."""
     # Make sure to use UTC rather than system time zone
     if dt.tzinfo is None:
@@ -131,8 +131,7 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit) -> int:
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
     else:
-        msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
-        raise ValueError(msg)
+        _raise_invalid_time_unit(time_unit)
 
 
 def _timestamp_in_seconds(dt: datetime) -> int:
@@ -140,7 +139,7 @@ def _timestamp_in_seconds(dt: datetime) -> int:
     return td.days * SECONDS_PER_DAY + td.seconds
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit) -> int:
+def timedelta_to_int(td: timedelta, time_unit: TimeUnit) -> int:
     """Convert a Python timedelta object to an integer."""
     seconds = td.days * SECONDS_PER_DAY + td.seconds
     microseconds = td.microseconds
@@ -152,8 +151,7 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit) -> int:
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
     else:
-        msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
-        raise ValueError(msg)
+        _raise_invalid_time_unit(time_unit)
 
 
 @lru_cache(256)
@@ -189,8 +187,7 @@ def _to_python_datetime(
     elif time_unit == "ms":
         td = timedelta(milliseconds=value)
     else:
-        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        raise ValueError(msg)
+        _raise_invalid_time_unit(time_unit)
 
     if time_zone is None:
         return EPOCH + td
@@ -241,8 +238,7 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
     elif time_unit == "ms":
         return timedelta(milliseconds=value)
     else:
-        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        raise ValueError(msg)
+        _raise_invalid_time_unit(time_unit)
 
 
 def _to_python_decimal(
@@ -276,3 +272,8 @@ def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
         dt = _localize(dt, "UTC")
     # returns (s, ms)
     return (_timestamp_in_seconds(dt), dt.microsecond)
+
+
+def _raise_invalid_time_unit(time_unit: TimeUnit) -> NoReturn:
+    msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+    raise ValueError(msg)

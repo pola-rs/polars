@@ -7,7 +7,6 @@ from polars.utils._scan import _execute_from_rust
 from polars.utils.convert import (
     _datetime_for_any_value,
     _datetime_for_any_value_windows,
-    _timedelta_to_pl_timedelta,
     _to_python_date,
     _to_python_datetime,
     _to_python_decimal,
@@ -15,6 +14,7 @@ from polars.utils.convert import (
     _to_python_timedelta,
     date_to_int,
     time_to_int,
+    timedelta_to_int,
 )
 from polars.utils.various import NoDefault, _polars_warn, is_column, no_default
 
@@ -24,12 +24,12 @@ __all__ = [
     "no_default",
     # Required for Rust bindings
     "date_to_int",
+    "time_to_int",
+    "timedelta_to_int",
     "_datetime_for_any_value",
     "_datetime_for_any_value_windows",
     "_execute_from_rust",
     "_polars_warn",
-    "time_to_int",
-    "_timedelta_to_pl_timedelta",
     "_to_python_date",
     "_to_python_datetime",
     "_to_python_decimal",

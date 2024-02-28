@@ -86,10 +86,10 @@ from polars.utils._construction import (
 )
 from polars.utils._wrap import wrap_df
 from polars.utils.convert import (
-    _datetime_to_pl_timestamp,
-    _timedelta_to_pl_timedelta,
     date_to_int,
+    datetime_to_int,
     time_to_int,
+    timedelta_to_int,
 )
 from polars.utils.deprecation import (
     deprecate_function,
@@ -696,7 +696,7 @@ class Series:
             else:
                 msg = f"cannot compare datetime.datetime to Series of type {self.dtype}"
                 raise ValueError(msg)
-            ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
+            ts = datetime_to_int(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -709,7 +709,7 @@ class Series:
 
         elif isinstance(other, timedelta) and self.dtype == Duration:
             time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
-            td = _timedelta_to_pl_timedelta(other, time_unit)  # type: ignore[arg-type]
+            td = timedelta_to_int(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(td))
