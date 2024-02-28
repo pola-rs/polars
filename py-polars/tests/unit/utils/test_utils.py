@@ -30,65 +30,6 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    ("dt", "time_unit", "expected"),
-    [
-        (datetime(2121, 1, 1), "ns", 4_765_132_800_000_000_000),
-        (datetime(2121, 1, 1), "us", 4_765_132_800_000_000),
-        (datetime(2121, 1, 1), "ms", 4_765_132_800_000),
-        (datetime.min, "ns", -62_135_596_800_000_000_000),
-        (datetime.max, "ns", 253_402_300_799_999_999_000),
-        (datetime.min, "ms", -62_135_596_800_000),
-        (datetime.max, "ms", 253_402_300_799_999),
-    ],
-)
-def test_datetime_to_int(dt: datetime, time_unit: TimeUnit, expected: int) -> None:
-    assert datetime_to_int(dt, time_unit) == expected
-
-
-@pytest.mark.parametrize(
-    ("t", "expected"),
-    [
-        (time(0, 0, 1), 1_000_000_000),
-        (time(20, 52, 10), 75_130_000_000_000),
-        (time(20, 52, 10, 200), 75_130_000_200_000),
-        (time.min, 0),
-        (time.max, 86_399_999_999_000),
-    ],
-)
-def test_time_to_int(t: time, expected: int) -> None:
-    assert time_to_int(t) == expected
-
-
-@pytest.mark.parametrize(
-    ("d", "expected"),
-    [
-        (date(1999, 9, 9), 10_843),
-        (date(1969, 12, 31), -1),
-        (date.min, -719_162),
-        (date.max, 2_932_896),
-    ],
-)
-def test_date_to_int(d: date, expected: int) -> None:
-    assert date_to_int(d) == expected
-
-
-@pytest.mark.parametrize(
-    ("td", "time_unit", "expected"),
-    [
-        (timedelta(days=1), "ns", 86_400_000_000_000),
-        (timedelta(days=1), "us", 86_400_000_000),
-        (timedelta(days=1), "ms", 86_400_000),
-        (timedelta.min, "ns", -86_399_999_913_600_000_000_000),
-        (timedelta.max, "ns", 86_399_999_999_999_999_999_000),
-        (timedelta.min, "ms", -86_399_999_913_600_000),
-        (timedelta.max, "ms", 86_399_999_999_999_999),
-    ],
-)
-def testtimedelta_to_int(td: timedelta, time_unit: TimeUnit, expected: int) -> None:
-    assert timedelta_to_int(td, time_unit) == expected
-
-
-@pytest.mark.parametrize(
     ("td", "expected"),
     [
         (timedelta(), ""),
@@ -111,6 +52,65 @@ def test_parse_as_duration_string(
     td: timedelta | str | None, expected: str | None
 ) -> None:
     assert parse_as_duration_string(td) == expected
+
+
+@pytest.mark.parametrize(
+    ("d", "expected"),
+    [
+        (date(1999, 9, 9), 10_843),
+        (date(1969, 12, 31), -1),
+        (date.min, -719_162),
+        (date.max, 2_932_896),
+    ],
+)
+def test_date_to_int(d: date, expected: int) -> None:
+    assert date_to_int(d) == expected
+
+
+@pytest.mark.parametrize(
+    ("t", "expected"),
+    [
+        (time(0, 0, 1), 1_000_000_000),
+        (time(20, 52, 10), 75_130_000_000_000),
+        (time(20, 52, 10, 200), 75_130_000_200_000),
+        (time.min, 0),
+        (time.max, 86_399_999_999_000),
+    ],
+)
+def test_time_to_int(t: time, expected: int) -> None:
+    assert time_to_int(t) == expected
+
+
+@pytest.mark.parametrize(
+    ("dt", "time_unit", "expected"),
+    [
+        (datetime(2121, 1, 1), "ns", 4_765_132_800_000_000_000),
+        (datetime(2121, 1, 1), "us", 4_765_132_800_000_000),
+        (datetime(2121, 1, 1), "ms", 4_765_132_800_000),
+        (datetime.min, "ns", -62_135_596_800_000_000_000),
+        (datetime.max, "ns", 253_402_300_799_999_999_000),
+        (datetime.min, "ms", -62_135_596_800_000),
+        (datetime.max, "ms", 253_402_300_799_999),
+    ],
+)
+def test_datetime_to_int(dt: datetime, time_unit: TimeUnit, expected: int) -> None:
+    assert datetime_to_int(dt, time_unit) == expected
+
+
+@pytest.mark.parametrize(
+    ("td", "time_unit", "expected"),
+    [
+        (timedelta(days=1), "ns", 86_400_000_000_000),
+        (timedelta(days=1), "us", 86_400_000_000),
+        (timedelta(days=1), "ms", 86_400_000),
+        (timedelta.min, "ns", -86_399_999_913_600_000_000_000),
+        (timedelta.max, "ns", 86_399_999_999_999_999_999_000),
+        (timedelta.min, "ms", -86_399_999_913_600_000),
+        (timedelta.max, "ms", 86_399_999_999_999_999),
+    ],
+)
+def test_timedelta_to_int(td: timedelta, time_unit: TimeUnit, expected: int) -> None:
+    assert timedelta_to_int(td, time_unit) == expected
 
 
 def test_estimated_size() -> None:
