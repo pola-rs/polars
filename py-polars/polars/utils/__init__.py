@@ -5,9 +5,8 @@ Functions that are part of the public API are re-exported here.
 """
 from polars.utils._scan import _execute_from_rust
 from polars.utils.convert import (
-    _datetime_for_any_value,
-    _datetime_for_any_value_windows,
     date_to_int,
+    datetime_to_int,
     time_to_int,
     timedelta_to_int,
     to_py_date,
@@ -24,10 +23,9 @@ __all__ = [
     "no_default",
     # Required for Rust bindings
     "date_to_int",
+    "datetime_to_int",
     "time_to_int",
     "timedelta_to_int",
-    "_datetime_for_any_value",
-    "_datetime_for_any_value_windows",
     "_execute_from_rust",
     "_polars_warn",
     "to_py_date",
