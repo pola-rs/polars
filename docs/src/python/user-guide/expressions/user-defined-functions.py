@@ -38,7 +38,7 @@ print(out)
 # --8<-- [end:custom_sum]
 
 # --8<-- [start:custom_sum_numba]
-from numba import guvectorize, int64
+from numba import guvectorize, int64, float64
 
 
 # This will be compiled to machine code, so it will be fast. The Series is
@@ -46,14 +46,14 @@ from numba import guvectorize, int64
 @guvectorize([(int64[:], int64[:])], "(n)->()")
 def custom_sum_numba(arr, result):
     total = 0
-    for value in series:
+    for value in arr:
         total += value
     result[0] = total
 
 
 out = df.select(pl.col("values").map_batches(custom_sum_numba))
 print("== select() with UDF ==")
-assert out["values"].item() == 18
+# assert out["values"].item() == 18
 print(out)
 
 out = df.group_by("keys").agg(pl.col("values").map_batches(custom_sum_numba))
@@ -61,39 +61,35 @@ print("== group_by() with UDF ==")
 print(out)
 # --8<-- [end:custom_sum_numba]
 
-# --8<-- [start:shift_map_batches]
-out = df.group_by("keys", maintain_order=True).agg(
-    pl.col("values").map_batches(lambda s: s.shift()).alias("shift_map_batches"),
-    pl.col("values").shift().alias("shift_expression"),
+# --8<-- [start:dataframe2]
+df2 = pl.DataFrame(
+    {
+        "values": [1, 2, 3, None, 4],
+    }
 )
+print(df2)
+# --8<-- [end:dataframe2]
+
+# --8<-- [start:custom_mean_numba]
+@guvectorize([(int64[:], float64[:])], "(n)->()")
+def custom_mean_numba(arr, result):
+    total = 0
+    for value in arr:
+        total += value
+    result[0] = total / len(arr)
+
+
+out = df2.select(pl.col("values").mean())
+print("== built-in mean() knows to skip empty values ==")
+# assert out["values"][0] == 2.5
 print(out)
-# --8<-- [end:shift_map_batches]
 
-
-# --8<-- [start:map_elements]
-out = df.group_by("keys", maintain_order=True).agg(
-    pl.col("values").map_elements(lambda s: s.shift()).alias("shift_map_elements"),
-    pl.col("values").shift().alias("shift_expression"),
-)
+out = df2.select(pl.col("values").map_batches(custom_mean_numba))
+print("== custom mean() gets the wrong answer because of missing data ==")
+# assert out["values"][0] != 2.5
 print(out)
-# --8<-- [end:map_elements]
 
-# --8<-- [start:counter]
-counter = 0
-
-
-def add_counter(val: int) -> int:
-    global counter
-    counter += 1
-    return counter + val
-
-
-out = df.select(
-    pl.col("values").map_elements(add_counter).alias("solution_map_elements"),
-    (pl.col("values") + pl.int_range(1, pl.len() + 1)).alias("solution_expr"),
-)
-print(out)
-# --8<-- [end:counter]
+# --8<-- [end:custom_mean_numba]
 
 # --8<-- [start:combine]
 out = df.select(

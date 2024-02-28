@@ -15,44 +15,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:custom_sum_numba]
     // --8<-- [end:custom_sum_numba]
 
-    // --8<-- [start:shift_map_batches]
-    let out = df
-        .clone()
-        .lazy()
-        .group_by(["keys"])
-        .agg([
-            col("values")
-                .map(|s| Ok(Some(s.shift(1))), GetOutput::default())
-                // note: the `'shift_map_batches'` alias is just there to show how you
-                // get the same output as in the Python API example.
-                .alias("shift_map_batches"),
-            col("values").shift(lit(1)).alias("shift_expression"),
-        ])
-        .collect()?;
+    // --8<-- [start:dataframe2]
+    // --8<-- [end:dataframe2]
 
-    println!("{}", out);
-    // --8<-- [end:shift_map_batches]
-
-    // --8<-- [start:map_elements]
-    let out = df
-        .clone()
-        .lazy()
-        .group_by([col("keys")])
-        .agg([
-            col("values")
-                .apply(|s| Ok(Some(s.shift(1))), GetOutput::default())
-                // note: the `'shift_map_elements'` alias is just there to show how you
-                // get the same output as in the Python API example.
-                .alias("shift_map_elements"),
-            col("values").shift(lit(1)).alias("shift_expression"),
-        ])
-        .collect()?;
-    println!("{}", out);
-    // --8<-- [end:map_elements]
-
-    // --8<-- [start:counter]
-
-    // --8<-- [end:counter]
+    // --8<-- [start:custom_mean_numba]
+    // --8<-- [end:custom_mean_numba]
 
     // --8<-- [start:combine]
     let out = df
