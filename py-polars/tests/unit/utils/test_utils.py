@@ -26,7 +26,11 @@ from polars.utils.various import (
 )
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import TimeUnit
+else:
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(
@@ -75,10 +79,22 @@ def test_date_to_int(d: date, expected: int) -> None:
         (time(20, 52, 10, 200), 75_130_000_200_000),
         (time.min, 0),
         (time.max, 86_399_999_999_000),
+        (time(12, 0, tzinfo=None), 43_200_000_000_000),
+        (time(12, 0, tzinfo=ZoneInfo("UTC")), 43_200_000_000_000),
+        (time(12, 0, tzinfo=ZoneInfo("Asia/Shanghai")), 43_200_000_000_000),
+        (time(12, 0, tzinfo=ZoneInfo("US/Central")), 43_200_000_000_000),
     ],
 )
 def test_time_to_int(t: time, expected: int) -> None:
     assert time_to_int(t) == expected
+
+
+@pytest.mark.parametrize(
+    "tzinfo", [None, ZoneInfo("UTC"), ZoneInfo("Asia/Shanghai"), ZoneInfo("US/Central")]
+)
+def test_time_to_int_with_time_zone(tzinfo: Any) -> None:
+    t = time(12, 0, tzinfo=tzinfo)
+    assert time_to_int(t) == 43_200_000_000_000
 
 
 @pytest.mark.parametrize(
@@ -97,6 +113,31 @@ def test_time_to_int(t: time, expected: int) -> None:
 )
 def test_datetime_to_int(dt: datetime, time_unit: TimeUnit, expected: int) -> None:
     assert datetime_to_int(dt, time_unit) == expected
+
+
+@pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=None),
+            946_728_000_000_000,
+        ),
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("UTC")),
+            946_728_000_000_000,
+        ),
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+            946_699_200_000_000,
+        ),
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("US/Central")),
+            946_749_600_000_000,
+        ),
+    ],
+)
+def test_datetime_to_int_with_time_zone(dt: datetime, expected: int) -> None:
+    assert datetime_to_int(dt, "us") == expected
 
 
 @pytest.mark.parametrize(
