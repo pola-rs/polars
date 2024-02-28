@@ -102,12 +102,12 @@ def negate_duration_string(duration: str) -> str:
         return f"-{duration}"
 
 
-def _date_to_pl_date(d: date) -> int:
+def date_to_int(d: date) -> int:
     """Convert a Python time object to an integer."""
     return (d - EPOCH_DATE).days
 
 
-def _time_to_pl_time(t: time) -> int:
+def time_to_int(t: time) -> int:
     """Convert a Python time object to an integer."""
     t = t.replace(tzinfo=timezone.utc)
     seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second

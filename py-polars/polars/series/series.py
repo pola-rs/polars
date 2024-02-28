@@ -86,10 +86,10 @@ from polars.utils._construction import (
 )
 from polars.utils._wrap import wrap_df
 from polars.utils.convert import (
-    _date_to_pl_date,
     _datetime_to_pl_timestamp,
-    _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    date_to_int,
+    time_to_int,
 )
 from polars.utils.deprecation import (
     deprecate_function,
@@ -702,7 +702,7 @@ class Series:
             return self._from_pyseries(f(ts))
 
         elif isinstance(other, time) and self.dtype == Time:
-            d = _time_to_pl_time(other)
+            d = time_to_int(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
@@ -718,7 +718,7 @@ class Series:
             other = Series([other])
 
         elif isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
+            d = date_to_int(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))

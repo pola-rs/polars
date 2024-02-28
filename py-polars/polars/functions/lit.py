@@ -10,10 +10,10 @@ from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import (
-    _date_to_pl_date,
     _datetime_to_pl_timestamp,
-    _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    date_to_int,
+    time_to_int,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -109,11 +109,11 @@ def lit(
         return lit(td_int).cast(Duration(time_unit))
 
     elif isinstance(value, time):
-        time_int = _time_to_pl_time(value)
+        time_int = time_to_int(value)
         return lit(time_int).cast(Time)
 
     elif isinstance(value, date):
-        date_int = _date_to_pl_date(value)
+        date_int = date_to_int(value)
         return lit(date_int).cast(Date)
 
     elif isinstance(value, pl.Series):

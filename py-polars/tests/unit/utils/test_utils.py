@@ -9,11 +9,11 @@ import pytest
 import polars as pl
 from polars.io._utils import _looks_like_url
 from polars.utils.convert import (
-    _date_to_pl_date,
     _datetime_to_pl_timestamp,
-    _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    date_to_int,
     parse_as_duration_string,
+    time_to_int,
 )
 from polars.utils.various import (
     _in_notebook,
@@ -58,8 +58,8 @@ def test_datetime_to_pl_timestamp(
         (time.max, 86_399_999_999_000),
     ],
 )
-def test_time_to_pl_time(t: time, expected: int) -> None:
-    assert _time_to_pl_time(t) == expected
+def test_time_to_int(t: time, expected: int) -> None:
+    assert time_to_int(t) == expected
 
 
 @pytest.mark.parametrize(
@@ -71,8 +71,8 @@ def test_time_to_pl_time(t: time, expected: int) -> None:
         (date.max, 2_932_896),
     ],
 )
-def test_date_to_pl_date(d: date, expected: int) -> None:
-    assert _date_to_pl_date(d) == expected
+def test_date_to_int(d: date, expected: int) -> None:
+    assert date_to_int(d) == expected
 
 
 @pytest.mark.parametrize(

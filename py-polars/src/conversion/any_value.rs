@@ -222,7 +222,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Python::with_gil(|py| {
                 let time = UTILS
                     .as_ref(py)
-                    .getattr(intern!(py, "_time_to_pl_time"))
+                    .getattr(intern!(py, "time_to_int"))
                     .unwrap()
                     .call1((ob,))
                     .unwrap();
@@ -348,7 +348,7 @@ fn convert_date(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     Python::with_gil(|py| {
         let date = UTILS
             .as_ref(py)
-            .getattr(intern!(py, "_date_to_pl_date"))
+            .getattr(intern!(py, "date_to_int"))
             .unwrap()
             .call1((ob,))
             .unwrap();
