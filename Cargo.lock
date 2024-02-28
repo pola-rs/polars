@@ -2937,6 +2937,7 @@ dependencies = [
 name = "polars-row"
 version = "0.37.0"
 dependencies = [
+ "bytemuck",
  "polars-arrow",
  "polars-error",
  "polars-utils",
