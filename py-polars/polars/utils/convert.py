@@ -1,27 +1,18 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
 
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
-    from collections.abc import Reversible
+    import sys
     from datetime import tzinfo
     from decimal import Decimal
 
     from polars.type_aliases import TimeUnit
-
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
-
-    P = ParamSpec("P")
-    T = TypeVar("T")
 
     # the below shenanigans with ZoneInfo are all to handle a
     # typing issue in py < 3.9 while preserving lazy-loading
@@ -39,11 +30,6 @@ else:
     def get_zoneinfo(key: str) -> ZoneInfo:  # noqa: D103
         return zoneinfo.ZoneInfo(key)
 
-
-# note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 11):
-    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
-    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 SECONDS_PER_DAY = 86_400
 SECONDS_PER_HOUR = 3_600
