@@ -7,7 +7,9 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
-use crate::bitmap::iterator::{FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter};
+use crate::bitmap::iterator::{
+    FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
+};
 use crate::buffer::Bytes;
 use crate::trusted_len::TrustedLen;
 
@@ -140,7 +142,7 @@ impl Bitmap {
     pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
         BitChunks::new(&self.bytes, self.offset, self.length)
     }
-    
+
     /// Returns a fast iterator that gives 32 bits at a time.
     /// Has a remainder that must be handled separately.
     pub fn fast_iter_u32(&self) -> FastU32BitmapIter<'_> {
@@ -158,7 +160,7 @@ impl Bitmap {
     pub fn fast_iter_u64(&self) -> FastU64BitmapIter<'_> {
         FastU64BitmapIter::new(&self.bytes, self.offset, self.length)
     }
-    
+
     /// Returns an iterator that only iterates over the set bits.
     pub fn true_idx_iter(&self) -> TrueIdxIter<'_> {
         TrueIdxIter::new(self.len(), Some(self))
@@ -181,7 +183,7 @@ impl Bitmap {
             self.length,
         )
     }
-    
+
     /// Returns the number of set bits on this [`Bitmap`].
     ///
     /// See `unset_bits` for details.
@@ -229,16 +231,17 @@ impl Bitmap {
             Some(cache as usize)
         }
     }
-    
+
     /// Updates the count of the number of set bits on this [`Bitmap`].
     ///
     /// # Safety
-    /// 
+    ///
     /// The number of set bits must be correct.
     pub unsafe fn update_bit_count(&mut self, bits_set: usize) {
         assert!(bits_set <= self.length);
         let zeros = self.length - bits_set;
-        self.unset_bit_count_cache.store(zeros as u64, Ordering::Relaxed);
+        self.unset_bit_count_cache
+            .store(zeros as u64, Ordering::Relaxed);
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.

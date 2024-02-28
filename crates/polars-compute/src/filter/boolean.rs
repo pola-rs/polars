@@ -95,7 +95,12 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
                 core::arch::x86_64::_pext_u64(v, m)
             });
         } else {
-            filter_boolean_kernel_pext::<false, _>(values, mask, out_vec.as_mut_ptr(), pext64_polyfill)
+            filter_boolean_kernel_pext::<false, _>(
+                values,
+                mask,
+                out_vec.as_mut_ptr(),
+                pext64_polyfill,
+            )
         }
 
         out_vec.set_len(num_bytes);
@@ -151,12 +156,12 @@ unsafe fn filter_boolean_kernel_sparse(values: &Bitmap, mask: &Bitmap, mut out_p
                         word = 0;
                     }
                 }
-                
+
                 m &= m.wrapping_sub(1); // Clear least significant bit.
             }
-        }}
+        }};
     }
-    
+
     // Handle bulk.
     while value_idx + 64 <= len {
         let chunk;
@@ -169,7 +174,7 @@ unsafe fn filter_boolean_kernel_sparse(values: &Bitmap, mask: &Bitmap, mut out_p
         loop_body!(m);
         value_idx += 64;
     }
-    
+
     // Handle remainder.
     if value_idx < len {
         let rest_len = len - value_idx;
@@ -232,9 +237,9 @@ unsafe fn filter_boolean_kernel_pext<const HAS_NATIVE_PEXT: bool, F: Fn(u64, u64
                 let full_bytes_written = bits_in_word / 8;
                 out_ptr = out_ptr.add(full_bytes_written);
                 word >>= full_bytes_written * 8;
-                bits_in_word = bits_in_word % 8;
+                bits_in_word %= 8;
             }
-        }}
+        }};
     }
 
     let mut v_iter = values.fast_iter_u56();
@@ -255,13 +260,11 @@ unsafe fn filter_boolean_kernel_pext<const HAS_NATIVE_PEXT: bool, F: Fn(u64, u64
     }
 }
 
-
 pub(super) fn filter_bitmap_and_validity(
     values: &Bitmap,
     validity: Option<&Bitmap>,
     mask: &Bitmap,
 ) -> (Bitmap, Option<Bitmap>) {
-    
     let filtered_values = filter_boolean_kernel(values, mask);
     if let Some(validity) = validity {
         // TODO: we could theoretically be faster by computing these two filters
@@ -272,7 +275,6 @@ pub(super) fn filter_bitmap_and_validity(
         (filtered_values, None)
     }
 }
-
 
 #[cfg(test)]
 mod test {

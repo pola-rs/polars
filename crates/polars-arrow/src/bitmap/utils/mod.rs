@@ -55,7 +55,7 @@ pub unsafe fn set_bit_unchecked(bytes: &mut [u8], i: usize, value: bool) {
 pub fn get_bit(bytes: &[u8], i: usize) -> bool {
     let byte = bytes[i / 8];
     let bit = (byte >> (i % 8)) & 1;
-    bit != 0    
+    bit != 0
 }
 
 /// Returns whether bit at position `i` in `bytes` is set or not.
@@ -66,7 +66,7 @@ pub fn get_bit(bytes: &[u8], i: usize) -> bool {
 pub unsafe fn get_bit_unchecked(bytes: &[u8], i: usize) -> bool {
     let byte = *bytes.get_unchecked(i / 8);
     let bit = (byte >> (i % 8)) & 1;
-    bit != 0    
+    bit != 0
 }
 
 /// Returns the number of bytes required to hold `bits` bits.
