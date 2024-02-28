@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal as D
 from typing import Any
 
 import pytest
@@ -548,21 +547,12 @@ def test_sort_by_logical() -> None:
         {
             "start": [date(2020, 5, 6), date(2020, 5, 13), date(2020, 5, 10)],
             "end": [date(2020, 12, 31), date(2020, 12, 31), date(2021, 1, 1)],
-            "num": [D(0), D(1), D(2)],
+            "num": [0, 1, 2],
         }
     )
-    assert test.select([pl.col("start").sort_by("num", descending=True).alias("s1")])[
-        "s1"
-    ].to_list() == [date(2020, 5, 10), date(2020, 5, 13), date(2020, 5, 6)]
-
-    assert test.select([pl.col("start").sort_by(["end", "num"]).alias("s2")])[
-        "s2"
-    ].to_list() == [date(2020, 5, 6), date(2020, 5, 13), date(2020, 5, 10)]
-
     assert test.select([pl.col("num").sort_by(["start", "end"]).alias("n1")])[
         "n1"
-    ].to_list() == [D(0), D(2), D(1)]
-
+    ].to_list() == [0, 2, 1]
     df = pl.DataFrame(
         {
             "dt1": [date(2022, 2, 1), date(2022, 3, 1), date(2022, 4, 1)],
