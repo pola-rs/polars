@@ -50,6 +50,7 @@ pub enum FunctionNode {
     Count {
         paths: Arc<[PathBuf]>,
         scan_type: FileScan,
+        alias: Option<Arc<str>>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
     Pipeline {
@@ -198,9 +199,11 @@ impl FunctionNode {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
-            Count { .. } => {
+            Count { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
-                schema.insert_at_index(0, SmartString::from("len"), IDX_DTYPE)?;
+                let name =
+                    SmartString::from(alias.as_ref().map(|alias| alias.as_ref()).unwrap_or("len"));
+                schema.insert_at_index(0, name, IDX_DTYPE)?;
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
@@ -323,7 +326,9 @@ impl FunctionNode {
                 }
             },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
-            Count { paths, scan_type } => count::count_rows(paths, scan_type),
+            Count {
+                paths, scan_type, ..
+            } => count::count_rows(paths, scan_type),
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
