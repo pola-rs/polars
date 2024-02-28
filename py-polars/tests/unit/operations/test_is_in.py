@@ -323,3 +323,74 @@ def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
         pl.Series(["a", "d", "e", "b"]).is_in(s),
         pl.Series([False, False, False, True]),
     )
+
+
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        [
+            (["a", "b"], "c"),
+            (["a", "b"], "a"),
+            (["a", None], None),
+            (["a", "c"], None),
+            (["a"], "d"),
+        ],
+        schema={"li": pl.List(dtype), "x": dtype},
+    )
+    res = df.select(pl.col("li").list.contains(pl.col("x")))
+    expected_df = pl.DataFrame({"li": [False, True, True, False, False]})
+    assert_frame_equal(res, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("val", "expected"),
+    [
+        ("b", [True, False, False, None, True]),
+        (None, [False, False, True, None, False]),
+        ("e", [False, False, False, None, False]),
+    ],
+)
+def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -> None:
+    df = pl.Series(
+        "li",
+        [["a", "b"], ["a", "c"], ["a", None], None, ["b"]],
+        dtype=pl.List(pl.Categorical),
+    ).to_frame()
+    res = df.select(pl.col("li").list.contains(pl.lit(val, dtype=pl.Categorical)))
+    expected_df = pl.DataFrame({"li": expected})
+    assert_frame_equal(res, expected_df)
+
+
+def test_cat_list_is_in_from_str() -> None:
+    df = pl.DataFrame(
+        [
+            (["a", "b"], "c"),
+            (["a", "b"], "a"),
+            (["a", None], None),
+            (["a", "c"], None),
+            (["a"], "d"),
+        ],
+        schema={"li": pl.List(pl.Categorical), "x": pl.String},
+    )
+    res = df.select(pl.col("li").list.contains(pl.col("x")))
+    expected_df = pl.DataFrame({"li": [False, True, True, False, False]})
+    assert_frame_equal(res, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("val", "expected"),
+    [
+        ("b", [True, False, False, None, True]),
+        (None, [False, False, True, None, False]),
+        ("e", [False, False, False, None, False]),
+    ],
+)
+def test_cat_list_is_in_from_single_str(val: str | None, expected: list[bool]) -> None:
+    df = pl.Series(
+        "li",
+        [["a", "b"], ["a", "c"], ["a", None], None, ["b"]],
+        dtype=pl.List(pl.Categorical),
+    ).to_frame()
+    res = df.select(pl.col("li").list.contains(pl.lit(val, dtype=pl.String)))
+    expected_df = pl.DataFrame({"li": expected})
+    assert_frame_equal(res, expected_df)
