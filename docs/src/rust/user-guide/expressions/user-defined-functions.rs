@@ -9,6 +9,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", df);
     // --8<-- [end:dataframe]
 
+    // --8<-- [start:custom_sum]
+    // --8<-- [end:custom_sum]
+
+    // --8<-- [start:custom_sum_numba]
+    // --8<-- [end:custom_sum_numba]
+
     // --8<-- [start:shift_map_batches]
     let out = df
         .clone()

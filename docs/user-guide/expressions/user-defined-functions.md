@@ -8,8 +8,60 @@ over data in Polars.
 
 For this we provide the following expressions:
 
-- `map_batches`
-- `map_elements`
+- [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html): Always passes the full `Series` to the function.
+- [:material-api: `map_elements`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html): Passes the smallest logical for an operation; in a `select()` context this will be individual items, in a `group_by()` context this will be group-specific `Series`.
+
+## Example: A slow, custom sum function written in Python
+
+For demonstration purposes, let's say we want to sum the values in a `Series` using a function we write in Python.
+Here is our data:
+
+{{code_block('user-guide/expressions/user-defined-functions','dataframe',[])}}
+
+```python exec="on" result="text" session="user-guide/udf"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:setup"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:dataframe"
+```
+
+We can use `map_batches()` to run this function on either the full `Series` or individual groups in a `group_by()`.
+Since the result of the latter is a `Series`, we can also extract it into a single value if we want.
+
+{{code_block('user-guide/expressions/user-defined-functions','custom_sum',[])}}
+
+```python exec="on" result="text" session="user-guide/udf"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:custom_sum"
+```
+
+The problem with this implementation is that it's slow.
+In general, you want to minimize how much Python code you call if you want fast results.
+Calling a Python function for every `Series` isn't usually a problem, unless the `group_by()` produces a very large number of groups.
+However, running the `for` loop in Python, and then summing the values in Python, will be very slow.
+
+## Fast operations with user-defined functions
+
+In general, user-defined functions will run most quickly when two conditions are met:
+
+1. **You're operating on a whole `Series`.**
+   That means you'll want to use `map_batches()` in `select()` contexts, and `map_elements()` in `group_by()` contexts so your function gets called per group.
+   See below for more details about the difference between the two APIs.
+2. **You're using a function written in a compiled language.**
+   For numeric calculations Polars supports a pair of interfaces defined by NumPy called ["ufuncs"](https://numpy.org/doc/stable/reference/ufuncs.html) and ["generalized ufuncs"](https://numpy.org/neps/nep-0005-generalized-ufuncs.html).
+   The latter runs on each item individually, but the latter accepts a whole array.
+   The easiest way to write these in Python is to use [Numba](https://numba.readthedocs.io/en/stable/), which allows you to write custom functions in (a subset) of Python while still getting the benefit of compiled code.
+
+## Example: A fast custom sum function in Python using Numba
+
+Numba provides a decorator called [`@guvectorize`](https://numba.readthedocs.io/en/stable/user/vectorize.html#the-guvectorize-decorator) that takes a Python function and compiles it to fast machine code, in a way that allows it to be used by Polars.
+
+In the following example the `custom_sum_numba()` will be compiled to fast machine code at import time, which will take a little time.
+After that all calls to the function will run quickly.
+The `Series` will be converted to a NumPy array before being passed to the function:
+
+{{code_block('user-guide/expressions/user-defined-functions','custom_sum_numba',[])}}
+
+```python exec="on" result="text" session="user-guide/udf"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:custom_sum"
+```
 
 ## To `map_batches` or to `map_elements`.
 
@@ -28,7 +80,7 @@ we could use `map_batches` to pass an expression column to a neural network mode
 [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html)
 
 ```python
-df.with_columns([
+features_df.with_columns([
     pl.col("features").map_batches(lambda s: MyNeuralNetwork.forward(s.to_numpy())).alias("activations")
 ])
 ```
@@ -36,12 +88,12 @@ df.with_columns([
 === ":fontawesome-brands-rust: Rust"
 
 ```rust
-df.with_columns([
+features_df.with_columns([
     col("features").map(|s| Ok(my_nn.forward(s))).alias("activations")
 ])
 ```
 
-Use cases for `map_batches` in the `group_by` context are slim. They are only used for performance reasons, but can quite easily lead to incorrect results. Let me explain why.
+Use cases for `map_batches` in the `group_by` context are slim. They are only used for performance reasons, but can quite easily lead to incorrect results. Let me explain why, returning to our original code example.
 
 {{code_block('user-guide/expressions/user-defined-functions','dataframe',[])}}
 

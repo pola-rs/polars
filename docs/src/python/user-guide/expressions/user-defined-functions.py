@@ -14,6 +14,53 @@ df = pl.DataFrame(
 print(df)
 # --8<-- [end:dataframe]
 
+
+# --8<-- [start:custom_sum]
+def custom_sum(series):
+    # This will be very slow for non-triviial Series, since it's all Python
+    # code:
+    total = 0
+    for value in series:
+        total += value
+    return total
+
+
+# Apply our custom function a full Series with map_batches():
+out = df.select(pl.col("values").map_batches(custom_sum))
+assert out["values"].item() == 18
+print("== select() with UDF ==")
+print(out)
+
+# Apply our custom function per group:
+print("== group_by() with UDF ==")
+out = df.group_by("keys").agg(pl.col("values").map_batches(custom_sum))
+print(out)
+# --8<-- [end:custom_sum]
+
+# --8<-- [start:custom_sum_numba]
+from numba import guvectorize, int64
+
+
+# This will be compiled to machine code, so it will be fast. The Series is
+# converted to a NumPy array before being passed to the function:
+@guvectorize([(int64[:], int64[:])], "(n)->()")
+def custom_sum_numba(arr, result):
+    total = 0
+    for value in series:
+        total += value
+    result[0] = total
+
+
+out = df.select(pl.col("values").map_batches(custom_sum_numba))
+print("== select() with UDF ==")
+assert out["values"].item() == 18
+print(out)
+
+out = df.group_by("keys").agg(pl.col("values").map_batches(custom_sum_numba))
+print("== group_by() with UDF ==")
+print(out)
+# --8<-- [end:custom_sum_numba]
+
 # --8<-- [start:shift_map_batches]
 out = df.group_by("keys", maintain_order=True).agg(
     pl.col("values").map_batches(lambda s: s.shift()).alias("shift_map_batches"),

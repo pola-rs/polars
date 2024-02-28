@@ -18,6 +18,7 @@ numpy
 pandas
 pyarrow
 pydantic>=2.0.0
+numba
 # Datetime / time zones
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'

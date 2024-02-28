@@ -5,6 +5,7 @@ matplotlib
 seaborn
 plotly
 altair
+numba
 
 mkdocs-material==9.5.2
 mkdocs-macros-plugin==1.0.4
