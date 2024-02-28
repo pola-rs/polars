@@ -1,33 +1,37 @@
 use polars_utils::clmul::prefix_xorsum;
+use polars_utils::slice::load_padded_le_u64;
 
 use super::*;
 
 const U56_MAX: u64 = (1 << 56) - 1;
 
 fn pext64_polyfill(mut v: u64, mut m: u64, m_popcnt: u32) -> u64 {
-    // Fast path: all the masked bits in v are 0 or 1.
-    v &= m;
-    if v == 0 {
-        return 0;
-    } else if v == m {
-        return (1 << m_popcnt) - 1;
-    }
-
     // Fast path: popcount is low.
     if m_popcnt <= 4 {
-        // Not a "while m" but a for loop so compiler fully unrolls,
-        // this makes bit << i much faster.
+        // Not a "while m != 0" but a for loop instead so the compiler fully
+        // unrolls the loop, this makes bit << i much faster.
         let mut out = 0;
         for i in 0..4 {
             let bit = (v >> m.trailing_zeros()) & 1;
             out |= bit << i;
-            m &= m.wrapping_sub(1);
+            m &= m.wrapping_sub(1); // Clear least significant bit.
 
             if m == 0 {
                 break;
             };
         }
         return out;
+    }
+
+    // Fast path: all the masked bits in v are 0 or 1.
+    // Despite this fast path being simpler than the above popcount-based one,
+    // we do it afterwards because if m has a low popcount these branches become
+    // very unpredictable.
+    v &= m;
+    if v == 0 {
+        return 0;
+    } else if v == m {
+        return (1 << m_popcnt) - 1;
     }
 
     // This algorithm is too involved to explain here, see https://github.com/zwegner/zp7.
@@ -81,8 +85,8 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
             .add(num_bytes - num_tail_bytes)
             .write_bytes(0, num_tail_bytes);
 
-        if mask_bits_set <= mask.len() / 32 {
-            // Fast path: mask is very sparse, 1 in 32 bits or fewer set.
+        if mask_bits_set <= mask.len() / (64 * 4) {
+            // Less than one in 1 in 4 words has a bit set on average, use sparse kernel.
             filter_boolean_kernel_sparse(values, mask, out_vec.as_mut_ptr());
         } else if polars_utils::cpuid::has_fast_bmi2() {
             #[cfg(target_arch = "x86_64")]
@@ -106,20 +110,72 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
 unsafe fn filter_boolean_kernel_sparse(values: &Bitmap, mask: &Bitmap, mut out_ptr: *mut u8) {
     assert_eq!(values.len(), mask.len());
 
+    let mut value_idx = 0;
     let mut bits_in_word = 0usize;
     let mut word = 0u64;
-    for idx in mask.true_idx_iter() {
-        word |= (values.get_bit(idx) as u64) << bits_in_word;
-        bits_in_word += 1;
+    let (mut mask_bytes, offset, len) = mask.as_slice();
+    if len == 0 {
+        return;
+    }
 
-        if bits_in_word == 64 {
-            unsafe {
-                out_ptr.cast::<u64>().write_unaligned(word.to_le());
-                out_ptr = out_ptr.add(8);
-                bits_in_word = 0;
-                word = 0;
+    // Handle offset.
+    if offset > 0 {
+        let first_byte = mask_bytes[0];
+        mask_bytes = &mask_bytes[1..];
+
+        for byte_idx in offset..8 {
+            let mask_bit = first_byte & (1 << byte_idx) != 0;
+            if mask_bit && value_idx < len {
+                let bit = unsafe { values.get_bit_unchecked(value_idx) };
+                word |= (bit as u64) << bits_in_word;
+                bits_in_word += 1;
             }
+            value_idx += 1;
         }
+    }
+
+    macro_rules! loop_body {
+        ($m: expr) => {{
+            let mut m = $m;
+            while m > 0 {
+                let idx_in_m = m.trailing_zeros() as usize;
+                let bit = unsafe { values.get_bit_unchecked(value_idx + idx_in_m) };
+                word |= (bit as u64) << bits_in_word;
+                bits_in_word += 1;
+
+                if bits_in_word == 64 {
+                    unsafe {
+                        out_ptr.cast::<u64>().write_unaligned(word.to_le());
+                        out_ptr = out_ptr.add(8);
+                        bits_in_word = 0;
+                        word = 0;
+                    }
+                }
+                
+                m &= m.wrapping_sub(1); // Clear least significant bit.
+            }
+        }}
+    }
+    
+    // Handle bulk.
+    while value_idx + 64 <= len {
+        let chunk;
+        unsafe {
+            // SAFETY: we checked that value and mask have same length.
+            chunk = mask_bytes.get_unchecked(0..8);
+            mask_bytes = mask_bytes.get_unchecked(8..);
+        };
+        let m = u64::from_le_bytes(chunk.try_into().unwrap());
+        loop_body!(m);
+        value_idx += 64;
+    }
+    
+    // Handle remainder.
+    if value_idx < len {
+        let rest_len = len - value_idx;
+        assert!(rest_len < 64);
+        let m = load_padded_le_u64(mask_bytes) & ((1 << rest_len) - 1);
+        loop_body!(m);
     }
 
     if bits_in_word > 0 {
@@ -194,7 +250,7 @@ unsafe fn filter_boolean_kernel_pext<F: Fn(u64, u64, u32) -> u64>(
         let m = m_rem & U56_MAX;
         v_rem >>= 56;
         m_rem >>= 56;
-        loop_body!(v, m); // Careful, can contain continue/break, increment loop variables first.
+        loop_body!(v, m); // Careful, contains 'continue', increment loop variables first.
     }
 }
 
