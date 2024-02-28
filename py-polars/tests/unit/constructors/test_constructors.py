@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -15,7 +14,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
-from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
+from polars.dependencies import dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
@@ -23,14 +22,11 @@ from polars.utils._construction import type_hints
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars.datatypes import PolarsDataType
-
-if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+
+    from polars.datatypes import PolarsDataType
+else:
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 # -----------------------------------------------------------------------------------

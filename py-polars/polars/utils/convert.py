@@ -3,32 +3,23 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    NoReturn,
+    Sequence,
+    no_type_check,
+    overload,
+)
 
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
-    import sys
     from datetime import tzinfo
     from decimal import Decimal
 
     from polars.type_aliases import TimeUnit
-
-    # the below shenanigans with ZoneInfo are all to handle a
-    # typing issue in py < 3.9 while preserving lazy-loading
-    if sys.version_info >= (3, 9):
-        from zoneinfo import ZoneInfo
-    elif _ZONEINFO_AVAILABLE:
-        from backports.zoneinfo._zoneinfo import ZoneInfo
-
-    def get_zoneinfo(key: str) -> ZoneInfo:  # noqa: D103
-        pass
-
-else:
-
-    @lru_cache(None)
-    def get_zoneinfo(key: str) -> ZoneInfo:  # noqa: D103
-        return zoneinfo.ZoneInfo(key)
 
 
 SECONDS_PER_DAY = 86_400
@@ -187,14 +178,26 @@ def to_py_datetime(
 
 def _localize_datetime(dt: datetime, time_zone: str) -> datetime:
     # zone info installation should already be checked
-    _tzinfo: ZoneInfo | tzinfo
     try:
-        _tzinfo = get_zoneinfo(time_zone)
+        tz = string_to_zoneinfo(time_zone)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
-        _tzinfo = _parse_fixed_tz_offset(time_zone)
+        tz = _parse_fixed_tz_offset(time_zone)
 
-    return dt.astimezone(_tzinfo)
+    return dt.astimezone(tz)
+
+
+@no_type_check
+@lru_cache(None)
+def string_to_zoneinfo(key: str) -> Any:
+    """
+    Convert a time zone string to a Python ZoneInfo object.
+
+    This is a simple wrapper for the zoneinfo.ZoneInfo constructor.
+    The wrapper is useful because zoneinfo is not available on Python 3.8
+    and the backports module may not be installed.
+    """
+    return zoneinfo.ZoneInfo(key)
 
 
 # cache here as we have a single tz per column
@@ -209,7 +212,7 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
         # minutes, then we can construct:
         # tzinfo=timezone(timedelta(hours=..., minutes=...))
     except ValueError:
-        msg = f"offset: {offset!r} not understood"
+        msg = f"unexpected time zone offset: {offset!r}"
         raise ValueError(msg) from None
 
     return dt_offset.tzinfo  # type: ignore[return-value]
