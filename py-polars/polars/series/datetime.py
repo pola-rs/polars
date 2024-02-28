@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_date, _to_python_datetime
+from polars.utils.convert import to_py_date, to_py_datetime
 from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
 from polars.utils.unstable import unstable
 
@@ -81,11 +81,11 @@ class DateTimeNameSpace:
         out = s.median()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))  # type: ignore[arg-type]
+                return to_py_date(int(out))  # type: ignore[arg-type]
             elif s.dtype in (Datetime, Duration):
                 return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
+                return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
     def mean(self) -> TemporalLiteral | float | None:
@@ -105,11 +105,11 @@ class DateTimeNameSpace:
         out = s.mean()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))  # type: ignore[arg-type]
+                return to_py_date(int(out))  # type: ignore[arg-type]
             elif s.dtype in (Datetime, Duration):
                 return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
+                return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
     def to_string(self, format: str) -> Series:

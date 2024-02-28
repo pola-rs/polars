@@ -155,12 +155,12 @@ def timedelta_to_int(td: timedelta, time_unit: TimeUnit) -> int:
 
 
 @lru_cache(256)
-def _to_python_date(value: int | float) -> date:
+def to_py_date(value: int | float) -> date:
     """Convert an integer or float to a Python date object."""
     return EPOCH_DATE + timedelta(days=value)
 
 
-def _to_python_time(value: int) -> time:
+def to_py_time(value: int) -> time:
     """Convert an integer to a Python time object."""
     # Fast path for 00:00
     if value == 0:
@@ -174,7 +174,7 @@ def _to_python_time(value: int) -> time:
     )
 
 
-def _to_python_datetime(
+def to_py_datetime(
     value: int | float,
     time_unit: TimeUnit,
     time_zone: str | None = None,
@@ -229,7 +229,7 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     return dt_offset.tzinfo  # type: ignore[return-value]
 
 
-def _to_python_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
+def to_py_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
     """Convert an integer or float to a Python timedelta object."""
     if time_unit == "us":
         return timedelta(microseconds=value)

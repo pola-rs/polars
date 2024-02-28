@@ -112,7 +112,7 @@ impl ToPyObject for Wrap<&StructChunked> {
 impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
+        let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
         let time_unit = self.0.time_unit().to_ascii();
         let iter = self
             .0
@@ -125,7 +125,7 @@ impl ToPyObject for Wrap<&DurationChunked> {
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
+        let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
         let time_unit = self.0.time_unit().to_ascii();
         let time_zone = self.0.time_zone().to_object(py);
         let iter = self
@@ -148,7 +148,7 @@ pub(crate) fn time_to_pyobject_iter<'a>(
     ca: &'a TimeChunked,
 ) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
     let utils = UTILS.as_ref(py);
-    let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
+    let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
     ca.0.into_iter()
         .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()))
 }
@@ -156,7 +156,7 @@ pub(crate) fn time_to_pyobject_iter<'a>(
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_date")).unwrap();
+        let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
         let iter = self
             .0
             .into_iter()

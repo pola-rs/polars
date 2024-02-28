@@ -39,11 +39,11 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 s.into_py(py)
             },
             AnyValue::Date(v) => {
-                let convert = utils.getattr(intern!(py, "_to_python_date")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             },
             AnyValue::Datetime(v, time_unit, time_zone) => {
-                let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert
                     .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
@@ -51,12 +51,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .into_py(py)
             },
             AnyValue::Duration(v, time_unit) => {
-                let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert.call1((v, time_unit)).unwrap().into_py(py)
             },
             AnyValue::Time(v) => {
-                let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
+                let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             },
             AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
