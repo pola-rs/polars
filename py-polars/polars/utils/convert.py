@@ -179,13 +179,13 @@ def to_py_datetime(
         return EPOCH + td
     elif _ZONEINFO_AVAILABLE:
         dt = EPOCH_UTC + td
-        return _localize(dt, time_zone)
+        return _localize_datetime(dt, time_zone)
     else:
         msg = "install polars[timezone] to handle datetimes with time zone information"
         raise ImportError(msg)
 
 
-def _localize(dt: datetime, time_zone: str) -> datetime:
+def _localize_datetime(dt: datetime, time_zone: str) -> datetime:
     # zone info installation should already be checked
     _tzinfo: ZoneInfo | tzinfo
     try:
@@ -254,7 +254,7 @@ def _datetime_for_any_value(dt: datetime) -> tuple[int, int]:
 def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
     """Used in PyO3 AnyValue conversion."""
     if dt.tzinfo is None:
-        dt = _localize(dt, "UTC")
+        dt = _localize_datetime(dt, "UTC")
     # returns (s, ms)
     return (_timestamp_in_seconds(dt), dt.microsecond)
 
