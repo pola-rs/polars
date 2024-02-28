@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
-from typing import Any, cast
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -25,6 +17,11 @@ from polars.datatypes import (
     TEMPORAL_DTYPES,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+else:
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_arg_true() -> None:

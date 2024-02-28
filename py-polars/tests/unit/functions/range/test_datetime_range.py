@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
     from polars.type_aliases import ClosedInterval, TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_datetime_range() -> None:
@@ -166,13 +166,13 @@ def test_timezone_aware_datetime_range() -> None:
     assert pl.datetime_range(
         low, high, interval=timedelta(days=5), eager=True
     ).to_list() == [
-        datetime(2022, 10, 17, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 10, 22, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 10, 27, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 1, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 6, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 11, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 16, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 10, 17, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 10, 22, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 10, 27, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 1, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 6, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 11, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 16, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     ]
 
     with pytest.raises(

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import PolarsTemporalType, TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -505,8 +505,8 @@ def test_to_datetime_tz_aware_strptime(ts: str, fmt: str, expected: datetime) ->
 def test_crossing_dst(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     result = pl.Series(ts).str.to_datetime(format)
-    assert result[0] == datetime(2021, 3, 27, 22, 59, 59, tzinfo=ZoneInfo(key="UTC"))
-    assert result[1] == datetime(2021, 3, 28, 21, 59, 59, tzinfo=ZoneInfo(key="UTC"))
+    assert result[0] == datetime(2021, 3, 27, 22, 59, 59, tzinfo=ZoneInfo("UTC"))
+    assert result[1] == datetime(2021, 3, 28, 21, 59, 59, tzinfo=ZoneInfo("UTC"))
 
 
 @pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
