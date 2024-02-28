@@ -23,7 +23,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     }
 
     // default branch
-    fn default(series: Series, mut fill_value: Series) -> PolarsResult<Series> {
+    fn default(series: Series, fill_value: Series) -> PolarsResult<Series> {
         let mask = series.is_not_null();
         series.zip_with_same_type(&mask, &fill_value)
     }
