@@ -274,6 +274,6 @@ def _datetime_for_any_value_windows(dt: datetime) -> tuple[float, int]:
     return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
-def _raise_invalid_time_unit(time_unit: TimeUnit) -> NoReturn:
+def _raise_invalid_time_unit(time_unit: Any) -> NoReturn:
     msg = f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
     raise ValueError(msg)
