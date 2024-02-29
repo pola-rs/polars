@@ -31,7 +31,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils._construction import (
+from polars._utils.construction import (
     arrow_to_pydf,
     dict_to_pydf,
     frame_to_pydf,
@@ -42,8 +42,6 @@ from polars._utils._construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars._utils._parse_expr_input import parse_as_expression
-from polars._utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
@@ -54,6 +52,7 @@ from polars._utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _prepare_row_index_args,
@@ -68,6 +67,7 @@ from polars._utils.various import (
     scale_bytes,
     warn_null_comparison,
 )
+from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (

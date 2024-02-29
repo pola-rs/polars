@@ -16,7 +16,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars._utils._construction import iterable_to_pydf
+from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (

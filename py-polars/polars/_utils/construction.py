@@ -23,7 +23,6 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils._wrap import wrap_df, wrap_s
 from polars._utils.various import (
     _is_generator,
     arrlen,
@@ -31,6 +30,7 @@ from polars._utils.various import (
     parse_version,
     range_to_series,
 )
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,

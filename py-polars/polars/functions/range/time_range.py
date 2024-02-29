@@ -5,9 +5,9 @@ from datetime import time
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars._utils._parse_expr_input import parse_as_expression
-from polars._utils._wrap import wrap_expr
 from polars._utils.deprecation import deprecate_saturating
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

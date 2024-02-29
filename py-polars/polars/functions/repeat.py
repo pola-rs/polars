@@ -6,8 +6,8 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
-from polars._utils._parse_expr_input import parse_as_expression
-from polars._utils._wrap import wrap_expr
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,

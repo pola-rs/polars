@@ -11,7 +11,7 @@ import pytest
 
 import polars
 import polars as pl
-from polars._utils._construction import iterable_to_pyseries
+from polars._utils.construction import iterable_to_pyseries
 from polars.datatypes import (
     Date,
     Datetime,

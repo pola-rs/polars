@@ -18,10 +18,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     __register_startup_deps()
 
 from polars import api
-from polars._utils._polars_version import get_polars_version as _get_polars_version
+from polars._utils.polars_version import get_polars_version as _get_polars_version
 
 # TODO: remove need for importing wrap utils at top level
-from polars._utils._wrap import wrap_df, wrap_s  # noqa: F401
+from polars._utils.wrap import wrap_df, wrap_s  # noqa: F401
 from polars.config import Config
 from polars.convert import (
     from_arrow,
