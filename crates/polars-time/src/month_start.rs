@@ -1,6 +1,7 @@
 #[cfg(feature = "timezones")]
 use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
+use arrow::temporal_conversions::timestamp_s_to_datetime;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
@@ -77,6 +78,10 @@ impl PolarsMonthStart for DatetimeChunked {
             TimeUnit::Milliseconds => {
                 timestamp_to_datetime = timestamp_ms_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ms;
+            },
+            TimeUnit::Seconds => {
+                timestamp_to_datetime = timestamp_s_to_datetime;
+                datetime_to_timestamp = datetime_to_timestamp_s;
             },
         };
         Ok(self

@@ -126,6 +126,7 @@ impl Executor for JoinExec {
                                     TimeUnit::Nanoseconds => duration.duration_ns(),
                                     TimeUnit::Microseconds => duration.duration_us(),
                                     TimeUnit::Milliseconds => duration.duration_ms(),
+                                    TimeUnit::Seconds => duration.duration_s(),
                                 };
                                 options.tolerance = Some(AnyValue::from(tolerance))
                             }

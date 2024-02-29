@@ -1,7 +1,8 @@
 use std::fmt::Write;
 
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_s_to_datetime,
+    timestamp_us_to_datetime,
 };
 use chrono::format::{DelayedFormat, StrftimeItems};
 #[cfg(feature = "timezones")]
@@ -58,6 +59,7 @@ impl DatetimeChunked {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+            TimeUnit::Seconds => timestamp_s_to_datetime,
         };
         // we know the iterators len
         unsafe {
@@ -90,6 +92,7 @@ impl DatetimeChunked {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+            TimeUnit::Seconds => timestamp_s_to_datetime,
         };
 
         let dt = NaiveDate::from_ymd_opt(2001, 1, 1)
@@ -141,6 +144,7 @@ impl DatetimeChunked {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
             TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+            TimeUnit::Seconds => datetime_to_timestamp_s,
         };
         let vals = v.into_iter().map(func).collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
@@ -155,6 +159,7 @@ impl DatetimeChunked {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
             TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+            TimeUnit::Seconds => datetime_to_timestamp_s,
         };
         let vals = v.into_iter().map(|opt_nd| opt_nd.map(func));
         Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
@@ -179,6 +184,11 @@ impl DatetimeChunked {
                 out.0 = ca;
                 out
             },
+            (Nanoseconds, Seconds) => {
+                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000_000);
+                out.0 = ca;
+                out
+            },
             (Microseconds, Nanoseconds) => {
                 let ca = &self.0 * 1_000;
                 out.0 = ca;
@@ -186,6 +196,11 @@ impl DatetimeChunked {
             },
             (Microseconds, Milliseconds) => {
                 let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                out.0 = ca;
+                out
+            },
+            (Microseconds, Seconds) => {
+                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000);
                 out.0 = ca;
                 out
             },
@@ -199,9 +214,30 @@ impl DatetimeChunked {
                 out.0 = ca;
                 out
             },
+            (Milliseconds, Seconds) => {
+                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                out.0 = ca;
+                out
+            },
+            (Seconds, Milliseconds) => {
+                let ca = &self.0 * 1_000;
+                out.0 = ca;
+                out
+            },
+            (Seconds, Microseconds) => {
+                let ca = &self.0 * 1_000_000;
+                out.0 = ca;
+                out
+            },
+            (Seconds, Nanoseconds) => {
+                let ca = &self.0 * 1_000_000_000;
+                out.0 = ca;
+                out
+            },
             (Nanoseconds, Nanoseconds)
             | (Microseconds, Microseconds)
-            | (Milliseconds, Milliseconds) => out,
+            | (Milliseconds, Milliseconds)
+            | (Seconds, Seconds) => out,
         }
     }
 

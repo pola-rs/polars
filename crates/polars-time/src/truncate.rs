@@ -19,6 +19,7 @@ impl PolarsTruncate for DatetimeChunked {
             TimeUnit::Nanoseconds => Window::truncate_ns,
             TimeUnit::Microseconds => Window::truncate_us,
             TimeUnit::Milliseconds => Window::truncate_ms,
+            TimeUnit::Seconds => Window::truncate_s,
         };
 
         let out = match every.len() {

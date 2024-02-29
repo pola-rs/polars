@@ -154,6 +154,7 @@ pub(super) fn datetime(
                 NaiveDate::from_ymd_opt(y, m, d)
                     .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
                     .map(|ndt| match time_unit {
+                        TimeUnit::Seconds => ndt.timestamp(),
                         TimeUnit::Milliseconds => ndt.timestamp_millis(),
                         TimeUnit::Microseconds => ndt.timestamp_micros(),
                         TimeUnit::Nanoseconds => ndt.timestamp_nanos_opt().unwrap(),
@@ -245,6 +246,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
                 TimeUnit::Nanoseconds => Duration::add_ns,
                 TimeUnit::Microseconds => Duration::add_us,
                 TimeUnit::Milliseconds => Duration::add_ms,
+                TimeUnit::Seconds => Duration::add_s,
             };
 
             let out = match tz {

@@ -6,7 +6,7 @@ use arrow::compute::arity::unary;
 use arrow::temporal_conversions::time64ns_to_time_opt;
 use arrow::temporal_conversions::{
     date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
-    timestamp_us_to_datetime_opt,
+    timestamp_s_to_datetime_opt, timestamp_us_to_datetime_opt,
 };
 use chrono::{Datelike, Timelike};
 
@@ -206,6 +206,15 @@ to_temporal_unit!(
 
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
+    datetime_to_ordinal_s,
+    ordinal,
+    timestamp_s_to_datetime_opt,
+    i64,
+    i16,
+    ArrowDataType::Int16
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
     datetime_to_ordinal_ms,
     ordinal,
     timestamp_ms_to_datetime_opt,
@@ -253,6 +262,15 @@ to_temporal_unit!(
     ArrowDataType::Int32
 );
 #[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_iso_year_s,
+    iso_year,
+    timestamp_s_to_datetime_opt,
+    i64,
+    i32,
+    ArrowDataType::Int32
+);
+#[cfg(feature = "dtype-datetime")]
 to_boolean_temporal_unit!(
     datetime_to_is_leap_year_ns,
     year,
@@ -274,5 +292,13 @@ to_boolean_temporal_unit!(
     year,
     is_leap_year,
     timestamp_ms_to_datetime_opt,
+    i64
+);
+#[cfg(feature = "dtype-datetime")]
+to_boolean_temporal_unit!(
+    datetime_to_is_leap_year_s,
+    year,
+    is_leap_year,
+    timestamp_s_to_datetime_opt,
     i64
 );

@@ -54,6 +54,11 @@ impl Window {
         self.offset.add_ms(t, tz)
     }
 
+    pub fn truncate_s(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        let t = self.every.truncate_s(t, tz)?;
+        self.offset.add_s(t, tz)
+    }
+
     #[inline]
     pub fn truncate_no_offset_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.every.truncate_ms(t, tz)
@@ -79,6 +84,13 @@ impl Window {
         self.truncate_ms(t, tz)
     }
 
+    /// Round the given s timestamp by the window boundary.
+    pub fn round_s(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        let t = t + self.every.duration_ns()
+            / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Second) as i64);
+        self.truncate_s(t, tz)
+    }
+
     /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
@@ -102,6 +114,13 @@ impl Window {
         Ok(Bounds::new_checked(start, stop))
     }
 
+    pub fn get_earliest_bounds_s(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
+        let start = self.truncate_s(t, tz)?;
+        let stop = self.period.add_s(start, tz)?;
+
+        Ok(Bounds::new_checked(start, stop))
+    }
+
     pub(crate) fn estimate_overlapping_bounds_ns(&self, boundary: Bounds) -> usize {
         (boundary.duration() / self.every.duration_ns()
             + self.period.duration_ns() / self.every.duration_ns()) as usize
@@ -115,6 +134,11 @@ impl Window {
     pub(crate) fn estimate_overlapping_bounds_ms(&self, boundary: Bounds) -> usize {
         (boundary.duration() / self.every.duration_ms()
             + self.period.duration_ms() / self.every.duration_ms()) as usize
+    }
+
+    pub(crate) fn estimate_overlapping_bounds_s(&self, boundary: Bounds) -> usize {
+        (boundary.duration() / self.every.duration_s()
+            + self.period.duration_s() / self.every.duration_s()) as usize
     }
 
     pub fn get_overlapping_bounds_iter<'a>(
@@ -152,6 +176,7 @@ impl<'a> BoundsIter<'a> {
                     TimeUnit::Nanoseconds => Duration::add_ns,
                     TimeUnit::Microseconds => Duration::add_us,
                     TimeUnit::Milliseconds => Duration::add_ms,
+                    TimeUnit::Seconds => Duration::add_s,
                 };
                 boundary.stop = offset_fn(&window.period, boundary.start, tz)?;
                 boundary
@@ -160,6 +185,7 @@ impl<'a> BoundsIter<'a> {
                 TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start, tz)?,
                 TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start, tz)?,
                 TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start, tz)?,
+                TimeUnit::Seconds => window.get_earliest_bounds_s(boundary.start, tz)?,
             },
             _ => {
                 {
@@ -183,6 +209,11 @@ impl<'a> BoundsIter<'a> {
                             timestamp_ms_to_datetime,
                             datetime_to_timestamp_ms,
                             Duration::add_ms,
+                        ),
+                        TimeUnit::Seconds => (
+                            timestamp_s_to_datetime,
+                            datetime_to_timestamp_s,
+                            Duration::add_s,
                         ),
                     };
                     // find beginning of the week.
@@ -261,6 +292,10 @@ impl<'a> Iterator for BoundsIter<'a> {
                 TimeUnit::Milliseconds => {
                     self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_ms(self.bi.stop, self.tz).unwrap();
+                },
+                TimeUnit::Seconds => {
+                    self.bi.start = self.window.every.add_s(self.bi.start, self.tz).unwrap();
+                    self.bi.stop = self.window.every.add_s(self.bi.stop, self.tz).unwrap();
                 },
             }
             Some(out)

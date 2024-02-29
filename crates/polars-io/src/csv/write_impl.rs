@@ -175,6 +175,9 @@ unsafe fn write_any_value(
                                 TimeUnit::Milliseconds => {
                                     temporal_conversions::timestamp_ms_to_datetime(v)
                                 },
+                                TimeUnit::Seconds => {
+                                    temporal_conversions::timestamp_s_to_datetime(v)
+                                },
                             };
                             let formatted = match time_zone {
                                 #[cfg(feature = "timezones")]

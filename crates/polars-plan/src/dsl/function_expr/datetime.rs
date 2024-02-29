@@ -1,4 +1,6 @@
-use arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS, SECONDS_IN_DAY};
+use arrow::temporal_conversions::{
+    MICROSECONDS, MILLISECONDS, NANOSECONDS, SECONDS, SECONDS_IN_DAY,
+};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
@@ -504,7 +506,7 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
     let days = s[1].cast(&DataType::Int64).unwrap();
     let hours = s[2].cast(&DataType::Int64).unwrap();
     let minutes = s[3].cast(&DataType::Int64).unwrap();
-    let seconds = s[4].cast(&DataType::Int64).unwrap();
+    let mut seconds = s[4].cast(&DataType::Int64).unwrap();
     let mut milliseconds = s[5].cast(&DataType::Int64).unwrap();
     let mut microseconds = s[6].cast(&DataType::Int64).unwrap();
     let mut nanoseconds = s[7].cast(&DataType::Int64).unwrap();
@@ -525,6 +527,9 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
             if !is_zero_scalar(&milliseconds) {
                 microseconds = microseconds + (milliseconds * 1_000);
             }
+            if !is_zero_scalar(&seconds) {
+                microseconds = microseconds + (seconds * 1_000_000);
+            }
             microseconds
         },
         TimeUnit::Nanoseconds => {
@@ -537,9 +542,15 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
             if !is_zero_scalar(&milliseconds) {
                 nanoseconds = nanoseconds + (milliseconds * 1_000_000);
             }
+            if !is_zero_scalar(&seconds) {
+                nanoseconds = nanoseconds + (seconds * 1_000_000_000);
+            }
             nanoseconds
         },
         TimeUnit::Milliseconds => {
+            if is_scalar(&seconds) {
+                milliseconds = milliseconds + (seconds * 1_000);
+            }
             if is_scalar(&milliseconds) {
                 milliseconds = milliseconds.new_from_index(0, max_len);
             }
@@ -551,6 +562,21 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
             }
             milliseconds
         },
+        TimeUnit::Seconds => {
+            if is_scalar(&seconds) {
+                seconds = seconds.new_from_index(0, max_len);
+            }
+            if is_zero_scalar(&milliseconds) {
+                seconds = seconds + (milliseconds.wrapping_trunc_div_scalar(1_000));
+            }
+            if !is_zero_scalar(&microseconds) {
+                seconds = seconds + (microseconds.wrapping_trunc_div_scalar(1_000_000));
+            }
+            if !is_zero_scalar(&nanoseconds) {
+                seconds = seconds + (nanoseconds.wrapping_trunc_div_scalar(1_000_000_000));
+            }
+            seconds
+        },
     };
 
     // Process other duration specifiers
@@ -558,10 +584,8 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
         TimeUnit::Nanoseconds => NANOSECONDS,
         TimeUnit::Microseconds => MICROSECONDS,
         TimeUnit::Milliseconds => MILLISECONDS,
+        TimeUnit::Seconds => SECONDS,
     };
-    if !is_zero_scalar(&seconds) {
-        duration = duration + seconds * multiplier;
-    }
     if !is_zero_scalar(&minutes) {
         duration = duration + minutes * (multiplier * 60);
     }

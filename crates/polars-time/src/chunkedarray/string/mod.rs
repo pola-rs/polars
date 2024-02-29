@@ -176,6 +176,7 @@ pub trait StringMethods: AsString {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
             TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+            TimeUnit::Seconds => datetime_to_timestamp_s,
         };
 
         let ca = string_ca
@@ -281,6 +282,7 @@ pub trait StringMethods: AsString {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
             TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+            TimeUnit::Seconds => datetime_to_timestamp_s,
         };
 
         if tz_aware {
@@ -304,6 +306,7 @@ pub trait StringMethods: AsString {
                 TimeUnit::Nanoseconds => infer::transform_datetime_ns,
                 TimeUnit::Microseconds => infer::transform_datetime_us,
                 TimeUnit::Milliseconds => infer::transform_datetime_ms,
+                TimeUnit::Seconds => infer::transform_datetime_s,
             };
             // We can use the fast parser.
             let ca = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {

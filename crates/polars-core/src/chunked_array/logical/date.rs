@@ -38,6 +38,7 @@ impl LogicalType for DateChunked {
                     TimeUnit::Nanoseconds => NS_IN_DAY,
                     TimeUnit::Microseconds => US_IN_DAY,
                     TimeUnit::Milliseconds => MS_IN_DAY,
+                    TimeUnit::Seconds => SEC_IN_DAY,
                 };
                 Ok((casted.deref() * conversion)
                     .into_datetime(*tu, tz.clone())

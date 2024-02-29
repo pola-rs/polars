@@ -234,6 +234,8 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
         let time_unit = time_unit.expect("time_unit must be provided for datetime");
 
         let transform = match (time_unit, value) {
+            (TimeUnit::Seconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_s,
+            (TimeUnit::Seconds, _) => transform_datetime_s,
             (TimeUnit::Milliseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_ms,
             (TimeUnit::Milliseconds, _) => transform_datetime_ms,
             (TimeUnit::Microseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_us,
@@ -392,6 +394,24 @@ pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
 fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     let dt = DateTime::parse_from_str(val, fmt);
     dt.ok().map(|dt| datetime_to_timestamp_ms(dt.naive_utc()))
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn transform_datetime_s(val: &str, fmt: &str) -> Option<i64> {
+    match NaiveDateTime::parse_from_str(val, fmt) {
+        Ok(ndt) => Some(datetime_to_timestamp_s(ndt)),
+        Err(parse_error) => match parse_error.kind() {
+            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
+                .ok()
+                .map(|nd| datetime_to_timestamp_s(nd.and_hms_opt(0, 0, 0).unwrap())),
+            _ => None,
+        },
+    }
+}
+
+fn transform_tzaware_datetime_s(val: &str, fmt: &str) -> Option<i64> {
+    let dt = DateTime::parse_from_str(val, fmt);
+    dt.ok().map(|dt| datetime_to_timestamp_s(dt.naive_utc()))
 }
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {

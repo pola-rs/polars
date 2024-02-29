@@ -18,6 +18,7 @@ impl PolarsRound for DatetimeChunked {
             TimeUnit::Nanoseconds => Window::round_ns,
             TimeUnit::Microseconds => Window::round_us,
             TimeUnit::Milliseconds => Window::round_ms,
+            TimeUnit::Seconds => Window::round_s,
         };
 
         let out = { self.try_apply(|t| func(&w, t, tz)) };

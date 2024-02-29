@@ -43,6 +43,7 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Nanoseconds => datetime_to_is_leap_year_ns,
             TimeUnit::Microseconds => datetime_to_is_leap_year_us,
             TimeUnit::Milliseconds => datetime_to_is_leap_year_ms,
+            TimeUnit::Seconds => datetime_to_is_leap_year_s,
         };
         ca.apply_kernel_cast::<BooleanType>(&f)
     }
@@ -53,6 +54,7 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Nanoseconds => datetime_to_iso_year_ns,
             TimeUnit::Microseconds => datetime_to_iso_year_us,
             TimeUnit::Milliseconds => datetime_to_iso_year_ms,
+            TimeUnit::Seconds => datetime_to_iso_year_s,
         };
         ca.apply_kernel_cast::<Int32Type>(&f)
     }
@@ -126,6 +128,7 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Nanoseconds => datetime_to_ordinal_ns,
             TimeUnit::Microseconds => datetime_to_ordinal_us,
             TimeUnit::Milliseconds => datetime_to_ordinal_ms,
+            TimeUnit::Seconds => datetime_to_ordinal_s,
         };
         ca.apply_kernel_cast::<Int16Type>(&f)
     }
@@ -135,6 +138,7 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
             TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+            TimeUnit::Seconds => datetime_to_timestamp_s,
         };
 
         Int64Chunked::from_iter_options(

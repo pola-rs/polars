@@ -903,6 +903,8 @@ const SIZES_NS: [i64; 4] = [
 const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
 #[cfg(feature = "dtype-duration")]
 const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
+#[cfg(feature = "dtype-duration")]
+const SIZES_S: [i64; 4] = [86_400, 3_600, 60, 1];
 
 #[cfg(feature = "dtype-duration")]
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
@@ -943,6 +945,16 @@ fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v % 1_000 != 0 {
         write!(f, "{}ms", (v % 1_000))?;
     }
+    Ok(())
+}
+
+#[cfg(feature = "dtype-duration")]
+fn fmt_duration_s(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0s");
+    }
+    format_duration(f, v, SIZES_S.as_slice(), NAMES.as_slice())?;
+    write!(f, "{v}s")?;
     Ok(())
 }
 
@@ -1011,6 +1023,7 @@ impl Display for AnyValue<'_> {
                     TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
                     TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
                     TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
+                    TimeUnit::Seconds => timestamp_s_to_datetime(*v),
                 };
                 match tz {
                     None => write!(f, "{ndt}"),
@@ -1024,6 +1037,7 @@ impl Display for AnyValue<'_> {
                 TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
                 TimeUnit::Microseconds => fmt_duration_us(f, *v),
                 TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
+                TimeUnit::Seconds => fmt_duration_s(f, *v),
             },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {

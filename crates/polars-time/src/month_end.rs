@@ -1,4 +1,5 @@
 use arrow::legacy::time_zone::Tz;
+use arrow::temporal_conversions::timestamp_s_to_datetime;
 use chrono::NaiveDateTime;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
@@ -48,6 +49,11 @@ impl PolarsMonthEnd for DatetimeChunked {
                 timestamp_to_datetime = timestamp_ms_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ms;
                 offset_fn = Duration::add_ms;
+            },
+            TimeUnit::Seconds => {
+                timestamp_to_datetime = timestamp_s_to_datetime;
+                datetime_to_timestamp = datetime_to_timestamp_s;
+                offset_fn = Duration::add_s;
             },
         };
         Ok(self

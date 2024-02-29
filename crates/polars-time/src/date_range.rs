@@ -28,6 +28,7 @@ pub fn date_range(
         ),
         TimeUnit::Microseconds => (start.timestamp_micros(), end.timestamp_micros()),
         TimeUnit::Milliseconds => (start.timestamp_millis(), end.timestamp_millis()),
+        TimeUnit::Seconds => (start.timestamp(), end.timestamp()),
     };
     datetime_range_impl(name, start, end, interval, closed, tu, tz)
 }
@@ -119,6 +120,10 @@ pub(crate) fn datetime_range_i64(
         TimeUnit::Milliseconds => {
             size = ((end - start) / interval.duration_ms() + 1) as usize;
             offset_fn = Duration::add_ms;
+        },
+        TimeUnit::Seconds => {
+            size = ((end - start) / interval.duration_s() + 1) as usize;
+            offset_fn = Duration::add_s;
         },
     }
     let mut ts = Vec::with_capacity(size);

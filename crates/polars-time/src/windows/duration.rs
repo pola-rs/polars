@@ -6,15 +6,15 @@ use std::ops::Mul;
 use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_s_to_datetime,
+    timestamp_us_to_datetime, MICROSECONDS, MILLISECONDS, NANOSECONDS, SECONDS,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
+use polars_core::chunked_array::temporal::datetime_to_timestamp_s;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
     PolarsResult,
 };
-use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -396,6 +396,14 @@ impl Duration {
     }
 
     #[doc(hidden)]
+    pub const fn duration_s(&self) -> i64 {
+        self.months * 28 * 24 * 3600 * SECONDS
+            + (self.weeks * NS_WEEK / 1_000_000_000
+                + self.nsecs / 1_000_000_000
+                + self.days * NS_DAY / 1_000_000_000)
+    }
+
+    #[doc(hidden)]
     fn add_month(ts: NaiveDateTime, n_months: i64, negative: bool) -> NaiveDateTime {
         let mut months = n_months;
         if negative {
@@ -756,6 +764,18 @@ impl Duration {
         )
     }
 
+    // Truncate the given ms timestamp by the window boundary.
+    #[inline]
+    pub fn truncate_s(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        self.truncate_impl(
+            t,
+            tz,
+            |nsecs| nsecs / 1_000_000_000,
+            timestamp_s_to_datetime,
+            datetime_to_timestamp_s,
+        )
+    }
+
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
         t: i64,
@@ -867,6 +887,19 @@ impl Duration {
             |nsecs| nsecs / 1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,
+        );
+        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
+        Ok(new_t? + nsecs / 1_000_000)
+    }
+
+    pub fn add_s(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        let d = self;
+        let new_t = self.add_impl_month_week_or_day(
+            t,
+            tz,
+            |nsecs| nsecs / 1_000_000_000,
+            timestamp_s_to_datetime,
+            datetime_to_timestamp_s,
         );
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
         Ok(new_t? + nsecs / 1_000_000)

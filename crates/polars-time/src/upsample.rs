@@ -176,6 +176,7 @@ fn upsample_single_impl(
                         TimeUnit::Nanoseconds => offset.add_ns(first, tz.as_ref())?,
                         TimeUnit::Microseconds => offset.add_us(first, tz.as_ref())?,
                         TimeUnit::Milliseconds => offset.add_ms(first, tz.as_ref())?,
+                        TimeUnit::Seconds => offset.add_s(first, tz.as_ref())?,
                     };
                     let range = datetime_range_impl(
                         index_col_name,

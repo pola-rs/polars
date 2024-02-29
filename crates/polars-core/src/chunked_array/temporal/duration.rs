@@ -29,6 +29,11 @@ impl DurationChunked {
                 out.0 = ca;
                 out
             },
+            (Nanoseconds, Seconds) => {
+                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000_000);
+                out.0 = ca;
+                out
+            },
             (Microseconds, Nanoseconds) => {
                 let ca = &self.0 * 1_000;
                 out.0 = ca;
@@ -36,6 +41,11 @@ impl DurationChunked {
             },
             (Microseconds, Milliseconds) => {
                 let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                out.0 = ca;
+                out
+            },
+            (Microseconds, Seconds) => {
+                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000);
                 out.0 = ca;
                 out
             },
@@ -49,9 +59,30 @@ impl DurationChunked {
                 out.0 = ca;
                 out
             },
+            (Milliseconds, Seconds) => {
+                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                out.0 = ca;
+                out
+            },
+            (Seconds, Milliseconds) => {
+                let ca = &self.0 * 1_000;
+                out.0 = ca;
+                out
+            },
+            (Seconds, Microseconds) => {
+                let ca = &self.0 * 1_000_000;
+                out.0 = ca;
+                out
+            },
+            (Seconds, Nanoseconds) => {
+                let ca = &self.0 * 1_000_000_000;
+                out.0 = ca;
+                out
+            },
             (Nanoseconds, Nanoseconds)
             | (Microseconds, Microseconds)
-            | (Milliseconds, Milliseconds) => out,
+            | (Milliseconds, Milliseconds)
+            | (Seconds, Seconds) => out,
         }
     }
 
@@ -70,6 +101,7 @@ impl DurationChunked {
             TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
             TimeUnit::Microseconds => |v: ChronoDuration| v.num_microseconds().unwrap(),
             TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
+            TimeUnit::Seconds => |v: ChronoDuration| v.num_seconds(),
         };
         let vals = v.into_iter().map(func).collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_duration(tu)
@@ -85,6 +117,7 @@ impl DurationChunked {
             TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
             TimeUnit::Microseconds => |v: ChronoDuration| v.num_microseconds().unwrap(),
             TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
+            TimeUnit::Seconds => |v: ChronoDuration| v.num_seconds(),
         };
         let vals = v.into_iter().map(|opt| opt.map(func));
         Int64Chunked::from_iter_options(name, vals).into_duration(tu)

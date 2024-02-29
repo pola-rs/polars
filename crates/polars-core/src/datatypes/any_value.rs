@@ -535,6 +535,7 @@ impl<'a> AnyValue<'a> {
                     TimeUnit::Nanoseconds => (*v as i64) * NS_IN_DAY,
                     TimeUnit::Microseconds => (*v as i64) * US_IN_DAY,
                     TimeUnit::Milliseconds => (*v as i64) * MS_IN_DAY,
+                    TimeUnit::Seconds => (*v as i64) * SEC_IN_DAY,
                 },
                 *tu,
                 &None,
@@ -562,6 +563,7 @@ impl<'a> AnyValue<'a> {
                 TimeUnit::Nanoseconds => *v / NS_IN_DAY,
                 TimeUnit::Microseconds => *v / US_IN_DAY,
                 TimeUnit::Milliseconds => *v / MS_IN_DAY,
+                TimeUnit::Seconds => *v / SEC_IN_DAY,
             } as i32),
 
             // to time
@@ -572,6 +574,7 @@ impl<'a> AnyValue<'a> {
                 TimeUnit::Nanoseconds => *v % NS_IN_DAY,
                 TimeUnit::Microseconds => (*v % US_IN_DAY) * 1_000i64,
                 TimeUnit::Milliseconds => (*v % MS_IN_DAY) * 1_000_000i64,
+                TimeUnit::Seconds => (*v % SEC_IN_DAY) * 1_000_000_000i64,
             }),
 
             // to duration
@@ -585,6 +588,7 @@ impl<'a> AnyValue<'a> {
                     TimeUnit::Nanoseconds => *v,
                     TimeUnit::Microseconds => *v / 1_000i64,
                     TimeUnit::Milliseconds => *v / 1_000_000i64,
+                    TimeUnit::Seconds => *v / 1_000_000_000i64,
                 },
                 *tu,
             ),
@@ -594,10 +598,16 @@ impl<'a> AnyValue<'a> {
                     (_, _) if tu == tu_r => *v,
                     (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => *v / 1_000i64,
                     (TimeUnit::Nanoseconds, TimeUnit::Milliseconds) => *v / 1_000_000i64,
+                    (TimeUnit::Nanoseconds, TimeUnit::Seconds) => *v / 1_000_000_000i64,
                     (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => *v * 1_000i64,
                     (TimeUnit::Microseconds, TimeUnit::Milliseconds) => *v / 1_000i64,
+                    (TimeUnit::Microseconds, TimeUnit::Seconds) => *v / 1_000_000i64,
                     (TimeUnit::Milliseconds, TimeUnit::Microseconds) => *v * 1_000i64,
                     (TimeUnit::Milliseconds, TimeUnit::Nanoseconds) => *v * 1_000_000i64,
+                    (TimeUnit::Milliseconds, TimeUnit::Seconds) => *v / 1_000i64,
+                    (TimeUnit::Seconds, TimeUnit::Milliseconds) => *v * 1_000i64,
+                    (TimeUnit::Seconds, TimeUnit::Microseconds) => *v * 1_000_000i64,
+                    (TimeUnit::Seconds, TimeUnit::Nanoseconds) => *v * 1_000_000_000i64,
                     _ => *v,
                 },
                 *tu_r,

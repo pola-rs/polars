@@ -13,10 +13,13 @@ use polars_core::utils::arrow::temporal_conversions::{
 
 #[cfg(feature = "timezones")]
 pub fn dst_offset(ca: &DatetimeChunked, time_unit: &TimeUnit, time_zone: &Tz) -> DurationChunked {
+    use arrow::temporal_conversions::timestamp_s_to_datetime;
+
     let timestamp_to_datetime = match time_unit {
         TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
         TimeUnit::Microseconds => timestamp_us_to_datetime,
         TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+        TimeUnit::Seconds => timestamp_s_to_datetime,
     };
     ca.0.apply_values(|t| {
         let ndt = timestamp_to_datetime(t);

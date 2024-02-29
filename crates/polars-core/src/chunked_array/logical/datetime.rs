@@ -77,6 +77,7 @@ impl LogicalType for DatetimeChunked {
                     TimeUnit::Nanoseconds => cast_to_date(NS_IN_DAY),
                     TimeUnit::Microseconds => cast_to_date(US_IN_DAY),
                     TimeUnit::Milliseconds => cast_to_date(MS_IN_DAY),
+                    TimeUnit::Seconds => cast_to_date(SEC_IN_DAY),
                 }
             },
             #[cfg(feature = "dtype-time")]
@@ -85,6 +86,7 @@ impl LogicalType for DatetimeChunked {
                     TimeUnit::Nanoseconds => (NS_IN_DAY, 1i64),
                     TimeUnit::Microseconds => (US_IN_DAY, 1_000i64),
                     TimeUnit::Milliseconds => (MS_IN_DAY, 1_000_000i64),
+                    TimeUnit::Seconds => (SEC_IN_DAY, 1_000_000_000i64),
                 };
                 return Ok(self
                     .0

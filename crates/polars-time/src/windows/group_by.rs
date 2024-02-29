@@ -163,6 +163,7 @@ pub fn group_by_windows(
             TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
             TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
             TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
+            TimeUnit::Seconds => window.estimate_overlapping_bounds_s(boundary),
         }
     };
     let size_lower = if include_lower_bound { size } else { 0 };
@@ -236,6 +237,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Seconds => Duration::add_s,
     };
 
     let upper_bound = upper_bound.unwrap_or(time.len());
@@ -308,6 +310,7 @@ pub(crate) fn group_by_values_iter_window_behind_t(
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Seconds => Duration::add_s,
     };
 
     let mut start = 0;
@@ -358,6 +361,7 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Seconds => Duration::add_s,
     };
 
     let mut start = 0;
@@ -410,6 +414,7 @@ pub(crate) fn group_by_values_iter_lookahead(
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Seconds => Duration::add_s,
     };
     let mut start = start_offset;
     let mut end = start;

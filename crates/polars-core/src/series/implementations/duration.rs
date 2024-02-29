@@ -144,6 +144,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             },
             (DataType::Duration(tu), DataType::Date) => {
                 let one_day_in_tu: i64 = match tu {
+                    TimeUnit::Seconds => 86_400,
                     TimeUnit::Milliseconds => 86_400_000,
                     TimeUnit::Microseconds => 86_400_000_000,
                     TimeUnit::Nanoseconds => 86_400_000_000_000,

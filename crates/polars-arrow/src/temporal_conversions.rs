@@ -9,6 +9,8 @@ use crate::datatypes::{ArrowDataType, TimeUnit};
 
 /// Number of seconds in a day
 pub const SECONDS_IN_DAY: i64 = 86_400;
+/// Number of seconds in a second
+pub const SECONDS: i64 = 1;
 /// Number of milliseconds in a second
 pub const MILLISECONDS: i64 = 1_000;
 /// Number of microseconds in a second

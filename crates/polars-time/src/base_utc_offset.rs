@@ -2,7 +2,8 @@
 use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_s_to_datetime,
+    timestamp_us_to_datetime,
 };
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
@@ -20,6 +21,7 @@ pub fn base_utc_offset(
         TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
         TimeUnit::Microseconds => timestamp_us_to_datetime,
         TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+        TimeUnit::Seconds => timestamp_s_to_datetime,
     };
     ca.0.apply_values(|t| {
         let ndt = timestamp_to_datetime(t);

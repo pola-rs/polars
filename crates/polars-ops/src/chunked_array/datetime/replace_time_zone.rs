@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use arrow::legacy::kernels::{convert_to_naive_local, Ambiguous};
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_s_to_datetime,
+    timestamp_us_to_datetime,
 };
 use chrono::NaiveDateTime;
 use chrono_tz::UTC;
@@ -30,11 +31,13 @@ pub fn replace_time_zone(
         return Ok(out);
     }
     let timestamp_to_datetime: fn(i64) -> NaiveDateTime = match datetime.time_unit() {
+        TimeUnit::Seconds => timestamp_s_to_datetime,
         TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         TimeUnit::Microseconds => timestamp_us_to_datetime,
         TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
     };
     let datetime_to_timestamp: fn(NaiveDateTime) -> i64 = match datetime.time_unit() {
+        TimeUnit::Seconds => datetime_to_timestamp_s,
         TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         TimeUnit::Microseconds => datetime_to_timestamp_us,
         TimeUnit::Nanoseconds => datetime_to_timestamp_ns,

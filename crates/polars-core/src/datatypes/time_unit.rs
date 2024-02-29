@@ -9,6 +9,7 @@ pub enum TimeUnit {
     Nanoseconds,
     Microseconds,
     Milliseconds,
+    Seconds,
 }
 
 impl From<&ArrowTimeUnit> for TimeUnit {
@@ -18,7 +19,7 @@ impl From<&ArrowTimeUnit> for TimeUnit {
             ArrowTimeUnit::Microsecond => TimeUnit::Microseconds,
             ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
             // will be cast
-            ArrowTimeUnit::Second => TimeUnit::Milliseconds,
+            ArrowTimeUnit::Second => TimeUnit::Seconds,
         }
     }
 }
@@ -35,6 +36,9 @@ impl Display for TimeUnit {
             TimeUnit::Milliseconds => {
                 write!(f, "ms")
             },
+            TimeUnit::Seconds => {
+                write!(f, "s")
+            },
         }
     }
 }
@@ -46,6 +50,7 @@ impl TimeUnit {
             Nanoseconds => "ns",
             Microseconds => "us",
             Milliseconds => "ms",
+            Seconds => "s",
         }
     }
 
@@ -54,6 +59,7 @@ impl TimeUnit {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
             TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+            TimeUnit::Seconds => ArrowTimeUnit::Second,
         }
     }
 }
@@ -66,10 +72,16 @@ pub(crate) fn convert_time_units(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> i64 
     match (tu_l, tu_r) {
         (Nanoseconds, Microseconds) => v / 1_000,
         (Nanoseconds, Milliseconds) => v / 1_000_000,
+        (Nanoseconds, Seconds) => v / 1_000_000_000,
         (Microseconds, Nanoseconds) => v * 1_000,
         (Microseconds, Milliseconds) => v / 1_000,
+        (Microseconds, Seconds) => v / 1_000_000,
         (Milliseconds, Microseconds) => v * 1_000,
         (Milliseconds, Nanoseconds) => v * 1_000_000,
+        (Milliseconds, Seconds) => v / 1_000,
+        (Seconds, Nanoseconds) => v * 1_000_000_000,
+        (Seconds, Microseconds) => v * 1_000_000,
+        (Seconds, Milliseconds) => v * 1_000,
         _ => v,
     }
 }

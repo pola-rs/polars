@@ -427,6 +427,7 @@ impl ToPyObject for Wrap<TimeUnit> {
             TimeUnit::Nanoseconds => "ns",
             TimeUnit::Microseconds => "us",
             TimeUnit::Milliseconds => "ms",
+            TimeUnit::Seconds => "s",
         };
         time_unit.into_py(py)
     }
