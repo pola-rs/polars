@@ -40,7 +40,6 @@ impl<T: GetSize, E: Error> GetSize for Result<T, E> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
 enum Optimization {
     Step,
     Accept,
