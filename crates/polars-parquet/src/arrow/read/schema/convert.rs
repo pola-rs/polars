@@ -150,15 +150,15 @@ fn from_byte_array(
     converted_type: &Option<PrimitiveConvertedType>,
 ) -> ArrowDataType {
     match (logical_type, converted_type) {
-        (Some(PrimitiveLogicalType::String), _) => ArrowDataType::LargeUtf8,
-        (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::LargeBinary,
-        (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::LargeBinary,
-        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::LargeBinary,
-        (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::LargeBinary,
-        (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::LargeBinary,
-        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::LargeBinary,
-        (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::LargeUtf8,
-        (_, _) => ArrowDataType::LargeBinary,
+        (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8View,
+        (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::BinaryView,
+        (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::BinaryView,
+        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::BinaryView,
+        (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::BinaryView,
+        (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::BinaryView,
+        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::BinaryView,
+        (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::Utf8View,
+        (_, _) => ArrowDataType::BinaryView,
     }
 }
 
@@ -439,8 +439,8 @@ mod tests {
             Field::new("int64", ArrowDataType::Int64, false),
             Field::new("double", ArrowDataType::Float64, true),
             Field::new("float", ArrowDataType::Float32, true),
-            Field::new("string", ArrowDataType::LargeUtf8, true),
-            Field::new("string_2", ArrowDataType::LargeUtf8, true),
+            Field::new("string", ArrowDataType::Utf8View, true),
+            Field::new("string_2", ArrowDataType::Utf8View, true),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
@@ -459,7 +459,7 @@ mod tests {
         }
         ";
         let expected = vec![
-            Field::new("binary", ArrowDataType::LargeBinary, false),
+            Field::new("binary", ArrowDataType::BinaryView, false),
             Field::new("fixed_binary", ArrowDataType::FixedSizeBinary(20), false),
         ];
 
