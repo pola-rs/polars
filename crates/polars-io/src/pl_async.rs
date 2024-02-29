@@ -1,15 +1,16 @@
 use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::RwLock;
 use std::thread::ThreadId;
 
 use once_cell::sync::Lazy;
+use polars_core::config::verbose;
 use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::Semaphore;
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
@@ -38,56 +39,39 @@ impl<T: GetSize, E: Error> GetSize for Result<T, E> {
         }
     }
 }
-impl GetSize for () {
-    fn size(&self) -> u64 {
-        0
-    }
-}
 
-#[cfg(feature = "parquet")]
-impl GetSize for polars_parquet::read::FileMetaData {
-    fn size(&self) -> u64 {
-        0
-    }
-}
-
-#[cfg(feature = "reqwest")]
-impl GetSize for reqwest::Response {
-    fn size(&self) -> u64 {
-        0
-    }
-}
-
-impl GetSize for usize {
-    fn size(&self) -> u64 {
-        0
-    }
+#[derive(Debug, Copy, Clone)]
+enum Optimization {
+    Step,
+    Accept,
+    Finished,
 }
 
 struct SemaphoreTuner {
-    download_speeds: Vec<u64>,
-    increments: Vec<u16>,
-    permit_store: Vec<SemaphorePermit<'static>>,
+    previous_download_speed: u64,
     last_tune: std::time::Instant,
     downloaded: AtomicU64,
     download_time: AtomicU64,
-    incr_count: u16
+    opt_state: Optimization,
+    increments: u32,
 }
 
 impl SemaphoreTuner {
     fn new() -> Self {
         Self {
-            download_speeds: vec![],
-            increments: vec![],
-            permit_store: vec![],
+            previous_download_speed: 0,
             last_tune: std::time::Instant::now(),
             downloaded: AtomicU64::new(0),
             download_time: AtomicU64::new(0),
-            incr_count: 0,
+            opt_state: Optimization::Step,
+            increments: 0,
         }
     }
     fn should_tune(&self) -> bool {
-        self.last_tune.elapsed().as_millis() > 500
+        match self.opt_state {
+            Optimization::Finished => false,
+            _ => self.last_tune.elapsed().as_millis() > 350,
+        }
     }
 
     fn add_stats(&self, downloaded_bytes: u64, download_time: u64) {
@@ -98,73 +82,61 @@ impl SemaphoreTuner {
     }
 
     fn increment(&mut self, semaphore: &Semaphore) {
-
-
-        dbg!("increment");
-        if self.incr_count >= 0 {
-            self.last_time_increased = true;
-            if self.permit_store.is_empty() {
-                semaphore.add_permits(5);
-            } else {
-                // Drop will send them back to the semaphore.
-                let _permits = self.permit_store.pop();
-            }
-
-        }
-        self.incr_count += 1;
+        semaphore.add_permits(1);
+        self.increments += 1;
     }
 
-    fn decrement(&mut self, semaphore: &'static Semaphore) {
-        dbg!("deccrement");
-        if self.incr_count > 0 {
-            self.last_time_increased = false;
-
-            // Do not acquire here, that will deadlock
-            // the `write` guard cannot be a future.
-            if let Ok(permits) = semaphore.try_acquire_many(5) {
-                self.permit_store.push(permits);
-            }
-            self.incr_count -= 1;
-        }
-    }
-
-    fn tune(&mut self, semaphore: &'static Semaphore) {
-        self.last_tune = std::time::Instant::now();
+    fn tune(&mut self, semaphore: &'static Semaphore) -> bool {
         let download_speed = self.downloaded.fetch_add(0, Ordering::Relaxed)
             / self.download_time.fetch_add(0, Ordering::Relaxed);
-        dbg!(download_speed);
-        dbg!(self.permit_store.len());
-        let last_download_speed = self.last_download_speed;
 
-        self.last_download_speed = download_speed;
-
-        if self.last_time_increased {
-            if download_speed > last_download_speed {
-                self.increment(semaphore)
-            } else {
-                self.decrement(semaphore)
-            }
-        } else {
-            if download_speed > last_download_speed {
-                self.decrement(semaphore)
-            } else {
-                self.increment(semaphore)
-            }
+        let increased = download_speed > self.previous_download_speed;
+        self.previous_download_speed = download_speed;
+        match self.opt_state {
+            Optimization::Step => {
+                self.increment(semaphore);
+                self.opt_state = Optimization::Accept
+            },
+            Optimization::Accept => {
+                // Accept the step
+                if increased {
+                    // Set new step
+                    self.increment(semaphore);
+                    // Keep accept state to check next iteration
+                }
+                // Decline the step
+                else {
+                    self.opt_state = Optimization::Finished;
+                    FINISHED_TUNING.store(true, Ordering::Relaxed);
+                    if verbose() {
+                        eprintln!(
+                            "concurrency tuner finished after adding {} steps",
+                            self.increments
+                        )
+                    }
+                    // Finished.
+                    return true;
+                }
+            },
+            Optimization::Finished => {},
         }
+        self.last_tune = std::time::Instant::now();
+        // Not finished.
+        false
     }
 }
 static INCR: AtomicU8 = AtomicU8::new(0);
+static FINISHED_TUNING: AtomicBool = AtomicBool::new(false);
 static PERMIT_STORE: std::sync::OnceLock<tokio::sync::RwLock<SemaphoreTuner>> =
     std::sync::OnceLock::new();
 
 fn get_semaphore() -> &'static (Semaphore, u32) {
-     CONCURRENCY_BUDGET.get_or_init(|| {
+    CONCURRENCY_BUDGET.get_or_init(|| {
         let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
             .map(|s| s.parse::<usize>().expect("integer"))
             .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
         (Semaphore::new(permits), permits as u32)
     })
-
 }
 
 pub async fn tune_with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
@@ -185,8 +157,7 @@ where
     let now = std::time::Instant::now();
     let res = callable().await;
 
-    // Don't go to tuner for the types that don't implement GetSize
-    if res.size() == 0 {
+    if FINISHED_TUNING.load(Ordering::Relaxed) || res.size() == 0 {
         return res;
     }
 
@@ -205,22 +176,26 @@ where
     drop(tuner);
 
     // Reduce locking by letting only 1 in 5 tasks lock the tuner
-    if !((INCR.fetch_add(1, Ordering::Relaxed) % 5) == 0) {
+    if (INCR.fetch_add(1, Ordering::Relaxed) % 5) != 0 {
         return res;
     }
     // Never lock as we will deadlock. This can run under rayon
-    let Ok(mut tuner) = permit_store.try_write() else { return res };
-    dbg!("tune");
-    tuner.tune(semaphore);
-    dbg!("done tuning");
-    drop(tuner);
+    let Ok(mut tuner) = permit_store.try_write() else {
+        return res;
+    };
+    let finished = tuner.tune(semaphore);
+    if finished {
+        // Undo the last step
+        let undo = semaphore.acquire().await.unwrap();
+        std::mem::forget(undo)
+    }
     res
 }
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future,
+where
+    F: FnOnce() -> Fut,
+    Fut: Future,
 {
     let (semaphore, initial_budget) = get_semaphore();
 
