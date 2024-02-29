@@ -1218,11 +1218,11 @@ mod test {
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, None),
-                DataType::Datetime(TimeUnit::Milliseconds, None),
+                DataType::Datetime(TimeUnit::Seconds, None),
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
-                DataType::Datetime(TimeUnit::Milliseconds, None),
+                DataType::Datetime(TimeUnit::Seconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
             (ArrowDataType::Utf8, DataType::String),
