@@ -31,7 +31,7 @@ fn roll_quarter_forward(
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
 ) -> PolarsResult<i64> {
     let t = roll_quarter_backward(t, time_zone, timestamp_to_datetime, datetime_to_timestamp)?;
-    let t = offset_fn(&Duration::parse("1mo"), t, time_zone)?;
+    let t = offset_fn(&Duration::parse("3mo"), t, time_zone)?;
     offset_fn(&Duration::parse("-1d"), t, time_zone)
 }
 
@@ -43,7 +43,7 @@ fn roll_year_forward(
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
 ) -> PolarsResult<i64> {
     let t = roll_year_backward(t, time_zone, timestamp_to_datetime, datetime_to_timestamp)?;
-    let t = offset_fn(&Duration::parse("1mo"), t, time_zone)?;
+    let t = offset_fn(&Duration::parse("1y"), t, time_zone)?;
     offset_fn(&Duration::parse("-1d"), t, time_zone)
 }
 
