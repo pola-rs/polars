@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import reduce
 from operator import or_
 from typing import TYPE_CHECKING, Callable, TypeVar
@@ -374,3 +375,20 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ]
     """
     return _create_namespace(name, pl.Series)
+
+
+def _is_shared_lib(file: str) -> bool:
+    return file.endswith((".so", ".dll", ".pyd"))
+
+
+def get_shared_lib_location(main_file: str) -> str:
+    """
+    Get location of Shared Object file.
+
+    This is only meant to be used by plugin authors, rather than by
+    Polars end-users directly.
+    """
+    directory = os.path.dirname(main_file)  # noqa: PTH120
+    return os.path.join(  # noqa: PTH118
+        directory, next(filter(_is_shared_lib, os.listdir(directory)))
+    )
