@@ -10,6 +10,7 @@ from typing import Any, Callable, NamedTuple
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -42,6 +43,26 @@ def test_series_from_pydecimal_and_ints(
         for i, d in enumerate(data):
             assert s[i] == d
         assert s.to_list() == [D(x) if x is not None else None for x in data]
+
+
+def test_series_large_decimal() -> None:
+    s = pl.Series([D(2**127 - 1)], dtype=pl.Decimal)
+    assert s[0] == D(2**127 - 1)
+
+    s = pl.Series([D(-(2**127) + 1)], dtype=pl.Decimal)
+    assert s[0] == D(-(2**127) + 1)
+
+    with pytest.raises(
+        ComputeError,
+        match="Decimal is too large to fit in Decimal128",
+    ):
+        pl.Series([D(2**127)], dtype=pl.Decimal)
+
+    with pytest.raises(
+        ComputeError,
+        match="Decimal is too large to fit in Decimal128",
+    ):
+        pl.Series([D(-(2**127))], dtype=pl.Decimal)
 
 
 @pytest.mark.slow()

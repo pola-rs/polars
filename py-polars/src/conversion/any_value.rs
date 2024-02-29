@@ -1,7 +1,8 @@
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
-use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
-use polars::prelude::{AnyValue, Series};
+//use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
+//use polars::prelude::{AnyValue, Series};
+use polars::prelude::*;
 use polars_core::frame::row::any_values_to_dtype;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -239,9 +240,9 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 .unwrap();
             // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
             let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
-                PyErr::from(PyPolarsErr::Other(
-                    "Decimal is too large to fit in Decimal128".into(),
-                ))
+                let msg = "Decimal is too large to fit in Decimal128";
+                let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
+                PyErr::from(e)
             })?;
             if sign > 0 {
                 v = -v; // won't overflow since -i128::MAX > i128::MIN
@@ -374,7 +375,6 @@ fn abs_decimal_from_digits(
     digits: impl IntoIterator<Item = u8>,
     exp: i32,
 ) -> Option<(i128, usize)> {
-    const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
     let mut v = 0_i128;
     for (i, d) in digits.into_iter().map(i128::from).enumerate() {
         if i < 38 {
@@ -393,6 +393,5 @@ fn abs_decimal_from_digits(
     } else {
         (-exp) as usize
     };
-    // TODO: do we care for checking if it fits in MAX_ABS_DEC? (if we set precision to None anyway?)
-    (v <= MAX_ABS_DEC).then_some((v, scale))
+    Some((v, scale))
 }
