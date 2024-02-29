@@ -732,7 +732,7 @@ mod tests {
 
         {
             let struct_fields = vec![
-                Field::new("event_name", ArrowDataType::LargeUtf8, false),
+                Field::new("event_name", ArrowDataType::Utf8View, false),
                 Field::new(
                     "event_time",
                     ArrowDataType::Timestamp(TimeUnit::Millisecond, Some("+00:00".into())),
@@ -792,7 +792,7 @@ mod tests {
                 "my_list1",
                 ArrowDataType::LargeList(Box::new(Field::new(
                     "element",
-                    ArrowDataType::LargeUtf8,
+                    ArrowDataType::Utf8View,
                     true,
                 ))),
                 false,
@@ -810,7 +810,7 @@ mod tests {
                 "my_list2",
                 ArrowDataType::LargeList(Box::new(Field::new(
                     "element",
-                    ArrowDataType::LargeUtf8,
+                    ArrowDataType::Utf8View,
                     false,
                 ))),
                 true,
@@ -828,7 +828,7 @@ mod tests {
                 "my_list3",
                 ArrowDataType::LargeList(Box::new(Field::new(
                     "element",
-                    ArrowDataType::LargeUtf8,
+                    ArrowDataType::Utf8View,
                     false,
                 ))),
                 false,
@@ -1058,7 +1058,7 @@ mod tests {
             Field::new("int64", ArrowDataType::Int64, false),
             Field::new("double", ArrowDataType::Float64, true),
             Field::new("float", ArrowDataType::Float32, true),
-            Field::new("string", ArrowDataType::LargeUtf8, true),
+            Field::new("string", ArrowDataType::Utf8View, true),
             Field::new(
                 "bools",
                 ArrowDataType::LargeList(Box::new(Field::new(
@@ -1115,7 +1115,7 @@ mod tests {
                 ]),
                 false,
             ),
-            Field::new("dictionary_strings", ArrowDataType::LargeUtf8, false),
+            Field::new("dictionary_strings", ArrowDataType::Utf8View, false),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
