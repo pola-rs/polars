@@ -438,4 +438,4 @@ def test_grouping_hash_14749() -> None:
         )
         .select(pl.col("x").max().over("grp"))["x"]
         .value_counts()
-    ) == {"x": [3], "count": [1004]}
+    ).to_dict(as_series=False) == {"x": [3], "count": [1004]}
