@@ -2654,6 +2654,7 @@ dependencies = [
  "polars-arrow",
  "polars-error",
  "polars-utils",
+ "rand",
  "strength_reduce",
  "version_check",
 ]
@@ -2989,6 +2990,8 @@ dependencies = [
  "num-traits",
  "once_cell",
  "polars-error",
+ "rand",
+ "raw-cpuid",
  "rayon",
  "smartstring",
  "sysinfo",
@@ -3255,6 +3258,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
  "rand_core",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "11.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d86a7c4638d42c44551f4791a20e687dbb4c3de1f33c43dd71e355cd429def1"
+dependencies = [
+ "bitflags 2.4.2",
 ]
 
 [[package]]
