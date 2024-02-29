@@ -37,6 +37,13 @@ out = df.group_by("keys").agg(pl.col("values").map_batches(custom_sum))
 print(out)
 # --8<-- [end:custom_sum]
 
+# --8<-- [start:np_log]
+import numpy as np
+
+out = df.select(pl.col("values").map_batches(np.log))
+print(out)
+# --8<-- [end:np_log]
+
 # --8<-- [start:custom_sum_numba]
 from numba import guvectorize, int64, float64
 

@@ -12,6 +12,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:custom_sum]
     // --8<-- [end:custom_sum]
 
+    // --8<-- [start:np_log]
+    // --8<-- [end:np_log]
+
     // --8<-- [start:custom_sum_numba]
     // --8<-- [end:custom_sum_numba]
 
